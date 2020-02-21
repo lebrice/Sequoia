@@ -9,14 +9,14 @@ from torch.nn import functional as F
 from .autoencoder import AutoEncoder
 
 
-class VAE(AutoEncoder):
+class VAE(nn.Module, AutoEncoder):
     """ Example of a VAE for MNIST
     
     Adapted from https://github.com/pytorch/examples/blob/master/vae/main.py
     """
 
     def __init__(self, code_size: int = 20):
-        super().__init__()
+        nn.Module.__init__(self)
         self.code_size: int = code_size
         self.fc1 = nn.Linear(784, 400)
         self.fc21 = nn.Linear(400, self.code_size)
@@ -47,12 +47,6 @@ class VAE(AutoEncoder):
     def decode(self, z: Tensor) -> Tensor:
         h3 = self.relu(self.fc3(z))
         return torch.sigmoid(self.fc4(h3))
-
-    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
-        mu, logvar = self.encode(x.view(-1, 784))
-        z = self.reparameterize(mu, logvar)
-        return self.decode(z), mu, logvar
-
 
     # Reconstruction + KL divergence losses summed over all elements and batch
     @staticmethod

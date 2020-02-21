@@ -6,7 +6,7 @@ from torch.nn import functional as F
 from torch import Tensor, nn
 
 
-class AutoEncoder(nn.Module, ABC):
+class AutoEncoder(ABC):
     @abstractmethod
     def encode(self, x: Tensor):
         pass

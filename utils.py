@@ -23,11 +23,24 @@ class TensorCache(MutableMapping[Tensor, Tensor]):
         self.head: int = 0
         self.tail: int = 0
 
+    def __contains__(self, item: Tensor) -> bool:
+        # TODO: vectorize this.
+        for x, y in self:
+            if (x == item).all():
+                return True
+        return False
+        
     def __getitem__(self, key: Tensor) -> Tensor:
         if self.y_cache is None:
             self.x_shape = key.shape
             raise KeyError(key)
-   
+
+        for x, y in self:
+            if (x == item).all():
+                return y
+        # shouldn't happen, cause __contains__ is called before __getitem__ ?
+        raise KeyError(key) 
+
     def __setitem__(self, key: Tensor, value: Tensor) -> None:
         if self.x_cache is None:
             self.x_shape = key.shape
@@ -47,8 +60,13 @@ class TensorCache(MutableMapping[Tensor, Tensor]):
         pass
 
     def __iter__(self):
-        return iter(self.x_cache)
-
+        return iter(zip(self.x_cache, self.y_cache))
+    
+    def clear(self) -> None:
+        del self.x_cache
+        del self.y_cache
+        self.x_cache = None
+        self.y_cache = None
 
 
 class CachedForwardPass(nn.Module):
@@ -62,41 +80,28 @@ class CachedForwardPass(nn.Module):
     def __init__(self, capacity: int = 100):
         super().__init__()
         self.capacity = capacity
-        self.cached_x: Deque[Tensor] = deque(maxlen=capacity)
-        self.cached_y: Deque[Tensor] = deque(maxlen=capacity)
+        self.cache = TensorCache(capacity=capacity)
         self.head: int = 0
         self.tail: int = 0
 
     def forward(self, x_batch: Tensor):
+        x_s = x_batch
         is_cached = [x in self for x in x_batch]
         print(is_cached)
+        return False
+            
 
-    def __contains__(self, item: Tensor) -> bool:
-        pass
-    
-    def __getitem__(self, key: Tensor) -> Tensor:
-        pass
-
-    def __setitem__(self, key: Tensor, value: Tensor) -> None:
-        pass
-
-    def create_cache(self, example_x: Tensor, example_y: Tensor) -> None:
-        self.cache_x = example_x.new_zeros([self.capacity, *example_x.shape])
-        self.cache_y = example_y.new_zeros([self.capacity, *example_y.shape])
-
-    def clear(self) -> None:
-        self.cached_x.clear()
-        self.cached_y.clear()
             
 cache = TensorCache(5)
 
 
-
 d = TensorCache(5)
 zero = torch.zeros(3,3)
+d[zero] = torch.Tensor(123)
+
 one = torch.ones(3,3)
 batch = torch.stack([zero, one])
-print([t in d for t in batch.unbind()])
-d[zero] = torch.Tensor(123)
+print("zero is in cache:", zero in d)
+print("ones is in cache:", one in d)
 print(torch.zeros(3,3) in d)
-print(one in d)
+print(d[torch.zeros(3,3)])

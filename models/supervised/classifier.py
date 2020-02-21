@@ -6,12 +6,10 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 
-class Classifier(nn.Module, ABC):
+class Classifier(ABC):
     def __init__(self, num_classes: int):
-        super().__init__()
         self.num_classes = num_classes
         
-        self.feature_extractor: nn.Module = NotImplemented
         self.classifier: nn.Module = NotImplemented       
 
     def get_loss(self, x: Tensor, y: Tensor) -> Tensor:
@@ -25,10 +23,11 @@ class Classifier(nn.Module, ABC):
     def preprocess_inputs(self, x: Tensor) -> Tensor:
         return x
 
+    @abstractmethod
     def extract_features(self, x: Tensor) -> Tensor:
         """ Extracts the features from input example `x`. """
-        return self.feature_extractor(x)
-    
+        pass
+
     @abstractmethod
     def logits(self, h_x: Tensor) -> Tensor:
         """ Returns the (raw) scores for each class given features `h_x`. """
