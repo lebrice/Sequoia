@@ -40,9 +40,8 @@ class SemiSupervisedModel(SupervisedModel, UnsupervisedModel, ABC):  # type: ign
         return loss
 
 
-class AuxiliaryTask(nn.Module, ABC):
+class AuxiliaryTask(ABC):
     def __init__(self, model: "SelfSupervisedModel"):
-        super().__init__()
         self.model: Model = model
 
     @abstractmethod

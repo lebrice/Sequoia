@@ -9,12 +9,12 @@ from torch.nn import functional as F
 class Classifier(ABC):
     def __init__(self, num_classes: int):
         self.num_classes = num_classes
-        
+        self.encoder: nn.Module = NotImplemented
         self.classifier: nn.Module = NotImplemented       
 
     def get_loss(self, x: Tensor, y: Tensor) -> Tensor:
         x = self.preprocess_inputs(x)
-        h_x = self.extract_features(x)
+        h_x = self.encode(x)
         logits = self.logits(h_x)
         y_hat = self.log_probabilities(logits)
         return F.NLLLoss(y_hat, y)
@@ -24,9 +24,9 @@ class Classifier(ABC):
         return x
 
     @abstractmethod
-    def extract_features(self, x: Tensor) -> Tensor:
+    def encode(self, x: Tensor) -> Tensor:
         """ Extracts the features from input example `x`. """
-        pass
+        return self.encoder(x)
 
     @abstractmethod
     def logits(self, h_x: Tensor) -> Tensor:
