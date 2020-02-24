@@ -10,14 +10,14 @@ class Classifier(ABC):
     def __init__(self, num_classes: int):
         self.num_classes = num_classes
         self.encoder: nn.Module = NotImplemented
-        self.classifier: nn.Module = NotImplemented       
+        self.classifier: nn.Module = NotImplemented
+        self.loss = nn.CrossEntropyLoss()  
 
     def get_loss(self, x: Tensor, y: Tensor) -> Tensor:
         x = self.preprocess_inputs(x)
         h_x = self.encode(x)
         logits = self.logits(h_x)
-        y_hat = self.log_probabilities(logits)
-        return F.NLLLoss(y_hat, y)
+        return self.loss(logits, y)
 
     @abstractmethod
     def preprocess_inputs(self, x: Tensor) -> Tensor:
@@ -33,10 +33,7 @@ class Classifier(ABC):
         """ Returns the (raw) scores for each class given features `h_x`. """
         return self.classifier(h_x)
  
-    def log_probabilities(self, logits: Tensor) -> Tensor:
-        """ Returns the log-probabilities for each class given raw logits. """
-        return F.log_softmax(logits)
-
     def probabilities(self, logits: Tensor) -> Tensor:
         """ Returns the probabilities for each class given input raw logits. """
-        return self.log_probabilities(logits).exp()
+        return F.softmax(logits)
+    

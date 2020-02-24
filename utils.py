@@ -11,6 +11,9 @@ import collections
 from collections.abc import MutableMapping
 from typing import MutableMapping
 
+cuda_available = torch.cuda.is_available()
+gpus_available = torch.cuda.device_count()
+
 class TensorCache(MutableMapping[Tensor, Tensor]):
     """A mutable mapping of individual (not batched) tensors to their outputs.
     """
@@ -91,17 +94,18 @@ class CachedForwardPass(nn.Module):
         return False
             
 
+if __name__ == "__main__":
             
-cache = TensorCache(5)
+    cache = TensorCache(5)
 
 
-d = TensorCache(5)
-zero = torch.zeros(3,3)
-d[zero] = torch.Tensor(123)
+    d = TensorCache(5)
+    zero = torch.zeros(3,3)
+    d[zero] = torch.Tensor(123)
 
-one = torch.ones(3,3)
-batch = torch.stack([zero, one])
-print("zero is in cache:", zero in d)
-print("ones is in cache:", one in d)
-print(torch.zeros(3,3) in d)
-print(d[torch.zeros(3,3)])
+    one = torch.ones(3,3)
+    batch = torch.stack([zero, one])
+    print("zero is in cache:", zero in d)
+    print("ones is in cache:", one in d)
+    print(torch.zeros(3,3) in d)
+    print(d[torch.zeros(3,3)])

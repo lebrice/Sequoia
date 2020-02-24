@@ -2,34 +2,40 @@ from abc import ABC, abstractmethod
 from typing import Any, Tuple, List, Generic, TypeVar
 
 import torch
-from torch import Tensor, nn
+from torch import Tensor, nn, optim
 from torch.nn import functional as F
-
+from torch.utils.data import DataLoader
+from dataclasses import dataclass
+from simple_parsing import field
+from torchvision import datasets, transforms
+from torchvision.utils import save_image
 
 class Model(ABC):
-    pass
-
-
-class UnsupervisedModel(Model):
     @abstractmethod
-    def get_loss(self, x: Tensor) -> Tensor:
+    def get_loss(self, x: Tensor, y: Tensor):
+        pass
+
+    
+class UnsupervisedModel(Model, ABC):
+    @abstractmethod
+    def get_loss(self, x: Tensor, y: Tensor=None) -> Tensor:
         pass
 
 
-class SupervisedModel(Model):
+class SupervisedModel(Model, ABC):
     @abstractmethod
     def get_loss(self, x: Tensor, y: Tensor) -> Tensor:
         pass
 
 
-class SemiSupervisedModel(SupervisedModel, UnsupervisedModel, ABC):  # type: ignore
+class SemiSupervisedModel(Model, ABC):
     @abstractmethod
     def supervised_loss(self, x: Tensor, y: Tensor) -> Tensor:
-        return SupervisedModel.get_loss(self, x, y)
+        return SupervisedModel.get_loss(self, x, y)  # type: ignore
     
     @abstractmethod
     def unsupervised_loss(self, x: Tensor) -> Tensor:
-        return UnsupervisedModel.get_loss(self, x)
+        return UnsupervisedModel.get_loss(self, x)  # type: ignore
 
     @abstractmethod
     def get_loss(self, x: Tensor, y: Tensor=None):
