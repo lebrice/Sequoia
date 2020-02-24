@@ -14,7 +14,7 @@ class VAEReconstructionTask(nn.Module, AuxiliaryTask):
         self.code_size = code_size
         super().__init__()
         self.decoder = nn.Sequential(
-            nn.Linear(self.code_size, 400),
+            nn.Linear(self.code_size // 2, 400),
             nn.ReLU(),
             nn.Linear(400, 784),
             nn.Sigmoid(),
@@ -33,7 +33,6 @@ class VAEReconstructionTask(nn.Module, AuxiliaryTask):
         recon_x = self.decoder(z)
         loss = self.reconstruction_loss(recon_x, x)
         loss += self.kl_divergence_loss(mu, logvar)
-        print("Auxiliary loss (VAE):", loss.item())
         return loss
 
     # Reconstruction + KL divergence losses summed over all elements and batch

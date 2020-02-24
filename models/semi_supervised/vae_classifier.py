@@ -15,7 +15,7 @@ from models.tasks.reconstruction import VAEReconstructionTask
 class VaeClassifier(nn.Module, Classifier, SelfSupervisedModel):
     def __init__(self,
                  num_classes: int = 10,
-                 hidden_size: int = 20,
+                 hidden_size: int = 100,
                  tasks: List[AuxiliaryTask]=None):
         self.num_classes = num_classes
         self.hidden_size = hidden_size
@@ -40,22 +40,24 @@ class VaeClassifier(nn.Module, Classifier, SelfSupervisedModel):
 
 
     def get_loss(self, x: Tensor, y: Tensor=None) -> Tensor:
-        loss = 0.
+        loss = torch.zeros(1)
         x = self.preprocess_inputs(x)
         h_x = self.encode(x)
         y_logits = self.logits(h_x)
+        
         if y is not None:
             loss += Classifier.classification_loss(y_logits, y)
         
-        # reconstruction loss:
         for task in self.tasks:
             task_loss = task.get_loss(x, h_x=h_x, y_pred=y_logits, y=y)
-            print(f"Task {type(task)} has a loss of {task_loss}")
             loss += task_loss
         return loss
 
     def unsupervised_loss(self, x: Tensor) -> Tensor:
-        return self.vae.get_loss(x)
+        reconstruction_task: VAEReconstructionTask = self.tasks[0]
+        x = self.preprocess_inputs(x)
+        h_x = self.encode(x)
+        return reconstruction_task.get_loss(h_x)
 
     def supervised_loss(self, x: Tensor, y: Tensor) -> Tensor:
         return Classifier.get_loss(self, x, y)
