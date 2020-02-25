@@ -3,28 +3,37 @@ from dataclasses import dataclass
 from typing import Any, List, Tuple
 
 import torch
+from simple_parsing import field, MutableField as mutable_field
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
+from torch.utils.data import DataLoader
+from torchvision.utils import save_image
 
-from models.base import AuxiliaryTask, SelfSupervisedModel
+from models.bases import AuxiliaryTask, SelfSupervisedModel
 from models.supervised.classifier import Classifier
 from models.tasks.reconstruction import VAEReconstructionTask
 from models.unsupervised.vae import VAE
+from options import Options as BaseOptions
 
-
-@dataclass
-class ModelHyperParameters:
-    pass
 
 class VaeClassifier(nn.Module, Classifier, SelfSupervisedModel):
-    def __init__(self,
-                 num_classes: int = 10,
-                 hidden_size: int = 100,
-                 tasks: List[AuxiliaryTask]=None):
-        self.num_classes = num_classes
-        self.hidden_size = hidden_size
+
+    @dataclass
+    class Options(BaseOptions):
+        """ Set of options for the VAE MNIST Example. """
+        hidden_size: int = 100  # size of the hidden size of the network.
+        learning_rate: float = field(default=1e-3, alias="-lr")
+
+        reconstruction: VAEReconstructionTask.Options = mutable_field(VAEReconstructionTask.Options, coefficient=0.01)
+
+    def __init__(self, options: Options, num_classes: int = 10):
         super().__init__()
         Classifier.__init__(self, num_classes=num_classes)
+        
+        self.options: VaeClassifier.Options = options
+        self.num_classes = num_classes
+        self.hidden_size = options.hidden_size
+        self.detach_representation_from_classifier: bool = True
 
         self.encoder = nn.Sequential(
             nn.Linear(784, 400),
@@ -32,31 +41,37 @@ class VaeClassifier(nn.Module, Classifier, SelfSupervisedModel):
             nn.Linear(400, self.hidden_size),
             nn.Sigmoid(),
         )
-        self.classifier = nn.Sequential(
-            nn.Linear(self.hidden_size, self.num_classes)
-        )
+        self.classifier = nn.Linear(self.hidden_size, self.num_classes)
         self.classification_loss = nn.CrossEntropyLoss()
 
-        tasks = tasks or []
-        self.tasks: List[AuxiliaryTask] = nn.ModuleList(tasks)  # type: ignore
-        self.detach_representation_from_classifier: bool = True
+        self.tasks: List[AuxiliaryTask] = nn.ModuleList()  # type: ignore
+        
 
-        self.reconstruction_task = VAEReconstructionTask(code_size=hidden_size)
+        self.code_size = options.reconstruction.code_size
+        self.reconstruction_task = VAEReconstructionTask(
+            encoder=self.encoder,
+            classifier=self.classifier,
+            options=self.options.reconstruction,
+            hidden_size=self.hidden_size,
+        )
         self.tasks.append(self.reconstruction_task)
 
+        self.optimizer =  optim.Adam(self.parameters(), lr=1e-3)
+        self.device = self.options.device
 
     def get_loss(self, x: Tensor, y: Tensor=None) -> Tensor:
         loss = torch.zeros(1)
-        x = self.preprocess_inputs(x)
         h_x = self.encode(x)
-        y_logits = self.logits(h_x)
+        y_pred = self.logits(h_x)
         
         if y is not None:
-            loss += self.classification_loss(y_logits, y)
+            supervised_loss = self.classification_loss(y_pred, y)
+            loss += supervised_loss
         
         for task in self.tasks:
-            task_loss = task.get_loss(x, h_x=h_x, y_pred=y_logits, y=y)
+            task_loss = task.get_loss(x, h_x=h_x, y_pred=y_pred, y=y)
             loss += task_loss
+
         return loss
 
     def unsupervised_loss(self, x: Tensor) -> Tensor:
@@ -68,6 +83,7 @@ class VaeClassifier(nn.Module, Classifier, SelfSupervisedModel):
         return Classifier.get_loss(self, x, y)
 
     def encode(self, x: Tensor):
+        x = self.preprocess_inputs(x)
         return self.encoder(x)
 
     def preprocess_inputs(self, x: Tensor) -> Tensor:
@@ -77,3 +93,13 @@ class VaeClassifier(nn.Module, Classifier, SelfSupervisedModel):
         if self.detach_representation_from_classifier:
             h_x = h_x.detach()
         return self.classifier(h_x)
+
+    def reconstruct(self, x: Tensor) -> Tensor:
+        x = self.preprocess_inputs(x)
+        h_x = self.encode(x)
+        x_hat = self.reconstruction_task(h_x)
+        return x_hat.view(x.shape)
+    
+    def generate(self, z: Tensor) -> Tensor:
+        z = z.to(self.device)
+        return self.reconstruction_task(z)

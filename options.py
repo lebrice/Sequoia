@@ -3,6 +3,7 @@ from typing import Tuple
 
 import torch
 from simple_parsing import field
+from simple_parsing.utils import JsonSerializable
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
@@ -11,7 +12,7 @@ from utils import cuda_available, gpus_available
 
 
 @dataclass
-class Options:
+class Options(JsonSerializable):
     """ Set of options for the VAE MNIST Example. """
     batch_size: int = 128   # Input batch size for training.
     epochs: int = 10        # Number of epochs to train.

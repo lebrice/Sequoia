@@ -1,24 +1,46 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Tuple
 
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from models.base import AuxiliaryTask
+from models.bases import Model, AuxiliaryTask, TaskOptions
 from models.unsupervised.autoencoder import AutoEncoder
 
 
-class VAEReconstructionTask(nn.Module, AuxiliaryTask):
-    def __init__(self, code_size: int = 100):
-        self.code_size = code_size
-        super().__init__()
+
+class VAEReconstructionTask(AuxiliaryTask):
+    """ Task that adds the VAE loss (reconstruction + KL divergence). """
+        
+    @dataclass
+    class Options(TaskOptions):
+        """ Settings & Hyper-parameters related to the VAEReconstructioTask. """
+        code_size: int = 50  # dimensions of the VAE code-space.
+
+
+    def __init__(self, encoder: nn.Module, classifier: nn.Module, options: Options, hidden_size: int):
+        super().__init__(encoder=encoder, classifier=classifier, options=options)
+        self.hidden_size = hidden_size
+        self.code_size = options.code_size
+
+        # add the rest of the VAE layers: (Mu, Sigma, and the decoder)
+        self.mu =  nn.Linear(self.hidden_size, self.code_size)
+        self.logvar = nn.Linear(self.hidden_size, self.code_size)
         self.decoder = nn.Sequential(
-            nn.Linear(self.code_size // 2, 400),
+            nn.Linear(self.code_size, 400),
             nn.ReLU(),
             nn.Linear(400, 784),
             nn.Sigmoid(),
         )
+
+    def forward(self, h_x: Tensor) -> Tensor:  # type: ignore
+        h_x = h_x.view([h_x.shape[0], -1])
+        mu, logvar = self.mu(h_x), self.logvar(h_x)
+        z = self.reparameterize(mu, logvar)
+        x_hat = self.decoder(z)
+        return x_hat
 
     def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
         std = torch.exp(0.5*logvar)
@@ -27,11 +49,11 @@ class VAEReconstructionTask(nn.Module, AuxiliaryTask):
         return z
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> Tensor:
-        code_size = h_x.shape[-1]
-        mu, logvar = h_x[..., :code_size//2], h_x[..., code_size//2:]
+        h_x = h_x.view([h_x.shape[0], -1])
+        mu, logvar = self.mu(h_x), self.logvar(h_x)
         z = self.reparameterize(mu, logvar)
-        recon_x = self.decoder(z)
-        loss = self.reconstruction_loss(recon_x, x)
+        x_hat = self.decoder(z)
+        loss = self.reconstruction_loss(x_hat, x)
         loss += self.kl_divergence_loss(mu, logvar)
         return loss
 
