@@ -6,7 +6,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from models.bases import AuxiliaryTask, TaskOptions
+from .bases import AuxiliaryTask
 
 
 class VAEReconstructionTask(AuxiliaryTask):
@@ -18,7 +18,7 @@ class VAEReconstructionTask(AuxiliaryTask):
     """
         
     @dataclass
-    class Options(TaskOptions):
+    class Options(AuxiliaryTask.Options):
         """ Settings & Hyper-parameters related to the VAEReconstructioTask. """
         code_size: int = 50  # dimensions of the VAE code-space.
 

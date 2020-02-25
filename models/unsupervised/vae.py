@@ -6,17 +6,18 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from .autoencoder import AutoEncoder
+
+from models.unsupervised.bases import AutoEncoder
 
 
-class VAE(nn.Module, AutoEncoder):
+class VAE(AutoEncoder):
     """ Example of a VAE for MNIST
     
     Adapted from https://github.com/pytorch/examples/blob/master/vae/main.py
     """
 
     def __init__(self, code_size: int = 20):
-        nn.Module.__init__(self)
+        super().__init__()
         self.code_size: int = code_size
         self.fc1 = nn.Linear(784, 400)
         self.fc21 = nn.Linear(400, self.code_size)

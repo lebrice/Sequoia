@@ -1,18 +1,19 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Tuple
 
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from models.bases import AuxiliaryTask
+from .bases import AuxiliaryTask
 
 
 def mixup(x1: Tensor, x2: Tensor, coeff: Tensor) -> Tensor:
     return x1 + (x2 - x1) * coeff
 
 
-class Mixup(AuxiliaryTask):
+class MixupTask(AuxiliaryTask):
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tensor:
         batch_size = x.shape[0]
         coeff = torch.rand(batch_size)
@@ -32,7 +33,7 @@ class Mixup(AuxiliaryTask):
         return (difference **2).sum()
 
 
-class ManifoldMixup(AuxiliaryTask):
+class ManifoldMixupTask(AuxiliaryTask):
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tensor:
         batch_size = x.shape[0]
         coeff = torch.rand(size=batch_size)

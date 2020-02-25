@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import torch
 from simple_parsing import MutableField as mutable_field
@@ -10,41 +11,44 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
-from models.bases import AuxiliaryTask, SelfSupervisedModel
-from models.supervised.classifier import Classifier
+from models.bases import BaseHParams
+from models.config import Config
+from models.supervised import Classifier
+from models.tasks import (AuxiliaryTask, ManifoldMixupTask, MixupTask,
+                          PatchLocationTask, PatchShufflingTask, RotationTask,
+                          VAEReconstructionTask)
+from models.unsupervised import GenerativeModel
 
-from models.tasks.patch_location import PatchLocationTask
-from models.tasks.patch_shuffling import PatchShufflingTask
-from models.tasks.reconstruction import VAEReconstructionTask
-from models.tasks.rotation import RotationTask
-
-from models.unsupervised.generative_model import GenerativeModel
-from models.unsupervised.vae import VAE
-from options import BaseOptions
-
+from .bases import SelfSupervisedModel
 
 @dataclass
-class Options(BaseOptions):
-    """ Set of options for the VAE MNIST Example. """
-    hidden_size: int = 100  # dimensions of the hidden state (encoder output).
-    learning_rate: float = field(default=1e-3, alias="-lr")  # learning rate.
+class HParams(BaseHParams):
+    """ Set of Options / Command-line Parameters for the MNIST Example.
+    
+    We use [simple_parsing](www.github.com/lebrice/simpleparsing) to create
+    all the command-line arguments for this dataclass.
+    
+    """
+    # Dimensions of the hidden state (encoder output).
+    hidden_size: int = 100
 
     # Prevent gradients of the classifier from backpropagating into the encoder.
     detach_classifier: bool = True
-    
+
+
     # Settings for the reconstruction auxiliary task.
-    reconstruction: VAEReconstructionTask.Options = mutable_field(VAEReconstructionTask.Options, coefficient=0.01)
+    reconstruction: VAEReconstructionTask.Options = VAEReconstructionTask.Options(coefficient=0.01)
+    # Settings for the "vanilla" mixup auxiliary task.
+    mixup: MixupTask.Options = MixupTask.Options(coefficient=0.001)
+    # Settings for the manifold mixup auxiliary task.
+    manifold_mixup: ManifoldMixupTask.Options = ManifoldMixupTask.Options(coefficient=0.001)
 
 
-class SelfSupervisedClassifier(nn.Module, Classifier, SelfSupervisedModel, GenerativeModel):
-    def __init__(self, options: Options, num_classes: int = 10):
-        super().__init__()
-        Classifier.__init__(self, num_classes=num_classes)
-        
-        self.options: Options = options
-        self.num_classes = num_classes
-        self.hidden_size = options.hidden_size
-        
+class SelfSupervisedClassifier(Classifier):
+    def __init__(self, hparams: HParams, config: Config):
+        super().__init__(hparams, config)
+        self.hidden_size = hparams.hidden_size
+        self.num_classes = config.num_classes
         self.encoder = nn.Sequential(
             nn.Linear(784, 400),
             nn.ReLU(),
@@ -57,20 +61,29 @@ class SelfSupervisedClassifier(nn.Module, Classifier, SelfSupervisedModel, Gener
         self.tasks: List[AuxiliaryTask] = nn.ModuleList()  # type: ignore
         
 
-        self.code_size = options.reconstruction.code_size
+        self.code_size = hparams.reconstruction.code_size
         self.reconstruction_task = VAEReconstructionTask(
             encoder=self.encoder,
             classifier=self.classifier,
-            options=self.options.reconstruction,
+            options=self.hparams.reconstruction,
             hidden_size=self.hidden_size,
         )
         self.tasks.append(self.reconstruction_task)
 
+        self.manifold_mixup_task = ManifoldMixupTask(
+            encoder=self.encoder,
+            classifier=self.classifier,
+            options=self.hparams.manifold_mixup,
+        )
+
         self.optimizer =  optim.Adam(self.parameters(), lr=1e-3)
-        self.device = self.options.device
+        self.device = self.config.device
 
     def get_loss(self, x: Tensor, y: Tensor=None) -> Tensor:
+        # TODO: return logs
+        logs: Dict[str, float] = OrderedDict()
         loss = torch.zeros(1)
+
         h_x = self.encode(x)
         y_pred = self.logits(h_x)
         
@@ -80,7 +93,7 @@ class SelfSupervisedClassifier(nn.Module, Classifier, SelfSupervisedModel, Gener
         
         for task in self.tasks:
             task_loss = task.get_loss(x, h_x=h_x, y_pred=y_pred, y=y)
-            loss += task_loss
+            loss += task.coefficient * task_loss
 
         return loss
 
@@ -100,7 +113,7 @@ class SelfSupervisedClassifier(nn.Module, Classifier, SelfSupervisedModel, Gener
         return x.view([x.shape[0], -1])
 
     def logits(self, h_x: Tensor) -> Tensor:
-        if self.options.detach_classifier:
+        if self.hparams.detach_classifier:
             h_x = h_x.detach()
         return self.classifier(h_x)
 

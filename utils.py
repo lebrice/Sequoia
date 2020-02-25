@@ -9,13 +9,15 @@ from collections import deque
 import collections
 
 from collections.abc import MutableMapping
-from typing import MutableMapping
+from typing import MutableMapping, Any
 
 cuda_available = torch.cuda.is_available()
 gpus_available = torch.cuda.device_count()
 
 class TensorCache(MutableMapping[Tensor, Tensor]):
     """A mutable mapping of individual (not batched) tensors to their outputs.
+
+    TODO: Not really useful, since the weights keep changing anyway. Might get rid of this entirely.
     """
     def __init__(self, capacity: int = 32):
         self.capacity = capacity
@@ -26,11 +28,12 @@ class TensorCache(MutableMapping[Tensor, Tensor]):
         self.head: int = 0
         self.tail: int = 0
 
-    def __contains__(self, item: Tensor) -> bool:
+    def __contains__(self, item: Any) -> bool:
         # TODO: vectorize this.
-        for x, y in self:
-            if (x == item).all():
-                return True
+        if isinstance(item, Tensor):     
+            for x, y in self:
+                if (x == item).all():
+                    return True
         return False
         
     def __getitem__(self, key: Tensor) -> Tensor:

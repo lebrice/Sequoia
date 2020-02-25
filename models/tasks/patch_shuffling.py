@@ -5,7 +5,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from models.bases import AuxiliaryTask, TaskOptions
+from .bases import AuxiliaryTask
 
 
 class PatchShufflingTask(AuxiliaryTask):

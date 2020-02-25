@@ -1,14 +1,29 @@
 from abc import ABC, abstractmethod
-from typing import Any, Tuple
+from typing import Any, Tuple, List, Generic, TypeVar
 
 import torch
-from torch import Tensor, nn
+from torch import Tensor, nn, optim
 from torch.nn import functional as F
+from dataclasses import dataclass
+
+from models.bases import Model, BaseHParams
+from models.config import Config
+from models.tasks.bases import AuxiliaryTask
 
 
-class Classifier(ABC):
-    def __init__(self, num_classes: int):
-        self.num_classes = num_classes
+class SupervisedModel(Model):
+    def __init__(self, hparams: BaseHParams, config: Config):
+        super().__init__(hparams, config)
+
+    @abstractmethod
+    def get_loss(self, x: Tensor, y: Tensor) -> Tensor:
+        pass
+
+
+class Classifier(SupervisedModel):
+    def __init__(self, hparams: BaseHParams, config: Config):
+        super().__init__(hparams, config)
+        self.num_classes = config.num_classes
         self.encoder: nn.Module = NotImplemented
         self.classifier: nn.Module = NotImplemented
         self.loss = nn.CrossEntropyLoss()  
