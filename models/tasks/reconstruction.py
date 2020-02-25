@@ -10,7 +10,12 @@ from models.bases import AuxiliaryTask, TaskOptions
 
 
 class VAEReconstructionTask(AuxiliaryTask):
-    """ Task that adds the VAE loss (reconstruction + KL divergence). """
+    """ Task that adds the VAE loss (reconstruction + KL divergence). 
+    
+    Uses the feature extractor (`encoder`) of the parent model as the encoder of
+    a VAE. Contains trainable `mu`, `logvar`, and `decoder` modules, which are
+    used to get the VAE loss to train the feature extractor with.    
+    """
         
     @dataclass
     class Options(TaskOptions):
@@ -28,7 +33,7 @@ class VAEReconstructionTask(AuxiliaryTask):
                          options=options)
         self.hidden_size = hidden_size
         self.code_size = options.code_size
-        # We use the feature extractor as the encoder of a VAE.
+
         # add the rest of the VAE layers: (Mu, Sigma, and the decoder)
         self.mu =  nn.Linear(self.hidden_size, self.code_size)
         self.logvar = nn.Linear(self.hidden_size, self.code_size)

@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from typing import Any, List, Tuple
 
 import torch
-from simple_parsing import field, MutableField as mutable_field
+from simple_parsing import MutableField as mutable_field
+from simple_parsing import field
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -11,30 +12,39 @@ from torchvision.utils import save_image
 
 from models.bases import AuxiliaryTask, SelfSupervisedModel
 from models.supervised.classifier import Classifier
+
+from models.tasks.patch_location import PatchLocationTask
+from models.tasks.patch_shuffling import PatchShufflingTask
 from models.tasks.reconstruction import VAEReconstructionTask
+from models.tasks.rotation import RotationTask
+
+from models.unsupervised.generative_model import GenerativeModel
 from models.unsupervised.vae import VAE
-from options import Options as BaseOptions
+from options import BaseOptions
 
 
-class VaeClassifier(nn.Module, Classifier, SelfSupervisedModel):
+@dataclass
+class Options(BaseOptions):
+    """ Set of options for the VAE MNIST Example. """
+    hidden_size: int = 100  # dimensions of the hidden state (encoder output).
+    learning_rate: float = field(default=1e-3, alias="-lr")  # learning rate.
 
-    @dataclass
-    class Options(BaseOptions):
-        """ Set of options for the VAE MNIST Example. """
-        hidden_size: int = 100  # size of the hidden size of the network.
-        learning_rate: float = field(default=1e-3, alias="-lr")
+    # Prevent gradients of the classifier from backpropagating into the encoder.
+    detach_classifier: bool = True
+    
+    # Settings for the reconstruction auxiliary task.
+    reconstruction: VAEReconstructionTask.Options = mutable_field(VAEReconstructionTask.Options, coefficient=0.01)
 
-        reconstruction: VAEReconstructionTask.Options = mutable_field(VAEReconstructionTask.Options, coefficient=0.01)
 
+class SelfSupervisedClassifier(nn.Module, Classifier, SelfSupervisedModel, GenerativeModel):
     def __init__(self, options: Options, num_classes: int = 10):
         super().__init__()
         Classifier.__init__(self, num_classes=num_classes)
         
-        self.options: VaeClassifier.Options = options
+        self.options: Options = options
         self.num_classes = num_classes
         self.hidden_size = options.hidden_size
-        self.detach_representation_from_classifier: bool = True
-
+        
         self.encoder = nn.Sequential(
             nn.Linear(784, 400),
             nn.ReLU(),
@@ -90,7 +100,7 @@ class VaeClassifier(nn.Module, Classifier, SelfSupervisedModel):
         return x.view([x.shape[0], -1])
 
     def logits(self, h_x: Tensor) -> Tensor:
-        if self.detach_representation_from_classifier:
+        if self.options.detach_classifier:
             h_x = h_x.detach()
         return self.classifier(h_x)
 

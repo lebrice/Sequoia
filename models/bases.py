@@ -10,9 +10,10 @@ from simple_parsing import field
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
-from options import Options
+from options import BaseOptions
 
 class Model(ABC):
+
     @abstractmethod
     def get_loss(self, x: Tensor, y: Tensor):
         pass

@@ -12,7 +12,7 @@ from utils import cuda_available, gpus_available
 
 
 @dataclass
-class Options(JsonSerializable):
+class BaseOptions(JsonSerializable):
     """ Set of options for the VAE MNIST Example. """
     batch_size: int = 128   # Input batch size for training.
     epochs: int = 10        # Number of epochs to train.
@@ -52,13 +52,13 @@ class Options(JsonSerializable):
         """
 
         # TODO: Extract the 'MNIST' logic of this class into a new subclass.
-        train_dataset = datasets.MNIST('data', train=True, transform=transforms.ToTensor())
+        train_dataset = datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor())
         
         if self.non_iid:
             train_dataset.targets, sort_indices = torch.sort(train_dataset.targets)
             train_dataset.data = train_dataset.data[sort_indices]
 
-        valid_dataset = datasets.MNIST('data', train=False, transform=transforms.ToTensor())
+        valid_dataset = datasets.MNIST('data', train=False, download=True, transform=transforms.ToTensor())
 
         train_loader =  DataLoader(
             train_dataset,

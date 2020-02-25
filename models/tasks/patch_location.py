@@ -8,11 +8,7 @@ from torch.nn import functional as F
 from models.bases import AuxiliaryTask, TaskOptions
 
 
-def rotate(x: Tensor, angle: float) -> Tensor:
-    raise NotImplementedError("TODO")
-
-
-class RotationTask(AuxiliaryTask):
+class PatchLocationTask(AuxiliaryTask):
     def get_loss(self,
                  x: Tensor,
                  h_x: Tensor,

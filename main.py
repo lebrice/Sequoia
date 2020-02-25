@@ -12,21 +12,21 @@ from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
 from models.bases import Model
-from models.semi_supervised.vae_classifier import VaeClassifier
+from models.semi_supervised.classifier import SelfSupervisedClassifier, Options
 
 parser = ArgumentParser()
-parser.add_arguments(VaeClassifier.Options, dest="options")
+parser.add_arguments(Options, dest="options")
 
 args = parser.parse_args()
-options: VaeClassifier.Options = args.options
+options: Options = args.options
 print("Options:", options)
 
 
-model = VaeClassifier(options, num_classes=10).to(options.device)
+model = SelfSupervisedClassifier(options, num_classes=10).to(options.device)
 train_loader, test_loader = options.get_dataloaders()
 
 
-def train_epoch(model: VaeClassifier, dataloader: DataLoader, epoch: int):
+def train_epoch(model: SelfSupervisedClassifier, dataloader: DataLoader, epoch: int):
     model.train()
     train_loss = 0.
     for batch_idx, (data, target) in enumerate(dataloader):
@@ -52,7 +52,7 @@ def train_epoch(model: VaeClassifier, dataloader: DataLoader, epoch: int):
     return average_loss
 
 
-def test_epoch(model: VaeClassifier, dataloader: DataLoader, epoch: int):
+def test_epoch(model: SelfSupervisedClassifier, dataloader: DataLoader, epoch: int):
     model.eval()
     test_loss = torch.zeros(1)
     with torch.no_grad():
