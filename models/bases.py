@@ -11,7 +11,6 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
-from models.tasks import AuxiliaryTask
 from utils import cuda_available, gpus_available
 from .config import Config
 

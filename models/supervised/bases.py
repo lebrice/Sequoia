@@ -8,7 +8,6 @@ from dataclasses import dataclass
 
 from models.bases import Model, BaseHParams
 from models.config import Config
-from models.tasks.bases import AuxiliaryTask
 
 
 class SupervisedModel(Model):

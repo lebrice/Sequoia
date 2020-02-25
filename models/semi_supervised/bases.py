@@ -6,7 +6,7 @@ from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from dataclasses import dataclass
 
-from models.tasks import AuxiliaryTask
+from tasks import AuxiliaryTask
 from models.bases import Model, BaseHParams
 from models.config import Config
 

@@ -54,7 +54,7 @@ class AuxiliaryTask(nn.Module, ABC):
         self.options: AuxiliaryTask.Options = options or AuxiliaryTask.Options()
 
     @abstractmethod
-    def get_loss(self, x: Tensor, h_x: Tensor=None, y_pred: Tensor=None, y: Tensor=None) -> Tensor:
+    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tensor:
         """Calculates the Auxiliary loss for the input `x`.ABC
         
         The parameters `h_x`, `y_pred` are given for convenience, so we don't
@@ -65,12 +65,12 @@ class AuxiliaryTask(nn.Module, ABC):
         - x : Tensor
         
             The input samples.ABC
-        - h_x : Tensor, optional, by default None
+        - h_x : Tensor
         
             The hidden vector, or hidden features, which corresponds to the
             output of the feature extractor (should be equivalent to 
             `self.encoder(x)`). Given for convenience, when available.ABC
-        - y_pred : Tensor, optional, by default None
+        - y_pred : Tensor
         
             The predicted (raw/unscaled) scores for each class, which 
             corresponds to the output of the classifier layer of the parent

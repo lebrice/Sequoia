@@ -14,12 +14,13 @@ from torchvision.utils import save_image
 from models.bases import BaseHParams
 from models.config import Config
 from models.supervised import Classifier
-from models.tasks import (AuxiliaryTask, ManifoldMixupTask, MixupTask,
-                          PatchLocationTask, PatchShufflingTask, RotationTask,
-                          VAEReconstructionTask)
 from models.unsupervised import GenerativeModel
+from tasks import (AuxiliaryTask, ManifoldMixupTask, MixupTask,
+                   PatchLocationTask, PatchShufflingTask, RotationTask,
+                   VAEReconstructionTask)
 
 from .bases import SelfSupervisedModel
+
 
 @dataclass
 class HParams(BaseHParams):
