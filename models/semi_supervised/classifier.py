@@ -17,7 +17,7 @@ from models.supervised import Classifier
 from models.unsupervised import GenerativeModel
 from tasks import (TaskType, AuxiliaryTask, ManifoldMixupTask, MixupTask,
                    PatchLocationTask, JigsawPuzzleTask, RotationTask,
-                   VAEReconstructionTask)
+                   VAEReconstructionTask, IrmTask)
 
 from .bases import SelfSupervisedModel
 
@@ -51,6 +51,9 @@ class HParams(BaseHParams):
     # Settings for the jigsaw puzzle auxiliary task.
     jigsaw:         JigsawPuzzleTask.Options = JigsawPuzzleTask.Options(coefficient=0)
     
+    # Settings for the Invariant Risk Minimization auxiliary task.
+    irm:            IrmTask.Options = IrmTask.Options(coefficient=1)
+
 
 class SelfSupervisedClassifier(Classifier):
     def __init__(self, hparams: HParams, config: Config):
@@ -91,6 +94,8 @@ class SelfSupervisedClassifier(Classifier):
         # Mixup and Manifold-Mixup Auxiliary Tasks:
         self.add_task(ManifoldMixupTask, options=self.hparams.manifold_mixup)
         self.add_task(MixupTask, options=self.hparams.mixup)
+        
+        self.add_task(IrmTask, options=self.hparams.irm)
                 
         self.optimizer =  optim.Adam(self.parameters(), lr=1e-3)
         self.device = self.config.device
