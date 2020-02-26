@@ -26,8 +26,8 @@ from .bases import SelfSupervisedModel
 class HParams(BaseHParams):
     """ Set of Options / Command-line Parameters for the MNIST Example.
     
-    We use [simple_parsing](www.github.com/lebrice/simpleparsing) to create
-    all the command-line arguments for this dataclass.
+    We use [simple_parsing](www.github.com/lebrice/simpleparsing) to generate
+    all the command-line arguments for this class.
     
     """
     # Dimensions of the hidden state (encoder output).
@@ -36,22 +36,26 @@ class HParams(BaseHParams):
     # Prevent gradients of the classifier from backpropagating into the encoder.
     detach_classifier: bool = True
 
-
     # Settings for the reconstruction auxiliary task.
-    reconstruction: VAEReconstructionTask.Options = VAEReconstructionTask.Options(coefficient=0.01)
+    reconstruction: VAEReconstructionTask.Options = VAEReconstructionTask.Options(coefficient=0.001)
+    
     # Settings for the "vanilla" mixup auxiliary task.
-    mixup: MixupTask.Options = MixupTask.Options(coefficient=0.001)
+    mixup:          MixupTask.Options = MixupTask.Options(coefficient=0.001)
+    
     # Settings for the manifold mixup auxiliary task.
     manifold_mixup: ManifoldMixupTask.Options = ManifoldMixupTask.Options(coefficient=0.1)
+    
     # Settings for the rotation auxiliary task.
-    rotation: RotationTask.Options = RotationTask.Options(coefficient=0.001)
+    rotation:       RotationTask.Options = RotationTask.Options(coefficient=0)
+    
     # Settings for the jigsaw puzzle auxiliary task.
-    jigsaw: JigsawPuzzleTask.Options = JigsawPuzzleTask.Options(coefficient=0.001)
+    jigsaw:         JigsawPuzzleTask.Options = JigsawPuzzleTask.Options(coefficient=0)
     
 
 class SelfSupervisedClassifier(Classifier):
     def __init__(self, hparams: HParams, config: Config):
         super().__init__(hparams=hparams, config=config)
+
         self.hidden_size = hparams.hidden_size
         self.num_classes = config.num_classes
         
@@ -107,7 +111,7 @@ class SelfSupervisedClassifier(Classifier):
 
     def get_loss(self, x: Tensor, y: Tensor=None) -> Tuple[Tensor, Dict[str, Tensor]]:
         # TODO: return logs
-        logs: Dict[str, Tensor] = OrderedDict()
+        losses: Dict[str, Tensor] = OrderedDict()
         total_loss = torch.zeros(1)
 
         h_x = self.encode(x)
@@ -115,20 +119,20 @@ class SelfSupervisedClassifier(Classifier):
         
         if y is not None:
             supervised_loss = self.classification_loss(y_pred, y)
-            logs["supervised_loss"] = supervised_loss
+            losses["supervised"] = supervised_loss
             total_loss += supervised_loss
         
-        for task in self.tasks:
-            task_loss = task.get_loss(x, h_x=h_x, y_pred=y_pred, y=y)
-            task_loss_scaled = task.coefficient * task_loss
-            
-            total_loss += task_loss_scaled
-            
-            task_name = type(task).__qualname__
-            logs[f"{task_name}_loss"] = task_loss
-            logs[f"{task_name}_loss_scaled"] = task_loss_scaled
+        for aux_task in self.tasks:
+            if aux_task.enabled:
+                aux_loss = aux_task.get_loss(x, h_x=h_x, y_pred=y_pred, y=y)
+                aux_loss_scaled = aux_loss * aux_task.coefficient
+                
+                total_loss += aux_loss_scaled
+                
+                losses[f"{aux_task.name}"] = aux_loss
+                losses[f"{aux_task.name}_scaled"] = aux_loss_scaled
 
-        return total_loss, logs
+        return total_loss, losses
 
     def unsupervised_loss(self, x: Tensor) -> Tensor:
         x = self.preprocess_inputs(x)
@@ -136,6 +140,8 @@ class SelfSupervisedClassifier(Classifier):
         return self.reconstruction_task.get_loss(x=x, h_x=h_x)
 
     def supervised_loss(self, x: Tensor, y: Tensor) -> Tensor:
+        total_loss, losses = self.get_loss(x, y)
+        return losses["supervised"]
         return Classifier.get_loss(self, x, y)
 
     def encode(self, x: Tensor):

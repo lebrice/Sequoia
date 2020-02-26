@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Tuple
 
 import torch
@@ -22,14 +22,14 @@ class VAEReconstructionTask(AuxiliaryTask):
         """ Settings & Hyper-parameters related to the VAEReconstructionTask. """
         code_size: int = 50  # dimensions of the VAE code-space.
 
-
     def __init__(self,
                  options: Options,
                  hidden_size: int, **kwargs):
         super().__init__(**kwargs)
+        self.options = options
         self.hidden_size = hidden_size
         self.code_size = options.code_size
-
+        
         # add the rest of the VAE layers: (Mu, Sigma, and the decoder)
         self.mu =  nn.Linear(self.hidden_size, self.code_size)
         self.logvar = nn.Linear(self.hidden_size, self.code_size)

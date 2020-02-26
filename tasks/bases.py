@@ -54,8 +54,11 @@ class AuxiliaryTask(nn.Module):
         super().__init__()
         self.encoder: nn.Module = encoder
         self.classifier: nn.Module = classifier
-        self.options: AuxiliaryTask.Options = options or AuxiliaryTask.Options()
-        self.preprocessing: Optional[Callable[[Tensor], Tensor]] = preprocessing
+        self.options: AuxiliaryTask.Options = options if options is not None else self.Options()
+        self.preprocessing: Callable[[Tensor], Tensor] = preprocessing or (lambda x: x)
+
+    def encode(self, x: Tensor) -> Tensor:
+        return self.encoder(self.preprocessing(x))
 
     @abstractmethod
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tensor:
@@ -96,5 +99,12 @@ class AuxiliaryTask(nn.Module):
     def coefficient(self) -> float:
         return self.options.coefficient
 
+    @property
+    def name(self) -> str:
+        return type(self).__qualname__
+    
+    @property
+    def enabled(self) -> bool:
+        return self.coefficient != 0
 
 TaskType = TypeVar("TaskType", bound=AuxiliaryTask)
