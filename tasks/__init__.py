@@ -1,15 +1,15 @@
-from .bases import AuxiliaryTask
+from .bases import AuxiliaryTask, TaskType
+from .jigsaw_puzzle import JigsawPuzzleTask
 from .mixup import ManifoldMixupTask, MixupTask
 from .patch_location import PatchLocationTask
-from .patch_shuffling import PatchShufflingTask
 from .reconstruction import VAEReconstructionTask
 from .rotation import RotationTask
 
 __all__ = [
-    "AuxiliaryTask"    
+    "AuxiliaryTask", "TaskType",
+    "JigsawPuzzleTask"
     "ManifoldMixupTask", "MixupTask"
     "PatchLocationTask"
-    "PatchShufflingTask"
     "VAEReconstructionTask"
     "RotationTask"
 ]

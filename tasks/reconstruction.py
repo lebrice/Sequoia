@@ -19,18 +19,14 @@ class VAEReconstructionTask(AuxiliaryTask):
         
     @dataclass
     class Options(AuxiliaryTask.Options):
-        """ Settings & Hyper-parameters related to the VAEReconstructioTask. """
+        """ Settings & Hyper-parameters related to the VAEReconstructionTask. """
         code_size: int = 50  # dimensions of the VAE code-space.
 
 
     def __init__(self,
-                 encoder: nn.Module,
-                 classifier: nn.Module,
                  options: Options,
-                 hidden_size: int):
-        super().__init__(encoder=encoder,
-                         classifier=classifier,
-                         options=options)
+                 hidden_size: int, **kwargs):
+        super().__init__(**kwargs)
         self.hidden_size = hidden_size
         self.code_size = options.code_size
 

@@ -14,4 +14,5 @@ class PatchLocationTask(AuxiliaryTask):
                  h_x: Tensor,
                  y_pred: Tensor,
                  y: Tensor=None) -> Tensor:
+        return torch.zeros(1)
         raise NotImplementedError("TODO")

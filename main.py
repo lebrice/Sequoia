@@ -1,5 +1,6 @@
-from dataclasses import dataclass
-from typing import Tuple
+from collections import defaultdict
+from dataclasses import dataclass, asdict
+from typing import Tuple, Dict, List
 
 import simple_parsing
 import torch
@@ -20,10 +21,17 @@ parser.add_arguments(Config, dest="config")
 
 args = parser.parse_args()
 
+import pprint
+
 hparams: HParams = args.hparams
-print("HyperParameters:", hparams)
+print("HyperParameters:")
+pprint.pprint(asdict(hparams), indent=1)
 config: Config = args.config
-print("Config:", config)
+print("Config:")
+pprint.pprint(asdict(config), indent=1)
+
+print("=" * 40)
+print("Starting training")
 
 model = SelfSupervisedClassifier(hparams=hparams, config=config).to(config.device)
 train_loader, test_loader = config.get_dataloaders()
@@ -32,14 +40,20 @@ train_loader, test_loader = config.get_dataloaders()
 def train_epoch(model: SelfSupervisedClassifier, dataloader: DataLoader, epoch: int):
     model.train()
     train_loss = 0.
+
+    total_aux_losses: Dict[str, float] = defaultdict(float)
+
     for batch_idx, (data, target) in enumerate(dataloader):
         data = data.to(model.device)
         
         model.optimizer.zero_grad()
-        loss = model.get_loss(data, target)
+        loss, logs = model.get_loss(data, target)
         loss.backward()
         train_loss += loss.item()
         model.optimizer.step()
+
+        for loss_name, loss_tensor in logs.items():
+            total_aux_losses[loss_name] += loss_tensor.item()
 
         if batch_idx % model.config.log_interval == 0:
             samples_seen = batch_idx * len(data)
@@ -47,10 +61,19 @@ def train_epoch(model: SelfSupervisedClassifier, dataloader: DataLoader, epoch: 
             percent_done = 100. * batch_idx/ len(dataloader)
             average_loss_in_batch = loss.item() / len(data)
 
+            message: List[str] = []
+            message.append(f"Train Epoch: {epoch}")
+            message.append(f"[{samples_seen}/{total_samples}]")
+            message.append(f"Average Total Loss: {average_loss_in_batch:.6f}")
 
-            print(f"Train Epoch: {epoch}",
-                    f"[{samples_seen}/{total_samples}]",
-                    f"Loss: {average_loss_in_batch:.6f}", sep="\t", end="\r")
+            for loss_name, loss_tensor in logs.items():
+                message.append(f"{loss_name}: ")
+                loss = loss_tensor.item()
+                if abs(loss) < 1e-3:
+                    message.append(f"{loss:.2e}")
+                else:
+                    message.append(f"{loss:.3f}")
+            print(*message, sep=" ", end="\r")
 
     average_loss = train_loss / total_samples
     print(f"====> Epoch: {epoch} Average loss: {average_loss:.4f}", end="\r")

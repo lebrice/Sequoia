@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import Any, Tuple, List, Generic, TypeVar
+from dataclasses import InitVar, dataclass, field
+from typing import Any, Callable, Generic, List, Optional, Tuple, TypeVar
 
 import torch
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
-from dataclasses import dataclass
 
 
-class AuxiliaryTask(nn.Module, ABC):
+class AuxiliaryTask(nn.Module):
     """ Represents an additional loss to apply to a `Classifier`.
 
     The main logic should be implemented in the `get_loss` method.
@@ -17,14 +17,17 @@ class AuxiliaryTask(nn.Module, ABC):
     That loss should be backpropagatable through the feature extractor (the
     `encoder` attribute). 
     """
-
     @dataclass
     class Options:
         """Settings for this Auxiliary Task. """
         # Coefficient used to scale the task loss before adding it to the total.
         coefficient: float = 0.
 
-    def __init__(self, encoder: nn.Module, classifier: nn.Module, options: Options=None):
+    def __init__(self,
+                 encoder: nn.Module,
+                 classifier: nn.Module,
+                 options: Options=None,
+                 preprocessing: Callable[[Tensor], Tensor]=None):
         """Creates a new Auxiliary Task to further train the encoder.
         
         Should use the `encoder` and `classifier` components of the parent
@@ -44,14 +47,15 @@ class AuxiliaryTask(nn.Module, ABC):
             The classifier (logits) layer of the parent `Classifier`.
         - options : TaskOptions, optional, by default None
         
-            The `TaskOptions` related to this task, containing the loss 
+            The `Options` related to this task, containing the loss 
             coefficient used to scale this task, as well as any other additional
             hyperparameters specific to this `AuxiliaryTask`.
         """
         super().__init__()
-        self.encoder = encoder
-        self.classifier = classifier
+        self.encoder: nn.Module = encoder
+        self.classifier: nn.Module = classifier
         self.options: AuxiliaryTask.Options = options or AuxiliaryTask.Options()
+        self.preprocessing: Optional[Callable[[Tensor], Tensor]] = preprocessing
 
     @abstractmethod
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tensor:
@@ -91,3 +95,6 @@ class AuxiliaryTask(nn.Module, ABC):
     @property
     def coefficient(self) -> float:
         return self.options.coefficient
+
+
+TaskType = TypeVar("TaskType", bound=AuxiliaryTask)

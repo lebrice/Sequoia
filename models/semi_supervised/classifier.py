@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Type, TypeVar
 
 import torch
 from simple_parsing import MutableField as mutable_field
@@ -15,8 +15,8 @@ from models.bases import BaseHParams
 from models.config import Config
 from models.supervised import Classifier
 from models.unsupervised import GenerativeModel
-from tasks import (AuxiliaryTask, ManifoldMixupTask, MixupTask,
-                   PatchLocationTask, PatchShufflingTask, RotationTask,
+from tasks import (TaskType, AuxiliaryTask, ManifoldMixupTask, MixupTask,
+                   PatchLocationTask, JigsawPuzzleTask, RotationTask,
                    VAEReconstructionTask)
 
 from .bases import SelfSupervisedModel
@@ -42,61 +42,93 @@ class HParams(BaseHParams):
     # Settings for the "vanilla" mixup auxiliary task.
     mixup: MixupTask.Options = MixupTask.Options(coefficient=0.001)
     # Settings for the manifold mixup auxiliary task.
-    manifold_mixup: ManifoldMixupTask.Options = ManifoldMixupTask.Options(coefficient=0.001)
-
+    manifold_mixup: ManifoldMixupTask.Options = ManifoldMixupTask.Options(coefficient=0.1)
+    # Settings for the rotation auxiliary task.
+    rotation: RotationTask.Options = RotationTask.Options(coefficient=0.001)
+    # Settings for the jigsaw puzzle auxiliary task.
+    jigsaw: JigsawPuzzleTask.Options = JigsawPuzzleTask.Options(coefficient=0.001)
+    
 
 class SelfSupervisedClassifier(Classifier):
     def __init__(self, hparams: HParams, config: Config):
-        super().__init__(hparams, config)
+        super().__init__(hparams=hparams, config=config)
         self.hidden_size = hparams.hidden_size
         self.num_classes = config.num_classes
+        
+        # Feature extractor
         self.encoder = nn.Sequential(
             nn.Linear(784, 400),
             nn.ReLU(),
             nn.Linear(400, self.hidden_size),
             nn.Sigmoid(),
         )
+        # Classifier output layer
         self.classifier = nn.Linear(self.hidden_size, self.num_classes)
         self.classification_loss = nn.CrossEntropyLoss()
 
         self.tasks: List[AuxiliaryTask] = nn.ModuleList()  # type: ignore
         
-
         self.code_size = hparams.reconstruction.code_size
-        self.reconstruction_task = VAEReconstructionTask(
-            encoder=self.encoder,
-            classifier=self.classifier,
+        
+        # Reconstruction auxiliary task
+        recon_task = self.add_task(VAEReconstructionTask,
             options=self.hparams.reconstruction,
             hidden_size=self.hidden_size,
         )
-        self.tasks.append(self.reconstruction_task)
+        self.reconstruction_task: VAEReconstructionTask = recon_task
 
-        self.manifold_mixup_task = ManifoldMixupTask(
-            encoder=self.encoder,
-            classifier=self.classifier,
-            options=self.hparams.manifold_mixup,
-        )
+        # Rotation detection task:
+        self.add_task(RotationTask, options=self.hparams.rotation)
+        
+        # Jigsaw puzzle task:
+        self.add_task(JigsawPuzzleTask, options=self.hparams.jigsaw)
 
+
+        # Mixup and Manifold-Mixup Auxiliary Tasks:
+        self.add_task(ManifoldMixupTask, options=self.hparams.manifold_mixup)
+        self.add_task(MixupTask, options=self.hparams.mixup)
+                
         self.optimizer =  optim.Adam(self.parameters(), lr=1e-3)
         self.device = self.config.device
 
-    def get_loss(self, x: Tensor, y: Tensor=None) -> Tensor:
+
+    def add_task(self,
+                 task_type: Type[TaskType],
+                 options: AuxiliaryTask.Options=None, **kwargs) -> TaskType:
+        task = task_type(  # type: ignore
+            encoder=self.encoder,
+            classifier=self.classifier,
+            preprocessing=self.preprocess_inputs,
+            options=options, **kwargs
+        )
+        self.tasks.append(task)
+        return task
+
+
+    def get_loss(self, x: Tensor, y: Tensor=None) -> Tuple[Tensor, Dict[str, Tensor]]:
         # TODO: return logs
-        logs: Dict[str, float] = OrderedDict()
-        loss = torch.zeros(1)
+        logs: Dict[str, Tensor] = OrderedDict()
+        total_loss = torch.zeros(1)
 
         h_x = self.encode(x)
         y_pred = self.logits(h_x)
         
         if y is not None:
             supervised_loss = self.classification_loss(y_pred, y)
-            loss += supervised_loss
+            logs["supervised_loss"] = supervised_loss
+            total_loss += supervised_loss
         
         for task in self.tasks:
             task_loss = task.get_loss(x, h_x=h_x, y_pred=y_pred, y=y)
-            loss += task.coefficient * task_loss
+            task_loss_scaled = task.coefficient * task_loss
+            
+            total_loss += task_loss_scaled
+            
+            task_name = type(task).__qualname__
+            logs[f"{task_name}_loss"] = task_loss
+            logs[f"{task_name}_loss_scaled"] = task_loss_scaled
 
-        return loss
+        return total_loss, logs
 
     def unsupervised_loss(self, x: Tensor) -> Tensor:
         x = self.preprocess_inputs(x)

@@ -8,10 +8,11 @@ from torch.nn import functional as F
 from .bases import AuxiliaryTask
 
 
-class PatchShufflingTask(AuxiliaryTask):
+class JigsawPuzzleTask(AuxiliaryTask):
     def get_loss(self,
                  x: Tensor,
                  h_x: Tensor,
                  y_pred: Tensor,
                  y: Tensor=None) -> Tensor:
+        return torch.zeros(1)
         raise NotImplementedError("TODO")
