@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Callable, Generic, List, Optional, Tuple, TypeVar
+from typing import Any, Callable, Generic, List, Optional, Tuple, TypeVar, ClassVar
 
 import torch
 from torch import Tensor, nn, optim
@@ -17,17 +17,20 @@ class AuxiliaryTask(nn.Module):
     That loss should be backpropagatable through the feature extractor (the
     `encoder` attribute). 
     """
+    input_shape: Tuple[int, ...] = ()
+    hidden_size: int = -1
+    encoder: nn.Module
+    classifier: nn.Module
+    preprocessing: Callable[[Tensor], Tensor]
+    
     @dataclass
     class Options:
         """Settings for this Auxiliary Task. """
         # Coefficient used to scale the task loss before adding it to the total.
         coefficient: float = 0.
 
-    def __init__(self,
-                 encoder: nn.Module,
-                 classifier: nn.Module,
-                 options: Options=None,
-                 preprocessing: Callable[[Tensor], Tensor]=None):
+
+    def __init__(self, options: Options=None):
         """Creates a new Auxiliary Task to further train the encoder.
         
         Should use the `encoder` and `classifier` components of the parent
@@ -52,10 +55,11 @@ class AuxiliaryTask(nn.Module):
             hyperparameters specific to this `AuxiliaryTask`.
         """
         super().__init__()
-        self.encoder: nn.Module = encoder
-        self.classifier: nn.Module = classifier
+
+        # self.encoder: nn.Module = encoder
+        # self.classifier: nn.Module = classifier
         self.options: AuxiliaryTask.Options = options if options is not None else self.Options()
-        self.preprocessing: Callable[[Tensor], Tensor] = preprocessing or (lambda x: x)
+        # self.preprocessing: Callable[[Tensor], Tensor] = preprocessing or (lambda x: x)
 
     def encode(self, x: Tensor) -> Tensor:
         return self.encoder(self.preprocessing(x))

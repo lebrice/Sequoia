@@ -14,13 +14,16 @@ from models.bases import BaseHParams
 
 
 @dataclass  # type: ignore
-class Experiment():
-    """ Describes the parameters of an experimental setting. (ex: Mnist_iid, Mnist_continual, Cifar10, etc. etc.)
+class Experiment(ABC):
+    """ Describes the parameters of an experimental setting.
+    
+    (ex: Mnist_iid, Mnist_continual, Cifar10, etc. etc.)
     
     To create a new experiment, subclass this class, and add/change what you
     need to customize.
+
+    TODO: Maybe add some code for saving/restoring experiments here?
     """
-    name: ClassVar[str]
     dataset: Mnist = Mnist(iid=True)
     hparams: BaseHParams = BaseHParams()
     config: Config = Config()

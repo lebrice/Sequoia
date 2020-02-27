@@ -24,6 +24,9 @@ def mixup(x1: Tensor, x2: Tensor, coeff: Tensor) -> Tensor:
         
 
 class MixupTask(AuxiliaryTask):
+
+
+
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tensor:
         batch_size = x.shape[0]
         assert batch_size % 2  == 0, "Can only mix an even number of samples."
@@ -38,10 +41,7 @@ class MixupTask(AuxiliaryTask):
         y_pred_2 = y_pred[1::2]
         y_pred_mix = mixup(y_pred_1, y_pred_2, mix_coeff)
         
-        if self.preprocessing:
-            mix_x = self.preprocessing(mix_x)
-            
-        mix_h_x = self.encoder(mix_x)
+        mix_h_x = self.encode(mix_x)
         mix_y_pred = self.classifier(mix_h_x)
 
         difference = y_pred_mix - mix_y_pred

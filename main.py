@@ -23,6 +23,8 @@ from experiments.mnist_iid import MnistIID
 
 @dataclass
 class RunSettings:
+    """ Settings for which 'experiment' to run. """
+
     experiment: Experiment = subparsers({
         "mnist_iid": MnistIID,
         "mnist_continual": MnistIID, # TODO:
@@ -30,8 +32,8 @@ class RunSettings:
 
     def __post_init__(self):
         if self.experiment.config.verbose:     
-            print("Settings:")
-            pprint.pprint(asdict(settings), indent=1)
+            print("Experiment:")
+            pprint.pprint(asdict(self.experiment), indent=1)
             print("=" * 40)
 
 

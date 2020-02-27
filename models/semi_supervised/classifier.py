@@ -46,7 +46,7 @@ class HParams(BaseHParams):
     manifold_mixup: ManifoldMixupTask.Options = ManifoldMixupTask.Options(coefficient=0.1)
     
     # Settings for the rotation auxiliary task.
-    rotation:       RotationTask.Options = RotationTask.Options(coefficient=0)
+    rotation:       RotationTask.Options = RotationTask.Options(coefficient=0.1)
     
     # Settings for the jigsaw puzzle auxiliary task.
     jigsaw:         JigsawPuzzleTask.Options = JigsawPuzzleTask.Options(coefficient=0)
@@ -56,10 +56,16 @@ class HParams(BaseHParams):
 
 
 class SelfSupervisedClassifier(Classifier):
-    def __init__(self, hparams: HParams, config: Config, num_classes: int):
+    def __init__(self,
+                 input_shape: Tuple[int, ...],
+                 num_classes: int,
+                 hparams: HParams,
+                 config: Config):
         super().__init__(hparams=hparams, config=config, num_classes=num_classes)
+        self.input_shape = input_shape
         self.hidden_size = hparams.hidden_size
         self.num_classes = num_classes
+        
         
         # Feature extractor
         self.encoder = nn.Sequential(
@@ -74,25 +80,22 @@ class SelfSupervisedClassifier(Classifier):
 
         self.tasks: List[AuxiliaryTask] = nn.ModuleList()  # type: ignore
         
+        # Share the relevant parameters with all the auxiliary tasks.
+        AuxiliaryTask.input_shape   = self.input_shape
+        AuxiliaryTask.hidden_size   = self.hidden_size
+        AuxiliaryTask.encoder       = self.encoder
+        AuxiliaryTask.classifier    = self.classifier
+        AuxiliaryTask.preprocessing = self.preprocess_inputs
+
         # Reconstruction auxiliary task
-        recon_task = self.add_task(VAEReconstructionTask,
-            options=self.hparams.reconstruction,
-            hidden_size=self.hidden_size,
-        )
+        recon_task = self.add_task(VAEReconstructionTask, options=self.hparams.reconstruction)
         self.reconstruction_task: VAEReconstructionTask = recon_task
 
-        # Rotation detection task:
-        self.add_task(RotationTask, options=self.hparams.rotation)
-        
-        # Jigsaw puzzle task:
-        self.add_task(JigsawPuzzleTask, options=self.hparams.jigsaw)
-
-
-        # Mixup and Manifold-Mixup Auxiliary Tasks:
+        self.add_task(RotationTask,      options=self.hparams.rotation)
+        self.add_task(JigsawPuzzleTask,  options=self.hparams.jigsaw)
         self.add_task(ManifoldMixupTask, options=self.hparams.manifold_mixup)
-        self.add_task(MixupTask, options=self.hparams.mixup)
-        
-        self.add_task(IrmTask, options=self.hparams.irm)
+        self.add_task(MixupTask,         options=self.hparams.mixup)
+        self.add_task(IrmTask,           options=self.hparams.irm)
                 
         self.optimizer =  optim.Adam(self.parameters(), lr=1e-3)
         self.device = self.config.device
@@ -102,9 +105,6 @@ class SelfSupervisedClassifier(Classifier):
                  task_type: Type[TaskType],
                  options: AuxiliaryTask.Options=None, **kwargs) -> TaskType:
         task = task_type(  # type: ignore
-            encoder=self.encoder,
-            classifier=self.classifier,
-            preprocessing=self.preprocess_inputs,
             options=options, **kwargs
         )
         self.tasks.append(task)
@@ -115,6 +115,8 @@ class SelfSupervisedClassifier(Classifier):
         # TODO: return logs
         losses: Dict[str, Tensor] = OrderedDict()
         total_loss = torch.zeros(1)
+
+        assert all(task.encoder is self.encoder for task in self.tasks)
 
         h_x = self.encode(x)
         y_pred = self.logits(h_x)

@@ -34,7 +34,12 @@ class MnistIID(Experiment):
     valid_loader: DataLoader = field(default=None, init=False)
 
     def __post_init__(self):
-        self.model = SelfSupervisedClassifier(self.hparams, self.config, num_classes=10)
+        self.model = SelfSupervisedClassifier(
+            input_shape=self.dataset.x_shape,
+            num_classes=self.dataset.y_shape[0],
+            hparams=self.hparams,
+            config=self.config
+        )
         dataloaders = self.dataset.get_dataloaders(self.hparams.batch_size)
         self.train_loader, self.valid_loader = dataloaders
 
