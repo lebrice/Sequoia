@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from tasks import AuxiliaryTask
 from models.bases import Model, BaseHParams
-from models.config import Config
+from config import Config
 
 
 class SemiSupervisedModel(Model):

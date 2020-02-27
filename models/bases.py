@@ -4,7 +4,7 @@ from typing import Any, Generic, List, Tuple, TypeVar
 
 import torch
 from simple_parsing import field
-from simple_parsing.utils import JsonSerializable
+from simple_parsing.helpers import JsonSerializable
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -12,7 +12,7 @@ from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
 from utils import cuda_available, gpus_available
-from .config import Config
+from config import Config
 
 
 @dataclass

@@ -11,13 +11,13 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
+from config import Config
 from models.bases import BaseHParams
-from models.config import Config
 from models.supervised import Classifier
 from models.unsupervised import GenerativeModel
-from tasks import (TaskType, AuxiliaryTask, ManifoldMixupTask, MixupTask,
-                   PatchLocationTask, JigsawPuzzleTask, RotationTask,
-                   VAEReconstructionTask, IrmTask)
+from tasks import (AuxiliaryTask, IrmTask, JigsawPuzzleTask, ManifoldMixupTask,
+                   MixupTask, PatchLocationTask, RotationTask, TaskType,
+                   VAEReconstructionTask)
 
 from .bases import SelfSupervisedModel
 
@@ -56,11 +56,10 @@ class HParams(BaseHParams):
 
 
 class SelfSupervisedClassifier(Classifier):
-    def __init__(self, hparams: HParams, config: Config):
-        super().__init__(hparams=hparams, config=config)
-
+    def __init__(self, hparams: HParams, config: Config, num_classes: int):
+        super().__init__(hparams=hparams, config=config, num_classes=num_classes)
         self.hidden_size = hparams.hidden_size
-        self.num_classes = config.num_classes
+        self.num_classes = num_classes
         
         # Feature extractor
         self.encoder = nn.Sequential(
@@ -74,8 +73,6 @@ class SelfSupervisedClassifier(Classifier):
         self.classification_loss = nn.CrossEntropyLoss()
 
         self.tasks: List[AuxiliaryTask] = nn.ModuleList()  # type: ignore
-        
-        self.code_size = hparams.reconstruction.code_size
         
         # Reconstruction auxiliary task
         recon_task = self.add_task(VAEReconstructionTask,

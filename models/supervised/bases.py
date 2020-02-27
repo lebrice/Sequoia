@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import Any, Tuple, List, Generic, TypeVar
+from dataclasses import dataclass
+from typing import Any, Generic, List, Tuple, TypeVar
 
 import torch
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
-from dataclasses import dataclass
 
-from models.bases import Model, BaseHParams
-from models.config import Config
+from config import Config
+from models.bases import BaseHParams, Model
 
 
 class SupervisedModel(Model):
@@ -20,9 +20,9 @@ class SupervisedModel(Model):
 
 
 class Classifier(SupervisedModel):
-    def __init__(self, hparams: BaseHParams, config: Config):
+    def __init__(self, hparams: BaseHParams, config: Config, num_classes: int):
         super().__init__(hparams, config)
-        self.num_classes = config.num_classes
+        self.num_classes = num_classes
         self.encoder: nn.Module = NotImplemented
         self.classifier: nn.Module = NotImplemented
         self.loss = nn.CrossEntropyLoss()  
@@ -50,4 +50,3 @@ class Classifier(SupervisedModel):
     def probabilities(self, logits: Tensor) -> Tensor:
         """ Returns the probabilities for each class given input raw logits. """
         return F.softmax(logits)
-    
