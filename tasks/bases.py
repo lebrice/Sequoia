@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Callable, Generic, List, Optional, Tuple, TypeVar, ClassVar
+from typing import Any, Callable, Generic, List, Optional, Tuple, TypeVar, ClassVar, Type
 
 import torch
 from torch import Tensor, nn, optim
@@ -29,7 +29,6 @@ class AuxiliaryTask(nn.Module):
         # Coefficient used to scale the task loss before adding it to the total.
         coefficient: float = 0.
 
-
     def __init__(self, options: Options=None):
         """Creates a new Auxiliary Task to further train the encoder.
         
@@ -55,7 +54,7 @@ class AuxiliaryTask(nn.Module):
             hyperparameters specific to this `AuxiliaryTask`.
         """
         super().__init__()
-
+        self.Options.task = type(self)
         # self.encoder: nn.Module = encoder
         # self.classifier: nn.Module = classifier
         self.options: AuxiliaryTask.Options = options if options is not None else self.Options()

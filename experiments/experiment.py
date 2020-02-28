@@ -24,10 +24,13 @@ class Experiment(ABC):
 
     TODO: Maybe add some code for saving/restoring experiments here?
     """
+    # Dataset and preprocessing settings.
     dataset: Mnist = Mnist(iid=True)
+    # Model Hyperparameters 
     hparams: BaseHParams = BaseHParams()
+    # Settings related to the experimental setup (cuda, log_dir, etc.).
     config: Config = Config()
-
+    
     model: nn.Module = field(default=None, init=False)
 
     def __post_init__(self):

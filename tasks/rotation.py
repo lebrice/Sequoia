@@ -46,7 +46,7 @@ class RotationTask(AuxiliaryTask):
         rot_pred = self.classify_rotation(h_x)
         rot_loss = self.loss(rot_pred, rot_label)
         total_loss += rot_loss
-        print(f"0 degrees rotation loss:", rot_loss.item())
+        # print(f"0 degrees rotation loss:", rot_loss.item())
 
         for rotation_degrees in [90, 180, 270]:
             rot_x = rotate(x, rotation_degrees)
@@ -57,5 +57,5 @@ class RotationTask(AuxiliaryTask):
             # print(f"{rotation_degrees} degrees rotation loss:", rot_loss.item())
             total_loss += rot_loss
         
-        print("Total loss:", total_loss.item())
+        # print("Total loss:", total_loss.item())
         return total_loss

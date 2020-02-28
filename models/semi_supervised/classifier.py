@@ -15,10 +15,7 @@ from config import Config
 from models.bases import BaseHParams
 from models.supervised import Classifier
 from models.unsupervised import GenerativeModel
-from tasks import (AuxiliaryTask, IrmTask, JigsawPuzzleTask, ManifoldMixupTask,
-                   MixupTask, PatchLocationTask, RotationTask, TaskType,
-                   VAEReconstructionTask)
-
+from tasks import AuxiliaryTask
 from .bases import SelfSupervisedModel
 
 
@@ -36,30 +33,13 @@ class HParams(BaseHParams):
     # Prevent gradients of the classifier from backpropagating into the encoder.
     detach_classifier: bool = True
 
-    # Settings for the reconstruction auxiliary task.
-    reconstruction: VAEReconstructionTask.Options = VAEReconstructionTask.Options(coefficient=0.001)
-    
-    # Settings for the "vanilla" mixup auxiliary task.
-    mixup:          MixupTask.Options = MixupTask.Options(coefficient=0.001)
-    
-    # Settings for the manifold mixup auxiliary task.
-    manifold_mixup: ManifoldMixupTask.Options = ManifoldMixupTask.Options(coefficient=0.1)
-    
-    # Settings for the rotation auxiliary task.
-    rotation:       RotationTask.Options = RotationTask.Options(coefficient=0.1)
-    
-    # Settings for the jigsaw puzzle auxiliary task.
-    jigsaw:         JigsawPuzzleTask.Options = JigsawPuzzleTask.Options(coefficient=0)
-    
-    # Settings for the Invariant Risk Minimization auxiliary task.
-    irm:            IrmTask.Options = IrmTask.Options(coefficient=1)
-
 
 class SelfSupervisedClassifier(Classifier):
     def __init__(self,
                  input_shape: Tuple[int, ...],
                  num_classes: int,
                  hparams: HParams,
+                 tasks: List[AuxiliaryTask],
                  config: Config):
         super().__init__(hparams=hparams, config=config, num_classes=num_classes)
         self.input_shape = input_shape
@@ -78,37 +58,17 @@ class SelfSupervisedClassifier(Classifier):
         self.classifier = nn.Linear(self.hidden_size, self.num_classes)
         self.classification_loss = nn.CrossEntropyLoss()
 
-        self.tasks: List[AuxiliaryTask] = nn.ModuleList()  # type: ignore
+        self.tasks: List[AuxiliaryTask] = nn.ModuleList(tasks)  # type: ignore
         
         # Share the relevant parameters with all the auxiliary tasks.
-        AuxiliaryTask.input_shape   = self.input_shape
-        AuxiliaryTask.hidden_size   = self.hidden_size
         AuxiliaryTask.encoder       = self.encoder
         AuxiliaryTask.classifier    = self.classifier
         AuxiliaryTask.preprocessing = self.preprocess_inputs
 
-        # Reconstruction auxiliary task
-        recon_task = self.add_task(VAEReconstructionTask, options=self.hparams.reconstruction)
-        self.reconstruction_task: VAEReconstructionTask = recon_task
-
-        self.add_task(RotationTask,      options=self.hparams.rotation)
-        self.add_task(JigsawPuzzleTask,  options=self.hparams.jigsaw)
-        self.add_task(ManifoldMixupTask, options=self.hparams.manifold_mixup)
-        self.add_task(MixupTask,         options=self.hparams.mixup)
-        self.add_task(IrmTask,           options=self.hparams.irm)
-                
         self.optimizer =  optim.Adam(self.parameters(), lr=1e-3)
         self.device = self.config.device
 
 
-    def add_task(self,
-                 task_type: Type[TaskType],
-                 options: AuxiliaryTask.Options=None, **kwargs) -> TaskType:
-        task = task_type(  # type: ignore
-            options=options, **kwargs
-        )
-        self.tasks.append(task)
-        return task
 
 
     def get_loss(self, x: Tensor, y: Tensor=None) -> Tuple[Tensor, Dict[str, Tensor]]:

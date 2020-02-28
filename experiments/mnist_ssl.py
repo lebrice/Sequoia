@@ -18,14 +18,41 @@ from tqdm import tqdm
 from datasets.mnist import Mnist
 from models.bases import Config, Model
 from models.semi_supervised.classifier import HParams, SelfSupervisedClassifier
+from tasks import (AuxiliaryTask, IrmTask, JigsawPuzzleTask, ManifoldMixupTask,
+                   MixupTask, PatchLocationTask, RotationTask, TaskType,
+                   VAEReconstructionTask)
+from tasks.torchvision.adjust_brightness import AdjustBrightnessTask
 from utils.logging import loss_str
 
 from .experiment import Experiment
 
+
 @dataclass
-class MnistIID(Experiment):
+class HParamsWithAuxiliaryTasks(HParams):
+    """ Set of Options / Command-line Parameters for the auxiliary tasks. """
+    reconstruction: VAEReconstructionTask.Options = VAEReconstructionTask.Options(coefficient=0.001)
+    mixup:          MixupTask.Options = MixupTask.Options(coefficient=0.001)
+    manifold_mixup: ManifoldMixupTask.Options = ManifoldMixupTask.Options(coefficient=0.1)
+    rotation:       RotationTask.Options = RotationTask.Options(coefficient=0.1)
+    jigsaw:         JigsawPuzzleTask.Options = JigsawPuzzleTask.Options(coefficient=0)
+    irm:            IrmTask.Options = IrmTask.Options(coefficient=1)
+    adjust_brightness: AdjustBrightnessTask.Options = AdjustBrightnessTask.Options(coefficient=1.0)
+
+    def get_tasks(self):
+        tasks = []
+        tasks.append(RotationTask(options=self.rotation))
+        tasks.append(JigsawPuzzleTask(options=self.jigsaw))
+        tasks.append(ManifoldMixupTask(options=self.manifold_mixup))
+        tasks.append(MixupTask(options=self.mixup))
+        tasks.append(IrmTask(options=self.irm))
+        tasks.append(AdjustBrightnessTask(options=self.adjust_brightness))
+        return tasks
+
+
+@dataclass
+class MnistSSL(Experiment):
     dataset: Mnist = Mnist(iid=True)
-    hparams: HParams = HParams()
+    hparams: HParamsWithAuxiliaryTasks = HParamsWithAuxiliaryTasks()
     config: Config = Config()
 
     model: SelfSupervisedClassifier = field(default=None, init=False)
@@ -33,12 +60,14 @@ class MnistIID(Experiment):
     valid_loader: DataLoader = field(default=None, init=False)
 
     def __post_init__(self):
+        AuxiliaryTask.input_shape   = self.dataset.x_shape
+        AuxiliaryTask.hidden_size   = self.hparams.hidden_size
         self.model = SelfSupervisedClassifier(
             input_shape=self.dataset.x_shape,
             num_classes=self.dataset.y_shape[0],
             hparams=self.hparams,
             config=self.config,
-            tasks=[],
+            tasks=self.hparams.get_tasks(),
         )
         dataloaders = self.dataset.get_dataloaders(self.hparams.batch_size)
         self.train_loader, self.valid_loader = dataloaders

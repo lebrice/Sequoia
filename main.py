@@ -20,6 +20,7 @@ from models.semi_supervised.classifier import HParams, SelfSupervisedClassifier
 
 from experiments.experiment import Experiment
 from experiments.mnist_iid import MnistIID
+from experiments.mnist_ssl import MnistSSL
 
 @dataclass
 class RunSettings:
@@ -27,7 +28,7 @@ class RunSettings:
 
     experiment: Experiment = subparsers({
         "mnist_iid": MnistIID,
-        "mnist_continual": MnistIID, # TODO:
+        "mnist_ssl": MnistSSL, # TODO:
     })
 
     def __post_init__(self):
