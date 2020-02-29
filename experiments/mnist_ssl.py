@@ -16,16 +16,16 @@ from torchvision.utils import save_image
 from tqdm import tqdm
 
 from datasets.mnist import Mnist
-from models.bases import Config, Model
-from models.semi_supervised.classifier import HParams, SelfSupervisedClassifier
+from models.classifier import HParams, SelfSupervisedClassifier
+from models.common import LossInfo
 from tasks import (AuxiliaryTask, IrmTask, JigsawPuzzleTask, ManifoldMixupTask,
                    MixupTask, PatchLocationTask, RotationTask, TaskType,
                    VAEReconstructionTask)
 from tasks.torchvision.adjust_brightness import AdjustBrightnessTask
 from utils.logging import loss_str
 
-from .experiment import Experiment
-
+from experiments.experiment import Experiment
+from config import Config
 
 @dataclass
 class HParamsWithAuxiliaryTasks(HParams):
@@ -98,8 +98,12 @@ class MnistSSL(Experiment):
             batch_size = data.shape[0]
 
             model.optimizer.zero_grad()
-            loss, losses = model.get_loss(data, target)
-            loss.backward()
+            loss_info = model.get_loss(data, target)
+            
+            loss = loss_info.total_loss
+            losses = loss_info.losses
+
+            loss_info.total_loss.backward()
             train_loss += loss.item()
             model.optimizer.step()
 

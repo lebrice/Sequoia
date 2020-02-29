@@ -15,8 +15,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
-from models.bases import Config, Model
-from models.semi_supervised.classifier import HParams, SelfSupervisedClassifier
+from models.classifier import HParams, SelfSupervisedClassifier
 
 from experiments.experiment import Experiment
 from experiments.mnist_iid import MnistIID
@@ -27,7 +26,7 @@ class RunSettings:
     """ Settings for which 'experiment' to run. """
 
     experiment: Experiment = subparsers({
-        "mnist_iid": MnistIID,
+        "mnist": MnistIID,
         "mnist_ssl": MnistSSL, # TODO:
     })
 

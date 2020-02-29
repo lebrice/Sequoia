@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Callable, Generic, List, Optional, Tuple, TypeVar, ClassVar, Type
+from typing import *
 
 import torch
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
-
+from models.common import LossInfo
 
 class AuxiliaryTask(nn.Module):
     """ Represents an additional loss to apply to a `Classifier`.
@@ -19,6 +19,8 @@ class AuxiliaryTask(nn.Module):
     """
     input_shape: Tuple[int, ...] = ()
     hidden_size: int = -1
+    
+    # Modules shared with with the classifier. 
     encoder: nn.Module
     classifier: nn.Module
     preprocessing: Callable[[Tensor], Tensor]
@@ -54,7 +56,6 @@ class AuxiliaryTask(nn.Module):
             hyperparameters specific to this `AuxiliaryTask`.
         """
         super().__init__()
-        self.Options.task = type(self)
         # self.encoder: nn.Module = encoder
         # self.classifier: nn.Module = classifier
         self.options: AuxiliaryTask.Options = options if options is not None else self.Options()
@@ -64,7 +65,7 @@ class AuxiliaryTask(nn.Module):
         return self.encoder(self.preprocessing(x))
 
     @abstractmethod
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tensor:
+    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         """Calculates the Auxiliary loss for the input `x`.ABC
         
         The parameters `h_x`, `y_pred` are given for convenience, so we don't
@@ -97,7 +98,19 @@ class AuxiliaryTask(nn.Module):
             The loss, not scaled.
         """
         pass
-    
+
+    def get_scaled_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
+        if not self.enabled:
+            return LossInfo()
+        loss_info = self.get_loss(x, h_x, y_pred, y)
+        loss_info.add_prefix(self.name)
+        if loss_info.total_loss != 0 and not loss_info.losses:
+            loss_info.losses[self.name] = loss_info.total_loss
+
+        loss_info.scale_by(self.coefficient)
+        return loss_info
+
+
     @property
     def coefficient(self) -> float:
         return self.options.coefficient

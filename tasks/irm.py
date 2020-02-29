@@ -6,8 +6,8 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.autograd import grad
 
-from .bases import AuxiliaryTask
-
+from tasks.bases import AuxiliaryTask
+from models.common import LossInfo
 
 class IrmTask(AuxiliaryTask):
     """IRM implementation taken from https://github.com/facebookresearch/InvariantRiskMinimization/blob/6aad47e689913b9bdad05880833530a5edac389e/code/colored_mnist/main.py#L107
@@ -19,22 +19,23 @@ class IrmTask(AuxiliaryTask):
         self.mean_nll = nn.CrossEntropyLoss()
 
     def penalty(self, logits: Tensor, y: Tensor) -> Tensor:
+        y = y.to(logits.device)
         scale = torch.ones([1], requires_grad=True, device=logits.device)
         loss = self.mean_nll(logits * scale, y)
         grads = grad(loss, scale, create_graph=True)[0]
         return (grads**2).sum()
 
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tensor:
+    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         if y is None:
-            return torch.zeros(1)
+            return LossInfo()
         if not y_pred.requires_grad:
             # Can't evaluate the IRM score when the y_pred doesn't require grad!
             with torch.enable_grad():
                 y_pred = self.classifier(h_x)
-                y = y.to(y_pred.device)
-                return self.penalty(y_pred, y)
-        y = y.to(y_pred.device)
-        return self.penalty(y_pred, y)
+                loss = self.penalty(y_pred, y)
+                return LossInfo(loss)
+        loss = self.penalty(y_pred, y)
+        return LossInfo(loss)
     
 
 def irm_demo():

@@ -16,12 +16,11 @@ from torchvision.utils import save_image
 from tqdm import tqdm
 
 from datasets.mnist import Mnist
-from models.bases import Config, Model
-from models.semi_supervised.classifier import HParams, SelfSupervisedClassifier
+from models.classifier import HParams, SelfSupervisedClassifier, LossInfo
 from utils.logging import loss_str
 
-from .experiment import Experiment
-
+from experiments.experiment import Experiment
+from config import Config
 @dataclass
 class MnistIID(Experiment):
     dataset: Mnist = Mnist(iid=True)
@@ -69,7 +68,11 @@ class MnistIID(Experiment):
             batch_size = data.shape[0]
 
             model.optimizer.zero_grad()
-            loss, losses = model.get_loss(data, target)
+            loss_info = model.get_loss(data, target)
+            loss = loss_info.total_loss
+            losses = loss_info.losses
+            tensors = loss_info.tensors
+            
             loss.backward()
             train_loss += loss.item()
             model.optimizer.step()
@@ -116,10 +119,10 @@ class MnistIID(Experiment):
         with torch.no_grad():
             for i, (data, target) in enumerate(dataloader):
                 data = data.to(model.device)
-                total_loss, losses = model.get_loss(data, target)
-                test_loss += total_loss
+                loss_tuple = model.get_loss(data, target)
+                test_loss += loss_tuple.total_loss
 
-                for loss_name, loss_tensor in losses.items():
+                for loss_name, loss_tensor in loss_tuple.losses.items():
                     total_aux_losses[loss_name] += loss_tensor.item()
 
                 if i == 0:

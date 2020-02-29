@@ -10,8 +10,7 @@ from torch import nn
 from config import Config
 from datasets import Dataset
 from datasets.mnist import Mnist
-from models.bases import BaseHParams
-
+from models.classifier import HParams
 
 @dataclass  # type: ignore
 class Experiment(ABC):
@@ -27,7 +26,7 @@ class Experiment(ABC):
     # Dataset and preprocessing settings.
     dataset: Mnist = Mnist(iid=True)
     # Model Hyperparameters 
-    hparams: BaseHParams = BaseHParams()
+    hparams: HParams = HParams(detach_classifier=False)
     # Settings related to the experimental setup (cuda, log_dir, etc.).
     config: Config = Config()
     

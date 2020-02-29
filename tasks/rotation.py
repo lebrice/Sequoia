@@ -10,7 +10,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 from .bases import AuxiliaryTask
-
+from models.common import LossInfo
 
 def rotate(x: Tensor, angle: int) -> Tensor:
     # TODO: Test that this works.
@@ -34,19 +34,18 @@ class RotationTask(AuxiliaryTask):
                  x: Tensor,
                  h_x: Tensor,
                  y_pred: Tensor,
-                 y: Tensor=None) -> Tensor:
+                 y: Tensor=None) -> LossInfo:
         batch_size = x.shape[0]
-
         # TODO: change AuxiliaryTask so it also returns a dict with each loss?
-        losses: Dict[str, Tensor] = OrderedDict()
+        loss_info = LossInfo()
         
-        total_loss = torch.zeros(1)
         # no rotation:
         rot_label = torch.zeros([batch_size], dtype=torch.long)
         rot_pred = self.classify_rotation(h_x)
         rot_loss = self.loss(rot_pred, rot_label)
-        total_loss += rot_loss
-        # print(f"0 degrees rotation loss:", rot_loss.item())
+        
+        loss_info.losses["rotation_0"] = rot_loss
+        loss_info.total_loss += rot_loss
 
         for rotation_degrees in [90, 180, 270]:
             rot_x = rotate(x, rotation_degrees)
@@ -54,8 +53,8 @@ class RotationTask(AuxiliaryTask):
             rot_h_x = self.encode(rot_x)
             rot_pred = self.classify_rotation(rot_h_x)
             rot_loss = self.loss(rot_pred, rot_label)
-            # print(f"{rotation_degrees} degrees rotation loss:", rot_loss.item())
-            total_loss += rot_loss
+            
+            loss_info.losses[f"rotation_{rotation_degrees}"] = rot_loss
+            loss_info.total_loss += rot_loss
         
-        # print("Total loss:", total_loss.item())
-        return total_loss
+        return loss_info

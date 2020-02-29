@@ -7,7 +7,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 from .bases import AuxiliaryTask
-
+from models.common import LossInfo
 
 def mixup(x1: Tensor, x2: Tensor, coeff: Tensor) -> Tensor:
     assert coeff.dim() == 1
@@ -24,32 +24,31 @@ def mixup(x1: Tensor, x2: Tensor, coeff: Tensor) -> Tensor:
         
 
 class MixupTask(AuxiliaryTask):
-
-
-
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tensor:
+    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         batch_size = x.shape[0]
         assert batch_size % 2  == 0, "Can only mix an even number of samples."
-        
+        loss_info = LossInfo()
         mix_coeff = torch.rand(batch_size//2)
 
         x1 = x[0::2]
         x2 = x[1::2]
+             
         mix_x = mixup(x1, x2, mix_coeff)
-        
+        mix_h_x = self.encode(mix_x)
+        mix_y_pred = self.classifier(mix_h_x)
+        loss_info.tensors["mix_x"] = mix_x
+
         y_pred_1 = y_pred[0::2]
         y_pred_2 = y_pred[1::2]
         y_pred_mix = mixup(y_pred_1, y_pred_2, mix_coeff)
+        loss_info.tensors["y_pred_mix"] = y_pred_mix
+
+        loss = torch.dist(y_pred_mix, mix_y_pred)
+        loss_info.total_loss = loss
+        return loss_info
         
-        mix_h_x = self.encode(mix_x)
-        mix_y_pred = self.classifier(mix_h_x)
-
-        difference = y_pred_mix - mix_y_pred
-        return (difference **2).sum()
-
-
 class ManifoldMixupTask(AuxiliaryTask):
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tensor:
+    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         batch_size = x.shape[0]
         assert batch_size % 2  == 0, "Can only mix an even number of samples."
         mix_coeff = torch.rand(batch_size//2)
@@ -64,5 +63,5 @@ class ManifoldMixupTask(AuxiliaryTask):
 
         mix_y_pred = self.classifier(mix_h_x)
 
-        difference = y_pred_mix - mix_y_pred
-        return (difference **2).sum()
+        loss = torch.dist(y_pred_mix, mix_y_pred)
+        return LossInfo(loss)

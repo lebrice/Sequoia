@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple, Type, TypeVar
+from typing import Any, Dict, List, Tuple, Type, TypeVar, NamedTuple
 
 import torch
 from simple_parsing import MutableField as mutable_field
@@ -12,37 +12,43 @@ from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
 from config import Config
-from models.bases import BaseHParams
-from models.supervised import Classifier
-from models.unsupervised import GenerativeModel
 from tasks import AuxiliaryTask
-from .bases import SelfSupervisedModel
-
+from models.common import LossInfo
 
 @dataclass
-class HParams(BaseHParams):
+class HParams:
     """ Set of Options / Command-line Parameters for the MNIST Example.
     
     We use [simple_parsing](www.github.com/lebrice/simpleparsing) to generate
     all the command-line arguments for this class.
     
     """
+    batch_size: int = 128   # Input batch size for training.
+    epochs: int = 10        # Number of epochs to train.
+    learning_rate: float = field(default=1e-3, alias="-lr")  # learning rate.
+
     # Dimensions of the hidden state (encoder output).
     hidden_size: int = 100
 
     # Prevent gradients of the classifier from backpropagating into the encoder.
-    detach_classifier: bool = True
+    detach_classifier: bool = False
 
 
-class SelfSupervisedClassifier(Classifier):
+
+
+class SelfSupervisedClassifier(nn.Module):
     def __init__(self,
                  input_shape: Tuple[int, ...],
                  num_classes: int,
                  hparams: HParams,
                  tasks: List[AuxiliaryTask],
                  config: Config):
-        super().__init__(hparams=hparams, config=config, num_classes=num_classes)
+        super().__init__()
         self.input_shape = input_shape
+        self.hparams = hparams
+        self.tasks: List[AuxiliaryTask] = nn.ModuleList(tasks)  # type: ignore
+        self.config = config
+
         self.hidden_size = hparams.hidden_size
         self.num_classes = num_classes
         
@@ -58,7 +64,6 @@ class SelfSupervisedClassifier(Classifier):
         self.classifier = nn.Linear(self.hidden_size, self.num_classes)
         self.classification_loss = nn.CrossEntropyLoss()
 
-        self.tasks: List[AuxiliaryTask] = nn.ModuleList(tasks)  # type: ignore
         
         # Share the relevant parameters with all the auxiliary tasks.
         AuxiliaryTask.encoder       = self.encoder
@@ -69,44 +74,52 @@ class SelfSupervisedClassifier(Classifier):
         self.device = self.config.device
 
 
-
-
-    def get_loss(self, x: Tensor, y: Tensor=None) -> Tuple[Tensor, Dict[str, Tensor]]:
+    def get_loss(self, x: Tensor, y: Tensor=None) -> LossInfo:
         # TODO: return logs
-        losses: Dict[str, Tensor] = OrderedDict()
-        total_loss = torch.zeros(1)
-
-        assert all(task.encoder is self.encoder for task in self.tasks)
+        loss_tuple = LossInfo()
 
         h_x = self.encode(x)
         y_pred = self.logits(h_x)
         
+        loss_tuple.tensors["h_x"] = h_x
+        loss_tuple.tensors["y_pred"] = y_pred
+
         if y is not None:
-            supervised_loss = self.classification_loss(y_pred, y)
-            losses["supervised"] = supervised_loss
-            total_loss += supervised_loss
-        
+            loss_tuple += self.supervised_loss(y_pred, y)
+
         for aux_task in self.tasks:
             if aux_task.enabled:
-                aux_loss = aux_task.get_loss(x, h_x=h_x, y_pred=y_pred, y=y)
-                aux_loss_scaled = aux_loss * aux_task.coefficient
-                
-                total_loss += aux_loss_scaled
-                
-                losses[f"{aux_task.name}"] = aux_loss
-                losses[f"{aux_task.name}_scaled"] = aux_loss_scaled
+                loss_tuple += aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y) 
 
-        return total_loss, losses
+        return loss_tuple
 
-    def unsupervised_loss(self, x: Tensor) -> Tensor:
+    def unsupervised_loss(self, x: Tensor, h_x: Tensor=None, y_pred: Tensor=None) -> Tensor:
         x = self.preprocess_inputs(x)
-        h_x = self.encode(x)
-        return self.reconstruction_task.get_loss(x=x, h_x=h_x)
+        h_x = self.encode(x) if h_x is None else h_x
+        y_pred = self.logits(h_x) if y_pred is None else y_pred
+        losses = LossInfo()
+        raise NotImplementedError("TODO")
 
-    def supervised_loss(self, x: Tensor, y: Tensor) -> Tensor:
-        total_loss, losses = self.get_loss(x, y)
-        return losses["supervised"]
-        return Classifier.get_loss(self, x, y)
+    def supervised_loss(self, y_pred: Tensor, y: Tensor) -> LossInfo:
+        supervised_loss = self.classification_loss(y_pred, y)
+        metrics = self.get_metrics(y_pred, y)
+        
+        loss_info = LossInfo(
+            supervised_loss,
+            losses={"supervised": supervised_loss},
+            metrics=metrics
+        )
+        return loss_info
+
+
+    def get_metrics(self, y_pred: Tensor, y: Tensor) -> Dict[str, Any]:
+        #TODO: calculate accuracy or other metrics.
+        batch_size = y_pred.shape[0]
+        _, predicted = torch.max(y_pred, 1)
+        accuracy = (predicted == y).sum() / batch_size
+        return {
+            "Accuracy": accuracy
+        }
 
     def encode(self, x: Tensor):
         x = self.preprocess_inputs(x)
