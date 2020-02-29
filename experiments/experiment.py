@@ -10,10 +10,11 @@ from torch import nn
 from config import Config
 from datasets import Dataset
 from datasets.mnist import Mnist
-from models.classifier import HParams
 
-@dataclass  # type: ignore
-class Experiment(ABC):
+from models.classifier import Classifier
+
+@dataclass
+class Experiment:
     """ Describes the parameters of an experimental setting.
     
     (ex: Mnist_iid, Mnist_continual, Cifar10, etc. etc.)
@@ -24,9 +25,9 @@ class Experiment(ABC):
     TODO: Maybe add some code for saving/restoring experiments here?
     """
     # Dataset and preprocessing settings.
-    dataset: Mnist = Mnist(iid=True)
+    dataset: Dataset = Mnist()
     # Model Hyperparameters 
-    hparams: HParams = HParams(detach_classifier=False)
+    hparams: Classifier.HParams = Classifier.HParams()
     # Settings related to the experimental setup (cuda, log_dir, etc.).
     config: Config = Config()
     

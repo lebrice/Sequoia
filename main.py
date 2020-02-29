@@ -15,19 +15,20 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
-from models.classifier import HParams, SelfSupervisedClassifier
+from models.classifier import Classifier
+from models.ss_classifier import SelfSupervisedClassifier
 
 from experiments.experiment import Experiment
-from experiments.mnist_iid import MnistIID
-from experiments.mnist_ssl import MnistSSL
-
+from experiments.iid import IID
+from experiments.self_supervised import SelfSupervised
+from datasets.mnist import Mnist
 @dataclass
 class RunSettings:
     """ Settings for which 'experiment' to run. """
 
     experiment: Experiment = subparsers({
-        "mnist": MnistIID,
-        "mnist_ssl": MnistSSL, # TODO:
+        "baseline": IID(dataset=Mnist()),
+        "baseline_aux": SelfSupervised, # TODO:
     })
 
     def __post_init__(self):

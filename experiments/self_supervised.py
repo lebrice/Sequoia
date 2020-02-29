@@ -16,7 +16,7 @@ from torchvision.utils import save_image
 from tqdm import tqdm
 
 from datasets.mnist import Mnist
-from models.classifier import HParams, SelfSupervisedClassifier
+from models.ss_classifier import SelfSupervisedClassifier
 from models.common import LossInfo
 from tasks import (AuxiliaryTask, IrmTask, JigsawPuzzleTask, ManifoldMixupTask,
                    MixupTask, PatchLocationTask, RotationTask, TaskType,
@@ -28,7 +28,7 @@ from experiments.experiment import Experiment
 from config import Config
 
 @dataclass
-class HParamsWithAuxiliaryTasks(HParams):
+class HParamsWithAuxiliaryTasks(SelfSupervisedClassifier.HParams):
     """ Set of Options / Command-line Parameters for the auxiliary tasks. """
     reconstruction: VAEReconstructionTask.Options = VAEReconstructionTask.Options(coefficient=0.001)
     mixup:          MixupTask.Options = MixupTask.Options(coefficient=0.001)
@@ -48,16 +48,13 @@ class HParamsWithAuxiliaryTasks(HParams):
         tasks.append(AdjustBrightnessTask(options=self.adjust_brightness))
         return tasks
 
+from experiments.iid import IID
 
 @dataclass
-class MnistSSL(Experiment):
-    dataset: Mnist = Mnist(iid=True)
+class SelfSupervised(IID):
+    """ Simply adds auxiliary tasks to the IID experiment. """
+ 
     hparams: HParamsWithAuxiliaryTasks = HParamsWithAuxiliaryTasks()
-    config: Config = Config()
-
-    model: SelfSupervisedClassifier = field(default=None, init=False)
-    train_loader: DataLoader = field(default=None, init=False)
-    valid_loader: DataLoader = field(default=None, init=False)
 
     def __post_init__(self):
         AuxiliaryTask.input_shape   = self.dataset.x_shape

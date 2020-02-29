@@ -16,29 +16,34 @@ from torchvision.utils import save_image
 from tqdm import tqdm
 
 from datasets.mnist import Mnist
-from models.classifier import HParams, SelfSupervisedClassifier, LossInfo
+from models.classifier import Classifier, LossInfo
 from utils.logging import loss_str
 
 from experiments.experiment import Experiment
 from config import Config
+
+from datasets.bases import Dataset
 @dataclass
-class MnistIID(Experiment):
-    dataset: Mnist = Mnist(iid=True)
-    hparams: HParams = HParams()
+class IID(Experiment):
+    dataset: Dataset = subparsers({
+        "mnist": Mnist(),
+    })
+    hparams: Classifier.HParams = Classifier.HParams()
     config: Config = Config()
 
-    model: SelfSupervisedClassifier = field(default=None, init=False)
+    model: Classifier = field(default=None, init=False)
     train_loader: DataLoader = field(default=None, init=False)
     valid_loader: DataLoader = field(default=None, init=False)
 
     def __post_init__(self):
-        self.model = SelfSupervisedClassifier(
-            input_shape=self.dataset.x_shape,
-            num_classes=self.dataset.y_shape[0],
-            hparams=self.hparams,
-            config=self.config,
-            tasks=[],
-        )
+        if isinstance(self.dataset, Mnist):    
+            from models.classifier import MnistClassifier
+            self.model = MnistClassifier(
+                hparams=self.hparams,
+                config=self.config,
+            )
+        else:
+            raise NotImplementedError("TODO: add other datasets.")
         dataloaders = self.dataset.get_dataloaders(self.hparams.batch_size)
         self.train_loader, self.valid_loader = dataloaders
 
