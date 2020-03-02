@@ -14,10 +14,10 @@ from torchvision.utils import save_image
 from config import Config
 from common.losses import LossInfo
 from common.metrics import Metrics, accuracy
+from common.layers import ConvBlock, Flatten
 
 
 class Classifier(nn.Module):
-
     @dataclass
     class HParams:
         """ Set of hyperparameters for the classifier.
@@ -30,11 +30,10 @@ class Classifier(nn.Module):
         learning_rate: float = field(default=1e-3, alias="-lr")  # learning rate.
 
         # Dimensions of the hidden state (encoder output).
-        hidden_size: int = 100
+        hidden_size: int = 32
 
         # Prevent gradients of the classifier from backpropagating into the encoder.
         detach_classifier: bool = False
-
 
     def __init__(self,
                  input_shape: Tuple[int, ...],
@@ -65,7 +64,7 @@ class Classifier(nn.Module):
         loss = self.classification_loss(y_pred, y)
         return LossInfo(
             total_loss=loss,
-            tensors=OrderedDict(x=x, h_x=h_x, y_pred=y_pred, y=y) if self.config.debug else {},
+            tensors=OrderedDict(x=x, h_x=h_x, y_pred=y_pred, y=y),
             metrics=Metrics.from_tensors(y_pred=y_pred, y=y),
         )
 
@@ -74,7 +73,23 @@ class Classifier(nn.Module):
         return self.encoder(x)
 
     def preprocess_inputs(self, x: Tensor) -> Tensor:
-        return x.view([x.shape[0], -1])
+        """Preprocess the input tensor x before it is passed to the encoder.
+        
+        By default this does nothing. When subclassing the Classifier or 
+        switching datasets, you might want to change this behaviour.
+
+        Parameters
+        ----------
+        - x : Tensor
+        
+            a batch of inputs.
+        
+        Returns
+        -------
+        Tensor
+            The preprocessed inputs.
+        """
+        return x
 
     def logits(self, h_x: Tensor) -> Tensor:
         return self.classifier(h_x)
@@ -86,10 +101,11 @@ class MnistClassifier(Classifier):
                  config: Config):
         self.hidden_size = hparams.hidden_size
         encoder = nn.Sequential(
-            nn.Linear(784, 400),
-            nn.ReLU(),
-            nn.Linear(400, self.hidden_size),
-            nn.Sigmoid(),
+            ConvBlock(1, 16, kernel_size=3, padding=1),
+            ConvBlock(16, 32, kernel_size=3, padding=1),
+            ConvBlock(32, self.hidden_size, kernel_size=3, padding=1),
+            ConvBlock(self.hidden_size, self.hidden_size, kernel_size=3, padding=1),
+            Flatten(),
         )
         classifier = nn.Linear(self.hidden_size, 10)
         super().__init__(
@@ -100,3 +116,6 @@ class MnistClassifier(Classifier):
             hparams=hparams,
             config=config,
         )
+    
+    def preprocess_inputs(self, x):
+        return super().preprocess_inputs(x)

@@ -12,6 +12,7 @@ from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
 from utils import cuda_available, gpus_available
+from pathlib import Path
 
 @dataclass
 class Config:
@@ -20,9 +21,14 @@ class Config:
     debug: bool = False      # enable debug mode.
     verbose: bool = False    # enable verbose mode.
 
-    log_dir: str = "results" # Logging directory.
+    log_dir: Path = Path("results") # Logging directory.
     log_interval: int = 10   # How many batches to wait between logging calls.
     
+    class_incremental: bool = False  # train in a class-incremental fashion.
+    n_classes_per_task: int = 2      # Number of classes per task.
+    # Wether to sort out the classes in the class_incremental setting.
+    random_class_ordering: bool = False
+
     random_seed: int = 1            # Random seed.
     use_cuda: bool = cuda_available # Wether or not to use CUDA.
     

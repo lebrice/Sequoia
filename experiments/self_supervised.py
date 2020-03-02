@@ -2,13 +2,14 @@ import os
 import pprint
 from collections import OrderedDict, defaultdict
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 import simple_parsing
 import torch
 import torch.utils.data
 import tqdm
-from simple_parsing import ArgumentParser, field, subparsers, choice, list_field
+from simple_parsing import (ArgumentParser, choice, field, list_field,
+                            subparsers)
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -19,16 +20,15 @@ from common.losses import LossInfo
 from config import Config
 from datasets.mnist import Mnist
 from experiments.experiment import Experiment
-from experiments.iid import IID
+from experiments.baseline import Baseline
 from models.ss_classifier import MnistClassifier, SelfSupervisedClassifier
-
+from tasks import AuxiliaryTask, VAEReconstructionTask
 from tasks.torchvision.adjust_brightness import AdjustBrightnessTask
 from utils.logging import loss_str
-from tasks import AuxiliaryTask, VAEReconstructionTask
 
 
 @dataclass
-class SelfSupervised(IID):
+class SelfSupervised(Baseline):
     """ Simply adds auxiliary tasks to the IID experiment. """
     hparams: SelfSupervisedClassifier.HParams = SelfSupervisedClassifier.HParams(detach_classifier=False)
 
@@ -97,7 +97,9 @@ class SelfSupervised(IID):
 
     
     def log_info(self, batch_loss_info: LossInfo, overall_loss_info: LossInfo) -> Dict:
-        message: Dict[str, Any] = super().log_info(batch_loss_info, overall_loss_info)
+        message = super().log_info(batch_loss_info, overall_loss_info)
+        
+        # add the logs for all the scaled losses:
         for loss_name, loss_tensor in batch_loss_info.losses.items():
             if loss_name.endswith("_scaled"):
                 continue

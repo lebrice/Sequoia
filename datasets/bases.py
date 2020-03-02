@@ -11,17 +11,18 @@ from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
 from utils import cuda_available, gpus_available
+from config import Config
 
-
-@dataclass  # type: ignore (mypy bug)
-class Dataset(ABC):
+@dataclass  # type: ignore 
+class Dataset:
     """
     Represents all the command-line arguments as well as logic related to a Dataset.
     """
-    name: str
+    name: str = "default"
+    data_dir: str = "../data"
     
     @abstractmethod
-    def get_dataloaders(self, batch_size: int = 64) -> Tuple[DataLoader, DataLoader]:
+    def get_dataloaders(self, config: Config, batch_size: int = 64) -> Tuple[DataLoader, DataLoader]:
         """Create the train and test dataloaders using the passed arguments.
                 
         Returns

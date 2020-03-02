@@ -6,7 +6,7 @@ from typing import ClassVar
 
 import torch
 import tqdm
-from simple_parsing import field
+from simple_parsing import field, choice
 from torch import nn, Tensor
 from torch.utils.data import DataLoader
 
@@ -30,15 +30,16 @@ class Experiment:
     TODO: Maybe add some code for saving/restoring experiments here?
     """
     # Dataset and preprocessing settings.
-    dataset: Dataset = Mnist()
+    dataset: Dataset = choice({
+        "mnist": Mnist(),
+    }, default="mnist")
     # Model Hyperparameters 
     hparams: Classifier.HParams = Classifier.HParams()
     # Settings related to the experimental setup (cuda, log_dir, etc.).
     config: Config = Config()
-    
+        
+    model_class: Type[Classifier] = field(default=Classifier, init=False)
     model: Classifier = field(default=None, init=False)
-
-    class_incremental: bool = False
 
     def __post_init__(self):
         """ Called after __init__, used to initialize all missing fields.
@@ -70,8 +71,7 @@ class Experiment:
         self.model.train()
         overall_loss_info = LossInfo()
 
-        pbar = tqdm.tqdm(dataloader, disable=not (self.config.verbose or self.config.debug))
-        # pbar.disable = 
+        pbar = tqdm.tqdm(dataloader) # disable=not (self.config.verbose or self.config.debug)
         for batch_idx, (data, target) in enumerate(pbar):
             data = data.to(self.model.device)
             target = target.to(self.model.device)

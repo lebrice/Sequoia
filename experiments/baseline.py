@@ -1,8 +1,8 @@
 import os
 import pprint
 from collections import OrderedDict, defaultdict
-from dataclasses import asdict, dataclass
-from typing import Any, Dict, Iterable, List, Tuple
+from dataclasses import asdict, dataclass, InitVar
+from typing import Any, Dict, Iterable, List, Tuple, Type, ClassVar
 
 import simple_parsing
 import torch
@@ -19,33 +19,34 @@ from config import Config
 from datasets.bases import Dataset
 from datasets.mnist import Mnist
 from experiments.experiment import Experiment
-from models.classifier import Classifier, LossInfo
+from models.classifier import Classifier, MnistClassifier
 from utils.logging import loss_str
+from common.losses import LossInfo
 
 
 @dataclass
-class IID(Experiment):
-    dataset: Dataset = choice({"mnist": Mnist()}, default="mnist")
+class Baseline(Experiment):
+    dataset: Dataset = choice({
+        "mnist": Mnist(),
+    }, default="mnist")
+
     hparams: Classifier.HParams = Classifier.HParams()
     config: Config = Config()
 
-    model: Classifier = field(default=None, init=False)
-    train_loader: DataLoader = field(default=None, init=False)
-    valid_loader: DataLoader = field(default=None, init=False)
-
-    def __post_init__(self):
-        if isinstance(self.dataset, Mnist):    
-            from models.classifier import MnistClassifier
+    def load(self, config):
+        if isinstance(self.dataset, Mnist):
             self.model = MnistClassifier(
                 hparams=self.hparams,
                 config=self.config,
             )
         else:
             raise NotImplementedError("TODO: add other datasets.")
-        dataloaders = self.dataset.get_dataloaders(self.hparams.batch_size)
+        dataloaders = self.dataset.get_dataloaders(self.config, self.hparams.batch_size)
         self.train_loader, self.valid_loader = dataloaders
 
     def run(self):
+        self.load(self.config)
+
         train_epoch_loss: List[LossInfo] = []
         valid_epoch_loss: List[LossInfo] = []
 

@@ -4,7 +4,7 @@
 import torch
 from torch import nn, Tensor
 
-from typing import List, Deque, Optional
+from typing import List, Deque, Optional, TypeVar, Iterable, Tuple
 from collections import deque
 import collections
 
@@ -13,6 +13,18 @@ from typing import MutableMapping, Any
 
 cuda_available = torch.cuda.is_available()
 gpus_available = torch.cuda.device_count()
+
+T = TypeVar("T")
+
+def n_consecutive(items: Iterable[T], n: int=2, yield_last_batch=True) -> Iterable[Tuple[T, ...]]:
+    values: List[T] = []
+    for item in items:
+        values.append(item)
+        if len(values) == n:
+            yield tuple(values)
+            values.clear()
+    if values and yield_last_batch:
+        yield tuple(values)
 
 class TensorCache(MutableMapping[Tensor, Tensor]):
     """A mutable mapping of individual (not batched) tensors to their outputs.
@@ -98,17 +110,18 @@ class CachedForwardPass(nn.Module):
             
 
 if __name__ == "__main__":
-            
-    cache = TensorCache(5)
+    import doctest
+    doctest.testmod()
+    # cache = TensorCache(5)
 
 
-    d = TensorCache(5)
-    zero = torch.zeros(3,3)
-    d[zero] = torch.Tensor(123)
+    # d = TensorCache(5)
+    # zero = torch.zeros(3,3)
+    # d[zero] = torch.Tensor(123)
 
-    one = torch.ones(3,3)
-    batch = torch.stack([zero, one])
-    print("zero is in cache:", zero in d)
-    print("ones is in cache:", one in d)
-    print(torch.zeros(3,3) in d)
-    print(d[torch.zeros(3,3)])
+    # one = torch.ones(3,3)
+    # batch = torch.stack([zero, one])
+    # print("zero is in cache:", zero in d)
+    # print("ones is in cache:", one in d)
+    # print(torch.zeros(3,3) in d)
+    # print(d[torch.zeros(3,3)])

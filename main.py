@@ -19,7 +19,7 @@ from models.classifier import Classifier
 from models.ss_classifier import SelfSupervisedClassifier
 
 from experiments.experiment import Experiment
-from experiments.iid import IID
+from experiments.baseline import Baseline
 from experiments.self_supervised import SelfSupervised
 from datasets.mnist import Mnist
 
@@ -28,7 +28,7 @@ class RunSettings:
     """ Settings for which 'experiment' to run. """
 
     experiment: Experiment = subparsers({
-        "baseline": IID(dataset=Mnist()),
+        "baseline": Baseline(dataset=Mnist()),
         "baseline_aux": SelfSupervised, # TODO:
     })
 
@@ -41,7 +41,6 @@ class RunSettings:
 
 parser = ArgumentParser()
 parser.add_arguments(RunSettings, dest="settings")
-parser.add_subparsers
 args = parser.parse_args()
 settings: RunSettings = args.settings
 
