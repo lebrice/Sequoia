@@ -1,3 +1,4 @@
+import os
 import pprint
 from collections import OrderedDict, defaultdict
 from dataclasses import asdict, dataclass
@@ -30,7 +31,9 @@ from tasks import AuxiliaryTask, VAEReconstructionTask
 class SelfSupervised(IID):
     """ Simply adds auxiliary tasks to the IID experiment. """
     hparams: SelfSupervisedClassifier.HParams = SelfSupervisedClassifier.HParams(detach_classifier=False)
+
     model: SelfSupervisedClassifier = field(default=None, init=False)
+    reconstruction_task: Optional[VAEReconstructionTask] = field(default=None, init=False)
 
     def __post_init__(self):
         AuxiliaryTask.input_shape   = self.dataset.x_shape
@@ -45,17 +48,53 @@ class SelfSupervised(IID):
             )
         else:
             raise NotImplementedError("TODO: add other datasets.")
+        
+        # find the reconstruction task, if there is one.
+        for aux_task in self.model.tasks:
+            if isinstance(aux_task, VAEReconstructionTask):
+                self.reconstruction_task = aux_task
+                break
+
         dataloaders = self.dataset.get_dataloaders(self.hparams.batch_size)
         self.train_loader, self.valid_loader = dataloaders
 
     def run(self):
+        train_epoch_loss: List[LossInfo] = []
+        valid_epoch_loss: List[LossInfo] = []
+
         for epoch in range(self.hparams.epochs):
-            self.train_epoch(epoch)
-            self.test_epoch(epoch)
-            with torch.no_grad():
-                sample = model.generate(torch.randn(64, hparams.hidden_size))
-                sample = sample.cpu().view(64, 1, 28, 28)
-                save_image(sample, 'results/sample_' + str(epoch) + '.png')
+            for train_loss in self.train_iter(epoch, self.train_loader):
+                pass
+            train_epoch_loss.append(train_loss)
+            
+            for valid_loss in self.test_iter(epoch, self.valid_loader):
+                pass
+            valid_epoch_loss.append(valid_loss)
+
+            if self.reconstruction_task:
+                with torch.no_grad():
+                    sample = self.reconstruction_task.generate(torch.randn(64, self.hparams.hidden_size))
+                    sample = sample.cpu().view(64, 1, 28, 28)
+                    save_image(sample, os.path.join(self.config.log_dir, f"sample_{epoch}.png"))
+
+            if self.config.wandb:
+                # TODO: do some nice logging to wandb?:
+                wandb.log(TODO)
+        
+        import matplotlib.pyplot as plt
+        fig: plt.Figure = plt.figure()
+        plt.plot([loss.total_loss for loss in train_epoch_loss], label="train_loss")
+        plt.plot([loss.total_loss for loss in valid_epoch_loss], label="valid_loss")
+        plt.legend(loc='lower right')
+        fig.savefig(os.path.join(self.config.log_dir, "epoch_loss.jpg"))
+
+
+        fig: plt.Figure = plt.figure()
+        plt.plot([loss.metrics.accuracy for loss in train_epoch_loss], label="train_accuracy")
+        plt.plot([loss.metrics.accuracy for loss in valid_epoch_loss], label="valid_accuracy")
+        plt.legend(loc='lower right')
+        fig.savefig(os.path.join(self.config.log_dir, "epoch_accuracy.jpg"))
+
     
     def log_info(self, batch_loss_info: LossInfo, overall_loss_info: LossInfo) -> Dict:
         message: Dict[str, Any] = super().log_info(batch_loss_info, overall_loss_info)
@@ -69,26 +108,9 @@ class SelfSupervised(IID):
                 message[loss_name] = loss_str(loss_tensor)
         return message
 
-    def test_epoch(self, epoch: int):
-        model = self.model
-        dataloader = self.valid_loader
-        model.eval()
-        test_loss = 0.
-
-        overall_loss_info = LossInfo()
-
-        with torch.no_grad():
-            for i, (data, target) in enumerate(dataloader):
-                data = data.to(model.device)
-                batch_loss_info = model.get_loss(data, target)
-
-                if i == 0:
-                    n = min(data.size(0), 8)
-                    fake = model.reconstruct(data)
-                    # fake = recon_batch.view(model.hparams.batch_size, 1, 28, 28)
-                    comparison = torch.cat([data[:n], fake[:n]])
-                    save_image(comparison.cpu(), f"results/reconstruction_{epoch}.png", nrow=n)
-
-        test_loss /= len(dataloader.dataset)
-        print(f"====> Test set loss: {test_loss:.4f}")
-        print(*[f"{loss_name}: {loss_str(loss_tensor)}" for loss_name, loss_tensor in losses.items()], sep=" ")
+# if i == 0:
+            #     n = min(data.size(0), 8)
+            #     fake = self.reconstruction_task.reconstruct(data)
+            #     # fake = recon_batch.view(model.hparams.batch_size, 1, 28, 28)
+            #     comparison = torch.cat([data[:n], fake[:n]])
+            #     save_image(comparison.cpu(), f"results/reconstruction_{epoch}.png", nrow=n)

@@ -69,7 +69,6 @@ class VAEReconstructionTask(AuxiliaryTask):
         return x_hat.view(x.shape)
     
     def generate(self, z: Tensor) -> Tensor:
-        z = z.to(self.device)
         return self.forward(z)
 
     # Reconstruction + KL divergence losses summed over all elements and batch

@@ -30,6 +30,8 @@ class Config:
     # NOTE: Can be set directly with the command-line! (ex: "--device cuda")
     device: torch.device = torch.device("cuda" if cuda_available else "cpu")
     
+    wandb: str = ""  # Wandb setting (TODO)
+
     def __post_init__(self):
         # set the manual seed (for reproducibility)
         torch.manual_seed(self.random_seed)
