@@ -7,7 +7,7 @@ from torch.nn import functional as F
 from torch.autograd import grad
 
 from tasks.bases import AuxiliaryTask
-from models.common import LossInfo
+from common.losses import LossInfo
 
 class IrmTask(AuxiliaryTask):
     """IRM implementation taken from https://github.com/facebookresearch/InvariantRiskMinimization/blob/6aad47e689913b9bdad05880833530a5edac389e/code/colored_mnist/main.py#L107

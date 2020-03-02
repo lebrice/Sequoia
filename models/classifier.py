@@ -12,9 +12,8 @@ from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
 from config import Config
-from models.common import LossInfo
-
-
+from common.losses import LossInfo
+from common.metrics import Metrics, accuracy
 
 
 class Classifier(nn.Module):
@@ -55,46 +54,20 @@ class Classifier(nn.Module):
         self.config = config
 
         self.hidden_size = hparams.hidden_size  
-        self.loss = nn.CrossEntropyLoss()
+        self.classification_loss = nn.CrossEntropyLoss()
         self.device = self.config.device
 
         self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
 
-
-
-    def get_loss(self, x: Tensor, y: Tensor) -> LossInfo:
-        # TODO: return logs
-        loss_info = LossInfo()
-
-        h_x = self.encode(x)
-        y_pred = self.logits(h_x)
-        
-        loss_info.tensors["h_x"] = h_x
-        loss_info.tensors["y_pred"] = y_pred
-
-        loss_info += self.supervised_loss(y_pred, y)
-
-        return loss_info
-
-    def supervised_loss(self, y_pred: Tensor, y: Tensor) -> LossInfo:
-        supervised_loss = self.loss(y_pred, y)
-        metrics = self.get_metrics(y_pred, y)
-        loss_info = LossInfo(
-            supervised_loss,
-            losses={"supervised": supervised_loss},
-            metrics=metrics
+    def get_loss(self, x: Tensor, y: Tensor, h_x: Tensor=None, y_pred: Tensor=None) -> LossInfo:
+        h_x = self.encode(x) if h_x is None else h_x
+        y_pred = self.logits(h_x) if y_pred is None else y_pred
+        loss = self.classification_loss(y_pred, y)
+        return LossInfo(
+            total_loss=loss,
+            tensors=OrderedDict(x=x, h_x=h_x, y_pred=y_pred, y=y),
+            metrics=Metrics.from_tensors(y_pred=y_pred, y=y),
         )
-        return loss_info
-
-
-    def get_metrics(self, y_pred: Tensor, y: Tensor) -> Dict[str, Any]:
-        #TODO: calculate accuracy or other metrics.
-        batch_size = y_pred.shape[0]
-        _, predicted = torch.max(y_pred, 1)
-        accuracy = (predicted == y).sum() / batch_size
-        return {
-            "Accuracy": accuracy
-        }
 
     def encode(self, x: Tensor):
         x = self.preprocess_inputs(x)

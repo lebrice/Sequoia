@@ -5,6 +5,9 @@ from .mixup import ManifoldMixupTask, MixupTask
 from .patch_location import PatchLocationTask
 from .reconstruction import VAEReconstructionTask
 from .rotation import RotationTask
+from .torchvision.adjust_brightness import AdjustBrightnessTask
+from .torchvision.transformation import (ClassifyTransformationTask,
+                                         RegressTransformationTask)
 
 __all__ = [
     "AuxiliaryTask", "TaskType",
@@ -13,5 +16,7 @@ __all__ = [
     "ManifoldMixupTask", "MixupTask"
     "PatchLocationTask"
     "VAEReconstructionTask"
-    "RotationTask"
+    "RotationTask",
+    "AdjustBrightnessTask",
+    "ClassifyTransformationTask", "RegressTransformationTask",
 ]

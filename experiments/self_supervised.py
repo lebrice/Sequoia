@@ -1,71 +1,50 @@
 import pprint
 from collections import OrderedDict, defaultdict
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Type
 
 import simple_parsing
 import torch
 import torch.utils.data
 import tqdm
-from simple_parsing import ArgumentParser, field, subparsers
+from simple_parsing import ArgumentParser, field, subparsers, choice, list_field
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
-from tqdm import tqdm
 
+from common.losses import LossInfo
+from config import Config
 from datasets.mnist import Mnist
-from models.ss_classifier import SelfSupervisedClassifier
-from models.common import LossInfo
-from tasks import (AuxiliaryTask, IrmTask, JigsawPuzzleTask, ManifoldMixupTask,
-                   MixupTask, PatchLocationTask, RotationTask, TaskType,
-                   VAEReconstructionTask)
+from experiments.experiment import Experiment
+from experiments.iid import IID
+from models.ss_classifier import MnistClassifier, SelfSupervisedClassifier
+
 from tasks.torchvision.adjust_brightness import AdjustBrightnessTask
 from utils.logging import loss_str
+from tasks import AuxiliaryTask, VAEReconstructionTask
 
-from experiments.experiment import Experiment
-from config import Config
-
-@dataclass
-class HParamsWithAuxiliaryTasks(SelfSupervisedClassifier.HParams):
-    """ Set of Options / Command-line Parameters for the auxiliary tasks. """
-    reconstruction: VAEReconstructionTask.Options = VAEReconstructionTask.Options(coefficient=0.001)
-    mixup:          MixupTask.Options = MixupTask.Options(coefficient=0.001)
-    manifold_mixup: ManifoldMixupTask.Options = ManifoldMixupTask.Options(coefficient=0.1)
-    rotation:       RotationTask.Options = RotationTask.Options(coefficient=0.1)
-    jigsaw:         JigsawPuzzleTask.Options = JigsawPuzzleTask.Options(coefficient=0)
-    irm:            IrmTask.Options = IrmTask.Options(coefficient=1)
-    adjust_brightness: AdjustBrightnessTask.Options = AdjustBrightnessTask.Options(coefficient=1.0)
-
-    def get_tasks(self):
-        tasks = []
-        tasks.append(RotationTask(options=self.rotation))
-        tasks.append(JigsawPuzzleTask(options=self.jigsaw))
-        tasks.append(ManifoldMixupTask(options=self.manifold_mixup))
-        tasks.append(MixupTask(options=self.mixup))
-        tasks.append(IrmTask(options=self.irm))
-        tasks.append(AdjustBrightnessTask(options=self.adjust_brightness))
-        return tasks
-
-from experiments.iid import IID
 
 @dataclass
 class SelfSupervised(IID):
     """ Simply adds auxiliary tasks to the IID experiment. """
- 
-    hparams: HParamsWithAuxiliaryTasks = HParamsWithAuxiliaryTasks()
+    hparams: SelfSupervisedClassifier.HParams = SelfSupervisedClassifier.HParams(detach_classifier=False)
+    model: SelfSupervisedClassifier = field(default=None, init=False)
 
     def __post_init__(self):
         AuxiliaryTask.input_shape   = self.dataset.x_shape
         AuxiliaryTask.hidden_size   = self.hparams.hidden_size
-        self.model = SelfSupervisedClassifier(
-            input_shape=self.dataset.x_shape,
-            num_classes=self.dataset.y_shape[0],
-            hparams=self.hparams,
-            config=self.config,
-            tasks=self.hparams.get_tasks(),
-        )
+
+        if isinstance(self.dataset, Mnist):
+            from models.ss_classifier import MnistClassifier
+            self.model = MnistClassifier(
+                hparams=self.hparams,
+                config=self.config,
+                tasks=self.hparams.get_tasks(),
+            )
+        else:
+            raise NotImplementedError("TODO: add other datasets.")
         dataloaders = self.dataset.get_dataloaders(self.hparams.batch_size)
         self.train_loader, self.valid_loader = dataloaders
 
@@ -77,63 +56,18 @@ class SelfSupervised(IID):
                 sample = model.generate(torch.randn(64, hparams.hidden_size))
                 sample = sample.cpu().view(64, 1, 28, 28)
                 save_image(sample, 'results/sample_' + str(epoch) + '.png')
-
-
-    def train_epoch(self, epoch: int):
-        model = self.model
-        dataloader = self.train_loader
-
-        model.train()
-        train_loss = 0.
-
-        total_samples = len(dataloader.dataset)
-
-        total_aux_losses: Dict[str, float] = defaultdict(float)
-        pbar = tqdm(total=total_samples)
-        for batch_idx, (data, target) in enumerate(dataloader):
-            data = data.to(model.device)
-            batch_size = data.shape[0]
-
-            model.optimizer.zero_grad()
-            loss_info = model.get_loss(data, target)
-            
-            loss = loss_info.total_loss
-            losses = loss_info.losses
-
-            loss_info.total_loss.backward()
-            train_loss += loss.item()
-            model.optimizer.step()
-
-            for loss_name, loss_tensor in losses.items():
-                total_aux_losses[loss_name] += loss_tensor.item()
-
-            if batch_idx % model.config.log_interval == 0:
-                samples_seen = batch_idx * len(data)
-                percent_done = 100. * batch_idx/ len(dataloader)
-                average_loss_in_batch = loss.item() / len(data)
-
-                message: Dict[str, Any] = OrderedDict()
-                pbar.set_description(f"Epoch {epoch}")
-                message["Average Total Loss"] = average_loss_in_batch
-
-
-                for loss_name, loss_tensor in losses.items():
-                    if loss_name.endswith("_scaled"):
-                        continue
-                    scaled_loss_tensor = losses.get(f"{loss_name}_scaled")
-                    if scaled_loss_tensor is not None:
-                        message[loss_name] = f"{loss_str(scaled_loss_tensor)} ({loss_str(loss_tensor)})"
-                    else:
-                        message[loss_name] = loss_str(loss_tensor)
-                pbar.set_postfix(message)
-            
-            pbar.update(batch_size)
-
-        average_loss = train_loss / total_samples
-        pbar.close()
-        print(f"====> Epoch: {epoch} Average total loss: {average_loss:.4f}", end="\r")
-        return average_loss
-
+    
+    def log_info(self, batch_loss_info: LossInfo, overall_loss_info: LossInfo) -> Dict:
+        message: Dict[str, Any] = super().log_info(batch_loss_info, overall_loss_info)
+        for loss_name, loss_tensor in batch_loss_info.losses.items():
+            if loss_name.endswith("_scaled"):
+                continue
+            scaled_loss_tensor = batch_loss_info.losses.get(f"{loss_name}_scaled")
+            if scaled_loss_tensor is not None:
+                message[loss_name] = f"{loss_str(scaled_loss_tensor)} ({loss_str(loss_tensor)})"
+            else:
+                message[loss_name] = loss_str(loss_tensor)
+        return message
 
     def test_epoch(self, epoch: int):
         model = self.model
@@ -141,16 +75,12 @@ class SelfSupervised(IID):
         model.eval()
         test_loss = 0.
 
-        total_aux_losses: Dict[str, float] = defaultdict(float)
+        overall_loss_info = LossInfo()
 
         with torch.no_grad():
             for i, (data, target) in enumerate(dataloader):
                 data = data.to(model.device)
-                total_loss, losses = model.get_loss(data, target)
-                test_loss += total_loss
-
-                for loss_name, loss_tensor in losses.items():
-                    total_aux_losses[loss_name] += loss_tensor.item()
+                batch_loss_info = model.get_loss(data, target)
 
                 if i == 0:
                     n = min(data.size(0), 8)

@@ -10,7 +10,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 from .bases import AuxiliaryTask
-from models.common import LossInfo
+from common.losses import LossInfo
 
 def rotate(x: Tensor, angle: int) -> Tensor:
     # TODO: Test that this works.

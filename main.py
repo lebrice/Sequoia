@@ -22,6 +22,7 @@ from experiments.experiment import Experiment
 from experiments.iid import IID
 from experiments.self_supervised import SelfSupervised
 from datasets.mnist import Mnist
+
 @dataclass
 class RunSettings:
     """ Settings for which 'experiment' to run. """

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple, Type, TypeVar, NamedTuple
+from typing import Any, Dict, List, NamedTuple, Tuple, Type, TypeVar
 
 import torch
 from simple_parsing import MutableField as mutable_field
@@ -11,11 +11,13 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
+from common.losses import LossInfo
 from config import Config
-
-from models.common import LossInfo
 from models.classifier import Classifier
-from tasks import AuxiliaryTask, VAEReconstructionTask
+from tasks import (AuxiliaryTask, IrmTask, JigsawPuzzleTask, ManifoldMixupTask,
+                   MixupTask, PatchLocationTask, RotationTask, TaskType,
+                   VAEReconstructionTask, AdjustBrightnessTask)
+
 
 class SelfSupervisedClassifier(Classifier):
     @dataclass
@@ -31,82 +33,93 @@ class SelfSupervisedClassifier(Classifier):
         # Prevent gradients of the classifier from backpropagating into the encoder.
         detach_classifier: bool = False
 
-        reconstruction = VAEReconstructionTask.Options(coefficient=1e-3)
+        reconstruction: VAEReconstructionTask.Options = VAEReconstructionTask.Options(coefficient=1e-3)
+        mixup:          MixupTask.Options             = MixupTask.Options(coefficient=1e-3)
+        manifold_mixup: ManifoldMixupTask.Options     = ManifoldMixupTask.Options(coefficient=1e-3)
+        rotation:       RotationTask.Options          = RotationTask.Options(coefficient=1e-3)
+        jigsaw:         JigsawPuzzleTask.Options      = JigsawPuzzleTask.Options(coefficient=0)
+        irm:            IrmTask.Options               = IrmTask.Options(coefficient=1e-3)
+        adjust_brightness: AdjustBrightnessTask.Options = AdjustBrightnessTask.Options(coefficient=1e-3)
+
+        def get_tasks(self):
+            tasks: List[AuxiliaryTask] = []
+            tasks.append(VAEReconstructionTask(options=self.reconstruction))
+            tasks.append(MixupTask(options=self.mixup))
+            tasks.append(ManifoldMixupTask(options=self.manifold_mixup))
+            tasks.append(RotationTask(options=self.rotation))
+            tasks.append(JigsawPuzzleTask(options=self.jigsaw))
+            tasks.append(IrmTask(options=self.irm))
+            tasks.append(AdjustBrightnessTask(options=self.adjust_brightness))
+            return tasks
+
+
 
     def __init__(self, tasks: List[AuxiliaryTask], hparams: HParams, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, hparams=hparams, **kwargs)
         self.tasks: List[AuxiliaryTask] = nn.ModuleList(tasks)  # type: ignore
-        self.reconstruction_task = VAEReconstructionTask(options=self.hparams.reconstruction)
-
         # Share the relevant parameters with all the auxiliary tasks.
         AuxiliaryTask.encoder       = self.encoder
         AuxiliaryTask.classifier    = self.classifier
         AuxiliaryTask.preprocessing = self.preprocess_inputs
 
+        if self.config.verbose:
+            print(self)
+            print("Auxiliary tasks:")
+            for task in self.tasks:
+                print(f"{task.name} - enabled: {task.enabled}, coefficient: {task.coefficient}")
+
+
     def get_loss(self, x: Tensor, y: Tensor=None) -> LossInfo:
-        loss_tuple = LossInfo()
+        loss_info = LossInfo()
 
         h_x = self.encode(x)
         y_pred = self.logits(h_x)
         
-        loss_tuple.tensors["h_x"] = h_x
-        loss_tuple.tensors["y_pred"] = y_pred
+        loss_info.tensors["h_x"] = h_x
+        loss_info.tensors["y_pred"] = y_pred
 
         if y is not None:
-            loss_tuple += self.supervised_loss(y_pred, y)
+            supervised_loss = super().get_loss(x, y, h_x=h_x, y_pred=y_pred)
+            loss_info.losses["supervised"] = supervised_loss.total_loss
+            loss_info += supervised_loss
 
         for aux_task in self.tasks:
             if aux_task.enabled:
-                loss_tuple += aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y) 
-
-        return loss_tuple
-
-    def unsupervised_loss(self, x: Tensor, h_x: Tensor=None, y_pred: Tensor=None) -> LossInfo:
-        x = self.preprocess_inputs(x)
-        h_x = self.encode(x) if h_x is None else h_x
-        y_pred = self.logits(h_x) if y_pred is None else y_pred
-        losses = LossInfo()
-        raise NotImplementedError("TODO")
-
-    def supervised_loss(self, y_pred: Tensor, y: Tensor) -> LossInfo:
-        supervised_loss = self.classification_loss(y_pred, y)
-        metrics = self.get_metrics(y_pred, y)
+                aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y)
+                if self.config.verbose:
+                    print(f"{aux_task.name}:\t {aux_task_loss.total_loss.item()}")
+                loss_info += aux_task_loss
         
-        loss_info = LossInfo(
-            supervised_loss,
-            losses={"supervised": supervised_loss},
-            metrics=metrics
-        )
         return loss_info
-
-
-    def get_metrics(self, y_pred: Tensor, y: Tensor) -> Dict[str, Any]:
-        #TODO: calculate accuracy or other metrics.
-        batch_size = y_pred.shape[0]
-        _, predicted = torch.max(y_pred, 1)
-        accuracy = (predicted == y).sum() / batch_size
-        return {
-            "Accuracy": accuracy
-        }
-
-    def encode(self, x: Tensor):
-        x = self.preprocess_inputs(x)
-        return self.encoder(x)
-
-    def preprocess_inputs(self, x: Tensor) -> Tensor:
-        return x.view([x.shape[0], -1])
 
     def logits(self, h_x: Tensor) -> Tensor:
         if self.hparams.detach_classifier:
             h_x = h_x.detach()
         return self.classifier(h_x)
 
-    def reconstruct(self, x: Tensor) -> Tensor:  
-        x = self.preprocess_inputs(x)
-        h_x = self.encode(x)
-        x_hat = self.reconstruction_task(h_x)
-        return x_hat.view(x.shape)
-    
-    def generate(self, z: Tensor) -> Tensor:
-        z = z.to(self.device)
-        return self.reconstruction_task(z)
+
+class MnistClassifier(SelfSupervisedClassifier):
+    def __init__(self,
+                 tasks: List[AuxiliaryTask],
+                 hparams: Classifier.HParams,
+                 config: Config):
+        self.hidden_size = hparams.hidden_size
+        encoder = nn.Sequential(
+            nn.Linear(784, 400),
+            nn.ReLU(),
+            nn.Linear(400, self.hidden_size),
+            nn.Sigmoid(),
+        )
+        classifier = nn.Linear(self.hidden_size, 10)
+        
+
+
+        super().__init__(
+            tasks=tasks,
+            input_shape=(1,28,28),
+            num_classes=10,
+            encoder=encoder,
+            classifier=classifier,
+            hparams=hparams,
+            config=config,
+        )

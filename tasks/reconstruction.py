@@ -7,7 +7,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 from .bases import AuxiliaryTask
-
+from common.losses import LossInfo
 
 class VAEReconstructionTask(AuxiliaryTask):
     """ Task that adds the VAE loss (reconstruction + KL divergence). 
@@ -22,13 +22,12 @@ class VAEReconstructionTask(AuxiliaryTask):
         """ Settings & Hyper-parameters related to the VAEReconstructionTask. """
         code_size: int = 50  # dimensions of the VAE code-space.
 
-    def __init__(self, options: Options):
-        super().__init__(options=options)
-        self.code_size = options.code_size
-        
+    def __init__(self, coefficient: float=None, options: "VAEReconstructionTask.Options"=None):
+        super().__init__(coefficient=coefficient, options=options)
+        self.code_size = self.options.code_size
         # add the rest of the VAE layers: (Mu, Sigma, and the decoder)
-        self.mu     = nn.Linear(self.hidden_size, self.code_size)
-        self.logvar = nn.Linear(self.hidden_size, self.code_size)
+        self.mu     = nn.Linear(AuxiliaryTask.hidden_size, self.code_size)
+        self.logvar = nn.Linear(AuxiliaryTask.hidden_size, self.code_size)
         self.decoder = nn.Sequential(
             nn.Linear(self.code_size, 400),
             nn.ReLU(),
@@ -49,14 +48,29 @@ class VAEReconstructionTask(AuxiliaryTask):
         z = mu + eps*std
         return z
 
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> Tensor:
+    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> LossInfo:
         h_x = h_x.view([h_x.shape[0], -1])
         mu, logvar = self.mu(h_x), self.logvar(h_x)
         z = self.reparameterize(mu, logvar)
         x_hat = self.decoder(z)
-        loss = self.reconstruction_loss(x_hat, x)
-        loss += self.kl_divergence_loss(mu, logvar)
-        return loss
+        
+        recon_loss = self.reconstruction_loss(x_hat, x)
+        kl_loss = self.kl_divergence_loss(mu, logvar)
+        loss = recon_loss + kl_loss
+        loss_info = LossInfo()
+        loss_info.total_loss = loss
+        loss_info.losses["reconstruction"] = recon_loss
+        loss_info.losses["kl"] = kl_loss
+        return loss_info
+
+    def reconstruct(self, x: Tensor) -> Tensor:  
+        h_x = self.encode(x)
+        x_hat = self.forward(h_x)
+        return x_hat.view(x.shape)
+    
+    def generate(self, z: Tensor) -> Tensor:
+        z = z.to(self.device)
+        return self.forward(z)
 
     # Reconstruction + KL divergence losses summed over all elements and batch
     @staticmethod

@@ -7,7 +7,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 from .bases import AuxiliaryTask
-from models.common import LossInfo
+from common.losses import LossInfo
 
 def mixup(x1: Tensor, x2: Tensor, coeff: Tensor) -> Tensor:
     assert coeff.dim() == 1

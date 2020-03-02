@@ -33,6 +33,8 @@ class Experiment:
     
     model: nn.Module = field(default=None, init=False)
 
+    class_incremental: bool = False
+
     def __post_init__(self):
         """ Called after __init__, used to initialize all missing fields.
         
@@ -41,6 +43,5 @@ class Experiment:
         """ 
         pass
 
-    @abstractmethod
     def run(self):
         raise NotImplementedError("Implement the 'run' method in a subclass.")

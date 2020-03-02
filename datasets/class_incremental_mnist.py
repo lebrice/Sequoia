@@ -4,16 +4,16 @@ from typing import *
 from datasets.mnist import Mnist
 import torch
 from torch import Tensor
+from collections import OrderedDict
 
 @dataclass
 class ClassIncrementalConfig:
     classes_per_task: int = 2
- 
 
 @dataclass
 class ClassIncrementalMnist(Dataset):
-    config: ClassImcrementalConfig = ClassIncrementalConfig()
-    datasets: Dict[int, Tuple[Tensor, Tensor]]
+    config: ClassIncrementalConfig = ClassIncrementalConfig()
+    datasets: Dict[int, Tuple[Tensor, Tensor]] = field(default_factory=OrderedDict, init=False)
 
     def __post_init__(self):
         super().__post_init__()

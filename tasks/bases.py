@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 from dataclasses import InitVar, dataclass, field
 from typing import *
+from typing import ClassVar
 
 import torch
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
-from models.common import LossInfo
+from common.losses import LossInfo
 
 class AuxiliaryTask(nn.Module):
     """ Represents an additional loss to apply to a `Classifier`.
@@ -17,13 +18,13 @@ class AuxiliaryTask(nn.Module):
     That loss should be backpropagatable through the feature extractor (the
     `encoder` attribute). 
     """
-    input_shape: Tuple[int, ...] = ()
-    hidden_size: int = -1
+    input_shape: ClassVar[Tuple[int, ...]] = ()
+    hidden_size: ClassVar[int] = -1
     
-    # Modules shared with with the classifier. 
-    encoder: nn.Module
-    classifier: nn.Module
-    preprocessing: Callable[[Tensor], Tensor]
+    # Class variables for holding the Modules shared with with the classifier. 
+    encoder: ClassVar[nn.Module]
+    classifier: ClassVar[nn.Module]
+    preprocessing: ClassVar[Callable[[Tensor], Tensor]]
     
     @dataclass
     class Options:
@@ -31,7 +32,7 @@ class AuxiliaryTask(nn.Module):
         # Coefficient used to scale the task loss before adding it to the total.
         coefficient: float = 0.
 
-    def __init__(self, options: Options=None):
+    def __init__(self, options: Options=None, *args, **kwargs):
         """Creates a new Auxiliary Task to further train the encoder.
         
         Should use the `encoder` and `classifier` components of the parent
@@ -43,12 +44,12 @@ class AuxiliaryTask(nn.Module):
         
         Parameters
         ----------
-        - encoder : nn.Module
-        
-            The encoder (or feature extractor) of the parent `Classifier`.
-        - classifier : nn.Module
-        
-            The classifier (logits) layer of the parent `Classifier`.
+        - coefficient : float, optional, by default None
+
+            The coefficient of the loss for this auxiliary task. When None, the
+            coefficient from the `options` is used. When `options` and
+            `coefficient` are both given, `coefficient` is used instead of
+            `options.coefficient`.
         - options : TaskOptions, optional, by default None
         
             The `Options` related to this task, containing the loss 
@@ -56,13 +57,15 @@ class AuxiliaryTask(nn.Module):
             hyperparameters specific to this `AuxiliaryTask`.
         """
         super().__init__()
-        # self.encoder: nn.Module = encoder
-        # self.classifier: nn.Module = classifier
-        self.options: AuxiliaryTask.Options = options if options is not None else self.Options()
-        # self.preprocessing: Callable[[Tensor], Tensor] = preprocessing or (lambda x: x)
+        self.options = options or self.Options(*args, **kwargs)
+        self._coefficient = nn.Parameter(torch.Tensor([self.options.coefficient]))  # type: ignore
 
     def encode(self, x: Tensor) -> Tensor:
-        return self.encoder(self.preprocessing(x))
+        x = AuxiliaryTask.preprocessing(x)
+        return AuxiliaryTask.encoder(x)
+
+    def logits(self, h_x: Tensor) -> Tensor:
+        return AuxiliaryTask.classifier(h_x)
 
     @abstractmethod
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
@@ -113,7 +116,12 @@ class AuxiliaryTask(nn.Module):
 
     @property
     def coefficient(self) -> float:
-        return self.options.coefficient
+        return self._coefficient
+
+    @coefficient.setter
+    def coefficient(self, value: float) -> None:
+        self._coefficient.data = value
+        self.options.coefficient = value
 
     @property
     def name(self) -> str:

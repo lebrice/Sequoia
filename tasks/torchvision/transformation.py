@@ -7,7 +7,7 @@ from typing import Dict, Set, Callable, Any, List, Tuple, Optional
 from tasks.bases import AuxiliaryTask
 from functools import wraps
 
-from models.common import LossInfo
+from common.losses import LossInfo
 
 def wrap_pil_transform(function: Callable):
     def _transform(x, arg):

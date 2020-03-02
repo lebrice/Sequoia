@@ -28,9 +28,20 @@ class Mnist(Dataset):
     train: data.Dataset = field(default=None, init=False)
     valid: data.Dataset = field(default=None, init=False)
 
+    class_incremental: bool = False
+    n_classes_per_task: int = 1
+
     def __post_init__(self):
         self.train = datasets.MNIST(self.data_dir, train=True,  download=True, transform=transforms.ToTensor())
         self.valid = datasets.MNIST(self.data_dir, train=False, download=True, transform=transforms.ToTensor())
+
+        if self.class_incremental:
+            self.train.targets, train_sort_indices = torch.sort(self.train.targets)
+            self.valid.targets, valid_sort_indices = torch.sort(self.valid.targets)
+            self.train.data = self.train.data[train_sort_indices]
+            self.valid.data = self.valid.data[valid_sort_indices]
+            self.classes = self.train.targets.unique()
+            print(self.classes)
 
     def get_dataloaders(self, batch_size: int = 64, config: Config=None) -> Tuple[DataLoader, DataLoader]:
         """Create the train and test dataloaders using the passed arguments.
