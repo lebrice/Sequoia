@@ -18,8 +18,8 @@ from pathlib import Path
 class Config:
     """Settings related to the training setup. """
 
-    debug: bool = False      # enable debug mode.
-    verbose: bool = False    # enable verbose mode.
+    debug: bool = field(alias="-d", default=False, action="store_true", nargs=0)      # enable debug mode.
+    verbose: bool = field(alias="-v", default=False, action="store_true", nargs=0)    # enable verbose mode.
 
     log_dir: Path = Path("results") # Logging directory.
     log_interval: int = 10   # How many batches to wait between logging calls.

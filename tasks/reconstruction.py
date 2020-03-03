@@ -25,7 +25,7 @@ class VAEReconstructionTask(AuxiliaryTask):
 
     def __init__(self, coefficient: float=None, options: "VAEReconstructionTask.Options"=None):
         super().__init__(coefficient=coefficient, options=options)
-        self.code_size = self.options.code_size
+        self.code_size = self.options.code_size  # type: ignore
         # add the rest of the VAE layers: (Mu, Sigma, and the decoder)
         self.mu     = nn.Linear(AuxiliaryTask.hidden_size, self.code_size)
         self.logvar = nn.Linear(AuxiliaryTask.hidden_size, self.code_size)

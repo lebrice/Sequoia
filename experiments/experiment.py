@@ -6,7 +6,7 @@ from typing import ClassVar
 
 import torch
 import tqdm
-from simple_parsing import field, choice
+from simple_parsing import field, choice, subparsers
 from torch import nn, Tensor
 from torch.utils.data import DataLoader
 
@@ -17,6 +17,8 @@ from datasets import Dataset
 from datasets.mnist import Mnist
 from models.classifier import Classifier
 from tasks import AuxiliaryTask
+
+from models.ss_classifier import SelfSupervisedClassifier
 
 @dataclass  # type: ignore
 class Experiment:
@@ -29,13 +31,14 @@ class Experiment:
 
     TODO: Maybe add some code for saving/restoring experiments here?
     """
-    
+    hparams: Classifier.HParams = subparsers({
+        "baseline": Classifier.HParams(),
+        "self-supervised": SelfSupervisedClassifier.HParams(),
+    })
     dataset: Dataset = choice({
         "mnist": Mnist(),
     }, default="mnist")
     config: Config = Config()
-
-    hparams: Classifier.HParams = Classifier.HParams()
     model: Classifier = field(default=None, init=False)
     
     def __post_init__(self):
@@ -70,28 +73,36 @@ class Experiment:
     def run(self):
         self.load()
 
-        train_epoch_loss: List[LossInfo] = []
-        valid_epoch_loss: List[LossInfo] = []
+        train_epoch_losses: List[LossInfo] = []
+        valid_epoch_losses: List[LossInfo] = []
 
         for epoch in range(self.hparams.epochs):
+            train_batch_losses: List[LossInfo] = []
+            valid_batch_losses: List[LossInfo] = []
+
             for train_loss in self.train_iter(epoch, self.train_loader):
-                pass
-            train_epoch_loss.append(train_loss)
+                train_batch_losses.append(train_loss)
+            train_epoch_losses.append(train_loss)
             
             for valid_loss in self.test_iter(epoch, self.valid_loader):
-                pass
-            valid_epoch_loss.append(valid_loss)
+                valid_batch_losses.append(valid_loss)
+            valid_epoch_losses.append(valid_loss)
 
             if self.config.wandb:
                 # TODO: do some nice logging to wandb?:
                 wandb.log(TODO)
+
+            self.make_plots_for_epoch(epoch, train_batch_losses, valid_batch_losses)
         
-        self.make_plots(train_epoch_loss, valid_epoch_loss)
+        self.make_plots(train_epoch_losses, valid_epoch_losses)
     
     @abstractmethod
     def make_plots(self, train_epoch_loss: List[LossInfo], valid_epoch_loss: List[LossInfo]):
         pass
 
+    @abstractmethod
+    def make_plots_for_epoch(self, epoch: int, train_batch_losses: List[LossInfo], valid_batch_losses: List[LossInfo]):
+        pass
 
     def train_batch(self, batch_idx: int, data: Tensor, target: Tensor) -> LossInfo:
         batch_size = data.shape[0]

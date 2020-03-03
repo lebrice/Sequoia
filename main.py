@@ -1,37 +1,23 @@
 import pprint
-from collections import defaultdict, OrderedDict
 from dataclasses import asdict, dataclass
 from typing import Dict, List, Tuple, Any
 
-import simple_parsing
-import torch
-import torch.utils.data
-import tqdm
-from tqdm import tqdm
-from simple_parsing import ArgumentParser, field, subparsers
-from torch import Tensor, nn, optim
-from torch.nn import functional as F
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
-from torchvision.utils import save_image
-
-from models.classifier import Classifier
-from models.ss_classifier import SelfSupervisedClassifier
-
+from simple_parsing import ArgumentParser, subparsers
 from experiments.experiment import Experiment
-from experiments.baseline import Baseline
-from experiments.self_supervised import SelfSupervised
+from experiments.iid import IID
 from experiments.class_incremental import ClassIncremental
-from datasets.mnist import Mnist
 
 @dataclass
 class RunSettings:
-    """ Settings for which 'experiment' to run. """
-
+    """ Settings for which 'experiment' (experimental setting) to run. 
+    
+    Each setting has its own set of command-line arguments.
+       
+    
+    """
     experiment: Experiment = subparsers({
-        "baseline": Baseline,
-        "baseline_aux": SelfSupervised, # TODO:
-        "class_incremental": ClassIncremental
+        "iid": IID,
+        "class_incremental": ClassIncremental,
     })
 
     def __post_init__(self):
