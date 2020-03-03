@@ -105,9 +105,11 @@ class MnistClassifier(Classifier):
             ConvBlock(16, 32, kernel_size=3, padding=1),
             ConvBlock(32, self.hidden_size, kernel_size=3, padding=1),
             ConvBlock(self.hidden_size, self.hidden_size, kernel_size=3, padding=1),
-            Flatten(),
         )
-        classifier = nn.Linear(self.hidden_size, 10)
+        classifier = nn.Sequential(
+            Flatten(),
+            nn.Linear(self.hidden_size, 10),
+        )
         super().__init__(
             input_shape=(1,28,28),
             num_classes=10,

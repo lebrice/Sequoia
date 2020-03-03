@@ -11,6 +11,8 @@ from torch.nn import functional as F
 
 from .bases import AuxiliaryTask
 from common.losses import LossInfo
+from common.layers import Flatten
+
 
 def rotate(x: Tensor, angle: int) -> Tensor:
     # TODO: Test that this works.
@@ -27,7 +29,10 @@ def rotate(x: Tensor, angle: int) -> Tensor:
 class RotationTask(AuxiliaryTask):
     def __init__(self, options: AuxiliaryTask.Options=None):
         super().__init__(options)
-        self.classify_rotation: nn.Linear = nn.Linear(self.hidden_size, 4)
+        self.classify_rotation: nn.Linear = nn.Sequential(
+            Flatten(),
+            nn.Linear(AuxiliaryTask.hidden_size, 4),
+        )
         self.loss = nn.CrossEntropyLoss()
 
     def get_loss(self,

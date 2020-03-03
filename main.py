@@ -21,6 +21,7 @@ from models.ss_classifier import SelfSupervisedClassifier
 from experiments.experiment import Experiment
 from experiments.baseline import Baseline
 from experiments.self_supervised import SelfSupervised
+from experiments.class_incremental import ClassIncremental
 from datasets.mnist import Mnist
 
 @dataclass
@@ -30,6 +31,7 @@ class RunSettings:
     experiment: Experiment = subparsers({
         "baseline": Baseline(dataset=Mnist()),
         "baseline_aux": SelfSupervised, # TODO:
+        "class_incremental": ClassIncremental
     })
 
     def __post_init__(self):

@@ -4,7 +4,7 @@
 import torch
 from torch import nn, Tensor
 
-from typing import List, Deque, Optional, TypeVar, Iterable, Tuple
+from typing import List, Deque, Optional, TypeVar, Iterable, Tuple, Union
 from collections import deque
 import collections
 
@@ -25,6 +25,26 @@ def n_consecutive(items: Iterable[T], n: int=2, yield_last_batch=True) -> Iterab
             values.clear()
     if values and yield_last_batch:
         yield tuple(values)
+
+
+def to_list(tensors: Iterable[Union[T, Tensor]]) -> List[T]:
+    """Converts a list of tensors into a list of values.
+    
+    `tensots` must contain scalar tensors.Any
+    
+    Parameters
+    ----------
+    - tensors : Iterable[Tensor]
+    
+        some scalar tensors
+    
+    Returns
+    -------
+    List[float]
+        A list of their values.
+    """
+    return list(map(lambda v: v.item() if isinstance(v, Tensor) else c, tensors))
+
 
 class TensorCache(MutableMapping[Tensor, Tensor]):
     """A mutable mapping of individual (not batched) tensors to their outputs.

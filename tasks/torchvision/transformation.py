@@ -8,16 +8,18 @@ from tasks.bases import AuxiliaryTask
 from functools import wraps
 
 from common.losses import LossInfo
+from common.layers import Flatten
+
 
 def wrap_pil_transform(function: Callable):
-    def _transform(x, arg):
-        x = TF.to_pil_image(x)
+    def _transform(img_x, arg):
+        x = TF.to_pil_image(img_x)
         x = function(x, arg)
-        return TF.to_tensor(x)
+        return TF.to_tensor(x).view(img_x.shape)
 
     @wraps(function)
     def _pil_transform(x: Tensor, arg: Any):
-        return torch.cat([_transform(x_i, arg) for x_i in x])
+       return torch.cat([_transform(x_i, arg) for x_i in x]).view(x.shape)
     return _pil_transform
 
 
@@ -41,6 +43,7 @@ class ClassifyTransformationTask(AuxiliaryTask):
 
         self.nargs = len(self.function_args)
         self.choose_transformation = nn.Sequential(
+            Flatten(),
             nn.Linear(self.hidden_size * (2 if compare_with_original else 1), self.nargs),
             nn.Sigmoid(),
         )
@@ -49,7 +52,6 @@ class ClassifyTransformationTask(AuxiliaryTask):
         loss_info = LossInfo()
         batch_size: int = x.shape[0]
         ones = torch.ones(batch_size, dtype=torch.long)
-
         for i, fn_arg in enumerate(self.function_args):
             # vector of 0's for arg 0, vector of 1's for arg 1, etc.
             true_label = i * ones

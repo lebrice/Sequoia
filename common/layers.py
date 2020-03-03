@@ -2,11 +2,19 @@ from collections import OrderedDict
 
 import torch
 from torch import nn, Tensor
-
+from typing import Optional, Tuple
 
 class Flatten(nn.Module):
     def forward(self, inputs):
         return inputs.view([inputs.shape[0], -1])
+
+class Reshape(nn.Module):
+    def __init__(self, target_shape: Tuple[int, ...]):
+        self.target_shape = target_shape
+        super().__init__()
+
+    def forward(self, inputs):
+        return inputs.reshape([inputs.shape[0], *self.target_shape])
 
 class ConvBlock(nn.Module):
     def __init__(self,
@@ -36,3 +44,44 @@ class ConvBlock(nn.Module):
         x = self.relu(x)
         return self.pool(x)
 
+class DeConvBlock(nn.Module):
+    def __init__(self,
+                 in_channels: int,
+                 out_channels: int,
+                 hidden_channels: Optional[int]=None,
+                 kernel_size: int=3,
+                 padding: int=1,
+                 **kwargs):
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.hidden_channels = hidden_channels or out_channels
+        self.kernel_size = kernel_size
+        super().__init__()
+        self.conv1 = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=self.hidden_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+            **kwargs,
+        )
+        self.norm1 = nn.BatchNorm2d(self.hidden_channels)
+        self.conv2 = nn.Conv2d(
+            in_channels=self.hidden_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+            **kwargs,
+        )
+        self.norm2 = nn.BatchNorm2d(self.hidden_channels)
+        self.relu = nn.ReLU()
+        self.upsample = nn.Upsample(scale_factor=2)
+    
+    def forward(self, x):
+        x = self.upsample(x)
+        x = self.conv1(x)
+        x = self.norm1(x)
+        x = self.relu(x)
+        x = self.conv2(x)
+        x = self.norm2(x)
+        x = self.relu(x)
+        return x

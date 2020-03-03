@@ -19,20 +19,7 @@ from config import Config
 from utils import cuda_available, gpus_available
 from utils.utils import n_consecutive
 
-from .bases import Dataset
-
-
-@dataclass
-class TaskConfig:
-    id: int
-    classes: List[int]
-    class_counts: List[int]
-    start_index: int
-    end_index: int = field(init=False)
-
-    def __post_init__(self):
-        self.end_index = self.start_index + sum(self.class_counts)
-
+from .bases import Dataset, TaskConfig
 
 @dataclass
 class Mnist(Dataset):
@@ -109,55 +96,6 @@ class Mnist(Dataset):
         )
         return train_loader, valid_loader
 
-    def make_class_incremental(self, dataset: datasets.MNIST) -> List[TaskConfig]:
-        task_configs: List[TaskConfig] = []
-
-        dataset.targets, train_sort_indices = torch.sort(dataset.targets)
-        dataset.data = dataset.data[train_sort_indices]
-        classes, counts = dataset.targets.unique_consecutive(return_counts=True)
-        classes_and_counts = list(zip(classes, counts))
-        
-        if self.config.random_class_ordering:
-            random.shuffle(classes_and_counts)
-        n = self.config.n_classes_per_task
-    
-        old_x = dataset.data
-        old_y = dataset.targets
-        new_x = torch.empty_like(dataset.data)
-        new_y = torch.empty_like(dataset.targets)
-        
-        current_index = 0
-        for i, task_classes_and_counts in enumerate(n_consecutive(classes_and_counts, n)):
-            task_classes, task_counts = zip(*task_classes_and_counts)
-            selected_mask = sum([old_y==task_class for task_class in task_classes])
-            total_count = sum(task_counts).item()  # type: ignore
-            
-            task_config = TaskConfig(
-                id=i,
-                classes=list(task_classes),
-                class_counts=list(task_counts),
-                start_index= current_index,
-            )
-            task_configs.append(task_config)
-
-            permutation = torch.randperm(total_count)
-
-            x = old_x[selected_mask]
-            y = old_y[selected_mask]
-            x = x[permutation]
-            y = y[permutation]
-            assert x.shape[0] == y.shape[0] == total_count
-            
-            new_x[current_index: current_index + total_count] = x
-            new_y[current_index: current_index + total_count] = y
-
-            current_index += total_count
-            
-        dataset.data = new_x
-        dataset.targets = new_y
-        
-        return task_configs
-     
     def save_images_for_each_task(self,
                                   dataset: datasets.MNIST,
                                   tasks: List[TaskConfig],

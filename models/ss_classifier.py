@@ -17,7 +17,7 @@ from models.classifier import Classifier
 from tasks import (AuxiliaryTask, IrmTask, JigsawPuzzleTask, ManifoldMixupTask,
                    MixupTask, PatchLocationTask, RotationTask, TaskType,
                    VAEReconstructionTask, AdjustBrightnessTask)
-
+from common.layers import Flatten, ConvBlock
 
 class SelfSupervisedClassifier(Classifier):
     @dataclass
@@ -41,27 +41,35 @@ class SelfSupervisedClassifier(Classifier):
         irm:            IrmTask.Options               = IrmTask.Options(coefficient=1e-3)
         adjust_brightness: AdjustBrightnessTask.Options = AdjustBrightnessTask.Options(coefficient=1e-3)
 
-        def get_tasks(self):
+        def get_tasks(self) -> List[AuxiliaryTask]:
             tasks: List[AuxiliaryTask] = []
-            tasks.append(VAEReconstructionTask(options=self.reconstruction))
-            tasks.append(MixupTask(options=self.mixup))
-            tasks.append(ManifoldMixupTask(options=self.manifold_mixup))
-            tasks.append(RotationTask(options=self.rotation))
-            tasks.append(JigsawPuzzleTask(options=self.jigsaw))
-            tasks.append(IrmTask(options=self.irm))
-            tasks.append(AdjustBrightnessTask(options=self.adjust_brightness))
+            if self.reconstruction.coefficient != 0:
+                tasks.append(VAEReconstructionTask(options=self.reconstruction))
+            if self.mixup.coefficient != 0:
+                tasks.append(MixupTask(options=self.mixup))
+            if self.manifold_mixup.coefficient != 0:
+                tasks.append(ManifoldMixupTask(options=self.manifold_mixup))
+            if self.rotation.coefficient != 0:
+                tasks.append(RotationTask(options=self.rotation))
+            if self.jigsaw.coefficient != 0:
+                tasks.append(JigsawPuzzleTask(options=self.jigsaw))
+            if self.irm.coefficient != 0:
+                tasks.append(IrmTask(options=self.irm))
+            if self.adjust_brightness.coefficient != 0:
+                tasks.append(AdjustBrightnessTask(options=self.adjust_brightness))
             return tasks
-
-
 
     def __init__(self, tasks: List[AuxiliaryTask], hparams: HParams, *args, **kwargs):
         super().__init__(*args, hparams=hparams, **kwargs)
-        self.tasks: List[AuxiliaryTask] = nn.ModuleList(tasks)  # type: ignore
         # Share the relevant parameters with all the auxiliary tasks.
         AuxiliaryTask.encoder       = self.encoder
         AuxiliaryTask.classifier    = self.classifier
         AuxiliaryTask.preprocessing = self.preprocess_inputs
-
+        # TODO: Share the hidden size dimensions of this model with the Auxiliary tasks so they know how big the h_x is going to actually be.
+        AuxiliaryTask.hidden_size = 100
+        
+        self.tasks: List[AuxiliaryTask] = nn.ModuleList(tasks)  # type: ignore
+        self.tasks.extend(self.hparams.get_tasks())
         if self.config.verbose:
             print(self)
             print("Auxiliary tasks:")
@@ -97,7 +105,6 @@ class SelfSupervisedClassifier(Classifier):
             h_x = h_x.detach()
         return self.classifier(h_x)
 
-
 class MnistClassifier(SelfSupervisedClassifier):
     def __init__(self,
                  tasks: List[AuxiliaryTask],
@@ -105,15 +112,15 @@ class MnistClassifier(SelfSupervisedClassifier):
                  config: Config):
         self.hidden_size = hparams.hidden_size
         encoder = nn.Sequential(
-            nn.Linear(784, 400),
-            nn.ReLU(),
-            nn.Linear(400, self.hidden_size),
-            nn.Sigmoid(),
+            ConvBlock(1, 16),
+            ConvBlock(16, 32),
+            ConvBlock(32, self.hidden_size),
+            ConvBlock(self.hidden_size, self.hidden_size),
         )
-        classifier = nn.Linear(self.hidden_size, 10)
-        
-
-
+        classifier = nn.Sequential(
+            Flatten(),
+            nn.Linear(self.hidden_size, 10),
+        )
         super().__init__(
             tasks=tasks,
             input_shape=(1,28,28),

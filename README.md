@@ -19,22 +19,24 @@ Different experiment templates can be found in the `experiments` folder.
 Note that we use [simple_parsing](https://github.com/lebrice/SimpleParsing) to
 make
 
-- Baseline (iid setting)
+TODO: This doesn't make much sense (baseline vs baseline_aux, etc etc). Need to figure this out.
+
+- i.i.d setting (baseline)
     ```console
     python main.py baseline
     ```
 
-- Baseline + auxiliary tasks (iid setting)
+- i.i.d setting (self supervised model)
     ```console
     python main.py baseline_aux
     ```
 
-- TODO: Baseline (class-incremental setting) 
+- Class-incremental setting (baseline) 
     ```console
-    python main.py baseline --class-incremental
+    python main.py baseline --class_incremental
     ```
 
-- Baseline + auxiliary tasks (class-incremental setting)
+- Class-incremental setting () 
     ```console
-    python main.py baseline_aux
+    python main.py class_incremental
     ```

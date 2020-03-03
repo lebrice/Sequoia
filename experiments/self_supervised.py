@@ -38,13 +38,15 @@ class SelfSupervised(Baseline):
     def __post_init__(self):
         AuxiliaryTask.input_shape   = self.dataset.x_shape
         AuxiliaryTask.hidden_size   = self.hparams.hidden_size
+        
+        aux_tasks = self.hparams.get_tasks()
 
         if isinstance(self.dataset, Mnist):
             from models.ss_classifier import MnistClassifier
             self.model = MnistClassifier(
                 hparams=self.hparams,
                 config=self.config,
-                tasks=self.hparams.get_tasks(),
+                tasks=aux_tasks,
             )
         else:
             raise NotImplementedError("TODO: add other datasets.")
@@ -55,7 +57,7 @@ class SelfSupervised(Baseline):
                 self.reconstruction_task = aux_task
                 break
 
-        dataloaders = self.dataset.get_dataloaders(self.hparams.batch_size)
+        dataloaders = self.dataset.get_dataloaders(self.config, self.hparams.batch_size)
         self.train_loader, self.valid_loader = dataloaders
 
     def run(self):
