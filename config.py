@@ -30,7 +30,7 @@ class Config:
     random_class_ordering: bool = False
 
     random_seed: int = 1            # Random seed.
-    use_cuda: bool = cuda_available # Wether or not to use CUDA.
+    use_cuda: bool = cuda_available # Whether or not to use CUDA.
     
     # Which specific device to use.
     # NOTE: Can be set directly with the command-line! (ex: "--device cuda")

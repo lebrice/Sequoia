@@ -58,7 +58,7 @@ class AuxiliaryTask(nn.Module):
         """
         super().__init__()
         self.options = options or self.Options(*args, **kwargs)
-        self._coefficient = nn.Parameter(torch.Tensor([self.options.coefficient]))  # type: ignore
+        self._coefficient = self.options.coefficient  # type: ignore
 
     def encode(self, x: Tensor) -> Tensor:
         x = AuxiliaryTask.preprocessing(x)

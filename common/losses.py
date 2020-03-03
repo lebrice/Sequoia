@@ -21,7 +21,7 @@ class LossInfo:
     
     Used to simplify the return type of the various `get_loss` functions.    
     """
-    total_loss: Tensor = field(default_factory=lambda: torch.zeros(1).clone())
+    total_loss: Union[float, Tensor] = 0.
     losses: Dict[str, Tensor] = field(default_factory=OrderedDict)
     tensors: Dict[str, Tensor] = field(default_factory=OrderedDict)
     metrics: Metrics = field(default_factory=Metrics)

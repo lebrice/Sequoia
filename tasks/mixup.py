@@ -28,7 +28,7 @@ class MixupTask(AuxiliaryTask):
         batch_size = x.shape[0]
         assert batch_size % 2  == 0, "Can only mix an even number of samples."
         loss_info = LossInfo()
-        mix_coeff = torch.rand(batch_size//2)
+        mix_coeff = torch.rand(batch_size//2, dtype=x.dtype, device=x.device)
 
         x1 = x[0::2]
         x2 = x[1::2]
@@ -51,7 +51,7 @@ class ManifoldMixupTask(AuxiliaryTask):
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         batch_size = x.shape[0]
         assert batch_size % 2  == 0, "Can only mix an even number of samples."
-        mix_coeff = torch.rand(batch_size//2)
+        mix_coeff = torch.rand(batch_size//2, dtype=x.dtype, device=x.device)
 
         h1 = h_x[0::2]
         h2 = h_x[1::2]

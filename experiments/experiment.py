@@ -73,6 +73,8 @@ class Experiment:
     def run(self):
         self.load()
 
+        self.model = self.model.to(self.config.device)
+
         train_epoch_losses: List[LossInfo] = []
         valid_epoch_losses: List[LossInfo] = []
 

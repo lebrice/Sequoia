@@ -13,9 +13,9 @@ from common.layers import Flatten
 
 def wrap_pil_transform(function: Callable):
     def _transform(img_x, arg):
-        x = TF.to_pil_image(img_x)
+        x = TF.to_pil_image(img_x.cpu())
         x = function(x, arg)
-        return TF.to_tensor(x).view(img_x.shape)
+        return TF.to_tensor(x).view(img_x.shape).to(img_x)
 
     @wraps(function)
     def _pil_transform(x: Tensor, arg: Any):
@@ -51,7 +51,7 @@ class ClassifyTransformationTask(AuxiliaryTask):
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         loss_info = LossInfo()
         batch_size: int = x.shape[0]
-        ones = torch.ones(batch_size, dtype=torch.long)
+        ones = torch.ones(batch_size, dtype=torch.long, device=x.device)
         for i, fn_arg in enumerate(self.function_args):
             # vector of 0's for arg 0, vector of 1's for arg 1, etc.
             true_label = i * ones
