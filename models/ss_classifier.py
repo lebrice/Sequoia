@@ -43,33 +43,25 @@ class SelfSupervisedClassifier(Classifier):
 
         def get_tasks(self) -> List[AuxiliaryTask]:
             tasks: List[AuxiliaryTask] = []
-            if self.reconstruction.coefficient != 0:
-                tasks.append(VAEReconstructionTask(options=self.reconstruction))
-            if self.mixup.coefficient != 0:
-                tasks.append(MixupTask(options=self.mixup))
-            if self.manifold_mixup.coefficient != 0:
-                tasks.append(ManifoldMixupTask(options=self.manifold_mixup))
-            if self.rotation.coefficient != 0:
-                tasks.append(RotationTask(options=self.rotation))
-            if self.jigsaw.coefficient != 0:
-                tasks.append(JigsawPuzzleTask(options=self.jigsaw))
-            if self.irm.coefficient != 0:
-                tasks.append(IrmTask(options=self.irm))
-            if self.adjust_brightness.coefficient != 0:
-                tasks.append(AdjustBrightnessTask(options=self.adjust_brightness))
+            tasks.append(VAEReconstructionTask(options=self.reconstruction))
+            tasks.append(MixupTask(options=self.mixup))
+            tasks.append(ManifoldMixupTask(options=self.manifold_mixup))
+            tasks.append(RotationTask(options=self.rotation))
+            tasks.append(JigsawPuzzleTask(options=self.jigsaw))
+            tasks.append(IrmTask(options=self.irm))
+            tasks.append(AdjustBrightnessTask(options=self.adjust_brightness))
             return tasks
 
-    def __init__(self, tasks: List[AuxiliaryTask], hparams: HParams, *args, **kwargs):
+    def __init__(self, hparams: HParams, *args, **kwargs):
         super().__init__(*args, hparams=hparams, **kwargs)
         # Share the relevant parameters with all the auxiliary tasks.
         AuxiliaryTask.encoder       = self.encoder
         AuxiliaryTask.classifier    = self.classifier
         AuxiliaryTask.preprocessing = self.preprocess_inputs
         # TODO: Share the hidden size dimensions of this model with the Auxiliary tasks so they know how big the h_x is going to actually be.
-        AuxiliaryTask.hidden_size = 100
-        
-        self.tasks: List[AuxiliaryTask] = nn.ModuleList(tasks)  # type: ignore
-        self.tasks.extend(self.hparams.get_tasks())
+        AuxiliaryTask.hidden_size = self.hparams.hidden_size
+        aux_tasks = self.hparams.get_tasks()
+        self.tasks: List[AuxiliaryTask] = nn.ModuleList(aux_tasks)  # type: ignore
         if self.config.verbose:
             print(self)
             print("Auxiliary tasks:")
@@ -105,28 +97,12 @@ class SelfSupervisedClassifier(Classifier):
             h_x = h_x.detach()
         return self.classifier(h_x)
 
-class MnistClassifier(SelfSupervisedClassifier):
+
+from models.classifier import MnistClassifier as BaseMnistClassifier
+
+
+class MnistClassifier(BaseMnistClassifier, SelfSupervisedClassifier):
     def __init__(self,
-                 tasks: List[AuxiliaryTask],
                  hparams: Classifier.HParams,
                  config: Config):
-        self.hidden_size = hparams.hidden_size
-        encoder = nn.Sequential(
-            ConvBlock(1, 16),
-            ConvBlock(16, 32),
-            ConvBlock(32, self.hidden_size),
-            ConvBlock(self.hidden_size, self.hidden_size),
-        )
-        classifier = nn.Sequential(
-            Flatten(),
-            nn.Linear(self.hidden_size, 10),
-        )
-        super().__init__(
-            tasks=tasks,
-            input_shape=(1,28,28),
-            num_classes=10,
-            encoder=encoder,
-            classifier=classifier,
-            hparams=hparams,
-            config=config,
-        )
+        super().__init__(hparams=hparams, config=config)

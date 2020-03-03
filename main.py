@@ -29,7 +29,7 @@ class RunSettings:
     """ Settings for which 'experiment' to run. """
 
     experiment: Experiment = subparsers({
-        "baseline": Baseline(dataset=Mnist()),
+        "baseline": Baseline,
         "baseline_aux": SelfSupervised, # TODO:
         "class_incremental": ClassIncremental
     })

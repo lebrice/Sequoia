@@ -18,10 +18,11 @@ from torchvision.utils import save_image
 
 from common.losses import LossInfo
 from config import Config
+from datasets.bases import Dataset
 from datasets.mnist import Mnist
-from experiments.experiment import Experiment
 from experiments.baseline import Baseline
-from models.ss_classifier import MnistClassifier, SelfSupervisedClassifier
+from experiments.experiment import Experiment
+from models.ss_classifier import SelfSupervisedClassifier
 from tasks import AuxiliaryTask, VAEReconstructionTask
 from tasks.torchvision.adjust_brightness import AdjustBrightnessTask
 from utils.logging import loss_str
@@ -31,76 +32,31 @@ from utils.logging import loss_str
 class SelfSupervised(Baseline):
     """ Simply adds auxiliary tasks to the IID experiment. """
     hparams: SelfSupervisedClassifier.HParams = SelfSupervisedClassifier.HParams(detach_classifier=False)
-
-    model: SelfSupervisedClassifier = field(default=None, init=False)
-    reconstruction_task: Optional[VAEReconstructionTask] = field(default=None, init=False)
-
+    
     def __post_init__(self):
-        AuxiliaryTask.input_shape   = self.dataset.x_shape
-        AuxiliaryTask.hidden_size   = self.hparams.hidden_size
-        
-        aux_tasks = self.hparams.get_tasks()
+        super().__post_init__()
 
-        if isinstance(self.dataset, Mnist):
-            from models.ss_classifier import MnistClassifier
-            self.model = MnistClassifier(
-                hparams=self.hparams,
-                config=self.config,
-                tasks=aux_tasks,
-            )
-        else:
-            raise NotImplementedError("TODO: add other datasets.")
-        
+        self.reconstruction_task: Optional[VAEReconstructionTask] = None
         # find the reconstruction task, if there is one.
         for aux_task in self.model.tasks:
             if isinstance(aux_task, VAEReconstructionTask):
                 self.reconstruction_task = aux_task
                 break
 
-        dataloaders = self.dataset.get_dataloaders(self.config, self.hparams.batch_size)
-        self.train_loader, self.valid_loader = dataloaders
-
-    def run(self):
-        train_epoch_loss: List[LossInfo] = []
-        valid_epoch_loss: List[LossInfo] = []
-
-        for epoch in range(self.hparams.epochs):
-            for train_loss in self.train_iter(epoch, self.train_loader):
-                pass
-            train_epoch_loss.append(train_loss)
-            
-            for valid_loss in self.test_iter(epoch, self.valid_loader):
-                pass
-            valid_epoch_loss.append(valid_loss)
-
-            if self.reconstruction_task:
-                with torch.no_grad():
-                    sample = self.reconstruction_task.generate(torch.randn(64, self.hparams.hidden_size))
-                    sample = sample.cpu().view(64, 1, 28, 28)
-                    save_image(sample, os.path.join(self.config.log_dir, f"sample_{epoch}.png"))
-
-            if self.config.wandb:
-                # TODO: do some nice logging to wandb?:
-                wandb.log(TODO)
+    def test_iter(self, epoch: int, dataloader: DataLoader):
+        yield from super().test_iter(epoch, dataloader)
+        if self.reconstruction_task:
+            with torch.no_grad():
+                sample = self.reconstruction_task.generate(torch.randn(64, self.hparams.hidden_size))
+                sample = sample.cpu().view(64, 1, 28, 28)
+                save_image(sample, os.path.join(self.config.log_dir, f"sample_{epoch}.png"))
         
-        import matplotlib.pyplot as plt
-        fig: plt.Figure = plt.figure()
-        plt.plot([loss.total_loss for loss in train_epoch_loss], label="train_loss")
-        plt.plot([loss.total_loss for loss in valid_epoch_loss], label="valid_loss")
-        plt.legend(loc='lower right')
-        fig.savefig(os.path.join(self.config.log_dir, "epoch_loss.jpg"))
-
-
-        fig: plt.Figure = plt.figure()
-        plt.plot([loss.metrics.accuracy for loss in train_epoch_loss], label="train_accuracy")
-        plt.plot([loss.metrics.accuracy for loss in valid_epoch_loss], label="valid_accuracy")
-        plt.legend(loc='lower right')
-        fig.savefig(os.path.join(self.config.log_dir, "epoch_accuracy.jpg"))
-
+    def make_plots(self, train_epoch_loss: List[LossInfo], valid_epoch_loss: List[LossInfo]):
+        # TODO: make plots that are specific to self-supervised context?
+        super().make_plots(train_epoch_loss, valid_epoch_loss)
     
     def log_info(self, batch_loss_info: LossInfo, overall_loss_info: LossInfo) -> Dict:
         message = super().log_info(batch_loss_info, overall_loss_info)
-        
         # add the logs for all the scaled losses:
         for loss_name, loss_tensor in batch_loss_info.losses.items():
             if loss_name.endswith("_scaled"):

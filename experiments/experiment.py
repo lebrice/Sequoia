@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
-from typing import *
+from typing import Dict, Type, Iterable, Any, List
 from typing import ClassVar
 
 import torch
@@ -16,9 +16,9 @@ from config import Config
 from datasets import Dataset
 from datasets.mnist import Mnist
 from models.classifier import Classifier
+from tasks import AuxiliaryTask
 
-
-@dataclass
+@dataclass  # type: ignore
 class Experiment:
     """ Describes the parameters of an experimental setting.
     
@@ -29,28 +29,69 @@ class Experiment:
 
     TODO: Maybe add some code for saving/restoring experiments here?
     """
-    # Dataset and preprocessing settings.
+    
     dataset: Dataset = choice({
         "mnist": Mnist(),
     }, default="mnist")
-    # Model Hyperparameters 
-    hparams: Classifier.HParams = Classifier.HParams()
-    # Settings related to the experimental setup (cuda, log_dir, etc.).
     config: Config = Config()
-        
-    model_class: Type[Classifier] = field(default=Classifier, init=False)
-    model: Classifier = field(default=None, init=False)
 
+    hparams: Classifier.HParams = Classifier.HParams()
+    model: Classifier = field(default=None, init=False)
+    
     def __post_init__(self):
         """ Called after __init__, used to initialize all missing fields.
         
         You can use this method to initialize the fields that aren't parsed from
         the command-line, such as `model`, etc.        
-        """ 
-        pass
+        """
+        AuxiliaryTask.input_shape   = self.dataset.x_shape
+        self.model = self.get_model(self.dataset)
+    
+    def load(self):
+        dataloaders = self.dataset.get_dataloaders(self.config, self.hparams.batch_size)
+        self.train_loader, self.valid_loader = dataloaders
+
+    def get_model(self, dataset: Dataset) -> Classifier:
+        if isinstance(dataset, Mnist):
+            from models.ss_classifier import SelfSupervisedClassifier, MnistClassifier as SSMnistClassifier
+            if isinstance(self.hparams, SelfSupervisedClassifier.HParams):
+                return SSMnistClassifier(
+                    hparams=self.hparams,
+                    config=self.config,
+                )
+            else:
+                from models.classifier import MnistClassifier
+                return MnistClassifier(
+                    hparams=self.hparams,
+                    config=self.config,
+                )
+        raise NotImplementedError("TODO: add other datasets.")
 
     def run(self):
-        raise NotImplementedError("Implement the 'run' method in a subclass.")
+        self.load()
+
+        train_epoch_loss: List[LossInfo] = []
+        valid_epoch_loss: List[LossInfo] = []
+
+        for epoch in range(self.hparams.epochs):
+            for train_loss in self.train_iter(epoch, self.train_loader):
+                pass
+            train_epoch_loss.append(train_loss)
+            
+            for valid_loss in self.test_iter(epoch, self.valid_loader):
+                pass
+            valid_epoch_loss.append(valid_loss)
+
+            if self.config.wandb:
+                # TODO: do some nice logging to wandb?:
+                wandb.log(TODO)
+        
+        self.make_plots(train_epoch_loss, valid_epoch_loss)
+    
+    @abstractmethod
+    def make_plots(self, train_epoch_loss: List[LossInfo], valid_epoch_loss: List[LossInfo]):
+        pass
+
 
     def train_batch(self, batch_idx: int, data: Tensor, target: Tensor) -> LossInfo:
         batch_size = data.shape[0]

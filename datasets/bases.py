@@ -26,8 +26,8 @@ class TaskConfig:
     def __post_init__(self):
         self.classes = to_list(self.classes)
         self.class_counts = to_list(self.class_counts)
-        end_index = self.start_index + sum(self.class_counts)
-        self.indices = slice(self.start_index, end_index)
+        self.end_index = self.start_index + sum(self.class_counts)
+        self.indices = slice(self.start_index, self.end_index)
 
 @dataclass  # type: ignore 
 class Dataset:
@@ -69,7 +69,8 @@ class Dataset:
         current_index = 0
         for i, task_classes_and_counts in enumerate(n_consecutive(classes_and_counts, n)):
             task_classes, task_counts = zip(*task_classes_and_counts)
-            selected_mask = sum([old_y==task_class for task_class in task_classes])
+            selected = torch.cat([(old_y==task_class).unsqueeze(0) for task_class in task_classes], dim=0)
+            selected_mask = selected.sum(dim=0, dtype=torch.bool)            
             total_count = sum(task_counts).item()  # type: ignore
             
             task_config = TaskConfig(
@@ -81,11 +82,12 @@ class Dataset:
             task_configs.append(task_config)
 
             permutation = torch.randperm(total_count)
-
             x = old_x[selected_mask]
             y = old_y[selected_mask]
             x = x[permutation]
             y = y[permutation]
+            
+            assert to_list(y.unique()) == to_list(task_classes), y.unique()
             assert x.shape[0] == y.shape[0] == total_count
             
             new_x[current_index: current_index + total_count] = x

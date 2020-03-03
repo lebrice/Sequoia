@@ -30,7 +30,7 @@ class Mnist(Dataset):
         self.y_shape: Tuple[int] = (10,)
         self.transforms = T.Compose([
             T.ToTensor(),
-            lambda x: x.reshape([1, 28, 28])
+            lambda x: x.reshape(1, 28, 28)
         ])
         self.train: Optional[datasets.MNIST] = None
         self.valid: Optional[datasets.MNIST] = None
