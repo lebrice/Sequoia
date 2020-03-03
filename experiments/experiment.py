@@ -17,7 +17,7 @@ from datasets import Dataset
 from datasets.mnist import Mnist
 from models.classifier import Classifier
 from tasks import AuxiliaryTask
-
+from pathlib import Path
 from models.ss_classifier import SelfSupervisedClassifier
 
 @dataclass  # type: ignore
@@ -38,6 +38,7 @@ class Experiment:
     dataset: Dataset = choice({
         "mnist": Mnist(),
     }, default="mnist")
+    name: str = "default"
     config: Config = Config()
     model: Classifier = field(default=None, init=False)
     
@@ -49,6 +50,8 @@ class Experiment:
         """
         AuxiliaryTask.input_shape   = self.dataset.x_shape
         self.model = self.get_model(self.dataset)
+        self.config.log_dir /= self.name
+        self.config.log_dir.mkdir(exist_ok=True)
     
     def load(self):
         dataloaders = self.dataset.get_dataloaders(self.config, self.hparams.batch_size)

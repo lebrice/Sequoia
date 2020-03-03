@@ -41,13 +41,39 @@ class IID(Experiment):
                 if isinstance(aux_task, VAEReconstructionTask):
                     self.reconstruction_task = aux_task
                     break
-
-    def make_plots(self, train_epoch_loss: List[LossInfo], valid_epoch_loss: List[LossInfo]):
+    
+    def make_plots_for_epoch(self, epoch: int, train_losses: List[LossInfo], valid_losses: List[LossInfo]):
         import matplotlib.pyplot as plt
         fig: plt.Figure = plt.figure()
-        plt.plot([loss.total_loss for loss in train_epoch_loss], label="train_loss")
-        plt.plot([loss.total_loss for loss in valid_epoch_loss], label="valid_loss")
+        x_s: List[int] = []
+        for loss_info in train_losses:
+            x_s = [loss.metrics.n_samples for loss in train_losses]
+        
+
+        plt.plot([loss.total_loss for loss in train_losses], label="train_loss")
+        plt.plot([loss.total_loss for loss in valid_losses], label="valid_loss")
         plt.legend(loc='lower right')
+        fig.savefig(self.config.log_dir + "/train/epoch_{epoch}_loss.jpg")
+
+        fig = plt.figure()
+        plt.plot([loss.metrics.accuracy for loss in train_losses], label="train_accuracy")
+        plt.plot([loss.metrics.accuracy for loss in valid_losses], label="valid_accuracy")
+        plt.legend(loc='lower right')
+        fig.savefig(self.config.log_dir + "/train/epoch_{epoch}_acc.jpg")
+        
+
+    def make_plots(self, train_epoch_loss: List[LossInfo], valid_epoch_loss: List[LossInfo]):
+        
+        # TODO: (Currently under construction, will create plots for each epoch)
+        return
+        
+        import matplotlib.pyplot as plt
+        fig: plt.Figure = plt.figure()
+        ax1: plt.Axes = fig.add_subplot(nrows=1, ncols=2, index=1)
+        ax1.set_xlabel("# of Samples")
+        ax1.plot([loss.total_loss for loss in train_epoch_loss], label="train_loss")
+        ax1.plot([loss.total_loss for loss in valid_epoch_loss], label="valid_loss")
+        ax1.legend(loc='lower right')
         fig.savefig(os.path.join(self.config.log_dir, "epoch_loss.jpg"))
 
         fig = plt.figure()
@@ -79,10 +105,6 @@ class IID(Experiment):
                 # comparison = torch.cat([data[:n], fake[:n]])
                 # save_image(comparison.cpu(), os.path.join(self.config.log_dir, "reconstruction", f"{epoch}.png"), nrow=n)
 
-    def make_plots(self, train_epoch_loss: List[LossInfo], valid_epoch_loss: List[LossInfo]):
-        # TODO: make plots that are specific to self-supervised context?
-        super().make_plots(train_epoch_loss, valid_epoch_loss)
-    
     def log_info(self, batch_loss_info: LossInfo, overall_loss_info: LossInfo) -> Dict:
         message = super().log_info(batch_loss_info, overall_loss_info)
         # add the logs for all the scaled losses:

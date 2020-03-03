@@ -21,14 +21,14 @@ class ClassIncrementalConfig:
 
 @dataclass
 class ClassIncremental(Experiment):
-    name: str = None
+    name: str = "class_incremental"
     config: Config = Config(class_incremental=True)
-    hparams: Classifier.HParams = subparsers({
-        "baseline": Classifier.HParams(epochs=1),
-        "self_supervised": SelfSupervisedClassifier.HParams(epochs=1),
-    })
-    
+    online: bool = False  # wether or not to perform a single epoch of training.
+
     def __post_init__(self):
+        if self.online:
+            self.hparams.epochs = 1
+            self.name += "_online"
         super().__post_init__()
 
     def train_iter(self, epoch: int, dataloader: DataLoader) -> Iterable[LossInfo]:

@@ -2,6 +2,16 @@
 Self-Supervised Continual Learning
 
 
+## TODOS:
+- Add plots:
+  - Plot showing the evolution of the training/validation accuracy over the course of class-incremental training for both the baseline and self-supervised models 
+  - Plots showing the loss of an auxiliary task in the i.i.d. setting versus non-iid:
+    - Might be useful for arguing that the data can be considered IID from the perspective of the aux tasks
+    - Have to be careful about the relationship between task and dataset (ex: the "0" class in MNIST and Rotation task)
+
+
+
+
 ## Installation
 Requires python >= 3.6
 - Python 3.6:
@@ -13,6 +23,8 @@ Requires python >= 3.6
     ```console
     pip install -r requirements.txt
     ```
+
+
 
 ## Running Experiments
 Different experiment templates can be found in the `experiments` folder.
