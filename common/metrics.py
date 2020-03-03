@@ -46,3 +46,20 @@ def accuracy(y_pred: Tensor, y: Tensor) -> float:
     _, predicted = y_pred.max(dim=1)
     acc = (predicted == y).sum(dtype=float) / batch_size
     return acc.item()
+
+
+def confusion_matrix(y_pred: Tensor, y: Tensor) -> Tensor:
+    """ Taken from https://discuss.pytorch.org/t/how-to-find-individual-class-accuracy/6348
+    """
+    n_classes = y_pred.shape[-1]
+    confusion_matrix = torch.zeros(n_classes, n_classes)
+    _, y_preds = torch.max(y_pred, 1)
+    for y_t, y_p in zip(y.view(-1), y_preds.view(-1)):
+        confusion_matrix[y_t.long(), y_p.long()] += 1
+    return confusion_matrix
+
+
+def per_class_accuracy(y_pred: Tensor, y: Tensor) -> float:
+    confusion_mat = confusion_matrix(y_pred, y)
+    print(confusion_mat)
+    return confusion_mat.diag()/confusion_mat.sum(1).clamp_(1e-10, 1e10)
