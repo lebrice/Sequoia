@@ -9,6 +9,7 @@ import tqdm
 from simple_parsing import field, choice, subparsers
 from torch import nn, Tensor
 from torch.utils.data import DataLoader
+import wandb
 
 from common.losses import LossInfo
 from common.metrics import Metrics
@@ -38,7 +39,6 @@ class Experiment:
     dataset: Dataset = choice({
         "mnist": Mnist(),
     }, default="mnist")
-    name: str = "default"
     config: Config = Config()
     model: Classifier = field(default=None, init=False)
     
@@ -50,8 +50,6 @@ class Experiment:
         """
         AuxiliaryTask.input_shape   = self.dataset.x_shape
         self.model = self.get_model(self.dataset)
-        self.config.log_dir /= self.name
-        self.config.log_dir.mkdir(exist_ok=True)
     
     def load(self):
         dataloaders = self.dataset.get_dataloaders(self.config, self.hparams.batch_size)
@@ -81,21 +79,26 @@ class Experiment:
         train_epoch_losses: List[LossInfo] = []
         valid_epoch_losses: List[LossInfo] = []
 
+        global_step = 0
+
         for epoch in range(self.hparams.epochs):
             train_batch_losses: List[LossInfo] = []
             valid_batch_losses: List[LossInfo] = []
 
-            for train_loss in self.train_iter(epoch, self.train_loader):
+            for batch_idx, train_loss in enumerate(self.train_iter(epoch, self.train_loader)):
                 train_batch_losses.append(train_loss)
+
+                global_step += 1
+                if self.config.use_wandb and batch_idx % self.config.log_interval == 0:
+                    wandb.log({'Train ' + k: v for (k, v) in train_loss.to_log_dict().items()}, step=global_step)
             train_epoch_losses.append(train_loss)
             
             for valid_loss in self.test_iter(epoch, self.valid_loader):
                 valid_batch_losses.append(valid_loss)
             valid_epoch_losses.append(valid_loss)
 
-            if self.config.wandb:
-                # TODO: do some nice logging to wandb?:
-                wandb.log(TODO)
+            if self.config.use_wandb:
+                wandb.log({'Valid ' + k: v for (k, v) in valid_loss.to_log_dict().items()}, step=global_step)
 
             self.make_plots_for_epoch(epoch, train_batch_losses, valid_batch_losses)
         

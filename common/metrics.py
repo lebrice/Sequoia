@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Dict
 import torch
 from torch import Tensor
 
@@ -32,6 +33,13 @@ class Metrics:
 
     def __repr__(self) -> str:
         return f"Metrics(n_samples={self.n_samples}, accuracy={self.accuracy:.2%})"
+    
+    def to_log_dict(self) -> Dict:
+        return {
+            'n_samples': self.n_samples,
+            'accuracy': self.accuracy
+        }
+
 
 def accuracy(y_pred: Tensor, y: Tensor) -> float:
     batch_size = y_pred.shape[0]

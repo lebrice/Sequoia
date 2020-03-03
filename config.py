@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Generic, List, Tuple, TypeVar
+from typing import Any, Generic, List, Tuple, TypeVar, Optional
 
 import torch
 from simple_parsing import field
@@ -21,12 +21,12 @@ class Config:
     debug: bool = field(alias="-d", default=False, action="store_true", nargs=0)      # enable debug mode.
     verbose: bool = field(alias="-v", default=False, action="store_true", nargs=0)    # enable verbose mode.
 
-    log_dir: Path = Path("results") # Logging directory.
+    log_dir_root: Path = Path("results") # Logging directory.
     log_interval: int = 10   # How many batches to wait between logging calls.
     
     class_incremental: bool = False  # train in a class-incremental fashion.
     n_classes_per_task: int = 2      # Number of classes per task.
-    # Wether to sort out the classes in the class_incremental setting.
+    # Whether to sort out the classes in the class_incremental setting.
     random_class_ordering: bool = False
 
     random_seed: int = 1            # Random seed.
@@ -36,7 +36,8 @@ class Config:
     # NOTE: Can be set directly with the command-line! (ex: "--device cuda")
     device: torch.device = torch.device("cuda" if cuda_available else "cpu")
     
-    wandb: str = ""  # Wandb setting (TODO)
+    use_wandb: bool = True # Whether or not to log results to wandb
+    run_name: Optional[str] = None  # Wandb run name. If None, will use wandb's automatic name generation
 
     def __post_init__(self):
         # set the manual seed (for reproducibility)
@@ -49,6 +50,11 @@ class Config:
         
         if not self.use_cuda:
             self.device = torch.device("cpu")
+    
+    @property
+    def log_dir(self):
+        return self.log_dir_root.joinpath(self.run_name if self.run_name is not None else 'default')
+
 
 # shared config object.
 ## TODO: unused, but might be useful!
