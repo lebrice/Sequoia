@@ -17,15 +17,15 @@ from torchvision.utils import save_image
 
 from common.losses import LossInfo
 from config import Config
-from datasets.bases import Dataset
+from datasets.dataset import Dataset
 from datasets.mnist import Mnist
-from experiments.experiment import Experiment
 from models.classifier import Classifier
+from models.ss_classifier import SelfSupervisedClassifier
 from tasks import AuxiliaryTask
+from tasks.reconstruction import VAEReconstructionTask
 from utils.logging import loss_str
 
-from models.ss_classifier import SelfSupervisedClassifier
-from tasks.reconstruction import VAEReconstructionTask
+from .experiment import Experiment
 
 
 @dataclass

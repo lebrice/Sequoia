@@ -1,1 +1,7 @@
-from .bases import Dataset
+from .dataset import Dataset
+from .mnist import Mnist
+
+__all__ = [
+    "Dataset",
+    "Mnist",
+]

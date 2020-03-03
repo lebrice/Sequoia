@@ -1,7 +1,7 @@
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, InitVar
-from typing import *
 import random
+from abc import ABC, abstractmethod
+from dataclasses import InitVar, dataclass
+from typing import *
 
 import torch
 from simple_parsing import field
@@ -11,9 +11,10 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
+from config import Config
 from utils import cuda_available, gpus_available
 from utils.utils import n_consecutive, to_list
-from config import Config
+
 
 @dataclass
 class TaskConfig:
@@ -29,6 +30,7 @@ class TaskConfig:
         self.end_index = self.start_index + sum(self.class_counts)
         self.indices = slice(self.start_index, self.end_index)
 
+
 @dataclass  # type: ignore 
 class Dataset:
     """
@@ -37,7 +39,10 @@ class Dataset:
     name: str = "default"
     data_dir: str = "../data"
     config: Config = field(default_factory=Config, init=False)
-
+    
+    x_shape: ClassVar[Tuple[int, int, int]] = (1, 28, 28)
+    y_shape: ClassVar[Tuple[int]] = (10,)
+    
     @abstractmethod
     def get_dataloaders(self, config: Config, batch_size: int = 64) -> Tuple[DataLoader, DataLoader]:
         """Create the train and test dataloaders using the passed arguments.

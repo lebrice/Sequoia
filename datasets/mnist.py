@@ -19,22 +19,21 @@ from config import Config
 from utils import cuda_available, gpus_available
 from utils.utils import n_consecutive
 
-from .bases import Dataset, TaskConfig
+from datasets.dataset import Dataset, TaskConfig
 
 @dataclass
 class Mnist(Dataset):
     name: str = "MNIST"
+    x_shape: ClassVar[Tuple[int, int, int]] = (1, 28, 28)
+    y_shape: ClassVar[Tuple[int]] = (10,)
 
     def __post_init__(self):
-        self.x_shape: Tuple[int, int, int] = (1, 28, 28)
-        self.y_shape: Tuple[int] = (10,)
         self.transforms = T.Compose([
             T.ToTensor(),
             lambda x: x.reshape(1, 28, 28)
         ])
         self.train: Optional[datasets.MNIST] = None
         self.valid: Optional[datasets.MNIST] = None
-        self.config: Config = None
 
         # The indices where there is a transition between tasks.
         self.train_tasks: List[TaskConfig] = []
@@ -56,11 +55,13 @@ class Mnist(Dataset):
             
             self.save_images_for_each_task(
                 self.train,
+                config,
                 self.train_tasks,
                 folder_name="train_tasks"
             )
             self.save_images_for_each_task(
                 self.valid,
+                config,
                 self.valid_tasks,
                 folder_name="valid_tasks"
             )
@@ -98,13 +99,14 @@ class Mnist(Dataset):
 
     def save_images_for_each_task(self,
                                   dataset: datasets.MNIST,
+                                  config: Config,
                                   tasks: List[TaskConfig],
                                   folder_name:str="tasks"):
-        os.makedirs(os.path.join(self.config.log_dir, folder_name), exist_ok=True)
+        folder = config.log_dir / folder_name
+        folder.mkdir(exist_ok=True)
         n = 64
         for task in tasks:
             start = task.start_index
-            stop = start + n 
+            stop = start + n
             sample = dataset.data[start: start+n].view(n, 1, 28, 28).float()
-            save_image(sample, os.path.join(self.config.log_dir, folder_name, f"task_data_{task.id}.png"))
-            
+            save_image(sample, folder / f"task_{task.id}.png")
