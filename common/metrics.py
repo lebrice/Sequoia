@@ -25,7 +25,6 @@ class Metrics:
             if tensor is not None:
                 self.n_samples = tensor.shape[0]
                 break
-        print(self.y)
         if self.confusion_matrix is None and y_pred is not None and y is not None:
             self.confusion_matrix = get_confusion_matrix(y_pred=y_pred, y=y)
 
