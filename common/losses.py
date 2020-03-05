@@ -70,6 +70,7 @@ class LossInfo:
             **self.metrics.to_log_dict()
         }
 
+
 def prepend(d: Dict, prefix: str) -> None:
     for key in list(d.keys()):
         if not key.startswith(prefix):

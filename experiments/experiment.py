@@ -99,17 +99,23 @@ class Experiment:
             for valid_loss in self.test_iter(epoch, self.valid_loader):
                 valid_batch_losses.append(valid_loss)
 
-            train_epoch_losses.append(sum(train_batch_losses, LossInfo()))
-            valid_epoch_losses.append(sum(valid_batch_losses, LossInfo()))
+            train_epoch_loss = sum(train_batch_losses, LossInfo())
+            valid_epoch_loss = sum(valid_batch_losses, LossInfo())
+
+            train_epoch_losses.append(train_epoch_loss)
+            valid_epoch_losses.append(valid_epoch_loss)
 
             plots_dict = self.make_plots_for_epoch(epoch, train_batch_losses, valid_batch_losses)
             if self.config.use_wandb:
-                wandb.log({'Valid ' + k: v for (k, v) in valid_loss.to_log_dict().items()}, step=global_step)
+                wandb.log({'Valid ' + k: v for (k, v) in valid_epoch_loss.to_log_dict().items()}, step=global_step)
                 if plots_dict:
                     wandb.log(plots_dict, step=global_step)
         
         epoch_plots_dict = self.make_plots(train_epoch_losses, valid_epoch_losses)
         if self.config.use_wandb:
+            class_accuracy = valid_epoch_losses[-1].metrics.class_accuracy
+            wandb.log({"Validation Average Class Accuracy": class_accuracy.mean()})
+            wandb.log({"Validation Class Accuracy std": class_accuracy.std()})
             if epoch_plots_dict:
                 wandb.log(epoch_plots_dict, step=global_step)
     

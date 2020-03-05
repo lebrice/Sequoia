@@ -10,3 +10,4 @@ dmypy.json
 results
 data/*
 !data/**/*.py
+wandb

@@ -97,7 +97,7 @@ class IID(Experiment):
         ax2.set_xticklabels(classes)
         ax2.set_ylabel("Validation Accuracy")
         ax2.set_title(f"Validation Class Accuracy After Epoch {epoch}")
-        # fig.tight_layout()
+        fig.tight_layout()
         
         if self.config.debug:
             fig.show()
