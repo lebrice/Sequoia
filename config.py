@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Generic, List, Tuple, TypeVar, Optional
 
 import torch
-from simple_parsing import field
+from simple_parsing import field, mutable_field
 from simple_parsing.helpers import JsonSerializable
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
@@ -14,6 +14,14 @@ from torchvision.utils import save_image
 from utils import cuda_available, gpus_available
 from pathlib import Path
 
+
+@dataclass 
+class ClassIncrementalConfig:
+    n_classes_per_task: int = 2      # Number of classes per task.
+    # Wether to sort out the classes in the class_incremental setting.
+    random_class_ordering: bool = False
+
+
 @dataclass
 class Config:
     """Settings related to the training setup. """
@@ -21,14 +29,11 @@ class Config:
     debug: bool = field(alias="-d", default=False, action="store_true", nargs=0)      # enable debug mode.
     verbose: bool = field(alias="-v", default=False, action="store_true", nargs=0)    # enable verbose mode.
 
+    data_dir: Path = Path("data")  # data directory.
+
     log_dir_root: Path = Path("results") # Logging directory.
     log_interval: int = 10   # How many batches to wait between logging calls.
     
-    class_incremental: bool = False  # train in a class-incremental fashion.
-    n_classes_per_task: int = 2      # Number of classes per task.
-    # Whether to sort out the classes in the class_incremental setting.
-    random_class_ordering: bool = False
-
     random_seed: int = 1            # Random seed.
     use_cuda: bool = cuda_available # Whether or not to use CUDA.
     

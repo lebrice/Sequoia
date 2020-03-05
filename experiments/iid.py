@@ -186,10 +186,3 @@ class IID(Experiment):
                 message[loss_name] = loss_str(loss_tensor)
         return message
 
-    @property
-    def plots_dir(self) -> Path:
-        path = self.config.log_dir / "plots"
-        if not path.is_dir():
-            path.mkdir()
-        return path
- 

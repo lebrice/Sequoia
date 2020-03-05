@@ -17,6 +17,7 @@ from common.metrics import Metrics
 from config import Config
 from datasets import Dataset
 from datasets.mnist import Mnist
+from datasets.fashion_mnist import FashionMnist
 from models.classifier import Classifier
 from models.ss_classifier import SelfSupervisedClassifier
 from tasks import AuxiliaryTask
@@ -39,6 +40,7 @@ class Experiment:
     })
     dataset: Dataset = choice({
         "mnist": Mnist(),
+        "fashion_mnist": FashionMnist(),
     }, default="mnist")
     config: Config = Config()
     model: Classifier = field(default=None, init=False)
@@ -60,7 +62,7 @@ class Experiment:
         self.train_loader, self.valid_loader = dataloaders
 
     def get_model(self, dataset: Dataset) -> Classifier:
-        if isinstance(dataset, Mnist):
+        if isinstance(dataset, (Mnist, FashionMnist)):
             from models.ss_classifier import SelfSupervisedClassifier, MnistClassifier as SSMnistClassifier
             if isinstance(self.hparams, SelfSupervisedClassifier.HParams):
                 return SSMnistClassifier(
@@ -77,7 +79,7 @@ class Experiment:
 
     def run(self):
         self.load()
-
+        
         self.model = self.model.to(self.config.device)
 
         train_epoch_losses: List[LossInfo] = []
@@ -202,3 +204,24 @@ class Experiment:
         message["metrics:"] = overall_loss_info.metrics
         message["Average Total Loss"] = overall_loss_info.total_loss.item() / n_samples
         return message
+
+    @property
+    def plots_dir(self) -> Path:
+        path = self.config.log_dir / "plots"
+        if not path.is_dir():
+            path.mkdir()
+        return path
+
+    @property
+    def samples_dir(self) -> Path:
+        path = self.config.log_dir / "samples"
+        if not path.is_dir():
+            path.mkdir()
+        return path
+
+    @property
+    def checkpoints_dir(self) -> Path:
+        path = self.config.log_dir / "checkpoints"
+        if not path.is_dir():
+            path.mkdir()
+        return path

@@ -3,16 +3,17 @@ from typing import Tuple, Type
 
 import torchvision.datasets as v_datasets
 import torchvision.transforms as T
-from torchvision.datasets import FashionMNIST, VisionDataset
+from torchvision.datasets import VisionDataset
 
 from datasets.dataset import DatasetConfig
 
+
 @dataclass
-class Mnist(DatasetConfig):
-    name: str = "MNIST"
+class FashionMnist(DatasetConfig):
+    name: str = "FashionMNIST"
     x_shape: Tuple[int, int, int] = (1, 28, 28)
     y_shape: Tuple[int] = (10,)
-    dataset_class: Type[VisionDataset] = v_datasets.MNIST
+    dataset_class: Type[VisionDataset] = v_datasets.FashionMNIST
     transforms = T.Compose([
         T.ToTensor(),
         lambda x: x.reshape(1, 28, 28)
