@@ -43,6 +43,11 @@ class Dataset:
     x_shape: ClassVar[Tuple[int, int, int]] = (1, 28, 28)
     y_shape: ClassVar[Tuple[int]] = (10,)
     
+
+    # The indices where there is a transition between tasks.
+    train_tasks: List[TaskConfig] = field(default_factory=list, init=False)
+    valid_tasks: List[TaskConfig] = field(default_factory=list, init=False)
+
     @abstractmethod
     def get_dataloaders(self, config: Config, batch_size: int = 64) -> Tuple[DataLoader, DataLoader]:
         """Create the train and test dataloaders using the passed arguments.

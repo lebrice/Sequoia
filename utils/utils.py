@@ -1,15 +1,13 @@
 """ Set of Utilities. """
 
+import collections
+from collections import defaultdict, deque
+from collections.abc import MutableMapping
+from typing import (Any, Deque, Dict, Iterable, List, MutableMapping, Optional,
+                    Tuple, TypeVar, Union)
 
 import torch
-from torch import nn, Tensor
-
-from typing import List, Deque, Optional, TypeVar, Iterable, Tuple, Union
-from collections import deque
-import collections
-
-from collections.abc import MutableMapping
-from typing import MutableMapping, Any
+from torch import Tensor, nn
 
 cuda_available = torch.cuda.is_available()
 gpus_available = torch.cuda.device_count()
@@ -45,6 +43,15 @@ def to_list(tensors: Iterable[Union[T, Tensor]]) -> List[T]:
     """
     return list(map(lambda v: v.item() if isinstance(v, Tensor) else c, tensors))
 
+
+def to_dict_of_lists(list_of_dicts: List[Dict[str, Tensor]]) -> Dict[str, List[Tensor]]:
+    # TODO: we have a list of dicts, change it into a dict of lists.
+    result: Dict[str, List[Any]] = defaultdict(list)
+    for i, d in enumerate(list_of_dicts):
+        for key, tensor in d.items():
+            result[key].append(tensor.cpu())
+        assert d.keys() == result.keys()
+    return result
 
 class TensorCache(MutableMapping[Tensor, Tensor]):
     """A mutable mapping of individual (not batched) tensors to their outputs.

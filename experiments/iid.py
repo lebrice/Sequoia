@@ -2,8 +2,11 @@ import os
 import pprint
 from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass
+from itertools import accumulate
+from pathlib import Path
 from typing import Any, ClassVar, Dict, Iterable, List, Tuple, Type
 
+import matplotlib.pyplot as plt
 import simple_parsing
 import torch
 import torch.utils.data
@@ -16,6 +19,7 @@ from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
 from common.losses import LossInfo
+from common.metrics import Metrics
 from config import Config
 from datasets.dataset import Dataset
 from datasets.mnist import Mnist
@@ -41,54 +45,119 @@ class IID(Experiment):
                 if isinstance(aux_task, VAEReconstructionTask):
                     self.reconstruction_task = aux_task
                     break
+        
+        self._plots_dir: Optional[Path] = None
     
-    def make_plots_for_epoch(self, epoch: int, train_losses: List[LossInfo], valid_losses: List[LossInfo]):
-        import matplotlib.pyplot as plt
+    def make_plots_for_epoch(self,
+                             epoch: int,
+                             train_losses: List[LossInfo],
+                             valid_losses: List[LossInfo]) -> Dict[str, plt.Figure]:
+        train_x: List[int] = list(accumulate([
+            loss.metrics.n_samples for loss in train_losses
+        ]))
+        
+        valid_loss: LossInfo = sum(valid_losses, LossInfo())
+        valid_metrics = valid_loss.metrics
+        
+        accuracy = valid_metrics.accuracy
+        class_accuracy = valid_metrics.class_accuracy
+        if self.config.debug or self.config.verbose:
+            print("Validation Loss:", valid_loss)
+
         fig: plt.Figure = plt.figure()
-        x_s: List[int] = []
-        for loss_info in train_losses:
-            x_s = [loss.metrics.n_samples for loss in train_losses]
-        
-
-        plt.plot([loss.total_loss for loss in train_losses], label="train_loss")
-        plt.plot([loss.total_loss for loss in valid_losses], label="valid_loss")
-        plt.legend(loc='lower right')
-        fig.savefig(self.config.log_dir + "/train/epoch_{epoch}_loss.jpg")
-
-        fig = plt.figure()
-        plt.plot([loss.metrics.accuracy for loss in train_losses], label="train_accuracy")
-        plt.plot([loss.metrics.accuracy for loss in valid_losses], label="valid_accuracy")
-        plt.legend(loc='lower right')
-        fig.savefig(self.config.log_dir + "/train/epoch_{epoch}_acc.jpg")
-        
-
-    def make_plots(self, train_epoch_loss: List[LossInfo], valid_epoch_loss: List[LossInfo]):
-        
-        # TODO: (Currently under construction, will create plots for each epoch)
-        return
-        
-        import matplotlib.pyplot as plt
-        fig: plt.Figure = plt.figure()
-        ax1: plt.Axes = fig.add_subplot(nrows=1, ncols=2, index=1)
+        ax1: plt.Axes = fig.add_subplot(1, 2, 1)
+        ax1.set_title(f"Loss - Epoch {epoch}")
         ax1.set_xlabel("# of Samples")
-        ax1.plot([loss.total_loss for loss in train_epoch_loss], label="train_loss")
-        ax1.plot([loss.total_loss for loss in valid_epoch_loss], label="valid_loss")
-        ax1.legend(loc='lower right')
-        fig.savefig(os.path.join(self.config.log_dir, "epoch_loss.jpg"))
+        ax1.set_ylabel("Training Loss")
+        
+        # Plot the total loss
+        total_train_losses = [loss.total_loss.cpu() for loss in train_losses]
+        ax1.plot(train_x, total_train_losses, label="total loss")
 
-        fig = plt.figure()
-        plt.plot([loss.metrics.accuracy for loss in train_epoch_loss], label="train_accuracy")
-        plt.plot([loss.metrics.accuracy for loss in valid_epoch_loss], label="valid_accuracy")
-        plt.legend(loc='lower right')
-        fig.savefig(os.path.join(self.config.log_dir, "epoch_accuracy.jpg"))
+        from utils.utils import to_dict_of_lists
+        train_losses_dict = to_dict_of_lists([loss.losses for loss in train_losses])
+
+        # # Plot all the other losses (auxiliary losses)
+        # for loss_name, aux_losses in train_losses_dict.items():
+        #     ax1.plot(train_x, aux_losses, label=loss_name)
+        
+        # add the vertical lines for task transitions (if any)
+        for task_info in self.dataset.train_tasks:
+            ax1.axvline(x=task_info.start_index, color='r')
+
+        ax1.legend(loc='upper right')
+        
+        n_classes = self.dataset.y_shape[0]
+        classes = list(range(n_classes))
+        ax2: plt.Axes = fig.add_subplot(1, 2, 2)
+        
+        ax2.bar(classes, class_accuracy)
+        ax2.set_xlabel("Class")
+        ax2.set_xticks(classes)
+        ax2.set_xticklabels(classes)
+        ax2.set_ylabel("Validation Accuracy")
+        ax2.set_title(f"Validation Class Accuracy After Epoch {epoch}")
+        # fig.tight_layout()
+        
+        if self.config.debug:
+            fig.show()
+            fig.waitforbuttonpress(timeout=30)
+        fig.savefig(self.plots_dir / f"epoch_{epoch}.jpg")
+        
+        return {f"epoch_loss": fig}
+
+    def make_plots(self, train_losses: List[LossInfo], valid_losses: List[LossInfo]) -> Dict[str, plt.Figure]:
+        import matplotlib.pyplot as plt
+
+        plots_dir = self.config.log_dir / "plots"
+        plots_dir.mkdir(exist_ok=True)
+        epochs = list(range(len(train_losses)))
+        plots_dict: Dict[str, plt.Figure] = {}
+              
+        fig: plt.Figure = plt.figure()
+        ax: plt.Axes = fig.subplots()
+        
+        ax.set_title("Total Loss")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Loss")
+        ax.plot(epochs, [loss.total_loss for loss in train_losses], label="train")
+        ax.plot(epochs, [loss.total_loss for loss in valid_losses], label="valid")
+        ax.legend(loc='upper right')
+        plots_dict["loss"] = fig
+
+        if self.config.debug:
+            fig.show()
+            fig.waitforbuttonpress(timeout=30)
+        fig.savefig(self.plots_dir / "loss.jpg")
+
+        fig, ax = plt.subplots()
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Accuracy")
+        ax.set_title("Training and Validation Accuracy")
+        ax.plot(epochs, [loss.metrics.accuracy for loss in train_losses], label="train")
+        ax.plot(epochs, [loss.metrics.accuracy for loss in valid_losses], label="valid")
+        ax.legend(loc='lower right')
+        
+        plots_dict["accuracy"] = fig
+
+        if self.config.debug:
+            fig.show()
+            fig.waitforbuttonpress(timeout=30)
+
+        fig.savefig(self.plots_dir / "accuracy.jpg")
+        return plots_dict
+
 
     def test_iter(self, epoch: int, dataloader: DataLoader):
         yield from super().test_iter(epoch, dataloader)
         if self.reconstruction_task:
             with torch.no_grad():
+                reconstruction_images_dir = self.config.log_dir / "reconstruction"
+                reconstruction_images_dir.mkdir(exist_ok=True)
+
                 sample = self.reconstruction_task.generate(torch.randn(64, self.hparams.hidden_size))
                 sample = sample.cpu().view(64, 1, 28, 28)
-                save_image(sample, os.path.join(self.config.log_dir, f"sample_{epoch}.png"))
+                save_image(sample, reconstruction_images_dir / f"sample_{epoch}.png")
     
     def train_iter(self, epoch: int, dataloader: DataLoader):
         yield from super().train_iter(epoch, dataloader)
@@ -96,8 +165,7 @@ class IID(Experiment):
             with torch.no_grad():
                 sample = self.reconstruction_task.generate(torch.randn(64, self.hparams.hidden_size))
                 sample = sample.cpu().view(64, 1, 28, 28)
-                os.makedirs(os.path.join(self.config.log_dir, "generated"))
-                save_image(sample, os.path.join(self.config.log_dir, "generated", f"{epoch}.png"))
+                save_image(sample, self.config.log_dir / f"generated_{epoch}.png")
 
                 # os.makedirs(os.path.join(self.config.log_dir, "reconstruction"))
                 # n = min(data.size(0), 8)
@@ -117,3 +185,11 @@ class IID(Experiment):
             else:
                 message[loss_name] = loss_str(loss_tensor)
         return message
+
+    @property
+    def plots_dir(self) -> Path:
+        path = self.config.log_dir / "plots"
+        if not path.is_dir():
+            path.mkdir()
+        return path
+ 

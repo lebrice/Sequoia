@@ -35,10 +35,6 @@ class Mnist(Dataset):
         self.train: Optional[datasets.MNIST] = None
         self.valid: Optional[datasets.MNIST] = None
 
-        # The indices where there is a transition between tasks.
-        self.train_tasks: List[TaskConfig] = []
-        self.valid_tasks: List[TaskConfig] = []
-
     def load(self, config: Config) -> None:
         self.train = datasets.MNIST(self.data_dir, train=True,  download=True, transform=self.transforms)
         self.valid = datasets.MNIST(self.data_dir, train=False, download=True, transform=self.transforms)

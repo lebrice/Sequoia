@@ -4,3 +4,4 @@ tqdm
 simple_parsing
 wandb
 matplotlib
+plotly

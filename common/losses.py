@@ -23,7 +23,7 @@ class LossInfo:
     """
     total_loss: Union[float, Tensor] = 0.
     losses: Dict[str, Tensor] = field(default_factory=OrderedDict)
-    tensors: Dict[str, Tensor] = field(default_factory=OrderedDict)
+    tensors: Dict[str, Tensor] = field(default_factory=OrderedDict, repr=False)
     metrics: Metrics = field(default_factory=Metrics)
 
     def __add__(self, other: "LossInfo") -> "LossInfo":
@@ -66,7 +66,7 @@ class LossInfo:
     def to_log_dict(self) -> Dict:
         return {
             'total_loss': self.total_loss.item(), # if isinstance(self.total_loss, torch.Tensor) else self.total_loss,
-            **{k: v.item() for (k, v) in self.losses},
+            **{k: v.item() for (k, v) in self.losses.items()},
             **self.metrics.to_log_dict()
         }
 

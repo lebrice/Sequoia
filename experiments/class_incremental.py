@@ -10,6 +10,7 @@ from config import Config
 from models.classifier import Classifier
 from models.ss_classifier import SelfSupervisedClassifier
 from experiments.experiment import Experiment
+from experiments.iid import IID
 
 @dataclass 
 class ClassIncrementalConfig:
@@ -20,7 +21,7 @@ class ClassIncrementalConfig:
 
 
 @dataclass
-class ClassIncremental(Experiment):
+class ClassIncremental(IID):
     config: Config = Config(class_incremental=True)
     online: bool = False  # wether or not to perform a single epoch of training.
 
@@ -28,12 +29,3 @@ class ClassIncremental(Experiment):
         if self.online:
             self.hparams.epochs = 1
         super().__post_init__()
-
-    def train_iter(self, epoch: int, dataloader: DataLoader) -> Iterable[LossInfo]:
-        for train_loss in super().train_iter(epoch, dataloader):
-            yield train_loss
-
-    def make_plots_for_epoch(self, epoch: int, train_batch_losses: List[LossInfo], valid_batch_losses: List[LossInfo]):
-        print(epoch)
-        # print(train_batch_losses)
-        exit()

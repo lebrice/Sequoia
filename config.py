@@ -53,7 +53,7 @@ class Config:
     
     @property
     def log_dir(self):
-        return self.log_dir_root.joinpath(self.run_name if self.run_name is not None else 'default')
+        return self.log_dir_root.joinpath(self.run_name or 'default')
 
 
 # shared config object.

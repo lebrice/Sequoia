@@ -64,8 +64,8 @@ class Classifier(nn.Module):
         loss = self.classification_loss(y_pred, y)
         return LossInfo(
             total_loss=loss,
-            tensors=OrderedDict(x=x, h_x=h_x, y_pred=y_pred, y=y),
-            metrics=Metrics.from_tensors(y_pred=y_pred, y=y),
+            tensors=(dict(x=x, h_x=h_x, y_pred=y_pred, y=y) if self.config.debug else {}),
+            metrics=Metrics(x=x, h_x=h_x, y_pred=y_pred, y=y),
         )
 
     def encode(self, x: Tensor):

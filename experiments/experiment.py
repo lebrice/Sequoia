@@ -1,15 +1,16 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
-from typing import Dict, Type, Iterable, Any, List
-from typing import ClassVar
+from pathlib import Path
+from typing import Any, ClassVar, Dict, Iterable, List, Type
 
+import matplotlib.pyplot as plt
 import torch
 import tqdm
-from simple_parsing import field, choice, subparsers
-from torch import nn, Tensor
-from torch.utils.data import DataLoader
 import wandb
+from simple_parsing import choice, field, subparsers
+from torch import Tensor, nn
+from torch.utils.data import DataLoader
 
 from common.losses import LossInfo
 from common.metrics import Metrics
@@ -17,9 +18,9 @@ from config import Config
 from datasets import Dataset
 from datasets.mnist import Mnist
 from models.classifier import Classifier
-from tasks import AuxiliaryTask
-from pathlib import Path
 from models.ss_classifier import SelfSupervisedClassifier
+from tasks import AuxiliaryTask
+
 
 @dataclass  # type: ignore
 class Experiment:
@@ -41,7 +42,9 @@ class Experiment:
     }, default="mnist")
     config: Config = Config()
     model: Classifier = field(default=None, init=False)
-    
+    model_name: str = field(default=None, init=False)
+
+
     def __post_init__(self):
         """ Called after __init__, used to initialize all missing fields.
         
@@ -50,6 +53,7 @@ class Experiment:
         """
         AuxiliaryTask.input_shape   = self.dataset.x_shape
         self.model = self.get_model(self.dataset)
+        self.model_name = type(self.model).__name__
     
     def load(self):
         dataloaders = self.dataset.get_dataloaders(self.config, self.hparams.batch_size)
@@ -91,25 +95,30 @@ class Experiment:
                 global_step += 1
                 if self.config.use_wandb and batch_idx % self.config.log_interval == 0:
                     wandb.log({'Train ' + k: v for (k, v) in train_loss.to_log_dict().items()}, step=global_step)
-            train_epoch_losses.append(train_loss)
             
             for valid_loss in self.test_iter(epoch, self.valid_loader):
                 valid_batch_losses.append(valid_loss)
-            valid_epoch_losses.append(valid_loss)
 
+            train_epoch_losses.append(sum(train_batch_losses, LossInfo()))
+            valid_epoch_losses.append(sum(valid_batch_losses, LossInfo()))
+
+            plots_dict = self.make_plots_for_epoch(epoch, train_batch_losses, valid_batch_losses)
             if self.config.use_wandb:
                 wandb.log({'Valid ' + k: v for (k, v) in valid_loss.to_log_dict().items()}, step=global_step)
-
-            self.make_plots_for_epoch(epoch, train_batch_losses, valid_batch_losses)
+                if plots_dict:
+                    wandb.log(plots_dict, step=global_step)
         
-        self.make_plots(train_epoch_losses, valid_epoch_losses)
+        epoch_plots_dict = self.make_plots(train_epoch_losses, valid_epoch_losses)
+        if self.config.use_wandb:
+            if epoch_plots_dict:
+                wandb.log(epoch_plots_dict, step=global_step)
     
     @abstractmethod
-    def make_plots(self, train_epoch_loss: List[LossInfo], valid_epoch_loss: List[LossInfo]):
+    def make_plots(self, train_epoch_loss: List[LossInfo], valid_epoch_loss: List[LossInfo]) -> Dict[str, plt.Figure]:
         pass
 
     @abstractmethod
-    def make_plots_for_epoch(self, epoch: int, train_batch_losses: List[LossInfo], valid_batch_losses: List[LossInfo]):
+    def make_plots_for_epoch(self, epoch: int, train_batch_losses: List[LossInfo], valid_batch_losses: List[LossInfo]) -> Dict[str, plt.Figure]:
         pass
 
     def train_batch(self, batch_idx: int, data: Tensor, target: Tensor) -> LossInfo:

@@ -46,6 +46,6 @@ if settings.experiment.config.use_wandb:
 
 settings.experiment.config.log_dir.mkdir(parents=True, exist_ok=True)
 
-print("-" * 10, f"Starting experiment '{type(settings.experiment).__name__}' ({settings.experiment.config.run_name})", "-" * 10)
+print("-" * 10, f"Starting experiment '{type(settings.experiment).__name__}' ({settings.experiment.config.log_dir})", "-" * 10)
 settings.experiment.run()
 print("-" * 10, f"Experiment '{type(settings.experiment).__name__}' is done.", "-" * 10)
