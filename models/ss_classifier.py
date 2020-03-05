@@ -34,12 +34,12 @@ class SelfSupervisedClassifier(Classifier):
         detach_classifier: bool = False
 
         reconstruction: VAEReconstructionTask.Options = VAEReconstructionTask.Options(coefficient=1e-3)
-        mixup:          MixupTask.Options             = MixupTask.Options(coefficient=1e-3)
-        manifold_mixup: ManifoldMixupTask.Options     = ManifoldMixupTask.Options(coefficient=1e-3)
-        rotation:       RotationTask.Options          = RotationTask.Options(coefficient=1e-3)
-        jigsaw:         JigsawPuzzleTask.Options      = JigsawPuzzleTask.Options(coefficient=0)
-        irm:            IrmTask.Options               = IrmTask.Options(coefficient=1e-3)
-        adjust_brightness: AdjustBrightnessTask.Options = AdjustBrightnessTask.Options(coefficient=1e-3)
+        mixup:          MixupTask.Options             = MixupTask.Options(coefficient=0.)
+        manifold_mixup: ManifoldMixupTask.Options     = ManifoldMixupTask.Options(coefficient=0.)
+        rotation:       RotationTask.Options          = RotationTask.Options(coefficient=0.)
+        jigsaw:         JigsawPuzzleTask.Options      = JigsawPuzzleTask.Options(coefficient=0.)
+        irm:            IrmTask.Options               = IrmTask.Options(coefficient=0.)
+        adjust_brightness: AdjustBrightnessTask.Options = AdjustBrightnessTask.Options(coefficient=0.)
 
         def get_tasks(self) -> List[AuxiliaryTask]:
             tasks: List[AuxiliaryTask] = []

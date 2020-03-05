@@ -32,9 +32,6 @@ class Classifier(nn.Module):
         # Dimensions of the hidden state (encoder output).
         hidden_size: int = 32
 
-        # Prevent gradients of the classifier from backpropagating into the encoder.
-        detach_classifier: bool = False
-
     def __init__(self,
                  input_shape: Tuple[int, ...],
                  num_classes: int,
