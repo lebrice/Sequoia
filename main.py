@@ -9,18 +9,19 @@ from simple_parsing import ArgumentParser, subparsers
 from experiments.experiment import Experiment
 from experiments.iid import IID
 from experiments.class_incremental import ClassIncremental
+from experiments.task_incremental import TaskIncremental
+
 
 @dataclass
 class RunSettings:
     """ Settings for which 'experiment' (experimental setting) to run. 
     
     Each setting has its own set of command-line arguments.
-       
-    
     """
     experiment: Experiment = subparsers({
         "iid": IID,
         "class_incremental": ClassIncremental,
+        "task_incremental": TaskIncremental,
     })
 
     def __post_init__(self):

@@ -15,13 +15,6 @@ from utils import cuda_available, gpus_available
 from pathlib import Path
 
 
-@dataclass 
-class ClassIncrementalConfig:
-    n_classes_per_task: int = 2      # Number of classes per task.
-    # Wether to sort out the classes in the class_incremental setting.
-    random_class_ordering: bool = False
-
-
 @dataclass
 class Config:
     """Settings related to the training setup. """

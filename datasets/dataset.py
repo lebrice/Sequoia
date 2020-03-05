@@ -13,7 +13,7 @@ from torchvision import transforms
 from torchvision.utils import save_image
 from torchvision import datasets as v_datasets
 from torchvision.datasets import VisionDataset as VDataset
-from config import Config, ClassIncrementalConfig
+from config import Config
 from utils import cuda_available, gpus_available
 from utils.utils import n_consecutive, to_list
 
@@ -90,7 +90,8 @@ class DatasetConfig:
 
             train_dataset = self.train
             if self.current_train_task:
-                train_dataset = self.train[self.current_train_task.indices]
+                indices = list(range(self.current_train_task.start_index, self.current_train_task.end_index))
+                train_dataset = torch.utils.data.Subset(self.train, indices)
 
             train_loader = DataLoader(
                 train_dataset,
@@ -106,7 +107,8 @@ class DatasetConfig:
 
             valid_dataset = self.valid
             if self.current_valid_task:
-                valid_dataset = self.valid[self.current_valid_task.indices]
+                indices = list(range(self.current_valid_task.start_index, self.current_valid_task.end_index))
+                valid_dataset = torch.utils.data.Subset(self.valid, indices)
 
             valid_loader = DataLoader(
                 valid_dataset,
@@ -118,7 +120,9 @@ class DatasetConfig:
         return train_loader, valid_loader
 
 
-def make_class_incremental(dataset: VDataset, config: ClassIncrementalConfig) -> List[TaskConfig]:
+def make_class_incremental(dataset: VDataset,
+                           n_classes_per_task: int=2,
+                           random_ordering: bool=False) -> List[TaskConfig]:
     """Rearranges the given dataset in-place, making it class-incremental.
 
     By default, the classes will be presented in order and in pairs of two.
@@ -128,10 +132,12 @@ def make_class_incremental(dataset: VDataset, config: ClassIncrementalConfig) ->
     - dataset : VDataset
     
         A `torchvision.datasets.VisionDataset` instance to modify in-place.
-    - config : ClassIncrementalConfig
+    - n_classes_per_task : int, optional, by default 2
     
-        The configuration of tasks. (wether or not the ordering of the classes
-        is shuffled, and the number of classes per group.)
+        Number of classes per task. The data within a task is shuffled.
+    - random_ordering : bool, optional, by default False
+    
+        Wether the ordering of classes should itself be random.
     
     Returns
     -------
@@ -139,7 +145,6 @@ def make_class_incremental(dataset: VDataset, config: ClassIncrementalConfig) ->
         A list of `TaskConfig` objects that give useful information about the
         resulting tasks (classes, task_boundaries, etc.)
     """
-    
     task_configs: List[TaskConfig] = []
 
     dataset.targets, train_sort_indices = torch.sort(dataset.targets)
@@ -147,9 +152,9 @@ def make_class_incremental(dataset: VDataset, config: ClassIncrementalConfig) ->
     classes, counts = dataset.targets.unique_consecutive(return_counts=True)
     classes_and_counts = list(zip(classes, counts))
     
-    if config.random_class_ordering:
+    if random_ordering:
         random.shuffle(classes_and_counts)
-    n = config.n_classes_per_task
+    n = n_classes_per_task
 
     old_x = dataset.data
     old_y = dataset.targets
