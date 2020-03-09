@@ -12,7 +12,7 @@ import torchvision
 from torchvision import transforms
 from torchvision.utils import save_image
 from torchvision import datasets as v_datasets
-from torchvision.datasets import VisionDataset as VDataset
+from torchvision.datasets import VisionDataset as VisionDataset
 from config import Config
 from utils import cuda_available, gpus_available
 from utils.utils import n_consecutive, to_list
@@ -20,17 +20,17 @@ from utils.utils import n_consecutive, to_list
 
 @dataclass
 class TaskConfig:
-    id: int
     classes: List[int]
     class_counts: List[int]
     start_index: int
     end_index: int = field(default=None, init=False)
-    indices: slice = field(init=False, repr=False)
+    indices: List[int] = field(default_factory=list, repr=False)
+
     def __post_init__(self):
         self.classes = to_list(self.classes)
         self.class_counts = to_list(self.class_counts)
         self.end_index = self.start_index + sum(self.class_counts)
-        self.indices = slice(self.start_index, self.end_index)
+        self.indices = list(range(self.start_index, self.end_index))
 
 
 @dataclass  # type: ignore 
@@ -44,15 +44,15 @@ class DatasetConfig:
     name: str = "default"
 
     # which dataset class to use. (TODO: add more of them.)
-    dataset_class: Type[v_datasets.VisionDataset] = v_datasets.MNIST
+    dataset_class: ClassVar[Type[v_datasets.VisionDataset]] = field(default=v_datasets.MNIST, repr=False)
 
     config: Config = field(default_factory=Config)
     
     x_shape: Tuple[int, int, int] = (1, 28, 28)
     y_shape: Tuple[int] = (10,)
     
-    train: Optional[VDataset] = None
-    valid: Optional[VDataset] = None
+    train: Optional[VisionDataset] = None
+    valid: Optional[VisionDataset] = None
 
     # The indices where there is a transition between tasks.
     train_tasks: List[TaskConfig] = field(default_factory=list)
@@ -120,7 +120,7 @@ class DatasetConfig:
         return train_loader, valid_loader
 
 
-def make_class_incremental(dataset: VDataset,
+def make_class_incremental(dataset: VisionDataset,
                            n_classes_per_task: int=2,
                            random_ordering: bool=False) -> List[TaskConfig]:
     """Rearranges the given dataset in-place, making it class-incremental.
@@ -129,7 +129,7 @@ def make_class_incremental(dataset: VDataset,
 
     Parameters
     ----------
-    - dataset : VDataset
+    - dataset : VisionDataset
     
         A `torchvision.datasets.VisionDataset` instance to modify in-place.
     - n_classes_per_task : int, optional, by default 2
@@ -169,7 +169,6 @@ def make_class_incremental(dataset: VDataset,
         total_count = sum(task_counts).item()  # type: ignore
         
         task_config = TaskConfig(
-            id=i,
             classes=list(task_classes),
             class_counts=list(task_counts),
             start_index= current_index,

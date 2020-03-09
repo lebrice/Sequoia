@@ -70,8 +70,8 @@ class ClassIncremental(IID):
                                   prefix: str="",
                                   n: int=64):
         n = 64
-        for task in tasks:
+        for i, task in enumerate(tasks):
             start = task.start_index
             stop = start + n
             sample = dataset.data[start: start+n].view(n, *self.dataset.x_shape).float()
-            save_image(sample, self.samples_dir / f"{prefix}task_{task.id}.png")
+            save_image(sample, self.samples_dir / f"{prefix}task_{i}.png")

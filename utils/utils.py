@@ -41,7 +41,9 @@ def to_list(tensors: Iterable[Union[T, Tensor]]) -> List[T]:
     List[float]
         A list of their values.
     """
-    return list(map(lambda v: v.item() if isinstance(v, Tensor) else c, tensors))
+    if tensors is None:
+        return []
+    return list(map(lambda v: v.item() if isinstance(v, Tensor) else v, tensors))
 
 
 def to_dict_of_lists(list_of_dicts: List[Dict[str, Tensor]]) -> Dict[str, List[Tensor]]:

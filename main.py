@@ -40,7 +40,12 @@ if settings.experiment.config.use_wandb:
     wandb_path = settings.experiment.config.log_dir_root.joinpath('wandb')
     wandb_path.mkdir(parents=True, exist_ok=True)
     wandb_path.chmod(0o777)
-    wandb.init(project='SSCL', name=settings.experiment.config.run_name, config=asdict(settings), dir=str(wandb_path))
+
+    config_dict = asdict(settings)
+    # pprint.pprint(config_dict, indent=1)
+    # keys_to_remove: List[str] = []
+
+    wandb.init(project='SSCL', name=settings.experiment.config.run_name, config=config_dict, dir=str(wandb_path))
     wandb.run.save()
     settings.experiment.config.run_name = wandb.run.name
     print(f"Using wandb. Experiment name: {settings.experiment.config.run_name}")
