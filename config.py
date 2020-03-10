@@ -1,7 +1,11 @@
+import os
+import shutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Generic, List, Tuple, TypeVar, Optional
+from pathlib import Path
+from typing import Any, Generic, List, Optional, Tuple, TypeVar
 
+import numpy as np
 import torch
 from simple_parsing import field, mutable_field
 from simple_parsing.helpers import JsonSerializable
@@ -12,7 +16,6 @@ from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
 from utils import cuda_available, gpus_available
-from pathlib import Path
 
 
 @dataclass
@@ -40,12 +43,25 @@ class Config:
     def __post_init__(self):
         # set the manual seed (for reproducibility)
         torch.manual_seed(self.random_seed)
-        
+        np.random.seed(self.random_seed)
+
         if self.use_cuda and not cuda_available:
             print("Cannot use the passed value of argument 'use_cuda', as CUDA "
                   "is not available!")
             self.use_cuda = False
         
+        if self.debug:
+            self.use_wandb = False
+            self.run_name = "debug"
+            if self.log_dir.exists():
+                shutil.rmtree(self.log_dir)
+            self.log_dir.mkdir(exist_ok=False, parents=True)
+
+            if self.use_cuda:
+                # TODO: set CUDA deterministic.
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
+
         if not self.use_cuda:
             self.device = torch.device("cpu")
     
