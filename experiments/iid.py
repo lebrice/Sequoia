@@ -156,20 +156,30 @@ class IID(Experiment):
             self.reconstruct_samples(x_batch)
         
         
-    def reconstruct_samples(self, data: Tensor, n: int=64):
+    def reconstruct_samples(self, data: Tensor):
         with torch.no_grad():
+            n = min(data.size(0), 8)
+            
+            originals = data[:n]
+            reconstructed = self.reconstruction_task.reconstruct(originals)
+            comparison = torch.cat([originals, reconstructed])
+
             reconstruction_images_dir = self.config.log_dir / "reconstruction"
             reconstruction_images_dir.mkdir(exist_ok=True)
-
-            sample = self.reconstruction_task.reconstruct(data)
-            sample = sample.cpu().view(64, 1, 28, 28)
-            save_image(sample, reconstruction_images_dir / f"reconstructed_samples_step_{self.global_step}.png")
+            file_name = reconstruction_images_dir / f"reconstruction_step_{self.global_step}.png"
+            
+            save_image(comparison.cpu(), file_name, nrow=n)
 
     def generate_samples(self):
         with torch.no_grad():
-            sample = self.reconstruction_task.generate(self.latents_batch)
-            sample = sample.cpu().view(64, 1, 28, 28)
-            save_image(sample, self.config.log_dir / f"generated_samples_step_{self.global_step}.png")
+            n = 64
+            fake_samples = self.reconstruction_task.generate(self.latents_batch)
+            fake_samples = fake_samples.cpu().view(n, *self.dataset.x_shape)
+
+            generation_images_dir = self.config.log_dir / "generated_samples"
+            generation_images_dir.mkdir(exist_ok=True)
+            file_name = generation_images_dir / f"generated_step_{self.global_step}.png"
+            save_image(fake_samples, file_name)
 
 
     def log_info(self, batch_loss_info: LossInfo, overall_loss_info: LossInfo) -> Dict:

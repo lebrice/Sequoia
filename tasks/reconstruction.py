@@ -32,10 +32,19 @@ class VAEReconstructionTask(AuxiliaryTask):
         self.logvar = nn.Linear(AuxiliaryTask.hidden_size, self.code_size)
         # TODO: actually use a deconv-ish architecture for the decoder.
         # self.decoder: Optional[nn.Module] = None
+        # self.decoder = get_decoder((100,))
         self.decoder = nn.Sequential(
-            nn.Linear(self.code_size, 400),
-            nn.ReLU(),
-            nn.Linear(400, 784),
+            Reshape([self.code_size, 1, 1]),
+            nn.ConvTranspose2d(self.code_size, 32, kernel_size = 4 , stride = 1),
+            nn.BatchNorm2d(32),
+            nn.ELU(alpha=1.0,inplace=True),
+            nn.ConvTranspose2d(32, 16, kernel_size = 5, stride=2),
+            nn.BatchNorm2d(16),
+            nn.ELU(alpha=1.0,inplace=True),
+            nn.ConvTranspose2d(16,16,kernel_size = 5, stride=2),
+            nn.BatchNorm2d(16),
+            nn.ELU(alpha=1.0,inplace=True),
+            nn.ConvTranspose2d(16,1,kernel_size=4,stride=1),
             nn.Sigmoid(),
         )
 
@@ -56,8 +65,6 @@ class VAEReconstructionTask(AuxiliaryTask):
         h_x = h_x.view([h_x.shape[0], -1])
         mu, logvar = self.mu(h_x), self.logvar(h_x)
         z = self.reparameterize(mu, logvar)
-        if self.decoder is None:
-            self.decoder = get_decoder(h_x.shape)
         x_hat = self.decoder(z)
         
         recon_loss = self.reconstruction_loss(x_hat, x)
@@ -81,7 +88,7 @@ class VAEReconstructionTask(AuxiliaryTask):
     # Reconstruction + KL divergence losses summed over all elements and batch
     @staticmethod
     def reconstruction_loss(recon_x: Tensor, x: Tensor) -> Tensor:
-        return F.binary_cross_entropy(recon_x, x.view(x.shape[0], -1), reduction='sum')
+        return F.binary_cross_entropy(recon_x, x.view(recon_x.shape))
 
     @staticmethod
     def kl_divergence_loss(mu: Tensor, logvar: Tensor) -> Tensor:
@@ -105,7 +112,7 @@ def get_decoder(hidden_size: torch.Size) -> nn.Module:
                 channels //= 4
                 height *= 2
             target_shape = [channels, height, height]
-    print("reshaped input shape:", target_shape)
+    # print("reshaped input shape:", target_shape)
     
     return nn.Sequential(
         Flatten(),

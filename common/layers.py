@@ -2,19 +2,22 @@ from collections import OrderedDict
 
 import torch
 from torch import nn, Tensor
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union, List
+
 
 class Flatten(nn.Module):
     def forward(self, inputs):
         return inputs.view([inputs.shape[0], -1])
 
+
 class Reshape(nn.Module):
-    def __init__(self, target_shape: Tuple[int, ...]):
+    def __init__(self, target_shape: Union[List[int], Tuple[int, ...]]):
         self.target_shape = target_shape
         super().__init__()
 
     def forward(self, inputs):
         return inputs.reshape([inputs.shape[0], *self.target_shape])
+
 
 class ConvBlock(nn.Module):
     def __init__(self,
