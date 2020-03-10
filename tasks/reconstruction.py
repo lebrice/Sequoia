@@ -10,6 +10,7 @@ from .bases import AuxiliaryTask
 from common.losses import LossInfo
 from common.layers import DeConvBlock, Flatten, Reshape
 
+
 class VAEReconstructionTask(AuxiliaryTask):
     """ Task that adds the VAE loss (reconstruction + KL divergence). 
     
@@ -37,10 +38,8 @@ class VAEReconstructionTask(AuxiliaryTask):
             nn.Linear(400, 784),
             nn.Sigmoid(),
         )
-        self.device: Optional[torch.device] = None
 
-    def forward(self, h_x: Tensor) -> Tensor:  # type: ignore
-        self.device = h_x.device
+    def forward(self, h_x: Tensor) -> Tensor:
         h_x = h_x.view([h_x.shape[0], -1])
         mu, logvar = self.mu(h_x), self.logvar(h_x)
         z = self.reparameterize(mu, logvar)
@@ -54,7 +53,6 @@ class VAEReconstructionTask(AuxiliaryTask):
         return z
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> LossInfo:
-        self.device = h_x.device
         h_x = h_x.view([h_x.shape[0], -1])
         mu, logvar = self.mu(h_x), self.logvar(h_x)
         z = self.reparameterize(mu, logvar)
@@ -71,7 +69,7 @@ class VAEReconstructionTask(AuxiliaryTask):
         loss_info.losses["kl"] = kl_loss
         return loss_info
 
-    def reconstruct(self, x: Tensor) -> Tensor:  
+    def reconstruct(self, x: Tensor) -> Tensor:
         h_x = self.encode(x)
         x_hat = self.forward(h_x)
         return x_hat.view(x.shape)

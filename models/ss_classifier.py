@@ -61,6 +61,7 @@ class SelfSupervisedClassifier(Classifier):
         # TODO: Share the hidden size dimensions of this model with the Auxiliary tasks so they know how big the h_x is going to actually be.
         AuxiliaryTask.hidden_size = self.hparams.hidden_size
         aux_tasks = self.hparams.get_tasks()
+
         self.tasks: List[AuxiliaryTask] = nn.ModuleList(aux_tasks)  # type: ignore
         if self.config.verbose:
             print(self)

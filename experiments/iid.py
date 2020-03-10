@@ -45,8 +45,6 @@ class IID(Experiment):
                 if isinstance(aux_task, VAEReconstructionTask):
                     self.reconstruction_task = aux_task
                     break
-        
-        self._plots_dir: Optional[Path] = None
     
     def make_plots_for_epoch(self,
                              epoch: int,
@@ -83,7 +81,7 @@ class IID(Experiment):
         
         # add the vertical lines for task transitions (if any)
         for task_info in self.dataset.train_tasks:
-            ax1.axvline(x=task_info.start_index, color='r')
+            ax1.axvline(x=min(task_info.indices), color='r')
 
         ax1.legend(loc='upper right')
         
@@ -104,7 +102,7 @@ class IID(Experiment):
             fig.waitforbuttonpress(timeout=30)
         fig.savefig(self.plots_dir / f"epoch_{epoch}.jpg")
         
-        return {f"epoch_loss": fig}
+        return {"epoch_loss": fig}
 
     def make_plots(self, train_losses: List[LossInfo], valid_losses: List[LossInfo]) -> Dict[str, plt.Figure]:
         import matplotlib.pyplot as plt

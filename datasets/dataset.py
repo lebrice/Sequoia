@@ -12,7 +12,7 @@ import torchvision
 from torchvision import transforms
 from torchvision.utils import save_image
 from torchvision import datasets as v_datasets
-from torchvision.datasets import VisionDataset as VisionDataset
+from torchvision.datasets import VisionDataset
 from config import Config
 from utils import cuda_available, gpus_available
 from utils.utils import n_consecutive, to_list
@@ -24,16 +24,14 @@ class TaskConfig:
     class_counts: List[int]
     start_index: int
     end_index: int = field(default=None, init=False)
-    indices: List[int] = field(default_factory=list, repr=False)
 
     def __post_init__(self):
         self.classes = to_list(self.classes)
         self.class_counts = to_list(self.class_counts)
         self.end_index = self.start_index + sum(self.class_counts)
-        self.indices = list(range(self.start_index, self.end_index))
+        self.indices: List[int] = list(range(self.start_index, self.end_index))
 
-
-@dataclass  # type: ignore 
+@dataclass
 class DatasetConfig:
     """
     Represents all logic related to a Dataset.

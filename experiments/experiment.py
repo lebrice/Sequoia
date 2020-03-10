@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Dict, Iterable, List, Type
+from typing import Any, ClassVar, Dict, Iterable, List, Type, Union
 
 import matplotlib.pyplot as plt
 import torch
@@ -21,6 +21,7 @@ from datasets.fashion_mnist import FashionMnist
 from models.classifier import Classifier
 from models.ss_classifier import SelfSupervisedClassifier
 from tasks import AuxiliaryTask
+from utils import utils
 
 
 @dataclass  # type: ignore
@@ -46,20 +47,74 @@ class Experiment:
     model: Classifier = field(default=None, init=False)
     model_name: str = field(default=None, init=False)
 
-
     def __post_init__(self):
         """ Called after __init__, used to initialize all missing fields.
         
         You can use this method to initialize the fields that aren't parsed from
-        the command-line, such as `model`, etc.        
+        the command-line, such as `model`, etc.
+        Additionally, the fields created here are not added in the wandb logs.       
         """
         AuxiliaryTask.input_shape   = self.dataset.x_shape
-        self.model = self.get_model(self.dataset)
+        self.model = self.get_model(self.dataset).to(self.config.device)
         self.model_name = type(self.model).__name__
-    
+
+        self.train_loader: DataLoader = NotImplemented
+        self.valid_loader: DataLoader = NotImplemented
+
     def load(self):
+        """ Setup the dataloaders and other settings before training. """
+        self.dataset.load(self.config)
         dataloaders = self.dataset.get_dataloaders(self.config, self.hparams.batch_size)
         self.train_loader, self.valid_loader = dataloaders
+        self.global_step = 0
+
+    def run(self):
+        self.load()
+
+        train_epoch_losses: List[LossInfo] = []
+        valid_epoch_losses: List[LossInfo] = []
+
+        for epoch in range(self.hparams.epochs):
+            # Training:
+            train_losses: List[LossInfo] = []
+            for train_loss in self.train_iter(epoch, self.train_loader):
+                train_losses.append(train_loss)
+            train_epoch_loss = sum(train_losses, LossInfo())
+            train_epoch_losses.append(train_epoch_loss)
+
+            # Validation:
+            valid_batch_losses: List[LossInfo] = []
+            for valid_loss in self.test_iter(epoch, self.valid_loader):
+                valid_batch_losses.append(valid_loss)
+            valid_epoch_loss = sum(valid_batch_losses, LossInfo())
+            valid_epoch_losses.append(valid_epoch_loss)
+
+            # make the training plots for this epoch
+            plots_dict = self.make_plots_for_epoch(epoch, train_losses, valid_batch_losses)
+            self.log(plots_dict)
+            
+            # log the validation loss for this epoch.
+            self.log(valid_epoch_loss, prefix="Valid ")
+
+            total_validation_loss = valid_epoch_loss.total_loss.item()
+            validation_metrics = valid_epoch_loss.metrics
+
+            print(f"Epoch {epoch}: Total Test Loss: {total_validation_loss}, Validation Metrics: ", valid_epoch_loss.metrics.class_accuracy)
+
+        # make the plots using the training and validation losses of each epoch.
+        epoch_plots_dict = self.make_plots(train_epoch_losses, valid_epoch_losses)
+
+        # Get the most recent validation metrics. 
+        class_accuracy = valid_epoch_losses[-1].metrics.class_accuracy
+        valid_class_accuracy_mean = class_accuracy.mean()
+        valid_class_accuracy_std = class_accuracy.std()
+        self.log("Validation Average Class Accuracy: ", valid_class_accuracy_mean, once=True, always_print=True)
+        self.log("Validation Class Accuracy STD:", valid_class_accuracy_std, once=True, always_print=True)
+        self.log(epoch_plots_dict, once=True)
+
+        return epoch_plots_dict
+
+
 
     def get_model(self, dataset: Dataset) -> Classifier:
         if isinstance(dataset, (Mnist, FashionMnist)):
@@ -77,50 +132,33 @@ class Experiment:
                 )
         raise NotImplementedError("TODO: add other datasets.")
 
-    def run(self):
-        self.load()
-        
-        self.model = self.model.to(self.config.device)
 
-        train_epoch_losses: List[LossInfo] = []
-        valid_epoch_losses: List[LossInfo] = []
-
-        global_step = 0
-
-        for epoch in range(self.hparams.epochs):
-            train_batch_losses: List[LossInfo] = []
-            valid_batch_losses: List[LossInfo] = []
-
-            for batch_idx, train_loss in enumerate(self.train_iter(epoch, self.train_loader)):
-                train_batch_losses.append(train_loss)
-
-                global_step += 1
-                if self.config.use_wandb and batch_idx % self.config.log_interval == 0:
-                    wandb.log({'Train ' + k: v for (k, v) in train_loss.to_log_dict().items()}, step=global_step)
-            
-            for valid_loss in self.test_iter(epoch, self.valid_loader):
-                valid_batch_losses.append(valid_loss)
-
-            train_epoch_loss = sum(train_batch_losses, LossInfo())
-            valid_epoch_loss = sum(valid_batch_losses, LossInfo())
-
-            train_epoch_losses.append(train_epoch_loss)
-            valid_epoch_losses.append(valid_epoch_loss)
-
-            plots_dict = self.make_plots_for_epoch(epoch, train_batch_losses, valid_batch_losses)
-            if self.config.use_wandb:
-                wandb.log({'Valid ' + k: v for (k, v) in valid_epoch_loss.to_log_dict().items()}, step=global_step)
-                if plots_dict:
-                    wandb.log(plots_dict, step=global_step)
-        
-        epoch_plots_dict = self.make_plots(train_epoch_losses, valid_epoch_losses)
+    def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
+        if always_print or (self.config.debug and self.config.verbose):
+            print(message, value if value is not None else "")
         if self.config.use_wandb:
-            class_accuracy = valid_epoch_losses[-1].metrics.class_accuracy
-            wandb.log({"Validation Average Class Accuracy": class_accuracy.mean()})
-            wandb.log({"Validation Class Accuracy std": class_accuracy.std()})
-            if epoch_plots_dict:
-                wandb.log(epoch_plots_dict, step=global_step)
-    
+            # if we want to long once (like a final result, step should be None)
+            # else, if not given, we use the global step.
+            step = None if once else (step or self.global_step)
+            
+            message_dict: Dict = message
+            if message is None:
+                return
+            if isinstance(message, dict):
+                message_dict = message
+            elif isinstance(message, LossInfo):
+                message_dict = message.to_log_dict()
+            elif isinstance(message, str) and value is not None:
+                message_dict = {message: value}
+            else:
+                message_dict = message
+            
+            if prefix:
+                message_dict = utils.add_prefix(message_dict, prefix)
+            
+            wandb.log(message_dict, step=step)
+
+
     @abstractmethod
     def make_plots(self, train_epoch_loss: List[LossInfo], valid_epoch_loss: List[LossInfo]) -> Dict[str, plt.Figure]:
         pass
@@ -156,6 +194,9 @@ class Experiment:
             batch_loss_info = self.train_batch(batch_idx, data, target)
             yield batch_loss_info
 
+            batch_size = data.shape[0]
+            self.global_step += batch_size
+
             overall_loss_info += batch_loss_info
 
             if batch_idx % self.config.log_interval == 0:
@@ -163,7 +204,8 @@ class Experiment:
                 message = self.log_info(batch_loss_info, overall_loss_info)
                 pbar.set_postfix(message)
 
-        print(f"====> Epoch: {epoch}, total loss: {overall_loss_info.total_loss}, metrics: {overall_loss_info.metrics}")
+                self.log(batch_loss_info, prefix="Train ")
+
         return overall_loss_info
 
     def test_batch(self, batch_idx: int, data: Tensor, target: Tensor) -> LossInfo:
@@ -181,21 +223,18 @@ class Experiment:
         model.eval()
         test_loss = 0.
 
-        total_aux_losses: Dict[str, float] = defaultdict(float)
-        overall_loss_info = LossInfo()
+        test_loss = LossInfo()
 
         with torch.no_grad():
             for i, (data, target) in enumerate(dataloader):
                 data = data.to(model.device)
                 target = target.to(model.device)
 
-                batch_loss_info = self.test_batch(i, data, target)
-                yield batch_loss_info
-                overall_loss_info += batch_loss_info
-                
-        print(f"====> Test set loss: {overall_loss_info.total_loss.item():.4f}")
-        print(f"====> Test set Metrics:", overall_loss_info.metrics)
-        return overall_loss_info
+                batch_loss = self.test_batch(i, data, target)
+                yield batch_loss
+                test_loss += batch_loss
+       
+        return test_loss
 
     def log_info(self, batch_loss_info: LossInfo, overall_loss_info: LossInfo) -> Dict:
         message: Dict[str, Any] = OrderedDict()

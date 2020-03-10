@@ -25,13 +25,23 @@ class ClassIncremental(IID):
     
     def __post_init__(self):
         print("called postinit of ClassIncremental")
-
+        super().__post_init__()
         if self.online:
             self.hparams.epochs = 1
-
+        if self.config.debug:
+            print("Class Incremental Setup:")
+            print("Training tasks:")
+            print("\t", *self.dataset.train_tasks, sep="\n\t")
+            print("Validation tasks:")
+            print("\t", *self.dataset.valid_tasks, sep="\n\t")
+    
+    def load(self):
+        # TODO: Clean-up this mechanism by having the dataset.load() method take in classes to use and return the dataloaders.
         self.dataset.load(self.config)
+
         assert self.dataset.train
         assert self.dataset.valid
+        
         self.dataset.train_tasks = make_class_incremental(
             self.dataset.train,
             n_classes_per_task=self.n_classes_per_task,
@@ -41,17 +51,9 @@ class ClassIncremental(IID):
             self.dataset.valid,
             n_classes_per_task=self.n_classes_per_task,
             random_ordering=self.random_class_ordering,
-        )
-        
-        super().__post_init__()
+        )        
+        super().load()
 
-        if self.config.debug:
-            print("Class Incremental Setup:")
-            print("Training tasks:")
-            print("\t", *self.dataset.train_tasks, sep="\n\t")
-            print("Validation tasks:")
-            print("\t", *self.dataset.valid_tasks, sep="\n\t")
-        
         self.save_images_for_each_task(
             self.dataset.train,
             self.dataset.train_tasks,
@@ -63,7 +65,12 @@ class ClassIncremental(IID):
             prefix="valid_",
         )
 
-    
+        if isinstance(self.model, SelfSupervisedClassifier):
+            print("Auxiliary tasks:")
+            for task in self.model.tasks:
+                self.log(f"{task.name} coefficient: ", task.coefficient, once=True, always_print=True)
+
+
     def save_images_for_each_task(self,
                                   dataset: v_datasets.MNIST,
                                   tasks: List[TaskConfig],

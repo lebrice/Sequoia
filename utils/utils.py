@@ -55,6 +55,11 @@ def to_dict_of_lists(list_of_dicts: List[Dict[str, Tensor]]) -> Dict[str, List[T
         assert d.keys() == result.keys()
     return result
 
+
+def add_prefix(some_dict: Dict[str, T], prefix: str="") -> Dict[str, T]:
+    return {prefix + key: value for key, value in some_dict.items()}
+
+
 class TensorCache(MutableMapping[Tensor, Tensor]):
     """A mutable mapping of individual (not batched) tensors to their outputs.
 

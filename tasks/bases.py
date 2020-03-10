@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
 from dataclasses import InitVar, dataclass, field
-from typing import *
-from typing import ClassVar
+from typing import Tuple, ClassVar, Callable, TypeVar
 
 import torch
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from common.losses import LossInfo
+from utils import cuda_available
+
 
 class AuxiliaryTask(nn.Module):
     """ Represents an additional loss to apply to a `Classifier`.
@@ -59,6 +60,7 @@ class AuxiliaryTask(nn.Module):
         super().__init__()
         self.options = options or self.Options(*args, **kwargs)
         self._coefficient = self.options.coefficient  # type: ignore
+        self.device: torch.device = torch.device("cuda" if cuda_available else "cpu")
 
     def encode(self, x: Tensor) -> Tensor:
         x = AuxiliaryTask.preprocessing(x)
@@ -105,6 +107,14 @@ class AuxiliaryTask(nn.Module):
     def get_scaled_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         if not self.enabled:
             return LossInfo()
+        
+        self.device = h_x.device
+        x = x.to(self.device)
+        if y_pred is not None:
+            y_pred = y_pred.to(self.device)
+        if y is not None:
+            y = y.to(self.device)
+
         loss_info = self.get_loss(x, h_x, y_pred, y)
         loss_info.add_prefix(self.name)
         if loss_info.total_loss != 0 and not loss_info.losses:
