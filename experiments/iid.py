@@ -28,6 +28,7 @@ from models.ss_classifier import SelfSupervisedClassifier
 from tasks import AuxiliaryTask
 from tasks.reconstruction import VAEReconstructionTask
 from utils.logging import loss_str
+from utils.utils import to_list
 
 from .experiment import Experiment
 
@@ -44,7 +45,7 @@ class IID(Experiment):
             for aux_task in self.model.tasks:
                 if isinstance(aux_task, VAEReconstructionTask):
                     self.reconstruction_task = aux_task
-                    break
+                    self.latents_batch = torch.randn(64, self.hparams.hidden_size)
     
     def make_plots_for_epoch(self,
                              epoch: int,
@@ -54,39 +55,32 @@ class IID(Experiment):
             loss.metrics.n_samples for loss in train_losses
         ]))
         
-        valid_loss: LossInfo = sum(valid_losses, LossInfo())
-        valid_metrics = valid_loss.metrics
-        
-        accuracy = valid_metrics.accuracy
-        class_accuracy = valid_metrics.class_accuracy
-        if self.config.debug or self.config.verbose:
-            print("Validation Loss:", valid_loss)
-
         fig: plt.Figure = plt.figure()
         ax1: plt.Axes = fig.add_subplot(1, 2, 1)
         ax1.set_title(f"Loss - Epoch {epoch}")
         ax1.set_xlabel("# of Samples")
         ax1.set_ylabel("Training Loss")
         
-        # Plot the total loss
-        total_train_losses = [loss.total_loss.cpu() for loss in train_losses]
+        # Plot the evolution of the training loss
+        total_train_losses = to_list(loss.total_loss for loss in train_losses)
         ax1.plot(train_x, total_train_losses, label="total loss")
 
         from utils.utils import to_dict_of_lists
         train_losses_dict = to_dict_of_lists([loss.losses for loss in train_losses])
 
-        # # Plot all the other losses (auxiliary losses)
-        # for loss_name, aux_losses in train_losses_dict.items():
-        #     ax1.plot(train_x, aux_losses, label=loss_name)
+        # Plot all the other losses (auxiliary losses)
+        for loss_name, aux_losses in train_losses_dict.items():
+            ax1.plot(train_x, aux_losses, label=loss_name)
+        ax1.legend(loc='upper right')
         
         # add the vertical lines for task transitions (if any)
         for task_info in self.dataset.train_tasks:
             ax1.axvline(x=min(task_info.indices), color='r')
 
-        ax1.legend(loc='upper right')
         
         n_classes = self.dataset.y_shape[0]
         classes = list(range(n_classes))
+        class_accuracy = sum(valid_losses, LossInfo()).metrics.class_accuracy
         ax2: plt.Axes = fig.add_subplot(1, 2, 2)
         
         ax2.bar(classes, class_accuracy)
@@ -94,10 +88,11 @@ class IID(Experiment):
         ax2.set_xticks(classes)
         ax2.set_xticklabels(classes)
         ax2.set_ylabel("Validation Accuracy")
+        ax2.set_ylim(0.0, 1.0)
         ax2.set_title(f"Validation Class Accuracy After Epoch {epoch}")
-        fig.tight_layout()
+        # fig.tight_layout()
         
-        if self.config.debug:
+        if self.config.debug and self.config.verbose:
             fig.show()
             fig.waitforbuttonpress(timeout=30)
         fig.savefig(self.plots_dir / f"epoch_{epoch}.jpg")
@@ -105,43 +100,42 @@ class IID(Experiment):
         return {"epoch_loss": fig}
 
     def make_plots(self, train_losses: List[LossInfo], valid_losses: List[LossInfo]) -> Dict[str, plt.Figure]:
-        import matplotlib.pyplot as plt
-
-        plots_dir = self.config.log_dir / "plots"
-        plots_dir.mkdir(exist_ok=True)
-        epochs = list(range(len(train_losses)))
+        n_epochs = len(train_losses)
+        epochs = list(range(n_epochs))
         plots_dict: Dict[str, plt.Figure] = {}
-              
+
         fig: plt.Figure = plt.figure()
         ax: plt.Axes = fig.subplots()
         
         ax.set_title("Total Loss")
         ax.set_xlabel("Epoch")
+        ax.set_xticks(epochs)
         ax.set_ylabel("Loss")
         ax.plot(epochs, [loss.total_loss for loss in train_losses], label="train")
         ax.plot(epochs, [loss.total_loss for loss in valid_losses], label="valid")
         ax.legend(loc='upper right')
-        plots_dict["loss"] = fig
 
         if self.config.debug:
             fig.show()
             fig.waitforbuttonpress(timeout=30)
-        fig.savefig(self.plots_dir / "loss.jpg")
+        plots_dict["losses"] = fig
+        fig.savefig(self.plots_dir / "losses.jpg")
 
         fig, ax = plt.subplots()
         ax.set_xlabel("Epoch")
+        ax.set_ylim(0.0, 1.0)
         ax.set_ylabel("Accuracy")
         ax.set_title("Training and Validation Accuracy")
         ax.plot(epochs, [loss.metrics.accuracy for loss in train_losses], label="train")
         ax.plot(epochs, [loss.metrics.accuracy for loss in valid_losses], label="valid")
         ax.legend(loc='lower right')
         
-        plots_dict["accuracy"] = fig
 
         if self.config.debug:
             fig.show()
             fig.waitforbuttonpress(timeout=30)
 
+        plots_dict["accuracy"] = fig
         fig.savefig(self.plots_dir / "accuracy.jpg")
         return plots_dict
 
@@ -149,27 +143,34 @@ class IID(Experiment):
     def test_iter(self, epoch: int, dataloader: DataLoader):
         yield from super().test_iter(epoch, dataloader)
         if self.reconstruction_task:
-            with torch.no_grad():
-                reconstruction_images_dir = self.config.log_dir / "reconstruction"
-                reconstruction_images_dir.mkdir(exist_ok=True)
-
-                sample = self.reconstruction_task.generate(torch.randn(64, self.hparams.hidden_size))
-                sample = sample.cpu().view(64, 1, 28, 28)
-                save_image(sample, reconstruction_images_dir / f"sample_{epoch}.png")
+            self.generate_samples()        
     
     def train_iter(self, epoch: int, dataloader: DataLoader):
-        yield from super().train_iter(epoch, dataloader)
+        for loss_info in super().train_iter(epoch, dataloader):
+            yield loss_info
+        
+        # use the last batch of x's.
+        x_batch = loss_info.tensors["x"]
         if self.reconstruction_task:
-            with torch.no_grad():
-                sample = self.reconstruction_task.generate(torch.randn(64, self.hparams.hidden_size))
-                sample = sample.cpu().view(64, 1, 28, 28)
-                save_image(sample, self.config.log_dir / f"generated_{epoch}.png")
+            print("Reconstructing stuff: ", x_batch.shape)
+            self.reconstruct_samples(x_batch)
+        
+        
+    def reconstruct_samples(self, data: Tensor, n: int=64):
+        with torch.no_grad():
+            reconstruction_images_dir = self.config.log_dir / "reconstruction"
+            reconstruction_images_dir.mkdir(exist_ok=True)
 
-                # os.makedirs(os.path.join(self.config.log_dir, "reconstruction"))
-                # n = min(data.size(0), 8)
-                # fake = self.reconstruction_task.reconstruct()
-                # comparison = torch.cat([data[:n], fake[:n]])
-                # save_image(comparison.cpu(), os.path.join(self.config.log_dir, "reconstruction", f"{epoch}.png"), nrow=n)
+            sample = self.reconstruction_task.reconstruct(data)
+            sample = sample.cpu().view(64, 1, 28, 28)
+            save_image(sample, reconstruction_images_dir / f"reconstructed_samples_step_{self.global_step}.png")
+
+    def generate_samples(self):
+        with torch.no_grad():
+            sample = self.reconstruction_task.generate(self.latents_batch)
+            sample = sample.cpu().view(64, 1, 28, 28)
+            save_image(sample, self.config.log_dir / f"generated_samples_step_{self.global_step}.png")
+
 
     def log_info(self, batch_loss_info: LossInfo, overall_loss_info: LossInfo) -> Dict:
         message = super().log_info(batch_loss_info, overall_loss_info)
@@ -183,4 +184,3 @@ class IID(Experiment):
             else:
                 message[loss_name] = loss_str(loss_tensor)
         return message
-
