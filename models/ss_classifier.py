@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, List, NamedTuple, Tuple, Type, TypeVar
+from typing import Any, Dict, List, NamedTuple, Tuple, Type, TypeVar, Optional
 
 import torch
 from simple_parsing import MutableField as mutable_field
@@ -18,56 +18,63 @@ from tasks import (AuxiliaryTask, IrmTask, JigsawPuzzleTask, ManifoldMixupTask,
                    MixupTask, PatchLocationTask, RotationTask, TaskType,
                    VAEReconstructionTask, AdjustBrightnessTask)
 from common.layers import Flatten, ConvBlock
+from datasets.dataset import DatasetConfig
+
+@dataclass
+class AuxiliaryTaskList(nn.ModuleList, List[AuxiliaryTask]):  #type: ignore
+    """ TODO: maybe use this in order to have the same hyperparameter class as `classifier`. """
+    reconstruction: VAEReconstructionTask.Options = VAEReconstructionTask.Options(coefficient=0.)
+    mixup:          MixupTask.Options             = MixupTask.Options(coefficient=0.)
+    manifold_mixup: ManifoldMixupTask.Options     = ManifoldMixupTask.Options(coefficient=0.)
+    rotation:       RotationTask.Options          = RotationTask.Options(coefficient=0.)
+    jigsaw:         JigsawPuzzleTask.Options      = JigsawPuzzleTask.Options(coefficient=0.)
+    irm:            IrmTask.Options               = IrmTask.Options(coefficient=0.)
+    adjust_brightness: AdjustBrightnessTask.Options = AdjustBrightnessTask.Options(coefficient=0.)
+
+    def __post_init__(self):
+        # Call the __init__ of the ModuleList base class.
+        super().__init__()
+
+    def create_tasks(self, input_shape: Tuple[int, ...], hidden_size: int) -> None:
+        # Set the class attributes so that the Tasks can be created.
+        AuxiliaryTask.hidden_size = hidden_size
+        AuxiliaryTask.input_shape = input_shape
+
+        self.append(VAEReconstructionTask(options=self.reconstruction))
+        self.append(MixupTask(options=self.mixup))
+        self.append(ManifoldMixupTask(options=self.manifold_mixup))
+        self.append(RotationTask(options=self.rotation))
+        self.append(JigsawPuzzleTask(options=self.jigsaw))
+        self.append(IrmTask(options=self.irm))
+        self.append(AdjustBrightnessTask(options=self.adjust_brightness))
+
 
 class SelfSupervisedClassifier(Classifier):
+
     @dataclass
     class HParams(Classifier.HParams):
-        """ Set of Options / Command-line Parameters for the MNIST Example.
+        aux_tasks: AuxiliaryTaskList = field(default_factory=AuxiliaryTaskList)
         
-        We use [simple_parsing](www.github.com/lebrice/simpleparsing) to generate
-        all the command-line arguments for this class.
-        """
-        # Dimensions of the hidden state (feature extractor/encoder output).
-        hidden_size: int = 100
+    def __init__(self,
+                 input_shape: Tuple[int, ...],
+                 hparams: HParams,
+                 *args, **kwargs):
+        super().__init__(*args, input_shape=input_shape, hparams=hparams, **kwargs)
 
-        # Prevent gradients of the classifier from backpropagating into the encoder.
-        detach_classifier: bool = False
-
-        reconstruction: VAEReconstructionTask.Options = VAEReconstructionTask.Options(coefficient=1e-3)
-        mixup:          MixupTask.Options             = MixupTask.Options(coefficient=0.)
-        manifold_mixup: ManifoldMixupTask.Options     = ManifoldMixupTask.Options(coefficient=0.)
-        rotation:       RotationTask.Options          = RotationTask.Options(coefficient=0.)
-        jigsaw:         JigsawPuzzleTask.Options      = JigsawPuzzleTask.Options(coefficient=0.)
-        irm:            IrmTask.Options               = IrmTask.Options(coefficient=0.)
-        adjust_brightness: AdjustBrightnessTask.Options = AdjustBrightnessTask.Options(coefficient=0.)
-
-        def get_tasks(self) -> List[AuxiliaryTask]:
-            tasks: List[AuxiliaryTask] = []
-            tasks.append(VAEReconstructionTask(options=self.reconstruction))
-            tasks.append(MixupTask(options=self.mixup))
-            tasks.append(ManifoldMixupTask(options=self.manifold_mixup))
-            tasks.append(RotationTask(options=self.rotation))
-            tasks.append(JigsawPuzzleTask(options=self.jigsaw))
-            tasks.append(IrmTask(options=self.irm))
-            tasks.append(AdjustBrightnessTask(options=self.adjust_brightness))
-            return tasks
-
-    def __init__(self, hparams: HParams, *args, **kwargs):
-        super().__init__(*args, hparams=hparams, **kwargs)
         # Share the relevant parameters with all the auxiliary tasks.
         AuxiliaryTask.encoder       = self.encoder
         AuxiliaryTask.classifier    = self.classifier
         AuxiliaryTask.preprocessing = self.preprocess_inputs
-        # TODO: Share the hidden size dimensions of this model with the Auxiliary tasks so they know how big the h_x is going to actually be.
-        AuxiliaryTask.hidden_size = self.hparams.hidden_size
-        aux_tasks = self.hparams.get_tasks()
 
-        self.tasks: List[AuxiliaryTask] = nn.ModuleList(aux_tasks)  # type: ignore
-        if self.config.verbose:
+        self.tasks: AuxiliaryTaskList = self.hparams.aux_tasks
+        self.tasks.create_tasks(input_shape=input_shape, hidden_size=self.hparams.hidden_size)
+        self.tasks = nn.ModuleList(self.tasks)
+        if self.config.debug:
             print(self)
             print("Auxiliary tasks:")
+            print(self.tasks)
             for task in self.tasks:
-                print(f"{task.name} - enabled: {task.enabled}, coefficient: {task.coefficient}")
+                print(f"{task.name}: {task.coefficient}")
 
 
     def get_loss(self, x: Tensor, y: Tensor=None) -> LossInfo:

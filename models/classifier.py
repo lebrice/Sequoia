@@ -29,8 +29,11 @@ class Classifier(nn.Module):
         epochs: int = 10        # Number of epochs to train.
         learning_rate: float = field(default=1e-3, alias="-lr")  # learning rate.
 
-        # Dimensions of the hidden state (encoder output).
-        hidden_size: int = 32
+        # Dimensions of the hidden state (feature extractor/encoder output).
+        hidden_size: int = 100
+
+        # Prevent gradients of the classifier from backpropagating into the encoder.
+        detach_classifier: bool = False
 
     def __init__(self,
                  input_shape: Tuple[int, ...],
@@ -46,7 +49,7 @@ class Classifier(nn.Module):
         self.encoder = encoder
         # Classifier output layer
         self.classifier = classifier
-        self.hparams = hparams
+        self.hparams: Classifier.HParams = hparams
         self.config = config
 
         self.hidden_size = hparams.hidden_size  
@@ -89,6 +92,8 @@ class Classifier(nn.Module):
         return x
 
     def logits(self, h_x: Tensor) -> Tensor:
+        if self.hparams.detach_classifier:
+            h_x = h_x.detach()
         return self.classifier(h_x)
 
 
