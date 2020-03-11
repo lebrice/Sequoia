@@ -43,6 +43,7 @@ class Classifier(nn.Module):
                  num_classes: int,
                  encoder: nn.Module,
                  classifier: nn.Module,
+                #  auxiliary_task_options: AuxiliaryTaskOptions,
                  hparams: HParams,
                  config: Config):
         super().__init__()
@@ -60,22 +61,21 @@ class Classifier(nn.Module):
         self.device = self.config.device
 
         # Share the relevant parameters with all the auxiliary tasks.
+        # We do this by setting a class attribute.
         AuxiliaryTask.hidden_size   = self.hparams.hidden_size
         AuxiliaryTask.input_shape   = self.input_shape
         AuxiliaryTask.encoder       = self.encoder
         AuxiliaryTask.classifier    = self.classifier
         AuxiliaryTask.preprocessing = self.preprocess_inputs
         
-        self.tasks: Dict[str, AuxiliaryTask] = self.hparams.aux_tasks.create_tasks(
+        self.tasks: Dict[str, AuxiliaryTask] = self.hparams.aux_tasks.create_tasks(  # type: ignore
             input_shape=input_shape,
             hidden_size=self.hparams.hidden_size
         )
 
-        # self.tasks = nn.ModuleList(self.tasks)
         if self.config.debug:
             print(self)
             print("Auxiliary tasks:")
-            print(self.tasks)
             for task_name, task in self.tasks.items():
                 print(f"{task.name}: {task.coefficient}")
 
@@ -87,7 +87,7 @@ class Classifier(nn.Module):
         loss = self.classification_loss(y_pred, y)
         return LossInfo(
             total_loss=loss,
-            tensors=(dict(x=x, h_x=h_x, y_pred=y_pred, y=y) if self.config.debug else {}),
+            tensors=(dict(x=x, h_x=h_x, y_pred=y_pred, y=y)),
             metrics=Metrics(x=x, h_x=h_x, y_pred=y_pred, y=y),
         )
 

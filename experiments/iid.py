@@ -26,7 +26,6 @@ from datasets.mnist import Mnist
 from models.classifier import Classifier
 from tasks import AuxiliaryTask
 from tasks.reconstruction import VAEReconstructionTask
-from utils.logging import loss_str
 from utils.utils import to_list
 
 from .experiment import Experiment
@@ -150,8 +149,8 @@ class IID(Experiment):
         if self.reconstruction_task:
             # use the last batch of x's.
             x_batch = loss_info.tensors.get("x")
-            print("Reconstructing stuff: ", x_batch.shape)
-            self.reconstruct_samples(x_batch)
+            if x_batch is not None:
+                self.reconstruct_samples(x_batch)
         
         
     def reconstruct_samples(self, data: Tensor):
@@ -179,16 +178,3 @@ class IID(Experiment):
             file_name = generation_images_dir / f"generated_step_{self.global_step}.png"
             save_image(fake_samples, file_name)
 
-
-    def log_info(self, batch_loss_info: LossInfo, overall_loss_info: LossInfo) -> Dict:
-        message = super().log_info(batch_loss_info, overall_loss_info)
-        # add the logs for all the scaled losses:
-        for loss_name, loss_tensor in batch_loss_info.losses.items():
-            if loss_name.endswith("_scaled"):
-                continue
-            scaled_loss_tensor = batch_loss_info.losses.get(f"{loss_name}_scaled")
-            if scaled_loss_tensor is not None:
-                message[loss_name] = f"{loss_str(scaled_loss_tensor)} ({loss_str(loss_tensor)})"
-            else:
-                message[loss_name] = loss_str(loss_tensor)
-        return message

@@ -60,6 +60,16 @@ def add_prefix(some_dict: Dict[str, T], prefix: str="") -> Dict[str, T]:
     return {prefix + key: value for key, value in some_dict.items()}
 
 
+def loss_str(loss_tensor: Tensor) -> str:
+    loss = loss_tensor.item()
+    if loss == 0:
+        return "0"
+    elif abs(loss) < 1e-3 or abs(loss) > 1e3:
+        return f"{loss:.1e}"
+    else:
+        return f"{loss:.3f}"
+
+
 class TensorCache(MutableMapping[Tensor, Tensor]):
     """A mutable mapping of individual (not batched) tensors to their outputs.
 
