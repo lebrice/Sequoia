@@ -11,7 +11,6 @@ from experiments.iid import IID
 from experiments.class_incremental import ClassIncremental
 from experiments.task_incremental import TaskIncremental
 
-
 @dataclass
 class RunSettings:
     """ Settings for which 'experiment' (experimental setting) to run. 
@@ -38,10 +37,9 @@ settings: RunSettings = args.settings
 
 if settings.experiment.config.use_wandb:
     wandb_path = settings.experiment.config.log_dir_root.joinpath('wandb')
-    wandb_path.mkdir(parents=True, exist_ok=True)
-    wandb_path.chmod(0o777)
+    wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
 
-    config_dict = asdict(settings)
+    config_dict = asdict(settings.experiment)
     # pprint.pprint(config_dict, indent=1)
     # keys_to_remove: List[str] = []
 
