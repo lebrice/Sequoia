@@ -39,9 +39,9 @@ class ClassIncremental(IID):
         # TODO: Clean-up this mechanism by having the dataset.load() method take in classes to use and return the dataloaders.
         self.dataset.load(self.config)
 
-        assert self.dataset.train
-        assert self.dataset.valid
-        
+        assert self.dataset.train is not None
+        assert self.dataset.valid is not None
+
         self.dataset.train_tasks = make_class_incremental(
             self.dataset.train,
             n_classes_per_task=self.n_classes_per_task,

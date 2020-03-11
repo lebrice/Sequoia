@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import torch
 import tqdm
 import wandb
-from simple_parsing import choice, field, subparsers
+from simple_parsing import choice, field, subparsers, mutable_field
 from torch import Tensor, nn
 from torch.utils.data import DataLoader
 
@@ -35,14 +35,14 @@ class Experiment:
 
     TODO: Maybe add some code for saving/restoring experiments here?
     """
-    hparams: Classifier.HParams = subparsers({
-        "baseline": Classifier.HParams(),
-        "self-supervised": SelfSupervisedClassifier.HParams(),
-    })
+    # Model Hyper-parameters
+    hparams: SelfSupervisedClassifier.HParams = mutable_field(SelfSupervisedClassifier.HParams)
+    
     dataset: Dataset = choice({
         "mnist": Mnist(),
         "fashion_mnist": FashionMnist(),
     }, default="mnist")
+
     config: Config = Config()
     model: Classifier = field(default=None, init=False)
     model_name: str = field(default=None, init=False)
@@ -99,7 +99,7 @@ class Experiment:
             total_validation_loss = valid_epoch_loss.total_loss.item()
             validation_metrics = valid_epoch_loss.metrics
 
-            print(f"Epoch {epoch}: Total Test Loss: {total_validation_loss}, Validation Metrics: ", valid_epoch_loss.metrics.class_accuracy)
+            print(f"Epoch {epoch}: Total Test Loss: {total_validation_loss}, Validation Metrics: ", repr(valid_epoch_loss.metrics))
 
         # make the plots using the training and validation losses of each epoch.
         epoch_plots_dict = self.make_plots(train_epoch_losses, valid_epoch_losses)
@@ -118,18 +118,11 @@ class Experiment:
 
     def get_model(self, dataset: Dataset) -> Classifier:
         if isinstance(dataset, (Mnist, FashionMnist)):
-            from models.ss_classifier import SelfSupervisedClassifier, MnistClassifier as SSMnistClassifier
-            if isinstance(self.hparams, SelfSupervisedClassifier.HParams):
-                return SSMnistClassifier(
-                    hparams=self.hparams,
-                    config=self.config,
-                )
-            else:
-                from models.classifier import MnistClassifier
-                return MnistClassifier(
-                    hparams=self.hparams,
-                    config=self.config,
-                )
+            from models.ss_classifier import MnistClassifier
+            return MnistClassifier(
+                hparams=self.hparams,
+                config=self.config,
+            )
         raise NotImplementedError("TODO: add other datasets.")
 
 

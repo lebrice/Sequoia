@@ -149,9 +149,9 @@ class IID(Experiment):
         for loss_info in super().train_iter(epoch, dataloader):
             yield loss_info
         
-        # use the last batch of x's.
-        x_batch = loss_info.tensors["x"]
         if self.reconstruction_task:
+            # use the last batch of x's.
+            x_batch = loss_info.tensors.get("x")
             print("Reconstructing stuff: ", x_batch.shape)
             self.reconstruct_samples(x_batch)
         
