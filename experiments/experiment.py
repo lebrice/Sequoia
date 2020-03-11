@@ -19,7 +19,6 @@ from datasets import Dataset
 from datasets.mnist import Mnist
 from datasets.fashion_mnist import FashionMnist
 from models.classifier import Classifier
-from models.ss_classifier import SelfSupervisedClassifier
 from tasks import AuxiliaryTask
 from utils import utils
 
@@ -36,7 +35,7 @@ class Experiment:
     TODO: Maybe add some code for saving/restoring experiments here?
     """
     # Model Hyper-parameters
-    hparams: SelfSupervisedClassifier.HParams = mutable_field(SelfSupervisedClassifier.HParams)
+    hparams: Classifier.HParams = mutable_field(Classifier.HParams)
     
     dataset: Dataset = choice({
         "mnist": Mnist(),
@@ -55,11 +54,18 @@ class Experiment:
         Additionally, the fields created here are not added in the wandb logs.       
         """
         AuxiliaryTask.input_shape   = self.dataset.x_shape
+
+        # Set these shared attributes so that all the Auxiliary tasks can be created.
+        if isinstance(self.dataset, (Mnist, FashionMnist)):
+            AuxiliaryTask.input_shape = self.dataset.x_shape
+            AuxiliaryTask.hidden_size = self.hparams.hidden_size
+
         self.model = self.get_model(self.dataset).to(self.config.device)
         self.model_name = type(self.model).__name__
 
         self.train_loader: DataLoader = NotImplemented
         self.valid_loader: DataLoader = NotImplemented
+
 
     def load(self):
         """ Setup the dataloaders and other settings before training. """
@@ -118,7 +124,7 @@ class Experiment:
 
     def get_model(self, dataset: Dataset) -> Classifier:
         if isinstance(dataset, (Mnist, FashionMnist)):
-            from models.ss_classifier import MnistClassifier
+            from models.mnist import MnistClassifier
             return MnistClassifier(
                 hparams=self.hparams,
                 config=self.config,

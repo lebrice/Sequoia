@@ -11,7 +11,6 @@ from datasets.dataset import make_class_incremental
 from experiments.experiment import Experiment
 from experiments.iid import IID
 from models.classifier import Classifier
-from models.ss_classifier import SelfSupervisedClassifier
 
 from datasets.dataset import TaskConfig
 
@@ -65,10 +64,9 @@ class ClassIncremental(IID):
             prefix="valid_",
         )
 
-        if isinstance(self.model, SelfSupervisedClassifier):
-            print("Auxiliary tasks:")
-            for task in self.model.tasks:
-                self.log(f"{task.name} coefficient: ", task.coefficient, once=True, always_print=True)
+        print("Auxiliary tasks:")
+        for task_name, task in self.model.tasks.items():
+            self.log(f"{task.name} coefficient: ", task.coefficient, once=True, always_print=True)
 
 
     def save_images_for_each_task(self,

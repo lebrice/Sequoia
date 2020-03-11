@@ -15,6 +15,7 @@ from config import Config
 from common.losses import LossInfo
 from common.metrics import Metrics, accuracy
 from common.layers import ConvBlock, Flatten
+from tasks import AuxiliaryTask, AuxiliaryTaskOptions
 
 
 class Classifier(nn.Module):
@@ -34,6 +35,8 @@ class Classifier(nn.Module):
 
         # Prevent gradients of the classifier from backpropagating into the encoder.
         detach_classifier: bool = False
+
+        aux_tasks: AuxiliaryTaskOptions = field(default_factory=AuxiliaryTaskOptions)
 
     def __init__(self,
                  input_shape: Tuple[int, ...],
@@ -56,9 +59,29 @@ class Classifier(nn.Module):
         self.classification_loss = nn.CrossEntropyLoss()
         self.device = self.config.device
 
-        self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
+        # Share the relevant parameters with all the auxiliary tasks.
+        AuxiliaryTask.hidden_size   = self.hparams.hidden_size
+        AuxiliaryTask.input_shape   = self.input_shape
+        AuxiliaryTask.encoder       = self.encoder
+        AuxiliaryTask.classifier    = self.classifier
+        AuxiliaryTask.preprocessing = self.preprocess_inputs
+        
+        self.tasks: Dict[str, AuxiliaryTask] = self.hparams.aux_tasks.create_tasks(
+            input_shape=input_shape,
+            hidden_size=self.hparams.hidden_size
+        )
 
-    def get_loss(self, x: Tensor, y: Tensor, h_x: Tensor=None, y_pred: Tensor=None) -> LossInfo:
+        # self.tasks = nn.ModuleList(self.tasks)
+        if self.config.debug:
+            print(self)
+            print("Auxiliary tasks:")
+            print(self.tasks)
+            for task_name, task in self.tasks.items():
+                print(f"{task.name}: {task.coefficient}")
+
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)        
+
+    def supervised_loss(self, x: Tensor, y: Tensor, h_x: Tensor=None, y_pred: Tensor=None) -> LossInfo:
         h_x = self.encode(x) if h_x is None else h_x
         y_pred = self.logits(h_x) if y_pred is None else y_pred
         loss = self.classification_loss(y_pred, y)
@@ -67,6 +90,29 @@ class Classifier(nn.Module):
             tensors=(dict(x=x, h_x=h_x, y_pred=y_pred, y=y) if self.config.debug else {}),
             metrics=Metrics(x=x, h_x=h_x, y_pred=y_pred, y=y),
         )
+
+    def get_loss(self, x: Tensor, y: Tensor=None) -> LossInfo:
+        loss_info = LossInfo()
+
+        h_x = self.encode(x)
+        y_pred = self.logits(h_x)
+        
+        loss_info.tensors["h_x"] = h_x
+        loss_info.tensors["y_pred"] = y_pred
+
+        if y is not None:
+            supervised_loss = self.supervised_loss(x=x, y=y, h_x=h_x, y_pred=y_pred)
+            loss_info.losses["supervised"] = supervised_loss.total_loss
+            loss_info += supervised_loss
+
+        for task_name, aux_task in self.tasks.items():
+            if aux_task.enabled:
+                aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y)
+                if self.config.verbose:
+                    print(f"{aux_task.name}:\t {aux_task_loss.total_loss.item()}")
+                loss_info += aux_task_loss
+        
+        return loss_info
 
     def encode(self, x: Tensor):
         x = self.preprocess_inputs(x)
@@ -95,31 +141,3 @@ class Classifier(nn.Module):
         if self.hparams.detach_classifier:
             h_x = h_x.detach()
         return self.classifier(h_x)
-
-
-class MnistClassifier(Classifier):
-    def __init__(self,
-                 hparams: Classifier.HParams,
-                 config: Config):
-        self.hidden_size = hparams.hidden_size
-        encoder = nn.Sequential(
-            ConvBlock(1, 16, kernel_size=3, padding=1),
-            ConvBlock(16, 32, kernel_size=3, padding=1),
-            ConvBlock(32, self.hidden_size, kernel_size=3, padding=1),
-            ConvBlock(self.hidden_size, self.hidden_size, kernel_size=3, padding=1),
-        )
-        classifier = nn.Sequential(
-            Flatten(),
-            nn.Linear(self.hidden_size, 10),
-        )
-        super().__init__(
-            input_shape=(1,28,28),
-            num_classes=10,
-            encoder=encoder,
-            classifier=classifier,
-            hparams=hparams,
-            config=config,
-        )
-    
-    def preprocess_inputs(self, x):
-        return super().preprocess_inputs(x)

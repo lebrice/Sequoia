@@ -24,7 +24,6 @@ from config import Config
 from datasets.dataset import Dataset
 from datasets.mnist import Mnist
 from models.classifier import Classifier
-from models.ss_classifier import SelfSupervisedClassifier
 from tasks import AuxiliaryTask
 from tasks.reconstruction import VAEReconstructionTask
 from utils.logging import loss_str
@@ -35,17 +34,16 @@ from .experiment import Experiment
 
 @dataclass
 class IID(Experiment):
+    """ Simple IID setting. """
     def __post_init__(self):
         super().__post_init__()
         self.reconstruction_task: Optional[VAEReconstructionTask] = None
         
         # If the model is a SelfSupervised classifier, it will have a `tasks` attribute.
         # find the reconstruction task, if there is one.
-        if isinstance(self.model, SelfSupervisedClassifier):
-            for aux_task in self.model.tasks:
-                if isinstance(aux_task, VAEReconstructionTask):
-                    self.reconstruction_task = aux_task
-                    self.latents_batch = torch.randn(64, self.hparams.hidden_size)
+        if "reconstruction" in self.model.tasks:
+            self.reconstruction_task = self.model.tasks["reconstruction"]
+            self.latents_batch = torch.randn(64, self.hparams.hidden_size)
     
     def make_plots_for_epoch(self,
                              epoch: int,
@@ -62,7 +60,7 @@ class IID(Experiment):
         ax1.set_ylabel("Training Loss")
         
         # Plot the evolution of the training loss
-        total_train_losses = to_list(loss.total_loss for loss in train_losses)
+        total_train_losses: List[float] = to_list(loss.total_loss for loss in train_losses)
         ax1.plot(train_x, total_train_losses, label="total loss")
 
         from utils.utils import to_dict_of_lists

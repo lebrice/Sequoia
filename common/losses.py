@@ -21,7 +21,7 @@ class LossInfo:
     
     Used to simplify the return type of the various `get_loss` functions.    
     """
-    total_loss: Union[float, Tensor] = 0.
+    total_loss: Tensor = 0.  # type: ignore
     losses: Dict[str, Tensor] = field(default_factory=OrderedDict)
     tensors: Dict[str, Tensor] = field(default_factory=OrderedDict, repr=False)
     metrics: Metrics = field(default_factory=Metrics)
