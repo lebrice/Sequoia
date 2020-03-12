@@ -19,8 +19,8 @@ class RunSettings:
     """
     experiment: Experiment = subparsers({
         "iid": IID,
-        "class_incremental": ClassIncremental,
-        "task_incremental": TaskIncremental,
+        "class-incremental": ClassIncremental,
+        "task-incremental": TaskIncremental,
     })
 
     def __post_init__(self):

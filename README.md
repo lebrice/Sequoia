@@ -9,12 +9,12 @@ Different experimental settings are located the `experiments` folder.
 There are currently three settings to choose from:
 - "iid":
   - Your usual iid setting.
-- "class_incremental"
-  - (Should be renamed to something like "online_class_incremental")
+- "class-incremental"
+  - (Should be renamed to something like "online_class-incremental")
   - Learning occurs as a stream of first only 0's and 1's, then 2's and 3's, etc.
   - Every datapoint is only seen once.
-- "task_incremental" (WIP)
-  - (Could be renamed to class_incremental)
+- "task-incremental" (WIP)
+  - (Could be renamed to class-incremental)
   - Same as above, but can perform as many epochs on a given "task" as you want.
 
 By default, uses the baseline options (no auxiliary tasks, just a simple classifier).
@@ -46,7 +46,7 @@ Examples:
 
 ## TODOS:
 - Debug the VAE, figure out why the samples don't look good even in iid setting.
-- Debug the task_incremental setting (dataset setup, etc.)
+- Debug the task-incremental setting (dataset setup, etc.)
 - Add plots:
   - OML-style plot showing evolution of training and validation error during class-incremental setup.
   - Plot showing the evolution of the training/validation accuracy over the course of class-incremental training for both the baseline and self-supervised models 
@@ -80,12 +80,12 @@ There are currently three settings:
 
 - Class-incremental setting (baseline) 
     ```console
-    python main.py baseline --class_incremental
+    python main.py baseline --class-incremental
     ```
 
 - Class-incremental setting () 
     ```console
-    python main.py class_incremental
+    python main.py class-incremental
     ```
 
 Note that we use [simple_parsing](https://github.com/lebrice/SimpleParsing) (A python package I'm currently developing) to generate the command-line arguments for the experiments.
