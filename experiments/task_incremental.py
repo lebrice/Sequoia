@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from simple_parsing import choice, field, subparsers
+from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
@@ -28,11 +29,11 @@ class TaskIncremental(Experiment):
     """
     n_classes_per_task: int = 2      # Number of classes per task.
     # Wether to sort out the classes in the class_incremental setting.
-    random_class_ordering: bool = False
+    random_class_ordering: bool = True
     epochs_per_task: int = 1  # Number of epochs on each task's dataset.
     
     # Number of runs to execute in order to create the OML Figure 3.
-    n_runs: int = 3
+    n_runs: int = 2
 
     def __post_init__(self):
         super().__post_init__()
@@ -56,26 +57,53 @@ class TaskIncremental(Experiment):
             train_losses_list.append(train_losses)
             valid_losses_list.append(valid_losses)
             final_class_accuracies.append(final_class_accuracy)
+        
+        def stack_total_losses(losses: List[List[LossInfo]]) -> Tensor:
+            n = len(losses)
+            length = len(losses[0])
+            result = torch.zeros([n, length], dtype=torch.float)
+            for i, run_losses in enumerate(losses):
+                for j, epoch_loss in enumerate(run_losses):
+                    result[i,j] = epoch_loss.total_loss.item()
+            return result
 
+        train_loss = stack_total_losses(train_losses_list)
+        valid_loss = stack_total_losses(valid_losses_list)
+        final_class_accuracy = torch.stack(final_class_accuracies)
+        print("TRAINING LOSSES:")
+        print(train_loss)
+        print("CUMULATIVE VALID LOSS:")
+        print(valid_loss)
+        print("FINAL ACCURACIES:")
+        print(final_class_accuracy)    
 
-        fig = plt.figure()
-        x = np.arange(10)
-        y = 2.5 * np.sin(x / 20 * np.pi)
-        yerr = np.linspace(0.05, 0.2, 10)
+        loss_means = train_loss.mean(dim=0).numpy()
+        loss_stds = train_loss.std(dim=0).numpy()
+        x = np.arange(loss_means.shape[0])
+        print("Loss Means:", loss_means)
+        print("Loss STDs:", loss_stds)
 
-        plt.errorbar(x, y + 3, yerr=yerr, label='both limits (default)')
+        accuracy_means = final_class_accuracy.mean(dim=0).numpy()
+        accuracy_std =   final_class_accuracy.std(dim=0).numpy()
+        n_classes = len(accuracy_means)
+        print("Final Class Accuracy means:", accuracy_means)
+        print("Final Class Accuracy stds:", accuracy_std)
 
-        plt.errorbar(x, y + 2, yerr=yerr, uplims=True, label='uplims=True')
+        fig: plt.Figure = plt.figure()
 
-        plt.errorbar(x, y + 1, yerr=yerr, uplims=True, lolims=True,
-                    label='uplims=True, lolims=True')
+        ax1: plt.Axes = fig.add_subplot(1, 2, 1)
+        ax1.errorbar(x=x, y=loss_means, yerr=loss_stds)
+        ax1.set_title("Continual Classification Loss")
+        ax1.set_xlabel("Number of tasks learned")
+        ax1.set_ylabel("Classification Loss")
 
-        upperlimits = [True, False] * 5
-        lowerlimits = [False, True] * 5
-        plt.errorbar(x, y, yerr=yerr, uplims=upperlimits, lolims=lowerlimits,
-                    label='subsets of uplims and lolims')
+        ax2: plt.Axes = fig.add_subplot(1, 2, 2)
+        ax2.bar(x=np.arange(n_classes), height=accuracy_means, yerr=accuracy_std)
+        ax2.set_title(f"Final Class Accuracies")
+        ax2.set_xlabel("Task ID")
 
-        plt.legend(loc='lower right')
+        fig.show()
+        fig.savefig(self.plots_dir / "oml_fig.jpg")
 
     
     def do_one_run(self):
@@ -203,3 +231,4 @@ class TaskIncremental(Experiment):
         dataloaders = self.dataset.get_dataloaders(self.config, self.hparams.batch_size)
         self.train_loader, self.valid_loader = dataloaders
         return self.train_loader, self.valid_loader
+
