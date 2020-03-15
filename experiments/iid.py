@@ -44,6 +44,52 @@ class IID(Experiment):
             self.reconstruction_task = self.model.tasks["reconstruction"]
             self.latents_batch = torch.randn(64, self.hparams.hidden_size)
     
+    def run(self):
+        self.load()
+
+        train_epoch_losses: List[LossInfo] = []
+        valid_epoch_losses: List[LossInfo] = []
+
+        for epoch in range(self.hparams.epochs):
+            # Training:
+            train_losses: List[LossInfo] = []
+            for train_loss in self.train_iter(epoch, self.train_loader):
+                train_losses.append(train_loss)
+            train_epoch_loss = sum(train_losses, LossInfo())
+            train_epoch_losses.append(train_epoch_loss)
+
+            # Validation:
+            valid_batch_losses: List[LossInfo] = []
+            for valid_loss in self.test_iter(epoch, self.valid_loader):
+                valid_batch_losses.append(valid_loss)
+            valid_epoch_loss = sum(valid_batch_losses, LossInfo())
+            valid_epoch_losses.append(valid_epoch_loss)
+
+            # make the training plots for this epoch
+            plots_dict = self.make_plots_for_epoch(epoch, train_losses, valid_batch_losses)
+            self.log(plots_dict)
+            
+            # log the validation loss for this epoch.
+            self.log(valid_epoch_loss, prefix="Valid ")
+
+            total_validation_loss = valid_epoch_loss.total_loss.item()
+            validation_metrics = valid_epoch_loss.metrics
+
+            print(f"Epoch {epoch}: Total Test Loss: {total_validation_loss}, Validation Metrics: ", repr(valid_epoch_loss.metrics))
+
+        # make the plots using the training and validation losses of each epoch.
+        epoch_plots_dict = self.make_plots(train_epoch_losses, valid_epoch_losses)
+
+        # Get the most recent validation metrics. 
+        class_accuracy = valid_epoch_losses[-1].metrics.class_accuracy
+        valid_class_accuracy_mean = class_accuracy.mean()
+        valid_class_accuracy_std = class_accuracy.std()
+        self.log("Validation Average Class Accuracy: ", valid_class_accuracy_mean, once=True, always_print=True)
+        self.log("Validation Class Accuracy STD:", valid_class_accuracy_std, once=True, always_print=True)
+        self.log(epoch_plots_dict, once=True)
+
+        return epoch_plots_dict
+
     def make_plots_for_epoch(self,
                              epoch: int,
                              train_losses: List[LossInfo],
@@ -140,7 +186,7 @@ class IID(Experiment):
     def test_iter(self, epoch: int, dataloader: DataLoader):
         yield from super().test_iter(epoch, dataloader)
         if self.reconstruction_task:
-            self.generate_samples()        
+            self.generate_samples()  
     
     def train_iter(self, epoch: int, dataloader: DataLoader):
         for loss_info in super().train_iter(epoch, dataloader):
@@ -170,7 +216,7 @@ class IID(Experiment):
     def generate_samples(self):
         with torch.no_grad():
             n = 64
-            fake_samples = self.reconstruction_task.generate(self.latents_batch)
+            fake_samples = self.reconstruction_task.generate(torch.randn(64, self.hparams.hidden_size))
             fake_samples = fake_samples.cpu().view(n, *self.dataset.x_shape)
 
             generation_images_dir = self.config.log_dir / "generated_samples"

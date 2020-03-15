@@ -84,6 +84,7 @@ class Classifier(nn.Module):
     def supervised_loss(self, x: Tensor, y: Tensor, h_x: Tensor=None, y_pred: Tensor=None) -> LossInfo:
         h_x = self.encode(x) if h_x is None else h_x
         y_pred = self.logits(h_x) if y_pred is None else y_pred
+        y = y.view(-1)
         loss = self.classification_loss(y_pred, y)
         return LossInfo(
             total_loss=loss,
