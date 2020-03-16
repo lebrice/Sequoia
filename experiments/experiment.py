@@ -263,23 +263,72 @@ class Experiment:
             pin_memory=self.config.use_cuda
         )
 
+    def _folder(self, folder: Union[str, Path]):
+        path = self.config.log_dir / folder
+        if not path.is_dir():
+            path.mkdir(parents=True)
+        return path
+
     @property
     def plots_dir(self) -> Path:
-        path = self.config.log_dir / "plots"
-        if not path.is_dir():
-            path.mkdir()
-        return path
+        return self._folder("plots")
 
     @property
     def samples_dir(self) -> Path:
-        path = self.config.log_dir / "samples"
-        if not path.is_dir():
-            path.mkdir()
-        return path
+        return self._folder("samples")
 
     @property
     def checkpoints_dir(self) -> Path:
-        path = self.config.log_dir / "checkpoints"
-        if not path.is_dir():
-            path.mkdir()
-        return path
+        return self._folder("checkpoints")
+
+    @property
+    def log_dir(self) -> Path:
+        return self._folder("")
+
+    @property
+    def config_path(self) -> Path:
+        return self.log_dir / "config.pt"
+
+    def save(self) -> None:
+        with open(self.checkpoints_dir / "config.json", "w") as f:
+            d = asdict(self)
+            d = to_str(d)
+            json.dump(d, f, indent=1)
+
+        # with self.config_path.open("w") as f:
+        #     torch.save(self, f)
+
+    @classmethod
+    def load(cls, config_path: Union[Path, str]):
+        with open(config_path) as f:
+            return torch.load(f)
+
+def is_json_serializable(value: str):
+    try:
+        return json.loads(json.dumps(value)) == value 
+    except:
+        return False
+
+def to_str_dict(d: Dict) -> Dict[str, Union[str, Dict]]:
+    for key, value in list(d.items()):
+        d[key] = to_str(value) 
+    return d
+
+def to_str(value: Any) -> Any:
+    try:
+        return json.dumps(value)
+    except Exception as e:
+        if is_dataclass(value):
+            value = asdict(value)
+            return to_str_dict(value)
+        elif isinstance(value, dict):
+            return to_str_dict(value)
+        elif isinstance(value, Path):
+            return str(value)
+        elif isinstance(value, nn.Module):
+            return None
+        elif isinstance(value, Iterable):
+            return list(map(to_str, value))
+        else:
+            print("Couldn't make the value into a str:", value, e)
+            return repr(value)
