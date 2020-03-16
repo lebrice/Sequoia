@@ -133,7 +133,7 @@ class Experiment:
         message: Dict[str, Any] = OrderedDict()
         for epoch in range(max_epochs):
             pbar = tqdm.tqdm(train_dataloader)
-            desc = (description or "") + f"Train Epoch {epoch}"
+            desc = (description or "") + f"Epoch {epoch}"
             pbar.set_description(desc)
             
             for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
@@ -152,15 +152,21 @@ class Experiment:
 
                     self.log(train_loss, prefix="Train ")
                     self.log(valid_loss, prefix="Valid ")
-            
-            val_loss = self.test(valid_dataset, f"Valid epoch {epoch}").total_loss
+            val_desc = (desc + " " if desc and not desc.endswith(" ") else "")
+            val_desc += f"Valid epoch {epoch}"
+            val_loss_info = self.test(valid_dataset, description=val_desc)
+            print(f"Valid epoch {epoch}: ",
+                  f"total loss: {val_loss_info.total_loss.item()}",
+                  f"accuracy: {val_loss_info.metrics.accuracy}",
+                  f"class_acc: {val_loss_info.metrics.class_accuracy}")
+            val_loss = val_loss_info.total_loss
             
             if best_valid_loss is None or val_loss.item() < best_valid_loss:
                 counter = 0
                 best_valid_loss = val_loss.item()
             else:
                 counter += 1
-                print(f"Increasing counter to {counter}")
+                print(f"Validation Loss hasn't increased over the last {counter} epochs.")
                 if counter == patience:
                     print(f"Exiting at step {self.global_step}, as validation loss hasn't decreased over the last {patience} epochs.")
                     break
@@ -213,8 +219,7 @@ class Experiment:
             if batch_idx % self.config.log_interval == 0:
                 message["Loss"] = loss.total_loss.item()
                 message["Acc"]  = loss.metrics.accuracy
-                pbar.set_postfix(message)
-        print(desc, message)      
+                pbar.set_postfix(message)   
         return total_loss
 
     def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:

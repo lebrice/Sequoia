@@ -19,8 +19,7 @@ from datasets.dataset import TaskConfig
 from datasets.subset import VisionDatasetSubset
 from experiments.class_incremental import ClassIncremental
 from experiments.experiment import Experiment
-from utils.utils import n_consecutive
-
+from utils.utils import n_consecutive, rgetattr, rsetattr
 
 @dataclass
 class TaskIncremental(Experiment):
@@ -33,7 +32,7 @@ class TaskIncremental(Experiment):
     epochs_per_task: int = 1  # Number of epochs on each task's dataset.
     
     # Number of runs to execute in order to create the OML Figure 3.
-    n_runs: int = 2
+    n_runs: int = 5
 
     def __post_init__(self):
         super().__post_init__()
@@ -45,68 +44,74 @@ class TaskIncremental(Experiment):
         self.task_classes: List[List[int]] = list()
 
     def run(self):
-        train_losses_list: List[List[LossInfo]] = []
         valid_losses_list: List[List[LossInfo]] = []
-        # TODO: in the OML figure 3, the class accuracy at the end is ordered
-        # in the same way as they were learned.
-        final_class_accuracies: List[Tensor] = []
+        final_task_accuracies_list: List[Tensor] = []
 
         for i in range(self.n_runs):
             print(f"STARTING RUN {i}")
-            train_losses, valid_losses, final_class_accuracy = self.do_one_run()
-            train_losses_list.append(train_losses)
+            valid_losses, final_task_accuracies = self._run()
             valid_losses_list.append(valid_losses)
-            final_class_accuracies.append(final_class_accuracy)
-        
-        def stack_total_losses(losses: List[List[LossInfo]]) -> Tensor:
-            n = len(losses)
-            length = len(losses[0])
-            result = torch.zeros([n, length], dtype=torch.float)
-            for i, run_losses in enumerate(losses):
-                for j, epoch_loss in enumerate(run_losses):
-                    result[i,j] = epoch_loss.total_loss.item()
-            return result
+            final_task_accuracies_list.append(final_task_accuracies)
 
-        train_loss = stack_total_losses(train_losses_list)
-        valid_loss = stack_total_losses(valid_losses_list)
-        final_class_accuracy = torch.stack(final_class_accuracies)
-        print("TRAINING LOSSES:")
-        print(train_loss)
+        valid_loss = stack_loss_attr(valid_losses_list, "total_loss")
+        final_task_accuracy = torch.stack(final_task_accuracies_list)
+        loss_means = valid_loss.mean(dim=0).numpy()
+        loss_stds = valid_loss.std(dim=0).numpy()
+        
+        task_accuracy_means = final_task_accuracy.mean(dim=0).numpy()
+        task_accuracy_std =   final_task_accuracy.std(dim=0).numpy()
+        n_tasks= len(task_accuracy_means)
+
         print("CUMULATIVE VALID LOSS:")
         print(valid_loss)
-        print("FINAL ACCURACIES:")
-        print(final_class_accuracy)    
+        print("FINAL MEAN TASK ACCURACies:")
+        print(final_task_accuracy)    
 
-        loss_means = train_loss.mean(dim=0).numpy()
-        loss_stds = train_loss.std(dim=0).numpy()
-        x = np.arange(loss_means.shape[0])
         print("Loss Means:", loss_means)
         print("Loss STDs:", loss_stds)
 
-        accuracy_means = final_class_accuracy.mean(dim=0).numpy()
-        accuracy_std =   final_class_accuracy.std(dim=0).numpy()
-        n_classes = len(accuracy_means)
-        print("Final Class Accuracy means:", accuracy_means)
-        print("Final Class Accuracy stds:", accuracy_std)
-
+        print("Final Task Accuracy means:", task_accuracy_means)
+        print("Final Task Accuracy stds:", task_accuracy_std)
+        
         fig: plt.Figure = plt.figure()
 
         ax1: plt.Axes = fig.add_subplot(1, 2, 1)
-        ax1.errorbar(x=x, y=loss_means, yerr=loss_stds)
-        ax1.set_title("Continual Classification Loss")
+        ax1.errorbar(x=np.arange(n_tasks), y=loss_means, yerr=loss_stds, label=self.config.run_name)
+        ax1.set_title("Continual Classification Accuracy")
         ax1.set_xlabel("Number of tasks learned")
         ax1.set_ylabel("Classification Loss")
+        ax1.set_xticks(np.arange(n_tasks, dtype=int))
+        ax1.legend(loc="top left")
 
         ax2: plt.Axes = fig.add_subplot(1, 2, 2)
-        ax2.bar(x=np.arange(n_classes), height=accuracy_means, yerr=accuracy_std)
-        ax2.set_title(f"Final Class Accuracies")
+        for todo in range(1):
+            ax2.bar(x=np.arange(n_tasks), height=task_accuracy_means, yerr=task_accuracy_std)
+        ax2.set_title(f"Final mean accuracy per Task")
         ax2.set_xlabel("Task ID")
-
-        fig.show()
+        ax2.set_xticks(np.arange(n_tasks, dtype=int))
+        if self.config.debug:
+            fig.show()
+            fig.waitforbuttonpress(timeout=10)
         fig.savefig(self.plots_dir / "oml_fig.jpg")
+        self.log(fig)
 
+        return 
     
-    def do_one_run(self):
+    def _run(self) -> Tuple[List[LossInfo], Tensor]:
+        """Executes one single run from the OML figure 3.
+        
+        Trains the model until convergence on each task, using the validation
+        set specific to each task. Then, evaluates the model on the cumulative
+        validation set.
+        
+        This returns a list cumulative validation losses, as well as the final
+        average class accuracy for each task. 
+        
+        Returns:
+            Tuple[List[LossInfo], Tensor]: List of total losses on the
+            cummulative validation dataset after learning each task, as well as
+            a Tensor holding the final average class accuracy for each task.
+        """
         label_order = self.load()
         datasets = zip(
             self.train_datasets,
@@ -119,42 +124,43 @@ class TaskIncremental(Experiment):
 
         for task_index, (train, valid, valid_cumul) in enumerate(datasets):
             print(f"Starting task {task_index}, Classes {self.task_classes[task_index]}")
-            kwargs: Dict = {
-                "batch_size": self.hparams.batch_size,
-                "shuffle": False,
-                "num_workers": 1,
-                "pin_memory": self.config.use_cuda,
-            }
-            train_loader = DataLoader(train, **kwargs)
-            valid_loader = DataLoader(valid, **kwargs)
-            cumul_loader = DataLoader(valid_cumul, **kwargs)
-
+            
             # Train on the current task:
-            self.train_on_task(train_loader, valid_loader)
+            self.train_until_convergence(
+                train,
+                valid,
+                max_epochs=self.epochs_per_task,
+                description=f"Task {task_index} ",
+            )
             
-            # Evaluate the performance on training set.
-            # We only really do this in order to get a plot like the one in OML.
-            train_loss = sum(self.test_iter(f"Task {task_index}", train_loader), LossInfo())
-            
-            # Evaluate the performance on the cumulative validation set.
-            valid_loss = sum(self.test_iter(f"Task {task_index} (cumul)", cumul_loader), LossInfo())
+            ## TODO: turned this off for now, not sure if OML paper does this.
+            # # Evaluate the performance on training set.
+            # # We only really do this in order to get a plot like the one in OML.
+            # train_loss = self.test(train, description=f"Task {task_index} Train")
 
-            train_losses.append(train_loss)
+            # Evaluate the performance on the cumulative validation set.
+            valid_loss = self.test(valid_cumul, description=f"Task {task_index} Train ")
+
+            # train_losses.append(train_loss)
             valid_losses.append(valid_loss)
 
             validation_metrics = valid_loss.metrics
             class_accuracy = validation_metrics.class_accuracy  
-            print(f"AFTER TASK {task_index}: ",
-                  f"\tTrain loss: {train_loss.total_loss}, ",
-                  f"\tCumulative Validation Loss: {valid_loss.total_loss}, ",
-                  f"\tClass Accuracy: {class_accuracy} ", sep="\n")
+            print(f"AFTER TASK {task_index}:",
+                  f"\tCumulative Val Loss: {valid_loss.total_loss},",
+                  f"\tClass Accuracy: {class_accuracy}", sep=" ")
 
+        task_mean_accuracy = torch.zeros(len(self.task_classes))
+        # get the average accuracy per task:
+        for i, label_group in enumerate(self.task_classes):
+            task_mean_accuracy[i] = class_accuracy[label_group].mean()
+        
         # Get the most recent class accuracy metrics.
-        return train_losses, valid_losses, class_accuracy[label_order]
+        return valid_losses, task_mean_accuracy
 
 
     def load(self):
-        """ Create the datasets for each task. """
+        """ Create the train, valid and cumulative datasets for each task. """
         # download the dataset.
         self.dataset.load(self.config)
 
@@ -194,30 +200,7 @@ class TaskIncremental(Experiment):
             self.save_images(i, dataset, prefix="valid_cumul_")
         
         return all_labels
-        
 
-    def train_on_task(self, train_loader: DataLoader, valid_loader: DataLoader) -> None:
-        """ Train on a given task.
-        
-        The given `train_loader` and `valid_loader` DataLoaders are only for the
-        current task.
-        """
-        for epoch in range(self.epochs_per_task):
-            # Train for an epoch.
-            # NOTE: train_iter logs the train_loss periodically to wandb with the global_step.
-            for train_loss in self.train_iter(epoch, train_loader):
-                pass
-
-            # Evaluate the performance on validation set.
-            valid_epoch_loss = sum(self.test_iter(epoch, valid_loader), LossInfo())
-
-            # log the validation loss for this epoch.
-            self.log(valid_epoch_loss, prefix="Valid ")
-
-            total_validation_loss = valid_epoch_loss.total_loss.item()
-            validation_metrics = valid_epoch_loss.metrics
-
-       
     def save_images(self, i: int, dataset: VisionDatasetSubset, prefix: str=""):
         n = 64
         samples = dataset.data[:n].view(n, *self.dataset.x_shape).float()
@@ -232,3 +215,12 @@ class TaskIncremental(Experiment):
         self.train_loader, self.valid_loader = dataloaders
         return self.train_loader, self.valid_loader
 
+
+def stack_loss_attr(losses: List[List[LossInfo]], attribute: str="total_loss") -> Tensor:
+    n = len(losses)
+    length = len(losses[0])
+    result = torch.zeros([n, length], dtype=torch.float)
+    for i, run_losses in enumerate(losses):
+        for j, epoch_loss in enumerate(run_losses):
+            result[i,j] = rgetattr(epoch_loss, attribute)
+    return result
