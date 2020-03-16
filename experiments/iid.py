@@ -46,50 +46,21 @@ class IID(Experiment):
     
     def run(self):
         self.load()
-        train_losses, valid_losses = super().train_until_convergence(self.dataset.train, self.dataset.valid, self.hparams.epochs)
-        exit()
-        train_epoch_losses: List[LossInfo] = []
-        valid_epoch_losses: List[LossInfo] = []
-
-        for epoch in range(self.hparams.epochs):
-            # Training:
-            train_losses: List[LossInfo] = []
-            for train_loss in self.train_iter(epoch, self.train_loader):
-                train_losses.append(train_loss)
-            train_epoch_loss = sum(train_losses, LossInfo())
-            train_epoch_losses.append(train_epoch_loss)
-
-            # Validation:
-            valid_batch_losses: List[LossInfo] = []
-            for valid_loss in self.test_iter(epoch, self.valid_loader):
-                valid_batch_losses.append(valid_loss)
-            valid_epoch_loss = sum(valid_batch_losses, LossInfo())
-            valid_epoch_losses.append(valid_epoch_loss)
-
-            # make the training plots for this epoch
-            plots_dict = self.make_plots_for_epoch(epoch, train_losses, valid_batch_losses)
-            self.log(plots_dict)
-            
-            # log the validation loss for this epoch.
-            self.log(valid_epoch_loss, prefix="Valid ")
-
-            total_validation_loss = valid_epoch_loss.total_loss.item()
-            validation_metrics = valid_epoch_loss.metrics
-
-            print(f"Epoch {epoch}: Total Test Loss: {total_validation_loss}, Validation Metrics: ", repr(valid_epoch_loss.metrics))
-
-        # make the plots using the training and validation losses of each epoch.
-        epoch_plots_dict = self.make_plots(train_epoch_losses, valid_epoch_losses)
+        train_losses, valid_losses = self.train_until_convergence(self.dataset.train, self.dataset.valid, self.hparams.epochs)
+        # make the training plots
+        plots_dict = self.make_plots(train_losses, valid_losses)
 
         # Get the most recent validation metrics. 
-        class_accuracy = valid_epoch_losses[-1].metrics.class_accuracy
+        last_step = max(valid_losses.keys())
+        last_val_loss = valid_losses[last_step]
+        class_accuracy = last_val_loss.metrics.class_accuracy
         valid_class_accuracy_mean = class_accuracy.mean()
         valid_class_accuracy_std = class_accuracy.std()
         self.log("Validation Average Class Accuracy: ", valid_class_accuracy_mean, once=True, always_print=True)
         self.log("Validation Class Accuracy STD:", valid_class_accuracy_std, once=True, always_print=True)
-        self.log(epoch_plots_dict, once=True)
+        self.log(plots_dict, once=True)
 
-        return epoch_plots_dict
+        return train_losses, valid_losses
 
     def make_plots_for_epoch(self,
                              epoch: int,
@@ -143,21 +114,17 @@ class IID(Experiment):
         
         return {"epoch_loss": fig}
 
-    def make_plots(self, train_losses: List[LossInfo], valid_losses: List[LossInfo]) -> Dict[str, plt.Figure]:
-        n_epochs = len(train_losses)
-        epochs = list(range(n_epochs))
+    def make_plots(self, train_losses: Dict[int, LossInfo], valid_losses: Dict[int, LossInfo]) -> Dict[str, plt.Figure]:
         plots_dict: Dict[str, plt.Figure] = {}
 
         fig: plt.Figure = plt.figure()
         ax: plt.Axes = fig.subplots()
-        
         ax.set_title("Total Loss")
-        ax.set_xlabel("Epoch")
-        ax.set_xticks(epochs)
+        ax.set_xlabel("# of Samples seen")
         ax.set_ylabel("Loss")
-        ax.plot(epochs, [loss.total_loss for loss in train_losses], label="train")
-        ax.plot(epochs, [loss.total_loss for loss in valid_losses], label="valid")
-        ax.legend(loc='upper right')
+        ax.plot(list(train_losses.keys()), [l.total_loss for l in train_losses.values()], label="train")
+        ax.plot(list(valid_losses.keys()), [l.total_loss for l in valid_losses.values()], label="valid")
+        ax.legend(loc="upper right")
 
         if self.config.debug:
             fig.show()
@@ -170,11 +137,10 @@ class IID(Experiment):
         ax.set_ylim(0.0, 1.0)
         ax.set_ylabel("Accuracy")
         ax.set_title("Training and Validation Accuracy")
-        ax.plot(epochs, [loss.metrics.accuracy for loss in train_losses], label="train")
-        ax.plot(epochs, [loss.metrics.accuracy for loss in valid_losses], label="valid")
+        ax.plot(list(train_losses.keys()), [l.metrics.accuracy for l in train_losses.values()], label="train")
+        ax.plot(list(valid_losses.keys()), [l.metrics.accuracy for l in valid_losses.values()], label="valid")
         ax.legend(loc='lower right')
         
-
         if self.config.debug:
             fig.show()
             fig.waitforbuttonpress(timeout=30)

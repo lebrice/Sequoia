@@ -170,7 +170,7 @@ class Experiment:
                 if counter == patience:
                     print(f"Exiting at step {self.global_step}, as validation loss hasn't decreased over the last {patience} epochs.")
                     break
-        return train_losses
+        return train_losses, valid_losses
 
     def valid_performance_generator(self, valid_dataset: Dataset) -> Iterable[LossInfo]:
         periodic_valid_dataloader = self.get_dataloader(valid_dataset)

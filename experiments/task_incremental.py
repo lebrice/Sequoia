@@ -81,7 +81,7 @@ class TaskIncremental(Experiment):
         ax1.set_xlabel("Number of tasks learned")
         ax1.set_ylabel("Classification Loss")
         ax1.set_xticks(np.arange(n_tasks, dtype=int))
-        ax1.legend(loc="top left")
+        ax1.legend(loc="upper left")
 
         ax2: plt.Axes = fig.add_subplot(1, 2, 2)
         for todo in range(1):
@@ -93,7 +93,7 @@ class TaskIncremental(Experiment):
             fig.show()
             fig.waitforbuttonpress(timeout=10)
         fig.savefig(self.plots_dir / "oml_fig.jpg")
-        self.log(fig)
+        self.log({"OML": fig}, once=True)
 
         return 
     
