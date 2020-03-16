@@ -29,27 +29,27 @@ class RunSettings:
             pprint.pprint(asdict(self.experiment), indent=1)
             print("=" * 40)
 
+if __name__ == "__main__":    
+    parser = ArgumentParser()
+    parser.add_arguments(RunSettings, dest="settings")
+    args = parser.parse_args()
+    settings: RunSettings = args.settings
 
-parser = ArgumentParser()
-parser.add_arguments(RunSettings, dest="settings")
-args = parser.parse_args()
-settings: RunSettings = args.settings
+    if settings.experiment.config.use_wandb:
+        wandb_path = settings.experiment.config.log_dir_root.joinpath('wandb')
+        wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
 
-if settings.experiment.config.use_wandb:
-    wandb_path = settings.experiment.config.log_dir_root.joinpath('wandb')
-    wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
+        config_dict = asdict(settings.experiment)
+        # pprint.pprint(config_dict, indent=1)
+        # keys_to_remove: List[str] = []
 
-    config_dict = asdict(settings.experiment)
-    # pprint.pprint(config_dict, indent=1)
-    # keys_to_remove: List[str] = []
+        wandb.init(project='SSCL', name=settings.experiment.config.run_name, config=config_dict, dir=str(wandb_path))
+        wandb.run.save()
+        settings.experiment.config.run_name = wandb.run.name
+        print(f"Using wandb. Experiment name: {settings.experiment.config.run_name}")
 
-    wandb.init(project='SSCL', name=settings.experiment.config.run_name, config=config_dict, dir=str(wandb_path))
-    wandb.run.save()
-    settings.experiment.config.run_name = wandb.run.name
-    print(f"Using wandb. Experiment name: {settings.experiment.config.run_name}")
+    settings.experiment.config.log_dir.mkdir(parents=True, exist_ok=True)
 
-settings.experiment.config.log_dir.mkdir(parents=True, exist_ok=True)
-
-print("-" * 10, f"Starting experiment '{type(settings.experiment).__name__}' ({settings.experiment.config.log_dir})", "-" * 10)
-settings.experiment.run()
-print("-" * 10, f"Experiment '{type(settings.experiment).__name__}' is done.", "-" * 10)
+    print("-" * 10, f"Starting experiment '{type(settings.experiment).__name__}' ({settings.experiment.config.log_dir})", "-" * 10)
+    settings.experiment.run()
+    print("-" * 10, f"Experiment '{type(settings.experiment).__name__}' is done.", "-" * 10)

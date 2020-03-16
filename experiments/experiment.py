@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Dict, Iterable, List, Type, Union
+from typing import Any, ClassVar, Dict, Iterable, List, Type, Union, Generator
 
 import matplotlib.pyplot as plt
 import torch
@@ -114,7 +114,78 @@ class Experiment:
             
             wandb.log(message_dict, step=step)
 
-    def train_batch(self, batch_idx: int, data: Tensor, target: Tensor) -> LossInfo:
+    def train_until_convergence(self, train_dataset: Dataset,
+                                      valid_dataset: Dataset,
+                                      max_epochs: int,
+                                      description: str=None,
+                                      patience: int=3) -> Dict[int, LossInfo]:
+        train_dataloader = self.get_dataloader(train_dataset)
+        valid_dataloader = self.get_dataloader(valid_dataset)
+
+        train_losses: Dict[int, LossInfo] = OrderedDict()
+        valid_losses: Dict[int, LossInfo] = OrderedDict()
+
+        valid_loss_gen = self.valid_performance_generator(valid_dataset)
+        
+        best_valid_loss: Optional[float] = None
+        counter = 0
+
+        message: Dict[str, Any] = OrderedDict()
+        for epoch in range(max_epochs):
+            pbar = tqdm.tqdm(train_dataloader)
+            desc = (description or "") + f"Train Epoch {epoch}"
+            pbar.set_description(desc)
+            
+            for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
+                if batch_idx % self.config.log_interval == 0:
+                    train_losses[self.global_step] = train_loss
+                    # get loss on a batch of validation data:
+                    valid_loss = next(valid_loss_gen)
+                    valid_losses[self.global_step] = valid_loss
+                    
+                    message["Val Loss"] = valid_loss.total_loss.item()
+                    message["Val Acc"]  = valid_loss.metrics.accuracy
+                    message["Train Loss"] = train_loss.total_loss.item()
+                    message["Train Acc"]  = train_loss.metrics.accuracy
+                    message["Best val loss"] = best_valid_loss
+                    pbar.set_postfix(message)
+
+                    self.log(train_loss, prefix="Train ")
+                    self.log(valid_loss, prefix="Valid ")
+            
+            val_loss = self.test(valid_dataset, f"Valid epoch {epoch}").total_loss
+            
+            if best_valid_loss is None or val_loss.item() < best_valid_loss:
+                counter = 0
+                best_valid_loss = val_loss.item()
+            else:
+                counter += 1
+                print(f"Increasing counter to {counter}")
+                if counter == patience:
+                    print(f"Exiting at step {self.global_step}, as validation loss hasn't decreased over the last {patience} epochs.")
+                    break
+        return train_losses
+
+    def valid_performance_generator(self, valid_dataset: Dataset) -> Iterable[LossInfo]:
+        periodic_valid_dataloader = self.get_dataloader(valid_dataset)
+        while True:
+            for data, target in periodic_valid_dataloader:
+                data = data.to(self.model.device)
+                target = target.to(self.model.device)
+                yield self.test_batch(data, target)
+
+    def train_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
+        self.model.train()
+        for data, target in dataloader:
+            data = data.to(self.model.device)
+            target = target.to(self.model.device)
+            batch_size = data.shape[0]
+
+            yield self.train_batch(data, target)
+
+            self.global_step += batch_size
+
+    def train_batch(self, data: Tensor, target: Tensor) -> LossInfo:
         batch_size = data.shape[0]
         self.model.optimizer.zero_grad()
 
@@ -129,49 +200,33 @@ class Experiment:
         self.model.optimizer.step()
         return batch_loss_info
 
-    def train_iter(self, epoch: int, dataloader: DataLoader) -> Iterable[LossInfo]:
-        self.model.train()
-
-        pbar = tqdm.tqdm(dataloader) # disable=not (self.config.verbose or self.config.debug)
-        for batch_idx, (data, target) in enumerate(pbar):
-            data = data.to(self.model.device)
-            target = target.to(self.model.device)
-            batch_size = data.shape[0]
-
-            batch_loss_info = self.train_batch(batch_idx, data, target)
-            yield batch_loss_info
-
-            self.global_step += batch_size
+    def test(self, dataset: Dataset, description: str=None) -> LossInfo:
+        dataloader = self.get_dataloader(dataset)
+        pbar = tqdm.tqdm(dataloader, leave=False)
+        desc = (description or "Test Epoch")
+        pbar.set_description(desc)
+        total_loss = LossInfo()
+        message = OrderedDict()
+        for batch_idx, loss in enumerate(self.test_iter(pbar)):
+            total_loss += loss
 
             if batch_idx % self.config.log_interval == 0:
-                pbar.set_description(f"Train Epoch {epoch}")
-                message = self.pbar_message(batch_loss_info)
+                message["Loss"] = loss.total_loss.item()
+                message["Acc"]  = loss.metrics.accuracy
                 pbar.set_postfix(message)
+        print(desc, message)      
+        return total_loss
 
-                self.log(batch_loss_info, prefix="Train ")
-
-
-    def test_batch(self, batch_idx: int, data: Tensor, target: Tensor) -> LossInfo:
-        return self.model.get_loss(data, target)
-
-    def test_iter(self, epoch: int, dataloader: DataLoader) -> Iterable[LossInfo]:
+    def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.eval()
-        test_loss = 0.
+        for data, target in dataloader:
+            data = data.to(self.config.device)
+            target = target.to(self.config.device)
+            yield self.test_batch(data, target)
 
-        test_loss = LossInfo()
-
-        pbar = tqdm.tqdm(dataloader)
-        pbar.set_description(f"Test Epoch {epoch}")
-
-        for i, (data, target) in enumerate(pbar):
-            with torch.no_grad():
-                data = data.to(self.config.device)
-                target = target.to(self.config.device)
-                batch_loss = self.test_batch(i, data, target)
-                yield batch_loss
-                test_loss += batch_loss
-       
-        return test_loss
+    def test_batch(self, data: Tensor, target: Tensor) -> LossInfo:
+        with torch.no_grad():
+            return self.model.get_loss(data, target)
 
     def pbar_message(self, batch_loss_info: LossInfo) -> Dict:
         message: Dict[str, Any] = OrderedDict()
@@ -192,8 +247,14 @@ class Experiment:
                 message[loss_name] = utils.loss_str(loss_tensor)
         return message
 
-
-
+    def get_dataloader(self, dataset: Dataset) -> DataLoader:
+        return DataLoader(
+            dataset,
+            batch_size=self.hparams.batch_size,
+            shuffle=False,
+            num_workers=4,
+            pin_memory=self.config.use_cuda
+        )
 
     @property
     def plots_dir(self) -> Path:

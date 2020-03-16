@@ -95,7 +95,7 @@ class DatasetConfig:
                 train_dataset,
                 batch_size=batch_size,
                 shuffle=not class_incremental,
-                num_workers=1,
+                num_workers=4,
                 pin_memory=config.use_cuda,
             )
 
@@ -112,7 +112,7 @@ class DatasetConfig:
                 valid_dataset,
                 batch_size=batch_size,
                 shuffle=not class_incremental,
-                num_workers=1,
+                num_workers=4,
                 pin_memory=config.use_cuda,
             )
         return train_loader, valid_loader

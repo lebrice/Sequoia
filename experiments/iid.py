@@ -46,7 +46,8 @@ class IID(Experiment):
     
     def run(self):
         self.load()
-
+        train_losses, valid_losses = super().train_until_convergence(self.dataset.train, self.dataset.valid, self.hparams.epochs)
+        exit()
         train_epoch_losses: List[LossInfo] = []
         valid_epoch_losses: List[LossInfo] = []
 
@@ -183,13 +184,13 @@ class IID(Experiment):
         return plots_dict
 
 
-    def test_iter(self, epoch: int, dataloader: DataLoader):
-        yield from super().test_iter(epoch, dataloader)
+    def test_iter(self, dataloader: DataLoader):
+        yield from super().test_iter(dataloader)
         if self.reconstruction_task:
-            self.generate_samples()  
+            self.generate_samples()
     
-    def train_iter(self, epoch: int, dataloader: DataLoader):
-        for loss_info in super().train_iter(epoch, dataloader):
+    def train_iter(self, dataloader: DataLoader):
+        for loss_info in super().train_iter(dataloader):
             yield loss_info
         
         if self.reconstruction_task:
