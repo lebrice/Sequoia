@@ -1,14 +1,15 @@
+import json
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Dict, Iterable, List, Type, Union, Generator
+from typing import Any, ClassVar, Dict, Generator, Iterable, List, Type, Union
 
 import matplotlib.pyplot as plt
 import torch
 import tqdm
 import wandb
-from simple_parsing import choice, field, subparsers, mutable_field
+from simple_parsing import choice, field, mutable_field, subparsers
 from torch import Tensor, nn
 from torch.utils.data import DataLoader
 
@@ -16,8 +17,8 @@ from common.losses import LossInfo
 from common.metrics import Metrics
 from config import Config
 from datasets import Dataset
-from datasets.mnist import Mnist
 from datasets.fashion_mnist import FashionMnist
+from datasets.mnist import Mnist
 from models.classifier import Classifier
 from tasks import AuxiliaryTask
 from utils import utils
@@ -133,7 +134,9 @@ class Experiment:
         message: Dict[str, Any] = OrderedDict()
         for epoch in range(max_epochs):
             pbar = tqdm.tqdm(train_dataloader)
-            desc = (description or "") + f"Epoch {epoch}"
+            desc = description or "" 
+            desc += " " if desc and not desc.endswith(" ") else ""
+            desc += f"Epoch {epoch}"
             pbar.set_description(desc)
             
             for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
@@ -152,13 +155,9 @@ class Experiment:
 
                     self.log(train_loss, prefix="Train ")
                     self.log(valid_loss, prefix="Valid ")
-            val_desc = (desc + " " if desc and not desc.endswith(" ") else "")
-            val_desc += f"Valid epoch {epoch}"
+            
+            val_desc = desc + " Valid"
             val_loss_info = self.test(valid_dataset, description=val_desc)
-            print(f"Valid epoch {epoch}: ",
-                  f"total loss: {val_loss_info.total_loss.item()}",
-                  f"accuracy: {val_loss_info.metrics.accuracy}",
-                  f"class_acc: {val_loss_info.metrics.class_accuracy}")
             val_loss = val_loss_info.total_loss
             
             if best_valid_loss is None or val_loss.item() < best_valid_loss:
@@ -208,18 +207,21 @@ class Experiment:
 
     def test(self, dataset: Dataset, description: str=None) -> LossInfo:
         dataloader = self.get_dataloader(dataset)
-        pbar = tqdm.tqdm(dataloader, leave=False)
+        pbar = tqdm.tqdm(dataloader)
         desc = (description or "Test Epoch")
+        
         pbar.set_description(desc)
         total_loss = LossInfo()
         message = OrderedDict()
+
         for batch_idx, loss in enumerate(self.test_iter(pbar)):
             total_loss += loss
 
             if batch_idx % self.config.log_interval == 0:
-                message["Loss"] = loss.total_loss.item()
-                message["Acc"]  = loss.metrics.accuracy
-                pbar.set_postfix(message)   
+                message["Total Loss"] = total_loss.total_loss.item()
+                message["Total Acc"]  = total_loss.metrics.accuracy
+                pbar.set_postfix(message)
+
         return total_loss
 
     def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:

@@ -62,58 +62,6 @@ class IID(Experiment):
 
         return train_losses, valid_losses
 
-    def make_plots_for_epoch(self,
-                             epoch: int,
-                             train_losses: List[LossInfo],
-                             valid_losses: List[LossInfo]) -> Dict[str, plt.Figure]:
-        train_x: List[int] = list(accumulate([
-            loss.metrics.n_samples for loss in train_losses
-        ]))
-        
-        fig: plt.Figure = plt.figure()
-        ax1: plt.Axes = fig.add_subplot(1, 2, 1)
-        ax1.set_title(f"Loss - Epoch {epoch}")
-        ax1.set_xlabel("# of Samples")
-        ax1.set_ylabel("Training Loss")
-        
-        # Plot the evolution of the training loss
-        total_train_losses: List[float] = to_list(loss.total_loss for loss in train_losses)
-        ax1.plot(train_x, total_train_losses, label="total loss")
-
-        from utils.utils import to_dict_of_lists
-        train_losses_dict = to_dict_of_lists([loss.losses for loss in train_losses])
-
-        # Plot all the other losses (auxiliary losses)
-        for loss_name, aux_losses in train_losses_dict.items():
-            ax1.plot(train_x, aux_losses, label=loss_name)
-        ax1.legend(loc='upper right')
-        
-        # add the vertical lines for task transitions (if any)
-        for task_info in self.dataset.train_tasks:
-            ax1.axvline(x=min(task_info.indices), color='r')
-
-        
-        n_classes = self.dataset.y_shape[0]
-        classes = list(range(n_classes))
-        class_accuracy = sum(valid_losses, LossInfo()).metrics.class_accuracy
-        ax2: plt.Axes = fig.add_subplot(1, 2, 2)
-        
-        ax2.bar(classes, class_accuracy)
-        ax2.set_xlabel("Class")
-        ax2.set_xticks(classes)
-        ax2.set_xticklabels(classes)
-        ax2.set_ylabel("Validation Accuracy")
-        ax2.set_ylim(0.0, 1.0)
-        ax2.set_title(f"Validation Class Accuracy After Epoch {epoch}")
-        # fig.tight_layout()
-        
-        if self.config.debug and self.config.verbose:
-            fig.show()
-            fig.waitforbuttonpress(timeout=30)
-        fig.savefig(self.plots_dir / f"epoch_{epoch}.jpg")
-        
-        return {"epoch_loss": fig}
-
     def make_plots(self, train_losses: Dict[int, LossInfo], valid_losses: Dict[int, LossInfo]) -> Dict[str, plt.Figure]:
         plots_dict: Dict[str, plt.Figure] = {}
 

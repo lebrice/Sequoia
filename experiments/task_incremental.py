@@ -54,12 +54,16 @@ class TaskIncremental(Experiment):
             final_task_accuracies_list.append(final_task_accuracies)
 
         valid_loss = stack_loss_attr(valid_losses_list, "total_loss")
-        final_task_accuracy = torch.stack(final_task_accuracies_list)
         loss_means = valid_loss.mean(dim=0).numpy()
         loss_stds = valid_loss.std(dim=0).numpy()
         
+        final_task_accuracy = torch.stack(final_task_accuracies_list)
         task_accuracy_means = final_task_accuracy.mean(dim=0).numpy()
         task_accuracy_std =   final_task_accuracy.std(dim=0).numpy()
+        
+        torch.save(valid_loss, self.plots_dir / 'valid_losses.pt')
+        torch.save(final_task_accuracy, self.plots_dir / 'final_task_accuracy.pt')
+        
         n_tasks= len(task_accuracy_means)
 
         print("CUMULATIVE VALID LOSS:")
@@ -77,7 +81,7 @@ class TaskIncremental(Experiment):
 
         ax1: plt.Axes = fig.add_subplot(1, 2, 1)
         ax1.errorbar(x=np.arange(n_tasks), y=loss_means, yerr=loss_stds, label=self.config.run_name)
-        ax1.set_title("Continual Classification Accuracy")
+        ax1.set_title("Cumulative Validation Error")
         ax1.set_xlabel("Number of tasks learned")
         ax1.set_ylabel("Classification Loss")
         ax1.set_xticks(np.arange(n_tasks, dtype=int))
@@ -130,7 +134,7 @@ class TaskIncremental(Experiment):
                 train,
                 valid,
                 max_epochs=self.epochs_per_task,
-                description=f"Task {task_index} ",
+                description=f"Task {task_index}",
             )
             
             ## TODO: turned this off for now, not sure if OML paper does this.
@@ -139,16 +143,16 @@ class TaskIncremental(Experiment):
             # train_loss = self.test(train, description=f"Task {task_index} Train")
 
             # Evaluate the performance on the cumulative validation set.
-            valid_loss = self.test(valid_cumul, description=f"Task {task_index} Train ")
+            valid_loss = self.test(valid_cumul, description=f"Task {task_index} Valid (Cumul) ")
 
             # train_losses.append(train_loss)
             valid_losses.append(valid_loss)
 
             validation_metrics = valid_loss.metrics
             class_accuracy = validation_metrics.class_accuracy  
-            print(f"AFTER TASK {task_index}:",
-                  f"\tCumulative Val Loss: {valid_loss.total_loss},",
-                  f"\tClass Accuracy: {class_accuracy}", sep=" ")
+            # print(f"AFTER TASK {task_index}:",
+            #       f"\tCumulative Val Loss: {valid_loss.total_loss},",
+            #       f"\tMean Class Accuracy: {class_accuracy.mean()}", sep=" ")
 
         task_mean_accuracy = torch.zeros(len(self.task_classes))
         # get the average accuracy per task:
