@@ -39,38 +39,6 @@ class RunSettings(JsonSerializable):
 
 
 
-# def is_json_serializable(value: str):
-#     try:
-#         return json.loads(json.dumps(value)) == value 
-#     except:
-#         return False
-
-# def to_str_dict(d: Dict) -> Dict[str, Union[str, Dict]]:
-#     for key, value in list(d.items()):
-#         d[key] = to_str(value)
-#     return d
-
-# def to_str(value: Any) -> Any:
-#     try:
-#         return json.dumps(value)
-#     except Exception as e:
-#         if is_dataclass(value):
-#             d = asdict(value)
-#             return to_str_dict(d)
-#         elif isinstance(value, dict):
-#             return to_str_dict(value)
-#         elif isinstance(value, Path):
-#             return str(value)
-#         elif isinstance(value, nn.Module):
-#             return 
-#         elif isinstance(value, Iterable):
-#             return list(map(to_str, value))
-#         else:
-#             print("Couldn't make the value into a str:", value, e)
-#             return str(value)
-
-
-
 if __name__ == "__main__":    
     parser = ArgumentParser()
     parser.add_arguments(RunSettings, dest="settings")
