@@ -136,9 +136,6 @@ class TaskIncremental(Experiment):
         
         for task_index, (train, valid, valid_cumul) in enumerate(datasets):
             print(f"Starting task {task_index}, Classes {self.task_classes[task_index]}")
-            train_targets = train.targets
-            train.targets = [None] * len(train.targets)
-
             # Create an unsupervised version of the dataset by temporarily removing the labels.
             with train.without_labels(), valid.without_labels():
                 self.train_until_convergence(
