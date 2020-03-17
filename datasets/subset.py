@@ -1,4 +1,5 @@
-from typing import Iterable, Sequence, Set, Tuple
+from contextlib import contextmanager
+from typing import Iterable, List, Sequence, Set, Tuple, Union
 
 import torch
 from PIL import Image as image
@@ -29,6 +30,7 @@ class VisionDatasetSubset(TensorDataset):
             self.data = self.data.float() / 255
 
         super().__init__(self.data, self.targets)
+        self.tensors: List[Tensor]
 
     def __add__(self, other: "VisionDatasetSubset") -> "VisionDatasetSubset":  # type: ignore
         assert self.dataset is other.dataset, "can't add subsets of different datasets"
@@ -37,6 +39,14 @@ class VisionDatasetSubset(TensorDataset):
     
     def __str__(self) -> str:
         return f"VisionDatasetSubset of dataset of type {type(self.dataset).__name__} with labels {self.labels}."
+
+    @contextmanager
+    def without_labels(self):
+        self.tensors = list(self.tensors)
+        labels = self.tensors.pop()
+        yield
+        self.tensors.append(labels)
+        self.tensors = tuple(self.tensors)
 
 
 def get_mask(dataset: VisionDataset, labels: Iterable[int]) -> Tensor:

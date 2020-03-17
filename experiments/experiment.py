@@ -174,16 +174,16 @@ class Experiment:
     def valid_performance_generator(self, valid_dataset: Dataset) -> Iterable[LossInfo]:
         periodic_valid_dataloader = self.get_dataloader(valid_dataset)
         while True:
-            for data, target in periodic_valid_dataloader:
-                data = data.to(self.model.device)
-                target = target.to(self.model.device)
+            for batch in periodic_valid_dataloader:
+                data = batch[0].to(self.model.device)
+                target = batch[1].to(self.model.device) if len(batch) == 2 else None
                 yield self.test_batch(data, target)
 
     def train_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.train()
-        for data, target in dataloader:
-            data = data.to(self.model.device)
-            target = target.to(self.model.device)
+        for batch in dataloader:
+            data = batch[0].to(self.model.device)
+            target = batch[1].to(self.model.device) if len(batch) == 2 else None
             batch_size = data.shape[0]
 
             yield self.train_batch(data, target)
@@ -226,9 +226,9 @@ class Experiment:
 
     def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.eval()
-        for data, target in dataloader:
-            data = data.to(self.config.device)
-            target = target.to(self.config.device)
+        for batch in dataloader:
+            data = batch[0].to(self.model.device)
+            target = batch[1].to(self.model.device) if len(batch) == 2 else None
             yield self.test_batch(data, target)
 
     def test_batch(self, data: Tensor, target: Tensor) -> LossInfo:

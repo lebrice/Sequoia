@@ -29,8 +29,13 @@ class TaskIncremental(Experiment):
     n_classes_per_task: int = 2      # Number of classes per task.
     # Wether to sort out the classes in the class_incremental setting.
     random_class_ordering: bool = True
-    epochs_per_task: int = 1  # Number of epochs on each task's dataset.
-    
+
+    # (Maximum number of epochs of self-supervised training to perform before switching
+    # to supervised training.
+    unsupervised_epochs_per_task: int = 5
+    # (Maximum number of epochs of supervised training to perform on each task's dataset.
+    supervised_epochs_per_task: int = 1
+
     # Number of runs to execute in order to create the OML Figure 3.
     n_runs: int = 5
 
@@ -125,15 +130,28 @@ class TaskIncremental(Experiment):
         train_losses: List[LossInfo] = []
         valid_losses: List[LossInfo] = []
 
+        train: VisionDatasetSubset
+        valid: VisionDatasetSubset
+        valid_cumul: VisionDatasetSubset
+        
         for task_index, (train, valid, valid_cumul) in enumerate(datasets):
             print(f"Starting task {task_index}, Classes {self.task_classes[task_index]}")
-            
-            # Train on the current task:
+            train_targets = train.targets
+            train.targets = [None] * len(train.targets)
+
+            # Create an unsupervised version of the dataset by temporarily removing the labels.
+            with train.without_labels(), valid.without_labels():
+                self.train_until_convergence(
+                    train,
+                    valid,
+                    max_epochs=self.unsupervised_epochs_per_task,
+                    description=f"Task {task_index} (Unsupervised)",
+                )
             self.train_until_convergence(
                 train,
                 valid,
-                max_epochs=self.epochs_per_task,
-                description=f"Task {task_index}",
+                max_epochs=self.supervised_epochs_per_task,
+                description=f"Task {task_index} (Supervised)",
             )
             
             ## TODO: turned this off for now, not sure if OML paper does this.
