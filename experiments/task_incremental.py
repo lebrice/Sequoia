@@ -88,8 +88,7 @@ class TaskIncremental(Experiment):
         ax1.legend(loc="upper left")
 
         ax2: plt.Axes = fig.add_subplot(1, 2, 2)
-        for todo in range(1):
-            ax2.bar(x=np.arange(n_tasks), height=task_accuracy_means, yerr=task_accuracy_std)
+        ax2.bar(x=np.arange(n_tasks), height=task_accuracy_means, yerr=task_accuracy_std)
         ax2.set_title(f"Final mean accuracy per Task")
         ax2.set_xlabel("Task ID")
         ax2.set_xticks(np.arange(n_tasks, dtype=int))
