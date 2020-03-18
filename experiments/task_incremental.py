@@ -58,16 +58,19 @@ class TaskIncremental(Experiment):
             valid_losses_list.append(valid_losses)
             final_task_accuracies_list.append(final_task_accuracies)
 
-        valid_loss = stack_loss_attr(valid_losses_list, "total_loss")
-        loss_means = valid_loss.mean(dim=0).numpy()
-        loss_stds = valid_loss.std(dim=0).numpy()
+            # Save after each run, just in case we interrupt anything, so we
+            # still get partial results even if something goes wrong at some
+            # point.
+            valid_loss = stack_loss_attr(valid_losses_list, "total_loss")
+            final_task_accuracy = torch.stack(final_task_accuracies_list)
+            torch.save(valid_loss, self.plots_dir / 'valid_losses.pt')
+            torch.save(final_task_accuracy, self.plots_dir / 'final_task_accuracy.pt')
+
+        loss_means = valid_loss.mean(dim=0).detach().numpy()
+        loss_stds = valid_loss.std(dim=0).detach().numpy()
+        task_accuracy_means = final_task_accuracy.mean(dim=0).detach().numpy()
+        task_accuracy_std =   final_task_accuracy.std(dim=0).detach().numpy()
         
-        final_task_accuracy = torch.stack(final_task_accuracies_list)
-        task_accuracy_means = final_task_accuracy.mean(dim=0).numpy()
-        task_accuracy_std =   final_task_accuracy.std(dim=0).numpy()
-        
-        torch.save(valid_loss, self.plots_dir / 'valid_losses.pt')
-        torch.save(final_task_accuracy, self.plots_dir / 'final_task_accuracy.pt')
         
         n_tasks= len(task_accuracy_means)
 
@@ -137,13 +140,16 @@ class TaskIncremental(Experiment):
         for task_index, (train, valid, valid_cumul) in enumerate(datasets):
             print(f"Starting task {task_index}, Classes {self.task_classes[task_index]}")
             # Create an unsupervised version of the dataset by temporarily removing the labels.
-            with train.without_labels(), valid.without_labels():
-                self.train_until_convergence(
-                    train,
-                    valid,
-                    max_epochs=self.unsupervised_epochs_per_task,
-                    description=f"Task {task_index} (Unsupervised)",
-                )
+
+            # if there are any tasks:
+            if any(task.enabled for task in self.model.tasks.values()):
+                with train.without_labels(), valid.without_labels():
+                    self.train_until_convergence(
+                        train,
+                        valid,
+                        max_epochs=self.unsupervised_epochs_per_task,
+                        description=f"Task {task_index} (Unsupervised)",
+                    )
             self.train_until_convergence(
                 train,
                 valid,

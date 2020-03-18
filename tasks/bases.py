@@ -59,7 +59,6 @@ class AuxiliaryTask(nn.Module):
         """
         super().__init__()
         self.options = options or self.Options(*args, **kwargs)
-        self._coefficient = self.options.coefficient  # type: ignore
         self.device: torch.device = torch.device("cuda" if cuda_available else "cpu")
 
     def encode(self, x: Tensor) -> Tensor:
@@ -126,11 +125,10 @@ class AuxiliaryTask(nn.Module):
 
     @property
     def coefficient(self) -> float:
-        return self._coefficient
+        return self.options.coefficient
 
     @coefficient.setter
     def coefficient(self, value: float) -> None:
-        self._coefficient.data = value
         self.options.coefficient = value
 
     @property

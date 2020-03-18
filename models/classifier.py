@@ -98,6 +98,7 @@ class Classifier(nn.Module):
         h_x = self.encode(x)
         y_pred = self.logits(h_x)
         
+        loss_info.total_loss = torch.zeros(1, device=self.device)
         loss_info.tensors["h_x"] = h_x
         loss_info.tensors["y_pred"] = y_pred
 
