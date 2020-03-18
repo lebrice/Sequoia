@@ -14,24 +14,24 @@ import glob
 @dataclass
 class Options:
     """ Options for the script making the OML Figure 3 plot. """
-    runs_to_compare: List[str] = field(type=glob.glob, default_factory=lambda: glob.glob("results/*"))
+    runs: List[str] = field(type=glob.glob, default_factory=lambda: glob.glob("results/TaskIncremental/*"))
     out_path: Path = Path("scripts/plot.png")
 
     def __post_init__(self):
-        if len(self.runs_to_compare) == 1 and isinstance(self.runs_to_compare[0], list):
-            self.runs_to_compare = self.runs_to_compare[0]
+        if len(self.runs) == 1 and isinstance(self.runs[0], list):
+            self.runs = self.runs[0]
 
 
 def make_plot(options: Options) -> plt.Figure:
-    runs: List[Path] = list(map(Path, options.runs_to_compare))
+    runs: List[Path] = list(map(Path, options.runs))
     
     kept_runs: List[Path] = []
     for run in runs:
         if not run.is_dir() or str(run).endswith("wandb"):
             continue
         
-        valid_losses_path = (run / "plots" / "valid_losses.pt")
-        final_accuracy_path = (run / "plots" / "final_task_accuracy.pt")
+        valid_losses_path = next(run.glob("*/valid_losses.pt"))
+        final_accuracy_path = next(run.glob("*/final_task_accuracy.pt"))
         required_files = [valid_losses_path, final_accuracy_path]
         if all(p.exists() and p.is_file for p in required_files):
             kept_runs.append(run)
@@ -67,9 +67,8 @@ def make_plot(options: Options) -> plt.Figure:
     
 
     for i, run_path in enumerate(kept_runs):
-        valid_loss = torch.load(run_path / "plots" / "valid_losses.pt")
-        final_task_accuracy = torch.load(run_path / "plots" / "final_task_accuracy.pt")
-
+        valid_loss = torch.load(next(run_path.glob("*/valid_losses.pt")))
+        final_task_accuracy =torch.load(next(run_path.glob("*/final_task_accuracy.pt")))
         loss_means = valid_loss.mean(dim=0).numpy()
         loss_stds = valid_loss.std(dim=0).numpy()
 
