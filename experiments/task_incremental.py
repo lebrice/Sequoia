@@ -68,11 +68,10 @@ class TaskIncremental(Experiment):
 
             # Save after each run, just in case we interrupt anything, so we
             # still get partial results even if something goes wrong at some
-            # point.
-            if not self.results_dir.exists():
-                self.results_dir.mkdir(parents=True)
-            torch.save(valid_loss, self.results_dir / 'valid_losses.pt')
-            torch.save(final_task_accuracy, self.results_dir / 'final_task_accuracy.pt')
+            # point.  
+            results["valid_losses.pt"] = valid_losses
+            results["final_task_accuracy.pt"] = final_task_accuracy
+            self.save_results(results)
 
         loss_means = valid_loss.mean(dim=0).detach().numpy()
         loss_stds = valid_loss.std(dim=0).detach().numpy()
@@ -108,13 +107,12 @@ class TaskIncremental(Experiment):
         if self.config.debug:
             fig.show()
             fig.waitforbuttonpress(timeout=10)
+        
         fig.savefig(self.plots_dir / "oml_fig.jpg")
         self.log({"oml_fig.jpg": fig}, once=True)
 
-        return {
-            self.results_dir / "valid_losses.pt": valid_losses,
-            self.results_dir / "final_task_accuracy.pt": final_task_accuracy, 
-        }
+        self.save_results(results)
+        return results
     
     def _run(self) -> Tuple[List[LossInfo], Tensor]:
         """Executes one single run from the OML figure 3.

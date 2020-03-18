@@ -45,6 +45,8 @@ if __name__ == "__main__":
     parser.add_arguments(RunSettings, dest="settings")
     args = parser.parse_args()
     settings: RunSettings = args.settings
+    
+    experiment = settings.experiment
 
     config = settings.experiment.config
     config_dict = asdict(settings.experiment)
@@ -70,17 +72,11 @@ if __name__ == "__main__":
         
         print(f"Using wandb. Group name: {config.run_group} run name: {config.run_name}, log_dir: {config.log_dir}")
     
-    log_dir: Path = config.log_dir
-    experiment_started = log_dir.is_dir()
-
-    experiment_results_dir = (log_dir / "results")
-    experiment_done = experiment_results_dir.is_dir()
-
-    if experiment_done:
+    if experiment.done:
         print(f"Experiment is already done. Exiting.")
         exit(0)
-    if experiment_started:
-        print(f"Experiment is incomplete at directory {log_dir}.")
+    if experiment.started:
+        print(f"Experiment is incomplete at directory {config.log_dir}.")
         # TODO: pick up where we left off ?
         # latest_checkpoint = log_dir / "checkpoints" / "todo"
         # settings.experiment = torch.load(latest_checkpoints)
@@ -88,14 +84,9 @@ if __name__ == "__main__":
     try:
         print("-" * 10, f"Starting experiment '{type(settings.experiment).__name__}' ({settings.experiment.config.log_dir})", "-" * 10)
         
-        settings.experiment.save()
-        results: Optional[Dict[Union[str, Path], Any]] = settings.experiment.run()
-        # write out the results of an experiment, if any.
-        if results is not None:
-            for key, value in results.items():
-                with open(experiment_results_dir / key) as f:
-                    if results is not None:
-                        torch.save(results, f)
+        experiment.log_dir.mkdir(parents=True, exist_ok=True)
+        experiment.save()
+        experiment.run()
         
         print("-" * 10, f"Experiment '{type(settings.experiment).__name__}' is done.", "-" * 10)
     

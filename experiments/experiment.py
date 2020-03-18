@@ -266,7 +266,7 @@ class Experiment:
     def _folder(self, folder: Union[str, Path], create: bool=True):
         path = self.config.log_dir / folder
         if create and not path.is_dir():
-            path.mkdir(parents=True)
+            path.mkdir(parents=False)
         return path
 
     @property
@@ -283,7 +283,8 @@ class Experiment:
 
     @property
     def log_dir(self) -> Path:
-        return self._folder("")
+        # Accessing this property doesn't create the folder.
+        return self._folder("", create=False)
 
     @property
     def results_dir(self) -> Path:
@@ -293,7 +294,29 @@ class Experiment:
     def config_path(self) -> Path:
         return self.log_dir / "config.pt"
 
+    @property
+    def started(self) -> bool:
+        return is_nonempty_dir(self.config.log_dir)
+
+    @property
+    def done(self) -> bool:
+        """Returns wether or not the experiment is complete.
+        
+        Returns:
+            bool: Wether the experiment is complete or not (wether the
+            results_dir exists and contains files).
+        """
+        return self.started and is_nonempty_dir(self.results_dir)
+
+   
+    
+    def save_results(self, results: Dict[Union[str, Path], Any]):
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+        for path, result in results.items():
+            torch.save(result, self.results_dir / path)
+
     def save(self) -> None:
+        self.log_dir.mkdir(parents=True, exist_ok=True)
         with open(self.checkpoints_dir / "config.json", "w") as f:
             d = asdict(self)
             d = to_str(d)
@@ -306,6 +329,9 @@ class Experiment:
     def load_from_config(cls, config_path: Union[Path, str]):
         with open(config_path) as f:
             return torch.load(f)
+
+def is_nonempty_dir(path: Path):
+    path.is_dir() and len(list(path.iterdir())) > 0
 
 def is_json_serializable(value: str):
     try:

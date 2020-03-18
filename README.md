@@ -1,5 +1,5 @@
 # SSCL
-Self-Supervised Continual Learning
+Self-Supervised Learning for Continual Learning.
 
 
 ## Debugging / Running experiments:
@@ -8,20 +8,28 @@ run `python main.py <setting_name> [--<hparam_name> <hparam_value>]`.
 Different experimental settings are located the `experiments` folder.
 There are currently three settings to choose from:
 - "iid":
-  - Your usual iid setting.
+    - The usual iid setting. Nothing fancy.
+- "task-incremental":
+    - Learning occurs as a series of tasks, each with a subset of the classes.
+    For example, first only 0's and 1's, then 2's and 3's, etc.
+
+    - For each task, if at least one auxiliary tasks is enabled (see below), we first do `--unsupervised_epochs` epochs of self-supervised training, followed by `--supervised_epochs` epochs of supervised training.
+
+    - (Could be renamed to class-incremental, since the same image is always the same label)
 - "class-incremental"
-  - (Should be renamed to something like "online_class-incremental")
-  - Learning occurs as a stream of first only 0's and 1's, then 2's and 3's, etc.
-  - Every datapoint is only seen once.
-- "task-incremental" (WIP)
-  - (Could be renamed to class-incremental)
-  - Same as above, but can perform as many epochs on a given "task" as you want.
+    - (deprecated)
+    - (Should be renamed to something like "online-class-incremental")
 
-By default, uses the baseline options (no auxiliary tasks, just a simple classifier).
+To learn more about the command-line options available, use `"python <setting-name> --help"`, or check out the different classes in the [experiments folder](/experiments).
 
-To add auxiliary tasks, use `"--<task_name>.coefficient <value>"`. This value is used to scale the task loss before it is added to the total loss and backpropagted. The default value for all tasks is 0, meaning they are disabled by default.
 
-Examples:
+## Adding auxiliary tasks:
+By default, the model uses no auxiliary tasks, and is just a simple classifier. It therefore can only do supervised training.
+
+To add auxiliary tasks, use the `"--<task_name>.coefficient <value>"` argument.
+This value is used to scale the task loss before it is added to the total loss and backpropagted. The default value for all tasks is 0, meaning they are disabled by default.
+
+## Examples:
 - Running the baseline in a setting:
     ```console
     python main.py <setting>
