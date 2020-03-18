@@ -38,6 +38,9 @@ class Config:
     device: torch.device = torch.device("cuda" if cuda_available else "cpu")
     
     use_wandb: bool = True # Whether or not to log results to wandb
+    # Name used to easily group runs together.
+    # Used to create a parent folder that will contain the `run_name` directory. 
+    run_group: Optional[str] = None 
     run_name: Optional[str] = None  # Wandb run name. If None, will use wandb's automatic name generation
 
     def __post_init__(self):
@@ -49,12 +52,16 @@ class Config:
             print("Cannot use the passed value of argument 'use_cuda', as CUDA "
                   "is not available!")
             self.use_cuda = False
-        
+        if not self.use_cuda:
+            self.device = torch.device("cpu")
+
         if self.debug:
             self.use_wandb = False
             self.run_name = "debug"
             if self.log_dir.exists():
+                # wipe out the debug folder every time.
                 shutil.rmtree(self.log_dir)
+            
             self.log_dir.mkdir(exist_ok=False, parents=True)
 
             if self.use_cuda:
@@ -62,12 +69,10 @@ class Config:
                 torch.backends.cudnn.deterministic = True
                 torch.backends.cudnn.benchmark = False
 
-        if not self.use_cuda:
-            self.device = torch.device("cpu")
     
     @property
     def log_dir(self):
-        return self.log_dir_root.joinpath(self.run_name or 'default')
+        return self.log_dir_root.joinpath(self.run_group or "", self.run_name or 'default')
 
 
 # shared config object.

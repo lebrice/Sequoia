@@ -1,6 +1,7 @@
 from collections import OrderedDict
 from dataclasses import dataclass
 from itertools import accumulate
+from pathlib import Path
 from random import shuffle
 from typing import Dict, Iterable, List, Tuple, Union
 
@@ -20,6 +21,7 @@ from datasets.subset import VisionDatasetSubset
 from experiments.class_incremental import ClassIncremental
 from experiments.experiment import Experiment
 from utils.utils import n_consecutive, rgetattr, rsetattr
+
 
 @dataclass
 class TaskIncremental(Experiment):
@@ -48,9 +50,11 @@ class TaskIncremental(Experiment):
         self.valid_cumul_datasets: List[VisionDatasetSubset] = []
         self.task_classes: List[List[int]] = list()
 
-    def run(self):
+    def run(self) -> Dict[Path, Tensor]:
         valid_losses_list: List[List[LossInfo]] = []
         final_task_accuracies_list: List[Tensor] = []
+
+        results: Dict[Path, Tensor] = {}
 
         for i in range(self.n_runs):
             print(f"STARTING RUN {i}")
@@ -58,35 +62,36 @@ class TaskIncremental(Experiment):
             valid_losses_list.append(valid_losses)
             final_task_accuracies_list.append(final_task_accuracies)
 
+            # stack the lists of tensors into tensors.
+            valid_loss = stack_loss_attr(valid_losses_list, "total_loss")
+            final_task_accuracy = torch.stack(final_task_accuracies_list)
+
             # Save after each run, just in case we interrupt anything, so we
             # still get partial results even if something goes wrong at some
             # point.
-            valid_loss = stack_loss_attr(valid_losses_list, "total_loss")
-            final_task_accuracy = torch.stack(final_task_accuracies_list)
-            torch.save(valid_loss, self.plots_dir / 'valid_losses.pt')
-            torch.save(final_task_accuracy, self.plots_dir / 'final_task_accuracy.pt')
+            if not self.results_dir.exists():
+                self.results_dir.mkdir(parents=True)
+            torch.save(valid_loss, self.results_dir / 'valid_losses.pt')
+            torch.save(final_task_accuracy, self.results_dir / 'final_task_accuracy.pt')
 
         loss_means = valid_loss.mean(dim=0).detach().numpy()
         loss_stds = valid_loss.std(dim=0).detach().numpy()
         task_accuracy_means = final_task_accuracy.mean(dim=0).detach().numpy()
         task_accuracy_std =   final_task_accuracy.std(dim=0).detach().numpy()
-        
-        
+            
         n_tasks= len(task_accuracy_means)
 
-        print("CUMULATIVE VALID LOSS:")
-        print(valid_loss)
-        print("FINAL MEAN TASK ACCURACies:")
-        print(final_task_accuracy)    
+        self.log({
+            "Cumulative valid loss": valid_loss,
+            "Final mean task accuracies": final_task_accuracy,
+            "Loss Means": loss_means,
+            "Loss STDs": loss_stds,
+            "Final Task Accuracy means:": task_accuracy_means,
+            "Final Task Accuracy stds:": task_accuracy_std,
+            }, once=True, always_print=True)
 
-        print("Loss Means:", loss_means)
-        print("Loss STDs:", loss_stds)
-
-        print("Final Task Accuracy means:", task_accuracy_means)
-        print("Final Task Accuracy stds:", task_accuracy_std)
-        
         fig: plt.Figure = plt.figure()
-
+        fig.suptitle(f"{self.config.run_group} - {self.config.run_name}")
         ax1: plt.Axes = fig.add_subplot(1, 2, 1)
         ax1.errorbar(x=np.arange(n_tasks), y=loss_means, yerr=loss_stds, label=self.config.run_name)
         ax1.set_title("Cumulative Validation Error")
@@ -104,9 +109,12 @@ class TaskIncremental(Experiment):
             fig.show()
             fig.waitforbuttonpress(timeout=10)
         fig.savefig(self.plots_dir / "oml_fig.jpg")
-        self.log({"OML": fig}, once=True)
+        self.log({"oml_fig.jpg": fig}, once=True)
 
-        return 
+        return {
+            self.results_dir / "valid_losses.pt": valid_losses,
+            self.results_dir / "final_task_accuracy.pt": final_task_accuracy, 
+        }
     
     def _run(self) -> Tuple[List[LossInfo], Tensor]:
         """Executes one single run from the OML figure 3.

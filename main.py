@@ -4,7 +4,7 @@ import pprint
 from dataclasses import asdict, dataclass, is_dataclass
 from os import path
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple, Union
+from typing import Any, Dict, Iterable, List, Tuple, Union, Optional
 
 import torch
 import wandb
@@ -29,6 +29,7 @@ class RunSettings(JsonSerializable):
         "class-incremental": ClassIncremental,
         "task-incremental": TaskIncremental,
     })
+    notes: Optional[str] = None
 
     def __post_init__(self):
         if self.experiment.config.verbose:     
@@ -45,22 +46,59 @@ if __name__ == "__main__":
     args = parser.parse_args()
     settings: RunSettings = args.settings
 
+    config = settings.experiment.config
     config_dict = asdict(settings.experiment)
+    # pprint.pprint(config_dict, indent=1)
+
     if settings.experiment.config.use_wandb:
         wandb_path = settings.experiment.config.log_dir_root.joinpath('wandb')
         wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
 
-        # pprint.pprint(config_dict, indent=1)
-        # keys_to_remove: List[str] = []
-
-        wandb.init(project='SSCL', name=settings.experiment.config.run_name, config=config_dict, dir=str(wandb_path))
+        config.run_group = config.run_group or type(settings.experiment).__name__
+        
+        print(f"Using wandb. Experiment name: {config.run_name}")
+        if config.run_name is None:
+            # TODO: Create a run name using the coefficients of the tasks, etc?
+            # At the moment, if no run name is given, ths
+            pass
+        
+        wandb.init(project='SSCL', name=config.run_name, group=config.run_group, config=config_dict, dir=str(wandb_path))
         wandb.run.save()
-        settings.experiment.config.run_name = wandb.run.name
-        print(f"Using wandb. Experiment name: {settings.experiment.config.run_name}")
 
-    settings.experiment.config.log_dir.mkdir(parents=True, exist_ok=True)
-    settings.experiment.save()
+        if config.run_name is None:
+            config.run_name = wandb.run.name
+        
+        print(f"Using wandb. Group name: {config.run_group} run name: {config.run_name}, log_dir: {config.log_dir}")
+    
+    log_dir: Path = config.log_dir
+    experiment_started = log_dir.is_dir()
 
-    print("-" * 10, f"Starting experiment '{type(settings.experiment).__name__}' ({settings.experiment.config.log_dir})", "-" * 10)
-    settings.experiment.run()
-    print("-" * 10, f"Experiment '{type(settings.experiment).__name__}' is done.", "-" * 10)
+    experiment_results_dir = (log_dir / "results")
+    experiment_done = experiment_results_dir.is_dir()
+
+    if experiment_done:
+        print(f"Experiment is already done. Exiting.")
+        exit(0)
+    if experiment_started:
+        print(f"Experiment is incomplete at directory {log_dir}.")
+        # TODO: pick up where we left off ?
+        # latest_checkpoint = log_dir / "checkpoints" / "todo"
+        # settings.experiment = torch.load(latest_checkpoints)
+    
+    try:
+        print("-" * 10, f"Starting experiment '{type(settings.experiment).__name__}' ({settings.experiment.config.log_dir})", "-" * 10)
+        
+        settings.experiment.save()
+        results: Optional[Dict[Union[str, Path], Any]] = settings.experiment.run()
+        # write out the results of an experiment, if any.
+        if results is not None:
+            for key, value in results.items():
+                with open(experiment_results_dir / key) as f:
+                    if results is not None:
+                        torch.save(results, f)
+        
+        print("-" * 10, f"Experiment '{type(settings.experiment).__name__}' is done.", "-" * 10)
+    
+    except Exception as e:
+        print(f"Experiment crashed: {e}")
+        raise e

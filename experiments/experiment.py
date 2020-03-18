@@ -263,9 +263,9 @@ class Experiment:
             pin_memory=self.config.use_cuda
         )
 
-    def _folder(self, folder: Union[str, Path]):
+    def _folder(self, folder: Union[str, Path], create: bool=True):
         path = self.config.log_dir / folder
-        if not path.is_dir():
+        if create and not path.is_dir():
             path.mkdir(parents=True)
         return path
 
@@ -286,6 +286,10 @@ class Experiment:
         return self._folder("")
 
     @property
+    def results_dir(self) -> Path:
+        return self._folder("results", create=False)
+
+    @property
     def config_path(self) -> Path:
         return self.log_dir / "config.pt"
 
@@ -299,7 +303,7 @@ class Experiment:
         #     torch.save(self, f)
 
     @classmethod
-    def load(cls, config_path: Union[Path, str]):
+    def load_from_config(cls, config_path: Union[Path, str]):
         with open(config_path) as f:
             return torch.load(f)
 
