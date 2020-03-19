@@ -14,35 +14,39 @@ import glob
 @dataclass
 class Options:
     """ Options for the script making the OML Figure 3 plot. """
-    runs: List[str] = field(type=glob.glob, default_factory=lambda: glob.glob("results/TaskIncremental/*"))
+    runs: List[str] = list_field(default=["results/TaskIncremental/*"])
     out_path: Path = Path("scripts/plot.png")
 
     def __post_init__(self):
         if len(self.runs) == 1 and isinstance(self.runs[0], list):
             self.runs = self.runs[0]
 
+        paths: List[Path] = []
+        for pattern in self.runs:
+            paths.extend(map(Path, glob.glob(pattern)))
+
+        def keep_run(path: Path) -> bool:
+            if not path.is_dir():
+                return False
+            if str(path).endswith("wandb"):
+                return False
+            if not path.joinpath("results").exists():
+                return False
+            return True
+        
+        self.runs = list(filter(keep_run, paths))
+        
 
 def make_plot(options: Options) -> plt.Figure:
-    runs: List[Path] = list(map(Path, options.runs))
+    runs: List[Path] = options.runs
     
-    kept_runs: List[Path] = []
-    for run in runs:
-        if not run.is_dir() or str(run).endswith("wandb"):
-            continue
-        
-        valid_losses_path = next(run.glob("*/valid_losses.pt"))
-        final_accuracy_path = next(run.glob("*/final_task_accuracy.pt"))
-        required_files = [valid_losses_path, final_accuracy_path]
-        if all(p.exists() and p.is_file for p in required_files):
-            kept_runs.append(run)
-    
-    n = len(kept_runs)
+    n = len(runs)
     print(f"Creating the OML plot to compare the {n} different methods:")
 
     fig: plt.Figure = plt.figure()
     
-    title = str(kept_runs[0].parent)
-    for run in kept_runs:
+    title = str(runs[0].parent)
+    for run in runs:
         if str(run.parent) != title:
             title = "Results"
             break
@@ -64,18 +68,19 @@ def make_plot(options: Options) -> plt.Figure:
     ax2.set_yticklabels(indicators*n)
     ax2.set_ylim(top=len(indicators) * n)
     ax2.hlines(y=np.arange(len(indicators)*n), xmin=0, xmax=5, linestyles="dotted", colors="gray")
-    
 
-    for i, run_path in enumerate(kept_runs):
-        valid_loss = torch.load(next(run_path.glob("*/valid_losses.pt")))
-        final_task_accuracy =torch.load(next(run_path.glob("*/final_task_accuracy.pt")))
-        loss_means = valid_loss.mean(dim=0).numpy()
-        loss_stds = valid_loss.std(dim=0).numpy()
+    for i, run_path in enumerate(runs):
+        valid_loss = load_array(run_path / "results" / "valid_loss.csv")
+        final_task_accuracy = load_array(run_path / "results" / "final_task_accuracy.csv")
+        
+        loss_means = valid_loss.mean(axis=0)
+        loss_stds = valid_loss.std(axis=0)
 
-        task_accuracy_means = final_task_accuracy.mean(dim=0).numpy()
-        task_accuracy_std =   final_task_accuracy.std(dim=0).numpy()
+        task_accuracy_means = final_task_accuracy.mean(axis=0)
+        task_accuracy_std =   final_task_accuracy.std(axis=0)
         
         n_tasks= len(task_accuracy_means)
+        ax1.set_xticks(np.arange(n_tasks, dtype=int))
         label = str(run_path.parts[-1])
 
         print(f"Run {run_path}:")
@@ -97,6 +102,24 @@ def make_plot(options: Options) -> plt.Figure:
     fig.savefig(options.out_path)
     fig.show()
     fig.waitforbuttonpress(timeout=30)
+
+
+def load_array(path: Path) -> np.ndarray:
+    """Loads a numpy array from a file.
+    
+    Args:
+        path (Path): A path to load from (the extension is ignored). Will load a
+        "csv" file with the given name, if there is one. If not, will look for a
+        pytorch pickle file. If there is a pytorch pickle file, will try to
+        load it, and then save a csv version for later use.
+    
+    Returns:
+        np.ndarray: The array.
+    """
+    if path.with_suffix(".pt").exists() and not path.with_suffix(".csv").exists():
+        array = torch.load(path.with_suffix(".pt")).detach().numpy()
+        np.savetxt(path.with_suffix(".csv"), array, delimiter=",")
+    return np.loadtxt(path.with_suffix(".csv"), delimiter=",")
 
 
 def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float):

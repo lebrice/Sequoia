@@ -4,7 +4,7 @@ from typing import Any, Dict, Union, Optional
 
 import torch
 from torch import Tensor
-from common.metrics import Metrics
+from .metrics import Metrics
 
 def add_dicts(d1: Dict, d2: Dict, add_values=True):
     result = d1.copy()

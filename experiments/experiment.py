@@ -12,7 +12,7 @@ import wandb
 from simple_parsing import choice, field, mutable_field, subparsers
 from torch import Tensor, nn
 from torch.utils.data import DataLoader
-
+import numpy as np
 from common.losses import LossInfo
 from common.metrics import Metrics
 from config import Config
@@ -307,13 +307,13 @@ class Experiment:
             results_dir exists and contains files).
         """
         return self.started and is_nonempty_dir(self.results_dir)
-
-   
     
-    def save_results(self, results: Dict[Union[str, Path], Any]):
+    def save_results(self, results: Dict[Union[str, Tensor], Any]):
         self.results_dir.mkdir(parents=True, exist_ok=True)
         for path, result in results.items():
-            torch.save(result, self.results_dir / path)
+            path = Path(path) if isinstance(path, str) else path
+            array = result.detach().numpy()
+            np.savetxt(self.results_dir / path.with_suffix(".csv"), array, delimiter=",")
 
     def save(self) -> None:
         self.log_dir.mkdir(parents=True, exist_ok=True)

@@ -69,7 +69,7 @@ class TaskIncremental(Experiment):
             # Save after each run, just in case we interrupt anything, so we
             # still get partial results even if something goes wrong at some
             # point.  
-            results["valid_losses.pt"] = valid_losses
+            results["valid_loss.pt"] = valid_loss
             results["final_task_accuracy.pt"] = final_task_accuracy
             self.save_results(results)
 
