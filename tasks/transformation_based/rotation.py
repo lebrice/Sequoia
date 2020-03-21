@@ -28,11 +28,11 @@ def rotate(x: Tensor, angle: int) -> Tensor:
 
 
 class RotationTask(ClassifyTransformationTask):
-    def __init__(self, options: AuxiliaryTask.Options=None):
+    def __init__(self, options: ClassifyTransformationTask.Options=None):
         super().__init__(
-            function=wrap_pil_transform(rotate),
+            function=rotate,
             function_args=[0, 90, 180, 270],
-            options=options
+            options=options,
         )
         print("INIT!", self)
 
