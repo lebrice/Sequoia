@@ -6,7 +6,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from .bases import AuxiliaryTask
+from tasks.auxiliary_task import AuxiliaryTask
 from common.losses import LossInfo
 from common.layers import DeConvBlock, Flatten, Reshape
 

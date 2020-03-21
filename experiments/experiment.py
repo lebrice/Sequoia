@@ -14,7 +14,7 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader
 import numpy as np
 from common.losses import LossInfo
-from common.metrics import Metrics
+from common.metrics import get_metrics
 from config import Config
 from datasets import Dataset
 from datasets.fashion_mnist import FashionMnist
@@ -165,7 +165,7 @@ class Experiment:
                 best_valid_loss = val_loss.item()
             else:
                 counter += 1
-                print(f"Validation Loss hasn't increased over the last {counter} epochs.")
+                print(f"Validation Loss hasn't decreased over the last {counter} epochs.")
                 if counter == patience:
                     print(f"Exiting at step {self.global_step}, as validation loss hasn't decreased over the last {patience} epochs.")
                     break

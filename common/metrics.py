@@ -1,24 +1,93 @@
 from dataclasses import dataclass, field, InitVar
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 import torch
 from torch import Tensor
 
-@dataclass
+
+@dataclass 
 class Metrics:
     n_samples: int = 0
-
-    confusion_matrix: Optional[Tensor] = field(default=None, repr=False)
-
-    # fields we generate from the confusion matrix (if provided)
-    accuracy: float = field(default=0., init=False)
-    class_accuracy: Optional[Tensor] = field(default=None, init=False)
-
 
     x:      InitVar[Optional[Tensor]] = None
     h_x:    InitVar[Optional[Tensor]] = None
     y_pred: InitVar[Optional[Tensor]] = None
     y:      InitVar[Optional[Tensor]] = None
 
+    def __post_init__(self,
+                      x: Tensor=None,
+                      h_x: Tensor=None,
+                      y_pred: Tensor=None,
+                      y: Tensor=None):
+        """Creates metrics given `y_pred` and `y`.
+        
+        NOTE: Doesn't use `x` and `h_x` for now.
+ 
+        Args:
+            x (Tensor, optional): The input Tensor. Defaults to None.
+            h_x (Tensor, optional): The hidden representation for x. Defaults to None.
+            y_pred (Tensor, optional): The predicted label. Defaults to None.
+            y (Tensor, optional): The true label. Defaults to None.
+        """
+        # get the batch size:
+        for tensor in [x, h_x, y_pred, y]:
+            if tensor is not None:
+                self.n_samples = tensor.shape[0]
+                break
+    
+    def __add__(self, other):
+        # Metrics instances shouldn't be added together.
+        # We just return the other.
+        return other
+
+    def to_log_dict(self) -> Dict:
+        return {
+            "n_samples": self.n_samples,
+        }
+
+
+@dataclass
+class RegressionMetrics(Metrics):
+    l2: Optional[Tensor] = None
+
+    def __post_init__(self,
+                      x: Tensor=None,
+                      h_x: Tensor=None,
+                      y_pred: Tensor=None,
+                      y: Tensor=None):
+        super().__post_init__(x=x, h_x=h_x, y_pred=y_pred, y=y)
+        if y_pred is not None and y is not None:
+            self.l2 = torch.dist(y_pred, y)
+
+    def __add__(self, other: "RegressionMetrics") -> "RegressionMetrics":
+        l2 = torch.zeros_like(
+            self.l2 if self.l2 is not None else
+            other.l2 if other.l2 is not None else
+            torch.zeros(1)
+        )
+        if self.l2 is not None:
+            l2 = l2 + self.l2
+        if other.l2 is not None:
+            l2 = l2 + other.l2
+        return RegressionMetrics(
+            n_samples=self.n_samples + other.n_samples,
+            l2=l2
+        )
+    
+    def to_log_dict(self) -> Dict:
+        d = super().to_log_dict()
+        d["l2"] = self.l2
+        return d
+
+
+
+@dataclass
+class ClassificationMetrics(Metrics):
+    confusion_matrix: Optional[Tensor] = field(default=None, repr=False)
+
+    # fields we generate from the confusion matrix (if provided)
+    accuracy: float = field(default=0., init=False)
+    class_accuracy: Optional[Tensor] = field(default=None, init=False)
+    
     def __post_init__(self, x: Tensor=None, h_x: Tensor=None, y_pred: Tensor=None, y: Tensor=None):
         # get the batch size:
         for tensor in [x, h_x, y_pred, y]:
@@ -33,7 +102,7 @@ class Metrics:
             self.accuracy = get_accuracy(self.confusion_matrix)
             self.class_accuracy = get_class_accuracy(self.confusion_matrix)
 
-    def __add__(self, other: "Metrics") -> "Metrics":
+    def __add__(self, other: "ClassificationMetrics") -> "ClassificationMetrics":
         confusion_matrix: Optional[Tensor] = None
         if self.confusion_matrix is None:
             if other.confusion_matrix is None:
@@ -45,21 +114,30 @@ class Metrics:
         else:
             confusion_matrix = self.confusion_matrix + other.confusion_matrix
 
-        result = Metrics(
+        result = ClassificationMetrics(
             n_samples=self.n_samples + other.n_samples,
             confusion_matrix=confusion_matrix,
         )
         return result
     
     def to_log_dict(self) -> Dict:
-        return {
-            "n_samples": self.n_samples,
-            "accuracy": self.accuracy,
-            "class_accuracy": self.class_accuracy,
-        }
+        d = super().to_log_dict()
+        d["accuracy"] = self.accuracy
+        d["class_accuracy"] = self.class_accuracy
+        return d
     
     def __str__(self) -> str:
-        return f"Metrics(n_samples={self.n_samples}, accuracy={self.accuracy:.2%})"
+        return f"metrics(n_samples={self.n_samples}, accuracy={self.accuracy:.2%})"
+
+
+def get_metrics(y_pred: Tensor,
+            y: Tensor,
+            x: Tensor=None,
+            h_x: Tensor=None) -> Union[ClassificationMetrics, RegressionMetrics]:
+    if y.is_floating_point():
+        return RegressionMetrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
+    else:
+        return ClassificationMetrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
 
 
 def get_confusion_matrix(y_pred: Tensor, y: Tensor) -> Tensor:

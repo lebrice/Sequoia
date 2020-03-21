@@ -1,4 +1,4 @@
-__pycache__/
+**/__pycache__/
 .vscode
 
 # mypy
@@ -7,7 +7,9 @@ __pycache__/
 dmypy.json
 
 
-results
+results/*
+!results/**/*.csv
 data/*
 !data/**/*.py
+scripts/*.png
 wandb

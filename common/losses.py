@@ -4,16 +4,27 @@ from typing import Any, Dict, Union, Optional
 
 import torch
 from torch import Tensor
-from .metrics import Metrics
+from .metrics import get_metrics, Metrics, ClassificationMetrics
 
-def add_dicts(d1: Dict, d2: Dict, add_values=True):
+
+def add_dicts(d1: Dict, d2: Dict, add_values=True) -> Dict:
     result = d1.copy()
     for key, v2 in d2.items():
-        if add_values:
-            result[key] = result.get(key, 0) + v2
-        else:
+        if isinstance(v2, dict):
+            result[key] = add_dicts(d1[key], v2)
+        elif not add_values:
             result[key] = v2
+        else:
+            result[key] = result.get(key, 0) + v2
     return result
+
+
+def prepend(d: Dict, prefix: str) -> None:
+    for key in list(d.keys()):
+        if not key.startswith(prefix):
+            value = d.pop(key)
+            d[f"{prefix}.{key}"] = value
+
 
 @dataclass
 class LossInfo:
@@ -22,15 +33,21 @@ class LossInfo:
     Used to simplify the return type of the various `get_loss` functions.    
     """
     total_loss: Tensor = 0.  # type: ignore
-    losses: Dict[str, Tensor] = field(default_factory=OrderedDict)
+    losses:  Dict[str, Tensor] = field(default_factory=OrderedDict)
     tensors: Dict[str, Tensor] = field(default_factory=OrderedDict, repr=False)
     metrics: Metrics = field(default_factory=Metrics)
 
     def __add__(self, other: "LossInfo") -> "LossInfo":
         total_loss = self.total_loss + other.total_loss
-        losses = add_dicts(self.losses, other.losses)
+        losses = add_dicts(self.losses, other.losses, add_values=True)
         tensors = add_dicts(self.tensors, other.tensors, add_values=False)
-        metrics = self.metrics + other.metrics     
+        
+        metrics = self.metrics
+        if self.metrics.n_samples == 0:
+            metrics = other.metrics
+        else:
+            metrics += other.metrics
+        
         return LossInfo(
             total_loss=total_loss,
             losses=losses,
@@ -60,7 +77,7 @@ class LossInfo:
         return self
 
     def add_prefix(self, prefix: str) -> None:
-        prepend(self.losses, prefix)
+        prepend(self.losses,  prefix)
         prepend(self.tensors, prefix)
     
     def to_log_dict(self) -> Dict:
@@ -70,9 +87,3 @@ class LossInfo:
             **self.metrics.to_log_dict()
         }
 
-
-def prepend(d: Dict, prefix: str) -> None:
-    for key in list(d.keys()):
-        if not key.startswith(prefix):
-            value = d.pop(key)
-            d[f"{prefix}.{key}"] = value

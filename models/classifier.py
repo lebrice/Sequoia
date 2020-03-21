@@ -13,7 +13,7 @@ from torchvision.utils import save_image
 
 from config import Config
 from common.losses import LossInfo
-from common.metrics import Metrics, accuracy
+from common.metrics import get_metrics, accuracy
 from common.layers import ConvBlock, Flatten
 from tasks import AuxiliaryTask, AuxiliaryTaskOptions
 
@@ -89,12 +89,11 @@ class Classifier(nn.Module):
         return LossInfo(
             total_loss=loss,
             tensors=(dict(x=x, h_x=h_x, y_pred=y_pred, y=y)),
-            metrics=Metrics(x=x, h_x=h_x, y_pred=y_pred, y=y),
+            metrics=get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y),
         )
 
     def get_loss(self, x: Tensor, y: Tensor=None) -> LossInfo:
         loss_info = LossInfo()
-
         h_x = self.encode(x)
         y_pred = self.logits(h_x)
         
@@ -103,6 +102,7 @@ class Classifier(nn.Module):
         loss_info.tensors["y_pred"] = y_pred
 
         if y is not None:
+            loss_info.metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
             supervised_loss = self.supervised_loss(x=x, y=y, h_x=h_x, y_pred=y_pred)
             loss_info.losses["supervised"] = supervised_loss.total_loss
             loss_info += supervised_loss

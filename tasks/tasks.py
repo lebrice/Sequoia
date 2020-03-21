@@ -1,18 +1,18 @@
 from dataclasses import dataclass
-from torch import nn
-from simple_parsing import mutable_field
-from typing import Tuple, NewType, Dict, Union
+from typing import Dict, NewType, Tuple, Union
 
-from .bases import AuxiliaryTask, TaskType
+from simple_parsing import mutable_field
+from torch import nn
+
+from .auxiliary_task import AuxiliaryTask, TaskType
 from .irm import IrmTask
 from .jigsaw_puzzle import JigsawPuzzleTask
 from .mixup import ManifoldMixupTask, MixupTask
 from .patch_location import PatchLocationTask
-from .reconstruction import VAEReconstructionTask
-from .rotation import RotationTask
-from .torchvision.adjust_brightness import AdjustBrightnessTask
-from .torchvision.transformation import (ClassifyTransformationTask,
-                                         RegressTransformationTask)
+from .reconstruction.vae import VAEReconstructionTask
+from .transformation_based import (AdjustBrightnessTask,
+                                   ClassifyTransformationTask,
+                                   RegressTransformationTask, RotationTask)
 
 
 @dataclass

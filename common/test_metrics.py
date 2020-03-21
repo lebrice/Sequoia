@@ -1,4 +1,4 @@
-from .metrics import Metrics, accuracy, class_accuracy, get_confusion_matrix
+from .metrics import get_metrics, accuracy, class_accuracy, get_confusion_matrix
 from .losses import LossInfo
 import torch
 import numpy as np
@@ -15,7 +15,7 @@ def test_metrics_add_properly():
         2,
         0,
     ])
-    m1 = Metrics(y_pred=y_pred, y=y)
+    m1 = get_metrics(y_pred=y_pred, y=y)
     assert m1.n_samples == 3
     assert np.isclose(m1.accuracy, 2/3)
     
@@ -33,7 +33,7 @@ def test_metrics_add_properly():
         0,
         0,
     ])
-    m2 = Metrics(y_pred=y_pred, y=y)
+    m2 = get_metrics(y_pred=y_pred, y=y)
     assert m2.n_samples == 5
     assert np.isclose(m2.accuracy, 3/5)
 
@@ -52,7 +52,7 @@ def test_metrics_from_tensors():
         2,
         0,
     ])
-    m = Metrics(y_pred=y_pred, y=y)
+    m = get_metrics(y_pred=y_pred, y=y)
     assert m.n_samples == 3
     assert np.isclose(m.accuracy, 2/3)
 

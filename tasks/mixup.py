@@ -6,7 +6,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from .bases import AuxiliaryTask
+from .auxiliary_task import AuxiliaryTask
 from common.losses import LossInfo
 
 def mixup(x1: Tensor, x2: Tensor, coeff: Tensor) -> Tensor:

@@ -6,7 +6,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.autograd import grad
 
-from tasks.bases import AuxiliaryTask
+from tasks.auxiliary_task import AuxiliaryTask
 from common.losses import LossInfo
 
 class IrmTask(AuxiliaryTask):

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import InitVar, dataclass, field
-from typing import Tuple, ClassVar, Callable, TypeVar
+from typing import Tuple, ClassVar, Callable, TypeVar, Optional
 
 import torch
 from torch import Tensor, nn, optim
@@ -24,7 +24,7 @@ class AuxiliaryTask(nn.Module):
     
     # Class variables for holding the Modules shared with with the classifier. 
     encoder: ClassVar[nn.Module]
-    classifier: ClassVar[nn.Module]
+    classifier: ClassVar[nn.Module]  # type: ignore
     preprocessing: ClassVar[Callable[[Tensor], Tensor]]
     
     @dataclass
@@ -33,7 +33,7 @@ class AuxiliaryTask(nn.Module):
         # Coefficient used to scale the task loss before adding it to the total.
         coefficient: float = 0.
 
-    def __init__(self, options: Options=None, *args, **kwargs):
+    def __init__(self, options: Options=None, name: str=None, *args, **kwargs):
         """Creates a new Auxiliary Task to further train the encoder.
         
         Should use the `encoder` and `classifier` components of the parent
@@ -45,12 +45,6 @@ class AuxiliaryTask(nn.Module):
         
         Parameters
         ----------
-        - coefficient : float, optional, by default None
-
-            The coefficient of the loss for this auxiliary task. When None, the
-            coefficient from the `options` is used. When `options` and
-            `coefficient` are both given, `coefficient` is used instead of
-            `options.coefficient`.
         - options : TaskOptions, optional, by default None
         
             The `Options` related to this task, containing the loss 
@@ -58,6 +52,7 @@ class AuxiliaryTask(nn.Module):
             hyperparameters specific to this `AuxiliaryTask`.
         """
         super().__init__()
+        self.name: str = name or type(self).__qualname__
         self.options = options or self.Options(*args, **kwargs)
         self.device: torch.device = torch.device("cuda" if cuda_available else "cpu")
 
@@ -131,10 +126,6 @@ class AuxiliaryTask(nn.Module):
     def coefficient(self, value: float) -> None:
         self.options.coefficient = value
 
-    @property
-    def name(self) -> str:
-        return type(self).__qualname__
-    
     @property
     def enabled(self) -> bool:
         return self.coefficient != 0

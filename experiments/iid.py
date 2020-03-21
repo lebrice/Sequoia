@@ -19,13 +19,13 @@ from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
 from common.losses import LossInfo
-from common.metrics import Metrics
+from common.metrics import get_metrics
 from config import Config
 from datasets.dataset import Dataset
 from datasets.mnist import Mnist
 from models.classifier import Classifier
 from tasks import AuxiliaryTask
-from tasks.reconstruction import VAEReconstructionTask
+from tasks.reconstruction.vae import VAEReconstructionTask
 from utils.utils import to_list
 
 from .experiment import Experiment

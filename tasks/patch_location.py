@@ -5,7 +5,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from .bases import AuxiliaryTask
+from .auxiliary_task import AuxiliaryTask
 
 
 class PatchLocationTask(AuxiliaryTask):
