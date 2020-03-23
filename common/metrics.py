@@ -2,6 +2,7 @@ from dataclasses import dataclass, field, InitVar
 from typing import Dict, Optional, Union
 import torch
 from torch import Tensor
+from collections import OrderedDict
 
 
 @dataclass 
@@ -35,14 +36,12 @@ class Metrics:
                 break
     
     def __add__(self, other):
-        # Metrics instances shouldn't be added together.
-        # We just return the other.
+        # Metrics instances shouldn't be added together, as the base classes
+        # should implement the method. We just return the other.
         return other
 
     def to_log_dict(self) -> Dict:
-        return {
-            # "n_samples": self.n_samples,
-        }
+        return OrderedDict()
 
 
 @dataclass
@@ -70,14 +69,13 @@ class RegressionMetrics(Metrics):
             l2 = l2 + other.l2
         return RegressionMetrics(
             n_samples=self.n_samples + other.n_samples,
-            l2=l2
+            l2=l2,
         )
     
     def to_log_dict(self) -> Dict:
         d = super().to_log_dict()
         d["l2"] = self.l2
         return d
-
 
 
 @dataclass

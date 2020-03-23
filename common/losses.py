@@ -102,10 +102,12 @@ class LossInfo:
         ])
 
     def to_log_dict(self) -> Dict:
-        log_dict: Dict = {
-            'total_loss': self.total_loss.item(), # if isinstance(self.total_loss, torch.Tensor) else self.total_loss,
-            **{k: v.item() for (k, v) in self.losses.items()},
-        }
-        for name, metrics in self.metrics.items():
-            log_dict[name] = metrics.to_log_dict()
+        log_dict: Dict[str, Any] = OrderedDict()
+        log_dict['total_loss'] = self.total_loss.item()
+        for loss_name, loss_tensor in self.losses.items():
+            log_dict[loss_name] = loss_tensor.item()
+        for name, metric in self.metrics.items():
+            log_dict[name] = metric.to_log_dict()
+
+        # return add_prefix(log_dict, self.name)
         return log_dict

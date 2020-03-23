@@ -237,26 +237,6 @@ class Experiment:
         with torch.no_grad():
             return self.model.get_loss(data, target)
 
-    def pbar_message(self, batch_loss_info: LossInfo) -> Dict:
-        message: Dict[str, Any] = OrderedDict()
-        # average_accuracy = (overall_loss_info.metrics.get("accuracy", 0) / (batch_idx + 1))
-        message["Total Loss"] = batch_loss_info.total_loss.item()
-        for name, metrics in batch_loss_info.metrics.items():
-            message[name] = metrics
-        # add the logs for all the scaled losses:
-        
-        for loss_name, loss_tensor in batch_loss_info.losses.items():
-            if loss_name.endswith("_scaled"):
-                continue
-            
-            scaled_loss_tensor = batch_loss_info.losses.get(f"{loss_name}_scaled")
-
-            if scaled_loss_tensor is not None:
-                message[loss_name] = f"{utils.loss_str(scaled_loss_tensor)} ({utils.loss_str(loss_tensor)})"
-            else:
-                message[loss_name] = utils.loss_str(loss_tensor)
-        return message
-
     def get_dataloader(self, dataset: Dataset) -> DataLoader:
         return DataLoader(
             dataset,
