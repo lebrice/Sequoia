@@ -174,8 +174,8 @@ class TaskIncremental(Experiment):
             # train_losses.append(train_loss)
             valid_losses.append(valid_loss)
 
-            validation_metrics = valid_loss.metrics
-            class_accuracy = validation_metrics.class_accuracy  
+            validation_metrics: Dict[str, Metrics] = valid_loss.metrics
+            class_accuracy = validation_metrics["supervised"].class_accuracy  
             # print(f"AFTER TASK {task_index}:",
             #       f"\tCumulative Val Loss: {valid_loss.total_loss},",
             #       f"\tMean Class Accuracy: {class_accuracy.mean()}", sep=" ")

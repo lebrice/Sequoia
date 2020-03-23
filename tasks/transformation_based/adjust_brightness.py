@@ -1,4 +1,4 @@
-from typing import Any, Callable
+from typing import Any, Callable, List
 
 import torch
 import torchvision
@@ -17,25 +17,15 @@ class AdjustBrightnessTask(RegressTransformationTask):
     supposedly more akin to the human visual range, etc.
     """
     def __init__(self,
+                 brightness_values: List[float]=None,
                  min_brightness: float=0.1,
                  max_brightness: float=2.0,
                  n_calls: int=2,
                  options: RegressTransformationTask.Options=None):
         super().__init__(
             function=wrap_pil_transform(TF.adjust_brightness),
+            function_args=brightness_values,
             function_arg_range=(min_brightness, max_brightness),
             n_calls=n_calls,
             options=options or RegressTransformationTask.Options()
         )
-
-
-
-# class AdjustBrightnessTask(RegressTransformationTask):
-#     """Task that adjusts the brightness of the image. """
-#     def __init__(self, options: AuxiliaryTask.Options):
-#         super().__init__(
-#             function=wrap_pil_transform(TF.adjust_brightness),
-#             function_arg_range=[0.5, 1.5],
-#             compare_with_original=True,
-#             options=options,
-#         )

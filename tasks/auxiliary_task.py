@@ -50,6 +50,10 @@ class AuxiliaryTask(nn.Module):
             The `Options` related to this task, containing the loss 
             coefficient used to scale this task, as well as any other additional
             hyperparameters specific to this `AuxiliaryTask`.
+        - name: str, optional, by default None
+
+            The name of this auxiliary task. When not given, the name of the
+            class is used.
         """
         super().__init__()
         self.name: str = name or type(self).__qualname__
@@ -98,11 +102,40 @@ class AuxiliaryTask(nn.Module):
         """
         pass
 
-    def get_scaled_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
-        if not self.enabled:
-            return LossInfo()
+    def get_scaled_loss(self,
+                        x: Tensor,
+                        h_x: Tensor,
+                        y_pred: Tensor,
+                        y: Tensor=None) -> LossInfo:
+        """Returns the scaled LossInfo, with relevant prefixes added to the dicts.
         
+        Parameters
+        ----------
+        - x : Tensor
+        
+            The input samples.ABC
+        
+        - h_x : Tensor
+            The hidden vector, or hidden features, which corresponds to the
+            output of the feature extractor (should be equivalent to 
+            `self.encoder(x)`). Given for convenience, when available.ABC
+        - y_pred : Tensor
+            The predicted (raw/unscaled) scores for each class, which 
+            corresponds to the output of the classifier layer of the parent
+            Model. (should be equivalent to `self.classifier(self.encoder(x))`). 
+        - y : Tensor, optional, by default None
+            The true labels for each sample. Will generally be None, as we don't
+            generally use the label for Auxiliary Tasks.
+        
+        Returns
+        -------
+        LossInfo
+            The loss, scaled.
+        """
+        if not self.enabled:
+            return LossInfo(self.name)
         self.device = h_x.device
+        
         x = x.to(self.device)
         if y_pred is not None:
             y_pred = y_pred.to(self.device)
@@ -110,11 +143,8 @@ class AuxiliaryTask(nn.Module):
             y = y.to(self.device)
 
         loss_info = self.get_loss(x, h_x, y_pred, y)
-        loss_info.add_prefix(self.name)
-        if loss_info.total_loss != 0 and not loss_info.losses:
-            loss_info.losses[self.name] = loss_info.total_loss
-
-        loss_info.scale_by(self.coefficient)
+        loss_info.add_prefix(f"{self.name}_")
+        loss_info *= self.coefficient
         return loss_info
 
 

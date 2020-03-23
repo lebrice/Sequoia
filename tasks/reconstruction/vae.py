@@ -18,14 +18,13 @@ class VAEReconstructionTask(AuxiliaryTask):
     a VAE. Contains trainable `mu`, `logvar`, and `decoder` modules, which are
     used to get the VAE loss to train the feature extractor with.    
     """
-        
     @dataclass
     class Options(AuxiliaryTask.Options):
         """ Settings & Hyper-parameters related to the VAEReconstructionTask. """
         code_size: int = 50  # dimensions of the VAE code-space.
 
-    def __init__(self, coefficient: float=None, options: "VAEReconstructionTask.Options"=None):
-        super().__init__(coefficient=coefficient, options=options)
+    def __init__(self, coefficient: float=None, name: str="vae", options: "VAEReconstructionTask.Options"=None):
+        super().__init__(coefficient=coefficient, name=name, options=options)
         self.code_size = self.options.code_size  # type: ignore
         # add the rest of the VAE layers: (Mu, Sigma, and the decoder)
         self.mu     = nn.Linear(AuxiliaryTask.hidden_size, self.code_size)
@@ -48,7 +47,7 @@ class VAEReconstructionTask(AuxiliaryTask):
             nn.Sigmoid(),
         )
 
-    def forward(self, h_x: Tensor) -> Tensor:
+    def forward(self, h_x: Tensor) -> Tensor:  # type: ignore
         h_x = h_x.view([h_x.shape[0], -1])
         mu, logvar = self.mu(h_x), self.logvar(h_x)
         z = self.reparameterize(mu, logvar)
@@ -70,9 +69,9 @@ class VAEReconstructionTask(AuxiliaryTask):
         recon_loss = self.reconstruction_loss(x_hat, x)
         kl_loss = self.kl_divergence_loss(mu, logvar)
         loss = recon_loss + kl_loss
-        loss_info = LossInfo()
+        loss_info = LossInfo(self.name)
         loss_info.total_loss = loss
-        loss_info.losses["reconstruction"] = recon_loss
+        loss_info.losses["recon"] = recon_loss
         loss_info.losses["kl"] = kl_loss
         return loss_info
 

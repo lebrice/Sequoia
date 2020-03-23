@@ -41,7 +41,7 @@ class Metrics:
 
     def to_log_dict(self) -> Dict:
         return {
-            "n_samples": self.n_samples,
+            # "n_samples": self.n_samples,
         }
 
 
@@ -88,7 +88,11 @@ class ClassificationMetrics(Metrics):
     accuracy: float = field(default=0., init=False)
     class_accuracy: Optional[Tensor] = field(default=None, init=False)
     
-    def __post_init__(self, x: Tensor=None, h_x: Tensor=None, y_pred: Tensor=None, y: Tensor=None):
+    def __post_init__(self,
+                      x: Tensor=None,
+                      h_x: Tensor=None,
+                      y_pred: Tensor=None,
+                      y: Tensor=None):
         # get the batch size:
         for tensor in [x, h_x, y_pred, y]:
             if tensor is not None:
@@ -135,9 +139,9 @@ class ClassificationMetrics(Metrics):
 
 
 def get_metrics(y_pred: Tensor,
-            y: Tensor,
-            x: Tensor=None,
-            h_x: Tensor=None) -> Union[ClassificationMetrics, RegressionMetrics]:
+                y: Tensor,
+                x: Tensor=None,
+                h_x: Tensor=None) -> Union[ClassificationMetrics, RegressionMetrics]:
     if y.is_floating_point():
         return RegressionMetrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
     else:

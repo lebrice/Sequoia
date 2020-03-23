@@ -22,7 +22,7 @@ from datasets.mnist import Mnist
 from models.classifier import Classifier
 from tasks import AuxiliaryTask
 from utils import utils
-
+from utils.utils import add_prefix
 
 
 @dataclass  # type: ignore
@@ -142,25 +142,22 @@ class Experiment:
             
             for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
                 if batch_idx % self.config.log_interval == 0:
-                    train_losses[self.global_step] = train_loss
                     # get loss on a batch of validation data:
                     valid_loss = next(valid_loss_gen)
                     valid_losses[self.global_step] = valid_loss
+                    train_losses[self.global_step] = train_loss
                     
-                    message["Val Loss"] = valid_loss.total_loss.item()
-                    if isinstance(valid_loss.metrics, RegressionMetrics):
-                        message["Val l2"]  = valid_loss.metrics.l2
-                    else:
-                        message["Val Acc"]  = valid_loss.metrics.accuracy    
-                    # for name, metrics in valid_loss.metrics.items():
-                    #     message[f"Val {name}"] = metrics
+                    from utils.utils import add_prefix
+
+
+                    message["Val Loss"] = valid_loss.total_loss.item()    
+                    for name, metrics in valid_loss.metrics.items():
+                        message.update(add_prefix(metrics.to_log_dict(), f"Val {name} "))
+                        
+                    message["Train Loss"] = train_loss.total_loss.item()    
+                    for name, metrics in train_loss.metrics.items():
+                        message.update(add_prefix(metrics.to_log_dict(), f"Train {name} "))
                     
-                    message["Train Loss"] = train_loss.total_loss.item()
-                    if isinstance(train_loss.metrics, RegressionMetrics):
-                        message["Train l2"]  = train_loss.metrics.l2
-                    else:
-                        message["Train Acc"] = train_loss.metrics.accuracy  
-                    message["Best val loss"] = best_valid_loss
                     pbar.set_postfix(message)
 
                     self.log(train_loss, prefix="Train ")
@@ -207,10 +204,6 @@ class Experiment:
         batch_loss_info = self.model.get_loss(data, target)
 
         total_loss = batch_loss_info.total_loss
-        losses     = batch_loss_info.losses
-        tensors    = batch_loss_info.tensors
-        metrics    = batch_loss_info.metrics
-
         total_loss.backward()
         self.model.optimizer.step()
         return batch_loss_info
@@ -221,18 +214,14 @@ class Experiment:
         desc = (description or "Test Epoch")
         
         pbar.set_description(desc)
-        total_loss = LossInfo()
+        total_loss = LossInfo("Test")
         message = OrderedDict()
 
         for batch_idx, loss in enumerate(self.test_iter(pbar)):
             total_loss += loss
 
             if batch_idx % self.config.log_interval == 0:
-                message["Total Loss"] = total_loss.total_loss.item()
-                if isinstance(total_loss.metrics, RegressionMetrics):
-                    message["Total L2"]  = total_loss.metrics.l2
-                else:
-                    message["Total Acc"]  = total_loss.metrics.accuracy
+                message.update(total_loss.to_log_dict())  
                 pbar.set_postfix(message)
 
         return total_loss

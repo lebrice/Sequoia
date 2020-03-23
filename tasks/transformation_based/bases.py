@@ -53,7 +53,7 @@ class TransformationBasedTask(AuxiliaryTask):
         self.name = self.function.__name__
         self.function_args = function_args
         self.alphas: Tensor = torch.Tensor(self.function_args)
-        self.options = options or self.Options()
+        self.options: TransformationBasedTask.Options = options or self.Options()
         self.nargs = len(self.function_args)
         # which loss to use. CrossEntropy when classifying, or MSE when regressing.
         self.loss = loss
@@ -69,41 +69,43 @@ class TransformationBasedTask(AuxiliaryTask):
                 nn.Linear(input_dims, self.nargs),
             )
 
-    # def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
-    #     loss_info = LossInfo()
-    #     batch_size = x.shape[0]
-    #     for fn_arg, alpha in zip(self.function_args, self.alphas):
-    #         loss_i = self.get_loss_for_arg(x=x, h_x=h_x, fn_arg=fn_arg, alpha=alpha)
-    #         loss_info.losses[f"{self.name}_{fn_arg}"] = loss_i.total_loss
-    #         loss_info += loss_i
-    #         # print(f"{self.name}_{fn_arg}", loss_i.metrics) 
-    #     return loss_info
+    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
+        loss_info = LossInfo(self.name)
+        batch_size = x.shape[0]
+        for fn_arg, alpha in zip(self.function_args, self.alphas):
+            loss_i = self.get_loss_for_arg(x=x, h_x=h_x, fn_arg=fn_arg, alpha=alpha)
+            loss_info += loss_i
+            # print(f"{self.name}_{fn_arg}", loss_i.metrics) 
+        return loss_info
 
     def get_loss_for_arg(self, x: Tensor, h_x: Tensor, fn_arg: Any, alpha: Tensor) -> LossInfo:
-        loss_info = LossInfo()
         alpha = alpha.to(x.device)
 
-        # Transform X using the function:
+        # Transform X using the function.
         x_t = self.function(x, fn_arg)
-        # Get the code for the transformed x:
+        # Get the code for the transformed x.
         h_x_t = self.encode(x_t)
 
         aux_layer_input = h_x_t
         if self.options.compare_with_original:
             aux_layer_input = torch.cat([h_x, h_x_t], dim=-1)
 
+        # Get the predicted argument of the transformation.
         alpha_t = self.auxiliary_layer(aux_layer_input)
-    
+        
+        # get the metrics for this particular argument (accuracy, mse, etc.)
+        if isinstance(fn_arg, int):
+            name = f"{fn_arg}"
+        else:
+            name = f"{fn_arg:.3f}"
+        loss_info = LossInfo(name)
+        loss_info.total_loss = self.loss(alpha_t, alpha)
+        loss_info.metrics[name] = get_metrics(x=x_t, h_x=h_x_t, y_pred=alpha_t, y=alpha)
+        
         # Save some tensors for debugging purposes:
         loss_info.tensors["x_t"] = x_t
         loss_info.tensors["h_x_t"] = h_x_t
         loss_info.tensors["alpha_t"] = alpha_t
-
-        # get the metrics for this particular argument (accuracy, mse, etc.)
-        loss_info.metrics = get_metrics(x=x_t, h_x=h_x_t, y_pred=alpha_t, y=alpha)
-
-        loss_info.total_loss = self.loss(alpha_t, alpha)
-        # print(self.name, loss_info.metrics)
         return loss_info
 
 
@@ -123,19 +125,18 @@ class ClassifyTransformationTask(TransformationBasedTask):
                          options=options)
     
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> LossInfo:
+        loss_info = LossInfo(self.name)
+
         # Alpha is the classification target.
         # It indicates which transformation argument was used. 
         # I.e. a vector of 0's for function_args[0], 1's for function_args[1], etc.
         batch_size = x.shape[0]
         ones = torch.ones(batch_size, dtype=torch.long)
-        self.alphas = [ones * i for i in range(self.nargs)]
-        loss_info = LossInfo()
-        batch_size = x.shape[0]
-        for fn_arg, alpha in zip(self.function_args, self.alphas):
+        alphas: List[Tensor] = [ones * i for i in range(self.nargs)]
+
+        for fn_arg, alpha in zip(self.function_args, alphas):
             loss_i = self.get_loss_for_arg(x=x, h_x=h_x, fn_arg=fn_arg, alpha=alpha)
-            loss_info.losses[f"{self.name}_{fn_arg}"] = loss_i.total_loss
             loss_info += loss_i
-            # print(f"{self.name}_{fn_arg}", loss_i.metrics) 
         return loss_info
 
 
@@ -175,7 +176,7 @@ class RegressTransformationTask(TransformationBasedTask):
         if self.function_args is not None and len(self.function_args) != 0:
             if isinstance(self.function_args, Tensor):
                 return self.function_args
-            return torch.Tensor(self.function_args)
+            return torch.Tensor(self.function_args)  # type: ignore
         else:
             # sample a random argument in the range [self.min_arg, self.max_arg]
             alphas = torch.rand([self.n_calls]) * (self.max_arg - self.min_arg)
@@ -184,12 +185,12 @@ class RegressTransformationTask(TransformationBasedTask):
             
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> LossInfo:
         alphas = self.get_alphas(x.shape[0])
-        loss_info = LossInfo()
+        loss_info = LossInfo(self.name)
         batch_size = x.shape[0]
+
+        # Alpha is the label, and fn_arg is the parameter passed to the function.
         for alpha in alphas:
             fn_arg = alpha
             loss_i = self.get_loss_for_arg(x=x, h_x=h_x, fn_arg=fn_arg, alpha=alpha)
-            loss_info.losses[f"{self.name}_{fn_arg}"] = loss_i.total_loss
             loss_info += loss_i
-            # print(f"{self.name}_{fn_arg}", loss_i.metrics) 
         return loss_info

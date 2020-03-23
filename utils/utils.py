@@ -1,7 +1,7 @@
 """ Set of Utilities. """
 
 import collections
-from collections import defaultdict, deque
+from collections import defaultdict, deque, OrderedDict
 from collections.abc import MutableMapping
 from typing import (Any, Deque, Dict, Iterable, List, MutableMapping, Optional,
                     Tuple, TypeVar, Union)
@@ -13,6 +13,7 @@ cuda_available = torch.cuda.is_available()
 gpus_available = torch.cuda.device_count()
 
 T = TypeVar("T")
+
 
 def n_consecutive(items: Iterable[T], n: int=2, yield_last_batch=True) -> Iterable[Tuple[T, ...]]:
     values: List[T] = []
@@ -61,7 +62,27 @@ def to_dict_of_lists(list_of_dicts: List[Dict[str, Tensor]]) -> Dict[str, List[T
 
 
 def add_prefix(some_dict: Dict[str, T], prefix: str="") -> Dict[str, T]:
-    return {prefix + key: value for key, value in some_dict.items()}
+    """Adds the given prefix to all the keys in the dictionary that don't already start with it. 
+    
+    Parameters
+    ----------
+    - some_dict : Dict[str, T]
+    
+        Some dictionary.
+    - prefix : str, optional, by default ""
+    
+        A string prefix to append.
+    
+    Returns
+    -------
+    Dict[str, T]
+        A dictionary where all keys start with the prefix.
+    """
+    result: Dict[str, T] = OrderedDict()
+    for key, value in some_dict.items():
+        new_key = key if key.startswith(prefix) else (prefix + key)
+        result[new_key] = value
+    return result
 
 
 def loss_str(loss_tensor: Tensor) -> str:

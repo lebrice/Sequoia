@@ -86,14 +86,17 @@ class Classifier(nn.Module):
         y_pred = self.logits(h_x) if y_pred is None else y_pred
         y = y.view(-1)
         loss = self.classification_loss(y_pred, y)
-        return LossInfo(
+        metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
+        loss_info = LossInfo(
+            name="supervised",
             total_loss=loss,
             tensors=(dict(x=x, h_x=h_x, y_pred=y_pred, y=y)),
-            metrics=get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y),
         )
+        loss_info.metrics["supervised"] = metrics
+        return loss_info
 
     def get_loss(self, x: Tensor, y: Tensor=None) -> LossInfo:
-        loss_info = LossInfo()
+        loss_info = LossInfo("Train" if self.training else "Test")
         h_x = self.encode(x)
         y_pred = self.logits(h_x)
         
@@ -102,18 +105,12 @@ class Classifier(nn.Module):
         loss_info.tensors["y_pred"] = y_pred
 
         if y is not None:
-            loss_info.metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
             supervised_loss = self.supervised_loss(x=x, y=y, h_x=h_x, y_pred=y_pred)
-            loss_info.losses["supervised"] = supervised_loss.total_loss
             loss_info += supervised_loss
-
         for task_name, aux_task in self.tasks.items():
             if aux_task.enabled:
                 aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y)
-                if self.config.verbose:
-                    print(f"{aux_task.name}:\t {aux_task_loss.total_loss.item()}")
                 loss_info += aux_task_loss
-        
         return loss_info
 
     def encode(self, x: Tensor):
