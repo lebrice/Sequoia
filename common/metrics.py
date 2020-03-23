@@ -104,6 +104,10 @@ class ClassificationMetrics(Metrics):
 
     def __add__(self, other: "ClassificationMetrics") -> "ClassificationMetrics":
         confusion_matrix: Optional[Tensor] = None
+        if self.n_samples == 0:
+            return other
+        if not isinstance(other, ClassificationMetrics):
+            return NotImplemented
         if self.confusion_matrix is None:
             if other.confusion_matrix is None:
                 confusion_matrix = None

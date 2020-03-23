@@ -35,19 +35,15 @@ class LossInfo:
     total_loss: Tensor = 0.  # type: ignore
     losses:  Dict[str, Tensor] = field(default_factory=OrderedDict)
     tensors: Dict[str, Tensor] = field(default_factory=OrderedDict, repr=False)
+    # metrics: Dict[str, Metrics] = field(default_factory=OrderedDict)
     metrics: Metrics = field(default_factory=Metrics)
 
     def __add__(self, other: "LossInfo") -> "LossInfo":
         total_loss = self.total_loss + other.total_loss
         losses = add_dicts(self.losses, other.losses, add_values=True)
         tensors = add_dicts(self.tensors, other.tensors, add_values=False)
-        
-        metrics = self.metrics
-        if self.metrics.n_samples == 0:
-            metrics = other.metrics
-        else:
-            metrics += other.metrics
-        
+        metrics = self.metrics + other.metrics
+        # metrics = add_dicts(self.metrics, other.metrics, add_values=True)
         return LossInfo(
             total_loss=total_loss,
             losses=losses,
@@ -65,7 +61,7 @@ class LossInfo:
             returns `self`.
         """
         if self.total_loss == 0 and self.losses:
-            self.total_loss = torch.sum(self.losses.values())  # type: ignore
+            self.total_loss = sum(self.losses.values())  # type: ignore
         self.losses["total"] = self.total_loss
         
         self.total_loss = self.total_loss * coefficient
@@ -81,9 +77,11 @@ class LossInfo:
         prepend(self.tensors, prefix)
     
     def to_log_dict(self) -> Dict:
-        return {
+        log_dict: Dict = {
             'total_loss': self.total_loss.item(), # if isinstance(self.total_loss, torch.Tensor) else self.total_loss,
             **{k: v.item() for (k, v) in self.losses.items()},
-            **self.metrics.to_log_dict()
         }
+        for name, metrics in self.metrics.items():
+            log_dict[name] = metrics.to_log_dict()
+        return log_dict
 

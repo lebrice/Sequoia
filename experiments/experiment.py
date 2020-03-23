@@ -14,7 +14,7 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader
 import numpy as np
 from common.losses import LossInfo
-from common.metrics import get_metrics
+from common.metrics import get_metrics, RegressionMetrics, ClassificationMetrics
 from config import Config
 from datasets import Dataset
 from datasets.fashion_mnist import FashionMnist
@@ -22,6 +22,7 @@ from datasets.mnist import Mnist
 from models.classifier import Classifier
 from tasks import AuxiliaryTask
 from utils import utils
+
 
 
 @dataclass  # type: ignore
@@ -147,9 +148,18 @@ class Experiment:
                     valid_losses[self.global_step] = valid_loss
                     
                     message["Val Loss"] = valid_loss.total_loss.item()
-                    message["Val Acc"]  = valid_loss.metrics.accuracy
+                    if isinstance(valid_loss.metrics, RegressionMetrics):
+                        message["Val l2"]  = valid_loss.metrics.l2
+                    else:
+                        message["Val Acc"]  = valid_loss.metrics.accuracy    
+                    # for name, metrics in valid_loss.metrics.items():
+                    #     message[f"Val {name}"] = metrics
+                    
                     message["Train Loss"] = train_loss.total_loss.item()
-                    message["Train Acc"]  = train_loss.metrics.accuracy
+                    if isinstance(train_loss.metrics, RegressionMetrics):
+                        message["Train l2"]  = train_loss.metrics.l2
+                    else:
+                        message["Train Acc"] = train_loss.metrics.accuracy  
                     message["Best val loss"] = best_valid_loss
                     pbar.set_postfix(message)
 
@@ -219,7 +229,10 @@ class Experiment:
 
             if batch_idx % self.config.log_interval == 0:
                 message["Total Loss"] = total_loss.total_loss.item()
-                message["Total Acc"]  = total_loss.metrics.accuracy
+                if isinstance(total_loss.metrics, RegressionMetrics):
+                    message["Total L2"]  = total_loss.metrics.l2
+                else:
+                    message["Total Acc"]  = total_loss.metrics.accuracy
                 pbar.set_postfix(message)
 
         return total_loss
@@ -239,7 +252,8 @@ class Experiment:
         message: Dict[str, Any] = OrderedDict()
         # average_accuracy = (overall_loss_info.metrics.get("accuracy", 0) / (batch_idx + 1))
         message["Total Loss"] = batch_loss_info.total_loss.item()
-        message["metrics"] =   batch_loss_info.metrics        
+        for name, metrics in batch_loss_info.metrics.items():
+            message[name] = metrics
         # add the logs for all the scaled losses:
         
         for loss_name, loss_tensor in batch_loss_info.losses.items():
