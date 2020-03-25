@@ -1,30 +1,64 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any, Tuple, Dict
 from collections import OrderedDict
+from dataclasses import dataclass
+from typing import Any, Dict, Tuple
 
-import torch
 import numpy as np
-
+import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from tasks.auxiliary_task import AuxiliaryTask
-from .bases import ClassifyTransformationTask, wrap_pil_transform
-from common.losses import LossInfo
 from common.layers import Flatten
+from common.losses import LossInfo
 from common.metrics import get_metrics
+from tasks.auxiliary_task import AuxiliaryTask
+
+from .bases import ClassifyTransformationTask, wrap_pil_transform
 
 
 def rotate(x: Tensor, angle: int) -> Tensor:
+    """Rotates the given tensor `x` by an angle `angle`.
+
+    Currently only supports multiples of 90 degrees.
+    
+    Args:
+        x (Tensor): An image or a batch of images, with shape [(b), C, H, W]
+        angle (int): An angle. Currently only supports {0, 90, 180, 270}.
+    
+    Returns:
+        Tensor: The tensor x, rotated by `angle` degrees counter-clockwise.
+    
+    Example:
+    >>> import torch
+    >>> x = torch.Tensor([
+    ...   [1, 2, 3],
+    ...   [4, 5, 6],
+    ...   [7, 8, 9],
+    ... ])
+    >>> print(x)
+    tensor([[1., 2., 3.],
+            [4., 5., 6.],
+            [7., 8., 9.]])
+    >>> x = x.view(1, 3, 3)
+    >>> x_rot = rotate(x, 90)
+    >>> print(x_rot.shape)
+    torch.Size([1, 3, 3])
+    >>> print(x_rot)
+    tensor([[[3., 6., 9.],
+             [2., 5., 8.],
+             [1., 4., 7.]]])
+    """
+    
     # TODO: Test that this works.
-    assert angle % 90 == 0, "can only rotate 0, 90, 180, or 270 degrees"
+    assert angle % 90 == 0, "can only rotate 0, 90, 180, or 270 degrees for now."
     k = angle // 90
-    if angle == 0:
-        return x
-    rot_x = np.ascontiguousarray(np.rot90(x.detach().cpu().numpy(), k, axes=(2,3)))
-    rot_x_tensor = torch.from_numpy(rot_x).to(x)
-    return rot_x_tensor
+    assert min(x.shape) == x.shape[-3], "Image should be in [(b) C H W] format." 
+    return x.rot90(k, dims=(-2,-1))
+
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod()
 
 
 class RotationTask(ClassifyTransformationTask):
@@ -34,40 +68,3 @@ class RotationTask(ClassifyTransformationTask):
             function_args=[0, 90, 180, 270],
             options=options,
         )
-        print("INIT!", self)
-
-
-class RotationTaskOld(AuxiliaryTask):
-    def __init__(self, options: AuxiliaryTask.Options=None):
-        super().__init__(options)
-        self.classify_rotation: nn.Module = nn.Sequential(
-            Flatten(),
-            nn.Linear(AuxiliaryTask.hidden_size, 4),
-        )
-        self.loss = nn.CrossEntropyLoss()
-
-    def get_loss(self,
-                 x: Tensor,
-                 h_x: Tensor,
-                 y_pred: Tensor,
-                 y: Tensor=None) -> LossInfo:
-        batch_size = x.shape[0]
-        # TODO: change AuxiliaryTask so it also returns a dict with each loss?
-        
-        loss_info = LossInfo()
-
-        for i, rotation_degrees in enumerate([0, 90, 180, 270]):
-            rot_x = rotate(x, rotation_degrees)
-            rot_label = torch.ones([batch_size], dtype=torch.long, device=rot_x.device)
-            rot_label *= i
-            rot_h_x = self.encode(rot_x)
-            rot_pred = self.classify_rotation(rot_h_x)
-            rot_loss = self.loss(rot_pred, rot_label)
-
-            rot_metrics = get_metrics(x=x, h_x=rot_h_x, y_pred=rot_pred, y=rot_label)
-            loss_info.metrics += rot_metrics
-            
-            loss_info.losses[f"rotation_{rotation_degrees}"] = rot_loss
-            loss_info.total_loss += rot_loss
-        
-        return loss_info
