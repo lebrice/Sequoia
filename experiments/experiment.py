@@ -24,6 +24,8 @@ from tasks import AuxiliaryTask
 from utils import utils
 from utils.utils import add_prefix
 
+import logging
+logger = logging.getLogger(__file__)
 
 @dataclass  # type: ignore
 class Experiment:
@@ -69,6 +71,9 @@ class Experiment:
         self.valid_loader: DataLoader = NotImplemented
 
         self.global_step: int = 0
+        self.logger = logger
+        if self.config.debug:
+            self.logger.setLevel(logging.DEBUG)
 
     @abstractmethod
     def run(self):
@@ -123,6 +128,12 @@ class Experiment:
                                       patience: int=3) -> Dict[int, LossInfo]:
         train_dataloader = self.get_dataloader(train_dataset)
         valid_dataloader = self.get_dataloader(valid_dataset)
+        n_steps = len(train_dataloader)
+        
+        if self.config.debug and self.config.debug_steps:
+            from itertools import islice
+            n_steps = self.config.debug_steps
+            train_dataloader = islice(train_dataloader, 0, n_steps)
 
         train_losses: Dict[int, LossInfo] = OrderedDict()
         valid_losses: Dict[int, LossInfo] = OrderedDict()
@@ -134,7 +145,7 @@ class Experiment:
 
         message: Dict[str, Any] = OrderedDict()
         for epoch in range(max_epochs):
-            pbar = tqdm.tqdm(train_dataloader)
+            pbar = tqdm.tqdm(train_dataloader, total=n_steps)
             desc = description or "" 
             desc += " " if desc and not desc.endswith(" ") else ""
             desc += f"Epoch {epoch}"

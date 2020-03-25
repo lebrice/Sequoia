@@ -25,6 +25,8 @@ class Config:
     debug: bool = field(alias="-d", default=False, action="store_true", nargs=0)      # enable debug mode.
     verbose: bool = field(alias="-v", default=False, action="store_true", nargs=0)    # enable verbose mode.
 
+    # Number of steps to perform instead of complete epochs when debugging
+    debug_steps: Optional[int] = None
     data_dir: Path = Path("data")  # data directory.
 
     log_dir_root: Path = Path("results") # Logging directory.

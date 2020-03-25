@@ -64,6 +64,7 @@ class DatasetConfig:
     _loaded: bool = False
 
     def load(self, config: Config) -> None:
+        """ Downloads the corresponding datasets. """
         if self._loaded:
             return
         self.train = self.dataset_class(config.data_dir, train=True,  download=True, transform=self.transforms)
