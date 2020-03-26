@@ -1,11 +1,14 @@
 from collections import OrderedDict
-from dataclasses import dataclass, field
-from typing import Any, Dict, Union, Optional
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 from torch import Tensor
-from .metrics import get_metrics, Metrics, ClassificationMetrics
+
 from utils.utils import add_prefix
+
+from .metrics import ClassificationMetrics, Metrics, get_metrics
+
 
 def add_dicts(d1: Dict, d2: Dict, add_values=True) -> Dict:
     result = d1.copy()
@@ -30,7 +33,7 @@ class LossInfo:
     name: str
     coefficient: Union[float, Tensor] = 1.0
     total_loss: Tensor = 0.  # type: ignore
-    losses:  Dict[str, Tensor] = field(default_factory=OrderedDict)
+    losses:  Dict[str, Union[Tensor, "LossInfo"]] = field(default_factory=OrderedDict)
     tensors: Dict[str, Tensor] = field(default_factory=OrderedDict, repr=False)
     metrics: Dict[str, Metrics] = field(default_factory=OrderedDict)
 
@@ -103,11 +106,22 @@ class LossInfo:
 
     def to_log_dict(self) -> Dict:
         log_dict: Dict[str, Any] = OrderedDict()
+        log_dict["name"] = self.name
+        log_dict["coefficient"] = self.coefficient.item() if isinstance(self.coefficient, Tensor) else self.coefficient
         log_dict['total_loss'] = self.total_loss.item()
-        for loss_name, loss_tensor in self.losses.items():
-            log_dict[loss_name] = loss_tensor.item()
+
+        losses: Dict[str, Union[float, List, Dict]] = OrderedDict()
+        for loss_name, loss in self.losses.items():
+            if isinstance(loss, Tensor):
+                losses[loss_name] = loss.item() if loss.numel() == 1 else loss.tolist()
+            elif isinstance(loss, LossInfo):
+                losses[loss_name] = loss.to_log_dict()
+        log_dict["losses"] = losses
+
+        metrics: Dict[str, Dict] = OrderedDict()
         for name, metric in self.metrics.items():
-            log_dict[name] = metric.to_log_dict()
+            metrics[name] = metric.to_log_dict()
+        log_dict["metrics"] = metrics
 
         # return add_prefix(log_dict, self.name)
         return log_dict

@@ -4,7 +4,7 @@ import collections
 from collections import defaultdict, deque, OrderedDict
 from collections.abc import MutableMapping
 from typing import (Any, Deque, Dict, Iterable, List, MutableMapping, Optional,
-                    Tuple, TypeVar, Union)
+                    Tuple, TypeVar, Union, Set)
 
 import torch
 from torch import Tensor, nn
@@ -29,7 +29,7 @@ def n_consecutive(items: Iterable[T], n: int=2, yield_last_batch=True) -> Iterab
 def to_list(tensors: Iterable[Union[Any, Tensor]]) -> List[float]:
     """Converts a list of tensors into a list of values.
     
-    `tensots` must contain scalar tensors.Any
+    `tensors` must contain scalar tensors.
     
     Parameters
     ----------
@@ -44,6 +44,7 @@ def to_list(tensors: Iterable[Union[Any, Tensor]]) -> List[float]:
     """
     if tensors is None:
         return []
+    
     return list(map(
         lambda v: (v.item() if isinstance(v, Tensor) else v),
         tensors,
@@ -51,13 +52,24 @@ def to_list(tensors: Iterable[Union[Any, Tensor]]) -> List[float]:
     )
 
 
-def to_dict_of_lists(list_of_dicts: List[Dict[str, Tensor]]) -> Dict[str, List[Tensor]]:
-    # TODO: we have a list of dicts, change it into a dict of lists.
+
+
+def to_dict_of_lists(list_of_dicts: Iterable[Dict[str, Any]]) -> Dict[str, List[Tensor]]:
+    """ Returns a dict of lists given a list of dicts.
+    
+    Assumes that all dictionaries have the same keys as the first dictionary.
+    
+    Args:
+        list_of_dicts (Iterable[Dict[str, Any]]): An iterable of dicts.
+    
+    Returns:
+        Dict[str, List[Tensor]]: A Dict of lists.
+    """
     result: Dict[str, List[Any]] = defaultdict(list)
     for i, d in enumerate(list_of_dicts):
-        for key, tensor in d.items():
-            result[key].append(tensor.cpu())
-        assert d.keys() == result.keys()
+        for key, value in d.items():
+            result[key].append(value)
+        assert d.keys() == result.keys(), f"Dict {d} at index {i} does not contain all the keys!"
     return result
 
 
@@ -113,16 +125,3 @@ def rgetattr(obj: Any, attr: str, *args):
 if __name__ == "__main__":
     import doctest
     doctest.testmod()
-    # cache = TensorCache(5)
-
-
-    # d = TensorCache(5)
-    # zero = torch.zeros(3,3)
-    # d[zero] = torch.Tensor(123)
-
-    # one = torch.ones(3,3)
-    # batch = torch.stack([zero, one])
-    # print("zero is in cache:", zero in d)
-    # print("ones is in cache:", one in d)
-    # print(torch.zeros(3,3) in d)
-    # print(d[torch.zeros(3,3)])

@@ -163,11 +163,19 @@ class Experiment:
 
                     message["Val Loss"] = valid_loss.total_loss.item()    
                     for name, metrics in valid_loss.metrics.items():
-                        message.update(add_prefix(metrics.to_log_dict(), f"Val {name} "))
+                        if isinstance(metrics, ClassificationMetrics):
+                            message[f"Valid {name} Acc:"] = metrics.accuracy
+                        elif isinstance(metrics, RegressionMetrics):
+                            message[f"Valid {name} MSE:"] = metrics.l2
                         
                     message["Train Loss"] = train_loss.total_loss.item()    
                     for name, metrics in train_loss.metrics.items():
-                        message.update(add_prefix(metrics.to_log_dict(), f"Train {name} "))
+                        if isinstance(metrics, ClassificationMetrics):
+                            message[f"Train {name} Acc:"] = metrics.accuracy
+                        elif isinstance(metrics, RegressionMetrics):
+                            message[f"Train {name} MSE:"] = metrics.l2
+
+                        # message.update(add_prefix(metrics.to_log_dict(), f"Train {name} "))
                     
                     pbar.set_postfix(message)
 
@@ -213,7 +221,6 @@ class Experiment:
         self.model.optimizer.zero_grad()
 
         batch_loss_info = self.model.get_loss(data, target)
-
         total_loss = batch_loss_info.total_loss
         total_loss.backward()
         self.model.optimizer.step()
@@ -232,7 +239,12 @@ class Experiment:
             total_loss += loss
 
             if batch_idx % self.config.log_interval == 0:
-                message.update(total_loss.to_log_dict())  
+                message["total loss"] = total_loss.total_loss
+                for name, metrics in total_loss.metrics.items():
+                    if isinstance(metrics, ClassificationMetrics):
+                        message[f"{name} Acc:"] = metrics.accuracy
+                    elif isinstance(metrics, RegressionMetrics):
+                        message[f"{name} MSE:"] = metrics.l2
                 pbar.set_postfix(message)
 
         return total_loss

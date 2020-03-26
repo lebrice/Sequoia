@@ -26,7 +26,6 @@ from datasets.mnist import Mnist
 from models.classifier import Classifier
 from tasks import AuxiliaryTask
 from tasks.reconstruction.vae import VAEReconstructionTask
-from utils.utils import to_list
 
 from .experiment import Experiment
 
