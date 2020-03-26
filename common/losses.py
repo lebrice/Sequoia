@@ -55,7 +55,7 @@ class LossInfo:
         LossInfo
             The merged/summed up LossInfo.
         """
-        name = self.name
+        name = self.name or other.name
         total_loss = self.total_loss + other.total_loss
         
         losses  = add_dicts(self.losses, other.losses, add_values=True)

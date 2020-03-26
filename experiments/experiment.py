@@ -70,6 +70,7 @@ class Experiment:
         self.valid_loader: DataLoader = NotImplemented
 
         self.global_step: int = 0
+        self.log_dir.mkdir(parents=True, exist_ok=True)
         logging.basicConfig(
             filename=self.log_dir / "log.txt",
             level=logging.INFO, 
@@ -164,30 +165,14 @@ class Experiment:
                     valid_losses[self.global_step] = valid_loss
                     train_losses[self.global_step] = train_loss
                     
-                    from utils.utils import add_prefix
-
-
-                    message["Val Loss"] = valid_loss.total_loss.item()    
-                    for name, metrics in valid_loss.metrics.items():
-                        if isinstance(metrics, ClassificationMetrics):
-                            message[f"Valid {name} Acc:"] = metrics.accuracy
-                        elif isinstance(metrics, RegressionMetrics):
-                            message[f"Valid {name} MSE:"] = metrics.l2
-                        
-                    message["Train Loss"] = train_loss.total_loss.item()    
-                    for name, metrics in train_loss.metrics.items():
-                        if isinstance(metrics, ClassificationMetrics):
-                            message[f"Train {name} Acc:"] = metrics.accuracy
-                        elif isinstance(metrics, RegressionMetrics):
-                            message[f"Train {name} MSE:"] = metrics.l2
-
-                        # message.update(add_prefix(metrics.to_log_dict(), f"Train {name} "))
-                    
+                    add_messages_for_batch(valid_loss, message, "Valid ")
+                    add_messages_for_batch(train_loss, message, "Train ")
                     pbar.set_postfix(message)
 
                     self.log(train_loss, prefix="Train ")
                     self.log(valid_loss, prefix="Valid ")
             
+            # perform a validation epoch.
             val_desc = desc + " Valid"
             val_loss_info = self.test(valid_dataset, description=val_desc)
             val_loss = val_loss_info.total_loss
@@ -245,12 +230,7 @@ class Experiment:
             total_loss += loss
 
             if batch_idx % self.config.log_interval == 0:
-                message["total loss"] = total_loss.total_loss
-                for name, metrics in total_loss.metrics.items():
-                    if isinstance(metrics, ClassificationMetrics):
-                        message[f"{name} Acc:"] = metrics.accuracy
-                    elif isinstance(metrics, RegressionMetrics):
-                        message[f"{name} MSE:"] = metrics.l2
+                add_messages_for_batch(total_loss, message, prefix="Test ")
                 pbar.set_postfix(message)
 
         return total_loss
@@ -329,7 +309,7 @@ class Experiment:
                 np.savetxt(self.results_dir / path.with_suffix(".csv"), array, delimiter=",")
             elif path.suffix == ".json":
                 with open(self.results_dir / path, "w") as f:
-                    json.dump(result, f, indent=1)
+                    json.dump(result, f, indent="\t")
 
     def save(self) -> None:
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -378,3 +358,12 @@ def to_str(value: Any) -> Any:
         else:
             print("Couldn't make the value into a str:", value, e)
             return repr(value)
+
+
+def add_messages_for_batch(loss: LossInfo, message: Dict, prefix: str=""):
+    message[f"{prefix}Loss"] = loss.total_loss.item()
+    for name, metrics in loss.metrics.items():
+        if isinstance(metrics, ClassificationMetrics):
+            message[f"{prefix}{name} Acc:"] = metrics.accuracy
+        elif isinstance(metrics, RegressionMetrics):
+            message[f"{prefix}{name} MSE:"] = metrics.l2
