@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import glob
 
+from utils.plotting import autolabel
 
 # TODO: fill out a bug for SimpleParsing, when type is List and a custom type is
 # given, the custom type should overwrite the List type.
@@ -120,26 +121,6 @@ def load_array(path: Path) -> np.ndarray:
         array = torch.load(path.with_suffix(".pt")).detach().numpy()
         np.savetxt(path.with_suffix(".csv"), array, delimiter=",")
     return np.loadtxt(path.with_suffix(".csv"), delimiter=",")
-
-
-def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float):
-    """Attach a text label above each bar in *rects*, displaying its height.
-    
-    Taken from https://matplotlib.org/gallery/lines_bars_and_markers/barchart.html#sphx-glr-gallery-lines-bars-and-markers-barchart-py
-    """
-    for rect in rects:
-        height = rect.get_height()
-        bottom = rect.get_y()
-        value = height / bar_height_scale
-        if value != 0.0:    
-            axis.annotate(
-                f"{value:.0%}",
-                xy=(rect.get_x() + rect.get_width() / 2, bottom + height),
-                xytext=(0, 3),  # 3 points vertical offset
-                textcoords="offset points",
-                ha="center",
-                va="bottom",
-            )
 
 
 if __name__ == "__main__":

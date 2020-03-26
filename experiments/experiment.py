@@ -25,7 +25,6 @@ from utils import utils
 from utils.utils import add_prefix
 
 import logging
-logger = logging.getLogger(__file__)
 
 @dataclass  # type: ignore
 class Experiment:
@@ -71,10 +70,13 @@ class Experiment:
         self.valid_loader: DataLoader = NotImplemented
 
         self.global_step: int = 0
-        self.logger = logger
+        logging.basicConfig(
+            filename=self.log_dir / "log.txt",
+            level=logging.INFO, 
+        )
+        self.logger = logging.getLogger(__file__)
         if self.config.debug:
             self.logger.setLevel(logging.DEBUG)
-
     @abstractmethod
     def run(self):
         pass
@@ -99,6 +101,10 @@ class Experiment:
     def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
         if always_print or (self.config.debug and self.config.verbose):
             print(message, value if value is not None else "")
+
+        with open(self.log_dir / "log.txt", "a") as f:
+            print(message, value, file=f)
+
         if self.config.use_wandb:
             # if we want to long once (like a final result, step should be None)
             # else, if not given, we use the global step.
@@ -130,7 +136,7 @@ class Experiment:
         valid_dataloader = self.get_dataloader(valid_dataset)
         n_steps = len(train_dataloader)
         
-        if self.config.debug and self.config.debug_steps:
+        if self.config.debug_steps:
             from itertools import islice
             n_steps = self.config.debug_steps
             train_dataloader = islice(train_dataloader, 0, n_steps)
@@ -314,12 +320,16 @@ class Experiment:
         """
         return self.started and is_nonempty_dir(self.results_dir)
     
-    def save_results(self, results: Dict[Union[str, Tensor], Any]):
+    def save_to_results_dir(self, results: Dict[Union[str, Path], Any]):
         self.results_dir.mkdir(parents=True, exist_ok=True)
         for path, result in results.items():
             path = Path(path) if isinstance(path, str) else path
-            array = result.detach().numpy()
-            np.savetxt(self.results_dir / path.with_suffix(".csv"), array, delimiter=",")
+            if path.suffix in {".csv", ""}:
+                array = result.detach().numpy() if isinstance(result, Tensor) else result
+                np.savetxt(self.results_dir / path.with_suffix(".csv"), array, delimiter=",")
+            elif path.suffix == ".json":
+                with open(self.results_dir / path, "w") as f:
+                    json.dump(result, f, indent=1)
 
     def save(self) -> None:
         self.log_dir.mkdir(parents=True, exist_ok=True)

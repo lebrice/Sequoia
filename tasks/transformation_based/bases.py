@@ -6,7 +6,7 @@ from torch import Tensor, nn
 
 from common.layers import Flatten
 from common.losses import LossInfo
-from common.metrics import get_metrics, ClassificationMetrics
+from common.metrics import get_metrics, ClassificationMetrics, Metrics
 
 from tasks.auxiliary_task import AuxiliaryTask
 from functools import wraps
@@ -46,13 +46,32 @@ class TransformationBasedTask(AuxiliaryTask):
                  function: Callable[[Tensor, Any], Tensor],
                  function_args: List[Any],
                  loss: Callable,
+                 name: str=None,
                  auxiliary_layer: nn.Module=None,
                  options: Options=None):
+        """Creates a transformation-based task to predict alpha given the codes.
+        
+        Args:
+            function (Callable[[Tensor, Any], Tensor]): A function to apply to x
+            before it is passed to the encoder.
+            
+            function_args (List[Any]): The arguments to be passed to the
+            `function`.
+            
+            loss (Callable): A loss function, which will be called with 
+            `alpha_pred` and `alpha` to get a loss for each argument in `function_args`.
+
+            name (str, optional): [description]. Defaults to None.
+            
+            auxiliary_layer (nn.Module, optional): [description]. Defaults to None.
+            
+            options (Options, optional): [description]. Defaults to None.
+        """
         super().__init__(options=options)
         self.function = function
-        self.name = self.function.__name__
+        self.name = name or self.function.__name__
         self.function_args = function_args
-        self.alphas: Tensor = torch.Tensor(self.function_args)
+        self.alphas: Union[Tensor, List[Tensor]] = torch.Tensor(self.function_args)
         self.options: TransformationBasedTask.Options = options or self.Options()
         self.nargs = len(self.function_args)
         # which loss to use. CrossEntropy when classifying, or MSE when regressing.
@@ -69,13 +88,24 @@ class TransformationBasedTask(AuxiliaryTask):
                 nn.Linear(input_dims, self.nargs),
             )
 
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
+    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> LossInfo:
         loss_info = LossInfo(self.name)
         batch_size = x.shape[0]
+        assert self.alphas is not None, "set the `self.alphas` attribute in the base class."
+        assert self.function_args is not None, "set the `self.function_args` attribute in the base class."
+
+        # Get the loss for each transformation argument.
         for fn_arg, alpha in zip(self.function_args, self.alphas):
             loss_i = self.get_loss_for_arg(x=x, h_x=h_x, fn_arg=fn_arg, alpha=alpha)
             loss_info += loss_i
-            # print(f"{self.name}_{fn_arg}", loss_i.metrics) 
+            # print(f"{self.name}_{fn_arg}", loss_i.metrics)
+
+        # Fuse all the sub-metrics into a total metric.
+        # For instance, all the "rotate_0", "rotate_90", "rotate_180", etc.
+        metrics = loss_info.metrics
+        total_metrics = sum(loss_info.metrics.values(), Metrics())
+        metrics.clear()
+        metrics[self.name] = total_metrics        
         return loss_info
 
     def get_loss_for_arg(self, x: Tensor, h_x: Tensor, fn_arg: Any, alpha: Tensor) -> LossInfo:
@@ -114,30 +144,26 @@ class ClassifyTransformationTask(TransformationBasedTask):
     Generates an AuxiliaryTask for an arbitrary transformation function.
 
     Tries to classify which argument was passed to the function.
+    `self.alphas` is the classification target. It indicates which
+    transformation argument was used. 
+    I.e. a vector of 0's for function_args[0], 1's for function_args[1], etc.
     """
     def __init__(self,
                  function: Callable[[Tensor, Any], Tensor],
                  function_args: List[Any],
+                 name: str=None,
                  options: TransformationBasedTask.Options=None):
         super().__init__(function=function,
                          function_args=function_args,
+                         name=name,
                          loss=nn.CrossEntropyLoss(),
                          options=options)
     
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> LossInfo:
-        loss_info = LossInfo(self.name)
-
-        # Alpha is the classification target.
-        # It indicates which transformation argument was used. 
-        # I.e. a vector of 0's for function_args[0], 1's for function_args[1], etc.
         batch_size = x.shape[0]
         ones = torch.ones(batch_size, dtype=torch.long)
-        alphas: List[Tensor] = [ones * i for i in range(self.nargs)]
-
-        for fn_arg, alpha in zip(self.function_args, alphas):
-            loss_i = self.get_loss_for_arg(x=x, h_x=h_x, fn_arg=fn_arg, alpha=alpha)
-            loss_info += loss_i
-        return loss_info
+        self.alphas: List[Tensor] = [ones * i for i in range(self.nargs)]
+        return super().get_loss(x=x, h_x=h_x, y_pred=y_pred, y=y)
 
 
 class RegressTransformationTask(TransformationBasedTask):

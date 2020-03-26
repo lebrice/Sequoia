@@ -27,7 +27,6 @@ from utils.utils import n_consecutive, rgetattr, rsetattr
 @dataclass
 class TaskIncremental(Experiment):
     """ Evaluates the model in the same setting as the OML paper's Figure 3.
-
     """
     n_classes_per_task: int = 2      # Number of classes per task.
     # Wether to sort out the classes in the class_incremental setting.
@@ -51,109 +50,115 @@ class TaskIncremental(Experiment):
         self.valid_cumul_datasets: List[VisionDatasetSubset] = []
 
     def run(self) -> Dict[Path, Tensor]:
-        valid_losses_list: List[List[LossInfo]] = []
-        final_task_accuracies_list: List[Tensor] = []
-        results: Dict[Path, Tensor] = {}
+        # containers for the results of each individual run.
+        run_cumul_valid_losses: List[List[LossInfo]] = []
+        run_final_classification_task_accuracies: List[Tensor] = []
+        run_task_classes: List[List[List[int]]] = []
 
         for i in range(self.n_runs):
             print(f"STARTING RUN {i}")
-            # execute a single run
+            # execute a single run.
             cumul_valid_losses, task_classes = self._run()
-
-            final_task_accuracies = get_mean_task_accuracy_at_end_of_training(
-                cumul_valid_losses,
+            final_classification_task_accuracies = get_per_task_classification_accuracy(
+                cumul_valid_losses[-1],
                 task_classes
             )
 
-            valid_losses_list.append(cumul_valid_losses)
-            final_task_accuracies_list.append(final_task_accuracies)
-
-            # stack the lists of tensors into a single total_loss tensor.
-            # TODO: save everything useful in LossInfo, not just the total_loss.
-            total_valid_loss = stack_loss_attr(valid_losses_list, "total_loss")
-            final_task_accuracy = torch.stack(final_task_accuracies_list)
-
+            run_cumul_valid_losses.append(cumul_valid_losses)
+            run_task_classes.append(task_classes)
+            run_final_classification_task_accuracies.append(final_classification_task_accuracies)
+            
+            # create a "stacked"/"serializable" version of the loss objects.
+            results: Dict = make_results_dict(run_cumul_valid_losses)
+            # add the task_classes to `results` so we save it in the json file.
+            results["task_classes"] = run_task_classes
             # Save after each run, just in case we interrupt anything, so we
             # still get partial results even if something goes wrong at some
             # point.
-            results["valid_loss.csv"] = total_valid_loss
-            results["final_task_accuracy.csv"] = final_task_accuracy
-            self.save_results(results)
-            self.make_figure(
-                valid_losses_list,
-                final_task_accuracies_list,
+            self.save_to_results_dir({
+                "results.json": results,
+                "final_task_accuracy.csv": torch.stack(run_final_classification_task_accuracies),
+            })
+
+            fig: plt.Figure = self.make_figure(
+                results,
+                run_task_classes,
+                run_final_classification_task_accuracies,
             )
-        
-        loss_means = total_valid_loss.mean(dim=0).detach().numpy()
-        loss_stds = total_valid_loss.std(dim=0).detach().numpy()
-        task_accuracy_means = final_task_accuracy.mean(dim=0).detach().numpy()
-        task_accuracy_std =   final_task_accuracy.std(dim=0).detach().numpy()
+
+            if self.config.debug:
+                fig.show()
+                fig.waitforbuttonpress(timeout=10)
             
-        n_tasks= len(task_accuracy_means)
-
+            fig.savefig(self.plots_dir / "oml_fig.jpg")
+            self.log({"oml_fig.jpg": fig}, once=True)
+           
+        task_accuracy = torch.stack(run_final_classification_task_accuracies)
+        task_accuracy_means = task_accuracy.mean(dim=0).detach().numpy()
+        task_accuracy_stds  = task_accuracy.std(dim=0).detach().numpy()
         self.log({
-            "Cumulative valid loss": total_valid_loss,
-            "Final mean task accuracies": final_task_accuracy,
-            "Loss Means": loss_means,
-            "Loss STDs": loss_stds,
             "Final Task Accuracy means:": task_accuracy_means,
-            "Final Task Accuracy stds:": task_accuracy_std,
+            "Final Task Accuracy stds:": task_accuracy_stds,
             }, once=True, always_print=True)
-    
+
     def make_figure(self,
-                    cumul_valid_losses: List[List[LossInfo]],
-                    final_task_accuracies: List[Tensor]):
-        n_runs = len(cumul_valid_losses)
-        # stack the lists of tensors into a single total_loss tensor.
-        final_task_accuracy = torch.stack(final_task_accuracies).detach().numpy()
-        task_accuracy_means = np.mean(final_task_accuracy, axis=0)
-        task_accuracy_std =   np.std(final_task_accuracy, axis=0)
-
-        # get a "stacked" version of the metrics dicts, so that we get dicts of
-        # lists of tensors.
-        stacked: Dict[str, Union[Tensor, Dict]] = stack_dicts([
-            stack_dicts(losses) for losses in cumul_valid_losses 
-        ])
-
-       
-        # valid_loss = stack_loss_attr(cumul_valid_losses, "total_loss")
-        # cumul_metrics = arrange_metrics_by_name(cumul_valid_losses)
-        valid_loss = stacked["total_loss"]
-        cumul_metrics = stacked["metrics"]
-                
-        loss_stds = np.std(valid_loss, axis=0)
+                    results: Dict,
+                    run_task_classes: List[List[List[int]]],
+                    run_final_task_accuracies: List[Tensor]) -> plt.Figure:
+        n_runs = len(run_task_classes)
+        n_tasks = len(run_task_classes[0])
         
-        n_tasks= len(task_accuracy_means)
-
-        dataset_name = type(self.dataset).__name__
-
         fig: plt.Figure = plt.figure()
-        fig.suptitle(f"{self.config.run_group} - {self.config.run_name} - {dataset_name}")
+        
+        # Create the title for the figure.
+        dataset_name = type(self.dataset).__name__
+        figure_title: str = " - ".join(filter(None, [
+            self.config.run_group,
+            self.config.run_name,
+            dataset_name,
+            ("(debug)" if self.config.debug else None)
+        ]))
+        fig.suptitle(figure_title)
+
         ax1: plt.Axes = fig.add_subplot(1, 2, 1)
         ax1.set_title("Cumulative Validation Accuracy")
-        ax1.set_xlabel("Number of tasks learned")
+        ax1.set_xlabel("Task ID")
         ax1.set_ylabel("Classification Accuracy")
+
+        cumul_metrics = results["metrics"]
         for metric_name, metrics in cumul_metrics.items():
             if "accuracy" in metrics:
+                # stack the accuracies for each run, and use the mean and std for the errorbar plot.
+                # TODO: might want to implement the "95% confidence with 1000 bootstraps/etc." from the OML paper. 
                 accuracy = torch.stack([torch.Tensor(run_acc) for run_acc in metrics["accuracy"]])
-                accuracy_mean = accuracy.mean(dim=0).detach().numpy()
-                accuracy_std = accuracy.std(dim=0).detach().numpy()
+                accuracy = accuracy.detach().numpy()
+                accuracy_mean = accuracy.mean(axis=0)
+                accuracy_std = accuracy.std(axis=0)
+
                 ax1.errorbar(x=np.arange(n_tasks), y=accuracy_mean, yerr=accuracy_std, label=metric_name)
+                ax1.set_ylim(bottom=0, top=1)
+            elif "l2" in metrics:
+                pass # TODO: Maybe plot the MSE (called l2 here) for the auxiliary tasks that aren't doing classification.
         ax1.set_xticks(np.arange(n_tasks, dtype=int))
         ax1.legend(loc="lower left")
 
+         # stack the lists of tensors into a single total_loss tensor.
+        final_task_accuracy = torch.stack(run_final_task_accuracies).detach().numpy()
+        task_accuracy_means = np.mean(final_task_accuracy, axis=0)
+        task_accuracy_std =   np.std(final_task_accuracy, axis=0)
+
         ax2: plt.Axes = fig.add_subplot(1, 2, 2)
-        ax2.bar(x=np.arange(n_tasks), height=task_accuracy_means, yerr=task_accuracy_std)
+        rects = ax2.bar(x=np.arange(n_tasks), height=task_accuracy_means, yerr=task_accuracy_std)
+        from utils.plotting import autolabel
+        autolabel(ax2, rects)
+
         ax2.set_title(f"Final mean accuracy per Task")
         ax2.set_xlabel("Task ID")
         ax2.set_xticks(np.arange(n_tasks, dtype=int))
+        ax2.set_ylim(bottom=0, top=1)
         
-        if self.config.debug:
-            fig.show()
-            fig.waitforbuttonpress(timeout=10)
-        
-        fig.savefig(self.plots_dir / "oml_fig.jpg")
-        self.log({"oml_fig.jpg": fig}, once=True)
+        return fig
+
 
 
     def _run(self) -> Tuple[List[LossInfo], List[List[int]]]:
@@ -318,40 +323,46 @@ def stack_dicts(values: List[Union[Metrics, LossInfo, Dict]]) -> Dict[str, Union
     return result
 
 
-def arrange_metrics_by_name(losses: List[List[LossInfo]]) -> Dict[str, List[List[Metrics]]]:
-    """Create a dict of metrics for each run from the list of `LossInfo`s.
+def make_results_dict(run_cumul_valid_losses: List[List[LossInfo]]) -> Dict:
+    # get a "stacked" version of the loss dicts, so that we get dicts of
+    # lists of tensors.
+    stacked: Dict[str, Union[Tensor, Dict]] = stack_dicts([
+        stack_dicts(losses) for losses in run_cumul_valid_losses 
+    ])
+    def to_lists(tensors: Union[List, Dict]) -> Union[List, Dict]:
+        """ Converts all the tensors within `tensors` to lists."""
+        if isinstance(tensors, list) and tensors:
+            if isinstance(tensors[0], Tensor):
+                return torch.stack(tensors).tolist()
+            elif isinstance(tensors[0], list):
+                return list(map(to_lists, tensors))
+        elif isinstance(tensors, dict):
+            for key, values in tensors.items():
+                if isinstance(values, (dict, list)):
+                    tensors[key] = to_lists(values)
+                elif isinstance(values, Tensor):
+                    tensors[key] = values.tolist()
+        return tensors
+
+    stacked = to_lists(stacked)
+    return stacked
+
+
+def get_per_task_classification_accuracy(loss: LossInfo, task_classes: List[List[int]]) -> Tensor:
+    """Gets the mean classification accuracy for each task.
     
     Args:
-        losses (List[List[LossInfo]]): For each run, the list of `LossInfo`s.  
-    
-    Returns:
-        Dict[str, List[List[Metrics]]]: A dict of the form {<metric_name>: [[<run_1_metrics>], [<run_2_metrics>], ...]}
-    """
-    ## TODO: get a nice list of lists of all the metrics, arranged by name.
-    from utils.utils import to_dict_of_lists
-    metrics: Dict[str, List[List[Metrics]]] = defaultdict(list)
-
-    for run_number, run_losses in enumerate(losses):
-        run_metrics_dict = to_dict_of_lists(loss.metrics for loss in run_losses)
-        for metric_name, metric_values in run_metrics_dict.items():
-            metrics[metric_name].append(metric_values)
-    return metrics
-
-
-def get_mean_task_accuracy_at_end_of_training(cumul_valid_losses: List[LossInfo],
-                                                task_classes: List[List[int]]) -> Tensor:
-    """Gets the mean accuracy within each task at the end of training.
-    
-    Args:
-        cumul_valid_losses (List[LossInfo]): The list of losses.
+        loss (LossInfo): A given LossInfo. (usually the last of the cumulative
+        validation losses).
         task_classes (List[List[int]]): The classes within each task.
     
     Returns:
-        Tensor: Float tensor of shape [len(task_classes), 1] containing the mean accuracy for each task. 
+        Tensor: Float tensor of shape [len(task_classes)] containing the mean
+        accuracy for each task. 
     """
     # get the last validation metrics.
-    last_metrics = cumul_valid_losses[-1].metrics
-    classification_metrics: ClassificationMetrics = last_metrics["supervised"]
+    metrics = loss.metrics
+    classification_metrics: ClassificationMetrics = metrics["supervised"]
     final_class_accuracy = classification_metrics.class_accuracy
 
     # Find the mean accuracy per task at the end of training.
