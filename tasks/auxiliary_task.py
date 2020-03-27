@@ -143,7 +143,6 @@ class AuxiliaryTask(nn.Module):
             y = y.to(self.device)
 
         loss_info = self.get_loss(x, h_x, y_pred, y)
-        loss_info.add_prefix(f"{self.name}_")
         loss_info *= self.coefficient
         return loss_info
 

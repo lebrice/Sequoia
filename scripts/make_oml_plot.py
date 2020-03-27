@@ -16,7 +16,7 @@ class Options:
     """ Options for the script making the OML Figure 3 plot. """
     # One or more paths of glob patterns, each corresponding to a run to compare.
     runs: List[str] = list_field(default=["results/TaskIncremental/*"])
-    out_path: Path = Path("scripts/plot.png")
+    out_path: Path = Path("scripts/oml_plot.png")
     
     def __post_init__(self):
         if len(self.runs) == 1 and isinstance(self.runs[0], list):
@@ -75,10 +75,14 @@ def make_plot(options: Options) -> plt.Figure:
     for i, run_path in enumerate(runs):
         # Load up the per-task classification accuracies
         final_task_accuracy = load_array(run_path / "results" / "final_task_accuracy.csv")
+        try:    
+            # Load the results dict
+            with open(run_path / "results" / "results.json") as f:
+                result_json = json.load(f)
+        except FileNotFoundError as e:
+            print(f"Skipping run {run_path}: ", e)
+            continue
 
-        # Load the results dict
-        with open(run_path / "results" / "results.json") as f:
-            result_json = json.load(f)
         supervised_metrics = result_json["metrics"]["supervised"]
         classification_accuracies = np.array(supervised_metrics["accuracy"])
         accuracy_means = classification_accuracies.mean(axis=0)
