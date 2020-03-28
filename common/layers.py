@@ -1,8 +1,17 @@
 from collections import OrderedDict
+from typing import Callable, List, Optional, Tuple, Union
 
 import torch
-from torch import nn, Tensor
-from typing import Optional, Tuple, Union, List
+from torch import Tensor, nn
+
+
+class Lambda(nn.Module):
+    def __init__(self, func: Callable):
+        super().__init__()
+        self.func = func
+    
+    def forward(self, x):
+        return self.func(x)
 
 
 class Flatten(nn.Module):

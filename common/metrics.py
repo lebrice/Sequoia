@@ -1,9 +1,9 @@
-from dataclasses import dataclass, field, InitVar
+from dataclasses import dataclass, field, InitVar, asdict
 from typing import Dict, Optional, Union
 import torch
 from torch import Tensor
 from collections import OrderedDict
-
+import torch.nn.functional as functional
 
 @dataclass 
 class Metrics:
@@ -46,7 +46,7 @@ class Metrics:
 
 @dataclass
 class RegressionMetrics(Metrics):
-    l2: Optional[Tensor] = None
+    mse: Tensor = 0.  # type: ignore
 
     def __post_init__(self,
                       x: Tensor=None,
@@ -55,27 +55,30 @@ class RegressionMetrics(Metrics):
                       y: Tensor=None):
         super().__post_init__(x=x, h_x=h_x, y_pred=y_pred, y=y)
         if y_pred is not None and y is not None:
-            self.l2 = torch.dist(y_pred, y)
+            if y.shape != y_pred.shape:
+                print(y_pred.shape, y.shape)
+                exit()
+            self.mse = functional.mse_loss(y_pred, y)
 
     def __add__(self, other: "RegressionMetrics") -> "RegressionMetrics":
-        l2 = torch.zeros_like(
-            self.l2 if self.l2 is not None else
-            other.l2 if other.l2 is not None else
+        mse = torch.zeros_like(
+            self.mse if self.mse is not None else
+            other.mse if other.mse is not None else
             torch.zeros(1)
         )
-        if self.l2 is not None:
-            l2 = l2 + self.l2
-        if other.l2 is not None:
-            l2 = l2 + other.l2
+        if self.mse is not None:
+            mse = mse + self.mse
+        if other.mse is not None:
+            mse = mse + other.mse
         return RegressionMetrics(
             n_samples=self.n_samples + other.n_samples,
-            l2=l2,
+            mse=mse,
         )
     
     def to_log_dict(self) -> Dict:
-        d = super().to_log_dict()
-        d["l2"] = self.l2
-        return d
+        return {
+            "mse": self.mse.item()
+        }
 
 
 @dataclass

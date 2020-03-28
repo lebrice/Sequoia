@@ -366,4 +366,4 @@ def add_messages_for_batch(loss: LossInfo, message: Dict, prefix: str=""):
         if isinstance(metrics, ClassificationMetrics):
             message[f"{prefix}{name} Acc:"] = metrics.accuracy
         elif isinstance(metrics, RegressionMetrics):
-            message[f"{prefix}{name} MSE:"] = metrics.l2
+            message[f"{prefix}{name} MSE:"] = metrics.mse.item()

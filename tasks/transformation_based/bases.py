@@ -1,10 +1,10 @@
-from typing import Any, Callable, List, Tuple
+from typing import Any, Callable, List, Tuple, Union
 from dataclasses import dataclass
 
 import torch
 from torch import Tensor, nn
 
-from common.layers import Flatten
+from common.layers import Flatten, Lambda
 from common.losses import LossInfo
 from common.metrics import get_metrics, ClassificationMetrics, Metrics
 
@@ -33,6 +33,10 @@ class TransformationBasedTask(AuxiliaryTask):
     Tries to classify or regress which argument was passed to the function,
     given only the transformed code, if `compare_with_original` is False, else
     given the original and transformed codes. 
+    
+    NOTE: For now, the same function is applied to all the images within the
+    batch. Therefore, the function_args is one value per batch of transformed
+    images, and not one value per image.
     """
 
     @dataclass
@@ -71,7 +75,7 @@ class TransformationBasedTask(AuxiliaryTask):
         self.function = function
         self.name = name or self.function.__name__
         self.function_args = function_args
-        self.alphas: Union[Tensor, List[Tensor]] = torch.Tensor(self.function_args)
+        self.alphas: Tensor = torch.Tensor(self.function_args)
         self.options: TransformationBasedTask.Options = options or self.Options()
         self.nargs = len(self.function_args)
         # which loss to use. CrossEntropy when classifying, or MSE when regressing.
@@ -158,11 +162,11 @@ class ClassifyTransformationTask(TransformationBasedTask):
                          name=name,
                          loss=nn.CrossEntropyLoss(),
                          options=options)
+        self.labels = torch.arange(len(function_args), dtype=torch.long)
     
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> LossInfo:
         batch_size = x.shape[0]
-        ones = torch.ones(batch_size, dtype=torch.long)
-        self.alphas: List[Tensor] = [ones * i for i in range(self.nargs)]
+        self.alphas = self.labels.view(-1, 1).repeat(1, batch_size)
         return super().get_loss(x=x, h_x=h_x, y_pred=y_pred, y=y)
 
 
@@ -171,52 +175,68 @@ class RegressTransformationTask(TransformationBasedTask):
     Generates an AuxiliaryTask for an arbitrary transformation function.
 
     Tries to Regress which argument value was passed to the function.
+    x -----------------------encoder(x)-> h_x -----|     
+    x --f(x, alpha)--> x_t --encoder(x)-> h_x_t ---|----A(h_x, h_x_t) --> alpha_pred <-MSE-> alpha
 
     Can either use a list of function arguments, or a range from which to sample
-    the argument values uniformly. 
+    the argument values uniformly.
     """
     def __init__(self,
                  function: Callable[[Tensor, Any], Tensor],
                  function_args: List[Any]=None,
+                 name: str=None,
                  function_arg_range: Tuple[float, float]=None,
                  n_calls: int = 2,
                  options: TransformationBasedTask.Options=None):
         super().__init__(
             function=function,
-            function_args=function_args or [],
-            loss=torch.dist,
+            function_args=[],
+            name=name,
+            loss=nn.MSELoss(),
             options=options,
         )
-        assert function_args or function_arg_range, "One of function_args or function_arg_range must be set."
-        self.function_arg_range = function_arg_range
-        self.n_calls = n_calls
-        
-        if self.function_arg_range:
-            self.min_arg = self.function_arg_range[0]
-            self.max_arg = self.function_arg_range[1]
-            self.arg_mean = (self.min_arg + self.max_arg) / 2
-            self.arg_range = self.max_arg - self.min_arg
-
-    def get_alphas(self, batch_size: int) -> Tensor:
-        alphas: Tensor
-        if self.function_args is not None and len(self.function_args) != 0:
-            if isinstance(self.function_args, Tensor):
-                return self.function_args
-            return torch.Tensor(self.function_args)  # type: ignore
+        if function_arg_range:
+            self.function_arg_range = function_arg_range
+            self.n_calls = n_calls
+        elif function_args:
+            self.function_arg_range = (min(function_args), max(function_args))
+            self.n_calls = len(function_args)
         else:
-            # sample a random argument in the range [self.min_arg, self.max_arg]
-            alphas = torch.rand([self.n_calls]) * (self.max_arg - self.min_arg)
-            alphas += self.min_arg
-            return alphas
-            
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> LossInfo:
-        alphas = self.get_alphas(x.shape[0])
-        loss_info = LossInfo(self.name)
-        batch_size = x.shape[0]
+            raise RuntimeError("`function_args` or `function_arg_range` must be set.")
+        
+        self.arg_min = self.function_arg_range[0]
+        self.arg_max = self.function_arg_range[1]
+        self.arg_med = (self.arg_min + self.arg_max) / 2
+        self.arg_amp = self.arg_max - self.arg_min
+        
+        input_dims = AuxiliaryTask.hidden_size
+        if self.options.compare_with_original:
+            input_dims *= 2
+        self.auxiliary_layer = nn.Sequential(
+            Flatten(),
+            nn.Linear(input_dims, 1),
+            nn.Sigmoid(),
+            Lambda(lambda x: self.arg_min + self.arg_amp * x)
+        )
 
-        # Alpha is the label, and fn_arg is the parameter passed to the function.
-        for alpha in alphas:
-            fn_arg = alpha
-            loss_i = self.get_loss_for_arg(x=x, h_x=h_x, fn_arg=fn_arg, alpha=alpha)
-            loss_info += loss_i
-        return loss_info
+    def get_function_args(self) -> Tensor:
+        # sample random arguments in the range [self.min_arg, self.max_arg]
+        args = torch.rand(self.n_calls)
+        args *= self.arg_amp
+        args += self.arg_min
+        return args
+    
+    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> LossInfo:
+        batch_size = x.shape[0]
+        random_alphas = self.get_function_args()
+        self.function_args = random_alphas.tolist()
+        self.alphas = random_alphas.view(-1, 1, 1).repeat(1, batch_size, 1)
+        loss = super().get_loss(x=x, h_x=h_x, y_pred=y_pred, y=y)
+        return loss
+
+        # # Alpha is the label, and fn_arg is the parameter passed to the function.
+        # for alpha in alphas:
+        #     fn_arg = alpha
+        #     loss_i = self.get_loss_for_arg(x=x, h_x=h_x, fn_arg=fn_arg, alpha=alpha)
+        #     loss_info += loss_i
+        # return loss_info
