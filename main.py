@@ -51,12 +51,12 @@ if __name__ == "__main__":
     config = settings.experiment.config
     config_dict = asdict(settings.experiment)
     # pprint.pprint(config_dict, indent=1)
+    
+    config.run_group = config.run_group or type(settings.experiment).__name__
 
     if settings.experiment.config.use_wandb:
         wandb_path = settings.experiment.config.log_dir_root.joinpath('wandb')
         wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
-
-        config.run_group = config.run_group or type(settings.experiment).__name__
         
         print(f"Using wandb. Experiment name: {config.run_name}")
         if config.run_name is None:

@@ -159,8 +159,6 @@ class TaskIncremental(Experiment):
         
         return fig
 
-
-
     def _run(self) -> Tuple[List[LossInfo], List[List[int]]]:
         """Executes one single run from the OML figure 3.
         

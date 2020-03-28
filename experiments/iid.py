@@ -25,7 +25,6 @@ from datasets.dataset import Dataset
 from datasets.mnist import Mnist
 from models.classifier import Classifier
 from tasks import AuxiliaryTask
-from tasks.reconstruction.vae import VAEReconstructionTask
 
 from .experiment import Experiment
 
@@ -35,19 +34,18 @@ class IID(Experiment):
     """ Simple IID setting. """
     def __post_init__(self):
         super().__post_init__()
-        self.reconstruction_task: Optional[VAEReconstructionTask] = None
-        
-        # If the model is a SelfSupervised classifier, it will have a `tasks` attribute.
-        # find the reconstruction task, if there is one.
-        if "reconstruction" in self.model.tasks:
-            self.reconstruction_task = self.model.tasks["reconstruction"]
-            self.latents_batch = torch.randn(64, self.hparams.hidden_size)
     
     def run(self):
         self.load()
         train_losses, valid_losses = self.train_until_convergence(self.dataset.train, self.dataset.valid, self.hparams.epochs)
         # make the training plots
         plots_dict = self.make_plots(train_losses, valid_losses)
+
+        for figure_name, fig in plots_dict.items():    
+            if self.config.debug:
+                fig.show()
+                fig.waitforbuttonpress(timeout=30)
+            fig.savefig(self.plots_dir / Path(figure_name).with_suffix(".jpg"))
 
         # Get the most recent validation metrics. 
         last_step = max(valid_losses.keys())
@@ -72,69 +70,20 @@ class IID(Experiment):
         ax.plot(list(train_losses.keys()), [l.total_loss for l in train_losses.values()], label="train")
         ax.plot(list(valid_losses.keys()), [l.total_loss for l in valid_losses.values()], label="valid")
         ax.legend(loc="upper right")
-
-        if self.config.debug:
-            fig.show()
-            fig.waitforbuttonpress(timeout=30)
         plots_dict["losses"] = fig
-        fig.savefig(self.plots_dir / "losses.jpg")
+
+        # TODO: add the loss plots for all the auxiliary tasks here?
 
         fig, ax = plt.subplots()
         ax.set_xlabel("Epoch")
         ax.set_ylim(0.0, 1.0)
         ax.set_ylabel("Accuracy")
         ax.set_title("Training and Validation Accuracy")
-        ax.plot(list(train_losses.keys()), [l.metrics.accuracy for l in train_losses.values()], label="train")
-        ax.plot(list(valid_losses.keys()), [l.metrics.accuracy for l in valid_losses.values()], label="valid")
+        x = list(train_losses.keys())
+        y_train = [l.metrics["supervised"].accuracy for l in train_losses.values()]
+        y_valid = [l.metrics["supervised"].accuracy for l in valid_losses.values()]
+        ax.plot(x, y_train, label="train")
+        ax.plot(x, y_valid, label="valid")
         ax.legend(loc='lower right')
-        
-        if self.config.debug:
-            fig.show()
-            fig.waitforbuttonpress(timeout=30)
-
         plots_dict["accuracy"] = fig
-        fig.savefig(self.plots_dir / "accuracy.jpg")
         return plots_dict
-
-
-    def test_iter(self, dataloader: DataLoader):
-        yield from super().test_iter(dataloader)
-        if self.reconstruction_task:
-            self.generate_samples()
-    
-    def train_iter(self, dataloader: DataLoader):
-        for loss_info in super().train_iter(dataloader):
-            yield loss_info
-        
-        if self.reconstruction_task:
-            # use the last batch of x's.
-            x_batch = loss_info.tensors.get("x")
-            if x_batch is not None:
-                self.reconstruct_samples(x_batch)
-        
-        
-    def reconstruct_samples(self, data: Tensor):
-        with torch.no_grad():
-            n = min(data.size(0), 8)
-            
-            originals = data[:n]
-            reconstructed = self.reconstruction_task.reconstruct(originals)
-            comparison = torch.cat([originals, reconstructed])
-
-            reconstruction_images_dir = self.config.log_dir / "reconstruction"
-            reconstruction_images_dir.mkdir(exist_ok=True)
-            file_name = reconstruction_images_dir / f"reconstruction_step_{self.global_step}.png"
-            
-            save_image(comparison.cpu(), file_name, nrow=n)
-
-    def generate_samples(self):
-        with torch.no_grad():
-            n = 64
-            fake_samples = self.reconstruction_task.generate(torch.randn(64, self.hparams.hidden_size))
-            fake_samples = fake_samples.cpu().view(n, *self.dataset.x_shape)
-
-            generation_images_dir = self.config.log_dir / "generated_samples"
-            generation_images_dir.mkdir(exist_ok=True)
-            file_name = generation_images_dir / f"generated_step_{self.global_step}.png"
-            save_image(fake_samples, file_name)
-

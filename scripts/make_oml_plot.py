@@ -54,7 +54,7 @@ def make_plot(options: Options) -> plt.Figure:
     fig.suptitle(title)
 
     ax1: plt.Axes = fig.add_subplot(1, 2, 1)
-    ax1.set_title("Cumulative Loss")
+    ax1.set_title("Classification Accuracy on Tasks seen so far")
     ax1.set_xlabel("Number of tasks learned")
     ax1.set_ylabel("Cumulative Validation Accuracy")
     ax1.set_ylim(bottom=0, top=1)

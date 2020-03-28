@@ -1,4 +1,5 @@
 import json
+import logging
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from dataclasses import asdict, dataclass, is_dataclass
@@ -6,15 +7,18 @@ from pathlib import Path
 from typing import Any, ClassVar, Dict, Generator, Iterable, List, Type, Union
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import tqdm
 import wandb
 from simple_parsing import choice, field, mutable_field, subparsers
 from torch import Tensor, nn
 from torch.utils.data import DataLoader
-import numpy as np
+from torchvision.utils import save_image
+
 from common.losses import LossInfo
-from common.metrics import get_metrics, RegressionMetrics, ClassificationMetrics
+from common.metrics import (ClassificationMetrics, RegressionMetrics,
+                            get_metrics)
 from config import Config
 from datasets import Dataset
 from datasets.fashion_mnist import FashionMnist
@@ -24,7 +28,6 @@ from tasks import AuxiliaryTask
 from utils import utils
 from utils.utils import add_prefix
 
-import logging
 
 @dataclass  # type: ignore
 class Experiment:
@@ -71,13 +74,16 @@ class Experiment:
 
         self.global_step: int = 0
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        logging.basicConfig(
-            filename=self.log_dir / "log.txt",
-            level=logging.INFO, 
-        )
         self.logger = logging.getLogger(__file__)
         if self.config.debug:
             self.logger.setLevel(logging.DEBUG)
+
+        self.reconstruction_task: Optional[VAEReconstructionTask] = None
+        # find the reconstruction task, if there is one.
+        if "reconstruction" in self.model.tasks:
+            self.reconstruction_task = self.model.tasks["reconstruction"]
+            self.latents_batch = torch.randn(64, self.hparams.hidden_size)
+
     @abstractmethod
     def run(self):
         pass
@@ -206,6 +212,13 @@ class Experiment:
             yield self.train_batch(data, target)
 
             self.global_step += batch_size
+        
+        ## Reconstruct some samples after each epoch.
+        if self.reconstruction_task:
+            # use the last batch of x's.
+            x_batch = data
+            if x_batch is not None:
+                self.reconstruct_samples(x_batch)
 
     def train_batch(self, data: Tensor, target: Tensor) -> LossInfo:
         batch_size = data.shape[0]
@@ -242,6 +255,10 @@ class Experiment:
             target = batch[1].to(self.model.device) if len(batch) == 2 else None
             yield self.test_batch(data, target)
 
+        ## Generate some samples after each test/eval epoch.
+        if self.reconstruction_task:
+            self.generate_samples()
+
     def test_batch(self, data: Tensor, target: Tensor) -> LossInfo:
         with torch.no_grad():
             return self.model.get_loss(data, target)
@@ -254,6 +271,32 @@ class Experiment:
             num_workers=4,
             pin_memory=self.config.use_cuda
         )
+    
+    def reconstruct_samples(self, data: Tensor):
+        with torch.no_grad():
+            n = min(data.size(0), 16)
+            
+            originals = data[:n]
+            reconstructed = self.reconstruction_task.reconstruct(originals)
+            comparison = torch.cat([originals, reconstructed])
+
+            reconstruction_images_dir = self.samples_dir / "reconstruction"
+            reconstruction_images_dir.mkdir(parents=True, exist_ok=True)
+            file_name = reconstruction_images_dir / f"step_{self.global_step:08d}.png"
+            save_image(comparison.cpu(), file_name, nrow=n)
+
+    def generate_samples(self):
+        with torch.no_grad():
+            n = 64
+            latents = torch.randn(64, self.hparams.hidden_size)
+            fake_samples = self.reconstruction_task.generate(latents)
+            fake_samples = fake_samples.cpu().view(n, *self.dataset.x_shape)
+
+            generation_images_dir = self.samples_dir / "generated_samples"
+            generation_images_dir.mkdir(parents=True, exist_ok=True)
+            file_name = generation_images_dir / f"step_{self.global_step:08d}.png"
+            save_image(fake_samples, file_name)
+
 
     def _folder(self, folder: Union[str, Path], create: bool=True):
         path = self.config.log_dir / folder
