@@ -87,7 +87,7 @@ class VAEReconstructionTask(AuxiliaryTask):
     # Reconstruction + KL divergence losses summed over all elements and batch
     @staticmethod
     def reconstruction_loss(recon_x: Tensor, x: Tensor) -> Tensor:
-        return F.binary_cross_entropy(recon_x, x.view(recon_x.shape))
+        return F.binary_cross_entropy(recon_x, x.view(recon_x.shape), size_average=False)
 
     @staticmethod
     def kl_divergence_loss(mu: Tensor, logvar: Tensor) -> Tensor:
