@@ -37,13 +37,14 @@ class SimCLRTask(AuxiliaryTask):
         self.augment = Compose([
             ToPILImage(),
             SimCLRAugment(self.options),
-            Lambda(lambda tup: list(map(to_tensor, tup)))
+            Lambda(lambda tup: (to_tensor(tup[0]), to_tensor(tup[1])))
         ])
         self.projector = Projector(self.options)
+        self.i = 0
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         # TODO: is there a more efficient way to do this than with map? (torch multiprocessing-ish?)
-        x_augment = list(map(self.augment, x.cpu()))  # [2, B, C, H, W]
+        x_augment = [self.augment(x) for x in x.cpu()]  # [2, B, C, H, W]
         x1 = torch.stack([pair[0] for pair in x_augment])  # [B, C, H, W]
         x2 = torch.stack([pair[1] for pair in x_augment])  # [B, C, H, W]
         

@@ -412,9 +412,14 @@ def to_str(value: Any) -> Any:
 
 
 def add_messages_for_batch(loss: LossInfo, message: Dict, prefix: str=""):
-    message[f"{prefix}Loss"] = loss.total_loss.item()
+    new_message: Dict[str, float] = OrderedDict()
+    new_message[f"{prefix}Loss"] = loss.total_loss.item()
     for name, metrics in loss.metrics.items():
         if isinstance(metrics, ClassificationMetrics):
-            message[f"{prefix}{name} Acc:"] = metrics.accuracy
+            new_message[f"{prefix}{name} Acc"] = metrics.accuracy
         elif isinstance(metrics, RegressionMetrics):
-            message[f"{prefix}{name} MSE:"] = metrics.mse.item()
+            new_message[f"{prefix}{name} MSE"] = metrics.mse.item()
+    for loss_name, loss_tensor in loss.losses.items():
+        if not any(key.startswith(loss_name) for key in new_message.keys()):
+            new_message[f"{loss_name} Loss"] = loss_tensor.item()
+    message.update(new_message)

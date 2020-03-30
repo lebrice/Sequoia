@@ -60,7 +60,7 @@ class LossInfo:
         
         losses  = add_dicts(self.losses, other.losses, add_values=True)
         # Keep the total loss of the other LossInfo in the `losses` dict.
-        if other.name not in losses:
+        if other.name not in losses and other.name != self.name:
             losses[other.name] = other.total_loss
         
         tensors = add_dicts(self.tensors, other.tensors, add_values=False)
