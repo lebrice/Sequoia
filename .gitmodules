@@ -1,6 +1,3 @@
-[submodule "tasks/simclr/SimCLR"]
-	path = tasks/simclr/SimCLR
-	url = https://github.com/sthalles/SimCLR.git
 [submodule "tasks/simclr/falr"]
 	path = tasks/simclr/falr
 	url = https://github.com/lebrice/falr.git
