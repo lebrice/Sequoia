@@ -73,7 +73,6 @@ class Experiment:
         self.valid_loader: DataLoader = NotImplemented
 
         self.global_step: int = 0
-        self.log_dir.mkdir(parents=True, exist_ok=True)
         self.logger = logging.getLogger(__file__)
         if self.config.debug:
             self.logger.setLevel(logging.DEBUG)
