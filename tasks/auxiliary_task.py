@@ -9,6 +9,7 @@ from common.losses import LossInfo
 from utils import cuda_available
 
 
+
 class AuxiliaryTask(nn.Module):
     """ Represents an additional loss to apply to a `Classifier`.
 
@@ -57,7 +58,7 @@ class AuxiliaryTask(nn.Module):
         """
         super().__init__()
         self.name: str = name or type(self).__qualname__
-        self.options = options or self.Options(*args, **kwargs)
+        self.options = options or type(self).Options(*args, **kwargs)
         self.device: torch.device = torch.device("cuda" if cuda_available else "cpu")
 
     def encode(self, x: Tensor) -> Tensor:

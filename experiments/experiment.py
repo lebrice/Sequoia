@@ -83,6 +83,8 @@ class Experiment:
         if "reconstruction" in self.model.tasks:
             self.reconstruction_task = self.model.tasks["reconstruction"]
             self.latents_batch = torch.randn(64, self.hparams.hidden_size)
+        
+        self._samples_dir: Optional[Path] = None
 
     @abstractmethod
     def run(self):
@@ -310,7 +312,14 @@ class Experiment:
 
     @property
     def samples_dir(self) -> Path:
-        return self._folder("samples")
+        if self._samples_dir:
+            return self._samples_dir
+        self._samples_dir = self._folder("samples")
+        return self._samples_dir
+    
+    @samples_dir.setter
+    def samples_dir(self, value: Path) -> Path:
+        self._samples_dir = value
 
     @property
     def checkpoints_dir(self) -> Path:

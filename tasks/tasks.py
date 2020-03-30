@@ -13,7 +13,7 @@ from .reconstruction.vae import VAEReconstructionTask
 from .transformation_based import (AdjustBrightnessTask,
                                    ClassifyTransformationTask,
                                    RegressTransformationTask, RotationTask)
-
+from .simclr.simclr_task import SimCLRTask
 
 @dataclass
 class AuxiliaryTaskOptions:
@@ -22,13 +22,14 @@ class AuxiliaryTaskOptions:
     The "coefficient" parameter can be used to turn auxiliary tasks on or off.
 
     """
-    reconstruction: VAEReconstructionTask.Options = mutable_field(VAEReconstructionTask.Options, coefficient=0.)
-    mixup:          MixupTask.Options             = mutable_field(MixupTask.Options, coefficient=0.)
-    manifold_mixup: ManifoldMixupTask.Options     = mutable_field(ManifoldMixupTask.Options, coefficient=0.)
-    rotation:       RotationTask.Options          = mutable_field(RotationTask.Options, coefficient=0.)
-    jigsaw:         JigsawPuzzleTask.Options      = mutable_field(JigsawPuzzleTask.Options, coefficient=0.)
-    irm:            IrmTask.Options               = mutable_field(IrmTask.Options, coefficient=0.)
-    brightness:     AdjustBrightnessTask.Options  = mutable_field(AdjustBrightnessTask.Options, coefficient=0.)
+    reconstruction: VAEReconstructionTask.Options = mutable_field(VAEReconstructionTask.Options)
+    mixup:          MixupTask.Options             = mutable_field(MixupTask.Options)
+    manifold_mixup: ManifoldMixupTask.Options     = mutable_field(ManifoldMixupTask.Options)
+    rotation:       RotationTask.Options          = mutable_field(RotationTask.Options)
+    jigsaw:         JigsawPuzzleTask.Options      = mutable_field(JigsawPuzzleTask.Options)
+    irm:            IrmTask.Options               = mutable_field(IrmTask.Options)
+    brightness:     AdjustBrightnessTask.Options  = mutable_field(AdjustBrightnessTask.Options)
+    simclr:         SimCLRTask.Options            = mutable_field(SimCLRTask.Options)
 
     def create_tasks(self,
                     input_shape: Tuple[int, ...],
@@ -48,4 +49,6 @@ class AuxiliaryTaskOptions:
             tasks["irm"] = IrmTask(options=self.irm)
         if self.brightness:
             tasks["adjust_brightness"] = AdjustBrightnessTask(options=self.brightness)
+        if self.simclr:
+            tasks["simclr"] = SimCLRTask(options=self.simclr)
         return tasks
