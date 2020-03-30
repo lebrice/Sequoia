@@ -43,12 +43,12 @@ class SimCLRTask(AuxiliaryTask):
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         # TODO: is there a more efficient way to do this than with map? (torch multiprocessing-ish?)
-        x_augment = list(map(self.augment, x))  # [2, B, C, H, W]
+        x_augment = list(map(self.augment, x.cpu()))  # [2, B, C, H, W]
         x1 = torch.stack([pair[0] for pair in x_augment])  # [B, C, H, W]
         x2 = torch.stack([pair[1] for pair in x_augment])  # [B, C, H, W]
         
-        h1 = self.encode(x1).flatten(start_dim=1)  # [B, repr_dim]
-        h2 = self.encode(x2).flatten(start_dim=1)  # [B, repr_dim]
+        h1 = self.encode(x1.to(self.device)).flatten(start_dim=1)  # [B, repr_dim]
+        h2 = self.encode(x2.to(self.device)).flatten(start_dim=1)  # [B, repr_dim]
         
         z1 = self.projector(h1)  # [B, proj_dim]
         z2 = self.projector(h2)  # [B, proj_dim]
