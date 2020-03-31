@@ -1,11 +1,13 @@
 from dataclasses import dataclass, field
+from typing import List
 
 import torch
 from torch import Tensor
-from torchvision.transforms import Compose, ToPILImage, ToTensor, Lambda
+from torchvision.transforms import Compose, Lambda, ToPILImage, ToTensor
 from torchvision.transforms.functional import to_tensor
+
 from common.losses import LossInfo
-from common.metrics import get_metrics, RegressionMetrics
+from common.metrics import RegressionMetrics, get_metrics
 from tasks.auxiliary_task import AuxiliaryTask
 
 try:
@@ -37,25 +39,19 @@ class SimCLRTask(AuxiliaryTask):
         self.augment = Compose([
             ToPILImage(),
             SimCLRAugment(self.options),
-            Lambda(lambda tup: (to_tensor(tup[0]), to_tensor(tup[1])))
+            Lambda(lambda tup: [to_tensor(tup[0]), to_tensor(tup[1])])
         ])
         self.projector = Projector(self.options)
         self.i = 0
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         # TODO: is there a more efficient way to do this than with map? (torch multiprocessing-ish?)
-        x_augment = [self.augment(x) for x in x.cpu()]  # [2, B, C, H, W]
-        x1 = torch.stack([pair[0] for pair in x_augment])  # [B, C, H, W]
-        x2 = torch.stack([pair[1] for pair in x_augment])  # [B, C, H, W]
-        
-        h1 = self.encode(x1.to(self.device)).flatten(start_dim=1)  # [B, repr_dim]
-        h2 = self.encode(x2.to(self.device)).flatten(start_dim=1)  # [B, repr_dim]
-        
-        z1 = self.projector(h1)  # [B, proj_dim]
-        z2 = self.projector(h2)  # [B, proj_dim]
-        z = torch.cat([z1, z2], dim=0)  # [B*2, proj_dim]
-
+        # TODO: need to interleave the tensors in the [z1, z1', z2, z2', z3, z3'] fashion, instead of [z1, z2, z3, z1', z2', z3'].
+        # concat all the x's into a single list.
+        x_augment: List[Tensor] = sum([self.augment(x) for x in x.cpu()], [])  # [2*B, C, H, W]
+        x_t = torch.stack(x_augment)  # [2*B, C, H, W]
+        h_t = self.encode(x_t.to(self.device)).flatten(start_dim=1)  # [2*B, repr_dim]
+        z = self.projector(h_t)  # [2*B, proj_dim]
         loss = nt_xent_loss(z, self.options.xent_temp)
-        
-        return LossInfo(name=self.name, total_loss=loss)
-
+        loss_info = LossInfo(name=self.name, total_loss=loss)
+        return loss_info
