@@ -39,7 +39,7 @@ class SimCLRTask(AuxiliaryTask):
         self.augment = Compose([
             ToPILImage(),
             SimCLRAugment(self.options),
-            Lambda(lambda tup: [to_tensor(tup[0]), to_tensor(tup[1])])
+            Lambda(lambda tup: torch.stack([to_tensor(tup[0]), to_tensor(tup[1])]))
         ])
         self.projector = Projector(self.options)
         self.i = 0
@@ -48,8 +48,7 @@ class SimCLRTask(AuxiliaryTask):
         # TODO: is there a more efficient way to do this than with map? (torch multiprocessing-ish?)
         # TODO: need to interleave the tensors in the [z1, z1', z2, z2', z3, z3'] fashion, instead of [z1, z2, z3, z1', z2', z3'].
         # concat all the x's into a single list.
-        x_augment: List[Tensor] = sum([self.augment(x) for x in x.cpu()], [])  # [2*B, C, H, W]
-        x_t = torch.stack(x_augment)  # [2*B, C, H, W]
+        x_t = torch.cat([self.augment(x_i) for x_i in x.cpu()], dim=0)   # [2*B, C, H, W]
         h_t = self.encode(x_t.to(self.device)).flatten(start_dim=1)  # [2*B, repr_dim]
         z = self.projector(h_t)  # [2*B, proj_dim]
         loss = nt_xent_loss(z, self.options.xent_temp)
