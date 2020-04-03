@@ -1,11 +1,13 @@
 """ Set of Utilities. """
 
 import collections
-from collections import defaultdict, deque, OrderedDict
+import functools
+from collections import OrderedDict, defaultdict, deque
 from collections.abc import MutableMapping
 from typing import (Any, Deque, Dict, Iterable, List, MutableMapping, Optional,
-                    Tuple, TypeVar, Union, Set)
+                    Set, Tuple, TypeVar, Union)
 
+import numpy as np
 import torch
 from torch import Tensor, nn
 
@@ -106,7 +108,12 @@ def loss_str(loss_tensor: Tensor) -> str:
     else:
         return f"{loss:.3f}"
 
-import functools
+
+def set_seed(seed: int):
+    """ Set the pytorch/numpy random seed. """
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
 
 def rsetattr(obj: Any, attr: str, val: Any) -> None:
     """ Taken from https://stackoverflow.com/questions/31174295/getattr-and-setattr-on-nested-subobjects-chained-properties """

@@ -4,7 +4,9 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Dict, Generator, Iterable, List, Type, Union
+from queue import deque
+from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
+                    Type, Union)
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -66,8 +68,6 @@ class Experiment:
             AuxiliaryTask.input_shape = self.dataset.x_shape
             AuxiliaryTask.hidden_size = self.hparams.hidden_size
 
-        self.model = self.get_model(self.dataset).to(self.config.device)
-        self.model_name = type(self.model).__name__
 
         self.train_loader: DataLoader = NotImplemented
         self.valid_loader: DataLoader = NotImplemented
@@ -76,14 +76,10 @@ class Experiment:
         self.logger = logging.getLogger(__file__)
         if self.config.debug:
             self.logger.setLevel(logging.DEBUG)
-
-        self.reconstruction_task: Optional[VAEReconstructionTask] = None
-        # find the reconstruction task, if there is one.
-        if "reconstruction" in self.model.tasks:
-            self.reconstruction_task = self.model.tasks["reconstruction"]
-            self.latents_batch = torch.randn(64, self.hparams.hidden_size)
         
         self._samples_dir: Optional[Path] = None
+        self.reconstruction_task: Optional[VAEReconstructionTask] = None
+        self.init_model()
 
     @abstractmethod
     def run(self):
@@ -96,7 +92,14 @@ class Experiment:
         self.train_loader, self.valid_loader = dataloaders
         self.global_step = 0
 
-    def get_model(self, dataset: Dataset) -> Classifier:
+    def init_model(self):
+        self.model = self.get_model_for_dataset(self.dataset).to(self.config.device)
+        # find the reconstruction task, if there is one.
+        if "reconstruction" in self.model.tasks:
+            self.reconstruction_task = self.model.tasks["reconstruction"]
+            self.latents_batch = torch.randn(64, self.hparams.hidden_size)
+
+    def get_model_for_dataset(self, dataset: Dataset) -> Classifier:
         if isinstance(dataset, (Mnist, FashionMnist)):
             from models.mnist import MnistClassifier
             return MnistClassifier(
@@ -104,7 +107,6 @@ class Experiment:
                 config=self.config,
             )
         raise NotImplementedError("TODO: add other models for other datasets.")
-
 
     def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
         if always_print or (self.config.debug and self.config.verbose):
@@ -422,7 +424,7 @@ def add_messages_for_batch(loss: LossInfo, message: Dict, prefix: str=""):
     new_message[f"{prefix}Loss"] = loss.total_loss.item()
     for name, metrics in loss.metrics.items():
         if isinstance(metrics, ClassificationMetrics):
-            new_message[f"{prefix}{name} Acc"] = metrics.accuracy
+            new_message[f"{prefix}{name} Acc"] = f"{metrics.accuracy:.2%}"
         elif isinstance(metrics, RegressionMetrics):
             new_message[f"{prefix}{name} MSE"] = metrics.mse.item()
     for loss_name, loss_tensor in loss.losses.items():

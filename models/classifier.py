@@ -82,14 +82,13 @@ class Classifier(nn.Module):
         # Dictionary of classifiers to use if we are provided the task-label.
         self.task_classifiers: Dict[str, nn.Module] = nn.ModuleDict()  #type: ignore  
 
-
-        if self.config.debug:
+        if self.config.debug and self.config.verbose:
             print(self)
             print("Auxiliary tasks:")
             for task_name, task in self.tasks.items():
                 print(f"{task.name}: {task.coefficient}")
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)        
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)  
 
     def supervised_loss(self, x: Tensor, y: Tensor, h_x: Tensor=None, y_pred: Tensor=None) -> LossInfo:
         h_x = self.encode(x) if h_x is None else h_x
@@ -145,16 +144,6 @@ class Classifier(nn.Module):
             The preprocessed inputs.
         """
         return x
-
-    @contextmanager
-    def use_task_label(self, task_id: int):
-        """ If we are given a task label, then we can use that information.
-        
-        While inside this contextmanager, the model will use a classifier
-        specific to the given task_id, if there exists one. If none exists, will
-        create a new one starting from a deepcopy of the "general" classifier.
-
-        """
 
     @property
     def current_task_id(self) -> Optional[str]:

@@ -9,7 +9,6 @@ from common.losses import LossInfo
 from utils import cuda_available
 
 
-
 class AuxiliaryTask(nn.Module):
     """ Represents an additional loss to apply to a `Classifier`.
 

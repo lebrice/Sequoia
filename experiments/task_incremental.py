@@ -22,7 +22,7 @@ from datasets.subset import VisionDatasetSubset
 from experiments.class_incremental import ClassIncremental
 from experiments.experiment import Experiment
 from utils.utils import n_consecutive, rgetattr, rsetattr
-
+from utils import utils
 
 @dataclass
 class TaskIncremental(Experiment):
@@ -55,14 +55,16 @@ class TaskIncremental(Experiment):
         self.valid_datasets: List[VisionDatasetSubset] = []
         self.valid_cumul_datasets: List[VisionDatasetSubset] = []
 
-    def run(self) -> Dict[Path, Tensor]:
+    def run(self):
         # containers for the results of each individual run.
         run_cumul_valid_losses: List[List[LossInfo]] = []
         run_final_classification_task_accuracies: List[Tensor] = []
         run_task_classes: List[List[List[int]]] = []
-
+        
         for i in range(self.n_runs):
             print(f"STARTING RUN {i}")
+            utils.set_seed(self.config.random_seed + i)
+
             # execute a single run.
             cumul_valid_losses, task_classes = self._run()
             final_classification_task_accuracies = get_per_task_classification_accuracy(
@@ -180,8 +182,11 @@ class TaskIncremental(Experiment):
             classes learned during each task.
         """
         task_classes = self.load()
-        label_order = sum(task_classes, [])
+        self.init_model()
+
+        label_order: List[int] = sum(task_classes, [])
         print("Class Ordering:", label_order)
+        
         datasets = zip(
             self.train_datasets,
             self.valid_datasets,
@@ -260,6 +265,7 @@ class TaskIncremental(Experiment):
         Returns:
             List[List[int]]: The groups of classes for each task.
         """
+
         # download the dataset.
         self.dataset.load(self.config)
 
