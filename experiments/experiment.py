@@ -228,16 +228,22 @@ class Experiment:
         batch_loss_info = self.model.get_loss(data, target)
         total_loss = batch_loss_info.total_loss
         total_loss.backward()
+        
+        # from tasks.simclr.simclr_task import SimCLRTask
+        # simclr: SimCLRTask = self.model.tasks["simclr"]
+        # print("GRAD:", simclr.projector.d1.weight.grad)
+        # exit()
+        
         self.model.optimizer.step()
         return batch_loss_info
 
-    def test(self, dataset: Dataset, description: str=None) -> LossInfo:
+    def test(self, dataset: Dataset, description: str=None, name: str="Test") -> LossInfo:
         dataloader = self.get_dataloader(dataset)
         pbar = tqdm.tqdm(dataloader)
         desc = (description or "Test Epoch")
         
         pbar.set_description(desc)
-        total_loss = LossInfo("Test")
+        total_loss = LossInfo(name)
         message = OrderedDict()
 
         for batch_idx, loss in enumerate(self.test_iter(pbar)):

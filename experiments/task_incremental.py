@@ -41,6 +41,12 @@ class TaskIncremental(Experiment):
     # Number of runs to execute in order to create the OML Figure 3.
     n_runs: int = 5
 
+    # Wether or not we want to cheat and get access to the task-label at train 
+    # and test time. NOTE: This should ideally just be a temporary measure while
+    # we try to prove that Self-Supervision can help.
+    multihead: bool = False 
+
+
     def __post_init__(self):
         super().__post_init__()
         self.train_full_dataset: VisionDataset = None
@@ -190,6 +196,9 @@ class TaskIncremental(Experiment):
         valid_cumul: VisionDatasetSubset
         
         for task_index, (train, valid, valid_cumul) in enumerate(datasets):
+            if self.multihead:
+                self.model.current_task_id = task_index
+            
             classes = task_classes[task_index]
             print(f"Starting task {task_index}, Classes {classes}")
 
@@ -197,12 +206,14 @@ class TaskIncremental(Experiment):
             if any(task.enabled for task in self.model.tasks.values()):
                 # temporarily remove the labels
                 with train.without_labels(), valid.without_labels():
+                    # Train (Unsupervised/Self-supervised)
                     self.train_until_convergence(
                         train,
                         valid,
                         max_epochs=self.unsupervised_epochs_per_task,
                         description=f"Task {task_index} (Unsupervised)",
                     )
+            # Train (supervised)
             self.train_until_convergence(
                 train,
                 valid,
@@ -211,21 +222,37 @@ class TaskIncremental(Experiment):
             )
             
             # Evaluate the performance on the cumulative validation set.
-            valid_loss = self.test(
-                valid_cumul,
-                description=f"Task {task_index} Valid (Cumul) "
-            )
+            if not self.multihead:
+                # just use the whole cumulative validation set.
+                valid_loss = self.test(
+                    valid_cumul,
+                    description=f"Task {task_index} Valid (Cumul) "
+                )
+            else:
+                # If we're cheating, then use the validation set for each task,
+                # and add up the results. This is easier than having to use
+                # different classifiers depending on the labels for each sample.
+                valid_loss = LossInfo()
+                # evaluate from task_id 0 to the current task_id.
+                for task_id in range(task_index + 1):
+                    self.model.current_task_id = task_id
+                    valid_dataset = self.valid_datasets[task_id]
+                    valid_loss += self.test(
+                        dataset=valid_dataset,
+                        description=f"Task {task_index} Valid for Task {task_id} "
+                    )
 
             # train_losses.append(train_loss)
             valid_losses.append(valid_loss)
             validation_metrics: Dict[str, Metrics] = valid_loss.metrics
-            class_accuracy = validation_metrics["supervised"].class_accuracy  
+            supervised_metrics = validation_metrics["supervised"]
+            if isinstance(supervised_metrics, ClassificationMetrics):
+                class_accuracy = supervised_metrics.class_accuracy  
             # print(f"AFTER TASK {task_index}:",
             #       f"\tCumulative Val Loss: {valid_loss.total_loss},",
             #       f"\tMean Class Accuracy: {class_accuracy.mean()}", sep=" ")
 
         return valid_losses, task_classes
-
 
     def load(self) -> List[List[int]]:
         """Create the train, valid and cumulative datasets for each task. 

@@ -1,7 +1,9 @@
+import copy
 from abc import ABC, abstractmethod
 from collections import OrderedDict
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple, Type, TypeVar, NamedTuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Type, TypeVar, Union
 
 import torch
 from simple_parsing import MutableField as mutable_field
@@ -11,10 +13,10 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
-from config import Config
-from common.losses import LossInfo
-from common.metrics import get_metrics, accuracy
 from common.layers import ConvBlock, Flatten
+from common.losses import LossInfo
+from common.metrics import accuracy, get_metrics
+from config import Config
 from tasks import AuxiliaryTask, AuxiliaryTaskOptions
 
 
@@ -68,10 +70,18 @@ class Classifier(nn.Module):
         AuxiliaryTask.classifier    = self.classifier
         AuxiliaryTask.preprocessing = self.preprocess_inputs
         
+        # Dictionary of auxiliary tasks.
         self.tasks: Dict[str, AuxiliaryTask] = self.hparams.aux_tasks.create_tasks(  # type: ignore
             input_shape=input_shape,
             hidden_size=self.hparams.hidden_size
         )
+
+        # Current task label. (Optional, as we shouldn't rely on this.)
+        # TODO: Replace the classifier model with something better than a single-layer, so we can actually do task-free CL.
+        self._current_task_id: Optional[Union[int, str]] = None
+        # Dictionary of classifiers to use if we are provided the task-label.
+        self.task_classifiers: Dict[str, nn.Module] = nn.ModuleDict()  #type: ignore  
+
 
         if self.config.debug:
             print(self)
@@ -136,7 +146,40 @@ class Classifier(nn.Module):
         """
         return x
 
+    @contextmanager
+    def use_task_label(self, task_id: int):
+        """ If we are given a task label, then we can use that information.
+        
+        While inside this contextmanager, the model will use a classifier
+        specific to the given task_id, if there exists one. If none exists, will
+        create a new one starting from a deepcopy of the "general" classifier.
+
+        """
+
+    @property
+    def current_task_id(self) -> Optional[str]:
+        if self._current_task_id is None:
+            return None
+        elif isinstance(self._current_task_id, int):
+            return str(self._current_task_id)
+        return self._current_task_id
+
+    @current_task_id.setter
+    def current_task_id(self, value: Optional[Union[int, str]]):
+        self._current_task_id = value
+
     def logits(self, h_x: Tensor) -> Tensor:
         if self.hparams.detach_classifier:
             h_x = h_x.detach()
-        return self.classifier(h_x)
+
+        # else use the "general" classifier by default.
+        classifier = self.classifier
+        # if a task-id is given, use the task-specific classifier.
+        if self.current_task_id is not None:
+            # if there is not task-specific classifier, we initialize it from the "global" classifier.
+            if self.current_task_id not in self.task_classifiers:
+                classifier = copy.deepcopy(self.classifier)
+                self.task_classifiers[self.current_task_id] = classifier 
+            else:
+                classifier = self.task_classifiers[self.current_task_id]
+        return classifier(h_x)

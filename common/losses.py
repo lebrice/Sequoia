@@ -30,7 +30,7 @@ class LossInfo:
     
     Used to simplify the return type of the various `get_loss` functions.    
     """
-    name: str
+    name: str = ""
     coefficient: Union[float, Tensor] = 1.0
     total_loss: Tensor = 0.  # type: ignore
     losses:  Dict[str, Union[Tensor, "LossInfo"]] = field(default_factory=OrderedDict)
