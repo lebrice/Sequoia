@@ -101,8 +101,8 @@ class Classifier(nn.Module):
         y_pred = self.logits(h_x)
         
         loss_info.total_loss = torch.zeros(1, device=self.device)
-        loss_info.tensors["h_x"] = h_x
-        loss_info.tensors["y_pred"] = y_pred
+        loss_info.tensors["h_x"] = h_x.detach()
+        loss_info.tensors["y_pred"] = y_pred.detach()
 
         if y is not None:
             supervised_loss = self.supervised_loss(x=x, y=y, h_x=h_x, y_pred=y_pred)

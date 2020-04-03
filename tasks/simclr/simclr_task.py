@@ -45,8 +45,7 @@ class SimCLRTask(AuxiliaryTask):
         self.i = 0
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
-        # TODO: is there a more efficient way to do this than with map? (torch multiprocessing-ish?)
-        # TODO: need to interleave the tensors in the [z1, z1', z2, z2', z3, z3'] fashion, instead of [z1, z2, z3, z1', z2', z3'].
+        # TODO: is there a more efficient way to do this than with a list comprehension? (torch multiprocessing-ish?)
         # concat all the x's into a single list.
         x_t = torch.cat([self.augment(x_i) for x_i in x.cpu()], dim=0)   # [2*B, C, H, W]
         h_t = self.encode(x_t.to(self.device)).flatten(start_dim=1)  # [2*B, repr_dim]

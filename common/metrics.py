@@ -13,7 +13,8 @@ class Metrics:
     h_x:    InitVar[Optional[Tensor]] = None
     y_pred: InitVar[Optional[Tensor]] = None
     y:      InitVar[Optional[Tensor]] = None
-
+    
+    @torch.no_grad()
     def __post_init__(self,
                       x: Tensor=None,
                       h_x: Tensor=None,
@@ -138,7 +139,7 @@ class ClassificationMetrics(Metrics):
     def __str__(self) -> str:
         return f"metrics(n_samples={self.n_samples}, accuracy={self.accuracy:.2%})"
 
-
+@torch.no_grad()
 def get_metrics(y_pred: Tensor,
                 y: Tensor,
                 x: Tensor=None,
@@ -148,7 +149,7 @@ def get_metrics(y_pred: Tensor,
     else:
         return ClassificationMetrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
 
-
+@torch.no_grad()
 def get_confusion_matrix(y_pred: Tensor, y: Tensor) -> Tensor:
     """ Taken from https://discuss.pytorch.org/t/how-to-find-individual-class-accuracy/6348
     """
@@ -159,7 +160,7 @@ def get_confusion_matrix(y_pred: Tensor, y: Tensor) -> Tensor:
         confusion_matrix[y_t.long(), y_p.long()] += 1
     return confusion_matrix
 
-
+@torch.no_grad()
 def accuracy(y_pred: Tensor, y: Tensor) -> float:
     confusion_mat = get_confusion_matrix(y_pred, y)
     batch_size = y_pred.shape[0]

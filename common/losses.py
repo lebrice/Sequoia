@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, InitVar
 from typing import Any, Dict, List, Optional, Union
 
 import torch
@@ -36,6 +36,18 @@ class LossInfo:
     losses:  Dict[str, Union[Tensor, "LossInfo"]] = field(default_factory=OrderedDict)
     tensors: Dict[str, Tensor] = field(default_factory=OrderedDict, repr=False)
     metrics: Dict[str, Metrics] = field(default_factory=OrderedDict)
+
+    x:      InitVar[Optional[Tensor]] = None
+    h_x:    InitVar[Optional[Tensor]] = None
+    y_pred: InitVar[Optional[Tensor]] = None
+    y:      InitVar[Optional[Tensor]] = None
+
+    def __post_init__(self, x: Tensor=None, h_x: Tensor=None, y_pred: Tensor=None, y: Tensor=None):
+        if self.name and self.name not in self.metrics:
+            if y_pred is not None and y is not None:
+                self.metrics[self.name] = get_metrics(y_pred=y_pred, y=y)
+        for name, tensor in self.tensors.items():
+            tensor.detach_()
 
     def __add__(self, other: "LossInfo") -> "LossInfo":
         """Adds two LossInfo instances together.

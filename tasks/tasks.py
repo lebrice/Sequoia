@@ -15,6 +15,7 @@ from .transformation_based import (AdjustBrightnessTask,
                                    RegressTransformationTask, RotationTask)
 from .simclr.simclr_task import SimCLRTask
 
+
 @dataclass
 class AuxiliaryTaskOptions:
     """ Options related to the auxiliary tasks.
