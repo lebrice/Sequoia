@@ -47,7 +47,8 @@ class LossInfo:
             if y_pred is not None and y is not None:
                 self.metrics[self.name] = get_metrics(y_pred=y_pred, y=y)
         for name, tensor in self.tensors.items():
-            tensor.detach_()
+            if tensor.requires_grad:
+                self.tensors[name] = tensor.detach()
 
     def __add__(self, other: "LossInfo") -> "LossInfo":
         """Adds two LossInfo instances together.
