@@ -167,8 +167,11 @@ class Classifier(nn.Module):
         if self.current_task_id is not None:
             # if there is not task-specific classifier, we initialize it from the "global" classifier.
             if self.current_task_id not in self.task_classifiers:
+                if self.config.debug:
+                    print(f"Creating a new classifier for taskid {self.current_task_id}.")
                 classifier = copy.deepcopy(self.classifier)
-                self.task_classifiers[self.current_task_id] = classifier 
+                self.task_classifiers[self.current_task_id] = classifier
+                self.optimizer.add_param_group({"params": classifier.parameters()})
             else:
                 classifier = self.task_classifiers[self.current_task_id]
         return classifier(h_x)
