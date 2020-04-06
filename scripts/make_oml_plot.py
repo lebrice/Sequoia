@@ -1,24 +1,29 @@
-import torch
-from simple_parsing import ArgumentParser, field, list_field
-from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Iterable
-import matplotlib.pyplot as plt
-import numpy as np
 import glob
 import json
+from collections import OrderedDict
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Iterable, List
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from simple_parsing import ArgumentParser, field, list_field
 
 # TODO: fill out a bug for SimpleParsing, when type is List and a custom type is
 # given, the custom type should overwrite the List type.
 
 @dataclass
-class Options:
+class OmlFigureOptions:
     """ Options for the script making the OML Figure 3 plot. """
     # One or more paths of glob patterns, each corresponding to a run to compare.
     runs: List[str] = list_field(default=["results/TaskIncremental/*"])
     out_path: Path = Path("scripts/oml_plot.png")
     
     def __post_init__(self):
+        # The dictionary of result dicts.
+        self.results: Dict[Path, Dict] = OrderedDict()
+
         if len(self.runs) == 1 and isinstance(self.runs[0], list):
             self.runs = self.runs[0]
 
@@ -29,18 +34,33 @@ class Options:
         def keep_run(path: Path) -> bool:
             if not path.is_dir():
                 return False
-            if str(path).endswith("wandb"):
+            elif str(path).endswith("wandb"):
                 return False
-            if not path.joinpath("results").exists():
+            elif not path.joinpath("results").exists():
                 return False
-            return True
+            elif not (path / "results" / "results.json").exists():
+                return False
+            
+            try:
+                # Load the results dict
+                with open(path / "results" / "results.json") as f:
+                    result_json = json.load(f)
+            except (IOError, json.JSONDecodeError) as e:
+                print(f"Skipping run {path}: ", e)
+                return False
+            else:
+                return result_json
         
-        self.run_paths = list(filter(keep_run, paths))
+        for run_path in paths:
+            result = keep_run(run_path)
+            if result:
+                self.results[run_path] = result
 
 
-def make_plot(options: Options) -> plt.Figure:
-    runs: List[Path] = options.run_paths
-    
+def make_plot(options: OmlFigureOptions) -> plt.Figure:
+    results: Dict[Path, Dict] = options.results
+    runs: List[Path] = list(results.keys())
+
     n_runs = len(runs)
     print(f"Creating the OML plot to compare the {n_runs} different methods:")
     
@@ -72,16 +92,9 @@ def make_plot(options: Options) -> plt.Figure:
     # technically, we don't know the amount of tasks yet.
     n_tasks: int = -1
 
-    for i, run_path in enumerate(runs):
+    for i, (run_path, result_json) in reversed(list(enumerate(results.items()))):
         # Load up the per-task classification accuracies
         final_task_accuracy = load_array(run_path / "results" / "final_task_accuracy.csv")
-        try:    
-            # Load the results dict
-            with open(run_path / "results" / "results.json") as f:
-                result_json = json.load(f)
-        except FileNotFoundError as e:
-            print(f"Skipping run {run_path}: ", e)
-            continue
 
         supervised_metrics = result_json["metrics"]["supervised"]
         classification_accuracies = np.array(supervised_metrics["accuracy"])
@@ -109,7 +122,7 @@ def make_plot(options: Options) -> plt.Figure:
         
         autolabel(ax2, rects, bar_height_scale)
 
-    ax2.hlines(y=np.arange(len(indicators)*n_runs), xmin=0-0.5, xmax=n_tasks-1+0.5, linestyles="dotted", colors="gray")
+    ax2.hlines(y=np.arange(len(indicators)*n_runs), xmin=0-0.5, xmax=n_tasks-0.5, linestyles="dotted", colors="gray")
     ax2.set_xticks(np.arange(n_tasks, dtype=int))
     ax1.legend(loc="upper left")
 
@@ -159,10 +172,10 @@ def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float=1.):
 if __name__ == "__main__":
         
     parser = ArgumentParser()
-    parser.add_arguments(Options, "options")
+    parser.add_arguments(OmlFigureOptions, "options")
     args = parser.parse_args()
 
-    options: Options = args.options
+    options: OmlFigureOptions = args.options
     print(options)
 
     make_plot(options)
