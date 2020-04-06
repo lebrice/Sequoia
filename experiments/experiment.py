@@ -15,14 +15,14 @@ import tqdm
 import wandb
 from simple_parsing import choice, field, mutable_field, subparsers
 from torch import Tensor, nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torchvision.utils import save_image
 
 from common.losses import LossInfo
 from common.metrics import (ClassificationMetrics, RegressionMetrics,
                             get_metrics)
 from config import Config
-from datasets import Dataset
+from datasets import DatasetConfig
 from datasets.fashion_mnist import FashionMnist
 from datasets.mnist import Mnist
 from models.classifier import Classifier
@@ -45,7 +45,7 @@ class Experiment:
     # Model Hyper-parameters
     hparams: Classifier.HParams = mutable_field(Classifier.HParams)
     
-    dataset: Dataset = choice({
+    dataset: DatasetConfig = choice({
         "mnist": Mnist(),
         "fashion_mnist": FashionMnist(),
     }, default="mnist")
@@ -99,7 +99,7 @@ class Experiment:
             self.reconstruction_task = self.model.tasks["reconstruction"]
             self.latents_batch = torch.randn(64, self.hparams.hidden_size)
 
-    def get_model_for_dataset(self, dataset: Dataset) -> Classifier:
+    def get_model_for_dataset(self, dataset: DatasetConfig) -> Classifier:
         if isinstance(dataset, (Mnist, FashionMnist)):
             from models.mnist import MnistClassifier, MnistPretrainedEncoderClassifier
             if self.hparams.pretrained_model:

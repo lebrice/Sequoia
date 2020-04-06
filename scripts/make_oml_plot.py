@@ -3,7 +3,7 @@ import json
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,10 +16,13 @@ from simple_parsing import ArgumentParser, field, list_field
 @dataclass
 class OmlFigureOptions:
     """ Options for the script making the OML Figure 3 plot. """
-    # One or more paths of glob patterns, each corresponding to a run to compare.
+    # One or more paths of glob patterns matching the run folders to compare.
     runs: List[str] = list_field(default=["results/TaskIncremental/*"])
+    # Output path where the figure should be stored.
     out_path: Path = Path("scripts/oml_plot.png")
-    
+    # title to use for the figure.
+    title: Optional[str] = None
+
     def __post_init__(self):
         # The dictionary of result dicts.
         self.results: Dict[Path, Dict] = OrderedDict()
@@ -31,7 +34,7 @@ class OmlFigureOptions:
         for pattern in self.runs:
             paths.extend(map(Path, glob.glob(pattern)))
 
-        def keep_run(path: Path) -> bool:
+        def keep_run(path: Path) -> Union[bool, Dict]:
             if not path.is_dir():
                 return False
             elif str(path).endswith("wandb"):
@@ -40,13 +43,11 @@ class OmlFigureOptions:
                 return False
             elif not (path / "results" / "results.json").exists():
                 return False
-            
             try:
                 # Load the results dict
                 with open(path / "results" / "results.json") as f:
                     result_json = json.load(f)
             except (IOError, json.JSONDecodeError) as e:
-                print(f"Skipping run {path}: ", e)
                 return False
             else:
                 return result_json
@@ -55,6 +56,11 @@ class OmlFigureOptions:
             result = keep_run(run_path)
             if result:
                 self.results[run_path] = result
+        
+        if not self.title:
+            self.title = str(paths[0].parent)
+            if any(str(p.parent) != self.title for p in paths):
+                self.title = "Results"
 
 
 def make_plot(options: OmlFigureOptions) -> plt.Figure:
@@ -65,20 +71,13 @@ def make_plot(options: OmlFigureOptions) -> plt.Figure:
     print(f"Creating the OML plot to compare the {n_runs} different methods:")
     
     fig: plt.Figure = plt.figure()
-    
-    title = str(runs[0].parent)
-    for run_path in runs:
-        if str(run_path.parent) != title:
-            title = "Results"
-            break
-    fig.suptitle(title)
+    fig.suptitle(options.title)
 
     ax1: plt.Axes = fig.add_subplot(1, 2, 1)
     ax1.set_title("Classification Accuracy on Tasks seen so far")
     ax1.set_xlabel("Number of tasks learned")
     ax1.set_ylabel("Cumulative Validation Accuracy")
     ax1.set_ylim(bottom=0, top=1)
-
     ax2: plt.Axes = fig.add_subplot(1, 2, 2)
     ax2.set_title(f"Final mean accuracy per Task")
     ax2.set_xlabel("Task ID")
@@ -92,7 +91,7 @@ def make_plot(options: OmlFigureOptions) -> plt.Figure:
     # technically, we don't know the amount of tasks yet.
     n_tasks: int = -1
 
-    for i, (run_path, result_json) in reversed(list(enumerate(results.items()))):
+    for i, (run_path, result_json) in enumerate(results.items()):
         # Load up the per-task classification accuracies
         final_task_accuracy = load_array(run_path / "results" / "final_task_accuracy.csv")
 
@@ -104,8 +103,8 @@ def make_plot(options: OmlFigureOptions) -> plt.Figure:
 
         task_accuracy_means = final_task_accuracy.mean(axis=0)
         task_accuracy_std =   final_task_accuracy.std(axis=0)
-        print("n tasks:", n_tasks)
         ax1.set_xticks(np.arange(n_tasks, dtype=int))
+        ax1.set_xticklabels(np.arange(1, n_tasks+1, dtype=int))
         label = str(run_path.parts[-1])
 
         print(f"Run {run_path}:")
@@ -113,16 +112,34 @@ def make_plot(options: OmlFigureOptions) -> plt.Figure:
         print("\t Accuracy STDs:", accuracy_stds)
         print("\t Final Task Accuracy means:", task_accuracy_means)
         print("\t Final Task Accuracy stds:", task_accuracy_std)
-        ax1.errorbar(x=np.arange(n_tasks), y=accuracy_means, yerr=accuracy_stds, label=str(run_path.parts[-1]))
-        # TODO: figure out how to stack the bars like in OML plot.
-        bottom = len(indicators) * i
-        print(f"Bottom: {bottom}")
+        # adding the error plot on the left
+        ax1.errorbar(
+            x=np.arange(n_tasks),
+            y=accuracy_means,
+            yerr=accuracy_stds,
+            label=label
+        )
+
+        # Determining the bottom and height of the bars on the right plot.
+        bottom = len(indicators) * ((n_runs - 1) - i)
         height = bar_height_scale * task_accuracy_means
-        rects = ax2.bar(x=np.arange(n_tasks), height=height, bottom=bottom, yerr=task_accuracy_std, label=label)
-        
+        rects = ax2.bar(
+            x=np.arange(n_tasks),
+            height=height,
+            bottom=bottom,
+            yerr=task_accuracy_std,
+            label=label
+        )
+        # adding the percentage labels over the bars on the right plot.
         autolabel(ax2, rects, bar_height_scale)
 
-    ax2.hlines(y=np.arange(len(indicators)*n_runs), xmin=0-0.5, xmax=n_tasks-0.5, linestyles="dotted", colors="gray")
+    ax2.hlines(
+        y=np.arange(len(indicators)*n_runs),
+        xmin=0-0.5,
+        xmax=n_tasks-0.5,
+        linestyles="dotted",
+        colors="gray",
+    )
     ax2.set_xticks(np.arange(n_tasks, dtype=int))
     ax1.legend(loc="upper left")
 

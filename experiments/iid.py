@@ -50,7 +50,7 @@ class IID(Experiment):
         # Get the most recent validation metrics. 
         last_step = max(valid_losses.keys())
         last_val_loss = valid_losses[last_step]
-        class_accuracy = last_val_loss.metrics.class_accuracy
+        class_accuracy = last_val_loss.metrics["supervised"].class_accuracy
         valid_class_accuracy_mean = class_accuracy.mean()
         valid_class_accuracy_std = class_accuracy.std()
         self.log("Validation Average Class Accuracy: ", valid_class_accuracy_mean, once=True, always_print=True)

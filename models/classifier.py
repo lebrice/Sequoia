@@ -66,7 +66,7 @@ class Classifier(nn.Module):
         self.device = self.config.device
 
         # Share the relevant parameters with all the auxiliary tasks.
-        # We do this by setting a class attribute.
+        # We do this by setting class attributes.
         AuxiliaryTask.hidden_size   = self.hparams.hidden_size
         AuxiliaryTask.input_shape   = self.input_shape
         AuxiliaryTask.encoder       = self.encoder
@@ -80,8 +80,9 @@ class Classifier(nn.Module):
         )
 
         # Current task label. (Optional, as we shouldn't rely on this.)
-        # TODO: Replace the classifier model with something better than a single-layer, so we can actually do task-free CL.
-        self._current_task_id: Optional[Union[int, str]] = None
+        # TODO: Replace the classifier model with something like CN-DPM or CURL,
+        # so we can actually do task-free CL.
+        self._current_task_id: Optional[str] = None
         # Dictionary of classifiers to use if we are provided the task-label.
         self.task_classifiers: Dict[str, nn.Module] = nn.ModuleDict()  #type: ignore  
 
@@ -152,29 +153,28 @@ class Classifier(nn.Module):
     def current_task_id(self) -> Optional[str]:
         if self._current_task_id is None:
             return None
-        elif isinstance(self._current_task_id, int):
-            return str(self._current_task_id)
         return self._current_task_id
 
     @current_task_id.setter
     def current_task_id(self, value: Optional[Union[int, str]]):
+        value = str(value) if value is not None else None
         self._current_task_id = value
+        # If there isn't a classifier for this task
+        if value and value not in self.task_classifiers.keys():
+            if self.config.debug:
+                print(f"Creating a new classifier for taskid {value}.")
+            # Create one starting from the "global" classifier.
+            classifier = copy.deepcopy(self.classifier)
+            self.task_classifiers[value] = classifier
+            self.optimizer.add_param_group({"params": classifier.parameters()})
 
     def logits(self, h_x: Tensor) -> Tensor:
         if self.hparams.detach_classifier:
             h_x = h_x.detach()
 
-        # else use the "general" classifier by default.
+        # Use the "general" classifier by default.
         classifier = self.classifier
-        # if a task-id is given, use the task-specific classifier.
+        # If a task-id is given, use the task-specific classifier.
         if self.current_task_id is not None:
-            # if there is not task-specific classifier, we initialize it from the "global" classifier.
-            if self.current_task_id not in self.task_classifiers:
-                if self.config.debug:
-                    print(f"Creating a new classifier for taskid {self.current_task_id}.")
-                classifier = copy.deepcopy(self.classifier)
-                self.task_classifiers[self.current_task_id] = classifier
-                self.optimizer.add_param_group({"params": classifier.parameters()})
-            else:
-                classifier = self.task_classifiers[self.current_task_id]
+            classifier = self.task_classifiers[self.current_task_id]
         return classifier(h_x)

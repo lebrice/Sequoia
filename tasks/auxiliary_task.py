@@ -45,7 +45,7 @@ class AuxiliaryTask(nn.Module):
         
         Parameters
         ----------
-        - options : TaskOptions, optional, by default None
+        - options : AuxiliaryTask.Options, optional, by default None
         
             The `Options` related to this task, containing the loss 
             coefficient used to scale this task, as well as any other additional
@@ -69,7 +69,7 @@ class AuxiliaryTask(nn.Module):
 
     @abstractmethod
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
-        """Calculates the Auxiliary loss for the input `x`.ABC
+        """Calculates the Auxiliary loss for the input `x`.
         
         The parameters `h_x`, `y_pred` are given for convenience, so we don't
         re-calculate the forward pass multiple times on the same input.
@@ -78,12 +78,12 @@ class AuxiliaryTask(nn.Module):
         ----------
         - x : Tensor
         
-            The input samples.ABC
+            The input samples.
         - h_x : Tensor
         
             The hidden vector, or hidden features, which corresponds to the
             output of the feature extractor (should be equivalent to 
-            `self.encoder(x)`). Given for convenience, when available.ABC
+            `self.encoder(x)`). Given for convenience, when available.
         - y_pred : Tensor
         
             The predicted (raw/unscaled) scores for each class, which 
@@ -113,12 +113,12 @@ class AuxiliaryTask(nn.Module):
         ----------
         - x : Tensor
         
-            The input samples.ABC
+            The input samples.
         
         - h_x : Tensor
             The hidden vector, or hidden features, which corresponds to the
             output of the feature extractor (should be equivalent to 
-            `self.encoder(x)`). Given for convenience, when available.ABC
+            `self.encoder(x)`). Given for convenience, when available.
         - y_pred : Tensor
             The predicted (raw/unscaled) scores for each class, which 
             corresponds to the output of the classifier layer of the parent
@@ -146,7 +146,6 @@ class AuxiliaryTask(nn.Module):
         loss_info *= self.coefficient
         return loss_info
 
-
     @property
     def coefficient(self) -> float:
         return self.options.coefficient
@@ -158,5 +157,3 @@ class AuxiliaryTask(nn.Module):
     @property
     def enabled(self) -> bool:
         return self.coefficient != 0
-
-TaskType = TypeVar("TaskType", bound=AuxiliaryTask)

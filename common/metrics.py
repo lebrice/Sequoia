@@ -57,7 +57,7 @@ class RegressionMetrics(Metrics):
         super().__post_init__(x=x, h_x=h_x, y_pred=y_pred, y=y)
         if y_pred is not None and y is not None:
             if y.shape != y_pred.shape:
-                print(y_pred.shape, y.shape)
+                print("Shapes aren't the same!", y_pred.shape, y.shape)
                 exit()
             self.mse = functional.mse_loss(y_pred, y)
 

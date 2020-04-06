@@ -1,4 +1,4 @@
-from .auxiliary_task import AuxiliaryTask, TaskType
+from .auxiliary_task import AuxiliaryTask
 from .irm import IrmTask
 from .jigsaw_puzzle import JigsawPuzzleTask
 from .mixup import ManifoldMixupTask, MixupTask
@@ -8,7 +8,7 @@ from .tasks import AuxiliaryTaskOptions
 from .transformation_based import AdjustBrightnessTask, RotationTask
 
 __all__ = [
-    "AuxiliaryTask", "TaskType",
+    "AuxiliaryTask",
     "IrmTask",
     "JigsawPuzzleTask"
     "ManifoldMixupTask", "MixupTask"

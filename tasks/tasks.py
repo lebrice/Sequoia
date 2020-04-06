@@ -4,7 +4,7 @@ from typing import Dict, NewType, Tuple, Union
 from simple_parsing import mutable_field
 from torch import nn
 
-from .auxiliary_task import AuxiliaryTask, TaskType
+from .auxiliary_task import AuxiliaryTask
 from .irm import IrmTask
 from .jigsaw_puzzle import JigsawPuzzleTask
 from .mixup import ManifoldMixupTask, MixupTask

@@ -1,7 +1,7 @@
-from .dataset import Dataset
+from .dataset import DatasetConfig
 from .mnist import Mnist
 
 __all__ = [
-    "Dataset",
+    "DatasetConfig",
     "Mnist",
 ]
