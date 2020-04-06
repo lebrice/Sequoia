@@ -38,6 +38,9 @@ class Classifier(nn.Module):
         # Prevent gradients of the classifier from backpropagating into the encoder.
         detach_classifier: bool = False
 
+        # Use a model pretrained on ImageNet from torchvision.
+        pretrained_model: bool = False
+
         aux_tasks: AuxiliaryTaskOptions = field(default_factory=AuxiliaryTaskOptions)
 
     def __init__(self,

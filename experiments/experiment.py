@@ -101,11 +101,17 @@ class Experiment:
 
     def get_model_for_dataset(self, dataset: Dataset) -> Classifier:
         if isinstance(dataset, (Mnist, FashionMnist)):
-            from models.mnist import MnistClassifier
-            return MnistClassifier(
-                hparams=self.hparams,
-                config=self.config,
-            )
+            from models.mnist import MnistClassifier, MnistPretrainedEncoderClassifier
+            if self.hparams.pretrained_model:
+                return MnistPretrainedEncoderClassifier(
+                    hparams=self.hparams,
+                    config=self.config,
+                )
+            else:
+                return MnistClassifier(
+                    hparams=self.hparams,
+                    config=self.config,
+                )
         raise NotImplementedError("TODO: add other models for other datasets.")
 
     def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
