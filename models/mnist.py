@@ -1,8 +1,8 @@
 from torch import nn
 
-from common.layers import ConvBlock, Flatten
+from common.layers import ConvBlock
 from config import Config
-
+from torch.nn import Flatten
 from .classifier import Classifier
 
 
@@ -19,10 +19,7 @@ class MnistClassifier(Classifier):
         )
         classifier = nn.Sequential(
             Flatten(),
-            nn.Linear(self.hidden_size, self.hidden_size//2),
-            nn.Dropout(),
-            nn.ReLU(),
-            nn.Linear(self.hidden_size//2, 10),
+            nn.Linear(self.hidden_size, 10),
         )
         super().__init__(
             input_shape=(1,28,28),
