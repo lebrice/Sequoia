@@ -63,11 +63,13 @@ class DeConvBlock(nn.Module):
                  hidden_channels: Optional[int]=None,
                  kernel_size: int=3,
                  padding: int=1,
+                 last_relu: bool=True,
                  **kwargs):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.hidden_channels = hidden_channels or out_channels
         self.kernel_size = kernel_size
+        self.last_relu = last_relu
         super().__init__()
         self.conv1 = nn.Conv2d(
             in_channels=in_channels,
@@ -95,5 +97,6 @@ class DeConvBlock(nn.Module):
         x = self.relu(x)
         x = self.conv2(x)
         x = self.norm2(x)
-        x = self.relu(x)
+        if self.last_relu:
+            x = self.relu(x)
         return x

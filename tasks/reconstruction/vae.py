@@ -1,14 +1,17 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Tuple, Optional
+from typing import Any, Optional, Tuple
 
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from tasks.auxiliary_task import AuxiliaryTask
-from common.losses import LossInfo
 from common.layers import DeConvBlock, Flatten, Reshape
+from common.losses import LossInfo
+from datasets.cifar import Cifar10, Cifar100
+from datasets.dataset import DatasetConfig
+from datasets.mnist import Mnist
+from tasks.auxiliary_task import AuxiliaryTask
 
 
 class VAEReconstructionTask(AuxiliaryTask):
@@ -23,15 +26,24 @@ class VAEReconstructionTask(AuxiliaryTask):
         """ Settings & Hyper-parameters related to the VAEReconstructionTask. """
         code_size: int = 50  # dimensions of the VAE code-space.
 
-    def __init__(self, coefficient: float=None, name: str="vae", options: "VAEReconstructionTask.Options"=None):
+    def __init__(self,
+                 coefficient: float=None,
+                 name: str="vae",
+                 options: "VAEReconstructionTask.Options"=None):
         super().__init__(coefficient=coefficient, name=name, options=options)
         self.code_size = self.options.code_size  # type: ignore
         # add the rest of the VAE layers: (Mu, Sigma, and the decoder)
         self.mu     = nn.Linear(AuxiliaryTask.hidden_size, self.code_size)
         self.logvar = nn.Linear(AuxiliaryTask.hidden_size, self.code_size)
         
-        # TODO: get the right decoder architecture for other datasets than MNIST.
-        self.decoder = MnistDecoder(code_size=self.code_size)
+        self.decoder: nn.Module
+        if AuxiliaryTask.input_shape == Mnist.x_shape:
+            # TODO: get the right decoder architecture for other datasets than MNIST.
+            self.decoder = MnistDecoder(code_size=self.code_size)
+        elif AuxiliaryTask.input_shape == Cifar10.x_shape:
+            self.decoder = CifarDecoder(code_size=self.code_size)
+        else:
+            raise RuntimeError(f"Don't have an encoder for the given input shape: {AuxiliaryTask.input_shape}")
 
     def forward(self, h_x: Tensor) -> Tensor:  # type: ignore
         h_x = h_x.view([h_x.shape[0], -1])
@@ -99,5 +111,19 @@ class MnistDecoder(nn.Sequential):
             nn.BatchNorm2d(16),
             nn.ELU(alpha=1.0, inplace=True),
             nn.ConvTranspose2d(16, 1, kernel_size=4, stride=1),
+            nn.Sigmoid(),
+        )
+
+
+class CifarDecoder(nn.Sequential):
+    def __init__(self, code_size: int):
+        self.code_size = code_size
+        super().__init__(
+            Reshape([self.code_size, 1, 1]),
+            DeConvBlock(self.code_size, 16),
+            DeConvBlock(16, 32),
+            DeConvBlock(32, 64),
+            DeConvBlock(64, 64),
+            DeConvBlock(64, 3, last_relu=False),
             nn.Sigmoid(),
         )
