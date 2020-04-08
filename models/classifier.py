@@ -147,7 +147,7 @@ class Classifier(nn.Module):
         Tensor
             The preprocessed inputs.
         """
-        return x
+        return fix_channels(x)
 
     @property
     def current_task_id(self) -> Optional[str]:
@@ -178,3 +178,13 @@ class Classifier(nn.Module):
         if self.current_task_id is not None:
             classifier = self.task_classifiers[self.current_task_id]
         return classifier(h_x)
+
+
+def fix_channels(x_batch: Tensor) -> Tensor:
+    if x_batch.dim() == 3:
+        return x_batch.unsqueeze(1)
+    else:
+        if x_batch.shape[1] != min(x_batch.shape[1:]):
+            return x_batch.transpose(1, -1)
+        else:
+            return x_batch

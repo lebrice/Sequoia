@@ -12,7 +12,6 @@ from simple_parsing import ArgumentParser, subparsers
 from simple_parsing.helpers import JsonSerializable
 from torch import nn
 
-from experiments.class_incremental import ClassIncremental
 from experiments.experiment import Experiment
 from experiments.iid import IID
 from experiments.task_incremental import TaskIncremental
@@ -26,7 +25,6 @@ class RunSettings(JsonSerializable):
     """
     experiment: Experiment = subparsers({
         "iid": IID,
-        "class-incremental": ClassIncremental,
         "task-incremental": TaskIncremental,
     })
     notes: Optional[str] = None

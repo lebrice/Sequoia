@@ -14,7 +14,4 @@ class FashionMnist(DatasetConfig):
     x_shape: Tuple[int, int, int] = (1, 28, 28)
     y_shape: Tuple[int] = (10,)
     dataset_class: Type[VisionDataset] = v_datasets.FashionMNIST
-    transforms = T.Compose([
-        T.ToTensor(),
-        lambda x: x.reshape(1, 28, 28)
-    ])
+    

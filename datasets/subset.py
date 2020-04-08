@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 from typing import Iterable, List, Sequence, Set, Tuple, Union
 
+import numpy as np
 import torch
 from PIL import Image as image
 from PIL.Image import Image
@@ -11,21 +12,36 @@ from torchvision.transforms import Normalize
 
 
 class VisionDatasetSubset(TensorDataset):
-    r"""
-    Subset of a dataset at specified indices.
-
-    Arguments:
-        dataset (Dataset): The whole Dataset
-        classes (sequence): Indices in the whole set selected for subset
+    """
+    Subset of a dataset containing only the given labels.
     """
     def __init__(self, dataset: VisionDataset, labels: Sequence[int]):
+        """Creates a Dataset from the x's in `dataset` whose y's are in `labels`.
+        
+        Args:
+            dataset (VisionDataset): The whole Dataset.
+            labels (Sequence[int]): The set of labels (targets) to keep.
+        """
         self.dataset = dataset
         self.labels: Set[int] = set(labels)
-        indices = get_mask(self.dataset, self.labels).nonzero()
+        # get the mask to select only the relevant items.
+        mask = get_mask(self.dataset, self.labels)
+        indices = mask.nonzero().flatten()
+        # only keep the elements where y is in `self.labels`
+        self.data = torch.as_tensor(dataset.data)
+        self.data = self.data[indices]
         
-        self.data = self.dataset.data[indices]
-        self.targets = self.dataset.targets[indices]
+        self.targets = torch.as_tensor(dataset.targets)
+        self.targets = self.targets[indices]
 
+        shape_1 = self.dataset.data[0].shape
+        shape_2 = self.data[0].shape
+        assert shape_1 == shape_2, f"Shapes should be the same: {shape_1}, {shape_2}"
+        
+        # Add a "channel" dimension, if none exists.
+        if self.data.dim() == 3:
+            self.data.unsqueeze_(1)
+        # Convert the samples to float, if not done already. 
         if self.data.dtype == torch.uint8:
             self.data = self.data.float() / 255
 
@@ -69,6 +85,9 @@ def get_mask(dataset: VisionDataset, labels: Iterable[int]) -> Tensor:
         A boolean mask to select the values from the dataset.
     """
     selected_mask = torch.zeros(len(dataset), dtype=torch.bool)
+    targets = dataset.targets
+    if not torch.is_tensor(targets):
+        targets = torch.as_tensor(targets)
     for label in labels:
-        selected_mask |= (dataset.targets == label)
+        selected_mask |= (targets == label)
     return selected_mask

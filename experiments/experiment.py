@@ -4,9 +4,8 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
-from queue import deque
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
-                    Type, Union)
+                    Tuple, Type, Union)
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,6 +22,7 @@ from common.metrics import (ClassificationMetrics, RegressionMetrics,
                             get_metrics)
 from config import Config
 from datasets import DatasetConfig
+from datasets.cifar import Cifar10, Cifar100
 from datasets.fashion_mnist import FashionMnist
 from datasets.mnist import Mnist
 from models.classifier import Classifier
@@ -48,6 +48,8 @@ class Experiment:
     dataset: DatasetConfig = choice({
         "mnist": Mnist(),
         "fashion_mnist": FashionMnist(),
+        "cifar10": Cifar10(),
+        "cifar100": Cifar100(),
     }, default="mnist")
 
     config: Config = Config()
@@ -100,19 +102,17 @@ class Experiment:
             self.latents_batch = torch.randn(64, self.hparams.hidden_size)
 
     def get_model_for_dataset(self, dataset: DatasetConfig) -> Classifier:
+        from models.mnist import MnistClassifier
+        from models.cifar import Cifar10Classifier, Cifar100Classifier
+
         if isinstance(dataset, (Mnist, FashionMnist)):
-            from models.mnist import MnistClassifier, MnistPretrainedEncoderClassifier
-            if self.hparams.pretrained_model:
-                return MnistPretrainedEncoderClassifier(
-                    hparams=self.hparams,
-                    config=self.config,
-                )
-            else:
-                return MnistClassifier(
-                    hparams=self.hparams,
-                    config=self.config,
-                )
-        raise NotImplementedError("TODO: add other models for other datasets.")
+            return MnistClassifier(hparams=self.hparams, config=self.config)
+        elif isinstance(dataset, Cifar10):
+            return Cifar10Classifier(hparams=self.hparams, config=self.config)
+        elif isinstance(dataset, Cifar100):
+            return Cifar100Classifier(hparams=self.hparams, config=self.config)
+        else:
+            raise NotImplementedError(f"TODO: add a model for dataset {dataset}.")
 
     def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
         if always_print or (self.config.debug and self.config.verbose):
@@ -126,7 +126,6 @@ class Experiment:
             # else, if not given, we use the global step.
             step = None if once else (step or self.global_step)
             
-            message_dict: Dict = message
             if message is None:
                 return
             if isinstance(message, dict):
@@ -147,7 +146,7 @@ class Experiment:
                                       valid_dataset: Dataset,
                                       max_epochs: int,
                                       description: str=None,
-                                      patience: int=3) -> Dict[int, LossInfo]:
+                                      patience: int=3) -> Tuple[Dict[int, LossInfo], Dict[int, LossInfo]]:
         train_dataloader = self.get_dataloader(train_dataset)
         valid_dataloader = self.get_dataloader(valid_dataset)
         n_steps = len(train_dataloader)
@@ -223,7 +222,7 @@ class Experiment:
             self.global_step += batch_size
         
         ## Reconstruct some samples after each epoch.
-        if self.reconstruction_task:
+        if self.reconstruction_task and self.reconstruction_task.enabled:
             # use the last batch of x's.
             x_batch = data
             if x_batch is not None:
@@ -236,12 +235,7 @@ class Experiment:
         batch_loss_info = self.model.get_loss(data, target)
         total_loss = batch_loss_info.total_loss
         total_loss.backward()
-        
-        # from tasks.simclr.simclr_task import SimCLRTask
-        # simclr: SimCLRTask = self.model.tasks["simclr"]
-        # print("GRAD:", simclr.projector.d1.weight.grad)
-        # exit()
-        
+                
         self.model.optimizer.step()
         return batch_loss_info
 
@@ -252,7 +246,7 @@ class Experiment:
         
         pbar.set_description(desc)
         total_loss = LossInfo(name)
-        message = OrderedDict()
+        message: Dict[str, Any] = OrderedDict()
 
         for batch_idx, loss in enumerate(self.test_iter(pbar)):
             total_loss += loss
@@ -271,9 +265,8 @@ class Experiment:
             yield self.test_batch(data, target)
 
         ## Generate some samples after each test/eval epoch.
-        if self.reconstruction_task:
-            self.generate_samples()
-
+        self.generate_samples()
+    
     def test_batch(self, data: Tensor, target: Tensor) -> LossInfo:
         with torch.no_grad():
             return self.model.get_loss(data, target)
@@ -287,30 +280,34 @@ class Experiment:
             pin_memory=self.config.use_cuda
         )
     
+    @torch.no_grad()
     def reconstruct_samples(self, data: Tensor):
-        with torch.no_grad():
-            n = min(data.size(0), 16)
-            
-            originals = data[:n]
-            reconstructed = self.reconstruction_task.reconstruct(originals)
-            comparison = torch.cat([originals, reconstructed])
+        if not self.reconstruction_task or not self.reconstruction_task.enabled:
+            return
+        n = min(data.size(0), 16)
+        
+        originals = data[:n]
+        reconstructed = self.reconstruction_task.reconstruct(originals)
+        comparison = torch.cat([originals, reconstructed])
 
-            reconstruction_images_dir = self.samples_dir / "reconstruction"
-            reconstruction_images_dir.mkdir(parents=True, exist_ok=True)
-            file_name = reconstruction_images_dir / f"step_{self.global_step:08d}.png"
-            save_image(comparison.cpu(), file_name, nrow=n)
+        reconstruction_images_dir = self.samples_dir / "reconstruction"
+        reconstruction_images_dir.mkdir(parents=True, exist_ok=True)
+        file_name = reconstruction_images_dir / f"step_{self.global_step:08d}.png"
+        save_image(comparison.cpu(), file_name, nrow=n)
 
+    @torch.no_grad()
     def generate_samples(self):
-        with torch.no_grad():
-            n = 64
-            latents = torch.randn(64, self.hparams.hidden_size)
-            fake_samples = self.reconstruction_task.generate(latents)
-            fake_samples = fake_samples.cpu().view(n, *self.dataset.x_shape)
+        if not self.reconstruction_task or not self.reconstruction_task.enabled:
+            return
+        n = 64
+        latents = torch.randn(64, self.hparams.hidden_size)
+        fake_samples = self.reconstruction_task.generate(latents)
+        fake_samples = fake_samples.cpu().view(n, *self.dataset.x_shape)
 
-            generation_images_dir = self.samples_dir / "generated_samples"
-            generation_images_dir.mkdir(parents=True, exist_ok=True)
-            file_name = generation_images_dir / f"step_{self.global_step:08d}.png"
-            save_image(fake_samples, file_name)
+        generation_images_dir = self.samples_dir / "generated_samples"
+        generation_images_dir.mkdir(parents=True, exist_ok=True)
+        file_name = generation_images_dir / f"step_{self.global_step:08d}.png"
+        save_image(fake_samples, file_name)
 
 
     def _folder(self, folder: Union[str, Path], create: bool=True):

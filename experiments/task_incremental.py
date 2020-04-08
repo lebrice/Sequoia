@@ -17,9 +17,7 @@ from torchvision.utils import save_image
 from common.losses import LossInfo
 from common.metrics import Metrics, ClassificationMetrics, RegressionMetrics
 from config import Config
-from datasets.dataset import TaskConfig
 from datasets.subset import VisionDatasetSubset
-from experiments.class_incremental import ClassIncremental
 from experiments.experiment import Experiment
 from utils.utils import n_consecutive, rgetattr, rsetattr
 from utils import utils
@@ -138,10 +136,10 @@ class TaskIncremental(Experiment):
             if "accuracy" in metrics:
                 # stack the accuracies for each run, and use the mean and std for the errorbar plot.
                 # TODO: might want to implement the "95% confidence with 1000 bootstraps/etc." from the OML paper. 
-                accuracy = torch.stack([torch.Tensor(run_acc) for run_acc in metrics["accuracy"]])
+                accuracy = torch.stack([torch.as_tensor(run_acc) for run_acc in metrics["accuracy"]])
                 accuracy = accuracy.detach().numpy()
-                accuracy_mean = accuracy.mean(axis=0)
-                accuracy_std = accuracy.std(axis=0)
+                accuracy_mean = accuracy.mean(dim=0)
+                accuracy_std = accuracy.std(dim=0)
 
                 ax1.errorbar(x=np.arange(n_tasks), y=accuracy_mean, yerr=accuracy_std, label=metric_name)
                 ax1.set_ylim(bottom=0, top=1)
@@ -268,7 +266,6 @@ class TaskIncremental(Experiment):
 
         # download the dataset.
         self.dataset.load(self.config)
-
         assert self.dataset.train is not None
         assert self.dataset.valid is not None
 
@@ -311,15 +308,6 @@ class TaskIncremental(Experiment):
         n = 64
         samples = dataset.data[:n].view(n, *self.dataset.x_shape).float()
         save_image(samples, self.samples_dir / f"{prefix}task_{i}.png")
-        
-    def set_task(self, task_index: int) -> Tuple[DataLoader, DataLoader]:
-        assert 0 <= task_index < len(self.train_datasets)
-        self.dataset.train = self.train_datasets[task_index]
-        self.dataset.valid = self.valid_cumul_datasets[task_index]
-        ## equivalent to super().load()
-        dataloaders = self.dataset.get_dataloaders(self.config, self.hparams.batch_size)
-        self.train_loader, self.valid_loader = dataloaders
-        return self.train_loader, self.valid_loader
 
 
 def stack_loss_attr(losses: List[List[LossInfo]], attribute: str) -> Tensor:
