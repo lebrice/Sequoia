@@ -1,10 +1,11 @@
 import io
 import json
 import pprint
+from collections import OrderedDict
 from dataclasses import asdict, dataclass, is_dataclass
 from os import path
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple, Union, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import torch
 import wandb
@@ -15,7 +16,7 @@ from torch import nn
 from experiments.experiment import Experiment
 from experiments.iid import IID
 from experiments.task_incremental import TaskIncremental
-
+from utils.json_utils import take_out_unsuported_values
 
 @dataclass
 class RunSettings(JsonSerializable):
@@ -49,7 +50,9 @@ if __name__ == "__main__":
     config = settings.experiment.config
     config_dict = asdict(settings.experiment)
     # pprint.pprint(config_dict, indent=1)
-    
+
+    config_dict = take_out_unsuported_values(config_dict)
+
     config.run_group = config.run_group or type(settings.experiment).__name__
 
     if settings.experiment.config.use_wandb:
@@ -91,3 +94,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Experiment crashed: {e}")
         raise e
+

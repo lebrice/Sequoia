@@ -28,6 +28,7 @@ from datasets.mnist import Mnist
 from models.classifier import Classifier
 from tasks import AuxiliaryTask
 from utils import utils
+from utils.json_utils import is_json_serializable, to_str, to_str_dict
 from utils.utils import add_prefix
 
 
@@ -390,36 +391,6 @@ class Experiment:
 
 def is_nonempty_dir(path: Path):
     path.is_dir() and len(list(path.iterdir())) > 0
-
-def is_json_serializable(value: str):
-    try:
-        return json.loads(json.dumps(value)) == value 
-    except:
-        return False
-
-def to_str_dict(d: Dict) -> Dict[str, Union[str, Dict]]:
-    for key, value in list(d.items()):
-        d[key] = to_str(value) 
-    return d
-
-def to_str(value: Any) -> Any:
-    try:
-        return json.dumps(value)
-    except Exception as e:
-        if is_dataclass(value):
-            value = asdict(value)
-            return to_str_dict(value)
-        elif isinstance(value, dict):
-            return to_str_dict(value)
-        elif isinstance(value, Path):
-            return str(value)
-        elif isinstance(value, nn.Module):
-            return None
-        elif isinstance(value, Iterable):
-            return list(map(to_str, value))
-        else:
-            print("Couldn't make the value into a str:", value, e)
-            return repr(value)
 
 
 def add_messages_for_batch(loss: LossInfo, message: Dict, prefix: str=""):

@@ -135,7 +135,7 @@ def rgetattr(obj: Any, attr: str, *args):
     def _getattr(obj, attr):
         return getattr(obj, attr, *args)
     return functools.reduce(_getattr, [obj] + attr.split('.'))
-  
+
 
 if __name__ == "__main__":
     import doctest
