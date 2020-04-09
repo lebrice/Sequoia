@@ -62,9 +62,19 @@ if __name__ == "__main__":
 
 
 class RotationTask(ClassifyTransformationTask):
-    def __init__(self, options: ClassifyTransformationTask.Options=None):
+    @dataclass
+    class Options(ClassifyTransformationTask.Options):
+        """Command-line options for the Transformation-based auxiliary task."""
+        # Wether or not both the original and transformed codes should be passed
+        # to the auxiliary layer in order to detect the transformation.
+        # TODO: Maybe try with this set to False, to learn "innate" orientation rather than relative orientation. 
+        compare_with_original: bool = True
+
+    def __init__(self, options: "RotationTask.Options"=None):
         super().__init__(
             function=rotate,
             function_args=[0, 90, 180, 270],
-            options=options,
+            options=options or RotationTask.Options(),
         )
+        print(self.options, RotationTask.Options())
+        exit()

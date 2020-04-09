@@ -39,8 +39,9 @@ class VisionDatasetSubset(TensorDataset):
         assert shape_1 == shape_2, f"Shapes should be the same: {shape_1}, {shape_2}"
         
         # Add a "channel" dimension, if none exists.
-        if self.data.dim() == 3:
-            self.data.unsqueeze_(1)
+        from utils.utils import fix_channels
+        self.data = fix_channels(self.data)
+
         # Convert the samples to float, if not done already. 
         if self.data.dtype == torch.uint8:
             self.data = self.data.float() / 255

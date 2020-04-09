@@ -54,6 +54,14 @@ def to_list(tensors: Iterable[Union[Any, Tensor]]) -> List[float]:
     )
 
 
+def fix_channels(x_batch: Tensor) -> Tensor:
+    if x_batch.dim() == 3:
+        return x_batch.unsqueeze(1)
+    else:
+        if x_batch.shape[1] != min(x_batch.shape[1:]):
+            return x_batch.transpose(1, -1)
+        else:
+            return x_batch
 
 
 def to_dict_of_lists(list_of_dicts: Iterable[Dict[str, Any]]) -> Dict[str, List[Tensor]]:

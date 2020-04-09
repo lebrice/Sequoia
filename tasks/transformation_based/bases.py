@@ -1,17 +1,17 @@
-from typing import Any, Callable, List, Tuple, Union
+from abc import abstractmethod
 from dataclasses import dataclass
+from functools import wraps
+from typing import Any, Callable, List, Tuple, Union
 
 import torch
 from torch import Tensor, nn
+from torchvision.transforms import functional as TF
 
 from common.layers import Flatten, Lambda
 from common.losses import LossInfo
-from common.metrics import get_metrics, ClassificationMetrics, Metrics
-
+from common.metrics import ClassificationMetrics, Metrics, get_metrics
 from tasks.auxiliary_task import AuxiliaryTask
-from functools import wraps
-from abc import abstractmethod
-from torchvision.transforms import functional as TF
+from utils.utils import fix_channels
 
 
 def wrap_pil_transform(function: Callable):
@@ -114,7 +114,8 @@ class TransformationBasedTask(AuxiliaryTask):
 
     def get_loss_for_arg(self, x: Tensor, h_x: Tensor, fn_arg: Any, alpha: Tensor) -> LossInfo:
         alpha = alpha.to(x.device)
-
+        # TODO: Transform before or after the `preprocess_inputs` function?
+        x = fix_channels(x)
         # Transform X using the function.
         x_t = self.function(x, fn_arg)
         # Get the code for the transformed x.
