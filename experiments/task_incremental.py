@@ -137,9 +137,9 @@ class TaskIncremental(Experiment):
                 # stack the accuracies for each run, and use the mean and std for the errorbar plot.
                 # TODO: might want to implement the "95% confidence with 1000 bootstraps/etc." from the OML paper. 
                 accuracy = torch.stack([torch.as_tensor(run_acc) for run_acc in metrics["accuracy"]])
-                accuracy = accuracy.detach().numpy()
-                accuracy_mean = accuracy.mean(dim=0)
-                accuracy_std = accuracy.std(dim=0)
+                accuracy_np = accuracy.detach().numpy()
+                accuracy_mean = accuracy_np.mean(axis=0)
+                accuracy_std = accuracy_np.std(axis=0)
 
                 ax1.errorbar(x=np.arange(n_tasks), y=accuracy_mean, yerr=accuracy_std, label=metric_name)
                 ax1.set_ylim(bottom=0, top=1)
