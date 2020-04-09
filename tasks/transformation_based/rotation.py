@@ -76,5 +76,3 @@ class RotationTask(ClassifyTransformationTask):
             function_args=[0, 90, 180, 270],
             options=options or RotationTask.Options(),
         )
-        print(self.options, RotationTask.Options())
-        exit()
