@@ -18,7 +18,7 @@ from common.losses import LossInfo
 from common.metrics import Metrics, ClassificationMetrics, RegressionMetrics
 from config import Config
 from datasets.subset import VisionDatasetSubset
-from experiments.experiment import Experiment
+from experiment import Experiment
 from utils.utils import n_consecutive, rgetattr, rsetattr
 from utils import utils
 
@@ -26,27 +26,25 @@ from utils import utils
 class TaskIncremental(Experiment):
     """ Evaluates the model in the same setting as the OML paper's Figure 3.
     """
-    n_classes_per_task: int = 2      # Number of classes per task.
+    # Number of classes per task.
+    n_classes_per_task: int = 2
     # Wether to sort out the classes in the class_incremental setting.
     random_class_ordering: bool = True
-
     # (Maximum number of epochs of self-supervised training to perform before switching
     # to supervised training.
     unsupervised_epochs_per_task: int = 5
     # (Maximum number of epochs of supervised training to perform on each task's dataset.
     supervised_epochs_per_task: int = 1
-
     # Number of runs to execute in order to create the OML Figure 3.
     n_runs: int = 5
-
     # Wether or not we want to cheat and get access to the task-label at train 
     # and test time. NOTE: This should ideally just be a temporary measure while
     # we try to prove that Self-Supervision can help.
     multihead: bool = False 
 
-
     def __post_init__(self):
         super().__post_init__()
+        # The entire training and validation datasets.
         self.train_full_dataset: VisionDataset = None
         self.valid_full_dataset: VisionDataset = None
         self.train_datasets: List[VisionDatasetSubset] = []
@@ -55,40 +53,51 @@ class TaskIncremental(Experiment):
 
     def run(self):
         # containers for the results of each individual run.
-        run_cumul_valid_losses: List[List[LossInfo]] = []
-        run_final_classification_task_accuracies: List[Tensor] = []
-        run_task_classes: List[List[List[int]]] = []
+        cumul_valid_losses: List[List[LossInfo]] = []
+        # Stores the final mean task accuracy per class.
+        final_mean_task_accuracies: List[Tensor] = []
+        # stores the list of tasks (groups of labels) used in each run.
+        tasks: List[List[List[int]]] = []
         
         for i in range(self.n_runs):
             print(f"STARTING RUN {i}")
+            # Set a different random seed for each run.
             utils.set_seed(self.config.random_seed + i)
 
-            # execute a single run.
-            cumul_valid_losses, task_classes = self._run()
-            final_classification_task_accuracies = get_per_task_classification_accuracy(
-                cumul_valid_losses[-1],
-                task_classes
-            )
+            # Get the tasks to use for this run.
+            run_tasks = self.load()
+            # Get the resulting cumulative validation losses.
+            run_cumul_valid_losses: List[LossInfo] = self.run_once(run_tasks)
 
-            run_cumul_valid_losses.append(cumul_valid_losses)
-            run_task_classes.append(task_classes)
-            run_final_classification_task_accuracies.append(final_classification_task_accuracies)
+            final_loss = run_cumul_valid_losses[-1]
+            run_final_task_accuracies = get_mean_task_accuracy(final_loss, run_tasks)
+
+            # Accumulate the results of this run in the above lists
+            task_classes.append(run_tasks)
+            cumul_valid_losses.append(run_cumul_valid_losses)
+            final_classification_task_accuracies.append(run_final_classification_task_accuracies)
             
+            # results: Dict = {
+            #     "tasks": tasks,
+            #     "cumul_valid_losses": cumul_valid_losses,
+            #     "final_task_accuracy": torch.stack(final_classification_task_accuracies),
+            # }
+
             # create a "stacked"/"serializable" version of the loss objects.
-            results: Dict = make_results_dict(run_cumul_valid_losses)
-            # add the task_classes to `results` so we save it in the json file.
-            results["task_classes"] = run_task_classes
+            results: Dict = make_results_dict(cumul_valid_losses)
+            # add the tasks to `results` so we save it in the json file.
+            results["task_classes"] = run_tasks
             # Save after each run, just in case we interrupt anything, so we
             # still get partial results even if something goes wrong at some
             # point.
             self.save_to_results_dir({
                 "results.json": results,
-                "final_task_accuracy.csv": torch.stack(run_final_classification_task_accuracies),
+                "final_task_accuracy.csv": torch.stack(final_classification_task_accuracies),
             })
 
             fig: plt.Figure = self.make_figure(
                 results,
-                run_task_classes,
+                run_tasks,
                 run_final_classification_task_accuracies,
             )
 
@@ -139,7 +148,7 @@ class TaskIncremental(Experiment):
                 accuracy = torch.stack([torch.as_tensor(run_acc) for run_acc in metrics["accuracy"]])
                 accuracy_np = accuracy.detach().numpy()
                 accuracy_mean = accuracy_np.mean(axis=0)
-                accuracy_std = accuracy_np.std(axis=0)
+                accuracy_std  = accuracy_np.std(axis=0)
 
                 ax1.errorbar(x=np.arange(n_tasks), y=accuracy_mean, yerr=accuracy_std, label=metric_name)
                 ax1.set_ylim(bottom=0, top=1)
@@ -165,24 +174,24 @@ class TaskIncremental(Experiment):
         
         return fig
 
-    def _run(self) -> Tuple[List[LossInfo], List[List[int]]]:
+    def run_once(self, tasks: List[List[int]]) -> Tuple[List[LossInfo], List[List[int]]]:
         """Executes one single run from the OML figure 3.
         
         Trains the model until convergence on each task, using the validation
         set specific to each task. Then, evaluates the model on the cumulative
         validation set.
+
+        Args:
+            tasks: List[List[int]] A list containing a list of the
+            classes learned during each task.
         
         Returns:
             valid_cumul_losses: List[LossInfo] List of total losses on the
             cummulative validation dataset after learning each task
-
-            task_classes: List[List[int]] A list containing a list of the
-            classes learned during each task.
         """
-        task_classes = self.load()
         self.init_model()
 
-        label_order: List[int] = sum(task_classes, [])
+        label_order: List[int] = sum(tasks, [])
         print("Class Ordering:", label_order)
         
         datasets = zip(
@@ -202,7 +211,7 @@ class TaskIncremental(Experiment):
             if self.multihead:
                 self.model.current_task_id = task_index
             
-            classes = task_classes[task_index]
+            classes = tasks[task_index]
             print(f"Starting task {task_index}, Classes {classes}")
 
             # if there are any enabled auxiliary tasks:
@@ -255,7 +264,7 @@ class TaskIncremental(Experiment):
             #       f"\tCumulative Val Loss: {valid_loss.total_loss},",
             #       f"\tMean Class Accuracy: {class_accuracy.mean()}", sep=" ")
 
-        return valid_losses, task_classes
+        return valid_losses
 
     def load(self) -> List[List[int]]:
         """Create the train, valid and cumulative datasets for each task. 
@@ -273,7 +282,6 @@ class TaskIncremental(Experiment):
         self.train_full_dataset = self.dataset.train
         self.valid_full_dataset = self.dataset.valid
         
-
         self.train_datasets.clear()
         self.valid_datasets.clear()
         all_labels = list(range(self.dataset.y_shape[0]))
@@ -281,7 +289,7 @@ class TaskIncremental(Experiment):
         if self.random_class_ordering:
             shuffle(all_labels)
 
-        task_classes: List[List[int]] = []
+        tasks: List[List[int]] = []
         
         for label_group in n_consecutive(all_labels, self.n_classes_per_task):
             train = VisionDatasetSubset(self.train_full_dataset, label_group)
@@ -290,7 +298,7 @@ class TaskIncremental(Experiment):
             valid = VisionDatasetSubset(self.valid_full_dataset, label_group)
             self.valid_datasets.append(valid)
 
-            task_classes.append(list(label_group))
+            tasks.append(list(label_group))
 
         self.valid_cumul_datasets = list(accumulate(self.valid_datasets))
         
@@ -302,7 +310,7 @@ class TaskIncremental(Experiment):
             self.save_images(i, valid, prefix="valid_")
             self.save_images(i, cumul, prefix="valid_cumul_")
         
-        return task_classes
+        return tasks
 
     def save_images(self, i: int, dataset: VisionDatasetSubset, prefix: str=""):
         n = 64
@@ -367,26 +375,38 @@ def make_results_dict(run_cumul_valid_losses: List[List[LossInfo]]) -> Dict:
     return stacked
 
 
-def get_per_task_classification_accuracy(loss: LossInfo, task_classes: List[List[int]]) -> Tensor:
+def get_mean_task_accuracy(loss: LossInfo, run_tasks: List[List[int]]) -> Tensor:
     """Gets the mean classification accuracy for each task.
     
     Args:
         loss (LossInfo): A given LossInfo. (usually the last of the cumulative
         validation losses).
-        task_classes (List[List[int]]): The classes within each task.
+        run_tasks (List[List[int]]): The classes within each task.
     
     Returns:
-        Tensor: Float tensor of shape [len(task_classes)] containing the mean
+        Tensor: Float tensor of shape [len(run_tasks)] containing the mean
         accuracy for each task. 
     """
     # get the last validation metrics.
     metrics = loss.metrics
-    classification_metrics: ClassificationMetrics = metrics["supervised"]
+    classification_metrics: ClassificationMetrics = metrics["supervised"]  # type: ignore
     final_class_accuracy = classification_metrics.class_accuracy
 
     # Find the mean accuracy per task at the end of training.
-    final_accuracy_per_task = torch.zeros(len(task_classes))
-    for task_index, classes in enumerate(task_classes):
+    final_accuracy_per_task = torch.zeros(len(run_tasks))
+    for task_index, classes in enumerate(run_tasks):
         task_class_accuracies = final_class_accuracy[classes]
         final_accuracy_per_task[task_index] = task_class_accuracies.mean()
     return final_accuracy_per_task
+
+
+if __name__ == "__main__":
+    from simple_parsing import ArgumentParser
+    parser = ArgumentParser()
+    parser.add_arguments(TaskIncremental, dest="experiment")
+    
+    args = parser.parse_args()
+    experiment: TaskIncremental = args.experiment
+    
+    from main import launch
+    launch(experiment)

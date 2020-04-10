@@ -1,5 +1,6 @@
 import os
 import pprint
+import sys
 from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass
 from itertools import accumulate
@@ -23,10 +24,9 @@ from common.metrics import get_metrics
 from config import Config
 from datasets.dataset import Dataset
 from datasets.mnist import Mnist
+from experiment import Experiment
 from models.classifier import Classifier
 from tasks import AuxiliaryTask
-
-from .experiment import Experiment
 
 
 @dataclass
@@ -87,3 +87,15 @@ class IID(Experiment):
         ax.legend(loc='lower right')
         plots_dict["accuracy"] = fig
         return plots_dict
+
+
+if __name__ == "__main__":
+    from simple_parsing import ArgumentParser
+    parser = ArgumentParser()
+    parser.add_arguments(IID, dest="experiment")
+    
+    args = parser.parse_args()
+    experiment: IID = args.experiment
+    
+    from main import launch
+    launch(experiment)

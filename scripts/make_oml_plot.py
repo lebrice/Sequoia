@@ -61,91 +61,94 @@ class OmlFigureOptions:
             self.title = str(paths[0].parent)
             if any(str(p.parent) != self.title for p in paths):
                 self.title = "Results"
+        
+        self.make_plot()
+        print("DONE, exiting")
+        exit()
 
+    def make_plot(self) -> plt.Figure:
+        results: Dict[Path, Dict] = self.results
+        runs: List[Path] = list(results.keys())
 
-def make_plot(options: OmlFigureOptions) -> plt.Figure:
-    results: Dict[Path, Dict] = options.results
-    runs: List[Path] = list(results.keys())
+        n_runs = len(runs)
+        print(f"Creating the OML plot to compare the {n_runs} different methods:")
+        
+        fig: plt.Figure = plt.figure()
+        fig.suptitle(self.title)
 
-    n_runs = len(runs)
-    print(f"Creating the OML plot to compare the {n_runs} different methods:")
-    
-    fig: plt.Figure = plt.figure()
-    fig.suptitle(options.title)
+        ax1: plt.Axes = fig.add_subplot(1, 2, 1)
+        ax1.set_title("Classification Accuracy on Tasks seen so far")
+        ax1.set_xlabel("Number of tasks learned")
+        ax1.set_ylabel("Cumulative Validation Accuracy")
+        ax1.set_ylim(bottom=0, top=1)
+        ax2: plt.Axes = fig.add_subplot(1, 2, 2)
+        ax2.set_title(f"Final mean accuracy per Task")
+        ax2.set_xlabel("Task ID")
 
-    ax1: plt.Axes = fig.add_subplot(1, 2, 1)
-    ax1.set_title("Classification Accuracy on Tasks seen so far")
-    ax1.set_xlabel("Number of tasks learned")
-    ax1.set_ylabel("Cumulative Validation Accuracy")
-    ax1.set_ylim(bottom=0, top=1)
-    ax2: plt.Axes = fig.add_subplot(1, 2, 2)
-    ax2.set_title(f"Final mean accuracy per Task")
-    ax2.set_xlabel("Task ID")
+        indicators = ["0", "1.00"]
+        bar_height_scale = len(indicators) - 1
+        ax2.set_yticks(np.arange(len(indicators)*n_runs))
+        ax2.set_yticklabels(indicators*n_runs)
+        ax2.set_ylim(top=len(indicators) * n_runs)
+        
+        # technically, we don't know the amount of tasks yet.
+        n_tasks: int = -1
 
-    indicators = ["0", "1.00"]
-    bar_height_scale = len(indicators) - 1
-    ax2.set_yticks(np.arange(len(indicators)*n_runs))
-    ax2.set_yticklabels(indicators*n_runs)
-    ax2.set_ylim(top=len(indicators) * n_runs)
-    
-    # technically, we don't know the amount of tasks yet.
-    n_tasks: int = -1
+        for i, (run_path, result_json) in enumerate(results.items()):
+            # Load up the per-task classification accuracies
+            final_task_accuracy = load_array(run_path / "results" / "final_task_accuracy.csv")
 
-    for i, (run_path, result_json) in enumerate(results.items()):
-        # Load up the per-task classification accuracies
-        final_task_accuracy = load_array(run_path / "results" / "final_task_accuracy.csv")
+            supervised_metrics = result_json["metrics"]["supervised"]
+            classification_accuracies = np.array(supervised_metrics["accuracy"])
+            accuracy_means = classification_accuracies.mean(axis=0)
+            accuracy_stds = classification_accuracies.std(axis=0)
+            n_tasks = len(accuracy_means)
 
-        supervised_metrics = result_json["metrics"]["supervised"]
-        classification_accuracies = np.array(supervised_metrics["accuracy"])
-        accuracy_means = classification_accuracies.mean(axis=0)
-        accuracy_stds = classification_accuracies.std(axis=0)
-        n_tasks = len(accuracy_means)
+            task_accuracy_means = final_task_accuracy.mean(axis=0)
+            task_accuracy_std =   final_task_accuracy.std(axis=0)
+            ax1.set_xticks(np.arange(n_tasks, dtype=int))
+            ax1.set_xticklabels(np.arange(1, n_tasks+1, dtype=int))
+            label = str(run_path.parts[-1])
 
-        task_accuracy_means = final_task_accuracy.mean(axis=0)
-        task_accuracy_std =   final_task_accuracy.std(axis=0)
-        ax1.set_xticks(np.arange(n_tasks, dtype=int))
-        ax1.set_xticklabels(np.arange(1, n_tasks+1, dtype=int))
-        label = str(run_path.parts[-1])
+            print(f"Run {run_path}:")
+            print("\t Accuracy Means:", accuracy_means)
+            print("\t Accuracy STDs:", accuracy_stds)
+            print("\t Final Task Accuracy means:", task_accuracy_means)
+            print("\t Final Task Accuracy stds:", task_accuracy_std)
+            # adding the error plot on the left
+            ax1.errorbar(
+                x=np.arange(n_tasks),
+                y=accuracy_means,
+                yerr=accuracy_stds,
+                label=label
+            )
 
-        print(f"Run {run_path}:")
-        print("\t Accuracy Means:", accuracy_means)
-        print("\t Accuracy STDs:", accuracy_stds)
-        print("\t Final Task Accuracy means:", task_accuracy_means)
-        print("\t Final Task Accuracy stds:", task_accuracy_std)
-        # adding the error plot on the left
-        ax1.errorbar(
-            x=np.arange(n_tasks),
-            y=accuracy_means,
-            yerr=accuracy_stds,
-            label=label
+            # Determining the bottom and height of the bars on the right plot.
+            bottom = len(indicators) * ((n_runs - 1) - i)
+            height = bar_height_scale * task_accuracy_means
+            rects = ax2.bar(
+                x=np.arange(n_tasks),
+                height=height,
+                bottom=bottom,
+                yerr=task_accuracy_std,
+                label=label
+            )
+            # adding the percentage labels over the bars on the right plot.
+            autolabel(ax2, rects, bar_height_scale)
+
+        ax2.hlines(
+            y=np.arange(len(indicators)*n_runs),
+            xmin=0-0.5,
+            xmax=n_tasks-0.5,
+            linestyles="dotted",
+            colors="gray",
         )
+        ax2.set_xticks(np.arange(n_tasks, dtype=int))
+        ax1.legend(loc="upper left")
 
-        # Determining the bottom and height of the bars on the right plot.
-        bottom = len(indicators) * ((n_runs - 1) - i)
-        height = bar_height_scale * task_accuracy_means
-        rects = ax2.bar(
-            x=np.arange(n_tasks),
-            height=height,
-            bottom=bottom,
-            yerr=task_accuracy_std,
-            label=label
-        )
-        # adding the percentage labels over the bars on the right plot.
-        autolabel(ax2, rects, bar_height_scale)
-
-    ax2.hlines(
-        y=np.arange(len(indicators)*n_runs),
-        xmin=0-0.5,
-        xmax=n_tasks-0.5,
-        linestyles="dotted",
-        colors="gray",
-    )
-    ax2.set_xticks(np.arange(n_tasks, dtype=int))
-    ax1.legend(loc="upper left")
-
-    fig.savefig(options.out_path)
-    fig.show()
-    fig.waitforbuttonpress(timeout=30)
+        fig.savefig(self.out_path)
+        fig.show()
+        fig.waitforbuttonpress(timeout=30)
 
 
 def load_array(path: Path) -> np.ndarray:
@@ -186,13 +189,8 @@ def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float=1.):
             )
 
 
+
 if __name__ == "__main__":
-        
     parser = ArgumentParser()
     parser.add_arguments(OmlFigureOptions, "options")
     args = parser.parse_args()
-
-    options: OmlFigureOptions = args.options
-    print(options)
-
-    make_plot(options)

@@ -5,7 +5,7 @@ from collections import OrderedDict
 from dataclasses import asdict, dataclass, is_dataclass
 from os import path
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Type, Union
 
 import torch
 import wandb
@@ -13,50 +13,32 @@ from simple_parsing import ArgumentParser, subparsers
 from simple_parsing.helpers import JsonSerializable
 from torch import nn
 
-from experiments.experiment import Experiment
-from experiments.iid import IID
-from experiments.task_incremental import TaskIncremental
+from config import Config
+from experiment import Experiment
 from utils.json_utils import take_out_unsuported_values
+        
 
-@dataclass
-class RunSettings(JsonSerializable):
-    """ Settings for which 'experiment' (experimental setting) to run. 
+def launch(experiment: Experiment):
+    """ Launches the experiment.
     
-    Each setting has its own set of command-line arguments.
+    TODO: Clean this up. It isn't clear exactly where the separation is
+    between the Experiment.run() method and this one.
     """
-    experiment: Experiment = subparsers({
-        "iid": IID,
-        "task-incremental": TaskIncremental,
-    })
-    notes: Optional[str] = None
+    if experiment.config.verbose:     
+        print("Experiment:")
+        pprint.pprint(asdict(experiment), indent=1)
+        print("=" * 40)
 
-    def __post_init__(self):
-        if self.experiment.config.verbose:     
-            print("Experiment:")
-            pprint.pprint(asdict(self.experiment), indent=1)
-            print("=" * 40)
-
-
-
-
-if __name__ == "__main__":    
-    parser = ArgumentParser()
-    parser.add_arguments(RunSettings, dest="settings")
-    args = parser.parse_args()
-    settings: RunSettings = args.settings
-    
-    experiment = settings.experiment
-
-    config = settings.experiment.config
-    config_dict = asdict(settings.experiment)
+    config: Config = experiment.config
+    config_dict = asdict(experiment)
     # pprint.pprint(config_dict, indent=1)
 
     config_dict = take_out_unsuported_values(config_dict)
 
-    config.run_group = config.run_group or type(settings.experiment).__name__
+    config.run_group = config.run_group or type(experiment).__name__
 
-    if settings.experiment.config.use_wandb:
-        wandb_path = settings.experiment.config.log_dir_root.joinpath('wandb')
+    if experiment.config.use_wandb:
+        wandb_path = experiment.config.log_dir_root.joinpath('wandb')
         wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
         
         print(f"Using wandb. Experiment name: {config.run_name}")
@@ -65,7 +47,14 @@ if __name__ == "__main__":
             # At the moment, if no run name is given, ths
             pass
         
-        wandb.init(project='SSCL', name=config.run_name, group=config.run_group, config=config_dict, dir=str(wandb_path))
+        wandb.init(
+            project='SSCL',
+            name=config.run_name,
+            group=config.run_group,
+            config=config_dict,
+            dir=str(wandb_path),
+            notes=experiment.notes
+        )
         wandb.run.save()
 
         if config.run_name is None:
@@ -83,15 +72,41 @@ if __name__ == "__main__":
         # settings.experiment = torch.load(latest_checkpoints)
     
     try:
-        print("-" * 10, f"Starting experiment '{type(settings.experiment).__name__}' ({settings.experiment.config.log_dir})", "-" * 10)
+        print("-" * 10, f"Starting experiment '{type(experiment).__name__}' ({config.log_dir})", "-" * 10)
         
         experiment.log_dir.mkdir(parents=True, exist_ok=True)
         experiment.save()
         experiment.run()
         
-        print("-" * 10, f"Experiment '{type(settings.experiment).__name__}' is done.", "-" * 10)
-    
+        print("-" * 10, f"Experiment '{type(experiment).__name__}' is done.", "-" * 10)
     except Exception as e:
         print(f"Experiment crashed: {e}")
         raise e
 
+
+if __name__ == "__main__":
+    import textwrap
+    parser = ArgumentParser()
+    subparsers = parser.add_subparsers(description=textwrap.dedent("""\
+        Which Experiment or script to run. Experiments can also be launched by
+        executing the corresponding script directly. To get a more detailed view
+        of the parameters of each experiment, use the corresponding "--help"
+        option, as in "python main.py task-incremental --help"."""))
+    from iid import IID
+    subparser = subparsers.add_parser("iid", help=IID.__doc__)
+    subparser.add_arguments(IID, "experiment")
+    
+    # Add a subparser for each Experiment type:
+    from task_incremental import TaskIncremental
+    subparser = subparsers.add_parser("task-incremental", help=TaskIncremental.__doc__)
+    subparser.add_arguments(TaskIncremental, "experiment")
+
+    # Scripts to execute:
+    from scripts.make_oml_plot import OmlFigureOptions
+    subparser = subparsers.add_parser("make_oml_plot", help=OmlFigureOptions.__doc__)
+    subparser.add_arguments(OmlFigureOptions, "oml_fig_options")
+    
+    args = parser.parse_args()
+
+    experiment: Experiment = args.experiment
+    launch(experiment)

@@ -88,7 +88,7 @@ class ClassificationMetrics(Metrics):
 
     # fields we generate from the confusion matrix (if provided)
     accuracy: float = field(default=0., init=False)
-    class_accuracy: Optional[Tensor] = field(default=None, init=False)
+    class_accuracy: Tensor = field(default=None, init=False)  # type: ignore
     
     def __post_init__(self,
                       x: Tensor=None,

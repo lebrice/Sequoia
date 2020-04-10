@@ -54,8 +54,10 @@ class Experiment:
     }, default="mnist")
 
     config: Config = Config()
+    # Notes about this particular experiment. (will be logged to wandb if used.)
+    notes: Optional[str] = None
+    
     model: Classifier = field(default=None, init=False)
-    model_name: str = field(default=None, init=False)
 
     def __post_init__(self):
         """ Called after __init__, used to initialize all missing fields.
@@ -83,6 +85,10 @@ class Experiment:
         self._samples_dir: Optional[Path] = None
         self.reconstruction_task: Optional[VAEReconstructionTask] = None
         self.init_model()
+
+        if self.notes:
+            with open(self.log_dir / "notes.txt", "w") as f:
+                f.write(self.notes)
 
     @abstractmethod
     def run(self):
@@ -268,9 +274,9 @@ class Experiment:
         ## Generate some samples after each test/eval epoch.
         self.generate_samples()
     
+    @torch.no_grad()
     def test_batch(self, data: Tensor, target: Tensor) -> LossInfo:
-        with torch.no_grad():
-            return self.model.get_loss(data, target)
+        return self.model.get_loss(data, target)
 
     def get_dataloader(self, dataset: Dataset) -> DataLoader:
         return DataLoader(
