@@ -13,11 +13,11 @@ from .metrics import ClassificationMetrics, Metrics, get_metrics
 def add_dicts(d1: Dict, d2: Dict, add_values=True) -> Dict:
     result = d1.copy()
     for key, v2 in d2.items():
-        if isinstance(v2, dict):
-            result[key] = add_dicts(d1[key], v2)
-        elif not add_values:
+        if key not in d1:
             result[key] = v2
-        elif key not in d1:
+        elif isinstance(v2, dict):
+            result[key] = add_dicts(d1[key], v2, add_values=add_values)
+        elif not add_values:
             result[key] = v2
         else:
             result[key] = d1[key] + v2
@@ -33,7 +33,7 @@ class LossInfo:
     name: str = ""
     coefficient: Union[float, Tensor] = 1.0
     total_loss: Tensor = 0.  # type: ignore
-    losses:  Dict[str, Union[Tensor, "LossInfo"]] = field(default_factory=OrderedDict)
+    losses:  Dict[str, "LossInfo"] = field(default_factory=OrderedDict)
     tensors: Dict[str, Tensor] = field(default_factory=OrderedDict, repr=False)
     metrics: Dict[str, Metrics] = field(default_factory=OrderedDict)
 
@@ -68,16 +68,21 @@ class LossInfo:
         LossInfo
             The merged/summed up LossInfo.
         """
-        name = self.name or other.name
+        
+
+        name = self.name
         total_loss = self.total_loss + other.total_loss
         
-        losses  = add_dicts(self.losses, other.losses, add_values=True)
-        # Keep the total loss of the other LossInfo in the `losses` dict.
-        if other.name not in losses and other.name != self.name:
-            losses[other.name] = other.total_loss
+        if self.name == other.name:
+            losses  = add_dicts(self.losses, other.losses)
+            metrics = add_dicts(self.metrics, other.metrics)
+        else:
+            # IDEA: when the names don't match, store the entire LossInfo
+            # object into the 'losses' dict, rather than a single loss tensor.
+            losses = add_dicts(self.losses, {other.name: other})
+            metrics = add_dicts(self.metrics, other.metrics)
         
         tensors = add_dicts(self.tensors, other.tensors, add_values=False)
-        metrics = add_dicts(self.metrics, other.metrics, add_values=True)
         return LossInfo(
             name=name,
             coefficient=self.coefficient,

@@ -55,7 +55,7 @@ class TaskIncremental(Experiment):
         # containers for the results of each individual run.
         cumul_valid_losses: List[List[LossInfo]] = []
         # Stores the final mean task accuracy per class.
-        final_mean_task_accuracies: List[Tensor] = []
+        final_task_accuracies: List[Tensor] = []
         # stores the list of tasks (groups of labels) used in each run.
         tasks: List[List[List[int]]] = []
         
@@ -73,32 +73,32 @@ class TaskIncremental(Experiment):
             run_final_task_accuracies = get_mean_task_accuracy(final_loss, run_tasks)
 
             # Accumulate the results of this run in the above lists
-            task_classes.append(run_tasks)
+            tasks.append(run_tasks)
             cumul_valid_losses.append(run_cumul_valid_losses)
-            final_classification_task_accuracies.append(run_final_classification_task_accuracies)
+            final_task_accuracies.append(run_final_task_accuracies)
             
             # results: Dict = {
             #     "tasks": tasks,
             #     "cumul_valid_losses": cumul_valid_losses,
-            #     "final_task_accuracy": torch.stack(final_classification_task_accuracies),
+            #     "final_task_accuracy": torch.stack(final_task_accuracies),
             # }
 
             # create a "stacked"/"serializable" version of the loss objects.
             results: Dict = make_results_dict(cumul_valid_losses)
             # add the tasks to `results` so we save it in the json file.
-            results["task_classes"] = run_tasks
+            results["task_classes"] = tasks
             # Save after each run, just in case we interrupt anything, so we
             # still get partial results even if something goes wrong at some
             # point.
             self.save_to_results_dir({
                 "results.json": results,
-                "final_task_accuracy.csv": torch.stack(final_classification_task_accuracies),
+                "final_task_accuracy.csv": torch.stack(final_task_accuracies),
             })
 
             fig: plt.Figure = self.make_figure(
                 results,
-                run_tasks,
-                run_final_classification_task_accuracies,
+                tasks,
+                final_task_accuracies,
             )
 
             if self.config.debug:
@@ -107,8 +107,8 @@ class TaskIncremental(Experiment):
             
             fig.savefig(self.plots_dir / "oml_fig.jpg")
             self.log({"oml_fig.jpg": fig}, once=True)
-           
-        task_accuracy = torch.stack(run_final_classification_task_accuracies)
+
+        task_accuracy = torch.stack(final_task_accuracies)
         task_accuracy_means = task_accuracy.mean(dim=0).detach().numpy()
         task_accuracy_stds  = task_accuracy.std(dim=0).detach().numpy()
         self.log({

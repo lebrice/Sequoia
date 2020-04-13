@@ -177,7 +177,7 @@ class Experiment:
             desc = description or "" 
             desc += " " if desc and not desc.endswith(" ") else ""
             desc += f"Epoch {epoch}"
-            pbar.set_description(desc)
+            pbar.set_description(desc + " Train")
             
             for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
                 if batch_idx % self.config.log_interval == 0:
@@ -400,14 +400,13 @@ def is_nonempty_dir(path: Path):
 
 
 def add_messages_for_batch(loss: LossInfo, message: Dict, prefix: str=""):
-    new_message: Dict[str, float] = OrderedDict()
+    new_message: Dict[str, Union[str, float]] = OrderedDict()
     new_message[f"{prefix}Loss"] = loss.total_loss.item()
-    for name, metrics in loss.metrics.items():
-        if isinstance(metrics, ClassificationMetrics):
-            new_message[f"{prefix}{name} Acc"] = f"{metrics.accuracy:.2%}"
-        elif isinstance(metrics, RegressionMetrics):
-            new_message[f"{prefix}{name} MSE"] = metrics.mse.item()
-    for loss_name, loss_tensor in loss.losses.items():
-        if not any(key.startswith(loss_name) for key in new_message.keys()):
-            new_message[f"{loss_name} Loss"] = loss_tensor.item()
+    for name, loss_info in loss.losses.items():
+        new_message[f"{name} Loss"] = loss.total_loss.item()
+        for metric_name, metrics in loss_info.metrics.items():
+            if isinstance(metrics, ClassificationMetrics):
+                new_message[f"{prefix}{name} Acc"] = f"{metrics.accuracy:.2%}"
+            elif isinstance(metrics, RegressionMetrics):
+                new_message[f"{prefix}{name} MSE"] = metrics.mse.item()
     message.update(new_message)

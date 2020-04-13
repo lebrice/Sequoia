@@ -122,6 +122,7 @@ class Classifier(nn.Module):
         if y is not None:
             supervised_loss = self.supervised_loss(x=x, y=y, h_x=h_x, y_pred=y_pred)
             loss_info += supervised_loss
+
         for task_name, aux_task in self.tasks.items():
             if aux_task.enabled:
                 aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y)

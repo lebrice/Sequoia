@@ -12,7 +12,9 @@ from common.losses import LossInfo
 from common.metrics import ClassificationMetrics, Metrics, get_metrics
 from tasks.auxiliary_task import AuxiliaryTask
 from utils.utils import fix_channels
+import logging
 
+logger = logging.getLogger(__file__)
 
 def wrap_pil_transform(function: Callable):
     def _transform(img_x, arg):
@@ -108,8 +110,9 @@ class TransformationBasedTask(AuxiliaryTask):
         # For instance, all the "rotate_0", "rotate_90", "rotate_180", etc.
         metrics = loss_info.metrics
         total_metrics = sum(loss_info.metrics.values(), Metrics())
+        # we actually add up all the metrics to get the "overall" metric.
         metrics.clear()
-        metrics[self.name] = total_metrics        
+        metrics[self.name] = total_metrics
         return loss_info
 
     def get_loss_for_arg(self, x: Tensor, h_x: Tensor, fn_arg: Any, alpha: Tensor) -> LossInfo:
