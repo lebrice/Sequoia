@@ -29,7 +29,7 @@ class OmlFigureOptions:
 
         if len(self.runs) == 1 and isinstance(self.runs[0], list):
             self.runs = self.runs[0]
-
+        print(self.runs)
         paths: List[Path] = []
         for pattern in self.runs:
             paths.extend(map(Path, glob.glob(pattern)))
@@ -57,12 +57,17 @@ class OmlFigureOptions:
             if result:
                 self.results[run_path] = result
         
-        if not self.title:
+        if paths and not self.title:
             self.title = str(paths[0].parent)
             if any(str(p.parent) != self.title for p in paths):
                 self.title = "Results"
+
+        fig = self.make_plot()
+        maximize_figure()
         
-        self.make_plot()
+        fig.savefig(self.out_path)
+        plt.show() #close the figure to run the next section
+
         print("DONE, exiting")
         exit()
 
@@ -146,9 +151,20 @@ class OmlFigureOptions:
         ax2.set_xticks(np.arange(n_tasks, dtype=int))
         ax1.legend(loc="upper left")
 
-        fig.savefig(self.out_path)
-        fig.show()
-        fig.waitforbuttonpress(timeout=30)
+        return fig
+
+def maximize_figure():
+    fig_manager = plt.get_current_fig_manager()
+    try:
+        fig_manager.window.showMaximized()
+    except:
+        try:
+            fig_manager.window.state('zoomed') #works fine on Windows!
+        except:
+            try:
+                fig_manager.frame.Maximize(True)
+            except:
+                print("Couldn't maximize the figure.")
 
 
 def load_array(path: Path) -> np.ndarray:
