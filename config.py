@@ -59,7 +59,8 @@ class Config:
 
         if self.debug:
             self.use_wandb = False
-            self.run_name = "debug"
+            if self.run_name is None:
+                self.run_name = "debug"
             if self.log_dir.exists():
                 # wipe out the debug folder every time.
                 shutil.rmtree(self.log_dir)
