@@ -236,7 +236,6 @@ class Experiment:
                 self.reconstruct_samples(x_batch)
 
     def train_batch(self, data: Tensor, target: Tensor) -> LossInfo:
-        batch_size = data.shape[0]
         self.model.optimizer.zero_grad()
 
         batch_loss_info = self.model.get_loss(data, target)
@@ -403,7 +402,7 @@ def add_messages_for_batch(loss: LossInfo, message: Dict, prefix: str=""):
     new_message: Dict[str, Union[str, float]] = OrderedDict()
     new_message[f"{prefix}Loss"] = loss.total_loss.item()
     for name, loss_info in loss.losses.items():
-        new_message[f"{name} Loss"] = loss.total_loss.item()
+        new_message[f"{prefix}{name} Loss"] = loss.total_loss.item()
         for metric_name, metrics in loss_info.metrics.items():
             if isinstance(metrics, ClassificationMetrics):
                 new_message[f"{prefix}{name} Acc"] = f"{metrics.accuracy:.2%}"
