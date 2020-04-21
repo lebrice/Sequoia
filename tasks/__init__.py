@@ -4,7 +4,7 @@ from .jigsaw_puzzle import JigsawPuzzleTask
 from .mixup import ManifoldMixupTask, MixupTask
 from .patch_location import PatchLocationTask
 from .reconstruction.vae import VAEReconstructionTask
-from .tasks import AuxiliaryTaskOptions
+from .tasks import AuxiliaryTaskOptions, Tasks
 from .transformation_based import AdjustBrightnessTask, RotationTask
 
 __all__ = [
@@ -15,7 +15,7 @@ __all__ = [
     "PatchLocationTask"
     "VAEReconstructionTask"
     "RotationTask",
-    "AuxiliaryTaskOptions",
+    "AuxiliaryTaskOptions", "Tasks",
     "AdjustBrightnessTask",
     "ClassifyTransformationTask", "RegressTransformationTask",
 ]

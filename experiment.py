@@ -26,7 +26,7 @@ from datasets.cifar import Cifar10, Cifar100
 from datasets.fashion_mnist import FashionMnist
 from datasets.mnist import Mnist
 from models.classifier import Classifier
-from tasks import AuxiliaryTask
+from tasks import AuxiliaryTask, Tasks
 from utils import utils
 from utils.json_utils import is_json_serializable, to_str, to_str_dict
 from utils.utils import add_prefix
@@ -104,8 +104,8 @@ class Experiment:
     def init_model(self):
         self.model = self.get_model_for_dataset(self.dataset).to(self.config.device)
         # find the reconstruction task, if there is one.
-        if "reconstruction" in self.model.tasks:
-            self.reconstruction_task = self.model.tasks["reconstruction"]
+        if Tasks.RECONSTRUCTION in self.model.tasks:
+            self.reconstruction_task = self.model.tasks[Tasks.RECONSTRUCTION]
             self.latents_batch = torch.randn(64, self.hparams.hidden_size)
 
     def get_model_for_dataset(self, dataset: DatasetConfig) -> Classifier:

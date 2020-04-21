@@ -26,7 +26,7 @@ from datasets.dataset import Dataset
 from datasets.mnist import Mnist
 from experiment import Experiment
 from models.classifier import Classifier
-from tasks import AuxiliaryTask
+from tasks import AuxiliaryTask, Tasks
 
 
 @dataclass
@@ -50,7 +50,7 @@ class IID(Experiment):
         # Get the most recent validation metrics. 
         last_step = max(valid_losses.keys())
         last_val_loss = valid_losses[last_step]
-        class_accuracy = last_val_loss.metrics["supervised"].class_accuracy
+        class_accuracy = last_val_loss.metrics[Tasks.SUPERVISED].class_accuracy
         valid_class_accuracy_mean = class_accuracy.mean()
         valid_class_accuracy_std = class_accuracy.std()
         self.log("Validation Average Class Accuracy: ", valid_class_accuracy_mean, once=True, always_print=True)
@@ -80,8 +80,8 @@ class IID(Experiment):
         ax.set_ylabel("Accuracy")
         ax.set_title("Training and Validation Accuracy")
         x = list(train_losses.keys())
-        y_train = [l.metrics["supervised"].accuracy for l in train_losses.values()]
-        y_valid = [l.metrics["supervised"].accuracy for l in valid_losses.values()]
+        y_train = [l.metrics[Tasks.SUPERVISED].accuracy for l in train_losses.values()]
+        y_valid = [l.metrics[Tasks.SUPERVISED].accuracy for l in valid_losses.values()]
         ax.plot(x, y_train, label="train")
         ax.plot(x, y_valid, label="valid")
         ax.legend(loc='lower right')

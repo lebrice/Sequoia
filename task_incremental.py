@@ -21,6 +21,7 @@ from datasets.subset import VisionDatasetSubset
 from experiment import Experiment
 from utils.utils import n_consecutive, rgetattr, rsetattr
 from utils import utils
+from tasks import Tasks
 
 @dataclass
 class TaskIncremental(Experiment):
@@ -257,7 +258,7 @@ class TaskIncremental(Experiment):
             # train_losses.append(train_loss)
             valid_losses.append(valid_loss)
             validation_metrics: Dict[str, Metrics] = valid_loss.metrics
-            supervised_metrics = validation_metrics["supervised"]
+            supervised_metrics = validation_metrics[Tasks.SUPERVISED]
             if isinstance(supervised_metrics, ClassificationMetrics):
                 class_accuracy = supervised_metrics.class_accuracy  
             # print(f"AFTER TASK {task_index}:",
@@ -389,7 +390,7 @@ def get_mean_task_accuracy(loss: LossInfo, run_tasks: List[List[int]]) -> Tensor
     """
     # get the last validation metrics.
     metrics = loss.metrics
-    classification_metrics: ClassificationMetrics = metrics["supervised"]  # type: ignore
+    classification_metrics: ClassificationMetrics = metrics[Tasks.SUPERVISED]  # type: ignore
     final_class_accuracy = classification_metrics.class_accuracy
 
     # Find the mean accuracy per task at the end of training.

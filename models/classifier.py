@@ -18,7 +18,7 @@ from common.layers import ConvBlock, Flatten
 from common.losses import LossInfo
 from common.metrics import accuracy, get_metrics
 from config import Config
-from tasks import AuxiliaryTask, AuxiliaryTaskOptions
+from tasks import AuxiliaryTask, AuxiliaryTaskOptions, Tasks
 from utils.utils import fix_channels
 
 
@@ -103,11 +103,11 @@ class Classifier(nn.Module):
         loss = self.classification_loss(y_pred, y)
         metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
         loss_info = LossInfo(
-            name="supervised",
+            name=Tasks.SUPERVISED,
             total_loss=loss,
             tensors=(dict(x=x, h_x=h_x, y_pred=y_pred, y=y)),
         )
-        loss_info.metrics["supervised"] = metrics
+        loss_info.metrics[Tasks.SUPERVISED] = metrics
         return loss_info
 
     def get_loss(self, x: Tensor, y: Tensor=None) -> LossInfo:

@@ -8,6 +8,8 @@ from task_incremental import TaskIncremental
 from experiment import Experiment
 from iid import IID
 from contextlib import nullcontext
+from tasks.tasks import Tasks
+
 
 @dataclass  # type: ignore
 class TestTimeTraining(Experiment):
@@ -25,7 +27,7 @@ class TestTimeTraining(Experiment):
         
         self_supervised_loss = torch.zeros(1).to(self.config.device)
         for name, loss_info in batch_loss_info.losses.items():
-            if name != "supervised":
+            if name != Tasks.SUPERVISED:
                 self_supervised_loss += loss_info.total_loss
         self_supervised_loss.backward()
         
