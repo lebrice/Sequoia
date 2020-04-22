@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --account=rrg-bengioy-ad_gpu         # Yoshua pays for your job
-#SBATCH --gres=gpu:1       # Request GPU "generic resources"
-#SBATCH --cpus-per-task=6  # Cores proportional to GPUs: 6 on Cedar, 16 on Graham.
-#SBATCH --mem=32G       # Memory proportional to GPUs: 32000 Cedar, 64000 Graham.
-#SBATCH --time=3:00:00                   # The job will run for 3 hours
+#SBATCH --account=rrg-bengioy-ad_gpu    # Yoshua pays for your job
+#SBATCH --gres=gpu:1                    # Request GPU "generic resources"
+#SBATCH --cpus-per-task=6               # Cores proportional to GPUs: 6 on Cedar, 16 on Graham.
+#SBATCH --mem=32G                       # Memory proportional to GPUs: 32000 Cedar, 64000 Graham.
+#SBATCH --time=3:00:00                  # The job will run for 3 hours
 #SBATCH --output /scratch/normandf/slurm-%N-%j.out  # Write the log in $SCRATCH
 
 module load httpproxy
@@ -32,8 +32,8 @@ unzip -n $SLURM_TMPDIR/data.zip -d $SLURM_TMPDIR
 echo "Executing main.py with additional args: ${@:1}"
 
 python -u main.py task-incremental \
-	--data_dir $SLURM_TMPDIR/data \
-	--log_dir_root $SLURM_TMPDIR/SSCL "${@:1}"
+    --data_dir $SLURM_TMPDIR/data \
+    --log_dir_root $SLURM_TMPDIR/SSCL "${@:1}"
 
 rsync -r --delete $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
 wandb sync $SCRATCH/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
