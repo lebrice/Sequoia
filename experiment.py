@@ -121,34 +121,6 @@ class Experiment:
         else:
             raise NotImplementedError(f"TODO: add a model for dataset {dataset}.")
 
-    def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
-        if always_print or (self.config.debug and self.config.verbose):
-            print(message, value if value is not None else "")
-
-        with open(self.log_dir / "log.txt", "a") as f:
-            print(message, value, file=f)
-
-        if self.config.use_wandb:
-            # if we want to long once (like a final result, step should be None)
-            # else, if not given, we use the global step.
-            step = None if once else (step or self.global_step)
-            
-            if message is None:
-                return
-            if isinstance(message, dict):
-                message_dict = message
-            elif isinstance(message, LossInfo):
-                message_dict = message.to_log_dict()
-            elif isinstance(message, str) and value is not None:
-                message_dict = {message: value}
-            else:
-                message_dict = message
-            
-            if prefix:
-                message_dict = utils.add_prefix(message_dict, prefix)
-            
-            wandb.log(message_dict, step=step)
-
     def train_until_convergence(self, train_dataset: Dataset,
                                       valid_dataset: Dataset,
                                       max_epochs: int,
@@ -315,6 +287,33 @@ class Experiment:
         file_name = generation_images_dir / f"step_{self.global_step:08d}.png"
         save_image(fake_samples, file_name)
 
+    def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
+        if always_print or (self.config.debug and self.config.verbose):
+            print(message, value if value is not None else "")
+
+        with open(self.log_dir / "log.txt", "a") as f:
+            print(message, value, file=f)
+
+        if self.config.use_wandb:
+            # if we want to long once (like a final result, step should be None)
+            # else, if not given, we use the global step.
+            step = None if once else (step or self.global_step)
+            
+            if message is None:
+                return
+            if isinstance(message, dict):
+                message_dict = message
+            elif isinstance(message, LossInfo):
+                message_dict = message.to_log_dict()
+            elif isinstance(message, str) and value is not None:
+                message_dict = {message: value}
+            else:
+                message_dict = message
+            
+            if prefix:
+                message_dict = utils.add_prefix(message_dict, prefix)
+            
+            wandb.log(message_dict, step=step)
 
     def _folder(self, folder: Union[str, Path], create: bool=True):
         path = self.config.log_dir / folder
@@ -394,8 +393,8 @@ class Experiment:
         with open(config_path) as f:
             return torch.load(f)
 
-def is_nonempty_dir(path: Path):
-    path.is_dir() and len(list(path.iterdir())) > 0
+def is_nonempty_dir(path: Path) -> bool:
+    return path.is_dir() and len(list(path.iterdir())) > 0
 
 
 def add_messages_for_batch(loss: LossInfo, message: Dict, prefix: str=""):
