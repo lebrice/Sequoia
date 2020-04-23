@@ -6,8 +6,11 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from .auxiliary_task import AuxiliaryTask
 from common.losses import LossInfo
+
+from .auxiliary_task import AuxiliaryTask
+
+
 
 def mixup(x1: Tensor, x2: Tensor, coeff: Tensor) -> Tensor:
     assert coeff.dim() == 1
@@ -21,18 +24,22 @@ def mixup(x1: Tensor, x2: Tensor, coeff: Tensor) -> Tensor:
     # return x1 + (x2 - x1) * coeff    
     return torch.lerp(x1, x2, coeff)
 
-        
 
 class MixupTask(AuxiliaryTask):
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         batch_size = x.shape[0]
-        assert batch_size % 2  == 0, "Can only mix an even number of samples."
-        loss_info = LossInfo()
+        # assert batch_size % 2  == 0, f"Can only mix an even number of samples. (batch size is {batch_size})"
+        if batch_size % 2 != 0:
+            x = x[:-1]
+            y_pred = y_pred[:-1]
+
+        from .tasks import Tasks
+        loss_info = LossInfo(name=Tasks.MIXUP)
         mix_coeff = torch.rand(batch_size//2, dtype=x.dtype, device=x.device)
 
         x1 = x[0::2]
         x2 = x[1::2]
-             
+
         mix_x = mixup(x1, x2, mix_coeff)
         mix_h_x = self.encode(mix_x)
         mix_y_pred = self.classifier(mix_h_x)
@@ -46,11 +53,15 @@ class MixupTask(AuxiliaryTask):
         loss = torch.dist(y_pred_mix, mix_y_pred)
         loss_info.total_loss = loss
         return loss_info
-        
+
+
 class ManifoldMixupTask(AuxiliaryTask):
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         batch_size = x.shape[0]
-        assert batch_size % 2  == 0, "Can only mix an even number of samples."
+        # assert batch_size % 2  == 0, f"Can only mix an even number of samples. (batch size is {batch_size})"
+        if batch_size % 2 != 0:
+            h_x = h_x[:-1]
+            y_pred = y_pred[:-1]
         mix_coeff = torch.rand(batch_size//2, dtype=x.dtype, device=x.device)
 
         h1 = h_x[0::2]
@@ -64,4 +75,11 @@ class ManifoldMixupTask(AuxiliaryTask):
         mix_y_pred = self.classifier(mix_h_x)
 
         loss = torch.dist(y_pred_mix, mix_y_pred)
-        return LossInfo(loss)
+        from .tasks import Tasks
+        loss_info = LossInfo(
+            name=Tasks.MANIFOLD_MIXUP,
+            total_loss=loss,
+            y_pred=y_pred_mix,
+            y=mix_y_pred,
+        )
+        return loss_info
