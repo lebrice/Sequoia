@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Union
 
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import numpy as np
 import torch
 from simple_parsing import ArgumentParser, field, list_field
@@ -80,22 +81,31 @@ class OmlFigureOptions:
         
         fig: plt.Figure = plt.figure()
         fig.suptitle(self.title)
+                
+        gs = gridspec.GridSpec(1, 3, width_ratios=[2,1,2])
 
-        ax1: plt.Axes = fig.add_subplot(1, 2, 1)
-        ax1.set_title("Classification Accuracy on Tasks seen so far")
+        ax1: plt.Axes = fig.add_subplot(gs[0])
+        ax1.set_title("Cumulative Validation Accuracy During Training")
         ax1.set_xlabel("Number of tasks learned")
         ax1.set_ylabel("Cumulative Validation Accuracy")
         ax1.set_ylim(bottom=0, top=1)
-        ax2: plt.Axes = fig.add_subplot(1, 2, 2)
-        ax2.set_title(f"Final mean accuracy per Task")
-        ax2.set_xlabel("Task ID")
 
         indicators = ["0", "1.00"]
         bar_height_scale = len(indicators) - 1
+        ax2: plt.Axes = fig.add_subplot(gs[2])
+        ax2.set_title(f"Per-Task Accuracy At the End of Training")
+        ax2.set_xlabel("Task ID")
         ax2.set_yticks(np.arange(len(indicators)*n_runs))
         ax2.set_yticklabels(indicators*n_runs)
         ax2.set_ylim(top=len(indicators) * n_runs)
         
+        ax3: plt.Axes = fig.add_subplot(gs[1])
+        ax3.set_title(f"Final Cumulative Validation Accuracy")
+        ax3.set_yticks(np.arange(len(indicators)*n_runs))
+        ax3.set_xticks([])
+        ax3.set_yticklabels(indicators*n_runs)
+        ax3.set_ylim(top=len(indicators) * n_runs)
+        ax3.set_xlim(left=-0.5, right=0.5)
         # technically, we don't know the amount of tasks yet.
         n_tasks: int = -1
 
@@ -141,10 +151,30 @@ class OmlFigureOptions:
             # adding the percentage labels over the bars on the right plot.
             autolabel(ax2, rects, bar_height_scale)
 
+            final_cumul_accuracy = accuracy_means[-1]
+            final_cumul_std = accuracy_stds[-1]
+            height = bar_height_scale * final_cumul_accuracy
+            rects = ax3.bar(
+                x=0,
+                height=height,
+                bottom=bottom,
+                yerr=final_cumul_std,
+                label=label,
+            )
+            # adding the percentage labels over the bars on the right plot.
+            autolabel(ax3, rects, bar_height_scale, final_cumul_std)
+
         ax2.hlines(
             y=np.arange(len(indicators)*n_runs),
             xmin=0-0.5,
             xmax=n_tasks-0.5,
+            linestyles="dotted",
+            colors="gray",
+        )
+        ax3.hlines(
+            y=np.arange(len(indicators)*n_runs),
+            xmin=-1,
+            xmax=2,
             linestyles="dotted",
             colors="gray",
         )
@@ -185,25 +215,34 @@ def load_array(path: Path) -> np.ndarray:
     return np.loadtxt(path.with_suffix(".csv"), delimiter=",")
 
 
-def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float=1.):
+def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float=1., errors: Union[list, np.ndarray, float]=None):
     """Attach a text label above each bar in *rects*, displaying its height.
     
     Taken from https://matplotlib.org/gallery/lines_bars_and_markers/barchart.html#sphx-glr-gallery-lines-bars-and-markers-barchart-py
     """
-    for rect in rects:
+    for i, rect in enumerate(rects):
         height = rect.get_height()
         bottom = rect.get_y()
         value = height / bar_height_scale
-        if value != 0.0:    
+        error = None
+        if errors is not None:
+            if isinstance(errors, (list, np.ndarray)):
+                error = errors[i]
+            else:
+                error = errors
+        if value != 0.0:
+            value_string = f"{value:.0%}"
+            if error is not None:
+                value_string = f"{value*100:.1f} ± {error:.1%}"
+
             axis.annotate(
-                f"{value:.0%}",
+                value_string,
                 xy=(rect.get_x() + rect.get_width() / 2, bottom + height),
                 xytext=(0, 3),  # 3 points vertical offset
                 textcoords="offset points",
                 ha="center",
                 va="bottom",
             )
-
 
 
 if __name__ == "__main__":
