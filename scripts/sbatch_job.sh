@@ -31,11 +31,13 @@ unzip -n $SLURM_TMPDIR/data.zip -d $SLURM_TMPDIR
 # export WANDB_MODE
 echo "Executing main.py with additional args: ${@:1}"
 
+wandb off
+
 python -u main.py task-incremental \
     --data_dir $SLURM_TMPDIR/data \
     --log_dir_root $SLURM_TMPDIR/SSCL "${@:1}"
 
-rsync -r $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
+rsync -r -u $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
 wandb sync $SCRATCH/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
 # To make sure, run `wandb sync $SCRATCH/SSCL/wandb/` from a login node
 
