@@ -37,6 +37,7 @@ class IID(Experiment):
     
     def run(self):
         self.load()
+        self.init_model()
         train_losses, valid_losses = self.train_until_convergence(self.dataset.train, self.dataset.valid, self.hparams.epochs)
         # make the training plots
         plots_dict = self.make_plots(train_losses, valid_losses)

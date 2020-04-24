@@ -83,9 +83,9 @@ class Experiment:
             self.logger.setLevel(logging.DEBUG)
         
         self._samples_dir: Optional[Path] = None
-        self.reconstruction_task: Optional[VAEReconstructionTask] = None
-        self.init_model()
-
+        self.reconstruction_task: Optional[AEReconstructionTask] = None
+        self.generation_task: Optional[VAEReconstructionTask] = None
+        
         if self.notes:
             with open(self.log_dir / "notes.txt", "w") as f:
                 f.write(self.notes)
@@ -102,11 +102,16 @@ class Experiment:
         self.global_step = 0
 
     def init_model(self):
+        print("init model")
         self.model = self.get_model_for_dataset(self.dataset).to(self.config.device)
         # find the reconstruction task, if there is one.
-        if Tasks.RECONSTRUCTION in self.model.tasks:
-            self.reconstruction_task = self.model.tasks[Tasks.RECONSTRUCTION]
+        if Tasks.VAE in self.model.tasks:
+            self.reconstruction_task = self.model.tasks[Tasks.VAE]
+            self.generation_task = self.reconstruction_task
             self.latents_batch = torch.randn(64, self.hparams.hidden_size)
+        elif Tasks.AE in self.model.tasks:
+            self.reconstruction_task = self.model.tasks[Tasks.AE]
+            self.generation_task = None
 
     def get_model_for_dataset(self, dataset: DatasetConfig) -> Classifier:
         from models.mnist import MnistClassifier
@@ -203,9 +208,7 @@ class Experiment:
         ## Reconstruct some samples after each epoch.
         if self.reconstruction_task and self.reconstruction_task.enabled:
             # use the last batch of x's.
-            x_batch = data
-            if x_batch is not None:
-                self.reconstruct_samples(x_batch)
+            self.reconstruct_samples(data)
 
     def train_batch(self, data: Tensor, target: Tensor) -> LossInfo:
         self.model.optimizer.zero_grad()
@@ -275,11 +278,11 @@ class Experiment:
 
     @torch.no_grad()
     def generate_samples(self):
-        if not self.reconstruction_task or not self.reconstruction_task.enabled:
+        if not self.generation_task or not self.generation_task.enabled:
             return
         n = 64
         latents = torch.randn(64, self.hparams.hidden_size)
-        fake_samples = self.reconstruction_task.generate(latents)
+        fake_samples = self.generation_task.generate(latents)
         fake_samples = fake_samples.cpu().view(n, *self.dataset.x_shape)
 
         generation_images_dir = self.samples_dir / "generated_samples"

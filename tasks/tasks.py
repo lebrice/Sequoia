@@ -1,6 +1,6 @@
 import enum
 from dataclasses import dataclass
-from typing import Dict, NewType, Tuple, Union, cast, ClassVar
+from typing import ClassVar, Dict, NewType, Tuple, Union, cast
 
 from simple_parsing import mutable_field
 from torch import nn
@@ -10,11 +10,13 @@ from .irm import IrmTask
 from .jigsaw_puzzle import JigsawPuzzleTask
 from .mixup import ManifoldMixupTask, MixupTask
 from .patch_location import PatchLocationTask
+from .reconstruction.ae import AEReconstructionTask
 from .reconstruction.vae import VAEReconstructionTask
+from .simclr.simclr_task import SimCLRTask
 from .transformation_based import (AdjustBrightnessTask,
                                    ClassifyTransformationTask,
                                    RegressTransformationTask, RotationTask)
-from .simclr.simclr_task import SimCLRTask
+
 
 class Tasks:
     """Enum-like class that just holds the names of each task.
@@ -23,7 +25,8 @@ class Tasks:
     Tasks.SUPERVISED.value instead of Tasks.SUPERVISED to get a str. 
     """
     SUPERVISED: ClassVar[str] = "supervised"
-    RECONSTRUCTION: ClassVar[str] = "reconstruction"
+    VAE: ClassVar[str] = "vae"
+    AE: ClassVar[str] = "ae"
     MIXUP: ClassVar[str] = "mixup"
     MANIFOLD_MIXUP: ClassVar[str] = "manifold_mixup"
     ROTATION: ClassVar[str] = "rotation"
@@ -40,7 +43,8 @@ class AuxiliaryTaskOptions:
     The "coefficient" parameter can be used to turn auxiliary tasks on or off.
 
     """
-    reconstruction: VAEReconstructionTask.Options = mutable_field(VAEReconstructionTask.Options)
+    vae:            VAEReconstructionTask.Options = mutable_field(VAEReconstructionTask.Options)
+    ae:             AEReconstructionTask.Options  = mutable_field(AEReconstructionTask.Options)
     mixup:          MixupTask.Options             = mutable_field(MixupTask.Options)
     manifold_mixup: ManifoldMixupTask.Options     = mutable_field(ManifoldMixupTask.Options)
     rotation:       RotationTask.Options          = mutable_field(RotationTask.Options)
@@ -53,8 +57,10 @@ class AuxiliaryTaskOptions:
                     input_shape: Tuple[int, ...],
                     hidden_size: int) -> Dict[str, AuxiliaryTask]:
         tasks = nn.ModuleDict()
-        if self.reconstruction:
-            tasks[Tasks.RECONSTRUCTION] = VAEReconstructionTask(options=self.reconstruction)
+        if self.ae:
+            tasks[Tasks.AE] = AEReconstructionTask(options=self.ae)
+        if self.vae:
+            tasks[Tasks.VAE] = VAEReconstructionTask(options=self.vae)
         if self.mixup:
             tasks[Tasks.MIXUP] = MixupTask(options=self.mixup)
         if self.manifold_mixup:

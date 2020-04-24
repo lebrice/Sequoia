@@ -13,8 +13,11 @@ from datasets.dataset import DatasetConfig
 from datasets.mnist import Mnist
 from tasks.auxiliary_task import AuxiliaryTask
 
+from .decoders import get_decoder
+from .ae import AEReconstructionTask
 
-class VAEReconstructionTask(AuxiliaryTask):
+
+class VAEReconstructionTask(AEReconstructionTask):
     """ Task that adds the VAE loss (reconstruction + KL divergence). 
     
     Uses the feature extractor (`encoder`) of the parent model as the encoder of
@@ -22,7 +25,7 @@ class VAEReconstructionTask(AuxiliaryTask):
     used to get the VAE loss to train the feature extractor with.    
     """
     @dataclass
-    class Options(AuxiliaryTask.Options):
+    class Options(AEReconstructionTask.Options):
         """ Settings & Hyper-parameters related to the VAEReconstructionTask. """
         code_size: int = 50  # dimensions of the VAE code-space.
         beta: float = 1.0  # Beta term, multiplies the KL divergence term.
@@ -33,19 +36,14 @@ class VAEReconstructionTask(AuxiliaryTask):
                  options: "VAEReconstructionTask.Options"=None):
         super().__init__(coefficient=coefficient, name=name, options=options)
         self.options: VAEReconstructionTask.Options
-        self.code_size = self.options.code_size  # type: ignore
+        self.code_size = self.options.code_size
         # add the rest of the VAE layers: (Mu, Sigma, and the decoder)
         self.mu     = nn.Linear(AuxiliaryTask.hidden_size, self.code_size)
         self.logvar = nn.Linear(AuxiliaryTask.hidden_size, self.code_size)
-        
-        self.decoder: nn.Module
-        if AuxiliaryTask.input_shape == Mnist.x_shape:
-            # TODO: get the right decoder architecture for other datasets than MNIST.
-            self.decoder = MnistDecoder(code_size=self.code_size)
-        elif AuxiliaryTask.input_shape == Cifar10.x_shape:
-            self.decoder = CifarDecoder(code_size=self.code_size)
-        else:
-            raise RuntimeError(f"Don't have an encoder for the given input shape: {AuxiliaryTask.input_shape}")
+        self.decoder: nn.Module = get_decoder(
+            code_size=self.code_size,
+            input_size=AuxiliaryTask.input_shape,
+        )
 
     def forward(self, h_x: Tensor) -> Tensor:  # type: ignore
         h_x = h_x.view([h_x.shape[0], -1])
@@ -74,19 +72,9 @@ class VAEReconstructionTask(AuxiliaryTask):
         loss_info += LossInfo("kl", total_loss=kl_loss)
         return loss_info
 
-    def reconstruct(self, x: Tensor) -> Tensor:
-        h_x = self.encode(x)
-        x_hat = self.forward(h_x)
-        return x_hat.view(x.shape)
-    
     def generate(self, z: Tensor) -> Tensor:
         z = z.to(self.device)
         return self.forward(z)
-
-    # Reconstruction + KL divergence losses summed over all elements and batch
-    @staticmethod
-    def reconstruction_loss(recon_x: Tensor, x: Tensor) -> Tensor:
-        return F.binary_cross_entropy(recon_x, x.view(recon_x.shape), size_average=False)
 
     @staticmethod
     def kl_divergence_loss(mu: Tensor, logvar: Tensor) -> Tensor:
@@ -96,35 +84,3 @@ class VAEReconstructionTask(AuxiliaryTask):
         # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
         return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
-
-class MnistDecoder(nn.Sequential):
-    def __init__(self, code_size: int):
-        self.code_size = code_size
-        super().__init__(
-            Reshape([self.code_size, 1, 1]),
-            nn.ConvTranspose2d(self.code_size, 32, kernel_size=4 , stride=1),
-            nn.BatchNorm2d(32),
-            nn.ELU(alpha=1.0, inplace=True),
-            nn.ConvTranspose2d(32, 16, kernel_size=5, stride=2),
-            nn.BatchNorm2d(16),
-            nn.ELU(alpha=1.0, inplace=True),
-            nn.ConvTranspose2d(16,16,kernel_size=5, stride=2),
-            nn.BatchNorm2d(16),
-            nn.ELU(alpha=1.0, inplace=True),
-            nn.ConvTranspose2d(16, 1, kernel_size=4, stride=1),
-            nn.Sigmoid(),
-        )
-
-
-class CifarDecoder(nn.Sequential):
-    def __init__(self, code_size: int):
-        self.code_size = code_size
-        super().__init__(
-            Reshape([self.code_size, 1, 1]),
-            DeConvBlock(self.code_size, 16),
-            DeConvBlock(16, 32),
-            DeConvBlock(32, 64),
-            DeConvBlock(64, 64),
-            DeConvBlock(64, 3, last_relu=False),
-            nn.Sigmoid(),
-        )
