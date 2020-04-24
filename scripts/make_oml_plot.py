@@ -23,6 +23,8 @@ class OmlFigureOptions:
     out_path: Path = Path("scripts/oml_plot.png")
     # title to use for the figure.
     title: Optional[str] = None
+    # Also show the figure.
+    show: bool = False
 
     def __post_init__(self):
         # The dictionary of result dicts.
@@ -67,9 +69,10 @@ class OmlFigureOptions:
         maximize_figure()
         
         fig.savefig(self.out_path)
-        plt.show() #close the figure to run the next section
+        if self.show:
+            plt.show() #close the figure to run the next section
 
-        print("DONE, exiting")
+        print(f"Successfully created plot at {self.out_path}")
         exit()
 
     def make_plot(self) -> plt.Figure:
