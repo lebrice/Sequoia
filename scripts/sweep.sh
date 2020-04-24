@@ -7,6 +7,13 @@ ARGS=${@:2}
 echo "Sweep with name '$NAME' and with args '$ARGS'"
 # Create the slurm output dir if it doesn't exist already.
 
+# activate the virtual environment (only used to download the datasets)
+source ~/ENV/bin/activate
+python -m scripts.download_datasets --data_dir "$SCRATCH/data"
+deactivate
+
+zip -u "$SCRATCH/data.zip" "$SCRATCH/data"
+
 mkdir -p "$SCRATCH/slurm_out/$NAME"
 
 

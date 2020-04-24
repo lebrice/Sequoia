@@ -1,18 +1,20 @@
 import random
 from abc import ABC, abstractmethod
 from dataclasses import InitVar, dataclass
+from pathlib import Path
 from typing import *
 
 import torch
-from simple_parsing import field, choice
+import torchvision
+from simple_parsing import choice, field
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
-import torchvision
-from torchvision import transforms
-from torchvision.utils import save_image
 from torchvision import datasets as v_datasets
+from torchvision import transforms
 from torchvision.datasets import VisionDataset
+from torchvision.utils import save_image
+
 from config import Config
 from utils import cuda_available, gpus_available
 from utils.utils import n_consecutive, to_list
@@ -47,7 +49,7 @@ class DatasetConfig:
 
     _loaded: bool = False
 
-    def load(self, config: Config) -> None:
+    def load(self, config: Config=None, data_dir: Path=None) -> None:
         """ Downloads the corresponding datasets.
 
         TODO: Maybe figure out a way to get the resizing to happen here instead of
@@ -56,11 +58,16 @@ class DatasetConfig:
         """
         if self._loaded:
             return
-        self.train = self.dataset_class(config.data_dir, train=True,  download=True, transform=self.transforms)
+        if config:
+            data_dir = config.data_dir
+        elif not data_dir:
+            data_dir = Path("data")
+
+        self.train = self.dataset_class(data_dir, train=True,  download=True, transform=self.transforms)
         # print(self.transforms)
         # print(self.train[0][0].shape)
         # exit()
-        self.valid = self.dataset_class(config.data_dir, train=False, download=True, transform=self.transforms)
+        self.valid = self.dataset_class(data_dir, train=False, download=True, transform=self.transforms)
         self._loaded = True     
 
     def get_dataloaders(self, config: Config, batch_size: int = 64) -> Tuple[Optional[DataLoader], Optional[DataLoader]]:
