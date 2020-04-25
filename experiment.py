@@ -15,7 +15,6 @@ import wandb
 from simple_parsing import choice, field, mutable_field, subparsers
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
-from torchvision.utils import save_image
 
 from common.losses import LossInfo
 from common.metrics import (ClassificationMetrics, RegressionMetrics,
@@ -33,7 +32,7 @@ from utils.utils import add_prefix
 
 
 @dataclass  # type: ignore
-class Experiment:
+class ExperimentBase:
     """ Describes the parameters of an experimental setting.
     
     (ex: Mnist_iid, Mnist_continual, Cifar10, etc. etc.)
@@ -83,8 +82,6 @@ class Experiment:
             self.logger.setLevel(logging.DEBUG)
         
         self._samples_dir: Optional[Path] = None
-        self.reconstruction_task: Optional[AEReconstructionTask] = None
-        self.generation_task: Optional[VAEReconstructionTask] = None
         
         if self.notes:
             with open(self.log_dir / "notes.txt", "w") as f:
@@ -104,14 +101,6 @@ class Experiment:
     def init_model(self):
         print("init model")
         self.model = self.get_model_for_dataset(self.dataset).to(self.config.device)
-        # find the reconstruction task, if there is one.
-        if Tasks.VAE in self.model.tasks:
-            self.reconstruction_task = self.model.tasks[Tasks.VAE]
-            self.generation_task = self.reconstruction_task
-            self.latents_batch = torch.randn(64, self.hparams.hidden_size)
-        elif Tasks.AE in self.model.tasks:
-            self.reconstruction_task = self.model.tasks[Tasks.AE]
-            self.generation_task = None
 
     def get_model_for_dataset(self, dataset: DatasetConfig) -> Classifier:
         from models.mnist import MnistClassifier
@@ -186,7 +175,7 @@ class Experiment:
                     break
         return train_losses, valid_losses
 
-    def valid_performance_generator(self, valid_dataset: Dataset) -> Iterable[LossInfo]:
+    def valid_performance_generator(self, valid_dataset: Dataset) -> Generator[LossInfo, None, None]:
         periodic_valid_dataloader = self.get_dataloader(valid_dataset)
         while True:
             for batch in periodic_valid_dataloader:
@@ -197,27 +186,23 @@ class Experiment:
     def train_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.train()
         for batch in dataloader:
-            data = batch[0].to(self.model.device)
-            target = batch[1].to(self.model.device) if len(batch) == 2 else None
-            batch_size = data.shape[0]
-
+            data, target = self.preprocess(batch)
             yield self.train_batch(data, target)
 
-            self.global_step += batch_size
-        
-        ## Reconstruct some samples after each epoch.
-        if self.reconstruction_task and self.reconstruction_task.enabled:
-            # use the last batch of x's.
-            self.reconstruct_samples(data)
+    def preprocess(self, batch: Union[Tuple[Tensor], Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Optional[Tensor]]:
+        data = batch[0].to(self.model.device)
+        target = batch[1].to(self.model.device) if len(batch) == 2 else None  # type: ignore
+        return data, target
 
-    def train_batch(self, data: Tensor, target: Tensor) -> LossInfo:
+    def train_batch(self, data: Tensor, target: Optional[Tensor]) -> LossInfo:
         self.model.optimizer.zero_grad()
 
         batch_loss_info = self.model.get_loss(data, target)
         total_loss = batch_loss_info.total_loss
         total_loss.backward()
-                
+
         self.model.optimizer.step()
+        self.global_step += data.shape[0]
         return batch_loss_info
 
     def test(self, dataset: Dataset, description: str=None, name: str="Test") -> LossInfo:
@@ -241,15 +226,11 @@ class Experiment:
     def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.eval()
         for batch in dataloader:
-            data = batch[0].to(self.model.device)
-            target = batch[1].to(self.model.device) if len(batch) == 2 else None
+            data, target = self.preprocess(batch)
             yield self.test_batch(data, target)
 
-        ## Generate some samples after each test/eval epoch.
-        self.generate_samples()
-    
     @torch.no_grad()
-    def test_batch(self, data: Tensor, target: Tensor) -> LossInfo:
+    def test_batch(self, data: Tensor, target: Tensor=None) -> LossInfo:
         return self.model.get_loss(data, target)
 
     def get_dataloader(self, dataset: Dataset) -> DataLoader:
@@ -261,35 +242,6 @@ class Experiment:
             pin_memory=self.config.use_cuda
         )
     
-    @torch.no_grad()
-    def reconstruct_samples(self, data: Tensor):
-        if not self.reconstruction_task or not self.reconstruction_task.enabled:
-            return
-        n = min(data.size(0), 16)
-        
-        originals = data[:n]
-        reconstructed = self.reconstruction_task.reconstruct(originals)
-        comparison = torch.cat([originals, reconstructed])
-
-        reconstruction_images_dir = self.samples_dir / "reconstruction"
-        reconstruction_images_dir.mkdir(parents=True, exist_ok=True)
-        file_name = reconstruction_images_dir / f"step_{self.global_step:08d}.png"
-        save_image(comparison.cpu(), file_name, nrow=n)
-
-    @torch.no_grad()
-    def generate_samples(self):
-        if not self.generation_task or not self.generation_task.enabled:
-            return
-        n = 64
-        latents = torch.randn(64, self.hparams.hidden_size)
-        fake_samples = self.generation_task.generate(latents)
-        fake_samples = fake_samples.cpu().view(n, *self.dataset.x_shape)
-
-        generation_images_dir = self.samples_dir / "generated_samples"
-        generation_images_dir.mkdir(parents=True, exist_ok=True)
-        file_name = generation_images_dir / f"step_{self.global_step:08d}.png"
-        save_image(fake_samples, file_name)
-
     def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
         if always_print or (self.config.debug and self.config.verbose):
             print(message, value if value is not None else "")
@@ -311,7 +263,7 @@ class Experiment:
             elif isinstance(message, str) and value is not None:
                 message_dict = {message: value}
             else:
-                message_dict = message
+                message_dict = message  # type: ignore
             
             if prefix:
                 message_dict = utils.add_prefix(message_dict, prefix)
@@ -411,3 +363,11 @@ def add_messages_for_batch(loss: LossInfo, message: Dict, prefix: str=""):
             elif isinstance(metrics, RegressionMetrics):
                 new_message[f"{prefix}{name} MSE"] = metrics.mse.item()
     message.update(new_message)
+
+
+from addons import ExperimentWithVAE
+
+
+@dataclass  # type: ignore
+class Experiment(ExperimentWithVAE):
+    pass

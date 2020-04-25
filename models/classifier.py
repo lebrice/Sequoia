@@ -116,6 +116,7 @@ class Classifier(nn.Module):
         y_pred = self.logits(h_x)
         
         loss_info.total_loss = torch.zeros(1, device=self.device)
+        loss_info.tensors["x"] = x.detach()
         loss_info.tensors["h_x"] = h_x.detach()
         loss_info.tensors["y_pred"] = y_pred.detach()
 
@@ -127,6 +128,11 @@ class Classifier(nn.Module):
             if aux_task.enabled:
                 aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y)
                 loss_info += aux_task_loss
+        
+        if self.config.debug and self.config.verbose:
+            for name, loss in loss_info.losses.items():
+                print(name, loss.total_loss)
+        
         return loss_info
 
     def encode(self, x: Tensor):
