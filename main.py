@@ -101,11 +101,6 @@ def main(argv: Optional[List[str]]=None):
     subparser = subparsers.add_parser("task-incremental", help=TaskIncremental.__doc__)
     subparser.add_arguments(TaskIncremental, "experiment")
 
-    from test_time_training import TestTimeTrainingOptions
-    subparser = subparsers.add_parser("test-time-training", help=TestTimeTrainingOptions.__doc__)
-    # 'dest' doesn't matter here since the __post_init__ method will run & exit.
-    subparser.add_arguments(TestTimeTrainingOptions, dest="options") 
-
     # Scripts to execute:
     from scripts.make_oml_plot import OmlFigureOptions
     

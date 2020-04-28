@@ -365,9 +365,8 @@ def add_messages_for_batch(loss: LossInfo, message: Dict, prefix: str=""):
     message.update(new_message)
 
 
-from addons import ExperimentWithVAE
-
+from addons import ExperimentWithVAE, TestTimeTrainingAddon
 
 @dataclass  # type: ignore
-class Experiment(ExperimentWithVAE):
+class Experiment(ExperimentWithVAE, TestTimeTrainingAddon):
     pass
