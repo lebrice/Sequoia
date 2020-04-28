@@ -62,6 +62,18 @@ def launch(experiment: Experiment):
         
         print(f"Using wandb. Group name: {config.run_group} run name: {config.run_name}, log_dir: {config.log_dir}")
     
+    import os
+    scratch_dir = os.environ.get("SCRATCH") 
+    print("log_dir:", config.log_dir)
+                    
+    if scratch_dir:
+        results_dir = Path(scratch_dir) / "SSCL"
+        results_dir = Path(scratch_dir) / "SSCL" / config.log_dir.relative_to(config.log_dir_root)
+        print("results dir: ", results_dir)
+        if results_dir.exists() and results_dir.is_dir():
+            print("Results dir already exists on $SCRATCH, therefore not running this experiment.")
+            exit()
+
     if experiment.done:
         print(f"Experiment is already done. Exiting.")
         exit(0)

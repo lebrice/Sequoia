@@ -38,6 +38,7 @@ python -u main.py task-incremental \
     --log_dir_root $SLURM_TMPDIR/SSCL "${@:1}"
 
 rsync -r -u $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
-wandb sync $SCRATCH/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
+
+# wandb sync $SCRATCH/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
 # To make sure, run `wandb sync $SCRATCH/SSCL/wandb/` from a login node
 
