@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from torch import Tensor
 from pathlib import Path
 
+
 @dataclass
 class TrainAndValidLosses:
     """ Helper class to store the train and valid losses during training. """
@@ -40,8 +41,16 @@ class TrainAndValidLosses:
 
     def save_json(self, path: Path) -> None:
         """ TODO: save to a json file. """
-        pass
-
+        from dataclasses import asdict
+        from utils.json_utils import to_str_dict
+        import json
+        d = asdict(self)
+        
+@dataclass
+class PlotSectionLabel:
+    start_step: int
+    stop_step: int
+    description: str = ""
 
 @dataclass
 class ActiveRemembering(TaskIncremental):
@@ -51,6 +60,20 @@ class ActiveRemembering(TaskIncremental):
     """
     # The maximum number of epochs to train on when remembering without labels.
     remembering_max_epochs: int = 1
+
+    def __post_init__(self):
+        super().__post_init__()
+        # TODO: Use a list of these objects to add annotated regions in the plot
+        # enclosed by vertical lines with some text, for instance "task 0", etc.
+        self.plot_sections: List[PlotSectionLabel] = []
+
+    @contextmanager
+    def plot_region_name(self, description: str):
+        start_step = self.global_step
+        yield
+        end_step = self.global_step
+        plot_section_label = PlotSectionLabel(start_step, end_step, description)
+        self.plot_sections.append(plot_section_label)
 
     def run(self):
         # Load the datasets and return the set of classes within each task.
@@ -85,39 +108,42 @@ class ActiveRemembering(TaskIncremental):
         valid_0: VisionDatasetSubset = self.valid_datasets[0]
 
         train_valid_losses = TrainAndValidLosses()
-
+        
+        # TODO: Try to load the train_valid_losses from the json file.
+    
         for task_index, (train_i, valid_i, valid_0_to_i) in enumerate(datasets):
             print(f"Starting task {task_index} with classes {tasks[task_index]}")
-            
             # If we are using a multihead model, we give it the task label (so
             # that it can spawn / reuse the output head for the given task).
             if self.multihead:
                 self.model.current_task_id = task_index
             
-            # Temporarily remove the labels.
-            with train_i.without_labels(), valid_i.without_labels():
-                # Un/self-supervised training on task i.
+            
+            with self.plot_region_name(f"Learn Task {task_index}"):
+                # Temporarily remove the labels.
+                with train_i.without_labels(), valid_i.without_labels():
+                    # Un/self-supervised training on task i.
+                    train_valid_losses += self.train_until_convergence(
+                        train_i,
+                        valid_i,
+                        max_epochs=self.unsupervised_epochs_per_task,
+                        description=f"Task {task_index} (Unsupervised)",
+                    )
+
+                # Train (supervised) on task i.
                 train_valid_losses += self.train_until_convergence(
                     train_i,
                     valid_i,
-                    max_epochs=self.unsupervised_epochs_per_task,
-                    description=f"Task {task_index} (Unsupervised)",
+                    max_epochs=self.supervised_epochs_per_task,
+                    description=f"Task {task_index} (Supervised)",
                 )
-
-            # Train (supervised) on task i.
-            train_valid_losses += self.train_until_convergence(
-                train_i,
-                valid_i,
-                max_epochs=self.supervised_epochs_per_task,
-                description=f"Task {task_index} (Supervised)",
-            )
-            
+                
             # Actively "remember" task 0 by training with self-supervised on it.
             if task_index >= 1:
                 # Use the output head for task 0 if we are in multihead setup:
                 if self.multihead:
                     self.model.current_task_id = 0
-                with train_0.without_labels():
+                with train_0.without_labels(), self.plot_region_name("Remember Task 0"):
                     # Here by using train_until_convergence we also periodically
                     # evaluate the validation loss on batches from the (labeled)
                     # validation set.
@@ -127,6 +153,9 @@ class ActiveRemembering(TaskIncremental):
                         max_epochs=self.remembering_max_epochs,
                         description=f"Task 0 Remembering (Unsupervised)"
                     )
+
+        # Save the results to a json file.
+        train_valid_losses.save_json(self.results_dir / "losses.json")
 
         fig = self.make_plot(train_valid_losses)
         fig.savefig(self.plots_dir / "remembering_plot.png")
@@ -148,15 +177,17 @@ class ActiveRemembering(TaskIncremental):
         print("All loss names:", all_loss_names)
 
         def get_x_y(loss_dict: Dict[int, LossInfo],
-                    loss_name: str) -> Tuple[List[int], List[float]]:
+                    loss_name: str) -> Tuple[List[int], List[Optional[float]]]:
             xs: List[int] = []
-            ys: List[float] = []
+            ys: List[Optional[float]] = []
             for step, loss_info in loss_dict.items():
+                x = step
+                y = None
                 if loss_name in loss_info.losses:
-                    x = step
-                    y = loss_info.losses[loss_name].total_loss
-                    xs.append(x)
-                    ys.append(y.item())
+                    task_loss = loss_info.losses[loss_name]
+                    y = task_loss.total_loss.item()
+                xs.append(x)
+                ys.append(y)
             return xs, ys
 
         for loss_name in all_loss_names:
@@ -165,6 +196,11 @@ class ActiveRemembering(TaskIncremental):
             ax.plot(x_train, y_train, label=f"Train {loss_name}")
             ax.plot(x_valid, y_valid, label=f"Valid {loss_name}")       
         
+        for section_label in self.plot_sections:
+            # TODO: add vertical lines at the start_step and end_step of the label
+            # along with the description in between.
+            pass
+
         ax.legend(loc="upper right")
         
         return fig
