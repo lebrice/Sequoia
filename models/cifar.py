@@ -38,7 +38,6 @@ class CifarClassifier(Classifier):
                 )
         else:
             print("Using a simple convnet model")
-        else:
             encoder = nn.Sequential(
                 ConvBlock(3, 16, kernel_size=3, padding=1),
                 ConvBlock(16, 32, kernel_size=3, padding=1),
