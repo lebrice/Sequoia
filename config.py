@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
-from utils import cuda_available, gpus_available
+from utils import cuda_available, gpus_available, set_seed
 
 
 @dataclass
@@ -47,8 +47,7 @@ class Config:
 
     def __post_init__(self):
         # set the manual seed (for reproducibility)
-        torch.manual_seed(self.random_seed)
-        np.random.seed(self.random_seed)
+        set_seed(self.random_seed)
 
         if self.use_cuda and not cuda_available:
             print("Cannot use the passed value of argument 'use_cuda', as CUDA "

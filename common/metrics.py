@@ -58,8 +58,8 @@ class RegressionMetrics(Metrics):
         if y_pred is not None and y is not None:
             if y.shape != y_pred.shape:
                 print("Shapes aren't the same!", y_pred.shape, y.shape)
-                exit()
-            self.mse = functional.mse_loss(y_pred, y)
+            else:
+                self.mse = functional.mse_loss(y_pred, y)
 
     def __add__(self, other: "RegressionMetrics") -> "RegressionMetrics":
         mse = torch.zeros_like(
