@@ -181,7 +181,7 @@ class TrainValidLosses:
         torch.save(self, f=str(path.with_suffix(".pt")))
     
     @classmethod
-    def load_json(cls, path: Path) -> Optional["TrainAndValidLosses"]:
+    def load_json(cls, path: Path) -> Optional["TrainValidLosses"]:
         try:
             path = path.with_suffix(".pt")
             with open(path, 'rb') as f:
