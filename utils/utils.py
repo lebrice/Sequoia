@@ -4,8 +4,10 @@ import collections
 import functools
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import MutableMapping
-from typing import (Any, Deque, Dict, Iterable, List, MutableMapping, Optional,
-                    Set, Tuple, TypeVar, Union)
+from pathlib import Path
+from typing import (
+    Any, Deque, Dict, Iterable, List, MutableMapping, Optional, Set, Tuple,
+    TypeVar, Union)
 
 import numpy as np
 import torch
@@ -135,6 +137,10 @@ def rgetattr(obj: Any, attr: str, *args):
     def _getattr(obj, attr):
         return getattr(obj, attr, *args)
     return functools.reduce(_getattr, [obj] + attr.split('.'))
+
+
+def is_nonempty_dir(path: Path) -> bool:
+    return path.is_dir() and len(list(path.iterdir())) > 0
 
 
 if __name__ == "__main__":

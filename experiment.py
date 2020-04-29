@@ -28,7 +28,7 @@ from models.classifier import Classifier
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
 from utils.json_utils import is_json_serializable, to_str, to_str_dict
-from utils.utils import add_prefix
+from utils.utils import add_prefix, is_nonempty_dir
 
 
 @dataclass  # type: ignore
@@ -347,9 +347,6 @@ class ExperimentBase:
     def load_from_config(cls, config_path: Union[Path, str]):
         with open(config_path) as f:
             return torch.load(f)
-
-def is_nonempty_dir(path: Path) -> bool:
-    return path.is_dir() and len(list(path.iterdir())) > 0
 
 
 def add_messages_for_batch(loss: LossInfo, message: Dict, prefix: str=""):

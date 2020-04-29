@@ -16,7 +16,7 @@ from torch import nn
 from config import Config
 from experiment import Experiment
 from utils.json_utils import take_out_unsuported_values
-        
+from utils.utils import is_nonempty_dir
 
 def launch(experiment: Experiment):
     """ Launches the experiment.
@@ -67,10 +67,11 @@ def launch(experiment: Experiment):
     print("log_dir:", config.log_dir)
                     
     if scratch_dir:
-        results_dir = Path(scratch_dir) / "SSCL"
-        results_dir = Path(scratch_dir) / "SSCL" / config.log_dir.relative_to(config.log_dir_root) / "results"
+        log_dir = config.log_dir.relative_to(config.log_dir_root)
+        results_dir = Path(scratch_dir) / "SSCL" / log_dir / "results"
         print("results dir: ", results_dir)
-        if results_dir.exists() and results_dir.is_dir():
+        
+        if results_dir.exists() and results_dir.is_dir() and is_nonempty_dir(results_dir):
             print("Results dir already exists on $SCRATCH, therefore not running this experiment.")
             exit()
 

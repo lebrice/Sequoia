@@ -1,9 +1,12 @@
 import json
 from collections import OrderedDict
-from typing import Dict, Union, Any, Iterable, Tuple
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
+from typing import Any, Dict, Iterable, Optional, Tuple, TypeVar, Union
+
 from torch import nn
+
+T = TypeVar("T")
 
 
 def is_json_serializable(value: str):
@@ -53,3 +56,31 @@ def take_out_unsuported_values(d: Dict, weird_things: Tuple[Any] = (type,)) -> d
             new_value = list(filter(lambda v: None if isinstance(v, weird_things) else v, value))      
         new_value = value
     return result
+
+
+def try_load(path: Path, default: T=None) -> Optional[T]:
+    try:
+        if path.suffix == ".json":
+            with open(path) as f:
+                return json.load(f)
+        elif path.suffix == ".csv":
+            import numpy as np
+            with open(path) as f:
+                return np.loadtxt(f)
+        elif path.suffix == ".pt":
+            import torch
+            with open(path, 'rb') as fb:
+                return torch.load(fb)
+        elif path.suffix == ".yml":
+            import yaml
+            with open(path) as f:
+                return yaml.load(f)
+        elif path.suffix == ".pkl":
+            import pickle
+            with open(path, 'rb') as fb:
+                return pickle.load(fb)
+        else:
+            raise RuntimeError(f"Unable to load path {path}, unsupported extension.")
+    except Exception as e:
+        print(f"couldn't load path {path}: {e}")
+        return default

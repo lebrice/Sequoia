@@ -1,56 +1,25 @@
-from collections import OrderedDict
-from dataclasses import dataclass, field
-from typing import Dict, List, Union, Tuple, Optional, Set
-
-import matplotlib.pyplot as plt
-
 import functools
 import itertools
+from collections import OrderedDict
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple, Union
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from torch import Tensor
+
 from common.losses import LossInfo
 from datasets.subset import VisionDataset
 from task_incremental import TaskIncremental
-from contextlib import contextmanager
-from torch import Tensor
-from pathlib import Path
+from utils.json_utils import try_load
+from utils.plotting import PlotSectionLabel
 
+from common.losses import TrainValidLosses
+TrainAndValidLosses = TrainValidLosses
 
-@dataclass
-class TrainAndValidLosses:
-    """ Helper class to store the train and valid losses during training. """
-    train_losses: Dict[int, LossInfo] = field(default_factory=OrderedDict)
-    valid_losses: Dict[int, LossInfo] = field(default_factory=OrderedDict)
-
-    def __iadd__(self, other: Union["TrainAndValidLosses", Tuple[Dict[int, LossInfo], Dict[int, LossInfo]]]) -> "TrainAndValidLosses":
-        if isinstance(other, TrainAndValidLosses):
-            self.train_losses.update(other.train_losses)
-            self.valid_losses.update(other.valid_losses)
-            return self
-        elif isinstance(other, tuple):
-            self.train_losses.update(other[0])
-            self.valid_losses.update(other[1])
-            return self
-        else:
-            return NotImplemented
-
-    def all_loss_names(self) -> Set[str]:
-        all_loss_names: Set[str] = set()
-        for loss_info in itertools.chain(self.train_losses.values(), 
-                                         self.valid_losses.values()):
-            all_loss_names.update(loss_info.losses)
-        return all_loss_names
-
-    def save_json(self, path: Path) -> None:
-        """ TODO: save to a json file. """
-        from dataclasses import asdict
-        from utils.json_utils import to_str_dict
-        import json
-        d = asdict(self)
-        
-@dataclass
-class PlotSectionLabel:
-    start_step: int
-    stop_step: int
-    description: str = ""
 
 @dataclass
 class ActiveRemembering(TaskIncremental):
@@ -58,6 +27,8 @@ class ActiveRemembering(TaskIncremental):
     
     TODO: Add your arguments as attributes here, if any.
     """
+    unsupervised_epochs_per_task: int = 0
+
     # The maximum number of epochs to train on when remembering without labels.
     remembering_max_epochs: int = 1
 
@@ -107,18 +78,30 @@ class ActiveRemembering(TaskIncremental):
         train_0: VisionDatasetSubset = self.train_datasets[0]
         valid_0: VisionDatasetSubset = self.valid_datasets[0]
 
-        train_valid_losses = TrainAndValidLosses()
+        train_valid_losses = TrainValidLosses()
         
         # TODO: Try to load the train_valid_losses from the json file.
-    
+        train_valid_losses = (
+            TrainValidLosses.load_json(self.results_dir / "losses.json") or
+            TrainValidLosses()
+        )
+        self.global_step = train_valid_losses.latest_step()
+        if self.global_step != 0:
+            self.plot_sections = try_load(self.results_dir / "plot_labels.pt", [])
+            
+            # TODO: reset the state of the experiment.
+            print(f"Experiment is already at step {self.global_step}")
+            # Right now I just skip the training and just go straight to making the plot with the existing data:
+            datasets = []
+
+
         for task_index, (train_i, valid_i, valid_0_to_i) in enumerate(datasets):
             print(f"Starting task {task_index} with classes {tasks[task_index]}")
             # If we are using a multihead model, we give it the task label (so
             # that it can spawn / reuse the output head for the given task).
             if self.multihead:
                 self.model.current_task_id = task_index
-            
-            
+
             with self.plot_region_name(f"Learn Task {task_index}"):
                 # Temporarily remove the labels.
                 with train_i.without_labels(), valid_i.without_labels():
@@ -154,73 +137,98 @@ class ActiveRemembering(TaskIncremental):
                         description=f"Task 0 Remembering (Unsupervised)"
                     )
 
-        # Save the results to a json file.
+        # TODO: Save the results to a json file.
         train_valid_losses.save_json(self.results_dir / "losses.json")
+        torch.save(self.plot_sections, str(self.results_dir / "plot_labels.pt"))
 
-        fig = self.make_plot(train_valid_losses)
+        fig = make_plot(train_valid_losses, self.plot_sections)
+        
         from utils.plotting import maximize_figure
         maximize_figure()
+        
         fig.savefig(self.plots_dir / "remembering_plot.png")
+        
         if self.config.debug:
             fig.show()
+            fig.waitforbuttonpress(10)
             
         
-    def make_plot(self, train_and_valid_losses: TrainAndValidLosses) -> plt.Figure:
-        train_losses: Dict[int, LossInfo] = train_and_valid_losses.train_losses
-        valid_losses: Dict[int, LossInfo] = train_and_valid_losses.valid_losses
-        
-        fig: plt.Figure = plt.figure()
-        ax: plt.Axes = fig.subplots()
-        ax.set_title("Total Loss")
-        ax.set_xlabel("# of Samples seen")
-        ax.set_ylabel("Loss")
-        
-        # Figure out the name of all the losses that were used.
-        all_loss_names: Set[str] = train_and_valid_losses.all_loss_names()
-        print("All loss names:", all_loss_names)
+def make_plot(train_and_valid_losses: TrainValidLosses,
+              plot_sections: List[PlotSectionLabel]=None) -> plt.Figure:
+    train_losses: Dict[int, LossInfo] = train_and_valid_losses.train_losses
+    valid_losses: Dict[int, LossInfo] = train_and_valid_losses.valid_losses
+    
+    plot_sections = plot_sections or []
 
-        def get_x_y(loss_dict: Dict[int, LossInfo],
-                    loss_name: str) -> Tuple[List[int], List[Optional[float]]]:
-            xs: List[int] = []
-            ys: List[Optional[float]] = []
-            for step, loss_info in loss_dict.items():
-                x = step
-                y = None
-                if loss_name in loss_info.losses:
-                    task_loss = loss_info.losses[loss_name]
-                    y = task_loss.total_loss.item()
-                xs.append(x)
-                ys.append(y)
-            return xs, ys
+    fig: plt.Figure = plt.figure()
+    ax: plt.Axes = fig.subplots()
+    ax.set_title("Total Loss")
+    ax.set_xlabel("# of Samples seen")
+    ax.set_ylabel("Loss")
+    
+    # Figure out the name of all the losses that were used.
+    all_loss_names: Set[str] = train_and_valid_losses.all_loss_names()
+    print("All loss names:", all_loss_names)
 
-        for loss_name in all_loss_names:
-            x_train, y_train = get_x_y(train_losses, loss_name)
-            x_valid, y_valid = get_x_y(valid_losses, loss_name)
-            ax.plot(x_train, y_train, label=f"Train {loss_name}")
-            ax.plot(x_valid, y_valid, label=f"Valid {loss_name}")       
-        
-        for section_label in self.plot_sections:
-            # TODO: add vertical lines at the start_step and end_step of the label
-            # along with the description in between.
-            pass
+    def get_x_y(loss_dict: Dict[int, LossInfo],
+                loss_name: str) -> Tuple[List[int], List[Optional[float]]]:
+        xs: List[int] = []
+        ys: List[Optional[float]] = []
+        for step, loss_info in loss_dict.items():
+            x = step
+            y = None
+            if loss_name in loss_info.losses:
+                task_loss = loss_info.losses[loss_name]
+                y = task_loss.total_loss.item()
+            xs.append(x)
+            ys.append(y)
+        return xs, ys
 
-        ax.legend(loc="upper right")
-        
-        return fig
+    plot_data: Dict[str, Tuple[List[int], List[Optional[float]]]] = {}
+    for loss_name in all_loss_names:
+        x_train, y_train = get_x_y(train_losses, loss_name)
+        x_valid, y_valid = get_x_y(valid_losses, loss_name)
+        label = f"Train {loss_name}"
+        plot_data[label] = (x_train, y_train)
+        label=f"Valid {loss_name}"
+        plot_data[label] = (x_valid, y_valid)
+    
+    for section_label in plot_sections:
+        for loss_name, (x, y) in plot_data.items():
+            # insert a (x, None) pair before the vertical line, so it
+            # doesn't jump up (so that no plot lines cross the vertical
+            # line)
+            x.append(section_label.start_step-1)
+            y.append(None)
 
-        # TODO: maybe show evolution of accuracy in another subfigure?
-        # fig, ax = plt.subplots()
-        # ax.set_xlabel("Epoch")
-        # ax.set_ylim(0.0, 1.0)
-        # ax.set_ylabel("Accuracy")
-        # ax.set_title("Training and Validation Accuracy")
-        # x = list(train_losses.keys())
-        # from tasks.tasks import Tasks
-        # y_train = [l.metrics[Tasks.SUPERVISED].accuracy for l in train_losses.values()]
-        # y_valid = [l.metrics[Tasks.SUPERVISED].accuracy for l in valid_losses.values()]
-        # ax.plot(x, y_train, label="train")
-        # ax.plot(x, y_valid, label="valid")
-        # ax.legend(loc='lower right')
+        # Add vertical lines at the start_step and end_step of the label
+        # along with the description in between.
+        section_label.annotate(ax)
+
+    for label, (x, y) in plot_data.items():
+        sort_index = np.argsort(x)
+        xs = np.asarray(x)
+        ys = np.asarray(y)
+        # sort the pairs by x to place the potential (x, None) pairs
+        ax.plot(xs[sort_index], ys[sort_index], label=label)
+
+    ax.legend(loc="upper right")
+    
+    return fig
+
+    # TODO: maybe show evolution of accuracy in another subfigure?
+    # fig, ax = plt.subplots()
+    # ax.set_xlabel("Epoch")
+    # ax.set_ylim(0.0, 1.0)
+    # ax.set_ylabel("Accuracy")
+    # ax.set_title("Training and Validation Accuracy")
+    # x = list(train_losses.keys())
+    # from tasks.tasks import Tasks
+    # y_train = [l.metrics[Tasks.SUPERVISED].accuracy for l in train_losses.values()]
+    # y_valid = [l.metrics[Tasks.SUPERVISED].accuracy for l in valid_losses.values()]
+    # ax.plot(x, y_train, label="train")
+    # ax.plot(x, y_valid, label="valid")
+    # ax.legend(loc='lower right')
 
 
 if __name__ == "__main__":

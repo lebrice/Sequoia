@@ -1,6 +1,8 @@
+import itertools
 from collections import OrderedDict
-from dataclasses import asdict, dataclass, field, InitVar
-from typing import Any, Dict, List, Optional, Union
+from dataclasses import InitVar, asdict, dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from torch import Tensor
@@ -143,3 +145,52 @@ class LossInfo:
 
         # return add_prefix(log_dict, self.name)
         return log_dict
+
+
+@dataclass
+class TrainValidLosses:
+    """ Helper class to store the train and valid losses during training. """
+    train_losses: Dict[int, LossInfo] = field(default_factory=OrderedDict)
+    valid_losses: Dict[int, LossInfo] = field(default_factory=OrderedDict)
+
+    def __iadd__(self, other: Union["TrainValidLosses", Tuple[Dict[int, LossInfo], Dict[int, LossInfo]]]) -> "TrainValidLosses":
+        if isinstance(other, TrainValidLosses):
+            self.train_losses.update(other.train_losses)
+            self.valid_losses.update(other.valid_losses)
+            return self
+        elif isinstance(other, tuple):
+            self.train_losses.update(other[0])
+            self.valid_losses.update(other[1])
+            return self
+        else:
+            return NotImplemented
+
+    def all_loss_names(self) -> Set[str]:
+        all_loss_names: Set[str] = set()
+        for loss_info in itertools.chain(self.train_losses.values(), 
+                                         self.valid_losses.values()):
+            all_loss_names.update(loss_info.losses)
+        return all_loss_names
+
+    def save_json(self, path: Path) -> None:
+        """ TODO: save to a json file. """
+        # from dataclasses import asdict
+        # from utils.json_utils import to_str_dict
+        # import json
+        path.mkdir(parents=True, exist_ok=True)
+        torch.save(self, f=str(path.with_suffix(".pt")))
+    
+    @classmethod
+    def load_json(cls, path: Path) -> Optional["TrainAndValidLosses"]:
+        try:
+            path = path.with_suffix(".pt")
+            with open(path, 'rb') as f:
+                return torch.load(f)
+        except Exception as e:
+            print(f"Couldn't load from path {path}: {e}")
+            return None
+    
+    def latest_step(self) -> int:
+        """Returns the latest global_step in the dicts."""
+        return max(itertools.chain(self.train_losses, self.valid_losses), default=0)
+
