@@ -8,10 +8,11 @@ from typing import (Any, Dict, List, NamedTuple, Optional, Tuple, Type,
 
 import torch
 from simple_parsing import MutableField as mutable_field
-from simple_parsing import field
+from simple_parsing import choice, field
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
+from torchvision import models
 from torchvision.utils import save_image
 
 from common.layers import ConvBlock, Flatten
@@ -40,8 +41,28 @@ class Classifier(nn.Module):
         # Prevent gradients of the classifier from backpropagating into the encoder.
         detach_classifier: bool = False
 
-        # Use a model pretrained on ImageNet from torchvision.
+        # Use an encoder architecture from the torchvision.models package.
+        encoder_model: Optional[str] = choice({
+            "vgg16": models.vgg16,  # This is the only one tested so far.
+            "resnet18": models.resnet18,
+            "alexnet": models.alexnet,
+            "squeezenet": models.squeezenet1_0,
+            "densenet": models.densenet161,
+            "inception": models.inception_v3,
+            "googlenet": models.googlenet,
+            "shufflenet": models.shufflenet_v2_x1_0,
+            "mobilenet": models.mobilenet_v2,
+            "resnext50_32x4d": models.resnext50_32x4d,
+            "wide_resnet50_2": models.wide_resnet50_2,
+            "mnasnet": models.mnasnet1_0,
+        }, default=None)
+
+        # Use the pretrained weights of the ImageNet model from torchvision.
         pretrained_model: bool = False
+        # Freeze the weights of the pretrained encoder (except the last layer,
+        # which projects from their hidden size to ours).
+        freeze_pretrained_model: bool = False
+
 
         aux_tasks: AuxiliaryTaskOptions = field(default_factory=AuxiliaryTaskOptions)
 
@@ -111,29 +132,29 @@ class Classifier(nn.Module):
         return loss_info
 
     def get_loss(self, x: Tensor, y: Tensor=None) -> LossInfo:
-        loss_info = LossInfo("Train" if self.training else "Test")
+        total_loss = LossInfo("Train" if self.training else "Test")
         h_x = self.encode(x)
         y_pred = self.logits(h_x)
         
-        loss_info.total_loss = torch.zeros(1, device=self.device)
-        loss_info.tensors["x"] = x.detach()
-        loss_info.tensors["h_x"] = h_x.detach()
-        loss_info.tensors["y_pred"] = y_pred.detach()
+        total_loss.total_loss = torch.zeros(1, device=self.device)
+        total_loss.tensors["x"] = x.detach()
+        total_loss.tensors["h_x"] = h_x.detach()
+        total_loss.tensors["y_pred"] = y_pred.detach()
 
         if y is not None:
             supervised_loss = self.supervised_loss(x=x, y=y, h_x=h_x, y_pred=y_pred)
-            loss_info += supervised_loss
+            total_loss += supervised_loss
 
         for task_name, aux_task in self.tasks.items():
             if aux_task.enabled:
                 aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y)
-                loss_info += aux_task_loss
+                total_loss += aux_task_loss
         
         if self.config.debug and self.config.verbose:
-            for name, loss in loss_info.losses.items():
+            for name, loss in total_loss.losses.items():
                 print(name, loss.total_loss)
         
-        return loss_info
+        return total_loss
 
     def encode(self, x: Tensor):
         x = self.preprocess_inputs(x)

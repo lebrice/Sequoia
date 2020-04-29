@@ -113,6 +113,10 @@ def main(argv: Optional[List[str]]=None):
     subparser = subparsers.add_parser("task-incremental", help=TaskIncremental.__doc__)
     subparser.add_arguments(TaskIncremental, "experiment")
 
+    from active_remembering import ActiveRemembering
+    subparser = subparsers.add_parser("active-remembering", help=ActiveRemembering.__doc__)
+    subparser.add_arguments(ActiveRemembering, "experiment")
+
     # Scripts to execute:
     from scripts.make_oml_plot import OmlFigureOptions
     

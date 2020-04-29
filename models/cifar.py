@@ -16,11 +16,28 @@ class CifarClassifier(Classifier):
         assert cifar in {10, 100}
         self.hidden_size = hparams.hidden_size
 
-        if hparams.pretrained_model:
-            encoder = models.vgg16(pretrained=True)
-            for param in encoder.parameters():
-                param.requires_grad = False
-            encoder.classifier = nn.Linear(25088, self.hidden_size)
+        
+        if hparams.encoder_model:
+            print("Using encoder model", hparams.encoder_model.__name__,
+                  "pretrained: ", hparams.pretrained_model)
+
+            encoder = hparams.encoder_model(pretrained=hparams.pretrained_model)
+            if hparams.freeze_pretrained_model:
+                # Fix the parameters of the model.
+                for param in encoder.parameters():
+                    param.requires_grad = False
+            # TODO: add this logic for other models, or use torchlayers to infer
+            # the number of hidden units to use automatically.
+            if hparams.pretrained_model == models.vgg16:
+                encoder.classifier = nn.Linear(25088, self.hidden_size)
+            else:
+                raise RuntimeError(
+                    f"TODO: replace the last layer of the pretrained model "
+                    f"with a linear layer with an output of size "
+                    f"{self.hidden_size}"
+                )
+        else:
+            print("Using a simple convnet model")
         else:
             encoder = nn.Sequential(
                 ConvBlock(3, 16, kernel_size=3, padding=1),
