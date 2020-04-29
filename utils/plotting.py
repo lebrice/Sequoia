@@ -20,3 +20,16 @@ def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float=1.):
                 ha="center",
                 va="bottom",
             )
+
+def maximize_figure():
+    fig_manager = plt.get_current_fig_manager()
+    try:
+        fig_manager.window.showMaximized()
+    except:
+        try:
+            fig_manager.window.state('zoomed') #works fine on Windows!
+        except:
+            try:
+                fig_manager.frame.Maximize(True)
+            except:
+                print("Couldn't maximize the figure.")

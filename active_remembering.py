@@ -158,9 +158,12 @@ class ActiveRemembering(TaskIncremental):
         train_valid_losses.save_json(self.results_dir / "losses.json")
 
         fig = self.make_plot(train_valid_losses)
+        from utils.plotting import maximize_figure
+        maximize_figure()
         fig.savefig(self.plots_dir / "remembering_plot.png")
         if self.config.debug:
             fig.show()
+            
         
     def make_plot(self, train_and_valid_losses: TrainAndValidLosses) -> plt.Figure:
         train_losses: Dict[int, LossInfo] = train_and_valid_losses.train_losses
