@@ -68,7 +68,7 @@ def launch(experiment: Experiment):
                     
     if scratch_dir:
         results_dir = Path(scratch_dir) / "SSCL"
-        results_dir = Path(scratch_dir) / "SSCL" / config.log_dir.relative_to(config.log_dir_root)
+        results_dir = Path(scratch_dir) / "SSCL" / config.log_dir.relative_to(config.log_dir_root) / "results"
         print("results dir: ", results_dir)
         if results_dir.exists() and results_dir.is_dir():
             print("Results dir already exists on $SCRATCH, therefore not running this experiment.")
