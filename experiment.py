@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from dataclasses import asdict, dataclass, is_dataclass
@@ -320,6 +321,14 @@ class ExperimentBase:
             bool: Wether the experiment is complete or not (wether the
             results_dir exists and contains files).
         """
+        scratch_dir = os.environ.get("SCRATCH")
+        if scratch_dir:
+            log_dir = self.config.log_dir.relative_to(self.config.log_dir_root)
+            results_dir = Path(scratch_dir) / "SSCL" / log_dir / "results"
+            if results_dir.exists() and is_nonempty_dir(results_dir):
+                # Results already exists in $SCRATCH, therefore experiment is done.
+                self.log(f"Experiment is already done (non-empty folder at {results_dir}) Exiting.")
+                return True
         return self.started and is_nonempty_dir(self.results_dir)
     
     def save_to_results_dir(self, results: Dict[Union[str, Path], Any]):
