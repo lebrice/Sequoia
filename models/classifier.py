@@ -45,18 +45,21 @@ class Classifier(nn.Module):
         encoder_model: Optional[str] = choice({
             "vgg16": models.vgg16,  # This is the only one tested so far.
             "resnet18": models.resnet18,
+            "resnet34": models.resnet34,
+            "resnet50": models.resnet50,
+            "resnet101": models.resnet101,
+            "resnet152": models.resnet152,
             "alexnet": models.alexnet,
-            "squeezenet": models.squeezenet1_0,
+            # "squeezenet": models.squeezenet1_0,  # Not supported yet (weird output shape)
             "densenet": models.densenet161,
-            "inception": models.inception_v3,
-            "googlenet": models.googlenet,
+            # "inception": models.inception_v3,  # Not supported yet (creating model takes forever?)
+            # "googlenet": models.googlenet,  # Not supported yet (creating model takes forever?)
             "shufflenet": models.shufflenet_v2_x1_0,
             "mobilenet": models.mobilenet_v2,
             "resnext50_32x4d": models.resnext50_32x4d,
             "wide_resnet50_2": models.wide_resnet50_2,
             "mnasnet": models.mnasnet1_0,
         }, default=None)
-
         # Use the pretrained weights of the ImageNet model from torchvision.
         pretrained_model: bool = False
         # Freeze the weights of the pretrained encoder (except the last layer,

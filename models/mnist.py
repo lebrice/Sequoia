@@ -4,8 +4,9 @@ from torchvision import models
 
 from common.layers import ConvBlock
 from config import Config
-from torch.nn import Flatten
+from torch.nn import Flatten  # type: ignore
 from .classifier import Classifier
+from .pretrained_model import get_pretrained_encoder
 
 
 class MnistClassifier(Classifier):
@@ -15,24 +16,12 @@ class MnistClassifier(Classifier):
         self.hidden_size = hparams.hidden_size
         
         if hparams.encoder_model:
-            print("Using encoder model", hparams.encoder_model.__name__,
-                  "pretrained: ", hparams.pretrained_model)
-
-            encoder = hparams.encoder_model(pretrained=hparams.pretrained_model)
-            if hparams.freeze_pretrained_model:
-                # Fix the parameters of the model.
-                for param in encoder.parameters():
-                    param.requires_grad = False
-            # TODO: add this logic for other models, or use torchlayers to infer
-            # the number of hidden units to use automatically.
-            if hparams.pretrained_model == models.vgg16:
-                encoder.classifier = nn.Linear(25088, self.hidden_size)
-            else:
-                raise RuntimeError(
-                    f"TODO: replace the last layer of the pretrained model "
-                    f"with a linear layer with an output of size "
-                    f"{self.hidden_size}"
-                )
+            encoder = get_pretrained_encoder(
+                hidden_size=self.hidden_size,
+                encoder_model=hparams.encoder_model,
+                pretrained=hparams.pretrained_model,
+                freeze_pretrained_weights=hparams.freeze_pretrained_model,                
+            )
         else:
             print("Using a simple convnet model")
             encoder = nn.Sequential(
