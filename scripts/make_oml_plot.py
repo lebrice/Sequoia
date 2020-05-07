@@ -14,6 +14,21 @@ from simple_parsing import ArgumentParser, field, list_field
 # TODO: fill out a bug for SimpleParsing, when type is List and a custom type is
 # given, the custom type should overwrite the List type.
 
+
+def n_tasks_used(run_path: Path) -> int:
+    run_name = run_path.name
+    # prefix the baseline run with 0_ so it shows up first in plots.
+    if "baseline" in run_name:
+        return 0
+    # Add a prefix for methods with auxiliary tasks, indicating how many tasks were used.
+    tasks = ["rot", "vae", "ae", "simclr", "irm", "mixup", "brightness"]
+    count = 0
+    for t in tasks:
+        if t in run_name:
+            run_name = run_name.replace(t, "")
+            count += 1
+    return count
+
 @dataclass
 class OmlFigureOptions:
     """ Options for the script making the OML Figure 3 plot. """
@@ -25,6 +40,11 @@ class OmlFigureOptions:
     title: Optional[str] = None
     # Also show the figure.
     show: bool = False
+    # Exit after creating the figure.
+    exit_after: bool = True
+
+    # Add a prefix indicating the number of auxiliary tasks used: ("n_").
+    add_ntasks_prefix: bool = False
 
     def __post_init__(self):
         # The dictionary of result dicts.
@@ -67,13 +87,15 @@ class OmlFigureOptions:
 
         fig = self.make_plot()
         maximize_figure()
-        
+        self.out_path = Path(self.out_path)
+        self.out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(self.out_path)
         if self.show:
             plt.show() #close the figure to run the next section
 
-        print(f"Successfully created plot at {self.out_path}")
-        exit()
+        print(f"Successfully created plot at \"{self.out_path}\"")
+        if self.exit_after:
+            exit()
 
     def make_plot(self) -> plt.Figure:
         results: Dict[Path, Dict] = self.results
@@ -112,7 +134,9 @@ class OmlFigureOptions:
         # technically, we don't know the amount of tasks yet.
         n_tasks: int = -1
 
-        for i, (run_path, result_json) in enumerate(results.items()):
+
+        for i, run_path in enumerate(sorted(results, key=n_tasks_used)):
+            result_json = results[run_path]
             # Load up the per-task classification accuracies
             final_task_accuracy = load_array(run_path / "results" / "final_task_accuracy.csv")
 
@@ -126,13 +150,18 @@ class OmlFigureOptions:
             task_accuracy_std =   final_task_accuracy.std(axis=0)
             ax1.set_xticks(np.arange(n_tasks, dtype=int))
             ax1.set_xticklabels(np.arange(1, n_tasks+1, dtype=int))
-            label = str(run_path.parts[-1])
-
+            
+            label = run_path.name
+            n_aux_tasks = n_tasks_used(run_path)
+            if self.add_ntasks_prefix and not label.startswith(f"{n_aux_tasks}_"):
+                label = f"{n_aux_tasks}_{label}"
+            
             print(f"Run {run_path}:")
             print("\t Accuracy Means:", accuracy_means)
             print("\t Accuracy STDs:", accuracy_stds)
             print("\t Final Task Accuracy means:", task_accuracy_means)
             print("\t Final Task Accuracy stds:", task_accuracy_std)
+            
             # adding the error plot on the left
             ax1.errorbar(
                 x=np.arange(n_tasks),
