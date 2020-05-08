@@ -1,5 +1,6 @@
 import os
 import shutil
+import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,9 @@ class Config:
     run_group: Optional[str] = None 
     run_name: Optional[str] = None  # Wandb run name. If None, will use wandb's automatic name generation
 
+    # Field that stores the arguments that was used to produce this run.
+    argv: List[str] = field(init=False, default_factory=list) 
+
     def __post_init__(self):
         # set the manual seed (for reproducibility)
         set_seed(self.random_seed)
@@ -71,6 +75,7 @@ class Config:
                 torch.backends.cudnn.deterministic = True
                 torch.backends.cudnn.benchmark = False
 
+        self.argv = sys.argv.copy()
     
     @property
     def log_dir(self):
