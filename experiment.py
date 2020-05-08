@@ -121,7 +121,7 @@ class ExperimentBase:
         if self.config.debug_steps:
             from itertools import islice
             n_steps = self.config.debug_steps
-            train_dataloader = islice(train_dataloader, 0, n_steps)
+            train_dataloader = islice(train_dataloader, 0, n_steps)  # type: ignore
 
         train_losses: Dict[int, LossInfo] = OrderedDict()
         valid_losses: Dict[int, LossInfo] = OrderedDict()
@@ -146,12 +146,13 @@ class ExperimentBase:
                     valid_losses[self.global_step] = valid_loss
                     train_losses[self.global_step] = train_loss
                     
-                    add_messages_for_batch(valid_loss, message, "Valid ")
-                    add_messages_for_batch(train_loss, message, "Train ")
+                    message.update(train_loss.to_pbar_message())
+                    message.update(valid_loss.to_pbar_message())
                     pbar.set_postfix(message)
 
-                    self.log(train_loss, prefix="Train ")
-                    self.log(valid_loss, prefix="Valid ")
+                    train_log_dict = train_loss.to_log_dict()
+                    valid_log_dict = valid_loss.to_log_dict()
+                    self.log({"Train": train_log_dict, "Valid": valid_log_dict})
             
             # perform a validation epoch.
             val_desc = desc + " Valid"
@@ -212,7 +213,7 @@ class ExperimentBase:
             total_loss += loss
 
             if batch_idx % self.config.log_interval == 0:
-                add_messages_for_batch(total_loss, message, prefix="Test ")
+                message.update(total_loss.to_pbar_message())
                 pbar.set_postfix(message)
 
         return total_loss
@@ -223,9 +224,14 @@ class ExperimentBase:
             data, target = self.preprocess(batch)
             yield self.test_batch(data, target)
 
-    @torch.no_grad()
     def test_batch(self, data: Tensor, target: Tensor=None) -> LossInfo:
-        return self.model.get_loss(data, target)
+        was_training = self.model.training
+        self.model.eval()
+        with torch.no_grad():
+            loss = self.model.get_loss(data, target)
+        if was_training:
+            self.model.train()
+        return loss
 
     def get_dataloader(self, dataset: Dataset) -> DataLoader:
         return DataLoader(
@@ -350,18 +356,6 @@ class ExperimentBase:
         with open(config_path) as f:
             return torch.load(f)
 
-
-def add_messages_for_batch(loss: LossInfo, message: Dict, prefix: str=""):
-    new_message: Dict[str, Union[str, float]] = OrderedDict()
-    new_message[f"{prefix}Loss"] = loss.total_loss.item()
-    for name, loss_info in loss.losses.items():
-        new_message[f"{prefix}{name} Loss"] = loss.total_loss.item()
-        for metric_name, metrics in loss_info.metrics.items():
-            if isinstance(metrics, ClassificationMetrics):
-                new_message[f"{prefix}{name} Acc"] = f"{metrics.accuracy:.2%}"
-            elif isinstance(metrics, RegressionMetrics):
-                new_message[f"{prefix}{name} MSE"] = metrics.mse.item()
-    message.update(new_message)
 
 # Load up the addons, each of which adds independent, useful functionality to the Experiment base-class.
 # TODO: This might not be the cleanest/most elegant way to do it, but it's better than having files with 1000 lines in my opinion.

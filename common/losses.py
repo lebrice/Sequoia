@@ -9,7 +9,8 @@ from torch import Tensor
 
 from utils.utils import add_prefix
 
-from .metrics import ClassificationMetrics, Metrics, get_metrics
+from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
+                      get_metrics)
 
 
 def add_dicts(d1: Dict, d2: Dict, add_values=True) -> Dict:
@@ -113,38 +114,43 @@ class LossInfo:
             tensors=self.tensors,
         )
 
-    def add_prefix(self, prefix: str) -> None:
-        self.losses = add_prefix(self.losses, prefix)
-        self.tensors = add_prefix(self.tensors, prefix)
-        self.metrics = add_prefix(self.metrics, prefix)
-
     @property
     def unscaled_losses(self):
         return OrderedDict([
             (k, value / self.coefficient) for k, value in self.losses.items()
         ])
 
-    def to_log_dict(self) -> Dict:
-        log_dict: Dict[str, Any] = OrderedDict()
-        log_dict["name"] = self.name
-        log_dict["coefficient"] = self.coefficient.item() if isinstance(self.coefficient, Tensor) else self.coefficient
-        log_dict['total_loss'] = self.total_loss.item()
+    def to_log_dict(self) -> Dict[str, Union[str, float, Dict]]:
+        message: Dict[str, Union[str, float, Dict]] = OrderedDict()
+        # Log the total loss
+        message["Loss"] = float(self.total_loss.item())
+        # Log the metrics
+        for metric_name, metric in self.metrics.items():
+            metric_log_dict = metric.to_log_dict() 
+            message.update(metric_log_dict)
 
-        losses: Dict[str, Union[float, List, Dict]] = OrderedDict()
-        for loss_name, loss in self.losses.items():
-            if isinstance(loss, Tensor):
-                losses[loss_name] = loss.item() if loss.numel() == 1 else loss.tolist()
-            elif isinstance(loss, LossInfo):
-                losses[loss_name] = loss.to_log_dict()
-        log_dict["losses"] = losses
+        # Add the loss components as nested dicts, each with their own loss and metrics.
+        for name, loss_info in self.losses.items():
+            subloss_log_dict = loss_info.to_log_dict()
+            message[name] = subloss_log_dict
+        return message
 
-        metrics: Dict[str, Dict] = OrderedDict()
-        for name, metric in self.metrics.items():
-            metrics[name] = metric.to_log_dict()
-        log_dict["metrics"] = metrics
+    def to_pbar_message(self):
+        """ Smaller, less-detailed version of `self.to_log_dict()` (doesn't recurse into sublosses)
+        meant to be used in progressbars.
+        """
+        message: Dict[str, Union[str, float]] = OrderedDict()
+        message["Loss"] = float(self.total_loss.item())
+        for name, loss_info in self.losses.items():
+            message[f"{name} Loss"] = float(loss_info.total_loss.item())
+            for metric_name, metrics in loss_info.metrics.items():
+                if isinstance(metrics, ClassificationMetrics):
+                    message[f"{name} Acc"] = f"{metrics.accuracy:.2%}"
+                elif isinstance(metrics, RegressionMetrics):
+                    message[f"{name} MSE"] = float(metrics.mse.item())
+        prefix = (self.name + " ") if self.name else ""
+        return add_prefix(message, prefix)
 
-        # return add_prefix(log_dict, self.name)
-        return log_dict
 
 
 @dataclass
@@ -193,4 +199,3 @@ class TrainValidLosses:
     def latest_step(self) -> int:
         """Returns the latest global_step in the dicts."""
         return max(itertools.chain(self.train_losses, self.valid_losses), default=0)
-

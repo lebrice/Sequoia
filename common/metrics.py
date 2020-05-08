@@ -78,7 +78,7 @@ class RegressionMetrics(Metrics):
     
     def to_log_dict(self) -> Dict:
         return {
-            "mse": self.mse.item()
+            "mse": float(self.mse.item())
         }
 
 
@@ -132,8 +132,8 @@ class ClassificationMetrics(Metrics):
     
     def to_log_dict(self) -> Dict:
         d = super().to_log_dict()
-        d["accuracy"] = self.accuracy
-        d["class_accuracy"] = self.class_accuracy
+        d["accuracy"] = float(self.accuracy)
+        d["class_accuracy"] = self.class_accuracy.numpy().tolist()
         return d
     
     def __str__(self) -> str:

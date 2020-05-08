@@ -100,8 +100,10 @@ def add_prefix(some_dict: Dict[str, T], prefix: str="") -> Dict[str, T]:
     Returns
     -------
     Dict[str, T]
-        A dictionary where all keys start with the prefix.
+        A new dictionary where all keys start with the prefix.
     """
+    if not prefix:
+        return OrderedDict(some_dict.items())
     result: Dict[str, T] = OrderedDict()
     for key, value in some_dict.items():
         new_key = key if key.startswith(prefix) else (prefix + key)
