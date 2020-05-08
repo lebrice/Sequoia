@@ -1,2 +1,3 @@
-from .vae_addon import ExperimentWithVAE
+from .labeled_plot_regions import LabeledPlotRegionsAddon
 from .test_time_training import TestTimeTrainingAddon
+from .vae_addon import ExperimentWithVAE

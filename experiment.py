@@ -34,14 +34,7 @@ from utils.utils import add_prefix, is_nonempty_dir
 
 @dataclass  # type: ignore
 class ExperimentBase:
-    """ Describes the parameters of an experimental setting.
-    
-    (ex: Mnist_iid, Mnist_continual, Cifar10, etc. etc.)
-    
-    To create a new experiment, subclass this class, and add/change what you
-    need to customize.
-
-    TODO: Maybe add some code for saving/restoring experiments here?
+    """Base-class for an Experiment.
     """
     # Model Hyper-parameters
     hparams: Classifier.HParams = mutable_field(Classifier.HParams)
@@ -370,9 +363,19 @@ def add_messages_for_batch(loss: LossInfo, message: Dict, prefix: str=""):
                 new_message[f"{prefix}{name} MSE"] = metrics.mse.item()
     message.update(new_message)
 
-
-from addons import ExperimentWithVAE, TestTimeTrainingAddon
+# Load up the addons, each of which adds independent, useful functionality to the Experiment base-class.
+# TODO: This might not be the cleanest/most elegant way to do it, but it's better than having files with 1000 lines in my opinion.
+from addons import ExperimentWithVAE, TestTimeTrainingAddon, LabeledPlotRegionsAddon
 
 @dataclass  # type: ignore
-class Experiment(ExperimentWithVAE, TestTimeTrainingAddon):
+class Experiment(ExperimentWithVAE, TestTimeTrainingAddon, LabeledPlotRegionsAddon):
+    """ Describes the parameters of an experimental setting.
+    
+    (ex: Mnist_iid, Mnist_continual, Cifar10, etc. etc.)
+    
+    To create a new experiment, subclass this class, and add/change what you
+    need to customize.
+
+    TODO: Maybe add some code for saving/restoring experiments here?
+    """
     pass
