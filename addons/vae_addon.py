@@ -10,7 +10,7 @@ from common.losses import LossInfo
 from experiment import ExperimentBase
 from tasks.reconstruction import AEReconstructionTask, VAEReconstructionTask
 from tasks.tasks import Tasks
-
+import wandb
 
 @dataclass  # type: ignore
 class ExperimentWithVAE(ExperimentBase):
@@ -61,7 +61,10 @@ class ExperimentWithVAE(ExperimentBase):
         reconstruction_images_dir = self.samples_dir / "reconstruction"
         reconstruction_images_dir.mkdir(parents=True, exist_ok=True)
         file_name = reconstruction_images_dir / f"step_{self.global_step:08d}.png"
-        save_image(comparison.cpu(), file_name, nrow=n)
+        comparison = comparison.cpu().detach()
+        if self.config.use_wandb:
+            self.log({"reconstruction": wandb.Image(comparison)})
+        save_image(comparison, file_name, nrow=n)
 
     @torch.no_grad()
     def generate_samples(self):
@@ -75,4 +78,7 @@ class ExperimentWithVAE(ExperimentBase):
         generation_images_dir = self.samples_dir / "generated_samples"
         generation_images_dir.mkdir(parents=True, exist_ok=True)
         file_name = generation_images_dir / f"step_{self.global_step:08d}.png"
+
+        if self.config.use_wandb:
+            self.log({"generated": wandb.Image(fake_samples)})
         save_image(fake_samples, file_name)

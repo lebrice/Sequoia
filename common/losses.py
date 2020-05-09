@@ -120,20 +120,28 @@ class LossInfo:
             (k, value / self.coefficient) for k, value in self.losses.items()
         ])
 
-    def to_log_dict(self) -> Dict[str, Union[str, float, Dict]]:
-        message: Dict[str, Union[str, float, Dict]] = OrderedDict()
+    def to_log_dict(self, verbose: bool=False) -> Dict[str, Union[str, float, Dict]]:
+        log_dict: Dict[str, Union[str, float, Dict]] = OrderedDict()
         # Log the total loss
-        message["Loss"] = float(self.total_loss.item())
+        log_dict["loss"] = float(self.total_loss.item())
         # Log the metrics
+        metrics: Dict[str, Dict] = OrderedDict()
         for metric_name, metric in self.metrics.items():
             metric_log_dict = metric.to_log_dict() 
-            message.update(metric_log_dict)
+            metrics.update(metric_log_dict)
+        log_dict["metrics"] = metrics
+
+        tensors: Dict[str, Tensor] = OrderedDict()
+        if verbose:
+            for name, tensor in self.tensors.items():
+                tensors[name] = tensor.detach().cpu().numpy()
+        log_dict["tensors"] = tensors
 
         # Add the loss components as nested dicts, each with their own loss and metrics.
         for name, loss_info in self.losses.items():
-            subloss_log_dict = loss_info.to_log_dict()
-            message[name] = subloss_log_dict
-        return message
+            subloss_log_dict = loss_info.to_log_dict(verbose=verbose)
+            log_dict[name] = subloss_log_dict
+        return log_dict
 
     def to_pbar_message(self):
         """ Smaller, less-detailed version of `self.to_log_dict()` (doesn't recurse into sublosses)

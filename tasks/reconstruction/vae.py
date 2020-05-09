@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
 from torch import Tensor, nn
@@ -66,8 +66,7 @@ class VAEReconstructionTask(AEReconstructionTask):
 
         recon_loss = self.reconstruction_loss(x_hat, x)
         kl_loss = self.options.beta * self.kl_divergence_loss(mu, logvar)
-
-        loss_info = LossInfo(self.name)
+        loss_info = LossInfo(self.name, tensors=dict(mu=mu, logvar=logvar, z=z, x_hat=x_hat))
         loss_info += LossInfo("recon", total_loss=recon_loss)
         loss_info += LossInfo("kl", total_loss=kl_loss)
         return loss_info

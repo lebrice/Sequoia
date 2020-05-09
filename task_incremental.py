@@ -93,7 +93,7 @@ class TaskIncremental(Experiment):
             # point.
             self.save_to_results_dir({
                 "results.json": results,
-                "final_task_accuracy.csv": torch.stack(final_task_accuracies),
+                "final_task_accuracy.csv": torch.stack(final_task_accuracies).cpu().numpy().tolist(),
             })
 
             fig: plt.Figure = self.make_figure(

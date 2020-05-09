@@ -150,8 +150,8 @@ class ExperimentBase:
                     message.update(valid_loss.to_pbar_message())
                     pbar.set_postfix(message)
 
-                    train_log_dict = train_loss.to_log_dict()
-                    valid_log_dict = valid_loss.to_log_dict()
+                    train_log_dict = train_loss.to_log_dict(verbose=self.config.verbose)
+                    valid_log_dict = valid_loss.to_log_dict(verbose=self.config.verbose)
                     self.log({"Train": train_log_dict, "Valid": valid_log_dict})
             
             # perform a validation epoch.
@@ -288,7 +288,7 @@ class ExperimentBase:
         return self._samples_dir
     
     @samples_dir.setter
-    def samples_dir(self, value: Path) -> Path:
+    def samples_dir(self, value: Path) -> None:
         self._samples_dir = value
 
     @property
