@@ -49,7 +49,7 @@ class CifarClassifier(Classifier):
     def preprocess_inputs(self, x):
         # No special preprocessing needed.
         x = super().preprocess_inputs(x)
-        if self.hparams.pretrained_model:
+        if self.hparams.encoder_model:
             x = normalize(x, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225], inplace=True)
             x = torch.nn.functional.interpolate(x, size=(224, 224))
         return x 
