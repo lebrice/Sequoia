@@ -245,7 +245,7 @@ class TaskIncremental(Experiment):
                 # If we're cheating, then use the validation set for each task,
                 # and add up the results. This is easier than having to use
                 # different classifiers depending on the labels for each sample.
-                valid_loss = LossInfo()
+                valid_loss = LossInfo("Test")
                 # evaluate from task_id 0 to the current task_id.
                 for task_id in range(task_index + 1):
                     self.model.current_task_id = task_id
@@ -257,10 +257,11 @@ class TaskIncremental(Experiment):
 
             # train_losses.append(train_loss)
             valid_losses.append(valid_loss)
-            validation_metrics: Dict[str, Metrics] = valid_loss.metrics
-            supervised_metrics = validation_metrics[Tasks.SUPERVISED]
-            if isinstance(supervised_metrics, ClassificationMetrics):
-                class_accuracy = supervised_metrics.class_accuracy  
+            # NOTE: This is just a bugfix while I'm refactoring this mess.
+            supervised_metrics = valid_loss.losses[Tasks.SUPERVISED].metrics[Tasks.SUPERVISED]
+            # print("Supervised metrics", supervised_metrics)
+            assert isinstance(supervised_metrics, ClassificationMetrics)
+            class_accuracy = supervised_metrics.class_accuracy
             # print(f"AFTER TASK {task_index}:",
             #       f"\tCumulative Val Loss: {valid_loss.total_loss},",
             #       f"\tMean Class Accuracy: {class_accuracy.mean()}", sep=" ")
@@ -389,7 +390,7 @@ def get_mean_task_accuracy(loss: LossInfo, run_tasks: List[List[int]]) -> Tensor
         accuracy for each task. 
     """
     # get the last validation metrics.
-    metrics = loss.metrics
+    metrics = loss.losses[Tasks.SUPERVISED].metrics
     classification_metrics: ClassificationMetrics = metrics[Tasks.SUPERVISED]  # type: ignore
     final_class_accuracy = classification_metrics.class_accuracy
 
