@@ -1,5 +1,5 @@
 from collections import OrderedDict, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from itertools import accumulate
 from pathlib import Path
 from random import shuffle
@@ -8,18 +8,20 @@ from typing import Dict, Iterable, List, Tuple, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import wandb
 from simple_parsing import choice, field, subparsers
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
 
-from common.losses import LossInfo
+from common.losses import LossInfo, TrainValidLosses
 from common.metrics import Metrics, ClassificationMetrics, RegressionMetrics
 from config import Config
 from datasets.subset import VisionDatasetSubset
 from experiment import Experiment
 from utils.utils import n_consecutive, rgetattr, rsetattr
+from utils.json_utils import try_load
 from utils import utils
 from tasks import Tasks
 
@@ -31,13 +33,12 @@ class TaskIncremental(Experiment):
     n_classes_per_task: int = 2
     # Wether to sort out the classes in the class_incremental setting.
     random_class_ordering: bool = True
-    # (Maximum number of epochs of self-supervised training to perform before switching
-    # to supervised training.
+    # Maximum number of epochs of self-supervised training to perform on the
+    # task data before switching to supervised training.
     unsupervised_epochs_per_task: int = 5
-    # (Maximum number of epochs of supervised training to perform on each task's dataset.
+    # Maximum number of epochs of supervised training to perform on each task's
+    # dataset.
     supervised_epochs_per_task: int = 1
-    # Number of runs to execute in order to create the OML Figure 3.
-    n_runs: int = 5
     # Wether or not we want to cheat and get access to the task-label at train 
     # and test time. NOTE: This should ideally just be a temporary measure while
     # we try to prove that Self-Supervision can help.
@@ -46,81 +47,194 @@ class TaskIncremental(Experiment):
     def __post_init__(self):
         super().__post_init__()
         # The entire training and validation datasets.
-        self.train_full_dataset: VisionDataset = None
-        self.valid_full_dataset: VisionDataset = None
         self.train_datasets: List[VisionDatasetSubset] = []
         self.valid_datasets: List[VisionDatasetSubset] = []
         self.valid_cumul_datasets: List[VisionDatasetSubset] = []
 
-    def run(self):
-        # containers for the results of each individual run.
-        cumul_valid_losses: List[List[LossInfo]] = []
-        # Stores the final mean task accuracy per class.
-        final_task_accuracies: List[Tensor] = []
-        # stores the list of tasks (groups of labels) used in each run.
-        tasks: List[List[List[int]]] = []
+        self.tasks: List[List[int]] = []
+        self.n_tasks: int = 0
+
+        # Container for train/valid losses that are logged periodically.
+        self.all_losses = TrainValidLosses()
+
+        # Container for the losses. At index [i, j], gives the validation
+        # metrics on task j after having trained on tasks [0:i], for 0 < j <= i.
+        self.task_losses: List[List[Optional[LossInfo]]] = []
         
-        for i in range(self.n_runs):
-            print(f"STARTING RUN {i}")
-            # Set a different random seed for each run.
-            utils.set_seed(self.config.random_seed + i)
+        # Container for the KNN metrics. At index [i, j], gives the accuracy of
+        # a KNN classifier trained on the representations of the samples from
+        # task [i], evaluated on the representations of the the samples of task j.
+        # NOTE: The representations for task i are obtained using the encoder
+        # which was trained on tasks 0 through i.
+        self.knn_losses: List[List[LossInfo]] = []
+        
+        # Cumulative losses, which a
+        self.cumul_losses: List[Optional[LossInfo]] = []
+        
+        self.i: int = 0
+        self.j: int = 0
 
-            # Get the tasks to use for this run.
-            run_tasks = self.load()
-            # Get the resulting cumulative validation losses.
-            run_cumul_valid_losses: List[LossInfo] = self.run_once(run_tasks)
+    def run(self):
+        """Evaluates a model/method in the classical "task-incremental" setting.
 
-            final_loss = run_cumul_valid_losses[-1]
-            run_final_task_accuracies = get_mean_task_accuracy(final_loss, run_tasks)
+        NOTE: We evaluate the performance on all tasks:
+        - When the task has NOT been trained on before, we evaluate the ability
+        of the representations to "generalize" to unseen tasks by training a KNN
+        classifier on the representations of target task's training set, and
+        evaluating it on the representations of the target task's validation set.
+        - When the task has been previously trained on, we evaluate the
+        classification loss/metrics (and auxiliary tasks, if any) as well as the
+        representations with the KNN classifier.
 
-            # Accumulate the results of this run in the above lists
-            tasks.append(run_tasks)
-            cumul_valid_losses.append(run_cumul_valid_losses)
-            final_task_accuracies.append(run_final_task_accuracies)
+        Roughly equivalent to the following pseudocode:
+        ```
+        # Training and Validdation datasets
+        train_datasets: Dataset[n_tasks]
+        valid_datasets: Dataset[n_tasks]
+
+        # Arrays containing the loss/performance metrics. (Value at idx (i, j)
+        # is the preformance on task j after having trained on tasks [0:i].)
+        
+        knn_losses: LossInfo[n_tasks][n_tasks] 
+        tasks_losses: LossInfo[n_tasks][j]  #(this is a lower triangular matrix)
+
+        # Array of objects containing the loss/performance on tasks seen so far.
+        cumul_losses: LossInfo[n_tasks]
+        
+        for i in range(n_tasks):
+            train_until_convergence(train_datasets[i], valid_datasets[i])
             
-            # results: Dict = {
-            #     "tasks": tasks,
-            #     "cumul_valid_losses": cumul_valid_losses,
-            #     "final_task_accuracy": torch.stack(final_task_accuracies),
-            # }
+            # Cumulative (supervised) validation performance.
+            cumul_loss = LossInfo()
 
-            # create a "stacked"/"serializable" version of the loss objects.
-            results: Dict = make_results_dict(cumul_valid_losses)
-            # add the tasks to `results` so we save it in the json file.
-            results["task_classes"] = tasks
-            # Save after each run, just in case we interrupt anything, so we
-            # still get partial results even if something goes wrong at some
-            # point.
-            self.save_to_results_dir({
-                "results.json": results,
-                "final_task_accuracy.csv": torch.stack(final_task_accuracies).cpu().numpy().tolist(),
-            })
+            for j in range(n_tasks):
+                # Evaluate the representations with a KNN classifier.
+                knn_loss_j = evaluate_knn(train_dataset[j], valid_datasets[j])
+                knn_losses[i][j] = knn_loss_j
+                
+                if j <= i:
+                    # We have previously trained on this class.
+                    loss_j = evaluate(valid_datasets[j])
+                    task_losses[i][j] = loss_j
+                    cumul_loss += loss_j
 
-            fig: plt.Figure = self.make_figure(
-                results,
-                tasks,
-                final_task_accuracies,
-            )
+            cumul_losses[i] = cumul_loss
+        ```
+        """
+        # TODO: restore previous state.
+        self.model = self.init_model()
+        self.tasks = self.load_datasets(self.tasks)
+        # All classes in the order in which t
+        self.n_tasks = len(self.tasks)
+        print("Class Ordering:", self.tasks)
+        
+        if self.global_step == 0:
+            self.knn_losses   = [[None] * self.n_tasks] * self.n_tasks # [N,N]
+            self.task_losses  = [[None] * (i+1) for i in range(self.n_tasks)] # [N,J]
+            self.cumul_losses = [None] * self.n_tasks # [N]
+        print(self.cumul_losses)
 
-            if self.config.debug:
-                fig.show()
-                fig.waitforbuttonpress(timeout=10)
+        for i in range(self.i, self.n_tasks):
+            self.i = i
+            self.logger.info(f"Starting task {i} with classes {self.tasks[i]}")
+ 
+            # If we are using a multihead model, we give it the task label (so
+            # that it can spawn / reuse the output head for the given task).
+            if self.multihead:
+                self.model.current_task_id = i
+
+            # Training and validation datasets for task i.
+            train_i = self.train_datasets[i]
+            valid_i = self.valid_datasets[i]
+
+            with self.plot_region_name(f"Learn Task {i}"):
+                # We only train (unsupervised) if there is at least one enabled
+                # auxiliary task and if the maximum number of unsupervised
+                # epochs per task is greater than zero.
+                self_supervision_on = any(task.enabled for task in self.model.tasks.values())
+
+                if self_supervision_on and self.unsupervised_epochs_per_task:
+                    # Temporarily remove the labels.
+                    with train_i.without_labels(), valid_i.without_labels():
+                        # Un/self-supervised training on task i.
+                        self.all_losses += self.train_until_convergence(
+                            train_i,
+                            valid_i,
+                            max_epochs=self.unsupervised_epochs_per_task,
+                            description=f"Task {i} (Unsupervised)",
+                        )
+
+                # Train (supervised) on task i.
+                self.all_losses += self.train_until_convergence(
+                    train_i,
+                    valid_i,
+                    max_epochs=self.supervised_epochs_per_task,
+                    description=f"Task {i} (Supervised)",
+                )
+
+            # TODO: save the state during training.
+
+            #  Evaluate on all tasks (as described above).
+            cumul_loss = LossInfo(f"cumul_losses[{i}]")
             
-            fig.savefig(self.plots_dir / "oml_fig.jpg")
-            self.log({"oml_fig.jpg": fig}, once=True)
+            for j in range(self.j, self.n_tasks):
+                self.j = j
+                train_j = self.train_datasets[j]
+                valid_j = self.valid_datasets[j]
 
-        task_accuracy = torch.stack(final_task_accuracies)
-        task_accuracy_means = task_accuracy.mean(dim=0).detach().numpy()
-        task_accuracy_stds  = task_accuracy.std(dim=0).detach().numpy()
-        self.log({
-            "Final Task Accuracy means:": task_accuracy_means,
-            "Final Task Accuracy stds:": task_accuracy_stds,
-            }, once=True, always_print=True)
+                # Measure how linearly separable the representations of task j
+                # are by training and evaluating a KNNClassifier on the data of task j.
+                train_knn_loss, valid_knn_loss = self.test_knn(train_j, valid_j, description=f"KNN[{i}][{j}]")
+                self.log({
+                    f"knn_losses[{i}][{j}]/train": train_knn_loss.to_log_dict(),
+                    f"knn_losses[{i}][{j}]/valid": valid_knn_loss.to_log_dict(),
+                })
+                self.knn_losses[i][j] = valid_knn_loss
 
-    def make_figure(self,
+                if j <= i:
+                    # If we have previously trained on this task:
+                    self.model.current_task_id = j
+                    loss_j = self.test(dataset=valid_j, description=f"task_losses[{i}][{j}]")
+                    cumul_loss += loss_j
+                    
+                    self.task_losses[i][j] = loss_j
+                    self.log({f"task_losses[{i}][{j}]": loss_j.to_log_dict()})
+
+            self.cumul_losses[i] = cumul_loss
+            self.j = 0
+
+            valid_log_dict = cumul_loss.to_log_dict()
+            self.log({f"cumul_losses[{i}]": valid_log_dict})
+
+        # TODO: Save the results to a json file.
+        self.all_losses.save_json(self.results_dir / "losses.json")
+        # TODO: save the rest of the state.
+        # self.save_state(self.results_dir)
+        # torch.save(self.plot_sections, str(self.results_dir / "plot_labels.pt"))
+
+        from utils.plotting import maximize_figure
+        # Make the remembering grid figure.
+        grid = self.make_transfer_grid_figure(self.knn_losses, self.task_losses, self.cumul_losses)
+        maximize_figure()
+        fig.savefig(self.plots_dir / "remembering_plot.png")
+        
+        # make the plot of the losses (might not be useful, since we could also just do it in wandb).
+        fig = self.make_loss_figure(self.all_losses, self.plot_sections)
+        maximize_figure()
+        fig.savefig(self.plots_dir / "losses.png")
+        
+        if self.config.debug:
+            fig.show()
+            fig.waitforbuttonpress(10)
+
+    def make_transfer_grid_figure(self, knn_losses: List[List[LossInfo]], task_losses: List[List[LossInfo]], cumul_losses: List[LossInfo]) -> plt.Figure:
+        raise NotImplementedError("Not sure if I should do it manually or in wandb.")
+
+    def make_loss_figure(self,
                     results: Dict,
                     run_task_classes: List[List[List[int]]],
                     run_final_task_accuracies: List[Tensor]) -> plt.Figure:
+        raise NotImplementedError("Not sure if I should do it manually or in wandb.")
         n_runs = len(run_task_classes)
         n_tasks = len(run_task_classes[0])
         
@@ -175,139 +289,48 @@ class TaskIncremental(Experiment):
         
         return fig
 
-    def run_once(self, tasks: List[List[int]]) -> Tuple[List[LossInfo], List[List[int]]]:
-        """Executes one single run from the OML figure 3.
-        
-        Trains the model until convergence on each task, using the validation
-        set specific to each task. Then, evaluates the model on the cumulative
-        validation set.
+    def load_datasets(self, tasks: List[List[int]]=None) -> List[List[int]]:
+        """Create the train, valid and cumulative datasets for each task.
 
-        Args:
-            tasks: List[List[int]] A list containing a list of the
-            classes learned during each task.
-        
-        Returns:
-            valid_cumul_losses: List[LossInfo] List of total losses on the
-            cummulative validation dataset after learning each task
-        """
-        self.init_model()
-
-        label_order: List[int] = sum(tasks, [])
-        print("Class Ordering:", label_order)
-        
-        datasets = zip(
-            self.train_datasets,
-            self.valid_datasets,
-            self.valid_cumul_datasets
-        )
-        
-        train_losses: List[LossInfo] = []
-        valid_losses: List[LossInfo] = []
-
-        train: VisionDatasetSubset
-        valid: VisionDatasetSubset
-        valid_cumul: VisionDatasetSubset
-        
-        for task_index, (train, valid, valid_cumul) in enumerate(datasets):
-            if self.multihead:
-                self.model.current_task_id = task_index
-            
-            classes = tasks[task_index]
-            print(f"Starting task {task_index}, Classes {classes}")
-
-            # if there are any enabled auxiliary tasks:
-            if any(task.enabled for task in self.model.tasks.values()):
-                # temporarily remove the labels
-                with train.without_labels(), valid.without_labels():
-                    # Train (Unsupervised/Self-supervised)
-                    self.train_until_convergence(
-                        train,
-                        valid,
-                        max_epochs=self.unsupervised_epochs_per_task,
-                        description=f"Task {task_index} (Unsupervised)",
-                    )
-            # Train (supervised)
-            self.train_until_convergence(
-                train,
-                valid,
-                max_epochs=self.supervised_epochs_per_task,
-                description=f"Task {task_index} (Supervised)",
-            )
-            
-            # Evaluate the performance on the cumulative validation set.
-            if not self.multihead:
-                # just use the whole cumulative validation set.
-                valid_loss = self.test(
-                    valid_cumul,
-                    description=f"Task {task_index} Valid (Cumul) "
-                )
-            else:
-                # If we're cheating, then use the validation set for each task,
-                # and add up the results. This is easier than having to use
-                # different classifiers depending on the labels for each sample.
-                valid_loss = LossInfo("Test")
-                # evaluate from task_id 0 to the current task_id.
-                for task_id in range(task_index + 1):
-                    self.model.current_task_id = task_id
-                    valid_dataset = self.valid_datasets[task_id]
-                    valid_loss += self.test(
-                        dataset=valid_dataset,
-                        description=f"Task {task_index} Valid for Task {task_id} "
-                    )
-
-            # train_losses.append(train_loss)
-            valid_losses.append(valid_loss)
-            # NOTE: This is just a bugfix while I'm refactoring this mess.
-            supervised_metrics = valid_loss.losses[Tasks.SUPERVISED].metrics[Tasks.SUPERVISED]
-            # print("Supervised metrics", supervised_metrics)
-            assert isinstance(supervised_metrics, ClassificationMetrics)
-            class_accuracy = supervised_metrics.class_accuracy
-            # print(f"AFTER TASK {task_index}:",
-            #       f"\tCumulative Val Loss: {valid_loss.total_loss},",
-            #       f"\tMean Class Accuracy: {class_accuracy.mean()}", sep=" ")
-
-        return valid_losses
-
-    def load(self) -> List[List[int]]:
-        """Create the train, valid and cumulative datasets for each task. 
+        If tasks are given, uses them to create/load the datasets.
         
         Returns:
             List[List[int]]: The groups of classes for each task.
         """
 
         # download the dataset.
-        self.dataset.load(self.config)
+        super().load_datasets()
         assert self.dataset.train is not None
         assert self.dataset.valid is not None
 
         # safeguard the entire training dataset.
-        self.train_full_dataset = self.dataset.train
-        self.valid_full_dataset = self.dataset.valid
-        
+        train_full_dataset = self.train_dataset
+        valid_full_dataset = self.valid_dataset
+
         self.train_datasets.clear()
         self.valid_datasets.clear()
-        all_labels = list(range(self.dataset.y_shape[0]))
-        
-        if self.random_class_ordering:
-            shuffle(all_labels)
 
-        tasks: List[List[int]] = []
-        
-        for label_group in n_consecutive(all_labels, self.n_classes_per_task):
-            train = VisionDatasetSubset(self.train_full_dataset, label_group)
+        if not tasks:
+            # Create the tasks, if they aren't given.
+            classes = list(range(self.dataset.y_shape[0]))
+            if self.random_class_ordering:
+                shuffle(classes)
+            tasks = []
+            for label_group in n_consecutive(classes, self.n_classes_per_task):
+                tasks.append(list(label_group))
+
+        for i, task in enumerate(tasks):
+            train = VisionDatasetSubset(train_full_dataset, task)
+            valid = VisionDatasetSubset(valid_full_dataset, task)
             self.train_datasets.append(train)
-
-            valid = VisionDatasetSubset(self.valid_full_dataset, label_group)
             self.valid_datasets.append(valid)
 
-            tasks.append(list(label_group))
-
+        # Use itertools.accumulate to do the summation of validation datasets.
         self.valid_cumul_datasets = list(accumulate(self.valid_datasets))
-        
-        datasets = zip(self.train_datasets,
-                       self.valid_datasets,
-                       self.valid_cumul_datasets)
-        for i, (train, valid, cumul) in enumerate(datasets):
+
+        for i, (train, valid, cumul) in enumerate(zip(self.train_datasets,
+                                                      self.valid_datasets,
+                                                      self.valid_cumul_datasets)):
             self.save_images(i, train, prefix="train_")
             self.save_images(i, valid, prefix="valid_")
             self.save_images(i, cumul, prefix="valid_cumul_")

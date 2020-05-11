@@ -15,8 +15,8 @@ import tqdm
 import wandb
 from simple_parsing import choice, field, mutable_field, subparsers
 from torch import Tensor, nn
-from torch.utils.data import DataLoader, Dataset
-
+from torch.utils.data import DataLoader, Dataset, TensorDataset
+from torchvision.datasets import VisionDataset
 from common.losses import LossInfo
 from common.metrics import (ClassificationMetrics, RegressionMetrics,
                             get_metrics)
@@ -30,7 +30,7 @@ from tasks import AuxiliaryTask, Tasks
 from utils import utils
 from utils.json_utils import is_json_serializable, to_str, to_str_dict
 from utils.utils import add_prefix, is_nonempty_dir
-
+from utils.logging import pbar
 
 @dataclass  # type: ignore
 class ExperimentBase:
@@ -66,7 +66,8 @@ class ExperimentBase:
             AuxiliaryTask.input_shape = self.dataset.x_shape
             AuxiliaryTask.hidden_size = self.hparams.hidden_size
 
-
+        self.train_dataset: VisionDataset = NotImplemented
+        self.valid_dataset: VisionDataset = NotImplemented
         self.train_loader: DataLoader = NotImplemented
         self.valid_loader: DataLoader = NotImplemented
 
@@ -85,16 +86,17 @@ class ExperimentBase:
     def run(self):
         pass
 
-    def load(self):
+    def load_datasets(self):
         """ Setup the dataloaders and other settings before training. """
-        self.dataset.load(self.config)
-        dataloaders = self.dataset.get_dataloaders(self.config, self.hparams.batch_size)
-        self.train_loader, self.valid_loader = dataloaders
-        self.global_step = 0
+        self.train_dataset, self.valid_dataset = self.dataset.load(data_dir=self.config.data_dir)
+        self.train_loader = self.get_dataloader(self.train_dataset)
+        self.valid_loader = self.get_dataloader(self.valid_dataset)
 
-    def init_model(self):
+    def init_model(self) -> Classifier:
         print("init model")
-        self.model = self.get_model_for_dataset(self.dataset).to(self.config.device)
+        model = self.get_model_for_dataset(self.dataset)
+        model.to(self.config.device)
+        return model
 
     def get_model_for_dataset(self, dataset: DatasetConfig) -> Classifier:
         from models.mnist import MnistClassifier
@@ -150,8 +152,8 @@ class ExperimentBase:
                     message.update(valid_loss.to_pbar_message())
                     pbar.set_postfix(message)
 
-                    train_log_dict = train_loss.to_log_dict(verbose=self.config.verbose)
-                    valid_log_dict = valid_loss.to_log_dict(verbose=self.config.verbose)
+                    train_log_dict = train_loss.to_log_dict(verbose=True)
+                    valid_log_dict = valid_loss.to_log_dict(verbose=True)
                     self.log({"Train": train_log_dict, "Valid": valid_log_dict})
             
             # perform a validation epoch.
@@ -217,6 +219,38 @@ class ExperimentBase:
                 pbar.set_postfix(message)
 
         return total_loss
+
+    @torch.no_grad()
+    def test_knn(self, train_dataset: Dataset, test_dataset: Dataset, description: str="") -> Tuple[LossInfo, LossInfo]:
+        """TODO: Test the representations using a KNN classifier. """
+        
+        def get_hidden_codes_array(dataloader: DataLoader) -> Tuple[np.ndarray, np.ndarray]:
+            """ Gets the hidden vectors and corresponding labels. """
+            h_x_list: List[np.ndarray] = []
+            y_list: List[np.ndarray] = []
+            for batch in pbar(dataloader, description):
+                x, y = self.preprocess(batch)
+                # We only do KNN with examples that have a label.
+                if y is not None:
+                    h_x = self.model.encode(x)
+                    h_x_list.append(h_x.detach().cpu().numpy())
+                    y_list.append(y.detach().cpu().numpy())
+            return np.concatenate(h_x_list), np.concatenate(y_list)
+        
+        train_dataloader = self.get_dataloader(train_dataset)
+        h_x, y = get_hidden_codes_array(train_dataloader)
+        
+        test_dataloader = self.get_dataloader(test_dataset)
+        h_x_test, y_test = get_hidden_codes_array(test_dataloader)
+        
+        from utils.knn import evaluate_knn
+        train_loss, test_loss = evaluate_knn(
+            x=h_x, y=y,
+            x_t=h_x_test, y_t=y_test,
+        )
+        # train_loss = LossInfo("KNN-Train", y_pred=y_pred_train, y=y)
+        # test_loss = LossInfo("KNN-Test", y_pred=y_pred_train, y=y)
+        return train_loss, test_loss
 
     def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.eval()
@@ -355,7 +389,6 @@ class ExperimentBase:
     def load_from_config(cls, config_path: Union[Path, str]):
         with open(config_path) as f:
             return torch.load(f)
-
 
 # Load up the addons, each of which adds independent, useful functionality to the Experiment base-class.
 # TODO: This might not be the cleanest/most elegant way to do it, but it's better than having files with 1000 lines in my opinion.

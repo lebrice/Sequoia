@@ -15,7 +15,12 @@ class LabeledPlotRegionsAddon(ExperimentBase):
     @contextmanager
     def plot_region_name(self, description: str):
         start_step = self.global_step
-        yield
-        end_step = self.global_step
-        plot_section_label = PlotSectionLabel(start_step, end_step, description)
+        plot_section_label = PlotSectionLabel(
+            start_step=start_step,
+            stop_step=None,
+            description=description,
+        )
         self.plot_sections.append(plot_section_label)
+        yield
+        plot_section_label.stop_step = self.global_step
+        

@@ -26,7 +26,7 @@ class ExperimentWithVAE(ExperimentBase):
         self.generation_task: Optional[VAEReconstructionTask] = None
 
     def init_model(self):
-        super().init_model()
+        self.model = super().init_model()
         # find the reconstruction task, if there is one.
         if Tasks.VAE in self.model.tasks:
             self.reconstruction_task = self.model.tasks[Tasks.VAE]
@@ -35,7 +35,8 @@ class ExperimentWithVAE(ExperimentBase):
         elif Tasks.AE in self.model.tasks:
             self.reconstruction_task = self.model.tasks[Tasks.AE]
             self.generation_task = None
-        
+        return self.model
+
     def train_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         x_batch: Optional[Tensor] = None
         for loss in super().train_iter(dataloader):

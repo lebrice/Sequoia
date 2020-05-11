@@ -36,7 +36,7 @@ class ActiveRemembering(TaskIncremental):
         # Load the datasets and return the set of classes within each task.
         tasks: List[List[int]] = self.load()
 
-        self.init_model()
+        self.model = self.init_model()
         
         if not any(task.enabled for task in self.model.tasks.values()):
             self.log("At least one Auxiliary Task should be activated in order "
@@ -48,41 +48,26 @@ class ActiveRemembering(TaskIncremental):
         label_order: List[int] = sum(tasks, [])
         print("Class Ordering:", label_order)
         
-        datasets = zip(
-            self.train_datasets,
-            self.valid_datasets,
-            self.valid_cumul_datasets
-        )
-        
-        train_losses: List[LossInfo] = []
-        valid_losses: List[LossInfo] = []
-
-        train_i: VisionDatasetSubset
-        valid_i: VisionDatasetSubset
-        valid_0_to_i: VisionDatasetSubset
-        
-        train_0: VisionDatasetSubset = self.train_datasets[0]
-        valid_0: VisionDatasetSubset = self.valid_datasets[0]
-
-        train_valid_losses = TrainValidLosses()
-        
-        # TODO: Try to load the train_valid_losses from the json file.
         train_valid_losses = (
-            TrainValidLosses.load_json(self.results_dir / "losses.json") or
+            TrainValidLosses.try_load_json(self.results_dir / "losses.json") or
             TrainValidLosses()
         )
+
         self.global_step = train_valid_losses.latest_step()
         if self.global_step != 0:
             self.plot_sections = try_load(self.results_dir / "plot_labels.pt", [])
-            
             # TODO: reset the state of the experiment.
             print(f"Experiment is already at step {self.global_step}")
             # Right now I just skip the training and just go straight to making the plot with the existing data:
-            datasets = []
+            self.tasks = []
 
+        for task_index, task in enumerate(self.tasks):
+            self.logger.info(f"Starting task {task_index} with classes {task}")
+            
+            train_i: VisionDatasetSubset = self.train_datasets[task_index]
+            valid_i: VisionDatasetSubset = self.valid_datasets[task_index]
+            valid_0_to_i: VisionDatasetSubset = self.valid_cumul_datasets[task_index]
 
-        for task_index, (train_i, valid_i, valid_0_to_i) in enumerate(datasets):
-            print(f"Starting task {task_index} with classes {tasks[task_index]}")
             # If we are using a multihead model, we give it the task label (so
             # that it can spawn / reuse the output head for the given task).
             if self.multihead:
@@ -112,6 +97,10 @@ class ActiveRemembering(TaskIncremental):
                 # Use the output head for task 0 if we are in multihead setup:
                 if self.multihead:
                     self.model.current_task_id = 0
+
+                train_0: VisionDatasetSubset = self.train_datasets[0]
+                valid_0: VisionDatasetSubset = self.valid_datasets[0]
+
                 with train_0.without_labels(), self.plot_region_name("Remember Task 0"):
                     # Here by using train_until_convergence we also periodically
                     # evaluate the validation loss on batches from the (labeled)

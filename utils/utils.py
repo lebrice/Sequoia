@@ -1,7 +1,7 @@
 """ Set of Utilities. """
-
 import collections
 import functools
+import random
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import MutableMapping
 from pathlib import Path
@@ -28,32 +28,6 @@ def n_consecutive(items: Iterable[T], n: int=2, yield_last_batch=True) -> Iterab
             values.clear()
     if values and yield_last_batch:
         yield tuple(values)
-
-
-def to_list(tensors: Iterable[Union[Any, Tensor]]) -> List[float]:
-    """Converts a list of tensors into a list of values.
-    
-    `tensors` must contain scalar tensors.
-    
-    Parameters
-    ----------
-    - tensors : Iterable[Union[T, Tensor]]
-    
-        some scalar tensors
-    
-    Returns
-    -------
-    List[float]
-        A list of their values.
-    """
-    if tensors is None:
-        return []
-    
-    return list(map(
-        lambda v: (v.item() if isinstance(v, Tensor) else v),
-        tensors,
-        )
-    )
 
 
 def fix_channels(x_batch: Tensor) -> Tensor:
@@ -123,6 +97,7 @@ def loss_str(loss_tensor: Tensor) -> str:
 
 def set_seed(seed: int):
     """ Set the pytorch/numpy random seed. """
+    random.seed(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
 

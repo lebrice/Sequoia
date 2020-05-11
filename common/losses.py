@@ -124,7 +124,7 @@ class LossInfo:
             (k, value / self.coefficient) for k, value in self.losses.items()
         ])
 
-    def to_log_dict(self, verbose: bool=False) -> Dict[str, Union[str, float, Dict]]:
+    def to_log_dict(self, verbose: bool=True) -> Dict[str, Union[str, float, Dict]]:
         log_dict: Dict[str, Union[str, float, Dict]] = OrderedDict()
         # Log the total loss
         log_dict["loss"] = float(self.total_loss.item())
@@ -135,10 +135,10 @@ class LossInfo:
             metrics.update(metric_log_dict)
         log_dict["metrics"] = metrics
 
-        tensors: Dict[str, Tensor] = OrderedDict()
+        tensors: Dict[str, List] = OrderedDict()
         if verbose:
             for name, tensor in self.tensors.items():
-                tensors[name] = tensor.detach().cpu().numpy()
+                tensors[name] = tensor.tolist()
         log_dict["tensors"] = tensors
 
         # Add the loss components as nested dicts, each with their own loss and metrics.
@@ -199,14 +199,18 @@ class TrainValidLosses:
         torch.save(self, f=str(path.with_suffix(".pt")))
     
     @classmethod
-    def load_json(cls, path: Path) -> Optional["TrainValidLosses"]:
+    def try_load_json(cls, path: Path) -> Optional["TrainValidLosses"]:
         try:
-            path = path.with_suffix(".pt")
-            with open(path, 'rb') as f:
-                return torch.load(f)
+            return cls.load_json(path)
         except Exception as e:
             print(f"Couldn't load from path {path}: {e}")
             return None
+    
+    @classmethod
+    def load_json(cls, path: Path) -> Optional["TrainValidLosses"]:
+        path = path.with_suffix(".pt")
+        with open(path, 'rb') as f:
+            return torch.load(f)
     
     def latest_step(self) -> int:
         """Returns the latest global_step in the dicts."""

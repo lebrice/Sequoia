@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field, InitVar, asdict
 from typing import Dict, Optional, Union
+import numpy as np
 import torch
 from torch import Tensor
 from collections import OrderedDict
@@ -140,10 +141,16 @@ class ClassificationMetrics(Metrics):
         return f"metrics(n_samples={self.n_samples}, accuracy={self.accuracy:.2%})"
 
 @torch.no_grad()
-def get_metrics(y_pred: Tensor,
-                y: Tensor,
-                x: Tensor=None,
-                h_x: Tensor=None) -> Union[ClassificationMetrics, RegressionMetrics]:
+def get_metrics(y_pred: Union[Tensor, np.ndarray],
+                y: Union[Tensor, np.ndarray],
+                x: Union[Tensor, np.ndarray]=None,
+                h_x: Union[Tensor, np.ndarray]=None) -> Union[ClassificationMetrics, RegressionMetrics]:
+    y = torch.as_tensor(y)
+    y_pred = torch.as_tensor(y_pred)
+    if x is not None:
+        x = torch.as_tensor(x)
+    if h_x is not None:
+        h_x = torch.as_tensor(h_x)
     if y.is_floating_point():
         return RegressionMetrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
     else:

@@ -16,8 +16,6 @@ from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
 
 from config import Config
-from utils import cuda_available, gpus_available
-from utils.utils import n_consecutive, to_list
 
 
 @dataclass
@@ -49,7 +47,7 @@ class DatasetConfig:
 
     _loaded: bool = False
 
-    def load(self, config: Config=None, data_dir: Path=None) -> None:
+    def load(self, data_dir: Path=None) -> Tuple[VisionDataset, VisionDataset]:
         """ Downloads the corresponding datasets.
 
         TODO: Maybe figure out a way to get the resizing to happen here instead of
@@ -57,30 +55,29 @@ class DatasetConfig:
         Would there be a benefit in doing so?
         """
         if self._loaded:
-            return
-        if config:
-            data_dir = config.data_dir
-        elif not data_dir:
-            data_dir = Path("data")
+            assert self.train, self.valid
+            return self.train, self.valid
 
+        # Use the data_dir argument if given, otherwise use "./data"
+        data_dir = data_dir or Path("data")
         self.train = self.dataset_class(data_dir, train=True,  download=True, transform=self.transforms)
-        # print(self.transforms)
-        # print(self.train[0][0].shape)
-        # exit()
         self.valid = self.dataset_class(data_dir, train=False, download=True, transform=self.transforms)
-        self._loaded = True     
+        self._loaded = True
+        return self.train, self.valid
 
     def get_dataloaders(self, config: Config, batch_size: int = 64) -> Tuple[Optional[DataLoader], Optional[DataLoader]]:
         """Create the train and test dataloaders using the passed arguments.
 
         You might want to override/extend this method subclasses.
 
+        (NOTE: currently unused, will probably be removed at some point.)
+
         Returns
         -------
         Tuple[DataLoader, DataLoader]
             The training and validation dataloaders.
         """
-        self.load(config)
+        self.load(config.log_dir)
 
         train_loader = None
         if self.train:

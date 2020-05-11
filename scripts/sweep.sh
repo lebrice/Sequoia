@@ -10,6 +10,7 @@ echo "Sweep with name '$NAME' and with args '$ARGS'"
 # activate the virtual environment (only used to download the datasets)
 source ~/ENV/bin/activate
 python -m scripts.download_datasets --data_dir "$SCRATCH/data"
+python -m scripts.download_pretrained_models # --save_dir "$SCRATCH/checkpoints"
 deactivate
 
 zip -u "$SCRATCH/data.zip" "$SCRATCH/data"
