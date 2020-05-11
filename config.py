@@ -45,13 +45,17 @@ class Config:
     # Used to create a parent folder that will contain the `run_name` directory. 
     run_group: Optional[str] = None 
     run_name: Optional[str] = None  # Wandb run name. If None, will use wandb's automatic name generation
+    
+    # An run number is used to differentiate different iterations of the same experiment.
+    # Runs with the same name can be later grouped with wandb to produce stderr plots.
+    run_number: Optional[int] = None 
 
     # Field that stores the arguments that was used to produce this run.
     argv: List[str] = field(init=False, default_factory=list) 
 
     def __post_init__(self):
         # set the manual seed (for reproducibility)
-        set_seed(self.random_seed)
+        set_seed(self.random_seed + (self.run_number or 0))
 
         if self.use_cuda and not cuda_available:
             print("Cannot use the passed value of argument 'use_cuda', as CUDA "
@@ -79,7 +83,11 @@ class Config:
     
     @property
     def log_dir(self):
-        return self.log_dir_root.joinpath(self.run_group or "", self.run_name or 'default')
+        return self.log_dir_root.joinpath(
+            self.run_group or "",
+            self.run_name or 'default',
+            f"-{self.run_number}" if self.run_number is not None else ""
+        )
 
 
 # shared config object.

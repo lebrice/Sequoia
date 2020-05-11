@@ -5,7 +5,6 @@
 #SBATCH --mem=32G                       # Memory proportional to GPUs: 32000 Cedar, 64000 Graham.
 #SBATCH --time=24:00:00                 # The job will run for 24 hours max
 #SBATCH --output /scratch/normandf/%x-%j.out  # Write the log in $SCRATCH
-
 module load httpproxy
 module load python/3.7
 
@@ -32,10 +31,11 @@ unzip -n $SLURM_TMPDIR/data.zip -d $SLURM_TMPDIR
 echo "Executing main.py with additional args: ${@:1}"
 
 wandb off
-
 python -u main.py task-incremental \
     --data_dir $SLURM_TMPDIR/data \
-    --log_dir_root $SLURM_TMPDIR/SSCL "${@:1}"
+    --log_dir_root $SLURM_TMPDIR/SSCL \
+    --run_number ${SLURM_ARRAY_TASK_ID:-0} \
+    "${@:1}"
 
 rsync -r -u $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
 
