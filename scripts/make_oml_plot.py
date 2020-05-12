@@ -1,9 +1,9 @@
 import glob
 import json
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, InitVar
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Union
+from typing import Dict, Iterable, List, Optional, Union, Callable, Tuple
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -46,7 +46,20 @@ class OmlFigureOptions:
     # Add a prefix indicating the number of auxiliary tasks used: ("n_").
     add_ntasks_prefix: bool = False
 
-    def __post_init__(self):
+    # Wether or not to maximize the figure to fit the current screen size.
+    maximize_figure: bool = True
+    # A manually specified figure size, in case we don't want to maximize the figure.
+    fig_size_inches: Tuple[int, int] = (12, 9)
+    
+    # An optional function that returns the formatted label, given a run's path
+    # and the current auto-formatted label.
+    label_formatting_fn: InitVar[Optional[Callable[[Path, str], str]]] = None
+
+    # Where to place the legend.
+    legend_position: str = "lower left"
+
+    def __post_init__(self, label_formatting_fn: Callable[[Path, str], str]=None):
+        self.label_formatting_fn = label_formatting_fn
         # The dictionary of result dicts.
         self.results: Dict[Path, Dict[Optional[Path], Dict]] = OrderedDict()
 
@@ -88,21 +101,26 @@ class OmlFigureOptions:
                     continue
         
         print("Kept runs:")
-        for run_name, d in self.results.items():
+        for run_path, d in self.results.items():
             for run_number, _ in d.items():
-                print("\t", run_name, run_number or "")
+                print("\t", run_path, run_number or "")
         
         run_names: List[str] = [p.name for p in self.results.keys()]
         prefix = longest_common_prefix(run_names)
         print(f"Common prefix: '{prefix}'")
 
-        if not self.title and prefix:
+        if self.title is None and prefix:
             self.title = prefix
             # if any(str(p.parent) != self.title for p in paths):
             #     self.title = "Results"
 
         fig = self.make_plot()
-        maximize_figure()
+        
+        if self.maximize_figure:
+            maximize_figure()
+        else:
+            fig.set_size_inches(self.fig_size_inches)
+        
         self.out_path = Path(self.out_path)
         self.out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(self.out_path)
@@ -142,7 +160,7 @@ class OmlFigureOptions:
         gs = gridspec.GridSpec(1, 3, width_ratios=[2,1,2])
 
         ax1: plt.Axes = fig.add_subplot(gs[0])
-        ax1.set_title("Cumulative Validation Accuracy During Training")
+        ax1.set_title("Cumulative Accuracy")
         ax1.set_xlabel("Number of tasks learned")
         ax1.set_ylabel("Cumulative Validation Accuracy")
         ax1.set_ylim(bottom=0, top=1)
@@ -157,7 +175,7 @@ class OmlFigureOptions:
         ax2.set_ylim(top=len(indicators) * n_runs)
         
         ax3: plt.Axes = fig.add_subplot(gs[1])
-        ax3.set_title(f"Final Cumulative Validation Accuracy")
+        ax3.set_title(f"Final Cumulative Accuracy")
         ax3.set_yticks(np.arange(len(indicators)*n_runs))
         ax3.set_xticks([])
         ax3.set_yticklabels(indicators*n_runs)
@@ -175,7 +193,6 @@ class OmlFigureOptions:
             # Load up the per-task classification accuracies
             final_task_accuracy = load_array(run_path / "results" / "final_task_accuracy.csv")
             try:
-
                 metrics = result_json["metrics"]
                 supervised_metrics = metrics.get("supervised", metrics)
                 classification_accuracies = np.array(supervised_metrics["accuracy"])
@@ -197,9 +214,18 @@ class OmlFigureOptions:
             label = label.replace(prefix, "")
 
             n_aux_tasks = n_tasks_used(run_path)
-            if self.add_ntasks_prefix and not label[0].isdigit():
+            has_ntask_prefix = label[0].isdigit() and label[1] == "_"
+            if self.add_ntasks_prefix and not has_ntask_prefix:
                 label = f"{n_aux_tasks}_{label}"
-            
+            elif has_ntask_prefix:
+                # remove the "<n_tasks>_" prefix:
+                label = label[2:]
+
+            if self.label_formatting_fn is not None:
+                label = self.label_formatting_fn(run_path, label)
+
+
+
             print(f"Run {run_path}:")
             print("\t Accuracy Means:", accuracy_means)
             print("\t Accuracy STDs:", accuracy_stds)
@@ -244,18 +270,18 @@ class OmlFigureOptions:
             y=np.arange(len(indicators)*n_runs),
             xmin=0-0.5,
             xmax=n_tasks-0.5,
-            linestyles="dotted",
-            colors="gray",
+            linestyles="dashdot",
+            colors="lightgray",
         )
         ax3.hlines(
             y=np.arange(len(indicators)*n_runs),
             xmin=-1,
             xmax=2,
-            linestyles="dotted",
-            colors="gray",
+            linestyles="dashdot",
+            colors="lightgray",
         )
         ax2.set_xticks(np.arange(n_tasks, dtype=int))
-        ax1.legend(loc="upper left")
+        ax1.legend(loc=self.legend_position)
 
         return fig
 
