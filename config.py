@@ -84,9 +84,9 @@ class Config:
     @property
     def log_dir(self):
         return self.log_dir_root.joinpath(
-            self.run_group or "",
-            self.run_name or 'default',
-            f"-{self.run_number}" if self.run_number is not None else ""
+            (self.run_group or ""),
+            (self.run_name or 'default'),
+            (f"run_{self.run_number}" if self.run_number is not None else ""),
         )
 
 
