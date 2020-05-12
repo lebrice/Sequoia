@@ -5,6 +5,8 @@ import torch
 from torch import Tensor
 from collections import OrderedDict
 import torch.nn.functional as functional
+from utils.json_utils import encode
+
 
 @dataclass 
 class Metrics:
@@ -43,7 +45,12 @@ class Metrics:
         return other
 
     def to_log_dict(self) -> Dict:
-        return OrderedDict()
+        return OrderedDict({"n_samples": self.n_samples})
+
+
+@encode.register
+def encode_metrics(obj: Metrics) -> Dict:
+    return obj.to_log_dict()
 
 
 @dataclass
@@ -78,9 +85,9 @@ class RegressionMetrics(Metrics):
         )
     
     def to_log_dict(self) -> Dict:
-        return {
-            "mse": float(self.mse.item())
-        }
+        d = super().to_log_dict()
+        d["mse"] = float(self.mse)
+        return d
 
 
 @dataclass
@@ -134,11 +141,14 @@ class ClassificationMetrics(Metrics):
     def to_log_dict(self) -> Dict:
         d = super().to_log_dict()
         d["accuracy"] = float(self.accuracy)
-        d["class_accuracy"] = self.class_accuracy.numpy().tolist()
+        d["class_accuracy"] = self.class_accuracy.tolist()
+        if self.confusion_matrix is not None:
+            d["confusion_matrix"] = self.confusion_matrix.tolist()
         return d
     
     def __str__(self) -> str:
         return f"metrics(n_samples={self.n_samples}, accuracy={self.accuracy:.2%})"
+
 
 @torch.no_grad()
 def get_metrics(y_pred: Union[Tensor, np.ndarray],

@@ -365,23 +365,10 @@ class OmlFigureOptions:
             # Get the classification accuracy per task for all runs.
             classification_accuracies = get_cumul_accuracies(run_path)
 
-<<<<<<< HEAD
             # Get the per-task classification accuracy at the end of training
             # for each run.
             final_task_accuracy = get_final_task_accuracies(run_path)
             
-=======
-        for i, run_path in enumerate(sorted(results, key=n_tasks_used)):
-            result_json = results[run_path]
-            # Load up the per-task classification accuracies
-            final_task_accuracy = load_array(run_path / "results" / "final_task_accuracy.csv")
-            metrics = result_json["metrics"]
-            if "supervised" in metrics:
-                supervised_metrics = metrics["supervised"]
-            else:
-                supervised_metrics = metrics
-            classification_accuracies = np.array(supervised_metrics["accuracy"])
->>>>>>> 8457be1... [Large/dirty commit] Refactoring task_incremental
             accuracy_means = classification_accuracies.mean(axis=0)
             accuracy_stds = classification_accuracies.std(axis=0)
             n_tasks = len(accuracy_means)

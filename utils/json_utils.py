@@ -1,6 +1,7 @@
 import json
 from collections import OrderedDict
 from dataclasses import asdict, is_dataclass
+from functools import singledispatch
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple, TypeVar, Union
 
@@ -8,6 +9,14 @@ from torch import nn
 
 T = TypeVar("T")
 
+
+class MyEncoder(json.JSONEncoder):
+    def default(self, o: Any):
+        return encode(o)
+
+@singledispatch
+def encode(obj: Any) -> Dict:
+    return obj.__dict__
 
 def is_json_serializable(value: str):
     try:

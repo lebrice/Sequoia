@@ -11,6 +11,7 @@ from utils.utils import add_prefix
 
 from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                       get_metrics)
+from utils.json_utils import encode
 
 
 def add_dicts(d1: Dict, d2: Dict, add_values=True) -> Dict:
@@ -127,7 +128,7 @@ class LossInfo:
     def to_log_dict(self, verbose: bool=True) -> Dict[str, Union[str, float, Dict]]:
         log_dict: Dict[str, Union[str, float, Dict]] = OrderedDict()
         # Log the total loss
-        log_dict["loss"] = float(self.total_loss.item())
+        log_dict["loss"] = float(self.total_loss)
         # Log the metrics
         metrics: Dict[str, Dict] = OrderedDict()
         for metric_name, metric in self.metrics.items():
@@ -163,6 +164,10 @@ class LossInfo:
         prefix = (self.name + " ") if self.name else ""
         return add_prefix(message, prefix)
 
+
+@encode.register
+def encode_lossinfo(obj: LossInfo) -> Dict:
+    return obj.to_log_dict(verbose=True)
 
 
 @dataclass
@@ -215,3 +220,13 @@ class TrainValidLosses:
     def latest_step(self) -> int:
         """Returns the latest global_step in the dicts."""
         return max(itertools.chain(self.train_losses, self.valid_losses), default=0)
+
+
+@encode.register
+def encode_losses(obj: TrainValidLosses) -> Dict:
+    train_losses_dict = OrderedDict((k, encode(v)) for k, v in obj.train_losses.items())
+    valid_losses_dict = OrderedDict((k, encode(v)) for k, v in obj.valid_losses.items())
+    return {
+        "train_losses": train_losses_dict,
+        "valid_losses": valid_losses_dict,
+    }
