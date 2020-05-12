@@ -29,6 +29,8 @@ unzip -n $SLURM_TMPDIR/data.zip -d $SLURM_TMPDIR
 # WANDB_MODE=dryrun
 # export WANDB_MODE
 echo "Executing 'main.py task-incremental' with additional args: ${@:1}"
+echo "Slurm Array Job ID: $SLURM_ARRAY_TASK_ID"
+exit
 
 wandb off
 python -u main.py task-incremental \
@@ -39,6 +41,6 @@ python -u main.py task-incremental \
 
 rsync -r -u $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
 
-# wandb sync $SCRATCH/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
+wandb sync $SCRATCH/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
 # To make sure, run `wandb sync $SCRATCH/SSCL/wandb/` from a login node
 
