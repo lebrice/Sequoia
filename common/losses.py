@@ -86,8 +86,8 @@ class LossInfo:
             # TODO: setting in the 'metrics' dict, we are duplicating the
             # metrics, since they now reside in the `self.metrics[other.name]`
             # and `self.losses[other.name].metrics` attributes.
-            metrics = self.metrics
-            # metrics = add_dicts(self.metrics, {other.name: other.metrics})
+            # metrics = self.metrics
+            metrics = add_dicts(self.metrics, other.metrics)
         
         tensors = add_dicts(self.tensors, other.tensors, add_values=False)
         return LossInfo(
