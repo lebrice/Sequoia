@@ -107,7 +107,7 @@ class Options:
                 add_ntasks_prefix=group.name != "default",
             )
 
-    def __post_init__(self):
+    def __call__(self):
         # import subprocess
         # from shlex import split
         # out_dir = self.all_runs_dir
@@ -122,4 +122,9 @@ class Options:
 
 
 if __name__ == "__main__":
-    Options()
+    from simple_parsing import ArgumentParser
+    parser = ArgumentParser()
+    parser.add_arguments(Options, dest="options")
+    options = parser.parse_args().options
+
+    options()
