@@ -28,7 +28,7 @@ unzip -n $SLURM_TMPDIR/data.zip -d $SLURM_TMPDIR
 
 # WANDB_MODE=dryrun
 # export WANDB_MODE
-echo "Executing main.py with additional args: ${@:1}"
+echo "Executing 'main.py task-incremental' with additional args: ${@:1}"
 
 wandb off
 python -u main.py task-incremental \

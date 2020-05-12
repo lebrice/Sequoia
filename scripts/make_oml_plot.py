@@ -33,7 +33,7 @@ def n_tasks_used(run_path: Path) -> int:
 class OmlFigureOptions:
     """ Options for the script making the OML Figure 3 plot. """
     # One or more paths of glob patterns matching the run folders to compare.
-    runs: List[str] = list_field(default=["results/TaskIncremental/*"])
+    runs: List[str] = list_field(default=["results/TaskIncremental"])
     # Output path where the figure should be stored.
     out_path: Path = Path("scripts/oml_plot.png")
     # title to use for the figure.
@@ -48,42 +48,58 @@ class OmlFigureOptions:
 
     def __post_init__(self):
         # The dictionary of result dicts.
-        self.results: Dict[Path, Dict] = OrderedDict()
+        self.results: Dict[Path, Dict[Optional[Path], Dict]] = OrderedDict()
 
         if len(self.runs) == 1 and isinstance(self.runs[0], list):
             self.runs = self.runs[0]
-        print(self.runs)
-        paths: List[Path] = []
-        for pattern in self.runs:
-            paths.extend(map(Path, glob.glob(pattern)))
 
-        def keep_run(path: Path) -> Union[bool, Dict]:
-            if not path.is_dir():
-                return False
-            elif str(path).endswith("wandb"):
-                return False
-            elif not path.joinpath("results").exists():
-                return False
-            elif not (path / "results" / "results.json").exists():
-                return False
-            try:
-                # Load the results dict
-                with open(path / "results" / "results.json") as f:
-                    result_json = json.load(f)
-            except (IOError, json.JSONDecodeError) as e:
-                return False
-            else:
-                return result_json
+        print(self.runs)
         
-        for run_path in paths:
-            result = keep_run(run_path)
-            if result:
-                self.results[run_path] = result
+        setting: Optional[Path] = None
+
+        for run_pattern in map(Path, *map(glob.glob, self.runs)):
+            # print(run_pattern)
+            setting_dir: Path = run_pattern.parent
+            # print(setting_dir)
+            setting = setting_dir
+
+            for result_json_path in run_pattern.rglob("results.json"):
+                relative = result_json_path.relative_to(setting_dir)
+                parts = relative.parts
+                
+                if len(parts) == 3:
+                    run_path = result_json_path.parent.parent
+                    run_name = parts[0]
+                    run_number = None
+                elif len(parts) == 4:
+                    run_path = result_json_path.parent.parent.parent
+                    run_name = parts[0]
+                    run_number = result_json_path.parent.parent.relative_to(run_path)
+                else:
+                    continue
+                try:
+                    # Load the results dict
+                    with open(result_json_path) as f:
+                        if run_path not in self.results:
+                            self.results[run_path] = OrderedDict()
+                        self.results[run_path][run_number] = json.load(f)
+
+                except (IOError, json.JSONDecodeError) as e:
+                    continue
         
-        if paths and not self.title:
-            self.title = str(paths[0].parent)
-            if any(str(p.parent) != self.title for p in paths):
-                self.title = "Results"
+        print("Kept runs:")
+        for run_name, d in self.results.items():
+            for run_number, _ in d.items():
+                print("\t", run_name, run_number or "")
+        
+        run_names: List[str] = [p.name for p in self.results.keys()]
+        prefix = longest_common_prefix(run_names)
+        print(f"Common prefix: '{prefix}'")
+
+        if not self.title and prefix:
+            self.title = prefix
+            # if any(str(p.parent) != self.title for p in paths):
+            #     self.title = "Results"
 
         fig = self.make_plot()
         maximize_figure()
@@ -98,7 +114,23 @@ class OmlFigureOptions:
             exit()
 
     def make_plot(self) -> plt.Figure:
-        results: Dict[Path, Dict] = self.results
+        # results: Dict[Path, Dict] = self.results
+        results: Dict[Path, Dict] = OrderedDict()
+        # TODO: Use the better JSON format for the results
+        for run_path, run_number_to_result in self.results.items():
+            single_run_to_keep = None
+            for run_number, result_dict in run_number_to_result.items():
+                if run_number is not None:
+                    single_run_to_keep = run_path / run_number
+                    results[single_run_to_keep] = result_dict
+                    break
+            else:
+                single_run_to_keep = run_path
+                results[single_run_to_keep] = run_number_to_result[None]
+
+        # print("Kept runs:")
+        # for run_name, _ in results.items():
+        #     print("\t", run_name)
         runs: List[Path] = list(results.keys())
 
         n_runs = len(runs)
@@ -133,15 +165,25 @@ class OmlFigureOptions:
         ax3.set_xlim(left=-0.5, right=0.5)
         # technically, we don't know the amount of tasks yet.
         n_tasks: int = -1
-
+        
+        run_names: List[str] = [p.name for p in self.results.keys()]
+        prefix = longest_common_prefix(run_names)
 
         for i, run_path in enumerate(sorted(results, key=n_tasks_used)):
+            print(i, run_path)
             result_json = results[run_path]
             # Load up the per-task classification accuracies
             final_task_accuracy = load_array(run_path / "results" / "final_task_accuracy.csv")
+            try:
 
-            supervised_metrics = result_json["metrics"]["supervised"]
-            classification_accuracies = np.array(supervised_metrics["accuracy"])
+                metrics = result_json["metrics"]
+                supervised_metrics = metrics.get("supervised", metrics)
+                classification_accuracies = np.array(supervised_metrics["accuracy"])
+            except KeyError:
+                supervised = result_json["supervised"]
+                supervised_metrics = supervised["metrics"]
+                classification_accuracies = np.array(supervised_metrics["accuracy"])
+                
             accuracy_means = classification_accuracies.mean(axis=0)
             accuracy_stds = classification_accuracies.std(axis=0)
             n_tasks = len(accuracy_means)
@@ -151,9 +193,11 @@ class OmlFigureOptions:
             ax1.set_xticks(np.arange(n_tasks, dtype=int))
             ax1.set_xticklabels(np.arange(1, n_tasks+1, dtype=int))
             
-            label = run_path.name
+            label = run_path.name if not run_path.name.startswith(("run_", "-")) else run_path.parent.name
+            label = label.replace(prefix, "")
+
             n_aux_tasks = n_tasks_used(run_path)
-            if self.add_ntasks_prefix and not label.startswith(f"{n_aux_tasks}_"):
+            if self.add_ntasks_prefix and not label[0].isdigit():
                 label = f"{n_aux_tasks}_{label}"
             
             print(f"Run {run_path}:")
@@ -227,6 +271,18 @@ def maximize_figure():
                 fig_manager.frame.Maximize(True)
             except:
                 print("Couldn't maximize the figure.")
+
+
+def longest_common_prefix(values: List[str]) -> str:
+    if not values:
+        return ""
+
+    first = values[0]
+    i = 1
+    while all(v.startswith(first[:i]) for v in values):
+        i += 1
+    i -= 1
+    return first[:i]
 
 
 def load_array(path: Path) -> np.ndarray:

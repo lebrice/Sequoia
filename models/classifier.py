@@ -155,8 +155,8 @@ class Classifier(nn.Module):
         
         if self.config.debug and self.config.verbose:
             for name, loss in total_loss.losses.items():
-                print(name, loss.total_loss)
-        
+                print(name, loss.total_loss, loss.metrics)
+
         return total_loss
 
     def encode(self, x: Tensor):

@@ -87,24 +87,28 @@ class Options:
     
     # Additional Subgroups to cluster runs into. (Runs whose name doesn't
     # contain any of the following will have a group name of 'default'.)
-    subgroups: List[str] = list_field("pretrained_ue100_se10_", "pretrained_ue20_s10_", "ue20_se10_")
+    subgroups: List[str] = list_field("pretrained_ue100_se10_", "pretrained_", "ue20_se10_")
    
     def copy_and_plot(self, experiment: str, run_names: str):
         from make_oml_plot import OmlFigureOptions
         mh_paths, mh_d_paths = copy_over(self.all_runs_dir / experiment, self.organized_dir / experiment, run_names, self.subgroups)
         for group, runs in mh_paths.items():
+            path = Path(run_names) / group.name / f"{run_names}_{group.name}_multihead.png"
             OmlFigureOptions(
                 runs=[str(group / "*")],
-                out_path=self.figures_dir / run_names / group.name / f"{run_names}_{group.name}_multihead.png",
-                exit_after=False,
-                add_ntasks_prefix=group.name != "default"
-            )
-        for group, runs in mh_d_paths.items():
-            OmlFigureOptions(
-                runs=[str(group / "*")],
-                out_path=self.figures_dir / run_names / group.name / f"{run_names}_{group.name}_multihead_detached.png",
+                out_path=self.figures_dir / path,
                 exit_after=False,
                 add_ntasks_prefix=group.name != "default",
+                title=str(path),
+            )
+        for group, runs in mh_d_paths.items():
+            path = Path(run_names) / group.name / f"{run_names}_{group.name}_multihead_detached.png"
+            OmlFigureOptions(
+                runs=[str(group / "*")],
+                out_path=self.figures_dir / path,
+                exit_after=False,
+                add_ntasks_prefix=group.name != "default",
+                title=str(path),
             )
 
     def __call__(self):
