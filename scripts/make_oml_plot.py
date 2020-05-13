@@ -4,6 +4,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, InitVar
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Union, Callable, Tuple
+import warnings
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -29,11 +30,221 @@ def n_tasks_used(run_path: Path) -> int:
             count += 1
     return count
 
+
+def class_accuracy_v0(result_json: Dict) -> np.ndarray:
+    return np.array(result_json["metrics"]["supervised"]["accuracy"])
+
+def class_accuracy_v1(result_json: Dict) -> np.ndarray:
+    return np.array(result_json["supervised"]["metrics"]["accuracy"])
+
+def class_accuracy_v2(result_json: Dict) -> np.ndarray:
+    return np.array(result_json["Test"]["supervised"]["metrics"]["accuracy"])
+
+
+def get_class_accuracy(run_dir: Path) -> np.ndarray:
+    """Gets the class accuracies for each task from a given run dir.
+
+    Unfortunately has to account for a number of ways of getting that value,
+    depending on the version of source code that launched it, as the format
+    changed a bit over time. Uses the `class_accuracy_v*` functions above,
+    trying newer versions first.
+
+    Args:
+        run_dir (Path): Directory containing the "results/results.json" file.
+
+    Returns:
+        np.ndarray: The array of task accuracies.
+    """
+    with open(run_dir / "results" / "results.json") as f:
+        result_json = json.load(f)
+
+    class_accuracy_fns = [class_accuracy_v2, class_accuracy_v1, class_accuracy_v0]
+    for class_accuracy_fn in class_accuracy_fns:
+        try:
+            accuracy = class_accuracy_fn(result_json)
+            print("Successfully loaded with ", class_accuracy_fn.__name__)
+            return accuracy
+        except KeyError:
+            pass
+    else:
+        raise RuntimeError("Unable to load the class accuracy for run.")
+
+
+def get_cumul_accuracies(log_dir: Path) -> np.ndarray:
+    """Returns the cumulative classification accuracies for each run.
+
+    New (upcoming format):
+    If there are "run_*" (or "-0") direct subdirectories, stacks the results of
+    each run before returning it. See the `get_individual_run_dirs` function.
+
+    Args:
+        log_dir (Path): The path to the log directory folder, for example
+        "TaskIncremental/cifar10_mh_d_baseline".
+
+    Returns:
+        np.ndarray: An array of shape [n_runs, n_tasks] containing the
+        cumulative validation classification accuracy during training. 
+    """
+    task_accuracies_list: List[np.ndarray] = []
+    for run_dir in get_nonempty_run_dirs(log_dir):
+        accuracy = get_class_accuracy(run_dir)
+        if accuracy.ndim == 2:
+            task_accuracies_list.append(accuracy)
+        else:
+            task_accuracies_list.append(accuracy[None, :])
+    if not task_accuracies_list:
+        raise RuntimeError(f"Couldn't load final task accuracies from {log_dir}")
+    task_accuracies = np.concatenate(task_accuracies_list)
+    return task_accuracies
+
+
+def get_final_task_accuracy(run_dir: Path) -> np.ndarray:
+    """Loads the final task accuracy.
+
+    Args:
+        run_dir (Path): The directory of an individual run. 
+
+    Returns:
+        np.ndarray: The array containing the mean accuracy for each task at the
+        end of training.
+    """
+    return load_array(run_dir / "results" / "final_task_accuracy.csv")
+
+
+def get_final_task_accuracies(log_dir: Path) -> np.ndarray:
+    """Returns the mean accuracy for each task at the end of training.
+
+    New (upcoming/WIP format):
+    If there are "run_*" (or "-0") direct subdirectories, stacks the results of
+    each run before returning it. See the `get_individual_run_dirs` function.
+
+    Args:
+        log_dir (Path): The "parent" log dir, for example 
+        `Path("results/TaskIncremental/cifar10_mh_d_baseline")`.
+
+    Returns:
+        np.ndarray: An array of shape [n_runs, n_tasks] containing the mean
+        validaiton accuracy for each task. 
+    """
+    task_accuracies_list: List[np.ndarray] = [] 
+    for run_dir in get_nonempty_run_dirs(log_dir):
+        accuracy = get_final_task_accuracy(run_dir)
+        if accuracy.ndim == 2:
+            task_accuracies_list.append(accuracy)
+        else:
+            task_accuracies_list.append(accuracy[None, :])
+    if not task_accuracies_list:
+        raise RuntimeError(f"Couldn't load final task accuracies from {log_dir}")
+    task_accuracies = np.concatenate(task_accuracies_list)
+    return task_accuracies
+
+
+def get_nonempty_run_dirs(log_dir: Path) -> Iterable[Path]:
+    """Yields the paths to each individual runs of a given (parent) log dir.
+
+    NOTE: May yield the log_dir itself, in the (old setup) case where there are
+    no subdirectories for each individual run. Users of this function should not
+    use recursive glob calls from the yielded paths (to find "results.json", for
+    example) as this might yield duplicates of the other run directories. 
+
+    Args:
+        log_dir (Path): The "parent" log dir.
+
+    Returns:
+        Iterable[Path]: [description]
+
+    Examples:
+    Given the following structure:
+    ```console
+    baseline/
+    ├── run_0
+    └── run_1
+    ```
+    
+    >>> print([str(p) for p in get_individual_run_dirs("baseline")])
+    ["baseline/run_0", "baseline/run_1"]
+    
+    
+    ```
+    baseline/
+    ├── run_0
+    ├── results
+    ├── checkpoints
+    ├── plots
+    ├── foo
+    └── -0
+    ```
+    >>> print([str(p) for p in get_individual_run_dirs("baseline")])
+    ["baseline", "baseline/-0", "baseline/run_0"]
+    """
+    if is_run_dir(log_dir):
+        yield log_dir
+    # This weird naming format was due to a bug, and didn't last very long. 
+    for run_dir in log_dir.glob("-*"):
+        if is_run_dir(run_dir) and run_dir.name.split("-", maxsplit=1)[-1].isdigit():
+            yield run_dir
+    for run_dir in log_dir.glob("run_*"):
+        if is_run_dir(run_dir) and run_dir.name.split("_", maxsplit=1)[-1].isdigit():
+            yield run_dir
+
+REQUIRED_FILES: List[str] = [
+    "results/results.json",
+    "results/final_task_accuracy.csv"
+]
+
+def is_run_dir(path: Path) -> bool:
+    """Returns wether the given Path is a run directory.
+
+    Args:
+        path (Path): a given Path.
+
+    Returns:
+        bool: True if it is a run dir (contains all the required files).
+    """
+    required_folders = ""
+    if not path.is_dir():
+        return False
+    return all((path / req_file_path).exists() for req_file_path in REQUIRED_FILES)
+
+
+def is_log_dir(path: Path, recursive: bool=False) -> bool:
+    """Returns wether the given path points to a log_dir containing at least one non-empty run.
+
+    Args:
+        path (Path): a directory.
+        recursive (bool): When True, checks the subdirectories recursively. If
+        False, only checks the immediate children directories.
+
+    Returns:
+        bool: Wether this directory is or contains non-empty run directories.
+    """
+    if is_run_dir(path):
+        return True
+    for child in path.iterdir():
+        if recursive and is_log_dir(child, recursive=True):
+            return True
+        elif is_run_dir(child):
+            return True
+    return False
+
+
+def filter_runs(all_log_dirs: List[Path]) -> Tuple[List[Path], List[Path]]:
+    kept_runs: List[Path] = []
+    lost_runs: List[Path] = []
+    for log_dir in all_log_dirs:
+        if is_log_dir(log_dir):
+            kept_runs.append(log_dir)
+        else:
+            lost_runs.append(log_dir)
+    return kept_runs, lost_runs
+
+
 @dataclass
 class OmlFigureOptions:
     """ Options for the script making the OML Figure 3 plot. """
     # One or more paths of glob patterns matching the run folders to compare.
-    runs: List[str] = list_field(default=["results/TaskIncremental"])
+    # NOTE: should ideally be the immediate parent folder of the runs.
+    runs: List[str] = list_field(default=["results/TaskIncremental/*"])
     # Output path where the figure should be stored.
     out_path: Path = Path("scripts/oml_plot.png")
     # title to use for the figure.
@@ -60,61 +271,40 @@ class OmlFigureOptions:
 
     def __post_init__(self, label_formatting_fn: Callable[[Path, str], str]=None):
         self.label_formatting_fn = label_formatting_fn
-        # The dictionary of result dicts.
-        self.results: Dict[Path, Dict[Optional[Path], Dict]] = OrderedDict()
 
         if len(self.runs) == 1 and isinstance(self.runs[0], list):
             self.runs = self.runs[0]
-
         print(self.runs)
-        
-        setting: Optional[Path] = None
 
-        for run_pattern in map(Path, *map(glob.glob, self.runs)):
-            # print(run_pattern)
-            setting_dir: Path = run_pattern.parent
-            # print(setting_dir)
-            setting = setting_dir
+        run_paths: List[Path] = []
+        for run_pattern in self.runs:
+            for p in map(Path, glob.glob(run_pattern)):
+                if p.is_dir():
+                    run_paths.append(p)
 
-            for result_json_path in run_pattern.rglob("results.json"):
-                relative = result_json_path.relative_to(setting_dir)
-                parts = relative.parts
-                
-                if len(parts) == 3:
-                    run_path = result_json_path.parent.parent
-                    run_name = parts[0]
-                    run_number = None
-                elif len(parts) == 4:
-                    run_path = result_json_path.parent.parent.parent
-                    run_name = parts[0]
-                    run_number = result_json_path.parent.parent.relative_to(run_path)
-                else:
-                    continue
-                try:
-                    # Load the results dict
-                    with open(result_json_path) as f:
-                        if run_path not in self.results:
-                            self.results[run_path] = OrderedDict()
-                        self.results[run_path][run_number] = json.load(f)
+        required_files: List[str] = ["/results/results.json", "results/final_task_accuracy.csv"]
 
-                except (IOError, json.JSONDecodeError) as e:
-                    continue
+        kept_runs, lost_runs = filter_runs(run_paths)
         
-        print("Kept runs:")
-        for run_path, d in self.results.items():
-            for run_number, _ in d.items():
-                print("\t", run_path, run_number or "")
+        print("Kept runs:", len(kept_runs))
+        for path in kept_runs:
+            print("\t", path)
+
+        print("Lost/empty runs:", len(lost_runs))
+        for path in lost_runs:
+            print("\t", path)
         
-        run_names: List[str] = [p.name for p in self.results.keys()]
-        prefix = longest_common_prefix(run_names)
+        if not kept_runs:
+            warnings.warn(f"There are NO kept runs for path or pattern(s) {self.runs}. \n Returning early without creating the figure.")
+        
+        prefix = longest_common_prefix([p.name for p in kept_runs])
         print(f"Common prefix: '{prefix}'")
-
         if self.title is None and prefix:
             self.title = prefix
             # if any(str(p.parent) != self.title for p in paths):
             #     self.title = "Results"
 
-        fig = self.make_plot()
+        fig = self.make_plot(kept_runs)
         
         if self.maximize_figure:
             maximize_figure()
@@ -131,26 +321,9 @@ class OmlFigureOptions:
         if self.exit_after:
             exit()
 
-    def make_plot(self) -> plt.Figure:
-        # results: Dict[Path, Dict] = self.results
-        results: Dict[Path, Dict] = OrderedDict()
-        # TODO: Use the better JSON format for the results
-        for run_path, run_number_to_result in self.results.items():
-            single_run_to_keep = None
-            for run_number, result_dict in run_number_to_result.items():
-                if run_number is not None:
-                    single_run_to_keep = run_path / run_number
-                    results[single_run_to_keep] = result_dict
-                    break
-            else:
-                single_run_to_keep = run_path
-                results[single_run_to_keep] = run_number_to_result[None]
+    def make_plot(self, kept_runs: List[Path]) -> plt.Figure:
 
-        # print("Kept runs:")
-        # for run_name, _ in results.items():
-        #     print("\t", run_name)
-        runs: List[Path] = list(results.keys())
-
+        runs = kept_runs
         n_runs = len(runs)
         print(f"Creating the OML plot to compare the {n_runs} different methods:")
         
@@ -184,23 +357,18 @@ class OmlFigureOptions:
         # technically, we don't know the amount of tasks yet.
         n_tasks: int = -1
         
-        run_names: List[str] = [p.name for p in self.results.keys()]
+        run_names: List[str] = [p.name for p in runs]
         prefix = longest_common_prefix(run_names)
 
-        for i, run_path in enumerate(sorted(results, key=n_tasks_used)):
+        for i, run_path in enumerate(sorted(runs, key=n_tasks_used)):
             print(i, run_path)
-            result_json = results[run_path]
-            # Load up the per-task classification accuracies
-            final_task_accuracy = load_array(run_path / "results" / "final_task_accuracy.csv")
-            try:
-                metrics = result_json["metrics"]
-                supervised_metrics = metrics.get("supervised", metrics)
-                classification_accuracies = np.array(supervised_metrics["accuracy"])
-            except KeyError:
-                supervised = result_json["supervised"]
-                supervised_metrics = supervised["metrics"]
-                classification_accuracies = np.array(supervised_metrics["accuracy"])
-                
+            # Get the classification accuracy per task for all runs.
+            classification_accuracies = get_cumul_accuracies(run_path)
+
+            # Get the per-task classification accuracy at the end of training
+            # for each run.
+            final_task_accuracy = get_final_task_accuracies(run_path)
+            
             accuracy_means = classification_accuracies.mean(axis=0)
             accuracy_stds = classification_accuracies.std(axis=0)
             n_tasks = len(accuracy_means)
@@ -223,8 +391,6 @@ class OmlFigureOptions:
 
             if self.label_formatting_fn is not None:
                 label = self.label_formatting_fn(run_path, label)
-
-
 
             print(f"Run {run_path}:")
             print("\t Accuracy Means:", accuracy_means)
