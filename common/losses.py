@@ -11,7 +11,7 @@ from utils.utils import add_prefix
 
 from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                       get_metrics)
-from utils.json_utils import encode
+from utils.json_utils import encode, JsonSerializable
 
 
 def add_dicts(d1: Dict, d2: Dict, add_values=True) -> Dict:
@@ -29,7 +29,7 @@ def add_dicts(d1: Dict, d2: Dict, add_values=True) -> Dict:
 
 
 @dataclass
-class LossInfo:
+class LossInfo(JsonSerializable):
     """ Simple object to store the losses and metrics for a given task. 
     
     Used to simplify the return type of the various `get_loss` functions.    
@@ -171,7 +171,7 @@ def encode_lossinfo(obj: LossInfo) -> Dict:
 
 
 @dataclass
-class TrainValidLosses:
+class TrainValidLosses(JsonSerializable):
     """ Helper class to store the train and valid losses during training. """
     train_losses: Dict[int, LossInfo] = field(default_factory=OrderedDict)
     valid_losses: Dict[int, LossInfo] = field(default_factory=OrderedDict)
@@ -195,38 +195,38 @@ class TrainValidLosses:
             all_loss_names.update(loss_info.losses)
         return all_loss_names
 
-    def save_json(self, path: Path) -> None:
-        """ TODO: save to a json file. """
-        # from dataclasses import asdict
-        # from utils.json_utils import to_str_dict
-        # import json
-        path.mkdir(parents=True, exist_ok=True)
-        torch.save(self, f=str(path.with_suffix(".pt")))
+    # def save_json(self, path: Path) -> None:
+    #     """ TODO: save to a json file. """
+    #     # from dataclasses import asdict
+    #     # from utils.json_utils import to_str_dict
+    #     # import json
+    #     path.mkdir(parents=True, exist_ok=True)
+    #     torch.save(self, f=str(path.with_suffix(".pt")))
     
-    @classmethod
-    def try_load_json(cls, path: Path) -> Optional["TrainValidLosses"]:
-        try:
-            return cls.load_json(path)
-        except Exception as e:
-            print(f"Couldn't load from path {path}: {e}")
-            return None
+    # @classmethod
+    # def try_load_json(cls, path: Path) -> Optional["TrainValidLosses"]:
+    #     try:
+    #         return cls.load_json(path)
+    #     except Exception as e:
+    #         print(f"Couldn't load from path {path}: {e}")
+    #         return None
     
-    @classmethod
-    def load_json(cls, path: Path) -> Optional["TrainValidLosses"]:
-        path = path.with_suffix(".pt")
-        with open(path, 'rb') as f:
-            return torch.load(f)
+    # @classmethod
+    # def load_json(cls, path: Path) -> Optional["TrainValidLosses"]:
+    #     path = path.with_suffix(".pt")
+    #     with open(path, 'rb') as f:
+    #         return torch.load(f)
     
     def latest_step(self) -> int:
         """Returns the latest global_step in the dicts."""
         return max(itertools.chain(self.train_losses, self.valid_losses), default=0)
 
 
-@encode.register
-def encode_losses(obj: TrainValidLosses) -> Dict:
-    train_losses_dict = OrderedDict((k, encode(v)) for k, v in obj.train_losses.items())
-    valid_losses_dict = OrderedDict((k, encode(v)) for k, v in obj.valid_losses.items())
-    return {
-        "train_losses": train_losses_dict,
-        "valid_losses": valid_losses_dict,
-    }
+# @encode.register
+# def encode_losses(obj: TrainValidLosses) -> Dict:
+#     train_losses_dict = OrderedDict((k, encode(v)) for k, v in obj.train_losses.items())
+#     valid_losses_dict = OrderedDict((k, encode(v)) for k, v in obj.valid_losses.items())
+#     return {
+#         "train_losses": train_losses_dict,
+#         "valid_losses": valid_losses_dict,
+#     }

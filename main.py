@@ -30,9 +30,9 @@ def launch(experiment: Experiment):
         print("=" * 40)
 
     config: Config = experiment.config
-    config_dict = asdict(experiment)
     # pprint.pprint(config_dict, indent=1)
 
+    config_dict = asdict(experiment)
     config_dict = take_out_unsuported_values(config_dict)
 
     config.run_group = config.run_group or type(experiment).__name__
@@ -46,19 +46,8 @@ def launch(experiment: Experiment):
             # TODO: Create a run name using the coefficients of the tasks, etc?
             # At the moment, if no run name is given, ths
             pass
-        
-        wandb.init(
-            project='SSCL',
-            name=config.run_name,
-            group=config.run_group,
-            config=config_dict,
-            dir=str(wandb_path),
-            notes=experiment.notes
-        )
+        run = config.wandb_init(experiment)
         wandb.run.save()
-
-        if config.run_name is None:
-            config.run_name = wandb.run.name
         
         print(f"Using wandb. Group name: {config.run_group} run name: {config.run_name}, log_dir: {config.log_dir}")
     
@@ -74,8 +63,6 @@ def launch(experiment: Experiment):
     try:
         print("-" * 10, f"Starting experiment '{type(experiment).__name__}' ({config.log_dir})", "-" * 10)
         
-        experiment.log_dir.mkdir(parents=True, exist_ok=True)
-        experiment.save()
         experiment.run()
         
         print("-" * 10, f"Experiment '{type(experiment).__name__}' is done.", "-" * 10)

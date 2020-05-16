@@ -1,9 +1,9 @@
 from collections import OrderedDict, defaultdict
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, InitVar, fields
 from itertools import accumulate
 from pathlib import Path
 from random import shuffle
-from typing import Dict, Iterable, List, Tuple, Union
+from typing import Dict, Iterable, List, Tuple, Union, Optional, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,11 +19,52 @@ from common.losses import LossInfo, TrainValidLosses
 from common.metrics import Metrics, ClassificationMetrics, RegressionMetrics
 from config import Config
 from datasets.subset import VisionDatasetSubset
+from datasets import DatasetConfig
 from experiment import Experiment
-from utils.utils import n_consecutive, rgetattr, rsetattr
+from utils.utils import n_consecutive, rgetattr, rsetattr, common_fields
 from utils.json_utils import try_load
 from utils import utils
 from tasks import Tasks
+from sys import getsizeof
+
+from utils.json_utils import JsonSerializable
+from simple_parsing import mutable_field, list_field
+
+# def state(*args, **kwargs):
+#     kwargs.setdefault("init", False)
+#     return mutable_field(*args, **kwargs)
+
+@dataclass
+class State(JsonSerializable):
+    """Object that contains all the state we want to be able to save/restore.
+
+    We aren't going to parse these from the command-line.
+    """
+    tasks: List[List[int]] = list_field()
+
+    i: int = 0
+    j: int = 0
+
+    global_step: int = 0
+
+    # Container for the losses. At index [i, j], gives the validation
+    # metrics on task j after having trained on tasks [0:i], for 0 < j <= i.
+    task_losses: List[List[Optional[LossInfo]]] = list_field()
+
+    # Container for the KNN metrics. At index [i, j], gives the accuracy of
+    # a KNN classifier trained on the representations of the samples from
+    # task [i], evaluated on the representations of the the samples of task j.
+    # NOTE: The representations for task i are obtained using the encoder
+    # which was trained on tasks 0 through i.
+    knn_losses: List[List[LossInfo]] = list_field()
+    # Cumulative losses after each task
+    cumul_losses: List[Optional[LossInfo]] = list_field()
+
+    model_weights_path: Optional[Path] = None
+
+    # Container for train/valid losses that are logged periodically.
+    all_losses: TrainValidLosses = mutable_field(TrainValidLosses)
+
 
 @dataclass
 class TaskIncremental(Experiment):
@@ -44,35 +85,69 @@ class TaskIncremental(Experiment):
     # we try to prove that Self-Supervision can help.
     multihead: bool = False 
 
+    # Path to restore the state from at the start of training.
+    # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
+    restore_from_path: Optional[Path] = None
+
+    ###
+    ##  Fields that contain the state (not to be parsed from the command-line)
+    ## TODO: Figure out a neater way to separate the two than with init=False.
+    ###
+    state: State = mutable_field(State, init=False)
+
+
     def __post_init__(self):
+        """ NOTE: fields that are created in __post_init__ aren't serialized to/from json! """
         super().__post_init__()
         # The entire training and validation datasets.
         self.train_datasets: List[VisionDatasetSubset] = []
         self.valid_datasets: List[VisionDatasetSubset] = []
         self.valid_cumul_datasets: List[VisionDatasetSubset] = []
+        self.state = State()
 
-        self.tasks: List[List[int]] = []
-        self.n_tasks: int = 0
+    def load_state(self, state_json_path: Path=None) -> None:
+        # TODO: save/restore the state from a previous run.
+        # TODO: Work-In-Progress, this is ugly. There is for sure a more elegant
+        # way to do this.
+        self.logger.info(f"Restoring state from {state_json_path}")        
 
-        # Container for train/valid losses that are logged periodically.
-        self.all_losses = TrainValidLosses()
+        if not state_json_path:
+            state_json_path = self.checkpoints_dir / "state.json"
 
-        # Container for the losses. At index [i, j], gives the validation
-        # metrics on task j after having trained on tasks [0:i], for 0 < j <= i.
-        self.task_losses: List[List[Optional[LossInfo]]] = []
+        # Load the 'State' object from json
+        self.state = State.load_json(state_json_path)
+
+        # If any attributes are common to both the Experiment and the State,
+        # copy them over to the Experiment.
+        for name, (v1, v2) in common_fields(self, self.state):
+            self.logger.info(f"Loaded the {field.name} attribute from the 'State' object.")
+            setattr(self, name, v2)
+
+        if self.state.model_weights_path:
+            self.model.load_state_dict(torch.load(self.state.model_weights_path))
+            self.logger.info(f"Restoring model weights from {self.state.model_weights_path}")       
         
-        # Container for the KNN metrics. At index [i, j], gives the accuracy of
-        # a KNN classifier trained on the representations of the samples from
-        # task [i], evaluated on the representations of the the samples of task j.
-        # NOTE: The representations for task i are obtained using the encoder
-        # which was trained on tasks 0 through i.
-        self.knn_losses: List[List[LossInfo]] = []
+    def save(self, save_dir: Path=None) -> None:
+        if not save_dir:
+            save_dir = self.checkpoints_dir
         
-        # Cumulative losses, which a
-        self.cumul_losses: List[Optional[LossInfo]] = []
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_json_path = save_dir / "state.json"
+
+        if self.model:
+            self.state.model_weights_path = save_dir / "model_weights.pth"
+            
+            torch.save(self.model.state_dict(), self.state.model_weights_path)    
+            self.logger.debug(f"Saved model weights to {self.state.model_weights_path}")
         
-        self.i: int = 0
-        self.j: int = 0
+        
+        for name, (v1, v2) in common_fields(self, self.state):
+            self.logger.info(f"Saving the {name} attribute into the 'State' object.")
+            setattr(self.state, name, v1)
+
+        self.state.save_json(save_json_path)
+        self.logger.debug(f"Saved state to {save_json_path}")
+
 
     def run(self):
         """Evaluates a model/method in the classical "task-incremental" setting.
@@ -121,21 +196,39 @@ class TaskIncremental(Experiment):
             cumul_losses[i] = cumul_loss
         ```
         """
-        # TODO: restore previous state.
         self.model = self.init_model()
-        self.tasks = self.load_datasets(self.tasks)
-        # All classes in the order in which t
-        self.n_tasks = len(self.tasks)
-        print("Class Ordering:", self.tasks)
         
-        if self.global_step == 0:
-            self.knn_losses   = [[None] * self.n_tasks] * self.n_tasks # [N,N]
-            self.task_losses  = [[None] * (i+1) for i in range(self.n_tasks)] # [N,J]
-            self.cumul_losses = [None] * self.n_tasks # [N]
-        print(self.cumul_losses)
+        if self.restore_from_path:
+            self.logger.info(f"Will load state from {self.restore_from}")
+        elif self.started and not self.done:
+            self.logger.info(f"Experiment was incomplete.")
+            self.restore_from_path = self.checkpoints_dir / "state.json"
 
-        for i in range(self.i, self.n_tasks):
-            self.i = i
+        # assert self.restore_from_path is None
+        if self.restore_from_path:
+            self.load_state(self.restore_from_path)
+        else:
+            self.logger.info("Starting from scratch!")
+            self.state.tasks = self.create_tasks_for_dataset(self.dataset)
+        
+        self.tasks = self.state.tasks
+        self.save()
+
+        # Load the datasets
+        self.load_datasets(self.tasks)
+        self.n_tasks = len(self.tasks)
+
+        self.logger.info(f"Class Ordering: {self.state.tasks}")
+
+        if self.state.global_step == 0:
+            self.state.knn_losses   = [[None] * self.n_tasks] * self.n_tasks # [N,N]
+            self.state.task_losses  = [[None] * (i+1) for i in range(self.n_tasks)] # [N,J]
+            self.state.cumul_losses = [None] * self.n_tasks # [N]
+
+        from utils.json_utils import dumps
+        
+        for i in range(self.state.i, self.n_tasks):
+            self.state.i = i
             self.logger.info(f"Starting task {i} with classes {self.tasks[i]}")
  
             # If we are using a multihead model, we give it the task label (so
@@ -157,7 +250,7 @@ class TaskIncremental(Experiment):
                     # Temporarily remove the labels.
                     with train_i.without_labels(), valid_i.without_labels():
                         # Un/self-supervised training on task i.
-                        self.all_losses += self.train_until_convergence(
+                        self.state.all_losses += self.train_until_convergence(
                             train_i,
                             valid_i,
                             max_epochs=self.unsupervised_epochs_per_task,
@@ -165,20 +258,21 @@ class TaskIncremental(Experiment):
                         )
 
                 # Train (supervised) on task i.
-                self.all_losses += self.train_until_convergence(
+                self.state.all_losses += self.train_until_convergence(
                     train_i,
                     valid_i,
                     max_epochs=self.supervised_epochs_per_task,
                     description=f"Task {i} (Supervised)",
                 )
+                self.logger.debug(f"Size the state object: {getsizeof(self.state)}")
 
             # TODO: save the state during training.
-
+            self.save()
             #  Evaluate on all tasks (as described above).
             cumul_loss = LossInfo(f"cumul_losses[{i}]")
             
-            for j in range(self.j, self.n_tasks):
-                self.j = j
+            for j in range(self.state.j, self.n_tasks):
+                self.state.j = j
                 train_j = self.train_datasets[j]
                 valid_j = self.valid_datasets[j]
 
@@ -189,7 +283,11 @@ class TaskIncremental(Experiment):
                     f"knn_losses[{i}][{j}]/train": train_knn_loss.to_log_dict(),
                     f"knn_losses[{i}][{j}]/valid": valid_knn_loss.to_log_dict(),
                 })
-                self.knn_losses[i][j] = valid_knn_loss
+                self.state.knn_losses[i][j] = valid_knn_loss
+                accuracy = valid_knn_loss.metrics["KNN"].accuracy
+                loss = valid_knn_loss.total_loss
+
+                self.logger.info(f"knn_losses[{i}][{j}]/valid Accuracy: {accuracy:.2%}, loss: {loss}")
 
                 if j <= i:
                     # If we have previously trained on this task:
@@ -197,30 +295,30 @@ class TaskIncremental(Experiment):
                     loss_j = self.test(dataset=valid_j, description=f"task_losses[{i}][{j}]")
                     cumul_loss += loss_j
                     
-                    self.task_losses[i][j] = loss_j
+                    self.state.task_losses[i][j] = loss_j
                     self.log({f"task_losses[{i}][{j}]": loss_j.to_log_dict()})
 
-            self.cumul_losses[i] = cumul_loss
-            self.j = 0
+                self.save()
+            self.state.cumul_losses[i] = cumul_loss
+            self.state.j = 0
 
             valid_log_dict = cumul_loss.to_log_dict()
             self.log({f"cumul_losses[{i}]": valid_log_dict})
 
         # TODO: Save the results to a json file.
-        self.all_losses.save_json(self.results_dir / "losses.json")
+        self.state.all_losses.save_json(self.results_dir / "losses.json")
+        
         # TODO: save the rest of the state.
         # self.save_state(self.results_dir)
         # torch.save(self.plot_sections, str(self.results_dir / "plot_labels.pt"))
 
         from utils.plotting import maximize_figure
-        # Make the remembering grid figure.
-        grid = self.make_transfer_grid_figure(self.knn_losses, self.task_losses, self.cumul_losses)
-        maximize_figure()
-        fig.savefig(self.plots_dir / "remembering_plot.png")
+        # Make the forward-backward transfer grid figure.
+        grid = self.make_transfer_grid_figure(self.state.knn_losses, self.state.task_losses, self.state.cumul_losses)
+        grid.savefig(self.plots_dir / "transfer_grid.png")
         
         # make the plot of the losses (might not be useful, since we could also just do it in wandb).
         fig = self.make_loss_figure(self.all_losses, self.plot_sections)
-        maximize_figure()
         fig.savefig(self.plots_dir / "losses.png")
         
         if self.config.debug:
@@ -228,6 +326,18 @@ class TaskIncremental(Experiment):
             fig.waitforbuttonpress(10)
 
     def make_transfer_grid_figure(self, knn_losses: List[List[LossInfo]], task_losses: List[List[LossInfo]], cumul_losses: List[LossInfo]) -> plt.Figure:
+        n_tasks = len(task_losses)
+        knn_accuracies: List[List[Optional[float]]] = [[None] * n_tasks] * n_tasks # [N,N]
+        classifier_accuracies: List[List[Optional[float]]] = [[None] * n_tasks] * n_tasks # [N,N]
+        
+        for i in range(n_tasks):
+            knn_accuracies.append([])
+            classifier_accuracies.append([])
+            for j in range(n_tasks):
+                knn_accuracies[i].append()
+
+        fig: plt.Figure = plt.figure()
+        
         raise NotImplementedError("Not sure if I should do it manually or in wandb.")
 
     def make_loss_figure(self,
@@ -289,10 +399,21 @@ class TaskIncremental(Experiment):
         
         return fig
 
-    def load_datasets(self, tasks: List[List[int]]=None) -> List[List[int]]:
-        """Create the train, valid and cumulative datasets for each task.
+    def create_tasks_for_dataset(self, dataset: DatasetConfig) -> List[List[int]]:
+        tasks: List[List[int]] = []
 
-        If tasks are given, uses them to create/load the datasets.
+        # Create the tasks, if they aren't given.
+        classes = list(range(dataset.y_shape[0]))
+        if self.random_class_ordering:
+            shuffle(classes)
+        
+        for label_group in n_consecutive(classes, self.n_classes_per_task):
+            tasks.append(list(label_group))
+        
+        return tasks
+
+    def load_datasets(self, tasks: List[List[int]]) -> List[List[int]]:
+        """Create the train, valid and cumulative datasets for each task.
         
         Returns:
             List[List[int]]: The groups of classes for each task.
@@ -309,15 +430,6 @@ class TaskIncremental(Experiment):
 
         self.train_datasets.clear()
         self.valid_datasets.clear()
-
-        if not tasks:
-            # Create the tasks, if they aren't given.
-            classes = list(range(self.dataset.y_shape[0]))
-            if self.random_class_ordering:
-                shuffle(classes)
-            tasks = []
-            for label_group in n_consecutive(classes, self.n_classes_per_task):
-                tasks.append(list(label_group))
 
         for i, task in enumerate(tasks):
             train = VisionDatasetSubset(train_full_dataset, task)

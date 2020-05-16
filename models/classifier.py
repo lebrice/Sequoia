@@ -1,4 +1,5 @@
 import copy
+import logging
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -22,6 +23,7 @@ from config import Config
 from tasks import AuxiliaryTask, AuxiliaryTaskOptions, Tasks
 from utils.utils import fix_channels
 
+logger = logging.getLogger(__file__)
 
 class Classifier(nn.Module):
     @dataclass
@@ -113,10 +115,10 @@ class Classifier(nn.Module):
         self.task_classifiers: Dict[str, nn.Module] = nn.ModuleDict()  #type: ignore  
 
         if self.config.debug and self.config.verbose:
-            print(self)
-            print("Auxiliary tasks:")
+            logger.debug(self)
+            logger.debug("Auxiliary tasks:")
             for task_name, task in self.tasks.items():
-                print(f"{task.name}: {task.coefficient}")
+                logger.debug(f"{task.name}: {task.coefficient}")
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)  
 
@@ -155,7 +157,7 @@ class Classifier(nn.Module):
         
         if self.config.debug and self.config.verbose:
             for name, loss in total_loss.losses.items():
-                print(name, loss.total_loss, loss.metrics)
+                logger.debug(name, loss.total_loss, loss.metrics)
 
         return total_loss
 
@@ -195,7 +197,7 @@ class Classifier(nn.Module):
         # If there isn't a classifier for this task
         if value and value not in self.task_classifiers.keys():
             if self.config.debug:
-                print(f"Creating a new classifier for taskid {value}.")
+                logger.info(f"Creating a new classifier for taskid {value}.")
             # Create one starting from the "global" classifier.
             classifier = copy.deepcopy(self.classifier)
             self.task_classifiers[value] = classifier
@@ -211,3 +213,11 @@ class Classifier(nn.Module):
         if self.current_task_id is not None:
             classifier = self.task_classifiers[self.current_task_id]
         return classifier(h_x)
+    
+    def load_state_dict(self, state_dict: Dict) -> Tuple[List[str], List[str]]:
+        current_task_id = self.current_task_id
+        for key in state_dict:
+            if key.startswith("task_classifiers"):
+                n = key.split(".")[1]
+                self.current_task_id = n
+        return super().load_state_dict(state_dict)

@@ -1,3 +1,4 @@
+import inspect
 import json
 import logging
 import os
@@ -17,6 +18,8 @@ from simple_parsing import choice, field, mutable_field, subparsers
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from torchvision.datasets import VisionDataset
+
+
 from common.losses import LossInfo
 from common.metrics import (ClassificationMetrics, RegressionMetrics,
                             get_metrics)
@@ -28,12 +31,14 @@ from datasets.mnist import Mnist
 from models.classifier import Classifier
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
-from utils.json_utils import is_json_serializable, to_str, to_str_dict
-from utils.utils import add_prefix, is_nonempty_dir
+from utils.json_utils import (JsonSerializable, is_json_serializable, to_str,
+                              to_str_dict)
 from utils.logging import pbar
+from utils.utils import add_prefix, is_nonempty_dir
+
 
 @dataclass  # type: ignore
-class ExperimentBase:
+class ExperimentBase(JsonSerializable):
     """Base-class for an Experiment.
     """
     # Model Hyper-parameters
@@ -46,7 +51,7 @@ class ExperimentBase:
         "cifar100": Cifar100(),
     }, default="mnist")
 
-    config: Config = Config()
+    config: Config = mutable_field(Config)
     # Notes about this particular experiment. (will be logged to wandb if used.)
     notes: Optional[str] = None
     
@@ -72,7 +77,7 @@ class ExperimentBase:
         self.valid_loader: DataLoader = NotImplemented
 
         self.global_step: int = 0
-        self.logger = logging.getLogger(__file__)
+        self.logger = self.config.get_logger(inspect.getfile(type(self)))
         if self.config.debug:
             self.logger.setLevel(logging.DEBUG)
         
@@ -220,38 +225,6 @@ class ExperimentBase:
 
         return total_loss
 
-    @torch.no_grad()
-    def test_knn(self, train_dataset: Dataset, test_dataset: Dataset, description: str="") -> Tuple[LossInfo, LossInfo]:
-        """TODO: Test the representations using a KNN classifier. """
-        
-        def get_hidden_codes_array(dataloader: DataLoader) -> Tuple[np.ndarray, np.ndarray]:
-            """ Gets the hidden vectors and corresponding labels. """
-            h_x_list: List[np.ndarray] = []
-            y_list: List[np.ndarray] = []
-            for batch in pbar(dataloader, description):
-                x, y = self.preprocess(batch)
-                # We only do KNN with examples that have a label.
-                if y is not None:
-                    h_x = self.model.encode(x)
-                    h_x_list.append(h_x.detach().cpu().numpy())
-                    y_list.append(y.detach().cpu().numpy())
-            return np.concatenate(h_x_list), np.concatenate(y_list)
-        
-        train_dataloader = self.get_dataloader(train_dataset)
-        h_x, y = get_hidden_codes_array(train_dataloader)
-        
-        test_dataloader = self.get_dataloader(test_dataset)
-        h_x_test, y_test = get_hidden_codes_array(test_dataloader)
-        
-        from utils.knn import evaluate_knn
-        train_loss, test_loss = evaluate_knn(
-            x=h_x, y=y,
-            x_t=h_x_test, y_t=y_test,
-        )
-        # train_loss = LossInfo("KNN-Train", y_pred=y_pred_train, y=y)
-        # test_loss = LossInfo("KNN-Test", y_pred=y_pred_train, y=y)
-        return train_loss, test_loss
-
     def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.eval()
         for batch in dataloader:
@@ -272,10 +245,18 @@ class ExperimentBase:
             dataset,
             batch_size=self.hparams.batch_size,
             shuffle=False,
-            num_workers=4,
-            pin_memory=self.config.use_cuda
+            num_workers=self.config.num_workers,
+            pin_memory=self.config.use_cuda,
         )
     
+    def save(self, save_dir: Path=None) -> None:
+        self.log_dir.mkdir(parents=True)
+        if not save_dir:
+            save_dir = self.checkpoints_dir
+        save_json_path = save_dir / "config.json"
+        self.save_json(save_json_path)
+        
+
     def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
         if always_print or (self.config.debug and self.config.verbose):
             print(message, value if value is not None else "")
@@ -327,12 +308,12 @@ class ExperimentBase:
 
     @property
     def checkpoints_dir(self) -> Path:
-        return self._folder("checkpoints")
+        return self.config.log_dir / "checkpoints"
 
     @property
     def log_dir(self) -> Path:
         # Accessing this property doesn't create the folder.
-        return self._folder("", create=False)
+        return self.config.log_dir
 
     @property
     def results_dir(self) -> Path:
@@ -344,7 +325,7 @@ class ExperimentBase:
 
     @property
     def started(self) -> bool:
-        return is_nonempty_dir(self.config.log_dir)
+        return is_nonempty_dir(self.checkpoints_dir)
 
     @property
     def done(self) -> bool:
@@ -362,6 +343,7 @@ class ExperimentBase:
                 # Results already exists in $SCRATCH, therefore experiment is done.
                 self.log(f"Experiment is already done (non-empty folder at {results_dir}) Exiting.")
                 return True
+
         return self.started and is_nonempty_dir(self.results_dir)
     
     def save_to_results_dir(self, results: Dict[Union[str, Path], Any]):
@@ -375,27 +357,14 @@ class ExperimentBase:
                 with open(self.results_dir / path, "w") as f:
                     json.dump(result, f, indent="\t")
 
-    def save(self) -> None:
-        self.log_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.checkpoints_dir / "config.json", "w") as f:
-            d = asdict(self)
-            d = to_str(d)
-            json.dump(d, f, indent=1)
-
-        # with self.config_path.open("w") as f:
-        #     torch.save(self, f)
-
-    @classmethod
-    def load_from_config(cls, config_path: Union[Path, str]):
-        with open(config_path) as f:
-            return torch.load(f)
 
 # Load up the addons, each of which adds independent, useful functionality to the Experiment base-class.
 # TODO: This might not be the cleanest/most elegant way to do it, but it's better than having files with 1000 lines in my opinion.
-from addons import ExperimentWithVAE, TestTimeTrainingAddon, LabeledPlotRegionsAddon
+from addons import (ExperimentWithKNN, ExperimentWithVAE,
+                    LabeledPlotRegionsAddon, TestTimeTrainingAddon)
 
 @dataclass  # type: ignore
-class Experiment(ExperimentWithVAE, TestTimeTrainingAddon, LabeledPlotRegionsAddon):
+class Experiment(ExperimentWithVAE, TestTimeTrainingAddon, LabeledPlotRegionsAddon, ExperimentWithKNN):
     """ Describes the parameters of an experimental setting.
     
     (ex: Mnist_iid, Mnist_continual, Cifar10, etc. etc.)

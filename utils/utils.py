@@ -2,6 +2,7 @@
 import collections
 import functools
 import random
+from dataclasses import Field, fields
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import MutableMapping
 from pathlib import Path
@@ -100,6 +101,21 @@ def set_seed(seed: int):
     random.seed(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
+
+
+def common_fields(a, b) -> Iterable[Tuple[str, Tuple[Field, Field]]]:
+    # If any attributes are common to both the Experiment and the State,
+    # copy them over to the Experiment.
+    a_fields = fields(a)
+    b_fields = fields(b)
+    for field_a in a_fields:
+        name_a: str = field_a.name
+        value_a = getattr(a, field_a.name) 
+        for field_b in b_fields:
+            name_b: str = field_b.name
+            value_b = getattr(b, field_b.name)
+            if name_a == name_b:
+                yield name_a, (value_a, value_b)
 
 
 def rsetattr(obj: Any, attr: str, val: Any) -> None:

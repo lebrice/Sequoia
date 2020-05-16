@@ -1,12 +1,16 @@
 import json
 from collections import OrderedDict
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, fields
 from functools import singledispatch
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple, TypeVar, Union
-
-from torch import nn
-
+from typing import Any, Dict, Iterable, List, Optional, Tuple, TypeVar, Union, Callable
+from simple_parsing.helpers import from_dict, JsonSerializable as JsonSerializableBase
+from torch import nn, Tensor
+import numpy as np
+import logging
+logger = logging.getLogger(__file__)
+from io import StringIO
+            
 T = TypeVar("T")
 
 
@@ -16,13 +20,113 @@ class MyEncoder(json.JSONEncoder):
 
 @singledispatch
 def encode(obj: Any) -> Dict:
-    return obj.__dict__
+    try:
+        if is_dataclass(obj):
+            d: Dict = OrderedDict()
+            for field in fields(obj):
+                value = getattr(obj, field.name)
+                d[field.name] = encode(value) 
+            return d
+        elif hasattr(obj, "__dict__"):
+            return obj.__dict__
+        else:
+            return obj
+    except Exception as e:
+        logger.debug(f"Cannot encode object {obj}: {e}")
+        raise e
+
+@encode.register
+def encode_tensor(v: Tensor) -> List:
+    return v.tolist()
+
+@encode.register
+def encode_array(v: np.ndarray) -> List:
+    return v.tolist()
+
+@encode.register
+def encode_path(obj: Path) -> str:
+    return str(obj)
+
+object_hooks: List[Callable[[Any], Any]] = []
+
+object_hooks.append(Path)
+
+def dumps(v: Any) -> str:
+    return json.dumps(v, cls=MyEncoder)
+
+def loads(s: str) -> Optional[Any]:
+    for obj_hook in object_hooks:
+        try:
+            return json.loads(s, object_hook=obj_hook)
+        except:
+            pass
+    return json.loads(s)
+
 
 def is_json_serializable(value: str):
     try:
-        return json.loads(json.dumps(value)) == value 
+        return loads(json.dumps(value, cls=MyEncoder)) == value 
     except:
         return False
+
+def take_out_unsuported_values(d: Dict, default_value: Any=None) -> Dict:
+    result: Dict = OrderedDict()
+    for k, v in d.items():
+        if is_json_serializable(v):
+            result[k] = v
+        elif isinstance(v, dict):
+            result[k] = take_out_unsuported_values(v, default_value)
+        else:
+            result[k] = default_value
+    return result
+
+from dataclasses import asdict
+from pprint import pprint
+from utils.json_utils import MyEncoder, take_out_unsuported_values
+
+class JsonSerializable(JsonSerializableBase):
+    def save_json(self, path: Union[Path, str], indent: Union[int, str]=None):
+        d = encode(self)
+        kept_items = take_out_unsuported_values(d)
+        # print(json.dumps(kept_items, indent="\t", cls=MyEncoder))
+        with open(path, "w") as f:
+            json.dump(kept_items, f, indent=indent, cls=MyEncoder)
+        # exit()
+
+    @classmethod
+    def load_json(cls, path: Union[Path, str]):
+        with open(path) as f:
+            args_dict = loads(f.read())
+        return from_dict(cls, args_dict)
+    
+    @classmethod
+    def try_load_json(cls, path: Union[Path, str]):
+        try:
+            return cls.load_json(path)
+        except Exception as e:
+            print(f"Unable to load json ({e}), returning None.")
+            return None
+
+
+def get_new_file(file: Path) -> Path:
+    """Creates a new file, adding _{i} suffixes until the file doesn't exist.
+    
+    Args:
+        file (Path): A path.
+    
+    Returns:
+        Path: a path that is new. Might have a new _{i} suffix.
+    """
+    if not file.exists():
+        return file
+    else:
+        i = 0
+        file_i = file.with_name(file.stem + f"_{i}" + file.suffix)
+        while file_i.exists():
+            i += 1
+            file_i = file.with_name(file.stem + f"_{i}" + file.suffix)
+        file = file_i
+    return file
 
 
 def to_str_dict(d: Dict) -> Dict[str, Union[str, Dict]]:
@@ -51,27 +155,11 @@ def to_str(value: Any) -> Any:
             return repr(value)
 
 
-def take_out_unsuported_values(d: Dict, weird_things: Tuple[Any] = (type,)) -> dict:
-    """ Takes out values from the dict that aren't supported by Wandb. """
-    result: Dict = OrderedDict()
-    for key, value in d.items():
-        new_value = value
-        if isinstance(value, dict):
-            new_value = take_out_unsuported_values(value)
-        elif isinstance(value, weird_things):
-            print(f"Value at key '{key}' is weird, not keeping it.")
-            new_value = None
-        elif isinstance(value, list):
-            new_value = list(filter(lambda v: None if isinstance(v, weird_things) else v, value))      
-        new_value = value
-    return result
-
-
 def try_load(path: Path, default: T=None) -> Optional[T]:
     try:
         if path.suffix == ".json":
             with open(path) as f:
-                return json.load(f)
+                return loads(f.read())
         elif path.suffix == ".csv":
             import numpy as np
             with open(path) as f:
@@ -93,3 +181,13 @@ def try_load(path: Path, default: T=None) -> Optional[T]:
     except Exception as e:
         print(f"couldn't load path {path}: {e}")
         return default
+
+    
+# a = {
+#     "bob.txt": Path("bob.txt")
+# }
+# s = dumps(a)
+# print(s)
+# b = loads(s)
+# print(b)
+# exit()
