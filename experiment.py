@@ -37,6 +37,17 @@ from utils.logging import pbar
 from utils.utils import add_prefix, is_nonempty_dir
 
 
+@dataclass
+class ExperimentStateBase(JsonSerializable):
+    """ Dataclass used to store the state of the experiment.
+    
+    This object should contain everything we want to be able to save/restore.
+    NOTE: We aren't going to parse these from the command-line.
+    """
+    global_step: int = 0
+    model_weights_path: Optional[Path] = None
+
+
 @dataclass  # type: ignore
 class ExperimentBase(JsonSerializable):
     """Base-class for an Experiment.

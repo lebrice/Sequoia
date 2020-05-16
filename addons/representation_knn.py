@@ -82,17 +82,17 @@ def evaluate_knn(x: np.ndarray, y: np.ndarray, x_t: np.ndarray, y_t: np.ndarray,
     
     x = scaler.fit_transform(x)
     x_t = scaler.transform(x_t)
-
-    clf = KNeighborsClassifier(**asdict(options)).fit(x, y)
-    classes = clf.classes_
+    
+    # Create and train the Knn Classifier using the options as the kwargs
+    knn_classifier = KNeighborsClassifier(**asdict(options)).fit(x, y)
+    classes = knn_classifier.classes_
     # print("classes: ", classes)
 
-    y_pred = clf.predict(x)
-    y_prob = clf.predict_proba(x)
-    train_score = clf.score(x, y)
+    y_pred = knn_classifier.predict(x)
+    y_prob = knn_classifier.predict_proba(x)
     # print(y_pred.shape, y_prob.shape, train_score)
 
-    y_logits = np.zeros((y_pred.size, y_pred.max()+1))
+    y_logits = np.zeros((y.size, y.max() + 1))
     for i, label in enumerate(classes):
         y_logits[:, label] = y_prob[:, i]
     
@@ -100,12 +100,11 @@ def evaluate_knn(x: np.ndarray, y: np.ndarray, x_t: np.ndarray, y_t: np.ndarray,
     nce = log_loss(y_true=y, y_pred=y_prob, labels=classes)
     train_loss = LossInfo("KNN", total_loss=nce, y_pred=y_logits, y=y)
 
-    y_t_pred = clf.predict(x_t)
-    y_t_prob = clf.predict_proba(x_t)
-    test_score = clf.score(x_t, y_t)
+    y_t_pred = knn_classifier.predict(x_t)
+    y_t_prob = knn_classifier.predict_proba(x_t)
     # print(y_t_pred.shape, y_t_prob.shape, test_score)
 
-    y_t_logits = np.zeros((y_t_pred.size, y_t_pred.max()+1))
+    y_t_logits = np.zeros((y_t.size, y_t.max() + 1))
     for i, label in enumerate(classes):
         y_t_logits[:, label] = y_t_prob[:, i]
     

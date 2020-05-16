@@ -51,9 +51,9 @@ def launch(experiment: Experiment):
         
         print(f"Using wandb. Group name: {config.run_group} run name: {config.run_name}, log_dir: {config.log_dir}")
     
-    if experiment.done:
-        print(f"Experiment is already done. Exiting.")
-        exit(0)
+    # if experiment.done:
+    #     print(f"Experiment is already done. Exiting.")
+    #     exit(0)
     if experiment.started:
         print(f"Experiment is incomplete at directory {config.log_dir}.")
         # TODO: pick up where we left off ?

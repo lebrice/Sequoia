@@ -88,7 +88,8 @@ class JsonSerializable(JsonSerializableBase):
     def save_json(self, path: Union[Path, str], indent: Union[int, str]=None):
         d = encode(self)
         kept_items = take_out_unsuported_values(d)
-        # print(json.dumps(kept_items, indent="\t", cls=MyEncoder))
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             json.dump(kept_items, f, indent=indent, cls=MyEncoder)
         # exit()

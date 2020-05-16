@@ -20,7 +20,7 @@ from common.metrics import Metrics, ClassificationMetrics, RegressionMetrics
 from config import Config
 from datasets.subset import VisionDatasetSubset
 from datasets import DatasetConfig
-from experiment import Experiment
+from experiment import Experiment, ExperimentStateBase
 from utils.utils import n_consecutive, rgetattr, rsetattr, common_fields
 from utils.json_utils import try_load
 from utils import utils
@@ -35,7 +35,7 @@ from simple_parsing import mutable_field, list_field
 #     return mutable_field(*args, **kwargs)
 
 @dataclass
-class State(JsonSerializable):
+class State(ExperimentStateBase):
     """Object that contains all the state we want to be able to save/restore.
 
     We aren't going to parse these from the command-line.
@@ -44,8 +44,6 @@ class State(JsonSerializable):
 
     i: int = 0
     j: int = 0
-
-    global_step: int = 0
 
     # Container for the losses. At index [i, j], gives the validation
     # metrics on task j after having trained on tasks [0:i], for 0 < j <= i.
@@ -59,9 +57,6 @@ class State(JsonSerializable):
     knn_losses: List[List[LossInfo]] = list_field()
     # Cumulative losses after each task
     cumul_losses: List[Optional[LossInfo]] = list_field()
-
-    model_weights_path: Optional[Path] = None
-
     # Container for train/valid losses that are logged periodically.
     all_losses: TrainValidLosses = mutable_field(TrainValidLosses)
 
@@ -104,50 +99,6 @@ class TaskIncremental(Experiment):
         self.valid_datasets: List[VisionDatasetSubset] = []
         self.valid_cumul_datasets: List[VisionDatasetSubset] = []
         self.state = State()
-
-    def load_state(self, state_json_path: Path=None) -> None:
-        # TODO: save/restore the state from a previous run.
-        # TODO: Work-In-Progress, this is ugly. There is for sure a more elegant
-        # way to do this.
-        self.logger.info(f"Restoring state from {state_json_path}")        
-
-        if not state_json_path:
-            state_json_path = self.checkpoints_dir / "state.json"
-
-        # Load the 'State' object from json
-        self.state = State.load_json(state_json_path)
-
-        # If any attributes are common to both the Experiment and the State,
-        # copy them over to the Experiment.
-        for name, (v1, v2) in common_fields(self, self.state):
-            self.logger.info(f"Loaded the {field.name} attribute from the 'State' object.")
-            setattr(self, name, v2)
-
-        if self.state.model_weights_path:
-            self.model.load_state_dict(torch.load(self.state.model_weights_path))
-            self.logger.info(f"Restoring model weights from {self.state.model_weights_path}")       
-        
-    def save(self, save_dir: Path=None) -> None:
-        if not save_dir:
-            save_dir = self.checkpoints_dir
-        
-        save_dir.mkdir(parents=True, exist_ok=True)
-        save_json_path = save_dir / "state.json"
-
-        if self.model:
-            self.state.model_weights_path = save_dir / "model_weights.pth"
-            
-            torch.save(self.model.state_dict(), self.state.model_weights_path)    
-            self.logger.debug(f"Saved model weights to {self.state.model_weights_path}")
-        
-        
-        for name, (v1, v2) in common_fields(self, self.state):
-            self.logger.info(f"Saving the {name} attribute into the 'State' object.")
-            setattr(self.state, name, v1)
-
-        self.state.save_json(save_json_path)
-        self.logger.debug(f"Saved state to {save_json_path}")
-
 
     def run(self):
         """Evaluates a model/method in the classical "task-incremental" setting.
@@ -198,16 +149,17 @@ class TaskIncremental(Experiment):
         """
         self.model = self.init_model()
         
-        if self.restore_from_path:
-            self.logger.info(f"Will load state from {self.restore_from}")
-        elif self.started and not self.done:
-            self.logger.info(f"Experiment was incomplete.")
+        if self.started or self.restore_from_path:
+            self.logger.info(f"Experiment was already started in the past.")
             self.restore_from_path = self.checkpoints_dir / "state.json"
-
-        # assert self.restore_from_path is None
-        if self.restore_from_path:
+            self.logger.info(f"Will load state from {self.restore_from_path}")
             self.load_state(self.restore_from_path)
-        else:
+
+        if self.done:
+            self.logger.info(f"Experiment is already done.")
+            # exit()
+
+        if self.state.global_step == 0:
             self.logger.info("Starting from scratch!")
             self.state.tasks = self.create_tasks_for_dataset(self.dataset)
         
@@ -306,12 +258,9 @@ class TaskIncremental(Experiment):
             self.log({f"cumul_losses[{i}]": valid_log_dict})
 
         # TODO: Save the results to a json file.
-        self.state.all_losses.save_json(self.results_dir / "losses.json")
-        
+        self.save(self.results_dir)
         # TODO: save the rest of the state.
-        # self.save_state(self.results_dir)
-        # torch.save(self.plot_sections, str(self.results_dir / "plot_labels.pt"))
-
+        
         from utils.plotting import maximize_figure
         # Make the forward-backward transfer grid figure.
         grid = self.make_transfer_grid_figure(self.state.knn_losses, self.state.task_losses, self.state.cumul_losses)
@@ -325,20 +274,99 @@ class TaskIncremental(Experiment):
             fig.show()
             fig.waitforbuttonpress(10)
 
-    def make_transfer_grid_figure(self, knn_losses: List[List[LossInfo]], task_losses: List[List[LossInfo]], cumul_losses: List[LossInfo]) -> plt.Figure:
+    def make_transfer_grid_figure(self,
+                                  knn_losses: List[List[LossInfo]],
+                                  task_losses: List[List[LossInfo]],
+                                  cumul_losses: List[LossInfo]) -> plt.Figure:
+        """TODO: (WIP): Create a table that shows forward and backward transfer. 
+
+        Args:
+            knn_losses (List[List[LossInfo]]): [description]
+            task_losses (List[List[LossInfo]]): [description]
+            cumul_losses (List[LossInfo]): [description]
+
+        Raises:
+            NotImplementedError: [description]
+
+        Returns:
+            plt.Figure: [description]
+        """
         n_tasks = len(task_losses)
         knn_accuracies: List[List[Optional[float]]] = [[None] * n_tasks] * n_tasks # [N,N]
         classifier_accuracies: List[List[Optional[float]]] = [[None] * n_tasks] * n_tasks # [N,N]
         
-        for i in range(n_tasks):
+        from itertools import zip_longest
+        text: List[List[str]] = np.zeros(n_tasks, n_tasks, dtype=np.string)
+
+        for i, rows in enumerate(zip(classifier_accuracies, knn_accuracies)):
             knn_accuracies.append([])
             classifier_accuracies.append([])
-            for j in range(n_tasks):
-                knn_accuracies[i].append()
-
-        fig: plt.Figure = plt.figure()
-        
+            for j, (knn_loss, classifier_loss) in enumerate(zip_longest(*rows)):
+                knn_acc = knn_loss.metrics["KNN"].accuracy
+                text[i][j] = f"KNN Acc: {knn_acc:.2%}"
+                if classifier_loss:
+                    cls_acc = classifier_loss.metrics["supervised"].accuracy
+                    text[i][j] += f"\nAcc: {cls_acc:.2%}"
+        # fig: plt.Figure = plt.figure()
+        # ax = fig.subplots(1,1)
+        # ax.
+        print(text)
+        plt.table(text)
         raise NotImplementedError("Not sure if I should do it manually or in wandb.")
+
+    
+    def load_state(self, state_json_path: Path=None) -> None:
+        # TODO: save/restore the state from a previous run.
+        # TODO: Work-In-Progress, this is ugly. There is for sure a more elegant
+        # way to do this.
+        self.logger.info(f"Restoring state from {state_json_path}")        
+
+        if not state_json_path:
+            state_json_path = self.checkpoints_dir / "state.json"
+
+        # Load the 'State' object from json
+        self.state = State.load_json(state_json_path)
+
+        # If any attributes are common to both the Experiment and the State,
+        # copy them over to the Experiment.
+        for name, (v1, v2) in common_fields(self, self.state):
+            self.logger.info(f"Loaded the {field.name} attribute from the 'State' object.")
+            setattr(self, name, v2)
+
+        if self.state.model_weights_path:
+            self.model.load_state_dict(torch.load(self.state.model_weights_path))
+            self.logger.info(f"Restoring model weights from {self.state.model_weights_path}")
+
+        # TODO: Fix this so the global_step is nicely loaded/restored.
+        self.global_step = self.state.global_step or self.state.all_losses.latest_step()
+        self.logger.info(f"Starting at global step = {self.global_step}.")
+
+    def save(self, save_dir: Path=None) -> None:
+        if not save_dir:
+            save_dir = self.checkpoints_dir
+        
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_json_path = save_dir / "state.json"
+
+        if self.model:
+            self.state.model_weights_path = save_dir / "model_weights.pth"
+            
+            torch.save(self.model.state_dict(), self.state.model_weights_path)    
+            self.logger.debug(f"Saved model weights to {self.state.model_weights_path}")
+        
+        
+        for name, (v1, v2) in common_fields(self, self.state):
+            self.logger.info(f"Saving the {name} attribute into the 'State' object.")
+            setattr(self.state, name, v1)
+        
+        # TODO: Fix this so the global_step is nicely loaded/restored.
+        self.state.global_step = self.global_step
+
+        self.state.save_json(save_json_path)
+        self.logger.debug(f"Saved state to {save_json_path}")
+
+
+
 
     def make_loss_figure(self,
                     results: Dict,
