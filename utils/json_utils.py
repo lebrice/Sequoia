@@ -64,6 +64,10 @@ def loads(s: str) -> Optional[Any]:
 
 
 def is_json_serializable(value: str):
+    if isinstance(value, JsonSerializable):
+        return True
+    elif type(value) in encode.registry:
+        return True
     try:
         return loads(json.dumps(value, cls=MyEncoder)) == value 
     except:
@@ -77,7 +81,7 @@ def take_out_unsuported_values(d: Dict, default_value: Any=None) -> Dict:
         elif isinstance(v, dict):
             result[k] = take_out_unsuported_values(v, default_value)
         else:
-            result[k] = default_value
+            result[k] = v
     return result
 
 from dataclasses import asdict
@@ -86,13 +90,10 @@ from utils.json_utils import MyEncoder, take_out_unsuported_values
 
 class JsonSerializable(JsonSerializableBase):
     def save_json(self, path: Union[Path, str], indent: Union[int, str]=None):
-        d = encode(self)
-        kept_items = take_out_unsuported_values(d)
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
-            json.dump(kept_items, f, indent=indent, cls=MyEncoder)
-        # exit()
+            json.dump(self, f, indent=indent, cls=MyEncoder)
 
     @classmethod
     def load_json(cls, path: Union[Path, str]):

@@ -30,9 +30,6 @@ from sys import getsizeof
 from utils.json_utils import JsonSerializable
 from simple_parsing import mutable_field, list_field
 
-# def state(*args, **kwargs):
-#     kwargs.setdefault("init", False)
-#     return mutable_field(*args, **kwargs)
 
 @dataclass
 class State(ExperimentStateBase):
@@ -176,8 +173,6 @@ class TaskIncremental(Experiment):
             self.state.knn_losses   = [[None] * self.n_tasks] * self.n_tasks # [N,N]
             self.state.task_losses  = [[None] * (i+1) for i in range(self.n_tasks)] # [N,J]
             self.state.cumul_losses = [None] * self.n_tasks # [N]
-
-        from utils.json_utils import dumps
         
         for i in range(self.state.i, self.n_tasks):
             self.state.i = i

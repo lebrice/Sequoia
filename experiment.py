@@ -272,8 +272,8 @@ class ExperimentBase(JsonSerializable):
         if always_print or (self.config.debug and self.config.verbose):
             print(message, value if value is not None else "")
 
-        with open(self.log_dir / "log.txt", "a") as f:
-            print(message, value, file=f)
+        # with open(self.log_dir / "log.txt", "a") as f:
+        #     print(message, value, file=f)
 
         if self.config.use_wandb:
             # if we want to long once (like a final result, step should be None)
