@@ -77,7 +77,8 @@ class TaskIncremental_EWC(Experiment):
     # Wether or not we want to cheat and get access to the task-label at train 
     # and test time. NOTE: This should ideally just be a temporary measure while
     # we try to prove that Self-Supervision can help.
-    multihead: bool = False 
+    multihead: bool = True
+    ewc_lamda = 10
 
     # Path to restore the state from at the start of training.
     # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
@@ -175,7 +176,7 @@ class TaskIncremental_EWC(Experiment):
             self.state.task_losses  = [[None] * (i+1) for i in range(self.n_tasks)] # [N,J]
             self.state.cumul_losses = [None] * self.n_tasks # [N]
 
-        self.model = EWC_wrapper(self.model, lamda=1, n_ways=10, device='cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = EWC_wrapper(self.model, lamda=self.ewc_lamda, n_ways=10, device='cuda' if torch.cuda.is_available() else 'cpu')
         #TODO: n_ways should be self.n_classes_per_task, but model outputs 10 way classifier instead of self.n_classes_per_task - way
 
         for i in range(self.state.i, self.n_tasks):
