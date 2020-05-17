@@ -1,17 +1,46 @@
 
+from copy import copy, deepcopy
+from dataclasses import dataclass
+from typing import (Any, Dict, List, NamedTuple, Optional, Tuple, Type,
+                    TypeVar, Union)
+
 import torch
 import torch.nn as nn
-from copy import copy, deepcopy
-from common.losses import LossInfo
-from torch import Tensor, nn, optim
-from torch.utils.data import DataLoader
+from torch import Tensor
+from torch import nn as nn
+from torch import optim
 from torch.autograd import Variable
+from torch.utils.data import DataLoader
+
+from common.losses import LossInfo
+from experiment import ExperimentBase
 from models.classifier import Classifier
 from utils.nngeometry.nngeometry.layercollection import LayerCollection
-from utils.nngeometry.nngeometry.object.pspace import PSpaceKFAC, PSpaceBlockDiag,PSpaceDiag
-from utils.nngeometry.nngeometry.object.vector import PVector
 from utils.nngeometry.nngeometry.metrics import FIM
-from typing import (Any, Dict, List, NamedTuple, Optional, Tuple, Type, TypeVar, Union)
+from utils.nngeometry.nngeometry.object.pspace import (PSpaceBlockDiag,
+                                                       PSpaceDiag, PSpaceKFAC)
+from utils.nngeometry.nngeometry.object.vector import PVector
+
+
+@dataclass  # type: ignore
+class ExperimentWithEWC(ExperimentBase):
+    """ Evaluates the model in the same setting as the OML paper's Figure 3.
+    """
+    use_ewc: bool = False
+    # The 'lambda' parameter from EWC.
+    # TODO: (Fabrice) IDK what this parameter means, maybe read up the EWC paper again and add a better description?
+    ewc_lamda: float = 10
+
+    def init_model(self) -> Classifier:
+        self.logger.debug("init model")
+        model = self.get_model_for_dataset(self.dataset)
+        model.to(self.config.device)
+        if self.use_ewc:
+            self.logger.info(f"Using EWC with a lambda of {self.ewc_lamda}")
+            #TODO: n_ways should be self.n_classes_per_task, but model outputs 10 way classifier instead of self.n_classes_per_task - way
+            model = EWC_wrapper(model, lamda=self.ewc_lamda, n_ways=10, device=self.config.device)
+        return model
+
 
 class GaussianPrior(object):
     def __init__(self, model: torch.nn.Module, n_output:int, loader: DataLoader,
