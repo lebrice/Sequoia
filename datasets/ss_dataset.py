@@ -1,9 +1,9 @@
-import torch
+import torch    
 import numpy as np
 from itertools import repeat, cycle
 from torch.utils.data.sampler import SubsetRandomSampler
 
-def get_sampler(labels, p:float=None):
+def get_semi_sampler(labels, p:float=None):
     #p - percentage of labeled data to be kept
     #print(type(labels))
     indices = np.arange(len(labels))

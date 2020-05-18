@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from torch.utils.data import Subset
 from datasets.subset import VisionDatasetSubset
 from common.losses import LossInfo
-from datasets.ss_dataset import get_sampler
+from datasets.ss_dataset import get_semi_sampler
 from addons.ewc import EWC_wrapper
 from collections import OrderedDict, defaultdict
 from itertools import accumulate
@@ -29,6 +29,9 @@ class TaskIncrementalWithEWC(TaskIncremental):
     ewc_lamda = 10
     # Container for train/valid losses that are logged periodically.
     all_losses: TrainValidLosses = mutable_field(TrainValidLosses)
+
+    #labeled samples ratio
+    ratio_labelled = 0.2
 
     def init_model(self) -> Classifier:
         print("init model")
@@ -63,8 +66,8 @@ class TaskIncrementalWithEWC(TaskIncremental):
             train = VisionDatasetSubset(train_full_dataset, task)
             valid = VisionDatasetSubset(valid_full_dataset, task)
 
-            sampler_train, sampler_train_unlabelled = get_sampler(train.targets,p=0.2)
-            sampler_valid, sampler_valid_unlabelled = get_sampler(valid.targets, p=0.2)
+            sampler_train, sampler_train_unlabelled = get_semi_sampler(train.targets,p=self.ratio_labelled)
+            sampler_valid, sampler_valid_unlabelled = get_semi_sampler(valid.targets, p=self.ratio_labelled)
 
             self.train_datasets.append((train,sampler_train,sampler_train_unlabelled))
             self.valid_datasets.append((valid,sampler_valid,sampler_valid_unlabelled))
@@ -198,7 +201,7 @@ class TaskIncrementalWithEWC(TaskIncremental):
             #====================
             if self.use_ewc:
                 if self.config.debug:
-                    sampler_train_, sampler_train_unlabelled_ = get_sampler(Subset(train_i, range(200)).dataset.targets[:200], p=0.2)
+                    sampler_train_, sampler_train_unlabelled_ = get_semi_sampler(Subset(train_i, range(200)).dataset.targets[:200], p=self.ratio_labelled)
                     self.model.current_task_loader = self.get_dataloader(Subset(train_i, range(200)), sampler_train_, sampler_train_unlabelled_)[0]
                 else:
                     self.model.current_task_loader = self.get_dataloader(train_i, sampler_train_i, sampler_unlabelled_i)[0]
