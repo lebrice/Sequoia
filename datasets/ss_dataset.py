@@ -3,15 +3,16 @@ import numpy as np
 from itertools import repeat, cycle
 from torch.utils.data.sampler import SubsetRandomSampler
 
-def get_sampler(labels, n=None):
+def get_sampler(labels, p:float=None):
+    #p - percentage of labeled data to be kept
     #print(type(labels))
     indices = np.arange(len(labels))
     classes = np.unique(labels)
     # Ensure uniform distribution of labels
     np.random.shuffle(indices)
 
-    indices_train = np.hstack(
-        [list(filter(lambda idx: labels[idx] == i, indices))[:n] for i in classes])
+    indices_train = [list(filter(lambda idx: labels[idx] == i, indices))[:] for i in classes]
+    indices_train = np.hstack([indices_train[i][:int(p*len(indices_train[i]))] for i in range(len(indices_train))])
     indices_unlabelled = np.hstack(
         [list(filter(lambda idx: labels[idx] == i, indices))[:] for i in classes])
     # print (indices_train.shape)

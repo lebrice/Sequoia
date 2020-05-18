@@ -1,7 +1,7 @@
 
 import tqdm
 from sys import getsizeof
-from models.classifier import Classifier 
+from models.classifier import Classifier
 from task_incremental import TaskIncremental
 from dataclasses import dataclass
 from torch.utils.data import Subset
@@ -25,6 +25,7 @@ class TaskIncrementalWithEWC(TaskIncremental):
     unsupervised_epochs_per_task: int = 5
     # The 'lambda' parameter from EWC.
     # The factor in fron of the EWC regularizer  - higher lamda -> more penalty for changing the parameters
+    use_ewc = True
     ewc_lamda = 10
     # Container for train/valid losses that are logged periodically.
     all_losses: TrainValidLosses = mutable_field(TrainValidLosses)
@@ -33,8 +34,9 @@ class TaskIncrementalWithEWC(TaskIncremental):
         print("init model")
         model = self.get_model_for_dataset(self.dataset)
         model.to(self.config.device)
-        model = EWC_wrapper(model, lamda=self.ewc_lamda, n_ways=10, device=self.config.device)
-        #TODO: n_ways should be self.n_classes_per_task, but model outputs 10 way classifier instead of self.n_classes_per_task - way
+        if self.use_ewc:
+            model = EWC_wrapper(model, lamda=self.ewc_lamda, n_ways=10, device=self.config.device)
+            #TODO: n_ways should be self.n_classes_per_task, but model outputs 10 way classifier instead of self.n_classes_per_task - way
         return model
 
     def load_datasets(self, tasks: List[List[int]]) -> List[List[int]]:
@@ -61,8 +63,8 @@ class TaskIncrementalWithEWC(TaskIncremental):
             train = VisionDatasetSubset(train_full_dataset, task)
             valid = VisionDatasetSubset(valid_full_dataset, task)
 
-            sampler_train, sampler_train_unlabelled = get_sampler(train.targets,n=100)
-            sampler_valid, sampler_valid_unlabelled = get_sampler(valid.targets, n=100)
+            sampler_train, sampler_train_unlabelled = get_sampler(train.targets,p=0.2)
+            sampler_valid, sampler_valid_unlabelled = get_sampler(valid.targets, p=0.2)
 
             self.train_datasets.append((train,sampler_train,sampler_train_unlabelled))
             self.valid_datasets.append((valid,sampler_valid,sampler_valid_unlabelled))
@@ -194,11 +196,12 @@ class TaskIncrementalWithEWC(TaskIncremental):
             # EWC_specific: pass EWC_rapper the loader to compute fisher
             #call befor task change
             #====================
-            if self.config.debug:
-                sampler_train_, sampler_train_unlabelled_ = get_sampler(Subset(train_i, range(200)).dataset.targets[:200], n=100)
-                self.model.current_task_loader = self.get_dataloader(Subset(train_i, range(200)), sampler_train_, sampler_train_unlabelled_)[0]
-            else:
-                self.model.current_task_loader = self.get_dataloader(train_i, sampler_train_i, sampler_unlabelled_i)[0]
+            if self.use_ewc:
+                if self.config.debug:
+                    sampler_train_, sampler_train_unlabelled_ = get_sampler(Subset(train_i, range(200)).dataset.targets[:200], p=0.2)
+                    self.model.current_task_loader = self.get_dataloader(Subset(train_i, range(200)), sampler_train_, sampler_train_unlabelled_)[0]
+                else:
+                    self.model.current_task_loader = self.get_dataloader(train_i, sampler_train_i, sampler_unlabelled_i)[0]
             #====================
 
             with self.plot_region_name(f"Learn Task {i}"):
