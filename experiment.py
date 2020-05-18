@@ -213,7 +213,8 @@ class ExperimentBase(JsonSerializable):
         total_loss = batch_loss_info.total_loss
         total_loss.backward()
 
-        self.model.optimizer.step()
+        self.model.optimizer_step(global_step=self.global_step)
+
         self.global_step += data.shape[0]
         return batch_loss_info
 

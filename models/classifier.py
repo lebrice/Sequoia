@@ -192,16 +192,19 @@ class Classifier(nn.Module):
 
     @current_task_id.setter
     def current_task_id(self, value: Optional[Union[int, str]]):
-        value = str(value) if value is not None else None
-        self._current_task_id = value
+        value_str: str = str(value) if value is not None else None
+        self._current_task_id = value_str
         # If there isn't a classifier for this task
-        if value and value not in self.task_classifiers.keys():
+        if value_str and value_str not in self.task_classifiers.keys():
             if self.config.debug:
                 logger.info(f"Creating a new classifier for taskid {value}.")
             # Create one starting from the "global" classifier.
             classifier = copy.deepcopy(self.classifier)
-            self.task_classifiers[value] = classifier
+            self.task_classifiers[value_str] = classifier
             self.optimizer.add_param_group({"params": classifier.parameters()})
+
+        for name, task in self.tasks.items():
+            task.on_task_switch(task_id=value_str)
 
     def logits(self, h_x: Tensor) -> Tensor:
         if self.hparams.detach_classifier:
@@ -214,10 +217,22 @@ class Classifier(nn.Module):
             classifier = self.task_classifiers[self.current_task_id]
         return classifier(h_x)
     
-    def load_state_dict(self, state_dict: Dict) -> Tuple[List[str], List[str]]:
+    def load_state_dict(self, state_dict: Dict, strict: bool=True) -> Tuple[List[str], List[str]]:
         current_task_id = self.current_task_id
+        # Set the task ID attribute to create all the needed output heads. 
         for key in state_dict:
             if key.startswith("task_classifiers"):
-                n = key.split(".")[1]
-                self.current_task_id = n
-        return super().load_state_dict(state_dict)
+                task_id = key.split(".")[1]
+                self.current_task_id = task_id
+        # Reset the current_task_id to the previosu value.
+        self.current_task_id = current_task_id
+        return super().load_state_dict(state_dict, strict)
+    
+    def optimizer_step(self, global_step: int) -> None:
+        """Updates the model by calling `self.optimizer.step()`.
+        Additionally, also informs the auxiliary tasks that the model got
+        updated.
+        """
+        self.optimizer.step()
+        for name, task in self.tasks.items():
+            task.on_model_changed(global_step=global_step) 

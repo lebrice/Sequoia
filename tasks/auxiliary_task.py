@@ -157,3 +157,11 @@ class AuxiliaryTask(nn.Module):
     @property
     def enabled(self) -> bool:
         return self.coefficient != 0
+    
+    def on_model_changed(self, global_step: int)-> None:
+        """ Executed when the model was updated. """
+        pass
+    
+    def on_task_switch(self, task_id: str)-> None:
+        """ Executed when the task switches (to either a new or known task). """
+        pass

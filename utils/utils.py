@@ -118,6 +118,20 @@ def common_fields(a, b) -> Iterable[Tuple[str, Tuple[Field, Field]]]:
                 yield name_a, (value_a, value_b)
 
 
+def add_dicts(d1: Dict, d2: Dict, add_values=True) -> Dict:
+    result = d1.copy()
+    for key, v2 in d2.items():
+        if key not in d1:
+            result[key] = v2
+        elif isinstance(v2, dict):
+            result[key] = add_dicts(d1[key], v2, add_values=add_values)
+        elif not add_values:
+            result[key] = v2
+        else:
+            result[key] = d1[key] + v2
+    return result
+
+
 def rsetattr(obj: Any, attr: str, val: Any) -> None:
     """ Taken from https://stackoverflow.com/questions/31174295/getattr-and-setattr-on-nested-subobjects-chained-properties """
     pre, _, post = attr.rpartition('.')

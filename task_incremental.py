@@ -329,8 +329,8 @@ class TaskIncremental(Experiment):
             setattr(self, name, v2)
 
         if self.state.model_weights_path:
-            self.model.load_state_dict(torch.load(self.state.model_weights_path))
             self.logger.info(f"Restoring model weights from {self.state.model_weights_path}")
+            self.model.load_state_dict(torch.load(self.state.model_weights_path), strict=False)
 
         # TODO: Fix this so the global_step is nicely loaded/restored.
         self.global_step = self.state.global_step or self.state.all_losses.latest_step()

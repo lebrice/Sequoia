@@ -12,20 +12,7 @@ from utils.utils import add_prefix
 from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                       get_metrics)
 from utils.json_utils import encode, JsonSerializable
-
-
-def add_dicts(d1: Dict, d2: Dict, add_values=True) -> Dict:
-    result = d1.copy()
-    for key, v2 in d2.items():
-        if key not in d1:
-            result[key] = v2
-        elif isinstance(v2, dict):
-            result[key] = add_dicts(d1[key], v2, add_values=add_values)
-        elif not add_values:
-            result[key] = v2
-        else:
-            result[key] = d1[key] + v2
-    return result
+from utils.utils import add_dicts
 
 
 @dataclass
