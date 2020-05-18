@@ -1,6 +1,8 @@
 
 import tqdm
 from sys import getsizeof
+from torch import Tensor, nn
+from itertools import repeat, cycle
 from models.classifier import Classifier
 from task_incremental import TaskIncremental
 from dataclasses import dataclass
@@ -280,13 +282,13 @@ class TaskIncrementalWithEWC(TaskIncremental):
 
         message: Dict[str, Any] = OrderedDict()
         for epoch in range(max_epochs):
-            pbar = tqdm.tqdm(train_dataloader_labelled, total=n_steps)
+            pbar = tqdm.tqdm(train_dataloader_labelled, train_dataloader_unlabelled, total=n_steps)
             desc = description or ""
             desc += " " if desc and not desc.endswith(" ") else ""
             desc += f"Epoch {epoch}"
             pbar.set_description(desc + " Train")
 
-            for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
+            for batch_idx, train_loss in enumerate(self.train_iter_semi_sup(pbar)):
                 if batch_idx % self.config.log_interval == 0:
                     # get loss on a batch of validation data:
                     valid_loss = next(valid_loss_gen)
@@ -341,6 +343,23 @@ class TaskIncrementalWithEWC(TaskIncremental):
                 data = batch[0].to(self.model.device)
                 target = batch[1].to(self.model.device) if len(batch) == 2 else None
                 yield self.test_batch(data, target)
+
+
+    def train_iter_semi_sup(self, dataloader_sup: DataLoader, dataloader_unsup) -> Iterable[LossInfo]:
+        self.model.train()
+        for batch_sup, batch_unsup in zip(cycle(dataloader_sup),dataloader_unsup):
+            data, target = self.preprocess(batch_sup)
+            u, _ = self.preprocess(batch_unsup)
+            yield self.train_batch_semi_sup(data,target,u)
+
+    def train_batch_semi_sup(self, data: Tensor, target: Optional[Tensor], u: Tensor) -> LossInfo:
+        self.model.optimizer.zero_grad()
+        batch_loss_info = self.model.get_loss_semi(data, target, u)
+        total_loss = batch_loss_info.total_loss
+        total_loss.backward()
+        self.model.optimizer.step()
+        self.global_step += data.shape[0]
+        return batch_loss_info
 
 
 if __name__ == "__main__":
