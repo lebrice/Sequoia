@@ -1,66 +1,52 @@
 import json
-from collections import OrderedDict
-from dataclasses import asdict, is_dataclass, fields
-from functools import singledispatch
-from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple, TypeVar, Union, Callable
-from simple_parsing.helpers import from_dict, JsonSerializable as JsonSerializableBase
-from torch import nn, Tensor
-import numpy as np
 import logging
-logger = logging.getLogger(__file__)
+from collections import OrderedDict
+from dataclasses import asdict, dataclass, fields, is_dataclass
+from functools import singledispatch
 from io import StringIO
-            
+from pathlib import Path
+from pprint import pprint
+from typing import (Any, Callable, Dict, Iterable, List, Optional, Tuple,
+                    TypeVar, Union)
+
+import numpy as np
+import torch
+from torch import Tensor, nn
+
+from simple_parsing.helpers import JsonSerializable as JsonSerializableBase, encode, SimpleEncoder
+from simple_parsing.helpers.serialization import decoding_fns
+
+logger = logging.getLogger(__file__)
 T = TypeVar("T")
 
+decoding_fns[Tensor] = torch.as_tensor
+decoding_fns[np.ndarray] = np.array
+decoding_fns[Optional[Tensor]] = lambda v: torch.as_tensor(v or [])
+decoding_fns[Optional[np.ndarray]] = lambda v: np.array(v or [])
 
-class MyEncoder(json.JSONEncoder):
-    def default(self, o: Any):
-        return encode(o)
 
-@singledispatch
-def encode(obj: Any) -> Dict:
-    try:
-        if is_dataclass(obj):
-            d: Dict = OrderedDict()
-            for field in fields(obj):
-                value = getattr(obj, field.name)
-                d[field.name] = encode(value) 
-            return d
-        elif hasattr(obj, "__dict__"):
-            return obj.__dict__
-        else:
-            return obj
-    except Exception as e:
-        logger.debug(f"Cannot encode object {obj}: {e}")
-        raise e
+@dataclass
+class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):
+    pass
 
 @encode.register
 def encode_tensor(v: Tensor) -> List:
     return v.tolist()
 
+
 @encode.register
 def encode_array(v: np.ndarray) -> List:
     return v.tolist()
+
 
 @encode.register
 def encode_path(obj: Path) -> str:
     return str(obj)
 
-object_hooks: List[Callable[[Any], Any]] = []
 
-object_hooks.append(Path)
-
-def dumps(v: Any) -> str:
-    return json.dumps(v, cls=MyEncoder)
-
-def loads(s: str) -> Optional[Any]:
-    for obj_hook in object_hooks:
-        try:
-            return json.loads(s, object_hook=obj_hook)
-        except:
-            pass
-    return json.loads(s)
+@encode.register
+def encode_device(obj: torch.device) -> str:
+    return str(obj)
 
 
 def is_json_serializable(value: str):
@@ -73,6 +59,7 @@ def is_json_serializable(value: str):
     except:
         return False
 
+
 def take_out_unsuported_values(d: Dict, default_value: Any=None) -> Dict:
     result: Dict = OrderedDict()
     for k, v in d.items():
@@ -83,31 +70,6 @@ def take_out_unsuported_values(d: Dict, default_value: Any=None) -> Dict:
         else:
             result[k] = default_value
     return result
-
-from dataclasses import asdict
-from pprint import pprint
-from utils.json_utils import MyEncoder, take_out_unsuported_values
-
-class JsonSerializable(JsonSerializableBase):
-    def save_json(self, path: Union[Path, str], indent: Union[int, str]=None):
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(self, f, indent=indent, cls=MyEncoder)
-
-    @classmethod
-    def load_json(cls, path: Union[Path, str]):
-        with open(path) as f:
-            args_dict = loads(f.read())
-        return from_dict(cls, args_dict)
-    
-    @classmethod
-    def try_load_json(cls, path: Union[Path, str]):
-        try:
-            return cls.load_json(path)
-        except Exception as e:
-            print(f"Unable to load json ({e}), returning None.")
-            return None
 
 
 def get_new_file(file: Path) -> Path:
@@ -130,6 +92,27 @@ def get_new_file(file: Path) -> Path:
         file = file_i
     return file
 
+
+def is_json_serializable(value: str):
+    if isinstance(value, JsonSerializable):
+        return True
+    elif type(value) in encode.registry:
+        return True
+    try:
+        return json.loads(json.dumps(value, cls=SimpleEncoder)) == value 
+    except:
+        return False
+
+def take_out_unsuported_values(d: Dict, default_value: Any=None) -> Dict:
+    result: Dict = OrderedDict()
+    for k, v in d.items():
+        if is_json_serializable(v):
+            result[k] = v
+        elif isinstance(v, dict):
+            result[k] = take_out_unsuported_values(v, default_value)
+        else:
+            result[k] = v
+    return result
 
 def to_str_dict(d: Dict) -> Dict[str, Union[str, Dict]]:
     for key, value in list(d.items()):
@@ -161,7 +144,7 @@ def try_load(path: Path, default: T=None) -> Optional[T]:
     try:
         if path.suffix == ".json":
             with open(path) as f:
-                return loads(f.read())
+                return json.loads(f.read())
         elif path.suffix == ".csv":
             import numpy as np
             with open(path) as f:

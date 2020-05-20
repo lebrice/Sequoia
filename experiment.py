@@ -14,12 +14,11 @@ import numpy as np
 import torch
 import tqdm
 import wandb
-from simple_parsing import choice, field, mutable_field, subparsers
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset, TensorDataset, Sampler
 from torchvision.datasets import VisionDataset
 
-from common.losses import LossInfo
+from common.losses import LossInfo, TrainValidLosses
 from common.metrics import (ClassificationMetrics, RegressionMetrics,
                             get_metrics)
 from config import Config
@@ -28,10 +27,12 @@ from datasets.cifar import Cifar10, Cifar100
 from datasets.fashion_mnist import FashionMnist
 from datasets.mnist import Mnist
 from models.classifier import Classifier
+from simple_parsing import choice, field, mutable_field, subparsers
+from simple_parsing.helpers import FlattenedAccess
+from utils.json_utils import JsonSerializable
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
-from utils.json_utils import (JsonSerializable, is_json_serializable, to_str,
-                              to_str_dict)
+from utils.json_utils import take_out_unsuported_values
 from utils.logging import pbar
 from utils.utils import add_prefix, is_nonempty_dir
 
@@ -45,6 +46,8 @@ class ExperimentStateBase(JsonSerializable):
     """
     global_step: int = 0
     model_weights_path: Optional[Path] = None
+    # Container for train/valid losses that are logged periodically.
+    all_losses: TrainValidLosses = mutable_field(TrainValidLosses, repr=False)
 
 
 @dataclass  # type: ignore
@@ -394,7 +397,6 @@ class ExperimentBase(JsonSerializable):
 
     def to_config_dict(self) -> Dict:
         d = asdict(self)
-        from utils.json_utils import take_out_unsuported_values
         d = take_out_unsuported_values(d)
         return d
         

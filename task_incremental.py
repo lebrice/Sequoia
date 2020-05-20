@@ -22,7 +22,6 @@ from datasets.subset import VisionDatasetSubset
 from datasets import DatasetConfig
 from experiment import Experiment, ExperimentStateBase
 from utils.utils import n_consecutive, rgetattr, rsetattr, common_fields
-from utils.json_utils import try_load
 from utils import utils
 from tasks import Tasks
 from sys import getsizeof
@@ -54,8 +53,6 @@ class State(ExperimentStateBase):
     knn_losses: List[List[LossInfo]] = list_field()
     # Cumulative losses after each task
     cumul_losses: List[Optional[LossInfo]] = list_field()
-    # Container for train/valid losses that are logged periodically.
-    all_losses: TrainValidLosses = mutable_field(TrainValidLosses)
 
 
 @dataclass
@@ -162,13 +159,13 @@ class TaskIncremental(Experiment):
         
         self.tasks = self.state.tasks
         self.save()
-
+        
         # Load the datasets
         self.load_datasets(self.tasks)
         self.n_tasks = len(self.tasks)
 
         self.logger.info(f"Class Ordering: {self.state.tasks}")
-
+        
         if self.state.global_step == 0:
             self.state.knn_losses   = [[None] * self.n_tasks] * self.n_tasks # [N,N]
             self.state.task_losses  = [[None] * (i+1) for i in range(self.n_tasks)] # [N,J]
@@ -177,7 +174,9 @@ class TaskIncremental(Experiment):
         for i in range(self.state.i, self.n_tasks):
             self.state.i = i
             self.logger.info(f"Starting task {i} with classes {self.tasks[i]}")
- 
+            
+            self.save()
+
             # If we are using a multihead model, we give it the task label (so
             # that it can spawn / reuse the output head for the given task).
             if self.multihead:
@@ -218,6 +217,7 @@ class TaskIncremental(Experiment):
             #  Evaluate on all tasks (as described above).
             cumul_loss = LossInfo(f"cumul_losses[{i}]")
             
+            # Evaluation loop:
             for j in range(self.state.j, self.n_tasks):
                 self.state.j = j
                 train_j = self.train_datasets[j]
@@ -248,13 +248,31 @@ class TaskIncremental(Experiment):
                     self.log({f"task_losses[{i}][{j}]": loss_j.to_log_dict()})
 
                 self.save()
-            self.state.cumul_losses[i] = cumul_loss
-            self.state.j = 0
 
+            self.state.j = 0
+            self.save()
+
+            self.state.cumul_losses[i] = cumul_loss
             valid_log_dict = cumul_loss.to_log_dict()
             self.log({f"cumul_losses[{i}]": valid_log_dict})
+        
+        self.state.i = self.n_tasks
+        self.save()
+
+        def get_supervised_accuracy(cumul_loss: LossInfo) -> float:
+            # log_dict = cumul_loss.to_log_dict(verbose=False)
+            # print(log_dict.keys())
+            # TODO: this is ugly. There is probably a cleaner way, but I can't think of it right now. 
+            return cumul_loss.losses["Test"].losses["supervised"].metrics["supervised"].accuracy
+
+        for i, cumul_loss in enumerate(self.state.cumul_losses):
+            cumul_valid_accuracy = get_supervised_accuracy(cumul_loss)
+            self.logger.info(f"Cumul Accuracy [{i}]: {cumul_valid_accuracy}")
+            if self.config.use_wandb:
+                wandb.run.summary[f"Cumul Accuracy [{i}]"] = cumul_valid_accuracy
 
         # TODO: Save the results to a json file.
+        
         self.save(self.results_dir)
         # TODO: save the rest of the state.
         
@@ -293,13 +311,13 @@ class TaskIncremental(Experiment):
         classifier_accuracies: List[List[Optional[float]]] = [[None] * n_tasks] * n_tasks # [N,N]
         
         from itertools import zip_longest
-        text: List[List[str]] = np.zeros(n_tasks, n_tasks, dtype=np.dtype.str)
+        text: List[List[str]] = [[None] * n_tasks] * n_tasks # [N,N]
 
-        for i, rows in enumerate(zip(classifier_accuracies, knn_accuracies)):
+        for i, rows in enumerate(zip(cumul_losses, knn_losses)):
             knn_accuracies.append([])
             classifier_accuracies.append([])
-            for j, (knn_loss, classifier_loss) in enumerate(zip_longest(*rows)):
-                knn_acc = knn_loss.metrics["KNN"].accuracy
+            for j, (classifier_loss, knn_loss) in enumerate(zip_longest(*rows)):
+                knn_acc = knn_loss.losses["KNN"].metrics["KNN"].accuracy
                 text[i][j] = f"KNN Acc: {knn_acc:.2%}"
                 if classifier_loss:
                     cls_acc = classifier_loss.metrics["supervised"].accuracy

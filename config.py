@@ -14,25 +14,19 @@ import torch
 import tqdm
 import wandb
 from simple_parsing import field, mutable_field
-from simple_parsing.helpers import JsonSerializable
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
-
+from utils.json_utils import JsonSerializable
 from utils import cuda_available, gpus_available, set_seed
 
 import logging
-# loggers = [logging.getLogger()]  # get the root logger
-# loggers = loggers + [logging.getLogger(name) for name in logging.root.manager.loggerDict]
-# print(*loggers, sep="\n")
-# exit()
-
 logging.basicConfig(
     format='%(asctime)s,%(msecs)d %(levelname)-8s [./%(filename)s:%(lineno)d] %(message)s',
     datefmt='%Y-%m-%d:%H:%M:%S',
-    level=logging.INFO
+    level=logging.INFO,
 )
 logging.getLogger('simple_parsing').addHandler(logging.NullHandler())
 
