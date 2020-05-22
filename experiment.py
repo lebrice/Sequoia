@@ -365,6 +365,13 @@ class ExperimentBase(JsonSerializable):
                 with open(self.results_dir / path, "w") as f:
                     json.dump(result, f, indent="\t")
 
+    def to_config_dict(self) -> Dict:
+        d = asdict(self)
+        from utils.json_utils import take_out_unsuported_values
+        d = take_out_unsuported_values(d)
+        return d
+        
+
 # Load up the addons, each of which adds independent, useful functionality to the Experiment base-class.
 # TODO: This might not be the cleanest/most elegant way to do it, but it's better than having files with 1000 lines in my opinion.
 from addons import (ExperimentWithEWC, ExperimentWithKNN, ExperimentWithVAE,

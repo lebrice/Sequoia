@@ -81,7 +81,7 @@ def take_out_unsuported_values(d: Dict, default_value: Any=None) -> Dict:
         elif isinstance(v, dict):
             result[k] = take_out_unsuported_values(v, default_value)
         else:
-            result[k] = v
+            result[k] = default_value
     return result
 
 from dataclasses import asdict

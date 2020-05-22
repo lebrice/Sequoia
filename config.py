@@ -126,14 +126,14 @@ class Config:
             # At the moment, if no run name is given, the 'random' name from wandb is used.
             pass
 
-        #config_dict = experiment.to_json()
+        config_dict = experiment.to_config_dict()
         self.run_group = self.run_group or type(experiment).__name__
 
         run = wandb.init(
             project='SSCL',
             name=self.run_name,
             group=self.run_group,
-            #self=config_dict,
+            config=config_dict,
             dir=str(self.wandb_path),
             notes=experiment.notes,
             reinit=True,
