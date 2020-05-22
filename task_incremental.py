@@ -291,7 +291,7 @@ class TaskIncremental(Experiment):
         classifier_accuracies: List[List[Optional[float]]] = [[None] * n_tasks] * n_tasks # [N,N]
         
         from itertools import zip_longest
-        text: List[List[str]] = np.zeros(n_tasks, n_tasks, dtype=np.string)
+        text: List[List[str]] = np.zeros(n_tasks, n_tasks, dtype=np.dtype.str)
 
         for i, rows in enumerate(zip(classifier_accuracies, knn_accuracies)):
             knn_accuracies.append([])

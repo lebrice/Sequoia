@@ -33,7 +33,7 @@ class ExperimentWithKNN(ExperimentBase):
     knn_options: KnnClassifierOptions = mutable_field(KnnClassifierOptions)
 
     @torch.no_grad()
-    def test_knn(self, train_dataset: Dataset, test_dataset: Dataset, description: str="") -> Tuple[LossInfo, LossInfo]:
+    def test_knn(self, train_dataloader: DataLoader, test_dataloader: DataLoader, description: str="") -> Tuple[LossInfo, LossInfo]:
         """TODO: Test the representations using a KNN classifier. """
         
         def get_hidden_codes_array(dataloader: DataLoader) -> Tuple[np.ndarray, np.ndarray]:
@@ -48,11 +48,8 @@ class ExperimentWithKNN(ExperimentBase):
                     h_x_list.append(h_x.detach().cpu().numpy())
                     y_list.append(y.detach().cpu().numpy())
             return np.concatenate(h_x_list), np.concatenate(y_list)
-        
-        train_dataloader = self.get_dataloader(train_dataset)
+
         h_x, y = get_hidden_codes_array(train_dataloader)
-        
-        test_dataloader = self.get_dataloader(test_dataset)
         h_x_test, y_test = get_hidden_codes_array(test_dataloader)
         
         train_loss, test_loss = evaluate_knn(

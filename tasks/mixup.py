@@ -102,7 +102,12 @@ class MixupTask(AuxiliaryTask):
 
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
+        #select only unlabelled examples like in ICT: https://arxiv.org/pdf/1903.03825.pdf
+        x = x[len(y):]
+        h_x = h_x[len(y):]
         batch_size = x.shape[0]
+        y_pred = y_pred[len(y):]
+
         # assert batch_size % 2  == 0, f"Can only mix an even number of samples. (batch size is {batch_size})"
         if batch_size % 2 != 0:
             x = x[:-1]
@@ -110,26 +115,30 @@ class MixupTask(AuxiliaryTask):
 
         from .tasks import Tasks
         loss_info = LossInfo(name=Tasks.MIXUP)
-        mix_coeff = torch.rand(batch_size//2, dtype=x.dtype, device=x.device)
-         
-        x1 = x[0::2]
-        x2 = x[1::2]
+        if batch_size > 0:
+            mix_coeff = torch.rand(batch_size//2, dtype=x.dtype, device=x.device)
 
-        mix_x = mixup(x1, x2, mix_coeff)
-        loss_info.tensors["mix_x"] = mix_x.detach()
-        mix_h_x = self.encode(mix_x)
-        mix_y_pred = self.classifier(mix_h_x)
-        
-        # Use the mean teacher to get the h_x and y_pred for the unlabeled data.
-        h_x = self.mean_encode(x)
-        y_pred = self.mean_logits(h_x)
-        y_pred_1 = y_pred[0::2]
-        y_pred_2 = y_pred[1::2]
-        y_pred_mix = mixup(y_pred_1, y_pred_2, mix_coeff)
-        loss_info.tensors["y_pred_mix"] = y_pred_mix.detach()
-        
-        loss = torch.dist(y_pred_mix, mix_y_pred)
-        loss_info.total_loss = loss
+            x1 = x[0::2]
+            x2 = x[1::2]
+
+            mix_x = mixup(x1, x2, mix_coeff)
+            loss_info.tensors["mix_x"] = mix_x.detach()
+            mix_h_x = self.encode(mix_x)
+            mix_y_pred = self.classifier(mix_h_x)
+
+            # Use the mean teacher to get the h_x and y_pred for the unlabeled data.
+            h_x = self.mean_encode(x)
+            y_pred = self.mean_logits(h_x)
+            y_pred_1 = y_pred[0::2]
+            y_pred_2 = y_pred[1::2]
+            y_pred_mix = mixup(y_pred_1, y_pred_2, mix_coeff)
+            loss_info.tensors["y_pred_mix"] = y_pred_mix.detach()
+
+            loss = torch.dist(y_pred_mix, mix_y_pred)
+            loss_info.total_loss = loss
+        else:
+            loss_info.total_loss = torch.tensor([0])
+
         return loss_info
 
 

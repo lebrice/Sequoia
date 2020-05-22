@@ -1,5 +1,6 @@
 
 import tqdm
+import torch
 from sys import getsizeof
 from torch import Tensor, nn
 from itertools import repeat, cycle
@@ -21,14 +22,16 @@ from common.losses import LossInfo, TrainValidLosses
 from simple_parsing import mutable_field, list_field
 
 @dataclass
-class TaskIncrementalWithEWC(TaskIncremental):
+class TaskIncremental_Semi_Supervised(TaskIncremental):
     """ Evaluates the model in the same setting as the OML paper's Figure 3.
     """
-    unsupervised_epochs_per_task: int = 5
+    unsupervised_epochs_per_task: int = 0
     # The 'lambda' parameter from EWC.
     # The factor in fron of the EWC regularizer  - higher lamda -> more penalty for changing the parameters
-    use_ewc = True
     ewc_lamda = 10
+    n_classes_per_task=2
+    supervised_epochs_per_task: int = 2
+
     # Container for train/valid losses that are logged periodically.
     all_losses: TrainValidLosses = mutable_field(TrainValidLosses)
 
@@ -39,7 +42,7 @@ class TaskIncrementalWithEWC(TaskIncremental):
         print("init model")
         model = self.get_model_for_dataset(self.dataset)
         model.to(self.config.device)
-        if self.use_ewc:
+        if self.ewc_lamda>0:
             model = EWC_wrapper(model, lamda=self.ewc_lamda, n_ways=10, device=self.config.device)
             #TODO: n_ways should be self.n_classes_per_task, but model outputs 10 way classifier instead of self.n_classes_per_task - way
         return model
@@ -67,9 +70,8 @@ class TaskIncrementalWithEWC(TaskIncremental):
         for i, task in enumerate(tasks):
             train = VisionDatasetSubset(train_full_dataset, task)
             valid = VisionDatasetSubset(valid_full_dataset, task)
-
             sampler_train, sampler_train_unlabelled = get_semi_sampler(train.targets,p=self.ratio_labelled)
-            sampler_valid, sampler_valid_unlabelled = get_semi_sampler(valid.targets, p=self.ratio_labelled)
+            sampler_valid, sampler_valid_unlabelled = get_semi_sampler(valid.targets, p=1.)
 
             self.train_datasets.append((train,sampler_train,sampler_train_unlabelled))
             self.valid_datasets.append((valid,sampler_valid,sampler_valid_unlabelled))
@@ -154,11 +156,11 @@ class TaskIncrementalWithEWC(TaskIncremental):
         """
         self.model = self.init_model()
 
-        if (self.started or self.restore_from_path) and not self.config.debug:
-            self.logger.info(f"Experiment was already started in the past.")
-            self.restore_from_path = self.checkpoints_dir / "state.json"
-            self.logger.info(f"Will load state from {self.restore_from_path}")
-            self.load_state(self.restore_from_path)
+        #if (self.started or self.restore_from_path) and not self.config.debug:
+        #    self.logger.info(f"Experiment was already started in the past.")
+        #    self.restore_from_path = self.checkpoints_dir / "state.json"
+        #    self.logger.info(f"Will load state from {self.restore_from_path}")
+        #    self.load_state(self.restore_from_path)
 
         if self.done:
             self.logger.info(f"Experiment is already done.")
@@ -201,7 +203,7 @@ class TaskIncrementalWithEWC(TaskIncremental):
             # EWC_specific: pass EWC_rapper the loader to compute fisher
             #call befor task change
             #====================
-            if self.use_ewc:
+            if self.ewc_lamda>0:
                 if self.config.debug:
                     sampler_train_, sampler_train_unlabelled_ = get_semi_sampler(Subset(train_i, range(200)).dataset.targets[:200], p=self.ratio_labelled)
                     self.model.current_task_loader = self.get_dataloader(Subset(train_i, range(200)), sampler_train_, sampler_train_unlabelled_)[0]
@@ -239,6 +241,36 @@ class TaskIncrementalWithEWC(TaskIncremental):
             self.save()
             #  Evaluate on all tasks (as described above).
             cumul_loss = LossInfo(f"cumul_losses[{i}]")
+            for j in range(self.state.j, self.n_tasks):
+                self.state.j = j
+                train_j = self.train_datasets[j]
+                valid_j = self.valid_datasets[j]
+                train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloader(*train_j)
+                valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloader(*valid_j)
+                # Measure how linearly separable the representations of task j
+                # are by training and evaluating a KNNClassifier on the data of task j.
+                train_knn_loss, valid_knn_loss = self.test_knn(train_dataloader_labelled, valid_dataloader_labelled, description=f"KNN[{i}][{j}]")
+                self.log({
+                    f"knn_losses[{i}][{j}]/train": train_knn_loss.to_log_dict(),
+                    f"knn_losses[{i}][{j}]/valid": valid_knn_loss.to_log_dict(),
+                })
+                self.state.knn_losses[i][j] = valid_knn_loss
+                accuracy = valid_knn_loss.metrics["KNN"].accuracy
+                loss = valid_knn_loss.total_loss
+
+                self.logger.info(f"knn_losses[{i}][{j}]/valid Accuracy: {accuracy:.2%}, loss: {loss}")
+
+                if j <= i:
+                    # If we have previously trained on this task:
+                    self.model.current_task_id = j
+                    loss_j = self.test(dataloader=valid_dataloader_labelled, description=f"task_losses[{i}][{j}]")
+                    cumul_loss += loss_j
+
+                    self.state.task_losses[i][j] = loss_j
+                    self.log({f"task_losses[{i}][{j}]": loss_j.to_log_dict()})
+
+                self.save()
+
             self.state.cumul_losses[i] = cumul_loss
             self.state.j = 0
 
@@ -247,7 +279,55 @@ class TaskIncrementalWithEWC(TaskIncremental):
 
         # TODO: Save the results to a json file.
         self.save(self.results_dir)
+        #  Evaluate on all tasks (as described above).
+        cumul_loss = LossInfo(f"cumul_losses[{i}]")
+
+        for j in range(self.state.j, self.n_tasks):
+            self.state.j = j
+            train_j = self.train_datasets[j]
+            valid_j = self.valid_datasets[j]
+
+            train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloader(*train_j)
+            valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloader(*valid_j)
+            # Measure how linearly separable the representations of task j
+            # are by training and evaluating a KNNClassifier on the data of task j.
+
+            train_knn_loss, valid_knn_loss = self.test_knn(train_dataloader_labelled, valid_dataloader_labelled, description=f"KNN[{i}][{j}]")
+            self.log({
+                f"knn_losses[{i}][{j}]/train": train_knn_loss.to_log_dict(),
+                f"knn_losses[{i}][{j}]/valid": valid_knn_loss.to_log_dict(),
+            })
+            self.state.knn_losses[i][j] = valid_knn_loss
+            accuracy = valid_knn_loss.metrics["KNN"].accuracy
+            loss = valid_knn_loss.total_loss
+
+            self.logger.info(f"knn_losses[{i}][{j}]/valid Accuracy: {accuracy:.2%}, loss: {loss}")
+
+            if j <= i:
+                # If we have previously trained on this task:
+                self.model.current_task_id = j
+                loss_j = self.test(dataloader=valid_dataloader_labelled, description=f"task_losses[{i}][{j}]")
+                cumul_loss += loss_j
+
+                self.state.task_losses[i][j] = loss_j
+                self.log({f"task_losses[{i}][{j}]": loss_j.to_log_dict()})
+
+            self.save()
+        self.state.cumul_losses[i] = cumul_loss
+        self.state.j = 0
+
+        valid_log_dict = cumul_loss.to_log_dict()
+        self.log({f"cumul_losses[{i}]": valid_log_dict})
+
+        # TODO: Save the results to a json file.
+
+        self.save(self.results_dir)
         # TODO: save the rest of the state.
+
+        from utils.plotting import maximize_figure
+        # Make the forward-backward transfer grid figure.
+        grid = self.make_transfer_grid_figure(self.state.knn_losses, self.state.task_losses, self.state.cumul_losses)
+        grid.savefig(self.plots_dir / "transfer_grid.png")
 
         # make the plot of the losses (might not be useful, since we could also just do it in wandb).
         fig = self.make_loss_figure(self.all_losses, self.plot_sections)
@@ -257,7 +337,6 @@ class TaskIncrementalWithEWC(TaskIncremental):
             fig.show()
             fig.waitforbuttonpress(10)
 
-
     def train_until_convergence(self, train_dataset: Tuple[Dataset, SubsetRandomSampler, SubsetRandomSampler],
                                 valid_dataset: Tuple[Dataset, SubsetRandomSampler, SubsetRandomSampler],
                                 max_epochs: int,
@@ -265,7 +344,7 @@ class TaskIncrementalWithEWC(TaskIncremental):
                                 patience: int = 3) -> Tuple[Dict[int, LossInfo], Dict[int, LossInfo]]:
         train_dataloader_labelled, train_dataloader_unlabelled  = self.get_dataloader(*train_dataset)
         valid_dataloader_labelled, valid_dataloader_unlablled  = self.get_dataloader(*valid_dataset)
-        n_steps = len(train_dataloader_labelled)
+        n_steps = len(train_dataloader_unlabelled) if len(train_dataloader_unlabelled)>len(train_dataloader_labelled) else len(train_dataloader_labelled)
 
         if self.config.debug_steps:
             from itertools import islice
@@ -282,7 +361,7 @@ class TaskIncrementalWithEWC(TaskIncremental):
 
         message: Dict[str, Any] = OrderedDict()
         for epoch in range(max_epochs):
-            pbar = tqdm.tqdm(train_dataloader_labelled, train_dataloader_unlabelled, total=n_steps)
+            pbar = tqdm.tqdm(zip(cycle(train_dataloader_labelled),train_dataloader_unlabelled), total=n_steps)
             desc = description or ""
             desc += " " if desc and not desc.endswith(" ") else ""
             desc += f"Epoch {epoch}"
@@ -344,17 +423,16 @@ class TaskIncrementalWithEWC(TaskIncremental):
                 target = batch[1].to(self.model.device) if len(batch) == 2 else None
                 yield self.test_batch(data, target)
 
-
-    def train_iter_semi_sup(self, dataloader_sup: DataLoader, dataloader_unsup) -> Iterable[LossInfo]:
+    def train_iter_semi_sup(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.train()
-        for batch_sup, batch_unsup in zip(cycle(dataloader_sup),dataloader_unsup):
+        for batch_sup, batch_unsup in dataloader:
             data, target = self.preprocess(batch_sup)
             u, _ = self.preprocess(batch_unsup)
             yield self.train_batch_semi_sup(data,target,u)
 
     def train_batch_semi_sup(self, data: Tensor, target: Optional[Tensor], u: Tensor) -> LossInfo:
         self.model.optimizer.zero_grad()
-        batch_loss_info = self.model.get_loss_semi(data, target, u)
+        batch_loss_info = self.model.get_loss(torch.cat((data,u), dim=0), target)
         total_loss = batch_loss_info.total_loss
         total_loss.backward()
         self.model.optimizer.step()
@@ -365,7 +443,7 @@ class TaskIncrementalWithEWC(TaskIncremental):
 if __name__ == "__main__":
     from simple_parsing import ArgumentParser
     parser = ArgumentParser()
-    parser.add_arguments(TaskIncrementalWithEWC, dest="experiment")
+    parser.add_arguments(TaskIncremental_Semi_Supervised, dest="experiment")
     
     args = parser.parse_args()
     experiment: TaskIncremental = args.experiment

@@ -72,7 +72,9 @@ class Config:
     run_number: Optional[int] = None 
     
     # Save the command-line arguments that were used to create this run.
-    argv: List[str] = field(init=False, default_factory=sys.argv.copy) 
+    argv: List[str] = field(init=False, default_factory=sys.argv.copy)
+
+    wandb_path = './results'
 
     def __post_init__(self):
         # set the manual seed (for reproducibility)
@@ -124,15 +126,15 @@ class Config:
             # At the moment, if no run name is given, the 'random' name from wandb is used.
             pass
 
-        config_dict = experiment.to_json()
+        #config_dict = experiment.to_json()
         self.run_group = self.run_group or type(experiment).__name__
 
         run = wandb.init(
             project='SSCL',
             name=self.run_name,
             group=self.run_group,
-            self=config_dict,
-            dir=str(wandb_path),
+            #self=config_dict,
+            dir=str(self.wandb_path),
             notes=experiment.notes,
             reinit=True,
         )

@@ -147,7 +147,7 @@ class Classifier(nn.Module):
         total_loss.tensors["y_pred"] = y_pred.detach()
 
         if y is not None:
-            supervised_loss = self.supervised_loss(x=x, y=y, h_x=h_x, y_pred=y_pred)
+            supervised_loss = self.supervised_loss(x=x[:len(y)], y=y, h_x=h_x[:len(y)], y_pred=y_pred[:len(y)])
             total_loss += supervised_loss
 
         for task_name, aux_task in self.tasks.items():
@@ -158,8 +158,8 @@ class Classifier(nn.Module):
         if self.config.debug and self.config.verbose:
             for name, loss in total_loss.losses.items():
                 logger.debug(name, loss.total_loss, loss.metrics)
-
         return total_loss
+
 
     def encode(self, x: Tensor):
         x = self.preprocess_inputs(x)

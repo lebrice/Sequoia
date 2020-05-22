@@ -279,7 +279,6 @@ class ExperimentBase(JsonSerializable):
             # if we want to long once (like a final result, step should be None)
             # else, if not given, we use the global step.
             step = None if once else (step or self.global_step)
-            
             if message is None:
                 return
             if isinstance(message, dict):
@@ -293,7 +292,6 @@ class ExperimentBase(JsonSerializable):
             
             if prefix:
                 message_dict = utils.add_prefix(message_dict, prefix)
-            
             wandb.log(message_dict, step=step)
 
     def _folder(self, folder: Union[str, Path], create: bool=True) -> Path:
@@ -354,7 +352,6 @@ class ExperimentBase(JsonSerializable):
                 # Results already exists in $SCRATCH, therefore experiment is done.
                 self.log(f"Experiment is already done (non-empty folder at {results_dir}) Exiting.")
                 return True
-
         return self.started and is_nonempty_dir(self.results_dir)
     
     def save_to_results_dir(self, results: Dict[Union[str, Path], Any]):
