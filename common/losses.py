@@ -112,7 +112,7 @@ class LossInfo(JsonSerializable):
             (k, value / self.coefficient) for k, value in self.losses.items()
         ])
 
-    def to_log_dict(self, verbose: bool=True) -> Dict[str, Union[str, float, Dict]]:
+    def to_log_dict(self, verbose: bool=False) -> Dict[str, Union[str, float, Dict]]:
         log_dict: Dict[str, Union[str, float, Dict]] = OrderedDict()
         # Log the total loss
         log_dict["loss"] = float(self.total_loss)
@@ -154,7 +154,7 @@ class LossInfo(JsonSerializable):
 
 @encode.register
 def encode_lossinfo(obj: LossInfo) -> Dict:
-    return obj.to_log_dict(verbose=True)
+    return obj.to_log_dict()
 
 
 @dataclass

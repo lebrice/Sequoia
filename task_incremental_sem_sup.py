@@ -32,9 +32,6 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     n_classes_per_task=2
     supervised_epochs_per_task: int = 2
 
-    # Container for train/valid losses that are logged periodically.
-    all_losses: TrainValidLosses = mutable_field(TrainValidLosses)
-
     #labeled samples ratio
     ratio_labelled = 0.2
 
@@ -330,7 +327,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         grid.savefig(self.plots_dir / "transfer_grid.png")
 
         # make the plot of the losses (might not be useful, since we could also just do it in wandb).
-        fig = self.make_loss_figure(self.all_losses, self.plot_sections)
+        fig = self.make_loss_figure(self.state.all_losses, self.plot_sections)
         fig.savefig(self.plots_dir / "losses.png")
 
         if self.config.debug:
@@ -378,8 +375,8 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                     message.update(valid_loss.to_pbar_message())
                     pbar.set_postfix(message)
 
-                    train_log_dict = train_loss.to_log_dict(verbose=True)
-                    valid_log_dict = valid_loss.to_log_dict(verbose=True)
+                    train_log_dict = train_loss.to_log_dict()
+                    valid_log_dict = valid_loss.to_log_dict()
                     self.log({"Train": train_log_dict, "Valid": valid_log_dict})
 
             # perform a validation epoch.

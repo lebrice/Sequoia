@@ -167,8 +167,8 @@ class ExperimentBase(JsonSerializable):
                     message.update(valid_loss.to_pbar_message())
                     pbar.set_postfix(message)
 
-                    train_log_dict = train_loss.to_log_dict(verbose=True)
-                    valid_log_dict = valid_loss.to_log_dict(verbose=True)
+                    train_log_dict = train_loss.to_log_dict()
+                    valid_log_dict = valid_loss.to_log_dict()
                     self.log({"Train": train_log_dict, "Valid": valid_log_dict})
             
             # perform a validation epoch.
