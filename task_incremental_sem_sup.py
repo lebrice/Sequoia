@@ -26,23 +26,21 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     """ Evaluates the model in the same setting as the OML paper's Figure 3.
     """
     unsupervised_epochs_per_task: int = 0
-    # The 'lambda' parameter from EWC.
-    # The factor in fron of the EWC regularizer  - higher lamda -> more penalty for changing the parameters
-    ewc_lamda = 10
-    n_classes_per_task=2
     supervised_epochs_per_task: int = 2
+    # Coefficient of the EWC regularizer. Higher lamda -> more penalty for
+    # changing the parameters between tasks.
+    ewc_lamda: float = 10.
 
-    #labeled samples ratio
-    ratio_labelled = 0.2
+    # Ratio of samples that have a corresponding label.
+    ratio_labelled: float = 0.2
 
-    def init_model(self) -> Classifier:
-        print("init model")
-        model = self.get_model_for_dataset(self.dataset)
-        model.to(self.config.device)
-        if self.ewc_lamda>0:
-            model = EWC_wrapper(model, lamda=self.ewc_lamda, n_ways=10, device=self.config.device)
-            #TODO: n_ways should be self.n_classes_per_task, but model outputs 10 way classifier instead of self.n_classes_per_task - way
-        return model
+    def __post_init__(self):
+        super().__post_init__()
+        self.train_samplers_labelled: List[SubsetRandomSampler] = []
+        self.train_samplers_unlabelled: List[SubsetRandomSampler] = []
+        self.valid_samplers_labelled: List[SubsetRandomSampler] = []
+        self.valid_samplers_unlabelled: List[SubsetRandomSampler] = []
+
 
     def load_datasets(self, tasks: List[List[int]]) -> List[List[int]]:
         """Create the train, valid and cumulative datasets for each task.
@@ -52,10 +50,6 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         """
         # download the dataset.
         self.train_dataset, self.valid_dataset = self.dataset.load(data_dir=self.config.data_dir)
-        #self.train_loader = self.get_dataloader(self.train_dataset)
-        #self.valid_loader = self.get_dataloader(self.valid_dataset)
-        assert self.dataset.train is not None
-        assert self.dataset.valid is not None
 
         # safeguard the entire training dataset.
         train_full_dataset = self.train_dataset
@@ -70,8 +64,15 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             sampler_train, sampler_train_unlabelled = get_semi_sampler(train.targets,p=self.ratio_labelled)
             sampler_valid, sampler_valid_unlabelled = get_semi_sampler(valid.targets, p=1.)
 
-            self.train_datasets.append((train,sampler_train,sampler_train_unlabelled))
-            self.valid_datasets.append((valid,sampler_valid,sampler_valid_unlabelled))
+            # self.train_datasets.append((train, sampler_train, sampler_train_unlabelled))
+            # self.valid_datasets.append((valid, sampler_valid, sampler_valid_unlabelled))
+            self.train_datasets.append(train)
+            self.train_samplers_labelled.append(sampler_train)
+            self.train_samplers_unlabelled.append(sampler_train_unlabelled)
+
+            self.valid_datasets.append(valid)
+            self.valid_samplers_labelled.append(sampler_valid)
+            self.valid_samplers_unlabelled.append(sampler_valid_unlabelled)
 
         # Use itertools.accumulate to do the summation of validation datasets.
         self.valid_cumul_datasets = list(accumulate(self.valid_datasets))
@@ -79,17 +80,20 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         for i, (train, valid, cumul) in enumerate(zip(self.train_datasets,
                                                       self.valid_datasets,
                                                       self.valid_cumul_datasets)):
-            self.save_images(i, train[0], prefix="train_")
-            self.save_images(i, valid[0], prefix="valid_")
-            self.save_images(i, cumul[0], prefix="valid_cumul_")
+            self.save_images(i, train, prefix="train_")
+            self.save_images(i, valid, prefix="valid_")
+            self.save_images(i, cumul, prefix="valid_cumul_")
 
         return tasks
 
-    def get_dataloader(self, dataset: Dataset, sampler_labeller: SubsetRandomSampler, sampler_unlabelled: SubsetRandomSampler ) -> Tuple[DataLoader,DataLoader]:
+    def get_dataloader(self,
+                       dataset: Dataset,
+                       sampler_labelled: SubsetRandomSampler,
+                       sampler_unlabelled: SubsetRandomSampler) -> Tuple[DataLoader,DataLoader]:
         loader_train_labelled =  DataLoader(
             dataset,
             batch_size=self.hparams.batch_size,
-            sampler=sampler_labeller,
+            sampler=sampler_labelled,
             num_workers=self.config.num_workers,
             pin_memory=self.config.use_cuda,
         )
@@ -100,7 +104,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             num_workers=self.config.num_workers,
             pin_memory=self.config.use_cuda,
         )
-        #TODO: addapt run to deal with this tuple of loaders
+        #TODO: adapt run to deal with this tuple of loaders
         return (loader_train_labelled, loader_train_unlabelled)
 
 
@@ -194,18 +198,35 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
 
             # Training and validation datasets for task i.
-            train_i, sampler_train_i, sampler_unlabelled_i = self.train_datasets[i]
-            valid_i, sampler_valid_i, sampler_valid_unlabelled_i = self.valid_datasets[i]
+            # train_i, sampler_train_i, sampler_unlabelled_i = self.train_datasets[i]
+            # valid_i, sampler_valid_i, sampler_valid_unlabelled_i = self.valid_datasets[i]
 
+            train_i = self.train_datasets[i]
+            train_sampler_labeled_i = self.train_samplers_labelled[i]
+            train_sampler_unlabelled_i = self.train_samplers_unlabelled[i]
+
+            valid_i = self.valid_datasets[i]
+            valid_sampler_labelled_i = self.valid_samplers_labelled[i]
+            valid_sampler_unlabelled_i = self.valid_samplers_unlabelled[i]
+            
             # EWC_specific: pass EWC_rapper the loader to compute fisher
             #call befor task change
             #====================
             if self.ewc_lamda>0:
                 if self.config.debug:
-                    sampler_train_, sampler_train_unlabelled_ = get_semi_sampler(Subset(train_i, range(200)).dataset.targets[:200], p=self.ratio_labelled)
-                    self.model.current_task_loader = self.get_dataloader(Subset(train_i, range(200)), sampler_train_, sampler_train_unlabelled_)[0]
+                    sampler_train_, sampler_train_unlabelled_ = get_semi_sampler(
+                        Subset(train_i, range(200)).dataset.targets[:200], p=self.ratio_labelled)
+                    self.model.current_task_loader = self.get_dataloader(
+                        Subset(train_i, range(200)),
+                        sampler_train_,
+                        sampler_train_unlabelled_
+                    )[0]
                 else:
-                    self.model.current_task_loader = self.get_dataloader(train_i, sampler_train_i, sampler_unlabelled_i)[0]
+                    self.model.current_task_loader = self.get_dataloader(
+                        train_i,
+                        train_sampler_labeled_i,
+                        train_sampler_unlabelled_i
+                    )[0]
             #====================
 
             with self.plot_region_name(f"Learn Task {i}"):
@@ -219,16 +240,16 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                     with train_i.without_labels(), valid_i.without_labels():
                         # Un/self-supervised training on task i.
                         self.state.all_losses += self.train_until_convergence(
-                            (train_i,sampler_train_i,sampler_unlabelled_i),
-                            (valid_i,sampler_valid_i,sampler_valid_unlabelled_i),
+                            (train_i, train_sampler_labeled_i, train_sampler_unlabelled_i),
+                            (valid_i, valid_sampler_labelled_i, valid_sampler_unlabelled_i),
                             max_epochs=self.unsupervised_epochs_per_task,
                             description=f"Task {i} (Unsupervised)",
                         )
 
                 # Train (supervised) on task i.
                 self.state.all_losses += self.train_until_convergence(
-                    (train_i, sampler_train_i, sampler_unlabelled_i),
-                    (valid_i, sampler_valid_i, sampler_valid_unlabelled_i),
+                    (train_i, train_sampler_labeled_i, train_sampler_unlabelled_i),
+                    (valid_i, valid_sampler_labelled_i, valid_sampler_unlabelled_i),
                     max_epochs=self.supervised_epochs_per_task,
                     description=f"Task {i} (Supervised)",
                 )
@@ -241,12 +262,30 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             for j in range(self.state.j, self.n_tasks):
                 self.state.j = j
                 train_j = self.train_datasets[j]
+                train_sampler_labelled_j = self.train_samplers_labelled[j]
+                train_sampler_unlabelled_j = self.train_samplers_unlabelled[j]
+                
                 valid_j = self.valid_datasets[j]
-                train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloader(*train_j)
-                valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloader(*valid_j)
+                valid_sampler_labelled_j = self.valid_samplers_labelled[j]
+                valid_sampler_unlabelled_j = self.valid_samplers_unlabelled[j]
+                
+                train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloader(
+                    dataset=train_j,
+                    sampler_labelled=train_sampler_labelled_j,
+                    sampler_unlabelled=train_sampler_unlabelled_j,
+                )
+                valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloader(
+                    dataset=valid_j,
+                    sampler_labelled=valid_sampler_labelled_j,
+                    sampler_unlabelled=valid_sampler_unlabelled_j,
+                )
                 # Measure how linearly separable the representations of task j
                 # are by training and evaluating a KNNClassifier on the data of task j.
-                train_knn_loss, valid_knn_loss = self.test_knn(train_dataloader_labelled, valid_dataloader_labelled, description=f"KNN[{i}][{j}]")
+                train_knn_loss, valid_knn_loss = self.test_knn(
+                    train_dataloader_labelled,
+                    valid_dataloader_labelled,
+                    description=f"KNN[{i}][{j}]"
+                )
                 self.log({
                     f"knn_losses[{i}][{j}]/train": train_knn_loss.to_log_dict(),
                     f"knn_losses[{i}][{j}]/valid": valid_knn_loss.to_log_dict(),
@@ -281,15 +320,33 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
         for j in range(self.state.j, self.n_tasks):
             self.state.j = j
-            train_j = self.train_datasets[j]
-            valid_j = self.valid_datasets[j]
 
-            train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloader(*train_j)
-            valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloader(*valid_j)
+            train_j = self.train_datasets[j]
+            train_sampler_labelled_j = self.train_samplers_labelled[j]
+            train_sampler_unlabelled_j = self.train_samplers_unlabelled[j]
+            
+            valid_j = self.valid_datasets[j]
+            valid_sampler_labelled_j = self.valid_samplers_labelled[j]
+            valid_sampler_unlabelled_j = self.valid_samplers_unlabelled[j]
+
+            train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloader(
+                dataset=train_j,
+                sampler_labelled=train_sampler_labelled_j,
+                sampler_unlabelled=train_sampler_unlabelled_j,
+            )
+            valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloader(
+                dataset=valid_j,
+                sampler_labelled=valid_sampler_labelled_j,
+                sampler_unlabelled=valid_sampler_unlabelled_j,
+            )
             # Measure how linearly separable the representations of task j
             # are by training and evaluating a KNNClassifier on the data of task j.
 
-            train_knn_loss, valid_knn_loss = self.test_knn(train_dataloader_labelled, valid_dataloader_labelled, description=f"KNN[{i}][{j}]")
+            train_knn_loss, valid_knn_loss = self.test_knn(
+                train_dataloader_labelled,
+                valid_dataloader_labelled,
+                description=f"KNN[{i}][{j}]"
+            )
             self.log({
                 f"knn_losses[{i}][{j}]/train": train_knn_loss.to_log_dict(),
                 f"knn_losses[{i}][{j}]/valid": valid_knn_loss.to_log_dict(),

@@ -27,14 +27,18 @@ class ExperimentWithEWC(ExperimentBase):
     """ Evaluates the model in the same setting as the OML paper's Figure 3.
     """
     use_ewc: bool = False
-    # The 'lambda' parameter from EWC.
-    # TODO: (Fabrice) IDK what this parameter means, maybe read up the EWC paper again and add a better description?
-    ewc_lamda: float = 10
+    # Coefficient of the EWC regularizer. Higher lamda -> more penalty for
+    # changing the parameters between tasks.
+    ewc_lamda: float = 0.
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.ewc_lamda > 0:
+            self.use_ewc = True
 
     def init_model(self) -> Classifier:
         self.logger.debug("init model")
-        model = self.get_model_for_dataset(self.dataset)
-        model.to(self.config.device)
+        model = super().init_model()
         if self.use_ewc:
             self.logger.info(f"Using EWC with a lambda of {self.ewc_lamda}")
             #TODO: n_ways should be self.n_classes_per_task, but model outputs 10 way classifier instead of self.n_classes_per_task - way
