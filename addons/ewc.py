@@ -54,11 +54,10 @@ class GaussianPrior(object):
         assert variant == "classif_logits", 'Only classif_logits is iplemented as a metric variant'
 
         self.reg_matrix = reg_matrix
-        print("Calculating Fisher " + reg_matrix)
         self.model = model
         layer_collection_bn = LayerCollection()
         layer_collection = LayerCollection()
-        for l, mod in model.named_modules():
+        for l, mod in model[0].named_modules():
             mod_class = mod.__class__.__name__
             if mod_class in ['Linear', 'Conv2d']:
                 layer_collection.add_layer_from_model(model, mod)
@@ -142,7 +141,7 @@ class EWC_wrapper(object):
         if self.prior is None:
             return Variable(torch.zeros(1)).to(self.device)
         else:
-            return self.prior.regularizer(nn.Sequential(self.model.encoder, self.model.classifier))
+            return self.prior.regularizer(nn.Sequential(self.model.encoder))#, self.model.classifier))
 
     def get_loss(self, x: Tensor, y: Tensor = None) -> LossInfo:
         loss = self.model.get_loss(x, y)
@@ -165,12 +164,23 @@ class EWC_wrapper(object):
                 assert self.current_task_loader is not None, (
                     'Task loader should be set to the loader of the current task before switching the tasks'
                 )
-                prior = GaussianPrior(
-                    nn.Sequential(self.model.encoder, self.model.classifier),
-                    self.n_ways,
-                    self.current_task_loader,
-                    device=self.device
-                )
+                print(f"Calculating Fisher on task {task_number}")
+                if self.model.current_task_id is not None:
+                    #multihead
+                    prior = GaussianPrior(
+                        nn.Sequential(self.model.encoder, self.model.task_classifiers[self.current_task_id]),
+                        self.n_ways,
+                        self.current_task_loader,
+                        device=self.device
+                    )
+                else:
+                    #single_head
+                    prior = GaussianPrior(
+                        nn.Sequential(self.model.encoder, self.model.classifier),
+                        self.n_ways,
+                        self.current_task_loader,
+                        device=self.device
+                    )
                 if self.prior is not None:
                     self.prior.consolidate(prior, task_number)
                 else:
