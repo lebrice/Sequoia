@@ -49,7 +49,7 @@ class Metrics(JsonSerializable):
         # should implement the method. We just return the other.
         return other
 
-    def to_log_dict(self, verbose: bool=True) -> Dict:
+    def to_log_dict(self, verbose: bool=False) -> Dict:
         return OrderedDict({"n_samples": self.n_samples})
 
     def to_dict(self) -> Dict:

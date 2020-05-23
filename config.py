@@ -30,6 +30,7 @@ logging.basicConfig(
 )
 logging.getLogger('simple_parsing').addHandler(logging.NullHandler())
 
+logger = logging.getLogger(__file__)
 
 @dataclass
 class Config:
@@ -122,15 +123,19 @@ class Config:
 
         config_dict = experiment.to_config_dict()
         self.run_group = self.run_group or type(experiment).__name__
-
+        # store this id to use it later when resuming
+        # run_id = wandb.util.generate_id()
+        # logger.info(f"Wandb run id: {run_id}")
         run = wandb.init(
             project='SSCL',
             name=self.run_name,
+            # id=run_id,
             group=self.run_group,
             config=config_dict,
             dir=str(self.wandb_path),
             notes=experiment.notes,
             reinit=True,
+            resume="allow",
         )
         wandb.run.save()
 

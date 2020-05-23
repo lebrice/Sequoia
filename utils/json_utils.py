@@ -6,28 +6,26 @@ from functools import singledispatch
 from io import StringIO
 from pathlib import Path
 from pprint import pprint
-from typing import (Any, Callable, Dict, Iterable, List, Optional, Tuple,
+from typing import (Any, Callable, Dict, Iterable, List, Optional, Tuple, Type,
                     TypeVar, Union)
 
 import numpy as np
 import torch
+from simple_parsing.helpers import JsonSerializable as JsonSerializableBase
+from simple_parsing.helpers import SimpleEncoder, encode
+from simple_parsing.helpers.serialization import register_decoding_fn
 from torch import Tensor, nn
 
-from simple_parsing.helpers import JsonSerializable as JsonSerializableBase, encode, SimpleEncoder
-from simple_parsing.helpers.serialization import decoding_fns
-
-logger = logging.getLogger(__file__)
 T = TypeVar("T")
+logger = logging.getLogger(__file__)
 
-decoding_fns[Tensor] = torch.as_tensor
-decoding_fns[np.ndarray] = np.array
-decoding_fns[Optional[Tensor]] = lambda v: torch.as_tensor(v or [])
-decoding_fns[Optional[np.ndarray]] = lambda v: np.array(v or [])
-
+register_decoding_fn(Tensor, torch.as_tensor)
+register_decoding_fn(np.ndarray, np.asarray)
 
 @dataclass
 class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):
     pass
+
 
 @encode.register
 def encode_tensor(v: Tensor) -> List:
@@ -49,13 +47,14 @@ def encode_device(obj: torch.device) -> str:
     return str(obj)
 
 
+
 def is_json_serializable(value: str):
     if isinstance(value, JsonSerializable):
         return True
     elif type(value) in encode.registry:
         return True
     try:
-        return loads(json.dumps(value, cls=MyEncoder)) == value 
+        return json.loads(json.dumps(value, cls=SimpleEncoder)) == value 
     except:
         return False
 
@@ -63,6 +62,7 @@ def is_json_serializable(value: str):
 def take_out_unsuported_values(d: Dict, default_value: Any=None) -> Dict:
     result: Dict = OrderedDict()
     for k, v in d.items():
+        # logger.debug(f"key {k} with value {v} is json-serializable: {is_json_serializable(v)}")
         if is_json_serializable(v):
             result[k] = v
         elif isinstance(v, dict):
@@ -91,54 +91,6 @@ def get_new_file(file: Path) -> Path:
             file_i = file.with_name(file.stem + f"_{i}" + file.suffix)
         file = file_i
     return file
-
-
-def is_json_serializable(value: str):
-    if isinstance(value, JsonSerializable):
-        return True
-    elif type(value) in encode.registry:
-        return True
-    try:
-        return json.loads(json.dumps(value, cls=SimpleEncoder)) == value 
-    except:
-        return False
-
-def take_out_unsuported_values(d: Dict, default_value: Any=None) -> Dict:
-    result: Dict = OrderedDict()
-    for k, v in d.items():
-        if is_json_serializable(v):
-            result[k] = v
-        elif isinstance(v, dict):
-            result[k] = take_out_unsuported_values(v, default_value)
-        else:
-            result[k] = v
-    return result
-
-def to_str_dict(d: Dict) -> Dict[str, Union[str, Dict]]:
-    for key, value in list(d.items()):
-        d[key] = to_str(value) 
-    return d
-
-
-def to_str(value: Any) -> Any:
-    try:
-        return json.dumps(value)
-    except Exception as e:
-        if is_dataclass(value):
-            value = asdict(value)
-            return to_str_dict(value)
-        elif isinstance(value, dict):
-            return to_str_dict(value)
-        elif isinstance(value, Path):
-            return str(value)
-        elif isinstance(value, nn.Module):
-            return None
-        elif isinstance(value, Iterable):
-            return list(map(to_str, value))
-        else:
-            print("Couldn't make the value into a str:", value, e)
-            return repr(value)
-
 
 def try_load(path: Path, default: T=None) -> Optional[T]:
     try:

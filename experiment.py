@@ -104,11 +104,12 @@ class ExperimentBase(JsonSerializable):
     def run(self):
         pass
 
-    def load_datasets(self):
+    def load_datasets(self) -> Tuple[VisionDataset, VisionDataset]:
         """ Setup the dataloaders and other settings before training. """
         self.train_dataset, self.valid_dataset = self.dataset.load(data_dir=self.config.data_dir)
         self.train_loader = self.get_dataloader(self.train_dataset)
         self.valid_loader = self.get_dataloader(self.valid_dataset)
+        return self.train_dataset, self.valid_dataset
 
     def init_model(self) -> Classifier:
         print("init model")
@@ -399,6 +400,9 @@ class ExperimentBase(JsonSerializable):
         d = asdict(self)
         d = take_out_unsuported_values(d)
         return d
+
+    def to_dict(self) -> Dict:
+        return self.to_config_dict()
         
 
 # Load up the addons, each of which adds independent, useful functionality to the Experiment base-class.

@@ -168,11 +168,6 @@ class LossInfo(JsonSerializable):
         return self.to_log_dict(verbose=False)
 
 
-@encode.register
-def encode_lossinfo(obj: LossInfo) -> Dict:
-    return obj.to_log_dict()
-
-
 @dataclass
 class TrainValidLosses(JsonSerializable):
     """ Helper class to store the train and valid losses during training. """
