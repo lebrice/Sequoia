@@ -16,7 +16,7 @@ import tqdm
 import wandb
 from simple_parsing import choice, field, mutable_field, subparsers
 from torch import Tensor, nn
-from torch.utils.data import DataLoader, Dataset, TensorDataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset, Sampler
 from torchvision.datasets import VisionDataset
 
 from common.losses import LossInfo
@@ -251,11 +251,12 @@ class ExperimentBase(JsonSerializable):
             self.model.train()
         return loss
 
-    def get_dataloader(self, dataset: Dataset) -> DataLoader:
+    def get_dataloader(self, dataset: Dataset, sampler: Sampler=None) -> DataLoader:
         return DataLoader(
             dataset,
             batch_size=self.hparams.batch_size,
             shuffle=False,
+            sampler=sampler,
             num_workers=self.config.num_workers,
             pin_memory=self.config.use_cuda,
         )

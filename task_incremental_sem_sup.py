@@ -90,21 +90,8 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                        dataset: Dataset,
                        sampler_labelled: SubsetRandomSampler,
                        sampler_unlabelled: SubsetRandomSampler) -> Tuple[DataLoader,DataLoader]:
-        loader_train_labelled =  DataLoader(
-            dataset,
-            batch_size=self.hparams.batch_size,
-            sampler=sampler_labelled,
-            num_workers=self.config.num_workers,
-            pin_memory=self.config.use_cuda,
-        )
-        loader_train_unlabelled = DataLoader(
-            dataset,
-            batch_size=self.hparams.batch_size,
-            sampler=sampler_unlabelled,
-            num_workers=self.config.num_workers,
-            pin_memory=self.config.use_cuda,
-        )
-        #TODO: adapt run to deal with this tuple of loaders
+        loader_train_labelled = super().get_dataloader(dataset, sampler=sampler_labelled)
+        loader_train_unlabelled = super().get_dataloader(dataset, sampler=sampler_unlabelled)
         return (loader_train_labelled, loader_train_unlabelled)
 
 
