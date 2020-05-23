@@ -86,7 +86,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
         return tasks
 
-    def get_dataloader(self,
+    def get_dataloaders(self,
                        dataset: Dataset,
                        sampler_labelled: SubsetRandomSampler,
                        sampler_unlabelled: SubsetRandomSampler) -> Tuple[DataLoader,DataLoader]:
@@ -156,6 +156,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         ```
         """
         self.model = self.init_model()
+        self.log_dir.mkdir(parents=True, exist_ok=True)
 
         #if (self.started or self.restore_from_path) and not self.config.debug:
         #    self.logger.info(f"Experiment was already started in the past.")
@@ -193,9 +194,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             # If we are using a multihead model, we give it the task label (so
             # that it can spawn / reuse the output head for the given task).
             if self.multihead:
-                self.model.current_task_id = i
-
-
+                self.on_task_switch(i)
 
             # Training and validation datasets for task i.
             # train_i, sampler_train_i, sampler_unlabelled_i = self.train_datasets[i]
@@ -216,13 +215,13 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 if self.config.debug:
                     sampler_train_, sampler_train_unlabelled_ = get_semi_sampler(
                         Subset(train_i, range(200)).dataset.targets[:200], p=self.ratio_labelled)
-                    self.model.current_task_loader = self.get_dataloader(
+                    self.model.current_task_loader = self.get_dataloaders(
                         Subset(train_i, range(200)),
                         sampler_train_,
                         sampler_train_unlabelled_
                     )[0]
                 else:
-                    self.model.current_task_loader = self.get_dataloader(
+                    self.model.current_task_loader = self.get_dataloaders(
                         train_i,
                         train_sampler_labeled_i,
                         train_sampler_unlabelled_i
@@ -269,12 +268,12 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 valid_sampler_labelled_j = self.valid_samplers_labelled[j]
                 valid_sampler_unlabelled_j = self.valid_samplers_unlabelled[j]
                 
-                train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloader(
+                train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloaders(
                     dataset=train_j,
                     sampler_labelled=train_sampler_labelled_j,
                     sampler_unlabelled=train_sampler_unlabelled_j,
                 )
-                valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloader(
+                valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloaders(
                     dataset=valid_j,
                     sampler_labelled=valid_sampler_labelled_j,
                     sampler_unlabelled=valid_sampler_unlabelled_j,
@@ -298,7 +297,8 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
                 if j <= i:
                     # If we have previously trained on this task:
-                    self.model.current_task_id = j
+                    self.on_task_switch(j)
+
                     loss_j = self.test(dataloader=valid_dataloader_labelled, description=f"task_losses[{i}][{j}]")
                     cumul_loss += loss_j
 
@@ -329,12 +329,12 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             valid_sampler_labelled_j = self.valid_samplers_labelled[j]
             valid_sampler_unlabelled_j = self.valid_samplers_unlabelled[j]
 
-            train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloader(
+            train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloaders(
                 dataset=train_j,
                 sampler_labelled=train_sampler_labelled_j,
                 sampler_unlabelled=train_sampler_unlabelled_j,
             )
-            valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloader(
+            valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloaders(
                 dataset=valid_j,
                 sampler_labelled=valid_sampler_labelled_j,
                 sampler_unlabelled=valid_sampler_unlabelled_j,
@@ -359,7 +359,8 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
             if j <= i:
                 # If we have previously trained on this task:
-                self.model.current_task_id = j
+                self.on_task_switch(j)
+
                 loss_j = self.test(dataloader=valid_dataloader_labelled, description=f"task_losses[{i}][{j}]")
                 cumul_loss += loss_j
 
@@ -378,26 +379,26 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         self.save(self.results_dir)
         # TODO: save the rest of the state.
 
-        from utils.plotting import maximize_figure
+        # from utils.plotting import maximize_figure
         # Make the forward-backward transfer grid figure.
-        grid = self.make_transfer_grid_figure(self.state.knn_losses, self.state.task_losses, self.state.cumul_losses)
-        grid.savefig(self.plots_dir / "transfer_grid.png")
+        # grid = self.make_transfer_grid_figure(self.state.knn_losses, self.state.task_losses, self.state.cumul_losses)
+        # grid.savefig(self.plots_dir / "transfer_grid.png")
 
-        # make the plot of the losses (might not be useful, since we could also just do it in wandb).
-        fig = self.make_loss_figure(self.state.all_losses, self.plot_sections)
-        fig.savefig(self.plots_dir / "losses.png")
+        # # make the plot of the losses (might not be useful, since we could also just do it in wandb).
+        # fig = self.make_loss_figure(self.state.all_losses, self.plot_sections)
+        # fig.savefig(self.plots_dir / "losses.png")
 
-        if self.config.debug:
-            fig.show()
-            fig.waitforbuttonpress(10)
+        # if self.config.debug:
+        #     fig.show()
+        #     fig.waitforbuttonpress(10)
 
     def train_until_convergence(self, train_dataset: Tuple[Dataset, SubsetRandomSampler, SubsetRandomSampler],
                                 valid_dataset: Tuple[Dataset, SubsetRandomSampler, SubsetRandomSampler],
                                 max_epochs: int,
                                 description: str = None,
                                 patience: int = 3) -> Tuple[Dict[int, LossInfo], Dict[int, LossInfo]]:
-        train_dataloader_labelled, train_dataloader_unlabelled  = self.get_dataloader(*train_dataset)
-        valid_dataloader_labelled, valid_dataloader_unlablled  = self.get_dataloader(*valid_dataset)
+        train_dataloader_labelled, train_dataloader_unlabelled  = self.get_dataloaders(*train_dataset)
+        valid_dataloader_labelled, valid_dataloader_unlablled  = self.get_dataloaders(*valid_dataset)
         n_steps = len(train_dataloader_unlabelled) if len(train_dataloader_unlabelled)>len(train_dataloader_labelled) else len(train_dataloader_labelled)
 
         if self.config.debug_steps:

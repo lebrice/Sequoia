@@ -85,7 +85,7 @@ class Classifier(nn.Module):
         # Feature extractor
         self.encoder = encoder
         # Classifier output layer
-        self.classifier = classifier
+        self._classifier = classifier
         self.hparams: Classifier.HParams = hparams
         self.config = config
 
@@ -98,7 +98,7 @@ class Classifier(nn.Module):
         AuxiliaryTask.hidden_size   = self.hparams.hidden_size
         AuxiliaryTask.input_shape   = self.input_shape
         AuxiliaryTask.encoder       = self.encoder
-        AuxiliaryTask.classifier    = self.classifier
+        AuxiliaryTask.classifier    = self._classifier
         AuxiliaryTask.preprocessing = self.preprocess_inputs
         
         # Dictionary of auxiliary tasks.
@@ -184,27 +184,37 @@ class Classifier(nn.Module):
         """
         return fix_channels(x)
 
+    def on_task_switch(self, task_id: Optional[Union[int, str]]) -> None:
+        if isinstance(task_id, int):
+            task_id = str(task_id)
+        self.current_task_id = task_id
+        # also inform the auxiliary tasks that the task switched.
+        for name, task in self.tasks.items():
+            task.on_task_switch(task_id=task_id)
+
+    @property
+    def classifier(self) -> nn.Module:
+        if self.current_task_id is None:
+            return self._classifier
+        else:
+            return self.task_classifiers[self.current_task_id]
+
     @property
     def current_task_id(self) -> Optional[str]:
-        if self._current_task_id is None:
-            return None
         return self._current_task_id
 
     @current_task_id.setter
     def current_task_id(self, value: Optional[Union[int, str]]):
-        value_str: str = str(value) if value is not None else None
+        value_str: Optional[str] = str(value) if isinstance(value, int) else value
         self._current_task_id = value_str
         # If there isn't a classifier for this task
         if value_str and value_str not in self.task_classifiers.keys():
             if self.config.debug:
                 logger.info(f"Creating a new classifier for taskid {value}.")
             # Create one starting from the "global" classifier.
-            classifier = copy.deepcopy(self.classifier)
+            classifier = copy.deepcopy(self._classifier)
             self.task_classifiers[value_str] = classifier
             self.optimizer.add_param_group({"params": classifier.parameters()})
-
-        for name, task in self.tasks.items():
-            task.on_task_switch(task_id=value_str)
 
     def logits(self, h_x: Tensor) -> Tensor:
         if self.hparams.detach_classifier:
@@ -217,15 +227,15 @@ class Classifier(nn.Module):
             classifier = self.task_classifiers[self.current_task_id]
         return classifier(h_x)
     
-    def load_state_dict(self, state_dict: Dict, strict: bool=True) -> Tuple[List[str], List[str]]:
-        current_task_id = self.current_task_id
+    def load_state_dict(self, state_dict: Dict[str, Tensor], strict: bool=True) -> Tuple[List[str], List[str]]:
+        starting_task_id = self.current_task_id
         # Set the task ID attribute to create all the needed output heads. 
         for key in state_dict:
             if key.startswith("task_classifiers"):
                 task_id = key.split(".")[1]
-                self.current_task_id = task_id
-        # Reset the current_task_id to the previosu value.
-        self.current_task_id = current_task_id
+                self.on_task_switch(task_id)
+        # Reset the task_id to the starting value.
+        self.on_task_switch(starting_task_id)
         return super().load_state_dict(state_dict, strict)
     
     def optimizer_step(self, global_step: int) -> None:

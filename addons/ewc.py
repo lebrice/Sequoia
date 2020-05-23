@@ -50,8 +50,8 @@ class GaussianPrior(object):
     def __init__(self, model: torch.nn.Module, n_output:int, loader: DataLoader,
                  reg_matrix: str ="kfac", variant: str ='classif_logits', device: str='cuda'):
 
-        assert reg_matrix=="kfac", print('Only kfac EWC is implement')
-        assert variant == "classif_logits", print('Only classif_logits is iplemented as a metric variant')
+        assert reg_matrix=="kfac", 'Only kfac EWC is implement'
+        assert variant == "classif_logits", 'Only classif_logits is iplemented as a metric variant'
 
         self.reg_matrix = reg_matrix
         print("Calculating Fisher " + reg_matrix)
@@ -112,7 +112,7 @@ class GaussianPrior(object):
 
 
 class EWC_wrapper(object):
-    def __init__(self, model:Classifier, lamda: float, n_ways: int, device='cuda'):
+    def __init__(self, model: Classifier, lamda: float, n_ways: int, device='cuda'):
         '''
         Wrapper constructor.
         @param model: Classifier to wrap
@@ -120,10 +120,11 @@ class EWC_wrapper(object):
         self.model = model
         self.device = device
         self.lamda = lamda
-        self.current_task_loader = None
-        self.prior = None
-        self.n_ways = n_ways
-        self.tasks_seen = []
+        self.current_task_loader: Optional[DataLoader] = None
+        self.prior: Optional[GaussianPrior] = None
+        self.n_ways: int = n_ways
+        self.tasks_seen: List[int] = []
+
     def __getattr__(self, attr):
         # see if this object has attr
         # NOTE do not use hasattr, it goes into
@@ -141,33 +142,35 @@ class EWC_wrapper(object):
         if self.prior is None:
             return Variable(torch.zeros(1)).to(self.device)
         else:
-            return self.prior.regularizer(nn.Sequential(*[self.model.encoder, self.model.classifier]))
+            return self.prior.regularizer(nn.Sequential(self.model.encoder, self.model.classifier))
 
     def get_loss(self, x: Tensor, y: Tensor = None) -> LossInfo:
-        reg = LossInfo('Train')
-        reg.total_loss = self.lamda * self.regularizer_ewc()
-        loss = self.model.get_loss(x,y) + reg
+        loss = self.model.get_loss(x, y)
+        ewc_loss = LossInfo(
+            name='EWC',
+            total_loss=self.lamda * self.regularizer_ewc()
+        )
+        loss += ewc_loss
         return loss
 
-    @property
-    def current_task_id(self) -> Optional[str]:
-        #getter
-        return self.model._current_task_id
-
-    @current_task_id.setter
-    def current_task_id(self, value: Optional[Union[int, str]]):
-        #setter and on task switch
-        assert type(value) == int, print("When switching tasks with ewc, use the task number as task_id")
-        self.on_task_switch(value)
-        self.model.current_task_id = value
-
     def on_task_switch(self, task_number: int):
-        if task_number>0:
+        assert isinstance(task_number, int), f"Task number should be an int, got {task_number}"
+        
+        self.model.on_task_switch(task_number)
+        
+        if task_number > 0:
             if task_number not in self.tasks_seen:
                 self.current_task = task_number
                 self.model.eval()
-                assert self.current_task_loader!=None, print('Task loader should be set to the loader of the current task before switching the tasks')
-                prior = GaussianPrior(nn.Sequential(*[self.model.encoder, self.model.classifier]), self.n_ways, self.current_task_loader, device=self.device)
+                assert self.current_task_loader is not None, (
+                    'Task loader should be set to the loader of the current task before switching the tasks'
+                )
+                prior = GaussianPrior(
+                    nn.Sequential(self.model.encoder, self.model.classifier),
+                    self.n_ways,
+                    self.current_task_loader,
+                    device=self.device
+                )
                 if self.prior is not None:
                     self.prior.consolidate(prior, task_number)
                 else:

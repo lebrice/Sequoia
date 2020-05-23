@@ -162,6 +162,6 @@ class AuxiliaryTask(nn.Module):
         """ Executed when the model was updated. """
         pass
     
-    def on_task_switch(self, task_id: str)-> None:
+    def on_task_switch(self, task_id: Optional[str])-> None:
         """ Executed when the task switches (to either a new or known task). """
         pass

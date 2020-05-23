@@ -181,7 +181,7 @@ class TaskIncremental(Experiment):
             # If we are using a multihead model, we give it the task label (so
             # that it can spawn / reuse the output head for the given task).
             if self.multihead:
-                self.model.current_task_id = i
+                self.on_task_switch(i)
 
             # Training and validation datasets for task i.
             train_i = self.train_datasets[i]
@@ -238,7 +238,9 @@ class TaskIncremental(Experiment):
 
                 if j <= i:
                     # If we have previously trained on this task:
-                    self.model.current_task_id = j
+                    if self.multihead:
+                        self.on_task_switch(j)
+
                     loss_j = self.test(dataset=valid_j, description=f"task_losses[{i}][{j}]")
                     cumul_loss += loss_j
                     
@@ -475,7 +477,12 @@ class TaskIncremental(Experiment):
     def save_images(self, i: int, dataset: VisionDatasetSubset, prefix: str=""):
         n = 64
         samples = dataset.data[:n].view(n, *self.dataset.x_shape).float()
+        self.samples_dir.mkdir(parents=True, exist_ok=True)
         save_image(samples, self.samples_dir / f"{prefix}task_{i}.png")
+
+    def on_task_switch(self, task_id: Optional[int]) -> None:
+        if self.multihead:
+            self.model.on_task_switch(task_id)
 
 
 def stack_loss_attr(losses: List[List[LossInfo]], attribute: str) -> Tensor:
