@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from abc import ABC, abstractmethod
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict, MutableMapping
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
@@ -233,7 +233,6 @@ class ExperimentBase(JsonSerializable):
             if batch_idx % self.config.log_interval == 0:
                 message.update(total_loss.to_pbar_message())
                 pbar.set_postfix(message)
-
         return total_loss
 
     def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
@@ -293,7 +292,34 @@ class ExperimentBase(JsonSerializable):
             
             if prefix:
                 message_dict = utils.add_prefix(message_dict, prefix)
-            wandb.log(message_dict, step=step)
+
+            def wandb_cleanup(d, parent_key='', sep='/', exclude_type=list):
+                items = []
+                for k, v in d.items():
+                    new_key = parent_key + sep + k if parent_key else k
+                    if 'knn_losses' in k:
+                        task_measuree, task_measured = [int(s) for s in k if s.isdigit()]
+                        mode = k.split('/')[-1]
+                        items.append((f'KNN_per_task/knn_{mode}_task_{task_measured}',message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}'][
+                                                'metrics']['accuracy']))
+                    elif 'cumul_losses' in k:
+                        new_key = 'Cumulative'
+
+                    elif 'task_losses' in k:
+                        task_measuree, task_measured = [int(s) for s in k if s.isdigit()]
+                        new_key = 'Task_losses'+sep + f'Task{task_measured}'
+                    elif '[' in new_key and 'Verbose' not in new_key:
+                        new_key = 'Verbose/'+new_key
+                    #per task acc
+
+                    if isinstance(v, MutableMapping):
+                        items.extend(wandb_cleanup(v, new_key, sep=sep).items())
+                    else:
+                        if not type(v)==exclude_type:
+                            items.append((new_key, v))
+                return dict(items)
+
+            wandb.log(wandb_cleanup(message_dict), step=step)
 
     def _folder(self, folder: Union[str, Path], create: bool=True) -> Path:
         path = self.config.log_dir / folder
