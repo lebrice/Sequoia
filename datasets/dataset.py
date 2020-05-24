@@ -12,7 +12,6 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets as v_datasets
 from torchvision import transforms
-from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
 
 from config import Config
@@ -33,13 +32,13 @@ class DatasetConfig:
     name: str = "default"
 
     # which dataset class to use. (TODO: add more of them.)
-    dataset_class: Type[v_datasets.VisionDataset] = field(default=v_datasets.MNIST, repr=False)
+    dataset_class: Type[Dataset] = field(default=v_datasets.MNIST, repr=False)
 
     x_shape: Tuple[int, int, int] = (1, 28, 28)
     y_shape: Tuple[int] = (10,)
     
-    train: Optional[VisionDataset] = None
-    valid: Optional[VisionDataset] = None
+    train: Optional[Dataset] = None
+    valid: Optional[Dataset] = None
 
     # TODO: This isn't really actually ever used. The VisionDatasets would call
     # them in __getitem__, and we don't really use that..
@@ -47,7 +46,7 @@ class DatasetConfig:
 
     _loaded: bool = False
 
-    def load(self, data_dir: Path=None) -> Tuple[VisionDataset, VisionDataset]:
+    def load(self, data_dir: Path=None) -> Tuple[Dataset, Dataset]:
         """ Downloads the corresponding datasets.
 
         TODO: Maybe figure out a way to get the resizing to happen here instead of

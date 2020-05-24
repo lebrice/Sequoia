@@ -6,8 +6,7 @@ import torch
 from PIL import Image as image
 from PIL.Image import Image
 from torch import Tensor
-from torch.utils.data import TensorDataset
-from torchvision.datasets import VisionDataset
+from torch.utils.data import TensorDataset, Dataset
 from torchvision.transforms import Normalize
 
 
@@ -15,11 +14,11 @@ class VisionDatasetSubset(TensorDataset):
     """
     Subset of a dataset containing only the given labels.
     """
-    def __init__(self, dataset: VisionDataset, labels: Sequence[int]):
+    def __init__(self, dataset: Dataset, labels: Sequence[int]):
         """Creates a Dataset from the x's in `dataset` whose y's are in `labels`.
         
         Args:
-            dataset (VisionDataset): The whole Dataset.
+            dataset (Dataset): The whole Dataset.
             labels (Sequence[int]): The set of labels (targets) to keep.
         """
         self.dataset = dataset
@@ -66,14 +65,14 @@ class VisionDatasetSubset(TensorDataset):
         self.tensors = tuple(self.tensors)
 
 
-def get_mask(dataset: VisionDataset, labels: Iterable[int]) -> Tensor:
+def get_mask(dataset: Dataset, labels: Iterable[int]) -> Tensor:
     """Returns a binary mask to select only the entries with a label within `labels` from `dataset`.
 
     To get the corresponding indices, apply `.nonzero()` to the result.
 
     Parameters
     ----------
-    - dataset : VisionDataset
+    - dataset : Dataset
     
         A dataset, with a `targets` attribute containing the labels.
     - labels : Sequence[int]

@@ -12,7 +12,7 @@ import torch
 from torch import Tensor
 
 from common.losses import LossInfo
-from datasets.subset import VisionDataset
+from datasets.subset import Dataset
 from task_incremental import TaskIncremental
 from utils.json_utils import try_load
 from utils.plotting import PlotSectionLabel
