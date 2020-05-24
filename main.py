@@ -88,6 +88,10 @@ def main(argv: Optional[List[str]]=None):
     subparser = subparsers.add_parser("task-incremental", help=TaskIncremental.__doc__)
     subparser.add_arguments(TaskIncremental, "experiment")
 
+    from task_incremental_sem_sup import TaskIncremental_Semi_Supervised
+    subparser = subparsers.add_parser("task-incremental-semi-sup", help=TaskIncremental_Semi_Supervised.__doc__)
+    subparser.add_arguments(TaskIncremental_Semi_Supervised, "experiment")
+
     from active_remembering import ActiveRemembering
     subparser = subparsers.add_parser("active-remembering", help=ActiveRemembering.__doc__)
     subparser.add_arguments(ActiveRemembering, "experiment")

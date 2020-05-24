@@ -74,7 +74,11 @@ class Config:
     # Save the command-line arguments that were used to create this run.
     argv: List[str] = field(init=False, default_factory=sys.argv.copy)
 
-    wandb_path = './results'
+
+    if 'WANDB_DIR' in os.environ:
+        wandb_path=Path(os.environ['WANDB_DIR'])
+    else:
+        wandb_path = './results'
 
     def __post_init__(self):
         # set the manual seed (for reproducibility)

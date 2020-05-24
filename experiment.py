@@ -287,12 +287,15 @@ class ExperimentBase(JsonSerializable):
                 message_dict = message.to_log_dict()
             elif isinstance(message, str) and value is not None:
                 message_dict = {message: value}
+            elif isinstance(message, str):
+                return
             else:
                 message_dict = message  # type: ignore
             
             if prefix:
                 message_dict = utils.add_prefix(message_dict, prefix)
 
+            avv_knn = []
             def wandb_cleanup(d, parent_key='', sep='/', exclude_type=list):
                 items = []
                 for k, v in d.items():
@@ -300,8 +303,11 @@ class ExperimentBase(JsonSerializable):
                     if 'knn_losses' in k:
                         task_measuree, task_measured = [int(s) for s in k if s.isdigit()]
                         mode = k.split('/')[-1]
+                        if mode=='valid':
+                            avv_knn.append(message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}']['metrics']['accuracy'])
                         items.append((f'KNN_per_task/knn_{mode}_task_{task_measured}',message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}'][
                                                 'metrics']['accuracy']))
+
                     elif 'cumul_losses' in k:
                         new_key = 'Cumulative'
 
@@ -310,7 +316,6 @@ class ExperimentBase(JsonSerializable):
                         new_key = 'Task_losses'+sep + f'Task{task_measured}'
                     elif '[' in new_key and 'Verbose' not in new_key:
                         new_key = 'Verbose/'+new_key
-                    #per task acc
 
                     if isinstance(v, MutableMapping):
                         items.extend(wandb_cleanup(v, new_key, sep=sep).items())
@@ -319,7 +324,14 @@ class ExperimentBase(JsonSerializable):
                             items.append((new_key, v))
                 return dict(items)
 
-            wandb.log(wandb_cleanup(message_dict), step=step)
+
+
+            message_dict = wandb_cleanup(message_dict)
+            if len(avv_knn)>0:
+                message_dict['KNN_per_task/avv_knn']=np.mean(avv_knn)
+            message_dict['task/currently_learned_task'] = self.state.i
+
+            wandb.log(message_dict, step=step)
 
     def _folder(self, folder: Union[str, Path], create: bool=True) -> Path:
         path = self.config.log_dir / folder
