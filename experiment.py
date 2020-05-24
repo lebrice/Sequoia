@@ -70,6 +70,8 @@ class ExperimentBase(JsonSerializable):
     
     model: Classifier = field(default=None, init=False)
 
+    no_wandb_cleanup: bool = False
+
     def __post_init__(self):
         """ Called after __init__, used to initialize all missing fields.
         
@@ -323,7 +325,9 @@ class ExperimentBase(JsonSerializable):
                             items.append((new_key, v))
                 return dict(items)
 
-            wandb.log(wandb_cleanup(message_dict), step=step)
+            if not self.no_wandb_cleanup:
+                message_dict = wandb_cleanup(message_dict)
+            wandb.log(message_dict, step=step)
 
     def _folder(self, folder: Union[str, Path], create: bool=True) -> Path:
         path = self.config.log_dir / folder
