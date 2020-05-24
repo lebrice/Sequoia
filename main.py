@@ -63,10 +63,12 @@ def launch(experiment: Experiment):
         experiment.run()
         
         print("-" * 10, f"Experiment '{type(experiment).__name__}' is done.", "-" * 10)
+        experiment.cleanup()
+    
     except Exception as e:
         print(f"Experiment crashed: {e}")
         raise e
-
+    
 
 def main(argv: Optional[List[str]]=None):
     import textwrap

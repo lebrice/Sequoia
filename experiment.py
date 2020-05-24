@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from abc import ABC, abstractmethod
-from collections import OrderedDict, defaultdict, MutableMapping
+from collections import MutableMapping, OrderedDict, defaultdict
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
@@ -12,11 +12,13 @@ from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.multiprocessing as mp
 import tqdm
 import wandb
+from simple_parsing import choice, field, mutable_field, subparsers
+from simple_parsing.helpers import FlattenedAccess
 from torch import Tensor, nn
-from torch.utils.data import DataLoader, Dataset, TensorDataset, Sampler
-from torchvision.datasets import VisionDataset
+from torch.utils.data import DataLoader, Dataset, Sampler, TensorDataset
 
 from common.losses import LossInfo, TrainValidLosses
 from common.metrics import (ClassificationMetrics, RegressionMetrics,
@@ -27,14 +29,11 @@ from datasets.cifar import Cifar10, Cifar100
 from datasets.fashion_mnist import FashionMnist
 from datasets.mnist import Mnist
 from models.classifier import Classifier
-from simple_parsing import choice, field, mutable_field, subparsers
-from simple_parsing.helpers import FlattenedAccess
-from utils.json_utils import JsonSerializable
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
-from utils.json_utils import take_out_unsuported_values
+from utils.json_utils import JsonSerializable, take_out_unsuported_values
 from utils.logging import pbar
-from utils.utils import add_prefix, is_nonempty_dir
+from utils.utils import add_prefix, common_fields, is_nonempty_dir
 
 
 @dataclass
@@ -86,8 +85,8 @@ class ExperimentBase(JsonSerializable):
             AuxiliaryTask.input_shape = self.dataset.x_shape
             AuxiliaryTask.hidden_size = self.hparams.hidden_size
 
-        self.train_dataset: VisionDataset = NotImplemented
-        self.valid_dataset: VisionDataset = NotImplemented
+        self.train_dataset: Dataset = NotImplemented
+        self.valid_dataset: Dataset = NotImplemented
         self.train_loader: DataLoader = NotImplemented
         self.valid_loader: DataLoader = NotImplemented
 
@@ -101,12 +100,27 @@ class ExperimentBase(JsonSerializable):
         if self.notes:
             with open(self.log_dir / "notes.txt", "w") as f:
                 f.write(self.notes)
+        
+        from save_job import SaverWorker
+        self.background_queue = mp.Queue()
+        self.saver_worker = SaverWorker(self.config, self.background_queue)
+        self.saver_worker.start()
+
+    def __del__(self):
+        print("Destroying the 'Experiment' object.")
 
     @abstractmethod
     def run(self):
         pass
 
-    def load_datasets(self) -> Tuple[VisionDataset, VisionDataset]:
+    def cleanup(self):
+        print("Cleaning up after the experiment is done.")
+        self.background_queue.put(None)
+        if self.saver_worker.is_alive():
+            self.saver_worker.join()
+        print("Successfully closed everything")
+
+    def load_datasets(self) -> Tuple[Dataset, Dataset]:
         """ Setup the dataloaders and other settings before training. """
         self.train_dataset, self.valid_dataset = self.dataset.load(data_dir=self.config.data_dir)
         self.train_loader = self.get_dataloader(self.train_dataset)
@@ -266,12 +280,24 @@ class ExperimentBase(JsonSerializable):
             pin_memory=self.config.use_cuda,
         )
     
-    def save(self, save_dir: Path=None) -> None:
-        self.log_dir.mkdir(parents=True)
-        if not save_dir:
-            save_dir = self.checkpoints_dir
-        save_json_path = save_dir / "config.json"
-        self.save_json(save_json_path)
+    def save(self, save_dir: Path=None, save_model_weights: bool=True) -> None:
+        # If there are common attributes between the Experiment and the State
+        # objects, then also copy them over into the State to be saved.
+        # NOTE: (FN) This is a bit extra, I don't think its needed.
+        for name, (v1, v2) in common_fields(self, self.state):
+            self.logger.info(f"Copying the '{name}' attribute into the 'State' object to be saved.")
+            setattr(self.state, name, v1)
+        self.state.global_step = self.global_step
+        save_dir = save_dir or self.checkpoints_dir
+        self.logger.info(f"Saving state (in background) to save_dir {save_dir}")
+        self.background_queue.put({
+            "save_dir": save_dir,
+            "state": self.state,
+            "model_state_dict": (self.model.state_dict() if save_model_weights else None),
+        })
+        
+
+
         
 
     def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):

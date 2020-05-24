@@ -1,35 +1,31 @@
+import logging
 from collections import OrderedDict, defaultdict
-from dataclasses import dataclass, asdict, InitVar, fields
+from dataclasses import InitVar, asdict, dataclass, fields
 from itertools import accumulate
 from pathlib import Path
 from random import shuffle
-from typing import Dict, Iterable, List, Tuple, Union, Optional, Any
+from sys import getsizeof
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import wandb
-from simple_parsing import choice, field, subparsers
+from simple_parsing import choice, field, list_field, mutable_field, subparsers
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, Subset
-from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
 
 from common.losses import LossInfo, TrainValidLosses
-from common.metrics import Metrics, ClassificationMetrics, RegressionMetrics
+from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from config import Config
-from datasets.subset import VisionDatasetSubset
 from datasets import DatasetConfig
+from datasets.subset import VisionDatasetSubset
 from experiment import Experiment, ExperimentStateBase
-from utils.utils import n_consecutive, rgetattr, rsetattr, common_fields
-from utils import utils
 from tasks import Tasks
-from sys import getsizeof
-
+from utils import utils
 from utils.json_utils import JsonSerializable
-from simple_parsing import mutable_field, list_field
-import logging
-import wandb
+from utils.utils import common_fields, n_consecutive, rgetattr, rsetattr
 
 logger = logging.getLogger(__file__)
 
@@ -164,7 +160,7 @@ class TaskIncremental(Experiment):
             self.logger.info(f"i={self.state.i}, j={self.state.j}")
         
         self.tasks = self.state.tasks
-        self.save()
+        self.save(save_model_weights=False)
         
         # Load the datasets
         self.load_datasets(self.tasks)
@@ -216,9 +212,9 @@ class TaskIncremental(Experiment):
                         description=f"Task {i} (Supervised)",
                     )
                     self.logger.debug(f"Size the state object: {getsizeof(self.state)}")
-
-                self.save()
             
+            # Save to the 'checkpoints' dir
+            self.save()
             #  Evaluate on all tasks (as described above).
             cumul_loss = LossInfo(f"cumul_losses[{i}]")
             
@@ -252,21 +248,15 @@ class TaskIncremental(Experiment):
                     self.state.task_losses[i][j] = loss_j
                     self.log({f"task_losses[{i}][{j}]": loss_j.to_log_dict()})
 
-                if j != (self.n_tasks-1):
-                    # Just to avoid double-saving with the 'save' below.
-                    self.save()
+                # No need to save the model weights, as they didn't change.
+                self.save(save_model_weights=False)
             
             self.state.j = 0
             self.state.cumul_losses[i] = cumul_loss
             valid_log_dict = cumul_loss.to_log_dict()
             self.log({f"cumul_losses[{i}]": valid_log_dict})
 
-            if i != (self.n_tasks -1):
-                # Just to avoid double-saving with the 'save' below.
-                self.save()
-
         self.state.i = self.n_tasks
-        self.save() # Save to the 'checkpoints' dir
         self.save(self.results_dir) # Save to the 'results' dir.
         
         for i, cumul_loss in enumerate(self.state.cumul_losses):
@@ -280,6 +270,10 @@ class TaskIncremental(Experiment):
         grid = self.make_transfer_grid_figure(self.state.knn_losses, self.state.task_losses, self.state.cumul_losses)
         grid.savefig(self.plots_dir / "transfer_grid.png")
         
+        # if self.config.debug:
+        #     grid.waitforbuttonpress(10)
+
+
         # make the plot of the losses (might not be useful, since we could also just do it in wandb).
         # fig = self.make_loss_figure(self.all_losses, self.plot_sections)
         # fig.savefig(self.plots_dir / "losses.png")
@@ -346,8 +340,9 @@ class TaskIncremental(Experiment):
         # Rotate the tick labels and set their alignment.
         plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
 
-        wandb.log({'knn_accuracies': wandb.plots.HeatMap(x_labels, y_labels, knn_accs, show_text=True)})
-        wandb.log({'classifier_accuracies': wandb.plots.HeatMap(x_labels, y_labels, sup_accs, show_text=True)})
+        if self.config.use_wandb:
+            wandb.log({'knn_accuracies': wandb.plots.HeatMap(x_labels, y_labels, knn_accs, show_text=True)})
+            wandb.log({'classifier_accuracies': wandb.plots.HeatMap(x_labels, y_labels, sup_accs, show_text=True)})
 
         # Loop over data dimensions and create text annotations.
         for i in range(n_tasks):
@@ -356,8 +351,9 @@ class TaskIncremental(Experiment):
 
         ax.set_title("KNN Accuracies")
         fig.tight_layout()
-        if self.config.debug:
-            fig.show()
+        # if self.config.debug:
+        #     fig.show()
+
         return fig
     
     def load_state(self, state_json_path: Path=None) -> None:
@@ -379,37 +375,15 @@ class TaskIncremental(Experiment):
 
         if self.state.model_weights_path:
             self.logger.info(f"Restoring model weights from {self.state.model_weights_path}")
-            self.model.load_state_dict(torch.load(self.state.model_weights_path), strict=False)
+            state_dict = torch.load(
+                self.state.model_weights_path,
+                map_location=self.config.device,
+            )
+            self.model.load_state_dict(state_dict, strict=False)
 
         # TODO: Fix this so the global_step is nicely loaded/restored.
         self.global_step = self.state.global_step or self.state.all_losses.latest_step()
         self.logger.info(f"Starting at global step = {self.global_step}.")
-
-    def save(self, save_dir: Path=None) -> None:
-        save_dir = save_dir or self.checkpoints_dir
-        save_dir.mkdir(parents=True, exist_ok=True)
-
-        save_json_path = save_dir / "state.json"
-        saved_weights_path = save_dir / "model_weights.pth"
-
-        if self.model:
-            torch.save(self.model.state_dict(), saved_weights_path)    
-            self.state.model_weights_path = saved_weights_path
-            self.logger.debug(f"Saved model weights to {self.state.model_weights_path}")
-
-        # If there are common attributes between the Experiment and the State
-        # objects, then also copy them over into the State to be saved.
-        # NOTE: (FN) This is a bit extra, I don't think its needed.
-        for name, (v1, v2) in common_fields(self, self.state):
-            self.logger.info(f"Copying the '{name}' attribute into the 'State' object to be saved.")
-            setattr(self.state, name, v1)
-        self.state.global_step = self.global_step
-        
-        save_json_tmp_path = save_json_path.with_suffix(".tmp")
-        self.state.save_json(save_json_tmp_path)
-        save_json_tmp_path.replace(save_json_path)
-
-        self.logger.debug(f"Saved state to {save_json_path}")
 
     def make_loss_figure(self,
                     results: Dict,

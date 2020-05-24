@@ -220,7 +220,7 @@ class RegressTransformationTask(TransformationBasedTask):
             Flatten(),
             nn.Linear(input_dims, 1),
             nn.Sigmoid(),
-            Lambda(lambda x: self.arg_min + self.arg_amp * x)
+            ScaleToRange(arg_min=self.arg_min, arg_amp=self.arg_amp),
         )
 
     def get_function_args(self) -> Tensor:
@@ -244,3 +244,12 @@ class RegressTransformationTask(TransformationBasedTask):
         #     loss_i = self.get_loss_for_arg(x=x, h_x=h_x, fn_arg=fn_arg, alpha=alpha)
         #     loss_info += loss_i
         # return loss_info
+
+class ScaleToRange(nn.Module):
+    def __init__(self, arg_min: float, arg_amp: float):
+        super().__init__()
+        self.arg_min = arg_min
+        self.arg_max = arg_amp
+    
+    def forward(self, x: Tensor) -> Tensor:
+        return self.arg_min + self.arg_amp * x
