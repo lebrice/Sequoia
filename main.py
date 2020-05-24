@@ -10,12 +10,11 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, Type, Union
 import torch
 import wandb
 from simple_parsing import ArgumentParser, subparsers
-from simple_parsing.helpers import JsonSerializable
+from utils.json_utils import JsonSerializable
 from torch import nn
 
 from config import Config
 from experiment import Experiment
-from utils.json_utils import take_out_unsuported_values
 from utils.utils import is_nonempty_dir
 
 def launch(experiment: Experiment):
@@ -32,9 +31,7 @@ def launch(experiment: Experiment):
     config: Config = experiment.config
     # pprint.pprint(config_dict, indent=1)
 
-    config_dict = asdict(experiment)
-    config_dict = take_out_unsuported_values(config_dict)
-
+    config_dict = experiment.to_dict()
     config.run_group = config.run_group or type(experiment).__name__
 
     if experiment.config.use_wandb:

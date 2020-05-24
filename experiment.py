@@ -14,12 +14,11 @@ import numpy as np
 import torch
 import tqdm
 import wandb
-from simple_parsing import choice, field, mutable_field, subparsers
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset, TensorDataset, Sampler
 from torchvision.datasets import VisionDataset
 
-from common.losses import LossInfo
+from common.losses import LossInfo, TrainValidLosses
 from common.metrics import (ClassificationMetrics, RegressionMetrics,
                             get_metrics)
 from config import Config
@@ -28,10 +27,12 @@ from datasets.cifar import Cifar10, Cifar100
 from datasets.fashion_mnist import FashionMnist
 from datasets.mnist import Mnist
 from models.classifier import Classifier
+from simple_parsing import choice, field, mutable_field, subparsers
+from simple_parsing.helpers import FlattenedAccess
+from utils.json_utils import JsonSerializable
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
-from utils.json_utils import (JsonSerializable, is_json_serializable, to_str,
-                              to_str_dict)
+from utils.json_utils import take_out_unsuported_values
 from utils.logging import pbar
 from utils.utils import add_prefix, is_nonempty_dir
 
@@ -45,6 +46,8 @@ class ExperimentStateBase(JsonSerializable):
     """
     global_step: int = 0
     model_weights_path: Optional[Path] = None
+    # Container for train/valid losses that are logged periodically.
+    all_losses: TrainValidLosses = mutable_field(TrainValidLosses, repr=False)
 
 
 @dataclass  # type: ignore
@@ -66,6 +69,8 @@ class ExperimentBase(JsonSerializable):
     notes: Optional[str] = None
     
     model: Classifier = field(default=None, init=False)
+
+    no_wandb_cleanup: bool = False
 
     def __post_init__(self):
         """ Called after __init__, used to initialize all missing fields.
@@ -101,11 +106,12 @@ class ExperimentBase(JsonSerializable):
     def run(self):
         pass
 
-    def load_datasets(self):
+    def load_datasets(self) -> Tuple[VisionDataset, VisionDataset]:
         """ Setup the dataloaders and other settings before training. """
         self.train_dataset, self.valid_dataset = self.dataset.load(data_dir=self.config.data_dir)
         self.train_loader = self.get_dataloader(self.train_dataset)
         self.valid_loader = self.get_dataloader(self.valid_dataset)
+        return self.train_dataset, self.valid_dataset
 
     def init_model(self) -> Classifier:
         print("init model")
@@ -324,13 +330,12 @@ class ExperimentBase(JsonSerializable):
                             items.append((new_key, v))
                 return dict(items)
 
-
-
-            message_dict = wandb_cleanup(message_dict)
-            if len(avv_knn)>0:
-                message_dict['KNN_per_task/avv_knn']=np.mean(avv_knn)
-            message_dict['task/currently_learned_task'] = self.state.i
-
+            if not self.no_wandb_cleanup:
+                message_dict = wandb_cleanup(message_dict)
+                if len(avv_knn) > 0:
+                    message_dict['KNN_per_task/avv_knn'] = np.mean(avv_knn)
+                message_dict['task/currently_learned_task'] = self.state.i
+                message_dict = wandb_cleanup(message_dict)
             wandb.log(message_dict, step=step)
 
     def _folder(self, folder: Union[str, Path], create: bool=True) -> Path:
@@ -406,9 +411,11 @@ class ExperimentBase(JsonSerializable):
 
     def to_config_dict(self) -> Dict:
         d = asdict(self)
-        from utils.json_utils import take_out_unsuported_values
         d = take_out_unsuported_values(d)
         return d
+
+    def to_dict(self) -> Dict:
+        return self.to_config_dict()
         
 
 # Load up the addons, each of which adds independent, useful functionality to the Experiment base-class.

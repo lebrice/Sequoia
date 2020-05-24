@@ -6,10 +6,15 @@ from torch import Tensor
 from collections import OrderedDict
 import torch.nn.functional as functional
 from utils.json_utils import encode
+from utils.json_utils import JsonSerializable
+import logging
+
+
+logger = logging.getLogger(__file__)
 
 
 @dataclass 
-class Metrics:
+class Metrics(JsonSerializable):
     n_samples: int = 0
 
     x:      InitVar[Optional[Tensor]] = None
@@ -44,13 +49,11 @@ class Metrics:
         # should implement the method. We just return the other.
         return other
 
-    def to_log_dict(self) -> Dict:
+    def to_log_dict(self, verbose: bool=False) -> Dict:
         return OrderedDict({"n_samples": self.n_samples})
 
-
-@encode.register
-def encode_metrics(obj: Metrics) -> Dict:
-    return obj.to_log_dict()
+    def to_dict(self) -> Dict:
+        return self.to_log_dict()
 
 
 @dataclass
@@ -84,7 +87,7 @@ class RegressionMetrics(Metrics):
             mse=mse,
         )
     
-    def to_log_dict(self) -> Dict:
+    def to_log_dict(self, verbose: bool=True) -> Dict:
         d = super().to_log_dict()
         d["mse"] = float(self.mse)
         return d
@@ -94,8 +97,8 @@ class RegressionMetrics(Metrics):
 class ClassificationMetrics(Metrics):
     confusion_matrix: Optional[Tensor] = field(default=None, repr=False)
     # fields we generate from the confusion matrix (if provided)
-    accuracy: float = field(default=0., init=False)
-    class_accuracy: Tensor = field(default=None, init=False)  # type: ignore
+    accuracy: float = field(default=0.)
+    class_accuracy: Tensor = field(default=None, repr=False)  # type: ignore
     
     def __post_init__(self,
                       x: Tensor=None,
@@ -107,11 +110,14 @@ class ClassificationMetrics(Metrics):
             if tensor is not None:
                 self.n_samples = tensor.shape[0]
                 break
+        
         if self.confusion_matrix is None and y_pred is not None and y is not None:
             self.confusion_matrix = get_confusion_matrix(y_pred=y_pred, y=y)
 
         #TODO: add other useful metrics (potentially ones using x or h_x?)
         if self.confusion_matrix is not None:
+            if not isinstance(self.confusion_matrix, Tensor):
+                self.confusion_matrix = torch.as_tensor(self.confusion_matrix)
             self.accuracy = get_accuracy(self.confusion_matrix)
             self.class_accuracy = get_class_accuracy(self.confusion_matrix)
 
@@ -137,7 +143,7 @@ class ClassificationMetrics(Metrics):
         )
         return result
     
-    def to_log_dict(self) -> Dict:
+    def to_log_dict(self, verbose: bool=True) -> Dict:
         d = super().to_log_dict()
         d["accuracy"] = float(self.accuracy)
         d["class_accuracy"] = self.class_accuracy.tolist()
@@ -164,6 +170,7 @@ def get_metrics(y_pred: Union[Tensor, np.ndarray],
         return RegressionMetrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
     else:
         return ClassificationMetrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
+
 
 @torch.no_grad()
 def get_confusion_matrix(y_pred: Tensor, y: Tensor) -> Tensor:
@@ -192,6 +199,7 @@ def get_accuracy(confusion_matrix: Tensor) -> float:
 def class_accuracy(y_pred: Tensor, y: Tensor) -> Tensor:
     confusion_mat = get_confusion_matrix(y_pred, y)
     return confusion_mat.diag()/confusion_mat.sum(1).clamp_(1e-10, 1e10)
+
 
 def get_class_accuracy(confusion_matrix: Tensor) -> Tensor:
     return confusion_matrix.diag()/confusion_matrix.sum(1).clamp_(1e-10, 1e10)

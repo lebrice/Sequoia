@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -33,8 +33,15 @@ class ExperimentWithKNN(ExperimentBase):
     knn_options: KnnClassifierOptions = mutable_field(KnnClassifierOptions)
 
     @torch.no_grad()
-    def test_knn(self, train_dataloader: DataLoader, test_dataloader: DataLoader, description: str="") -> Tuple[LossInfo, LossInfo]:
+    def test_knn(self,
+                 train: Union[Dataset,DataLoader],
+                 test: Union[Dataset, DataLoader],
+                 description: str="") -> Tuple[LossInfo, LossInfo]:
         """TODO: Test the representations using a KNN classifier. """
+        if not isinstance(train, DataLoader):
+            train = self.get_dataloader(train)
+        if not isinstance(test, DataLoader):
+            test = self.get_dataloader(test)
         
         def get_hidden_codes_array(dataloader: DataLoader) -> Tuple[np.ndarray, np.ndarray]:
             """ Gets the hidden vectors and corresponding labels. """
@@ -49,8 +56,8 @@ class ExperimentWithKNN(ExperimentBase):
                     y_list.append(y.detach().cpu().numpy())
             return np.concatenate(h_x_list), np.concatenate(y_list)
 
-        h_x, y = get_hidden_codes_array(train_dataloader)
-        h_x_test, y_test = get_hidden_codes_array(test_dataloader)
+        h_x, y = get_hidden_codes_array(train)
+        h_x_test, y_test = get_hidden_codes_array(test)
         
         train_loss, test_loss = evaluate_knn(
             x=h_x, y=y,

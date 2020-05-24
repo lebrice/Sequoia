@@ -11,7 +11,7 @@ import torch
 import wandb
 from simple_parsing import choice, field, subparsers
 from torch import Tensor
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
 
@@ -22,14 +22,16 @@ from datasets.subset import VisionDatasetSubset
 from datasets import DatasetConfig
 from experiment import Experiment, ExperimentStateBase
 from utils.utils import n_consecutive, rgetattr, rsetattr, common_fields
-from utils.json_utils import try_load
 from utils import utils
 from tasks import Tasks
 from sys import getsizeof
 
 from utils.json_utils import JsonSerializable
 from simple_parsing import mutable_field, list_field
+import logging
+import wandb
 
+logger = logging.getLogger(__file__)
 
 @dataclass
 class State(ExperimentStateBase):
@@ -54,9 +56,6 @@ class State(ExperimentStateBase):
     knn_losses: List[List[LossInfo]] = list_field()
     # Cumulative losses after each task
     cumul_losses: List[Optional[LossInfo]] = list_field()
-    # Container for train/valid losses that are logged periodically.
-    all_losses: TrainValidLosses = mutable_field(TrainValidLosses)
-
 
 @dataclass
 class TaskIncremental(Experiment):
@@ -145,10 +144,11 @@ class TaskIncremental(Experiment):
         ```
         """
         self.model = self.init_model()
-        
+
         if self.started or self.restore_from_path:
             self.logger.info(f"Experiment was already started in the past.")
-            self.restore_from_path = self.checkpoints_dir / "state.json"
+            if not self.restore_from_path:
+                self.restore_from_path = self.checkpoints_dir / "state.json"
             self.logger.info(f"Will load state from {self.restore_from_path}")
             self.load_state(self.restore_from_path)
 
@@ -159,16 +159,19 @@ class TaskIncremental(Experiment):
         if self.state.global_step == 0:
             self.logger.info("Starting from scratch!")
             self.state.tasks = self.create_tasks_for_dataset(self.dataset)
+        else:
+            self.logger.info(f"Starting from global step {self.state.global_step}")
+            self.logger.info(f"i={self.state.i}, j={self.state.j}")
         
         self.tasks = self.state.tasks
         self.save()
-
+        
         # Load the datasets
         self.load_datasets(self.tasks)
         self.n_tasks = len(self.tasks)
 
         self.logger.info(f"Class Ordering: {self.state.tasks}")
-
+        
         if self.state.global_step == 0:
             self.state.knn_losses   = [[None] * self.n_tasks] * self.n_tasks # [N,N]
             self.state.task_losses  = [[None] * (i+1) for i in range(self.n_tasks)] # [N,J]
@@ -177,7 +180,7 @@ class TaskIncremental(Experiment):
         for i in range(self.state.i, self.n_tasks):
             self.state.i = i
             self.logger.info(f"Starting task {i} with classes {self.tasks[i]}")
- 
+
             # If we are using a multihead model, we give it the task label (so
             # that it can spawn / reuse the output head for the given task).
             if self.multihead:
@@ -186,38 +189,40 @@ class TaskIncremental(Experiment):
             # Training and validation datasets for task i.
             train_i = self.train_datasets[i]
             valid_i = self.valid_datasets[i]
+            if self.state.j == 0:
+                with self.plot_region_name(f"Learn Task {i}"):
+                    # We only train (unsupervised) if there is at least one enabled
+                    # auxiliary task and if the maximum number of unsupervised
+                    # epochs per task is greater than zero.
+                    self_supervision_on = any(task.enabled for task in self.model.tasks.values())
 
-            with self.plot_region_name(f"Learn Task {i}"):
-                # We only train (unsupervised) if there is at least one enabled
-                # auxiliary task and if the maximum number of unsupervised
-                # epochs per task is greater than zero.
-                self_supervision_on = any(task.enabled for task in self.model.tasks.values())
+                    if self_supervision_on and self.unsupervised_epochs_per_task:
+                        # Temporarily remove the labels.
+                        with train_i.without_labels(), valid_i.without_labels():
+                            # Un/self-supervised training on task i.
+                            self.state.all_losses += self.train_until_convergence(
+                                train_i,
+                                valid_i,
+                                max_epochs=self.unsupervised_epochs_per_task,
+                                description=f"Task {i} (Unsupervised)",
+                            )
 
-                if self_supervision_on and self.unsupervised_epochs_per_task:
-                    # Temporarily remove the labels.
-                    with train_i.without_labels(), valid_i.without_labels():
-                        # Un/self-supervised training on task i.
-                        self.state.all_losses += self.train_until_convergence(
-                            train_i,
-                            valid_i,
-                            max_epochs=self.unsupervised_epochs_per_task,
-                            description=f"Task {i} (Unsupervised)",
-                        )
+                    # Train (supervised) on task i.
+                    # TODO: save the state during training?.
+                    self.state.all_losses += self.train_until_convergence(
+                        train_i,
+                        valid_i,
+                        max_epochs=self.supervised_epochs_per_task,
+                        description=f"Task {i} (Supervised)",
+                    )
+                    self.logger.debug(f"Size the state object: {getsizeof(self.state)}")
 
-                # Train (supervised) on task i.
-                self.state.all_losses += self.train_until_convergence(
-                    train_i,
-                    valid_i,
-                    max_epochs=self.supervised_epochs_per_task,
-                    description=f"Task {i} (Supervised)",
-                )
-                self.logger.debug(f"Size the state object: {getsizeof(self.state)}")
-
-            # TODO: save the state during training.
-            self.save()
+                self.save()
+            
             #  Evaluate on all tasks (as described above).
             cumul_loss = LossInfo(f"cumul_losses[{i}]")
             
+            # Evaluation loop:
             for j in range(self.state.j, self.n_tasks):
                 self.state.j = j
                 train_j = self.train_datasets[j]
@@ -227,14 +232,14 @@ class TaskIncremental(Experiment):
                 # are by training and evaluating a KNNClassifier on the data of task j.
                 train_knn_loss, valid_knn_loss = self.test_knn(train_j, valid_j, description=f"KNN[{i}][{j}]")
                 self.log({
-                    f"knn_losses[{i}][{j}]/train": train_knn_loss.to_log_dict(),
-                    f"knn_losses[{i}][{j}]/valid": valid_knn_loss.to_log_dict(),
+                    f"knn_losses/train/[{i}][{j}]": train_knn_loss.to_log_dict(),
+                    f"knn_losses/valid/[{i}][{j}]": valid_knn_loss.to_log_dict(),
                 })
                 self.state.knn_losses[i][j] = valid_knn_loss
                 accuracy = valid_knn_loss.metrics["KNN"].accuracy
                 loss = valid_knn_loss.total_loss
 
-                self.logger.info(f"knn_losses[{i}][{j}]/valid Accuracy: {accuracy:.2%}, loss: {loss}")
+                self.logger.info(f"knn_losses/valid/[{i}][{j}] Accuracy: {accuracy:.2%}, loss: {loss}")
 
                 if j <= i:
                     # If we have previously trained on this task:
@@ -247,29 +252,41 @@ class TaskIncremental(Experiment):
                     self.state.task_losses[i][j] = loss_j
                     self.log({f"task_losses[{i}][{j}]": loss_j.to_log_dict()})
 
-                self.save()
-            self.state.cumul_losses[i] = cumul_loss
+                if j != (self.n_tasks-1):
+                    # Just to avoid double-saving with the 'save' below.
+                    self.save()
+            
             self.state.j = 0
-
+            self.state.cumul_losses[i] = cumul_loss
             valid_log_dict = cumul_loss.to_log_dict()
             self.log({f"cumul_losses[{i}]": valid_log_dict})
 
-        # TODO: Save the results to a json file.
-        self.save(self.results_dir)
-        # TODO: save the rest of the state.
+            if i != (self.n_tasks -1):
+                # Just to avoid double-saving with the 'save' below.
+                self.save()
+
+        self.state.i = self.n_tasks
+        self.save() # Save to the 'checkpoints' dir
+        self.save(self.results_dir) # Save to the 'results' dir.
         
+        for i, cumul_loss in enumerate(self.state.cumul_losses):
+            cumul_valid_accuracy = get_supervised_accuracy(cumul_loss)
+            self.logger.info(f"Cumul Accuracy [{i}]: {cumul_valid_accuracy}")
+            if self.config.use_wandb:
+                wandb.run.summary[f"Cumul Accuracy [{i}]"] = cumul_valid_accuracy
+
         from utils.plotting import maximize_figure
         # Make the forward-backward transfer grid figure.
         grid = self.make_transfer_grid_figure(self.state.knn_losses, self.state.task_losses, self.state.cumul_losses)
         grid.savefig(self.plots_dir / "transfer_grid.png")
         
         # make the plot of the losses (might not be useful, since we could also just do it in wandb).
-        fig = self.make_loss_figure(self.all_losses, self.plot_sections)
-        fig.savefig(self.plots_dir / "losses.png")
+        # fig = self.make_loss_figure(self.all_losses, self.plot_sections)
+        # fig.savefig(self.plots_dir / "losses.png")
         
-        if self.config.debug:
-            fig.show()
-            fig.waitforbuttonpress(10)
+        # if self.config.debug:
+        #     fig.show()
+        #     fig.waitforbuttonpress(10)
 
     def make_transfer_grid_figure(self,
                                   knn_losses: List[List[LossInfo]],
@@ -293,28 +310,58 @@ class TaskIncremental(Experiment):
         classifier_accuracies: List[List[Optional[float]]] = [[None] * n_tasks] * n_tasks # [N,N]
         
         from itertools import zip_longest
-        text: List[List[str]] = np.zeros(n_tasks, n_tasks, dtype=np.dtype.str)
+        text: List[List[str]] = [[""] * n_tasks] * n_tasks # [N,N]
+        fig: plt.Figure
+        ax: plt.Axes
+        fig, ax = plt.subplots()
+        for i in range(n_tasks):
+            for j in range(n_tasks):
+                knn_acc = knn_losses[i][j].metrics["KNN"].accuracy
+                knn_accuracies[i][j] = knn_acc
+                if j <= i:
+                    print(task_losses[i][j])
+                    sup_acc = task_losses[i][j].losses["supervised"].metrics["supervised"].accuracy
+                else:
+                    sup_acc = 0.
+                classifier_accuracies[i][j] = sup_acc
+        
+        fig.suptitle("KNN Accuracies")
+        knn_accs = np.array(knn_accuracies)
+        logger.info(f"KNN Accuracies: {knn_accs}")
+        sup_accs = np.array(classifier_accuracies)
+        logger.info(f"Supervised Accuracies {sup_accs}")
+    
+        im = ax.imshow(knn_accs)
+        
+        # We want to show all ticks...
+        ax.set_xticks(np.arange(n_tasks))
+        ax.set_yticks(np.arange(n_tasks))
+        
+        # ... and label them with the respective list entries
+        x_labels = [f"Task[{i}]" for i in range(n_tasks)]
+        y_labels = [f"Task[{i}]" for i in range(n_tasks)]
+        ax.set_xticklabels(x_labels)
+        ax.set_yticklabels(y_labels)
 
-        for i, rows in enumerate(zip(classifier_accuracies, knn_accuracies)):
-            knn_accuracies.append([])
-            classifier_accuracies.append([])
-            for j, (knn_loss, classifier_loss) in enumerate(zip_longest(*rows)):
-                knn_acc = knn_loss.metrics["KNN"].accuracy
-                text[i][j] = f"KNN Acc: {knn_acc:.2%}"
-                if classifier_loss:
-                    cls_acc = classifier_loss.metrics["supervised"].accuracy
-                    text[i][j] += f"\nAcc: {cls_acc:.2%}"
-        # fig: plt.Figure = plt.figure()
-        # ax = fig.subplots(1,1)
-        # ax.
-        print(text)
-        plt.table(text)
-        raise NotImplementedError("Not sure if I should do it manually or in wandb.")
+        # Rotate the tick labels and set their alignment.
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
 
+        wandb.log({'knn_accuracies': wandb.plots.HeatMap(x_labels, y_labels, knn_accs, show_text=True)})
+        wandb.log({'classifier_accuracies': wandb.plots.HeatMap(x_labels, y_labels, sup_accs, show_text=True)})
+
+        # Loop over data dimensions and create text annotations.
+        for i in range(n_tasks):
+            for j in range(n_tasks):
+                text = ax.text(j, i, knn_accs[i, j], ha="center", va="center", color="w")
+
+        ax.set_title("KNN Accuracies")
+        fig.tight_layout()
+        if self.config.debug:
+            fig.show()
+        return fig
     
     def load_state(self, state_json_path: Path=None) -> None:
-        # TODO: save/restore the state from a previous run.
-        # TODO: Work-In-Progress, this is ugly. There is for sure a more elegant
+        """ save/restore the state from a previous run. """
         # way to do this.
         self.logger.info(f"Restoring state from {state_json_path}")        
 
@@ -339,31 +386,30 @@ class TaskIncremental(Experiment):
         self.logger.info(f"Starting at global step = {self.global_step}.")
 
     def save(self, save_dir: Path=None) -> None:
-        if not save_dir:
-            save_dir = self.checkpoints_dir
-        
+        save_dir = save_dir or self.checkpoints_dir
         save_dir.mkdir(parents=True, exist_ok=True)
+
         save_json_path = save_dir / "state.json"
+        saved_weights_path = save_dir / "model_weights.pth"
 
         if self.model:
-            self.state.model_weights_path = save_dir / "model_weights.pth"
-            
-            torch.save(self.model.state_dict(), self.state.model_weights_path)    
+            torch.save(self.model.state_dict(), saved_weights_path)    
+            self.state.model_weights_path = saved_weights_path
             self.logger.debug(f"Saved model weights to {self.state.model_weights_path}")
-        
-        
+
+        # If there are common attributes between the Experiment and the State
+        # objects, then also copy them over into the State to be saved.
+        # NOTE: (FN) This is a bit extra, I don't think its needed.
         for name, (v1, v2) in common_fields(self, self.state):
-            self.logger.info(f"Saving the {name} attribute into the 'State' object.")
+            self.logger.info(f"Copying the '{name}' attribute into the 'State' object to be saved.")
             setattr(self.state, name, v1)
-        
-        # TODO: Fix this so the global_step is nicely loaded/restored.
         self.state.global_step = self.global_step
+        
+        save_json_tmp_path = save_json_path.with_suffix(".tmp")
+        self.state.save_json(save_json_tmp_path)
+        save_json_tmp_path.replace(save_json_path)
 
-        self.state.save_json(save_json_path)
         self.logger.debug(f"Saved state to {save_json_path}")
-
-
-
 
     def make_loss_figure(self,
                     results: Dict,
@@ -443,11 +489,8 @@ class TaskIncremental(Experiment):
         Returns:
             List[List[int]]: The groups of classes for each task.
         """
-
         # download the dataset.
-        super().load_datasets()
-        assert self.dataset.train is not None
-        assert self.dataset.valid is not None
+        self.train_dataset, self.valid_dataset = super().load_datasets()
 
         # safeguard the entire training dataset.
         train_full_dataset = self.train_dataset
@@ -483,6 +526,16 @@ class TaskIncremental(Experiment):
     def on_task_switch(self, task_id: Optional[int]) -> None:
         if self.multihead:
             self.model.on_task_switch(task_id)
+
+    @property
+    def started(self) -> bool:
+        checkpoint_exists = (self.checkpoints_dir / "state.json").exists()
+        return super().started and checkpoint_exists
+
+
+def get_supervised_accuracy(cumul_loss: LossInfo) -> float:
+    # TODO: this is ugly. There is probably a cleaner way, but I can't think of it right now. 
+    return cumul_loss.losses["Test"].losses["supervised"].metrics["supervised"].accuracy
 
 
 def stack_loss_attr(losses: List[List[LossInfo]], attribute: str) -> Tensor:

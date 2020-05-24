@@ -1,18 +1,20 @@
 import itertools
+import logging
 from collections import OrderedDict
 from dataclasses import InitVar, asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union, TypeVar
 
 import torch
 from torch import Tensor
 
-from utils.utils import add_prefix
+from utils.json_utils import JsonSerializable
+from utils.utils import add_dicts, add_prefix
 
 from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                       get_metrics)
-from utils.json_utils import encode, JsonSerializable
-from utils.utils import add_dicts
+
+logger = logging.getLogger(__file__)
 
 
 @dataclass
@@ -38,8 +40,16 @@ class LossInfo(JsonSerializable):
             if y_pred is not None and y is not None:
                 self.metrics[self.name] = get_metrics(y_pred=y_pred, y=y)
         for name, tensor in self.tensors.items():
+            if not isinstance(tensor, Tensor):
+                tensor = torch.as_tensor(tensor)
             if tensor.requires_grad:
                 self.tensors[name] = tensor.detach()
+        if isinstance(self.total_loss, list):
+            self.total_loss = torch.as_tensor(self.total_loss)
+        
+        for name, loss in self.losses.items():
+            if isinstance(loss, dict):
+                self.losses[name] = LossInfo.from_dict(loss)
 
     def __add__(self, other: "LossInfo") -> "LossInfo":
         """Adds two LossInfo instances together.
@@ -116,11 +126,14 @@ class LossInfo(JsonSerializable):
         log_dict: Dict[str, Union[str, float, Dict]] = OrderedDict()
         # Log the total loss
         log_dict["loss"] = float(self.total_loss)
+        
         # Log the metrics
         metrics: Dict[str, Dict] = OrderedDict()
         for metric_name, metric in self.metrics.items():
-            metric_log_dict = metric.to_log_dict() 
-            metrics.update(metric_log_dict)
+            metric_log_dict = metric.to_log_dict(verbose=verbose)
+            if metric_name not in metrics:
+                metrics[metric_name] = OrderedDict()
+            metrics[metric_name].update(metric_log_dict)
         log_dict["metrics"] = metrics
 
         tensors: Dict[str, List] = OrderedDict()
@@ -151,10 +164,8 @@ class LossInfo(JsonSerializable):
         prefix = (self.name + " ") if self.name else ""
         return add_prefix(message, prefix)
 
-
-@encode.register
-def encode_lossinfo(obj: LossInfo) -> Dict:
-    return obj.to_log_dict()
+    def to_dict(self):
+        return self.to_log_dict(verbose=False)
 
 
 @dataclass
@@ -181,28 +192,6 @@ class TrainValidLosses(JsonSerializable):
                                          self.valid_losses.values()):
             all_loss_names.update(loss_info.losses)
         return all_loss_names
-
-    # def save_json(self, path: Path) -> None:
-    #     """ TODO: save to a json file. """
-    #     # from dataclasses import asdict
-    #     # from utils.json_utils import to_str_dict
-    #     # import json
-    #     path.mkdir(parents=True, exist_ok=True)
-    #     torch.save(self, f=str(path.with_suffix(".pt")))
-    
-    # @classmethod
-    # def try_load_json(cls, path: Path) -> Optional["TrainValidLosses"]:
-    #     try:
-    #         return cls.load_json(path)
-    #     except Exception as e:
-    #         print(f"Couldn't load from path {path}: {e}")
-    #         return None
-    
-    # @classmethod
-    # def load_json(cls, path: Path) -> Optional["TrainValidLosses"]:
-    #     path = path.with_suffix(".pt")
-    #     with open(path, 'rb') as f:
-    #         return torch.load(f)
     
     def latest_step(self) -> int:
         """Returns the latest global_step in the dicts."""

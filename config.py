@@ -14,28 +14,23 @@ import torch
 import tqdm
 import wandb
 from simple_parsing import field, mutable_field
-from simple_parsing.helpers import JsonSerializable
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
-
+from utils.json_utils import JsonSerializable
 from utils import cuda_available, gpus_available, set_seed
 
 import logging
-# loggers = [logging.getLogger()]  # get the root logger
-# loggers = loggers + [logging.getLogger(name) for name in logging.root.manager.loggerDict]
-# print(*loggers, sep="\n")
-# exit()
-
 logging.basicConfig(
     format='%(asctime)s,%(msecs)d %(levelname)-8s [./%(filename)s:%(lineno)d] %(message)s',
     datefmt='%Y-%m-%d:%H:%M:%S',
-    level=logging.INFO
+    level=logging.INFO,
 )
 logging.getLogger('simple_parsing').addHandler(logging.NullHandler())
 
+logger = logging.getLogger(__file__)
 
 @dataclass
 class Config:
@@ -132,15 +127,19 @@ class Config:
 
         config_dict = experiment.to_config_dict()
         self.run_group = self.run_group or type(experiment).__name__
-
+        # store this id to use it later when resuming
+        # run_id = wandb.util.generate_id()
+        # logger.info(f"Wandb run id: {run_id}")
         run = wandb.init(
             project='SSCL',
             name=self.run_name,
+            # id=run_id,
             group=self.run_group,
             config=config_dict,
             dir=str(self.wandb_path),
             notes=experiment.notes,
             reinit=True,
+            resume="allow",
         )
         wandb.run.save()
 
