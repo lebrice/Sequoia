@@ -42,7 +42,7 @@ class ExperimentWithEWC(ExperimentBase):
         if self.use_ewc:
             self.logger.info(f"Using EWC with a lambda of {self.ewc_lamda}")
             #TODO: n_ways should be self.n_classes_per_task, but model outputs 10 way classifier instead of self.n_classes_per_task - way
-            model = EWC_wrapper(model, lamda=self.ewc_lamda, n_ways=10, device=self.config.device)
+            model = EWC_wrapper(model, lamda=self.ewc_lamda, n_ways=100, device=self.config.device)
         return model
 
 
@@ -119,7 +119,7 @@ class EWC_wrapper(object):
         self.model = model
         self.device = device
         self.lamda = lamda
-        self.current_task_loader: Optional[DataLoader] = None
+        self.current_task_loader: DataLoader = None
         self.prior: Optional[GaussianPrior] = None
         self.n_ways: int = n_ways
         self.tasks_seen: List[int] = []
@@ -152,42 +152,36 @@ class EWC_wrapper(object):
         loss += ewc_loss
         return loss
 
-    def on_task_switch(self, task_number: int):
+    def calculate_ewc_prior(self, task_number: int):
         assert isinstance(task_number, int), f"Task number should be an int, got {task_number}"
-        
-        self.model.on_task_switch(task_number)
-        
-        if task_number > 0:
-            if task_number not in self.tasks_seen:
-                self.current_task = task_number
-                self.model.eval()
-                assert self.current_task_loader is not None, (
-                    'Task loader should be set to the loader of the current task before switching the tasks'
+        if task_number not in self.tasks_seen:
+            self.current_task = task_number
+            self.model.eval()
+            assert self.current_task_loader is not None, (
+                'Task loader should be set to the loader of the current task before switching the tasks'
+            )
+            print(f"Calculating Fisher on task {self.current_task}")
+            if self.model.current_task_id is not None:
+                #multihead
+                prior = GaussianPrior(
+                    nn.Sequential(self.model.encoder, self.model.task_classifiers[str(self.current_task)]),
+                    self.n_ways,
+                    self.current_task_loader,
+                    device=self.device
                 )
-                print(f"Calculating Fisher on task {task_number}")
-                if self.model.current_task_id is not None:
-                    #multihead
-                    prior = GaussianPrior(
-                        nn.Sequential(self.model.encoder, self.model.task_classifiers[self.current_task_id]),
-                        self.n_ways,
-                        self.current_task_loader,
-                        device=self.device
-                    )
-                else:
-                    #single_head
-                    prior = GaussianPrior(
-                        nn.Sequential(self.model.encoder, self.model.classifier),
-                        self.n_ways,
-                        self.current_task_loader,
-                        device=self.device
-                    )
-                if self.prior is not None:
-                    self.prior.consolidate(prior, task_number)
-                else:
-                    self.prior = prior
-                self.tasks_seen.append(task_number)
-                del prior
             else:
-                print(f'Task {task_number} was learned before, fisher is not updated')
+                #single_head
+                prior = GaussianPrior(
+                    nn.Sequential(self.model.encoder, self.model.classifier),
+                    self.n_ways,
+                    self.current_task_loader,
+                    device=self.device
+                )
+            if self.prior is not None:
+                self.prior.consolidate(prior, task_number)
+            else:
+                self.prior = prior
+            self.tasks_seen.append(task_number)
+            del prior
         else:
-           print('Learning task 0, no EWC')
+            print(f'Task {task_number} was learned before, fisher is not updated')

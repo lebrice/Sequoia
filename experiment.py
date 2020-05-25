@@ -339,13 +339,13 @@ class ExperimentBase(JsonSerializable):
                 items = []
                 for k, v in d.items():
                     new_key = parent_key + sep + k if parent_key else k
-                    if 'knn_losses' in k:
+                    if 'knn_losses' in k and 'Verbose' not in k:
                         task_measuree, task_measured = [int(s) for s in k if s.isdigit()]
                         mode = k.split('/')[-1]
                         if mode=='valid':
-                            avv_knn.append(message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}']['metrics']['accuracy'])
+                            avv_knn.append(message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}']['metrics']['KNN']['accuracy'])
                         items.append((f'KNN_per_task/knn_{mode}_task_{task_measured}',message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}'][
-                                                'metrics']['accuracy']))
+                                                'metrics']['KNN']['accuracy']))
 
                     elif 'cumul_losses' in k:
                         new_key = 'Cumulative'
@@ -369,6 +369,7 @@ class ExperimentBase(JsonSerializable):
                     message_dict['KNN_per_task/avv_knn'] = np.mean(avv_knn)
                 message_dict['task/currently_learned_task'] = self.state.i
                 message_dict = wandb_cleanup(message_dict)
+
             wandb.log(message_dict, step=step)
 
     def _folder(self, folder: Union[str, Path], create: bool=True) -> Path:
