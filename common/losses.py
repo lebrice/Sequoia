@@ -166,6 +166,20 @@ class LossInfo(JsonSerializable):
 
     def to_dict(self):
         return self.to_log_dict(verbose=False)
+    
+    def __getstate__(self):
+        """ We implement this to just make sure to detach the tensors if any
+        before pickling.
+        """
+        # Copy the object's state from self.__dict__ which contains
+        # all our instance attributes. Always use the dict.copy()
+        # method to avoid modifying the original state.
+        state = self.__dict__.copy()
+        for key, value in state.items():
+            if isinstance(value, Tensor) and value.requires_grad:
+                state[key] = value.detach()
+        # Remove the unpicklable entries.
+        return state
 
 
 @dataclass

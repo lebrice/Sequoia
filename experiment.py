@@ -22,7 +22,7 @@ from torch.utils.data import DataLoader, Dataset, Sampler, TensorDataset
 
 from common.losses import LossInfo, TrainValidLosses
 from common.metrics import (ClassificationMetrics, RegressionMetrics,
-                            get_metrics)
+                            get_metrics, Metrics)
 from config import Config
 from datasets import DatasetConfig
 from datasets.cifar import Cifar10, Cifar100
@@ -285,11 +285,13 @@ class ExperimentBase(JsonSerializable):
         # objects, then also copy them over into the State to be saved.
         # NOTE: (FN) This is a bit extra, I don't think its needed.
         for name, (v1, v2) in common_fields(self, self.state):
-            self.logger.info(f"Copying the '{name}' attribute into the 'State' object to be saved.")
+            self.logger.debug(f"Copying the '{name}' attribute into the 'State' object to be saved.")
             setattr(self.state, name, v1)
+        
         self.state.global_step = self.global_step
         save_dir = save_dir or self.checkpoints_dir
-        self.logger.info(f"Saving state (in background) to save_dir {save_dir}")
+        
+        self.logger.debug(f"Saving state (in background) to save_dir {save_dir}")
         self.background_queue.put({
             "save_dir": save_dir,
             "state": self.state,
@@ -313,8 +315,13 @@ class ExperimentBase(JsonSerializable):
             step = None if once else (step or self.global_step)
             if message is None:
                 return
+            message_dict: Dict
             if isinstance(message, dict):
-                message_dict = message
+                message_dict = OrderedDict()
+                for k, v in message:
+                    if isinstance(v, (LossInfo, Metrics, TrainValidLosses)):
+                        v = v.to_log_dict()
+                    message_dict[k] = v
             elif isinstance(message, LossInfo):
                 message_dict = message.to_log_dict()
             elif isinstance(message, str) and value is not None:

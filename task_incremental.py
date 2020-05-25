@@ -53,6 +53,7 @@ class State(ExperimentStateBase):
     # Cumulative losses after each task
     cumul_losses: List[Optional[LossInfo]] = list_field()
 
+
 @dataclass
 class TaskIncremental(Experiment):
     """ Evaluates the model in the same setting as the OML paper's Figure 3.
@@ -211,31 +212,36 @@ class TaskIncremental(Experiment):
                         max_epochs=self.supervised_epochs_per_task,
                         description=f"Task {i} (Supervised)",
                     )
-                    self.logger.debug(f"Size the state object: {getsizeof(self.state)}")
             
             # Save to the 'checkpoints' dir
             self.save()
-            #  Evaluate on all tasks (as described above).
-            cumul_loss = LossInfo(f"cumul_losses[{i}]")
             
             # Evaluation loop:
             for j in range(self.state.j, self.n_tasks):
+                if j == 0:
+                    #  Evaluate on all tasks (as described above).
+                    assert self.state.cumul_losses[i] is None
+                    self.state.cumul_losses[i] = LossInfo(f"cumul_losses[{i}]")
+
                 self.state.j = j
                 train_j = self.train_datasets[j]
                 valid_j = self.valid_datasets[j]
 
                 # Measure how linearly separable the representations of task j
                 # are by training and evaluating a KNNClassifier on the data of task j.
-                train_knn_loss, valid_knn_loss = self.test_knn(train_j, valid_j, description=f"KNN[{i}][{j}]")
+                train_knn_loss, valid_knn_loss = self.test_knn(
+                    train_j,
+                    valid_j,
+                    description=f"KNN[{i}][{j}]"
+                )
                 self.log({
-                    f"knn_losses/train/[{i}][{j}]": train_knn_loss.to_log_dict(),
-                    f"knn_losses/valid/[{i}][{j}]": valid_knn_loss.to_log_dict(),
+                    f"knn_losses/train/[{i}][{j}]": train_knn_loss,
+                    f"knn_losses/valid/[{i}][{j}]": valid_knn_loss,
                 })
                 self.state.knn_losses[i][j] = valid_knn_loss
-                accuracy = valid_knn_loss.metrics["KNN"].accuracy
-                loss = valid_knn_loss.total_loss
 
-                self.logger.info(f"knn_losses/valid/[{i}][{j}] Accuracy: {accuracy:.2%}, loss: {loss}")
+                accuracy = valid_knn_loss.metrics["KNN"].accuracy
+                self.logger.info(f"knn_losses/valid/[{i}][{j}] Accuracy: {accuracy:.2%}")
 
                 if j <= i:
                     # If we have previously trained on this task:
@@ -243,23 +249,28 @@ class TaskIncremental(Experiment):
                         self.on_task_switch(j)
 
                     loss_j = self.test(dataset=valid_j, description=f"task_losses[{i}][{j}]")
-                    cumul_loss += loss_j
-                    
+                    self.state.cumul_losses[i] += loss_j
                     self.state.task_losses[i][j] = loss_j
-                    self.log({f"task_losses[{i}][{j}]": loss_j.to_log_dict()})
 
-                # No need to save the model weights, as they didn't change.
-                self.save(save_model_weights=False)
+                    self.log({f"task_losses/[{i}][{j}]": loss_j})
+
+            # Save the state with the new metrics, but no need to save the
+            # model weights, as they didn't change.
+            self.save(save_model_weights=False)
             
             self.state.j = 0
-            self.state.cumul_losses[i] = cumul_loss
-            valid_log_dict = cumul_loss.to_log_dict()
-            self.log({f"cumul_losses[{i}]": valid_log_dict})
+            cumul_loss = self.state.cumul_losses[i]
+            self.log({f"cumul_losses[{i}]": cumul_loss})
 
+        # mark that we're done so we get right back here if we resume a
+        # finished experiment
         self.state.i = self.n_tasks
+        self.state.j = self.n_tasks
+
         self.save(self.results_dir) # Save to the 'results' dir.
         
         for i, cumul_loss in enumerate(self.state.cumul_losses):
+            assert cumul_loss is not None, f"cumul loss at {i} should not be None!"
             cumul_valid_accuracy = get_supervised_accuracy(cumul_loss)
             self.logger.info(f"Cumul Accuracy [{i}]: {cumul_valid_accuracy}")
             if self.config.use_wandb:
@@ -267,7 +278,11 @@ class TaskIncremental(Experiment):
 
         from utils.plotting import maximize_figure
         # Make the forward-backward transfer grid figure.
-        grid = self.make_transfer_grid_figure(self.state.knn_losses, self.state.task_losses, self.state.cumul_losses)
+        grid = self.make_transfer_grid_figure(
+            knn_losses=self.state.knn_losses,
+            task_losses=self.state.task_losses,
+            cumul_losses=self.state.cumul_losses
+        )
         grid.savefig(self.plots_dir / "transfer_grid.png")
         
         # if self.config.debug:
@@ -300,30 +315,35 @@ class TaskIncremental(Experiment):
             plt.Figure: [description]
         """
         n_tasks = len(task_losses)
-        knn_accuracies: List[List[Optional[float]]] = [[None] * n_tasks] * n_tasks # [N,N]
-        classifier_accuracies: List[List[Optional[float]]] = [[None] * n_tasks] * n_tasks # [N,N]
+        knn_accuracies = np.zeros([n_tasks, n_tasks])
+        classifier_accuracies = np.zeros([n_tasks, n_tasks])
         
         from itertools import zip_longest
         text: List[List[str]] = [[""] * n_tasks] * n_tasks # [N,N]
         fig: plt.Figure
         ax: plt.Axes
         fig, ax = plt.subplots()
+
         for i in range(n_tasks):
             for j in range(n_tasks):
-                knn_acc = knn_losses[i][j].metrics["KNN"].accuracy
+
+                knn_loss = knn_losses[i][j] 
+                knn_acc = knn_loss.metrics["KNN"].accuracy
                 knn_accuracies[i][j] = knn_acc
+                
                 if j <= i:
-                    print(task_losses[i][j])
-                    sup_acc = task_losses[i][j].losses["supervised"].metrics["supervised"].accuracy
+                    task_loss = task_losses[i][j]
+                    sup_acc = task_loss.losses["supervised"].metrics["supervised"].accuracy
+                    print(f"Supervised accuracy {i} {j}: {sup_acc:.3%}")
                 else:
-                    sup_acc = 0.
-                classifier_accuracies[i][j] = sup_acc
+                    sup_acc = np.nan
+                classifier_accuracies[i][j] = sup_acc         
         
         fig.suptitle("KNN Accuracies")
-        knn_accs = np.array(knn_accuracies)
-        logger.info(f"KNN Accuracies: {knn_accs}")
-        sup_accs = np.array(classifier_accuracies)
-        logger.info(f"Supervised Accuracies {sup_accs}")
+        knn_accs = np.array(knn_accuracies).round(2)
+        logger.info(f"KNN Accuracies: \n{knn_accs}")
+        sup_accs = np.array(classifier_accuracies).round(2)
+        logger.info(f"Supervised Accuracies: \n{sup_accs}")
     
         im = ax.imshow(knn_accs)
         
@@ -509,7 +529,11 @@ class TaskIncremental(Experiment):
 
 def get_supervised_accuracy(cumul_loss: LossInfo) -> float:
     # TODO: this is ugly. There is probably a cleaner way, but I can't think of it right now. 
-    return cumul_loss.losses["Test"].losses["supervised"].metrics["supervised"].accuracy
+    try:
+        return cumul_loss.losses["Test"].losses["supervised"].metrics["supervised"].accuracy
+    except KeyError as e:
+        print(cumul_loss)
+        raise e
 
 
 def stack_loss_attr(losses: List[List[LossInfo]], attribute: str) -> Tensor:

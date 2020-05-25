@@ -29,19 +29,17 @@ class SaverWorker(mp.Process):
             item = self.q.get()
 
     def save(self, save_dir: Path, state: ExperimentStateBase, model_state_dict: Dict[str, Tensor]=None) -> None:
-        print(
+        logger.debug(
             f"Asked to save state to path {save_dir}" +
             (f" and the model weights to path {state.model_weights_path}."
                 if model_state_dict else ".")
-        )
-        
+        )        
         save_dir.mkdir(parents=True, exist_ok=True)
 
         saved_weights_path = save_dir / "model_weights.pth"
         if model_state_dict:
             torch.save(model_state_dict, saved_weights_path)    
             state.model_weights_path = saved_weights_path
-            logger.info(f"Saved model weights to {state.model_weights_path}")
 
         save_json_path = save_dir / "state.json"
         save_json_tmp_path = save_json_path.with_suffix(".tmp")
@@ -49,5 +47,11 @@ class SaverWorker(mp.Process):
         # we don't leave the file in a corrupted state.)
         state.save_json(save_json_tmp_path)
         save_json_tmp_path.replace(save_json_path)
-
-        logger.info(f"Saved state to {save_json_path}")
+        message = {
+            "global step": state.global_step,
+        }
+        if hasattr(state, "i"):
+            message["i"] = state.i
+        if hasattr(state, "j"):
+            message["j"] = state.j
+        logging.debug(f"Finished saving state {message} to directory {save_dir}")
