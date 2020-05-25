@@ -149,7 +149,7 @@ class ExperimentBase(JsonSerializable):
                                       valid_dataset: Dataset,
                                       max_epochs: int,
                                       description: str=None,
-                                      patience: int=3) -> Tuple[Dict[int, LossInfo], Dict[int, LossInfo]]:
+                                      patience: int=None) -> Tuple[Dict[int, LossInfo], Dict[int, LossInfo]]:
         train_dataloader = self.get_dataloader(train_dataset)
         valid_dataloader = self.get_dataloader(valid_dataset)
         n_steps = len(train_dataloader)
@@ -166,6 +166,10 @@ class ExperimentBase(JsonSerializable):
         
         best_valid_loss: Optional[float] = None
         counter = 0
+
+        # Early stopping: number of validation epochs with increasing loss after
+        # which we exit training.
+        patience = patience or self.config.patience
 
         message: Dict[str, Any] = OrderedDict()
         for epoch in range(max_epochs):

@@ -69,6 +69,10 @@ class Config:
     # Save the command-line arguments that were used to create this run.
     argv: List[str] = field(init=False, default_factory=sys.argv.copy)
 
+    # Early stopping patience: number of validation epochs with increasing loss
+    # to wait for before stopping training.
+    # TODO: use an actual validation set instead of the test set for validation.
+    patience: int = 3
 
     if 'WANDB_DIR' in os.environ:
         wandb_path=Path(os.environ['WANDB_DIR'])
