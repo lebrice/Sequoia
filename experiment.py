@@ -318,7 +318,7 @@ class ExperimentBase(JsonSerializable):
             message_dict: Dict
             if isinstance(message, dict):
                 message_dict = OrderedDict()
-                for k, v in message:
+                for k, v in message.items():
                     if isinstance(v, (LossInfo, Metrics, TrainValidLosses)):
                         v = v.to_log_dict()
                     message_dict[k] = v
