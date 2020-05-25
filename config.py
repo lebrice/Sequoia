@@ -24,7 +24,7 @@ from utils import cuda_available, gpus_available, set_seed
 
 import logging
 logging.basicConfig(
-    format='%(asctime)s,%(msecs)d %(levelname)-8s [./%(filename)s:%(lineno)d] %(message)s',
+    format='%(asctime)s,%(msecs)d %(levelname)-8s [./%(name)s:%(lineno)d] %(message)s',
     datefmt='%Y-%m-%d:%H:%M:%S',
     level=logging.INFO,
 )
@@ -118,8 +118,15 @@ class Config:
             (f"run_{self.run_number}" if self.run_number is not None else ""),
         )
 
-    def get_logger(self, name: str) -> logging.Logger:
+    @staticmethod
+    def get_logger(name: str) -> logging.Logger:
         """ TODO: figure out if we should add handlers, etc. """
+        try:
+            p = Path(name)
+            if p.exists():
+                name = str(p.absolute().relative_to(Path.cwd()).as_posix())
+        except:
+            pass
         logger = logging.getLogger(name)
         return logger
 

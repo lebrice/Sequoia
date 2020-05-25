@@ -6,8 +6,8 @@ import torch
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from common.losses import LossInfo
+from common.task import Task
 from utils import cuda_available
-
 
 class AuxiliaryTask(nn.Module):
     """ Represents an additional loss to apply to a `Classifier`.
@@ -25,7 +25,7 @@ class AuxiliaryTask(nn.Module):
     # Class variables for holding the Modules shared with with the classifier. 
     encoder: ClassVar[nn.Module]
     classifier: ClassVar[nn.Module]  # type: ignore
-    preprocessing: ClassVar[Callable[[Tensor], Tensor]]
+    preprocessing: ClassVar[Callable[[Tensor, Optional[Tensor]], Tuple[Tensor, Optional[Tensor]]]]
     
     @dataclass
     class Options:
@@ -61,7 +61,7 @@ class AuxiliaryTask(nn.Module):
         self.device: torch.device = torch.device("cuda" if cuda_available else "cpu")
 
     def encode(self, x: Tensor) -> Tensor:
-        x = AuxiliaryTask.preprocessing(x)
+        x, _ = AuxiliaryTask.preprocessing(x, None)
         return AuxiliaryTask.encoder(x)
 
     def logits(self, h_x: Tensor) -> Tensor:
@@ -152,16 +152,36 @@ class AuxiliaryTask(nn.Module):
 
     @coefficient.setter
     def coefficient(self, value: float) -> None:
+        if self.enabled and value == 0:
+            self.disable()
+        elif self.disabled and value != 0:
+            self.enable()
         self.options.coefficient = value
+
+    def enable(self) -> None: 
+        """ Enable this auxiliary task. 
+        This could be used to create/allocate resources to this task.
+        """
+        pass
+
+    def disable(self) -> None:
+        """ Disable this auxiliary task and sets its coefficient to 0. 
+        This could be used to delete/deallocate resources used by this task.
+        """
+        self.options.coefficient = 0.
 
     @property
     def enabled(self) -> bool:
         return self.coefficient != 0
     
+    @property
+    def disabled(self) -> bool:
+        return not self.enabled
+
     def on_model_changed(self, global_step: int, **kwargs)-> None:
         """ Executed when the model was updated. """
         pass
     
-    def on_task_switch(self, task_id: Optional[str])-> None:
+    def on_task_switch(self, task: Task)-> None:
         """ Executed when the task switches (to either a new or known task). """
         pass

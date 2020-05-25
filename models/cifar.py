@@ -1,10 +1,13 @@
+from typing import Optional, Tuple
+
 import torch
-from torch import nn
+from torch import Tensor, nn
+from torch.nn import Flatten  # type: ignore
 from torchvision import models
 
 from common.layers import ConvBlock
 from config import Config
-from torch.nn import Flatten  # type: ignore
+
 from .classifier import Classifier
 from .pretrained_model import get_pretrained_encoder
 
@@ -46,13 +49,13 @@ class CifarClassifier(Classifier):
             config=config,
         )
     
-    def preprocess_inputs(self, x):
+    def preprocess_inputs(self, x: Tensor, y: Tensor=None) -> Tuple[Tensor, Optional[Tensor]]:
         # No special preprocessing needed.
-        x = super().preprocess_inputs(x)
+        x, y = super().preprocess_inputs(x, y)
         if self.hparams.encoder_model:
             x = normalize(x, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225], inplace=True)
             x = torch.nn.functional.interpolate(x, size=(224, 224))
-        return x 
+        return x, y
 
 
 class Cifar10Classifier(CifarClassifier):

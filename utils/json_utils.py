@@ -23,8 +23,27 @@ register_decoding_fn(Tensor, torch.as_tensor)
 register_decoding_fn(np.ndarray, np.asarray)
 
 @dataclass
-class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):
-    pass
+class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):  # type: ignore
+    
+    def dumps(self, *, sort_keys=True, **dumps_kwargs) -> str:
+        dumps_kwargs.setdefault("sort_keys", sort_keys)
+        return super().dumps(**dumps_kwargs)
+
+    def __getstate__(self):
+        """ We implement this to just make sure to detach the tensors if any
+        before pickling.
+        """
+        # Copy the object's state from self.__dict__ which contains
+        # all our instance attributes. Always use the dict.copy()
+        # method to avoid modifying the original state.
+        state = self.__dict__.copy()
+        for key, value in state.items():
+            if isinstance(value, Tensor):
+                if value.requires_grad:
+                    value = value.detach()
+                state[key] = value.cpu()
+        # Remove the unpicklable entries.
+        return state
 
 
 @encode.register
@@ -45,7 +64,6 @@ def encode_path(obj: Path) -> str:
 @encode.register
 def encode_device(obj: torch.device) -> str:
     return str(obj)
-
 
 
 def is_json_serializable(value: str):

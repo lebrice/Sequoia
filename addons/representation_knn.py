@@ -29,7 +29,10 @@ class KnnClassifierOptions:
 
 @dataclass  # type: ignore
 class ExperimentWithKNN(ExperimentBase): 
-    """ Addon that adds the option of evaluating representations with a KNN. """
+    """ Addon that adds the option of evaluating representations with a KNN.
+    
+    TODO: Perform the KNN evaluations in different processes using multiprocessing.
+    """
     knn_options: KnnClassifierOptions = mutable_field(KnnClassifierOptions)
 
     @torch.no_grad()

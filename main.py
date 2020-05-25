@@ -35,7 +35,6 @@ def launch(experiment: Experiment):
     config.run_group = config.run_group or type(experiment).__name__
 
     if experiment.config.use_wandb:
-        print(f"Using wandb. Experiment name: {config.run_name}")
         if config.run_name is None:
             # TODO: Create a run name using the coefficients of the tasks, etc?
             # At the moment, if no run name is given, ths
