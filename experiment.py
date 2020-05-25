@@ -177,9 +177,13 @@ class ExperimentBase(JsonSerializable):
             pbar.set_description(desc + " Train")
             
             for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
+                train_loss.drop_tensors()
+                
                 if batch_idx % self.config.log_interval == 0:
                     # get loss on a batch of validation data:
                     valid_loss = next(valid_loss_gen)
+                    valid_loss.drop_tensors()
+
                     valid_losses[self.global_step] = valid_loss
                     train_losses[self.global_step] = train_loss
                     
