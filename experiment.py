@@ -383,7 +383,7 @@ class ExperimentBase(JsonSerializable):
     def _folder(self, folder: Union[str, Path], create: bool=True) -> Path:
         path = self.config.log_dir / folder
         if create and not path.is_dir():
-            path.mkdir(parents=False)
+            path.mkdir(parents=True)
         return path
 
     @property
