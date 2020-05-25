@@ -158,7 +158,7 @@ class AuxiliaryTask(nn.Module):
     def enabled(self) -> bool:
         return self.coefficient != 0
     
-    def on_model_changed(self, global_step: int)-> None:
+    def on_model_changed(self, global_step: int, **kwargs)-> None:
         """ Executed when the model was updated. """
         pass
     

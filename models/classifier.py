@@ -23,6 +23,12 @@ from config import Config
 from tasks import AuxiliaryTask, AuxiliaryTaskOptions, Tasks
 from utils.utils import fix_channels
 
+
+from utils.nngeometry.nngeometry.layercollection import LayerCollection
+from utils.nngeometry.nngeometry.metrics import FIM
+from utils.nngeometry.nngeometry.object.pspace import (PSpaceBlockDiag,
+                                                       PSpaceDiag, PSpaceKFAC)
+
 logger = logging.getLogger(__file__)
 
 class Classifier(nn.Module):
@@ -192,6 +198,7 @@ class Classifier(nn.Module):
         for name, task in self.tasks.items():
             task.on_task_switch(task_id=task_id)
 
+
     @property
     def classifier(self) -> nn.Module:
         if self.current_task_id is None:
@@ -238,11 +245,11 @@ class Classifier(nn.Module):
         self.on_task_switch(starting_task_id)
         return super().load_state_dict(state_dict, strict)
     
-    def optimizer_step(self, global_step: int) -> None:
+    def optimizer_step(self, global_step: int, **kwargs) -> None:
         """Updates the model by calling `self.optimizer.step()`.
         Additionally, also informs the auxiliary tasks that the model got
         updated.
         """
         self.optimizer.step()
         for name, task in self.tasks.items():
-            task.on_model_changed(global_step=global_step) 
+            task.on_model_changed(global_step=global_step, **kwargs)

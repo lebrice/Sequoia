@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Tuple, Set, Dict
+from typing import Any, Tuple, Set, Dict, Optional
 
 import torch
+import numpy as np
 from torch import Tensor, nn
 from torch.nn import functional as F
 from collections import OrderedDict
@@ -12,6 +13,16 @@ from .auxiliary_task import AuxiliaryTask
 import logging
 
 logger = logging.getLogger(__file__)
+
+def sigmoid_rampup(current, rampup_length):
+    """Exponential rampup from https://arxiv.org/abs/1610.02242"""
+    if rampup_length == 0:
+        return 1.0
+    else:
+        current = np.clip(current, 0.0, rampup_length)
+        phase = 1.0 - current / rampup_length
+        return float(np.exp(-5.0 * phase * phase))
+
 
 def mixup(x1: Tensor, x2: Tensor, coeff: Tensor) -> Tensor:
     assert coeff.dim() == 1
@@ -68,7 +79,16 @@ class MixupTask(AuxiliaryTask):
     class Options(AuxiliaryTask.Options):
         """ Options for the Mixup (ICT) Task. """
         # Fraction of the old weights to use in the mean-teacher model. 
-        mean_teacher_mixing_coefficient: float = 0.9 
+        mean_teacher_mixing_coefficient: float = 0.9
+        consistency_rampup_starts = 5
+        consistency_rampup_ends = 100
+        mixup_consistency = 1
+
+    def get_current_consistency_weight(self, epoch, step_in_epoch, total_steps_in_epoch):
+        # Consistency ramp-up from https://arxiv.org/abs/1610.02242
+        epoch = epoch - self.options.consistency_rampup_starts
+        epoch = epoch + step_in_epoch / total_steps_in_epoch
+        return self.options.mixup_consistency * sigmoid_rampup(epoch, self.options.consistency_rampup_ends - self.options.consistency_rampup_starts)
 
     def __init__(self,
                  coefficient: float=None,
@@ -79,6 +99,9 @@ class MixupTask(AuxiliaryTask):
         # TODO: Add the mean-teacher model to the ICT.
         self.mean_encoder = deepcopy(AuxiliaryTask.encoder)
         self.mean_classifier = deepcopy(AuxiliaryTask.classifier)
+        self.epoch_in_task = 0
+        self.epoch_length = 0
+        self.update_number = 0
     
     def mean_encode(self, x: Tensor) -> Tensor:
         x = AuxiliaryTask.preprocessing(x)
@@ -87,7 +110,7 @@ class MixupTask(AuxiliaryTask):
     def mean_logits(self, h_x: Tensor) -> Tensor:
         return self.mean_classifier(h_x)
 
-    def on_model_changed(self, global_step: int)-> None:
+    def on_model_changed(self, global_step: int, **kwargs)-> None:
         """ Executed when the model was updated. """
         average_models(
             self.mean_encoder,
@@ -99,7 +122,9 @@ class MixupTask(AuxiliaryTask):
             AuxiliaryTask.classifier,
             old_frac=self.options.mean_teacher_mixing_coefficient
         )
-
+        self.epoch_in_task = kwargs.get('epoch', None)
+        self.epoch_length = kwargs.get('epoch_length', None)
+        self.update_number = kwargs.get('update_number', None)
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         #select only unlabelled examples like in ICT: https://arxiv.org/pdf/1903.03825.pdf
@@ -115,7 +140,14 @@ class MixupTask(AuxiliaryTask):
 
         from .tasks import Tasks
         loss_info = LossInfo(name=Tasks.MIXUP)
-        if batch_size > 0:
+
+        if self.epoch_in_task < self.options.consistency_rampup_starts:
+            mixup_consistency_weight = 0.0
+        else:
+            mixup_consistency_weight = self.get_current_consistency_weight(self.epoch_in_task,
+                                                                           step_in_epoch=self.update_number,
+                                                                           total_steps_in_epoch=self.epoch_length)
+        if batch_size > 0 and mixup_consistency_weight>0:
             mix_coeff = torch.rand(batch_size//2, dtype=x.dtype, device=x.device)
 
             x1 = x[0::2]
@@ -135,9 +167,13 @@ class MixupTask(AuxiliaryTask):
             loss_info.tensors["y_pred_mix"] = y_pred_mix.detach()
 
             loss = torch.dist(y_pred_mix, mix_y_pred)
-            loss_info.total_loss = loss
+
+
+            loss_info.total_loss = mixup_consistency_weight * loss
         else:
-            loss_info.total_loss = torch.tensor([0])
+            loss_info.total_loss = torch.tensor([0]).to(self.device)
+
+
 
         return loss_info
 
