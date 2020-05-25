@@ -103,8 +103,7 @@ class ExperimentBase(JsonSerializable):
         
         from save_job import SaverWorker
         self.background_queue = mp.Queue()
-        self.saver_worker = SaverWorker(self.config, self.background_queue)
-        self.saver_worker.start()
+        self.saver_worker: Optional[SaverWorker] = None
 
     def __del__(self):
         print("Destroying the 'Experiment' object.")
@@ -286,6 +285,11 @@ class ExperimentBase(JsonSerializable):
         )
     
     def save(self, save_dir: Path=None, save_model_weights: bool=True) -> None:
+        if self.saver_worker is None:
+            from save_job import SaverWorker
+            self.saver_worker = SaverWorker(self.config, self.background_queue)
+            self.saver_worker.start()
+
         # If there are common attributes between the Experiment and the State
         # objects, then also copy them over into the State to be saved.
         # NOTE: (FN) This is a bit extra, I don't think its needed.
