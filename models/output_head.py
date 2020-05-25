@@ -26,7 +26,6 @@ class OutputHead(nn.Module):
         hidden_neurons: List[int] = list_field(128)
 
         def __post_init__(self):
-            print(self.hidden_layers, self.hidden_neurons)
             # no value passed to --hidden_layers
             if self.hidden_layers == 0:
                 if len(self.hidden_neurons) == 1:
