@@ -35,6 +35,7 @@ from utils.json_utils import JsonSerializable, take_out_unsuported_values
 from utils.logging import pbar
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
 
+logger = Config.get_logger(__file__)
 
 @dataclass
 class ExperimentStateBase(JsonSerializable):
@@ -93,7 +94,7 @@ class ExperimentBase(JsonSerializable):
         self.global_step: int = 0
         self.logger = self.config.get_logger(inspect.getfile(type(self)))
         if self.config.debug:
-            self.logger.setLevel(logging.DEBUG)
+            logger.setLevel(logging.DEBUG)
         
         self._samples_dir: Optional[Path] = None
         
@@ -103,8 +104,7 @@ class ExperimentBase(JsonSerializable):
         
         from save_job import SaverWorker
         self.background_queue = mp.Queue()
-        self.saver_worker = SaverWorker(self.config, self.background_queue)
-        self.saver_worker.start()
+        self.saver_worker: Optional[SaverWorker] = None
 
     def __del__(self):
         print("Destroying the 'Experiment' object.")
@@ -150,7 +150,10 @@ class ExperimentBase(JsonSerializable):
                                       valid_dataset: Dataset,
                                       max_epochs: int,
                                       description: str=None,
-                                      patience: int=3) -> Tuple[Dict[int, LossInfo], Dict[int, LossInfo]]:
+                                      patience: int=None) -> Tuple[Dict[int, LossInfo], Dict[int, LossInfo]]:
+        # TODO: Add a way to resume training if it was previously interrupted.
+        # For instance, it might be useful to keep track of the number of epochs
+        # performed in the current task (for TaskIncremental)
         train_dataloader = self.get_dataloader(train_dataset)
         valid_dataloader = self.get_dataloader(valid_dataset)
         n_steps = len(train_dataloader)
@@ -168,6 +171,10 @@ class ExperimentBase(JsonSerializable):
         best_valid_loss: Optional[float] = None
         counter = 0
 
+        # Early stopping: number of validation epochs with increasing loss after
+        # which we exit training.
+        patience = patience or self.config.patience
+
         message: Dict[str, Any] = OrderedDict()
         for epoch in range(max_epochs):
             pbar = tqdm.tqdm(train_dataloader, total=n_steps)
@@ -177,9 +184,13 @@ class ExperimentBase(JsonSerializable):
             pbar.set_description(desc + " Train")
             
             for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
+                train_loss.drop_tensors()
+                
                 if batch_idx % self.config.log_interval == 0:
                     # get loss on a batch of validation data:
                     valid_loss = next(valid_loss_gen)
+                    valid_loss.drop_tensors()
+
                     valid_losses[self.global_step] = valid_loss
                     train_losses[self.global_step] = train_loss
                     
@@ -253,6 +264,7 @@ class ExperimentBase(JsonSerializable):
             if batch_idx % self.config.log_interval == 0:
                 message.update(total_loss.to_pbar_message())
                 pbar.set_postfix(message)
+        total_loss.drop_tensors()
         return total_loss
 
     def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
@@ -281,21 +293,33 @@ class ExperimentBase(JsonSerializable):
         )
     
     def save(self, save_dir: Path=None, save_model_weights: bool=True) -> None:
+        if self.saver_worker is None:
+            from save_job import SaverWorker
+            self.saver_worker = SaverWorker(self.config, self.background_queue)
+            self.saver_worker.start()
+
         # If there are common attributes between the Experiment and the State
         # objects, then also copy them over into the State to be saved.
         # NOTE: (FN) This is a bit extra, I don't think its needed.
         for name, (v1, v2) in common_fields(self, self.state):
-            self.logger.debug(f"Copying the '{name}' attribute into the 'State' object to be saved.")
+            logger.debug(f"Copying the '{name}' attribute into the 'State' object to be saved.")
             setattr(self.state, name, v1)
         
         self.state.global_step = self.global_step
         save_dir = save_dir or self.checkpoints_dir
         
-        self.logger.debug(f"Saving state (in background) to save_dir {save_dir}")
+        model_state_dict: Optional[Dict[str, Tensor]] = None
+        if save_model_weights:
+            model_state_dict = OrderedDict()
+            tensor: Tensor
+            for k, tensor in self.model.state_dict().items():
+                model_state_dict[k] = tensor.detach().cpu()
+
+        logger.debug(f"Saving state (in background) to save_dir {save_dir}")
         self.background_queue.put({
             "save_dir": save_dir,
             "state": self.state,
-            "model_state_dict": (self.model.state_dict() if save_model_weights else None),
+            "model_state_dict": model_state_dict,
         })
         
 
@@ -375,7 +399,7 @@ class ExperimentBase(JsonSerializable):
     def _folder(self, folder: Union[str, Path], create: bool=True) -> Path:
         path = self.config.log_dir / folder
         if create and not path.is_dir():
-            path.mkdir(parents=False)
+            path.mkdir(parents=True)
         return path
 
     @property

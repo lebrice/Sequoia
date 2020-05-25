@@ -167,19 +167,10 @@ class LossInfo(JsonSerializable):
     def to_dict(self):
         return self.to_log_dict(verbose=False)
     
-    def __getstate__(self):
-        """ We implement this to just make sure to detach the tensors if any
-        before pickling.
-        """
-        # Copy the object's state from self.__dict__ which contains
-        # all our instance attributes. Always use the dict.copy()
-        # method to avoid modifying the original state.
-        state = self.__dict__.copy()
-        for key, value in state.items():
-            if isinstance(value, Tensor) and value.requires_grad:
-                state[key] = value.detach()
-        # Remove the unpicklable entries.
-        return state
+    def drop_tensors(self) -> None:
+        self.tensors.clear()
+        for n, loss in self.losses.items():
+            loss.drop_tensors()
 
 
 @dataclass
@@ -192,13 +183,13 @@ class TrainValidLosses(JsonSerializable):
         if isinstance(other, TrainValidLosses):
             self.train_losses.update(other.train_losses)
             self.valid_losses.update(other.valid_losses)
-            return self
         elif isinstance(other, tuple):
             self.train_losses.update(other[0])
             self.valid_losses.update(other[1])
-            return self
         else:
             return NotImplemented
+        self.drop_tensors()
+        return self
 
     def all_loss_names(self) -> Set[str]:
         all_loss_names: Set[str] = set()
@@ -211,6 +202,11 @@ class TrainValidLosses(JsonSerializable):
         """Returns the latest global_step in the dicts."""
         return max(itertools.chain(self.train_losses, self.valid_losses), default=0)
 
+    def drop_tensors(self) -> None:
+        for l in self.train_losses.values():
+            l.drop_tensors()
+        for l in self.valid_losses.values():
+            l.drop_tensors()
 
 # @encode.register
 # def encode_losses(obj: TrainValidLosses) -> Dict:

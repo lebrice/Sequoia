@@ -5,7 +5,7 @@ from itertools import accumulate
 from pathlib import Path
 from random import shuffle
 from sys import getsizeof
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,6 +26,7 @@ from tasks import Tasks
 from utils import utils
 from utils.json_utils import JsonSerializable
 from utils.utils import common_fields, n_consecutive, rgetattr, rsetattr
+from common.task import Task
 
 logger = logging.getLogger(__file__)
 
@@ -35,7 +36,7 @@ class State(ExperimentStateBase):
 
     We aren't going to parse these from the command-line.
     """
-    tasks: List[List[int]] = list_field()
+    tasks: List[Task] = list_field()
 
     i: int = 0
     j: int = 0
@@ -181,7 +182,7 @@ class TaskIncremental(Experiment):
             # If we are using a multihead model, we give it the task label (so
             # that it can spawn / reuse the output head for the given task).
             if self.multihead:
-                self.on_task_switch(i)
+                self.on_task_switch(self.tasks[i])
 
             # Training and validation datasets for task i.
             train_i = self.train_datasets[i]
@@ -220,7 +221,12 @@ class TaskIncremental(Experiment):
             for j in range(self.state.j, self.n_tasks):
                 if j == 0:
                     #  Evaluate on all tasks (as described above).
-                    assert self.state.cumul_losses[i] is None
+                    if self.state.cumul_losses[i] is not None:
+                        logger.warning(
+                            f"Cumul loss at index {i} should have been None "
+                            f"but is {self.state.cumul_losses[i]}.\n"
+                            f"This value be overwritten."
+                        )
                     self.state.cumul_losses[i] = LossInfo(f"cumul_losses[{i}]")
 
                 self.state.j = j
@@ -246,7 +252,7 @@ class TaskIncremental(Experiment):
                 if j <= i:
                     # If we have previously trained on this task:
                     if self.multihead:
-                        self.on_task_switch(j)
+                        self.on_task_switch(self.tasks[j])
 
                     loss_j = self.test(dataset=valid_j, description=f"task_losses[{i}][{j}]")
                     self.state.cumul_losses[i] += loss_j
@@ -287,7 +293,6 @@ class TaskIncremental(Experiment):
         
         # if self.config.debug:
         #     grid.waitforbuttonpress(10)
-
 
         # make the plot of the losses (might not be useful, since we could also just do it in wandb).
         # fig = self.make_loss_figure(self.all_losses, self.plot_sections)
@@ -464,20 +469,21 @@ class TaskIncremental(Experiment):
         
         return fig
 
-    def create_tasks_for_dataset(self, dataset: DatasetConfig) -> List[List[int]]:
-        tasks: List[List[int]] = []
+    def create_tasks_for_dataset(self, dataset: DatasetConfig) -> List[Task]:
+        tasks: List[Task] = []
 
         # Create the tasks, if they aren't given.
         classes = list(range(dataset.y_shape[0]))
         if self.random_class_ordering:
             shuffle(classes)
         
-        for label_group in n_consecutive(classes, self.n_classes_per_task):
-            tasks.append(list(label_group))
+        for i, label_group in enumerate(n_consecutive(classes, self.n_classes_per_task)):
+            task = Task(index=i, classes=sorted(label_group))
+            tasks.append(task)
         
         return tasks
 
-    def load_datasets(self, tasks: List[List[int]]) -> List[List[int]]:
+    def load_datasets(self, tasks: List[Task]) -> None:
         """Create the train, valid and cumulative datasets for each task.
         
         Returns:
@@ -509,7 +515,6 @@ class TaskIncremental(Experiment):
             self.save_images(i, valid, prefix="valid_")
             self.save_images(i, cumul, prefix="valid_cumul_")
         
-        return tasks
 
     def save_images(self, i: int, dataset: VisionDatasetSubset, prefix: str=""):
         n = 64
@@ -517,9 +522,9 @@ class TaskIncremental(Experiment):
         self.samples_dir.mkdir(parents=True, exist_ok=True)
         save_image(samples, self.samples_dir / f"{prefix}task_{i}.png")
 
-    def on_task_switch(self, task_id: Optional[int]) -> None:
+    def on_task_switch(self, task: Task) -> None:
         if self.multihead:
-            self.model.on_task_switch(task_id)
+            self.model.on_task_switch(task)
 
     @property
     def started(self) -> bool:

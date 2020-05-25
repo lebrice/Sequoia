@@ -21,6 +21,7 @@ from typing import Dict, Iterable, List, Tuple, Union, Optional, Any
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional, Tuple, Type, Union)
 from common.losses import LossInfo, TrainValidLosses
 from simple_parsing import mutable_field, list_field
+from common.task import Task
 
 @dataclass
 class TaskIncremental_Semi_Supervised(TaskIncremental):
@@ -42,9 +43,9 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         self.valid_samplers_labelled: List[SubsetRandomSampler] = []
         self.valid_samplers_unlabelled: List[SubsetRandomSampler] = []
 
-        self.epoch = None
-        self.epoch_length = None
-        self.batch_idx = None
+        self.epoch: Optional[int] = None
+        self.epoch_length: Optional[int] = None
+        self.batch_idx: Optional[int] = None
 
     def init_model(self) -> Classifier:
         self.logger.debug("init model")
@@ -57,8 +58,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
         return model
 
-
-    def load_datasets(self, tasks: List[List[int]]) -> List[List[int]]:
+    def load_datasets(self, tasks: List[Task]) -> None:
         """Create the train, valid and cumulative datasets for each task.
 
         Returns:
@@ -99,8 +99,6 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             self.save_images(i, train, prefix="train_")
             self.save_images(i, valid, prefix="valid_")
             self.save_images(i, cumul, prefix="valid_cumul_")
-
-        return tasks
 
     def get_dataloaders(self,
                        dataset: Dataset,
@@ -199,7 +197,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             # If we are using a multihead model, we give it the task label (so
             # that it can spawn / reuse the output head for the given task).
             if self.multihead:
-                self.on_task_switch(i)
+                self.on_task_switch(self.tasks[i])
             # EWC_specific: pass EWC_rapper the loader to compute fisher
             # call befor task change
             # ====================
@@ -308,7 +306,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
                 if j <= i:
                     # If we have previously trained on this task:
-                    self.on_task_switch(j)
+                    self.on_task_switch(self.tasks[j])
 
                     loss_j = self.test(dataloader=valid_dataloader_labelled, description=f"task_losses[{i}][{j}]")
                     cumul_loss += loss_j
@@ -370,7 +368,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
             if j <= i:
                 # If we have previously trained on this task:
-                self.on_task_switch(j)
+                self.on_task_switch(self.tasks[j])
 
                 loss_j = self.test(dataloader=valid_dataloader_labelled, description=f"task_losses[{i}][{j}]")
                 cumul_loss += loss_j

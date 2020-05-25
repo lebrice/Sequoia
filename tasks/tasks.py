@@ -16,7 +16,9 @@ from .simclr.simclr_task import SimCLRTask
 from .transformation_based import (AdjustBrightnessTask,
                                    ClassifyTransformationTask,
                                    RegressTransformationTask, RotationTask)
+from config import Config
 
+logger = Config.get_logger(__file__)
 
 class Tasks:
     """Enum-like class that just holds the names of each task.
@@ -76,4 +78,8 @@ class AuxiliaryTaskOptions:
         if self.simclr:
             tasks[Tasks.SIMCLR] = SimCLRTask(options=self.simclr)
         return cast(Dict[str, AuxiliaryTask], tasks)
+        for name, task in tasks.items():
+            if task.coefficient != 0:
+                logger.info(f"enabling the '{name}' auxiliary task (coefficient of {task.coefficient})")
+                task.enable()
         return tasks

@@ -8,13 +8,13 @@ from PIL.Image import Image
 from torch import Tensor
 from torch.utils.data import TensorDataset, Dataset
 from torchvision.transforms import Normalize
-
+from common.task import Task
 
 class VisionDatasetSubset(TensorDataset):
     """
     Subset of a dataset containing only the given labels.
     """
-    def __init__(self, dataset: Dataset, labels: Sequence[int]):
+    def __init__(self, dataset: Dataset, labels: Union[Sequence[int], Task]):
         """Creates a Dataset from the x's in `dataset` whose y's are in `labels`.
         
         Args:
@@ -22,6 +22,8 @@ class VisionDatasetSubset(TensorDataset):
             labels (Sequence[int]): The set of labels (targets) to keep.
         """
         self.dataset = dataset
+        if isinstance(labels, Task):
+            labels = labels.classes
         self.labels: Set[int] = set(labels)
         # get the mask to select only the relevant items.
         mask = get_mask(self.dataset, self.labels)

@@ -24,7 +24,7 @@ from utils import cuda_available, gpus_available, set_seed
 
 import logging
 logging.basicConfig(
-    format='%(asctime)s,%(msecs)d %(levelname)-8s [./%(filename)s:%(lineno)d] %(message)s',
+    format='%(asctime)s,%(msecs)d %(levelname)-8s [./%(name)s:%(lineno)d] %(message)s',
     datefmt='%Y-%m-%d:%H:%M:%S',
     level=logging.INFO,
 )
@@ -69,12 +69,16 @@ class Config:
     # Save the command-line arguments that were used to create this run.
     argv: List[str] = field(init=False, default_factory=sys.argv.copy)
 
+    # Early stopping patience: number of validation epochs with increasing loss
+    # to wait for before stopping training.
+    # TODO: use an actual validation set instead of the test set for validation.
+    patience: int = 3
 
-    if 'WANDB_DIR' in os.environ:
-        wandb_path=Path(os.environ['WANDB_DIR'])
-    else:
-        wandb_path = './results'
-
+    # Path where the wandb files should be stored. If the 'WANDB_DIR'
+    # environment variable is set, uses that value. Otherwise, defaults to
+    # the value of "<log_dir_root>/wandb"
+    wandb_path: Optional[Path] = Path(os.environ['WANDB_DIR']) if "WANDB_DIR" in os.environ else None
+    
     def __post_init__(self):
         # set the manual seed (for reproducibility)
         set_seed(self.random_seed + (self.run_number or 0))
@@ -114,8 +118,15 @@ class Config:
             (f"run_{self.run_number}" if self.run_number is not None else ""),
         )
 
-    def get_logger(self, name: str) -> logging.Logger:
+    @staticmethod
+    def get_logger(name: str) -> logging.Logger:
         """ TODO: figure out if we should add handlers, etc. """
+        try:
+            p = Path(name)
+            if p.exists():
+                name = str(p.absolute().relative_to(Path.cwd()).as_posix())
+        except:
+            pass
         logger = logging.getLogger(name)
         return logger
 
@@ -124,12 +135,18 @@ class Config:
             # TODO: Create a run name using the coefficients of the tasks, etc?
             # At the moment, if no run name is given, the 'random' name from wandb is used.
             pass
-
+        logger.info(f"Using wandb. Experiment name: {self.run_name}")
         config_dict = experiment.to_config_dict()
         self.run_group = self.run_group or type(experiment).__name__
-        # store this id to use it later when resuming
+
+        if self.wandb_path is None:
+            self.wandb_path = self.log_dir_root / "wandb"
+        self.wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
+
+        # TODO: add *proper* wandb resuming, probaby by using @nitarshan 's md5 id cool idea. 
         # run_id = wandb.util.generate_id()
         # logger.info(f"Wandb run id: {run_id}")
+
         run = wandb.init(
             project='SSCL_resnet18_2',
             name=self.run_name,

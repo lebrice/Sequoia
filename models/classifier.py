@@ -1,15 +1,17 @@
 import copy
 import logging
+import os
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import (Any, Dict, List, NamedTuple, Optional, Tuple, Type,
                     TypeVar, Union)
 
 import torch
 from simple_parsing import MutableField as mutable_field
-from simple_parsing import choice, field
+from simple_parsing import choice, field, list_field
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -19,15 +21,12 @@ from torchvision.utils import save_image
 from common.layers import ConvBlock, Flatten
 from common.losses import LossInfo
 from common.metrics import accuracy, get_metrics
+from common.task import Task
 from config import Config
+from models.output_head import OutputHead
 from tasks import AuxiliaryTask, AuxiliaryTaskOptions, Tasks
+from utils.json_utils import JsonSerializable
 from utils.utils import fix_channels
-
-
-from utils.nngeometry.nngeometry.layercollection import LayerCollection
-from utils.nngeometry.nngeometry.metrics import FIM
-from utils.nngeometry.nngeometry.object.pspace import (PSpaceBlockDiag,
-                                                       PSpaceDiag, PSpaceKFAC)
 
 logger = logging.getLogger(__file__)
 
@@ -49,6 +48,9 @@ class Classifier(nn.Module):
         # Prevent gradients of the classifier from backpropagating into the encoder.
         detach_classifier: bool = False
 
+        # Hyperparameters of the "output head" module.
+        output_head: OutputHead.HParams = mutable_field(OutputHead.HParams)
+
         # Use an encoder architecture from the torchvision.models package.
         encoder_model: Optional[str] = choice({
             "vgg16": models.vgg16,  # This is the only one tested so far.
@@ -68,21 +70,18 @@ class Classifier(nn.Module):
             # "wide_resnet50_2": models.wide_resnet50_2,
             # "mnasnet": models.mnasnet1_0,
         }, default=None)
+
         # Use the pretrained weights of the ImageNet model from torchvision.
         pretrained_model: bool = False
         # Freeze the weights of the pretrained encoder (except the last layer,
         # which projects from their hidden size to ours).
         freeze_pretrained_model: bool = False
-
-
         aux_tasks: AuxiliaryTaskOptions = field(default_factory=AuxiliaryTaskOptions)
 
     def __init__(self,
                  input_shape: Tuple[int, ...],
                  num_classes: int,
                  encoder: nn.Module,
-                 classifier: nn.Module,
-                #  auxiliary_task_options: AuxiliaryTaskOptions,
                  hparams: HParams,
                  config: Config):
         super().__init__()
@@ -91,40 +90,56 @@ class Classifier(nn.Module):
         # Feature extractor
         self.encoder = encoder
         # Classifier output layer
-        self._classifier = classifier
         self.hparams: Classifier.HParams = hparams
         self.config = config
+        self.logger = self.config.get_logger(__file__)
 
         self.hidden_size = hparams.hidden_size  
         self.classification_loss = nn.CrossEntropyLoss()
         self.device = self.config.device
+
+        # Classes of the current "task".
+        # By default, contains all the classes in `range(0, self.num_classes)`.
+        # When using a multihead approach (e.g. EWC), set `current_task` to the
+        # classes found within the current task when training or evaluating.
+        # NOTE: Order matters: task (0, 1) is not the same as (1, 0) (for now)
+        # TODO: Replace the multiple classifier heads with something like CN-DPM so we can actually do task-free CL.
+        self._default_task = Task(classes=list(range(self.num_classes)))
+        self._current_task = self._default_task
+        
+        # Dictionary that maps from task classes to output head to be used.
+        # By default, contains a single output head that serves all classes.
+        self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()  # type: ignore 
+         # Classifier for the default task.
+
+        self.output_heads[self._current_task.dumps()] = OutputHead(
+            input_size=self.hidden_size,
+            output_size=self.num_classes,
+            hparams=self.hparams.output_head,
+        )
+
+        self.logger.info(f"output heads: {self.output_heads}")
 
         # Share the relevant parameters with all the auxiliary tasks.
         # We do this by setting class attributes.
         AuxiliaryTask.hidden_size   = self.hparams.hidden_size
         AuxiliaryTask.input_shape   = self.input_shape
         AuxiliaryTask.encoder       = self.encoder
-        AuxiliaryTask.classifier    = self._classifier
+        AuxiliaryTask.classifier    = self.classifier # TODO: Also update this class attribute when switching tasks. 
         AuxiliaryTask.preprocessing = self.preprocess_inputs
         
         # Dictionary of auxiliary tasks.
-        self.tasks: Dict[str, AuxiliaryTask] = self.hparams.aux_tasks.create_tasks(  # type: ignore
+        self.tasks: Dict[str, AuxiliaryTask] = self.hparams.aux_tasks.create_tasks(
             input_shape=input_shape,
             hidden_size=self.hparams.hidden_size
         )
 
-        # Current task label. (Optional, as we shouldn't rely on this.)
-        # TODO: Replace the classifier model with something like CN-DPM or CURL,
-        # so we can actually do task-free CL.
-        self._current_task_id: Optional[str] = None
-        # Dictionary of classifiers to use if we are provided the task-label.
-        self.task_classifiers: Dict[str, nn.Module] = nn.ModuleDict()  #type: ignore  
-
+        
         if self.config.debug and self.config.verbose:
-            logger.debug(self)
-            logger.debug("Auxiliary tasks:")
+            self.logger.debug(self)
+            self.logger.debug("Auxiliary tasks:")
             for task_name, task in self.tasks.items():
-                logger.debug(f"{task.name}: {task.coefficient}")
+                self.logger.debug(f"{task.name}: {task.coefficient}")
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)  
 
@@ -143,7 +158,12 @@ class Classifier(nn.Module):
         return loss_info
 
     def get_loss(self, x: Tensor, y: Tensor=None) -> LossInfo:
+        if y is not None and y.shape[0] != x.shape[0]:
+            raise RuntimeError("Whole batch can either be fully labeled or "
+                               "fully unlabeled, but not a mix of both (for now)")
+
         total_loss = LossInfo("Train" if self.training else "Test")
+        x, y = self.preprocess_inputs(x, y)
         h_x = self.encode(x)
         y_pred = self.logits(h_x)
         
@@ -152,8 +172,9 @@ class Classifier(nn.Module):
         total_loss.tensors["h_x"] = h_x.detach()
         total_loss.tensors["y_pred"] = y_pred.detach()
 
+        # TODO: [improvement] Support a mix of labeled / unlabeled data.
         if y is not None:
-            supervised_loss = self.supervised_loss(x=x[:len(y)], y=y, h_x=h_x[:len(y)], y_pred=y_pred[:len(y)])
+            supervised_loss = self.supervised_loss(x=x, y=y, h_x=h_x, y_pred=y_pred)
             total_loss += supervised_loss
 
         for task_name, aux_task in self.tasks.items():
@@ -163,15 +184,14 @@ class Classifier(nn.Module):
         
         if self.config.debug and self.config.verbose:
             for name, loss in total_loss.losses.items():
-                logger.debug(name, loss.total_loss, loss.metrics)
+                self.logger.debug(name, loss.total_loss, loss.metrics)
         return total_loss
 
-
     def encode(self, x: Tensor):
-        x = self.preprocess_inputs(x)
+        x, _ = self.preprocess_inputs(x, None)
         return self.encoder(x)
 
-    def preprocess_inputs(self, x: Tensor) -> Tensor:
+    def preprocess_inputs(self, x: Tensor, y: Tensor=None) -> Tuple[Tensor, Optional[Tensor]]:
         """Preprocess the input tensor x before it is passed to the encoder.
         
         By default this does nothing. When subclassing the Classifier or 
@@ -188,62 +208,95 @@ class Classifier(nn.Module):
         Tensor
             The preprocessed inputs.
         """
-        return fix_channels(x)
+        # Process 'x'
+        x = fix_channels(x)
 
-    def on_task_switch(self, task_id: Optional[Union[int, str]]) -> None:
-        if isinstance(task_id, int):
-            task_id = str(task_id)
-        self.current_task_id = task_id
+        if y is not None:
+            # y_unique are the (sorted) unique values found within the batch.
+            # idx[i] holds the index of the value at y[i] in y_unique, s.t. for
+            # all i in range(0, len(y)) --> y[i] == y_unique[idx[i]]
+            y_unique, idx = y.unique(sorted=True, return_inverse=True)
+            # TODO: Could maybe decide which output head to use depending on the labels
+            # (perhaps like the "labels trick" from https://arxiv.org/abs/1803.10123)
+            if set(y_unique.tolist()) != set(self.current_task.classes):
+                print(y)
+                print(self.current_task, y_unique)
+                print(y_unique)            
+                print(idx)
+                raise RuntimeError(
+                    f"There are labels in the batch that aren't part of the "
+                    f"current task! \n(Current task: {self.current_task}, "
+                    f"batch labels: {y_unique})"
+                )
+
+            # NOTE: No need to do this when in the default task (all classes).
+            if self.current_task != self._default_task:
+                # if we are in the default task, no need to do this.
+                # Re-label the given batch so the losses/metrics work correctly.
+                new_y = torch.empty_like(y)
+                for i, label in enumerate(self.current_task.classes):
+                    new_y[y == label] = i
+                y = new_y            
+        return x, y
+
+    def on_task_switch(self, task: Task) -> None:
+        """Indicates to the model that it is working on a new task.
+
+        Args:
+            task_classes (Tuple[int, ...]): Tuple of integers, indicates the classes that are currently trained on.
+        """
+        self.current_task = task
         # also inform the auxiliary tasks that the task switched.
-        for name, task in self.tasks.items():
-            task.on_task_switch(task_id=task_id)
+        for name, aux_task in self.tasks.items():
+            aux_task.on_task_switch(task=task)
 
 
     @property
     def classifier(self) -> nn.Module:
-        if self.current_task_id is None:
-            return self._classifier
-        else:
-            return self.task_classifiers[self.current_task_id]
+        return self.output_heads[self.current_task.dumps()]
 
     @property
-    def current_task_id(self) -> Optional[str]:
-        return self._current_task_id
+    def current_task(self) -> Task:
+        return self._current_task
 
-    @current_task_id.setter
-    def current_task_id(self, value: Optional[Union[int, str]]):
-        value_str: Optional[str] = str(value) if isinstance(value, int) else value
-        self._current_task_id = value_str
-        # If there isn't a classifier for this task
-        if value_str and value_str not in self.task_classifiers.keys():
-            if self.config.debug:
-                logger.info(f"Creating a new classifier for taskid {value}.")
-            # Create one starting from the "global" classifier.
-            classifier = copy.deepcopy(self._classifier)
-            self.task_classifiers[value_str] = classifier
-            self.optimizer.add_param_group({"params": classifier.parameters()})
+    @current_task.setter
+    def current_task(self, task: Task):
+        assert isinstance(task, Task), f"Please set the current_task by passing a `Task` object."
+        self._current_task = task
+        
+        task_str = task.dumps()
+        # If there isn't an output head for this task
+        if task_str not in self.output_heads:
+            self.logger.debug(f"Creating a new output head for task {task}.")
+            new_output_head = OutputHead(
+                input_size=self.hidden_size,
+                output_size=len(task.classes),
+                hparams=self.hparams.output_head,
+            ).to(self.device)
+            self.output_heads[task_str] = new_output_head
+            self.optimizer.add_param_group({"params": new_output_head.parameters()})
+
+        # Update the classifier used by auxiliary tasks:
+        AuxiliaryTask.classifier = self.classifier
 
     def logits(self, h_x: Tensor) -> Tensor:
         if self.hparams.detach_classifier:
             h_x = h_x.detach()
-
-        # Use the "general" classifier by default.
-        classifier = self.classifier
-        # If a task-id is given, use the task-specific classifier.
-        if self.current_task_id is not None:
-            classifier = self.task_classifiers[self.current_task_id]
-        return classifier(h_x)
+        return self.classifier(h_x)
     
-    def load_state_dict(self, state_dict: Dict[str, Tensor], strict: bool=True) -> Tuple[List[str], List[str]]:
-        starting_task_id = self.current_task_id
+    def load_state_dict(self, state_dict: Dict[str, Tensor], strict: bool=False) -> Tuple[List[str], List[str]]:
+        starting_task = self.current_task
         # Set the task ID attribute to create all the needed output heads. 
         for key in state_dict:
-            if key.startswith("task_classifiers"):
-                task_id = key.split(".")[1]
-                self.on_task_switch(task_id)
+            if key.startswith("output_heads"):
+                task_json_str = key.split(".")[1]
+                task = Task.loads(task_json_str)
+                self.on_task_switch(task)
         # Reset the task_id to the starting value.
-        self.on_task_switch(starting_task_id)
-        return super().load_state_dict(state_dict, strict)
+        self.on_task_switch(starting_task)
+        missing, unexpected = super().load_state_dict(state_dict, strict)
+        # TODO: Make sure the mean-encoder and mean-output-head modules are loaded property when using Mixup.
+        return missing, unexpected
     
     def optimizer_step(self, global_step: int, **kwargs) -> None:
         """Updates the model by calling `self.optimizer.step()`.

@@ -8,10 +8,11 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 from collections import OrderedDict
 from common.losses import LossInfo
+from common.task import Task
 
 from .auxiliary_task import AuxiliaryTask
 import logging
-
+from config import Config
 logger = logging.getLogger(__file__)
 
 def sigmoid_rampup(current, rampup_length):
@@ -96,15 +97,27 @@ class MixupTask(AuxiliaryTask):
                  options: "MixupTask.Options"=None):
         super().__init__(coefficient=coefficient, name=name, options=options)
         self.options: MixupTask.Options
-        # TODO: Add the mean-teacher model to the ICT.
+        self.logger = Config.get_logger(__file__)
+        
+        # Exponential moving average versions of the encoder and output head. 
+        self.mean_encoder: nn.Module
+        self.mean_classifier: nn.Module
+        self.previous_task: Optional[Task] = None
+
+        self.epoch_in_task: Optional[int] = 0
+        self.epoch_length:  Optional[int] = 0
+        self.update_number: Optional[int] = 0
+
+    def enable(self):
         self.mean_encoder = deepcopy(AuxiliaryTask.encoder)
         self.mean_classifier = deepcopy(AuxiliaryTask.classifier)
-        self.epoch_in_task = 0
-        self.epoch_length = 0
-        self.update_number = 0
-    
+
+    def disable(self):
+        del self.mean_encoder
+        del self.mean_classifier
+
     def mean_encode(self, x: Tensor) -> Tensor:
-        x = AuxiliaryTask.preprocessing(x)
+        x, _ = AuxiliaryTask.preprocessing(x, None)
         return self.mean_encoder(x)
 
     def mean_logits(self, h_x: Tensor) -> Tensor:
@@ -112,26 +125,31 @@ class MixupTask(AuxiliaryTask):
 
     def on_model_changed(self, global_step: int, **kwargs)-> None:
         """ Executed when the model was updated. """
-        average_models(
-            self.mean_encoder,
-            AuxiliaryTask.encoder,
-            old_frac=self.options.mean_teacher_mixing_coefficient
-        )
-        average_models(
-            self.mean_classifier,
-            AuxiliaryTask.classifier,
-            old_frac=self.options.mean_teacher_mixing_coefficient
-        )
-        self.epoch_in_task = kwargs.get('epoch', None)
-        self.epoch_length = kwargs.get('epoch_length', None)
-        self.update_number = kwargs.get('update_number', None)
+        self.epoch_in_task = kwargs.get('epoch')
+        self.epoch_length = kwargs.get('epoch_length')
+        self.update_number = kwargs.get('update_number')
+        if self.enabled:
+            average_models(
+                self.mean_encoder,
+                AuxiliaryTask.encoder,
+                old_frac=self.options.mean_teacher_mixing_coefficient
+            )
+            average_models(
+                self.mean_classifier,
+                AuxiliaryTask.classifier,
+                old_frac=self.options.mean_teacher_mixing_coefficient
+            )
+    
+    def on_task_switch(self, task: Task) -> None:
+        if self.enabled and task != self.previous_task:
+            self.logger.info(f"Discarding the mean classifier on switch to task {task}")
+            self.mean_classifier = deepcopy(AuxiliaryTask.classifier)
+            self.previous_task = task
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
-        #select only unlabelled examples like in ICT: https://arxiv.org/pdf/1903.03825.pdf
-        x = x[len(y):]
-        h_x = h_x[len(y):]
+        # select only unlabelled examples like in ICT: https://arxiv.org/pdf/1903.03825.pdf
+        # TODO: fix this, y may be None, which would break this.
         batch_size = x.shape[0]
-        y_pred = y_pred[len(y):]
 
         # assert batch_size % 2  == 0, f"Can only mix an even number of samples. (batch size is {batch_size})"
         if batch_size % 2 != 0:
@@ -147,7 +165,7 @@ class MixupTask(AuxiliaryTask):
             mixup_consistency_weight = self.get_current_consistency_weight(self.epoch_in_task,
                                                                            step_in_epoch=self.update_number,
                                                                            total_steps_in_epoch=self.epoch_length)
-        if batch_size > 0 and mixup_consistency_weight>0:
+        if batch_size > 0 and mixup_consistency_weight > 0:
             mix_coeff = torch.rand(batch_size//2, dtype=x.dtype, device=x.device)
 
             x1 = x[0::2]
