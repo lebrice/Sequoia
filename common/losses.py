@@ -180,6 +180,11 @@ class LossInfo(JsonSerializable):
                 state[key] = value.detach()
         # Remove the unpicklable entries.
         return state
+    
+    def drop_tensors(self) -> None:
+        self.tensors.clear()
+        for n, loss in self.losses.items():
+            loss.drop_tensors()
 
 
 @dataclass
@@ -192,13 +197,13 @@ class TrainValidLosses(JsonSerializable):
         if isinstance(other, TrainValidLosses):
             self.train_losses.update(other.train_losses)
             self.valid_losses.update(other.valid_losses)
-            return self
         elif isinstance(other, tuple):
             self.train_losses.update(other[0])
             self.valid_losses.update(other[1])
-            return self
         else:
             return NotImplemented
+        self.drop_tensors()
+        return self
 
     def all_loss_names(self) -> Set[str]:
         all_loss_names: Set[str] = set()
@@ -211,6 +216,11 @@ class TrainValidLosses(JsonSerializable):
         """Returns the latest global_step in the dicts."""
         return max(itertools.chain(self.train_losses, self.valid_losses), default=0)
 
+    def drop_tensors(self) -> None:
+        for l in self.train_losses.values():
+            l.drop_tensors()
+        for l in self.valid_losses.values():
+            l.drop_tensors()
 
 # @encode.register
 # def encode_losses(obj: TrainValidLosses) -> Dict:

@@ -253,6 +253,7 @@ class ExperimentBase(JsonSerializable):
             if batch_idx % self.config.log_interval == 0:
                 message.update(total_loss.to_pbar_message())
                 pbar.set_postfix(message)
+        total_loss.drop_tensors()
         return total_loss
 
     def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
