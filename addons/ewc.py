@@ -117,13 +117,17 @@ class EWC_wrapper(object):
         Wrapper constructor.
         @param model: Classifier to wrap
         '''
-        self.model = model
+        self._model = model
         self.device = device
         self.lamda = lamda
         self.current_task_loader: DataLoader = None
         self.prior: Optional[GaussianPrior] = None
         self.n_ways: int = n_ways
         self.tasks_seen: List[int] = []
+
+    @property
+    def model(self) -> Classifier:
+        return self._model
 
     def __getattr__(self, attr):
         # see if this object has attr
@@ -155,30 +159,33 @@ class EWC_wrapper(object):
 
     def on_task_switch(self, task: Task) -> None:
         self.calculate_ewc_prior(task)
+        self.model.model.on_task_switch(task)
 
     def calculate_ewc_prior(self, task: Task):
         task_number: int = task.index
         assert isinstance(task_number, int), f"Task number should be an int, got {task_number}"
+        if task_number>0:
+            if task_number not in self.tasks_seen:
+                self.model.eval()
+                assert self.current_task_loader is not None, (
+                    'Task loader should be set to the loader of the current task before switching the tasks'
+                )
+                print(f"Calculating Fisher on task {self.current_task}")
+                #single_head OR multi_head
+                prior = GaussianPrior(
 
-        if task_number not in self.tasks_seen:
-            self.current_task = task
-            self.model.eval()
-            assert self.current_task_loader is not None, (
-                'Task loader should be set to the loader of the current task before switching the tasks'
-            )
-            print(f"Calculating Fisher on task {self.current_task}")
-            #single_head OR multi_head
-            prior = GaussianPrior(
-                nn.Sequential(self.model.encoder, self.model.classifier),
-                self.n_ways,
-                self.current_task_loader,
-                device=self.device
-            )
-            if self.prior is not None:
-                self.prior.consolidate(prior, task_number)
+                    nn.Sequential(self.model.model.encoder, self.model.model.classifier),
+                    self.n_ways,
+                    self.current_task_loader,
+                    device=self.device
+                )
+                if self.prior is not None:
+                    self.prior.consolidate(prior, task_number)
+                else:
+                    self.prior = prior
+                self.tasks_seen.append(task_number)
+                del prior
             else:
-                self.prior = prior
-            self.tasks_seen.append(task_number)
-            del prior
+                print(f'Task {task_number} was learned before, fisher is not updated')
         else:
-            print(f'Task {task_number} was learned before, fisher is not updated')
+            print('No EWC on task 0')

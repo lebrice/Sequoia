@@ -50,11 +50,11 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     def init_model(self) -> Classifier:
         self.logger.debug("init model")
         model = super().init_model()
-        model = Analyser(model)
+        #model = Analyser(model)
         if self.ewc_lamda>0:
             self.logger.info(f"Using EWC with a lambda of {self.ewc_lamda}")
             #TODO: n_ways should be self.n_classes_per_task, but model outputs 10 way classifier instead of self.n_classes_per_task - way
-            model = EWC_wrapper(model, lamda=self.ewc_lamda, n_ways=100, device=self.config.device)
+            model = EWC_wrapper(model, lamda=self.ewc_lamda, n_ways=self.n_classes_per_task, device=self.config.device)
 
         return model
 
@@ -172,6 +172,9 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         if self.state.global_step == 0:
             self.logger.info("Starting from scratch!")
             self.state.tasks = self.create_tasks_for_dataset(self.dataset)
+        else:
+            self.logger.info(f"Starting from global step {self.state.global_step}")
+            self.logger.info(f"i={self.state.i}, j={self.state.j}")
 
         self.tasks = self.state.tasks
         #if not self.config.debug:
@@ -198,32 +201,10 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             # that it can spawn / reuse the output head for the given task).
             if self.multihead:
                 self.on_task_switch(self.tasks[i])
-            # EWC_specific: pass EWC_rapper the loader to compute fisher
-            # call befor task change
-            # ====================
-            if self.ewc_lamda > 0 and i > 0:
-                train_past = self.train_datasets[i - 1]
-                train_sampler_labeled_past = self.train_samplers_labelled[i - 1]
-                train_sampler_unlabelled_past = self.train_samplers_unlabelled[i - 1]
-                past_train_loader, _ = self.get_dataloaders(
-                    train_past,
-                    train_sampler_labeled_past,
-                    train_sampler_unlabelled_past)
-                if self.config.debug:
-                    sampler_train_, sampler_train_unlabelled_ = get_semi_sampler(
-                        Subset(train_past, range(200)).dataset.targets[:200], p=self.ratio_labelled)
-                    self.model.current_task_loader = self.get_dataloaders(
-                        Subset(train_past, range(200)),
-                        train_sampler_labeled_past,
-                        train_sampler_unlabelled_past
-                    )[0]
-                else:
-                    self.model.current_task_loader = past_train_loader
-                self.model.calculate_ewc_prior(i-1)
-            # ====================
-            if i > 0:
-                fisher_norm, sum = self.model.analyse_curvature(i - 1, self.multihead, train_dataloader_labelled, 100)
-                self.log({'Curvature/fisher_norm': fisher_norm, 'Curvature/sum_eigenvalues': sum})
+
+            #if i > 0:
+            #    fisher_norm, sum = self.model.analyse_curvature(i - 1, self.multihead, train_dataloader_labelled, 100)
+            #    self.log({'Curvature/fisher_norm': fisher_norm, 'Curvature/sum_eigenvalues': sum})
 
             # Training and validation datasets for task i.
             # train_i, sampler_train_i, sampler_unlabelled_i = self.train_datasets[i]
@@ -236,6 +217,16 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             valid_i = self.valid_datasets[i]
             valid_sampler_labelled_i = self.valid_samplers_labelled[i]
             valid_sampler_unlabelled_i = self.valid_samplers_unlabelled[i]
+
+            # EWC_specific: pass EWC_rapper the loader to compute fisher
+            # call befor task change
+            # ====================
+            if self.ewc_lamda > 0:
+                self.model.current_task_loader = self.get_dataloaders(
+                    dataset=train_i,
+                    sampler_labelled=train_sampler_labeled_i,
+                    sampler_unlabelled=train_sampler_unlabelled_i)[0]
+            # ====================
 
 
             with self.plot_region_name(f"Learn Task {i}"):
@@ -499,7 +490,8 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
     def train_batch_semi_sup(self, data: Tensor, target: Optional[Tensor], u: Tensor) -> LossInfo:
         self.model.optimizer.zero_grad()
-        batch_loss_info = self.model.get_loss(torch.cat((data,u), dim=0), target)
+        batch_loss_info = self.model.get_loss(data, target) + self.model.get_loss(u, None)
+
         total_loss = batch_loss_info.total_loss
         total_loss.backward()
         self.model.optimizer_step(global_step=self.global_step,
@@ -507,7 +499,6 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                                   epoch_length=self.epoch_length,
                                   update_number=self.batch_idx)
         self.global_step += data.shape[0]
-        return batch_loss_info
         return batch_loss_info
 
 
