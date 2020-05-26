@@ -119,7 +119,7 @@ class ExperimentBase(JsonSerializable):
     def cleanup(self):
         print("Cleaning up after the experiment is done.")
         self.background_queue.put(None)
-        if self.saver_worker.is_alive():
+        if self.saver_worker and self.saver_worker.is_alive():
             self.saver_worker.join()
         print("Successfully closed everything")
 
