@@ -21,7 +21,7 @@ from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from config import Config
 from datasets import DatasetConfig
 from datasets.subset import VisionDatasetSubset
-from experiment import Experiment, ExperimentStateBase
+from experiment import Experiment
 from tasks import Tasks
 from utils import utils
 from utils.json_utils import JsonSerializable
@@ -29,30 +29,6 @@ from utils.utils import common_fields, n_consecutive, rgetattr, rsetattr
 from common.task import Task
 
 logger = logging.getLogger(__file__)
-
-@dataclass
-class State(ExperimentStateBase):
-    """Object that contains all the state we want to be able to save/restore.
-
-    We aren't going to parse these from the command-line.
-    """
-    tasks: List[Task] = list_field()
-
-    i: int = 0
-    j: int = 0
-
-    # Container for the losses. At index [i, j], gives the validation
-    # metrics on task j after having trained on tasks [0:i], for 0 < j <= i.
-    task_losses: List[List[Optional[LossInfo]]] = list_field()
-
-    # Container for the KNN metrics. At index [i, j], gives the accuracy of
-    # a KNN classifier trained on the representations of the samples from
-    # task [i], evaluated on the representations of the the samples of task j.
-    # NOTE: The representations for task i are obtained using the encoder
-    # which was trained on tasks 0 through i.
-    knn_losses: List[List[LossInfo]] = list_field()
-    # Cumulative losses after each task
-    cumul_losses: List[Optional[LossInfo]] = list_field()
 
 
 @dataclass
@@ -78,12 +54,29 @@ class TaskIncremental(Experiment):
     # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
     restore_from_path: Optional[Path] = None
 
-    ###
-    ##  Fields that contain the state (not to be parsed from the command-line)
-    ## TODO: Figure out a neater way to separate the two than with init=False.
-    ###
-    state: State = mutable_field(State, init=False)
+    @dataclass
+    class State(Experiment.State):
+        """Object that contains all the state we want to be able to save/restore.
 
+        We aren't going to parse these from the command-line.
+        """
+        tasks: List[Task] = list_field()
+
+        i: int = 0
+        j: int = 0
+
+        # Container for the losses. At index [i, j], gives the validation
+        # metrics on task j after having trained on tasks [0:i], for 0 < j <= i.
+        task_losses: List[List[Optional[LossInfo]]] = list_field()
+
+        # Container for the KNN metrics. At index [i, j], gives the accuracy of
+        # a KNN classifier trained on the representations of the samples from
+        # task [i], evaluated on the representations of the the samples of task j.
+        # NOTE: The representations for task i are obtained using the encoder
+        # which was trained on tasks 0 through i.
+        knn_losses: List[List[LossInfo]] = list_field()
+        # Cumulative losses after each task
+        cumul_losses: List[Optional[LossInfo]] = list_field()
 
     def __post_init__(self):
         """ NOTE: fields that are created in __post_init__ aren't serialized to/from json! """
@@ -92,7 +85,6 @@ class TaskIncremental(Experiment):
         self.train_datasets: List[VisionDatasetSubset] = []
         self.valid_datasets: List[VisionDatasetSubset] = []
         self.valid_cumul_datasets: List[VisionDatasetSubset] = []
-        self.state = State()
 
     def run(self):
         """Evaluates a model/method in the classical "task-incremental" setting.
@@ -390,7 +382,7 @@ class TaskIncremental(Experiment):
             state_json_path = self.checkpoints_dir / "state.json"
 
         # Load the 'State' object from json
-        self.state = State.load_json(state_json_path)
+        self.state = self.State.load_json(state_json_path)
 
         # If any attributes are common to both the Experiment and the State,
         # copy them over to the Experiment.

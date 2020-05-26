@@ -190,6 +190,16 @@ class TrainValidLosses(JsonSerializable):
             return NotImplemented
         self.drop_tensors()
         return self
+    
+    def __setitem__(self, index: int, value: Tuple[LossInfo, LossInfo]) -> None:
+        self.train_losses[index] = value[0].detach()
+        self.valid_losses[index] = value[1].detach()
+
+    def __getitem__(self, index: int) -> Tuple[LossInfo, LossInfo]:
+        return (
+            self.train_losses[index],
+            self.valid_losses[index]
+        )
 
     def all_loss_names(self) -> Set[str]:
         all_loss_names: Set[str] = set()
@@ -201,6 +211,20 @@ class TrainValidLosses(JsonSerializable):
     def latest_step(self) -> int:
         """Returns the latest global_step in the dicts."""
         return max(itertools.chain(self.train_losses, self.valid_losses), default=0)
+
+    def add_step(self, offset: int):
+        """Adds the value of `offset` to all the keys in the dictionary.
+        Args:
+            offset (int): A value to add to all the keys.
+        """
+        new_train_losses: Dict[int, LossInfo] = OrderedDict()
+        new_valid_losses: Dict[int, LossInfo] = OrderedDict()
+        for k in list(self.train_losses.keys()):
+            new_train_losses[k + offset] = self.train_losses.pop(k)
+        for k in list(self.valid_losses.keys()):
+            new_valid_losses[k + offset] = self.valid_losses.pop(k)
+        self.train_losses = new_train_losses
+        self.valid_losses = new_valid_losses
 
     def drop_tensors(self) -> None:
         for l in self.train_losses.values():

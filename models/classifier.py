@@ -218,7 +218,7 @@ class Classifier(nn.Module):
             y_unique, idx = y.unique(sorted=True, return_inverse=True)
             # TODO: Could maybe decide which output head to use depending on the labels
             # (perhaps like the "labels trick" from https://arxiv.org/abs/1803.10123)
-            if set(y_unique.tolist()) != set(self.current_task.classes):
+            if not (set(y_unique.tolist()) <= set(self.current_task.classes)):
                 print(y)
                 print(self.current_task, y_unique)
                 print(y_unique)            

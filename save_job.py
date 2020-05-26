@@ -1,7 +1,7 @@
 import torch
 import torch.multiprocessing as mp
 from pathlib import Path
-from experiment import ExperimentStateBase, Experiment
+from experiment import Experiment
 import logging
 logger = mp.get_logger()
 logger.setLevel(logging.DEBUG)
@@ -10,6 +10,8 @@ from torch import Tensor
 from config import Config
 import wandb
 from models.classifier import Classifier
+from utils.json_utils import JsonSerializable
+
 
 class SaverWorker(mp.Process):
     def __init__(self, config: Config, q: mp.Queue):
@@ -28,12 +30,14 @@ class SaverWorker(mp.Process):
                 self.save(**item)
             item = self.q.get()
 
-    def save(self, save_dir: Path, state: ExperimentStateBase, model_state_dict: Dict[str, Tensor]=None) -> None:
+    def save(self, save_dir: Path, state: Experiment.State, model_state_dict: Dict[str, Tensor]=None) -> None:
+        # TODO: Make this work for any kind of JsonSerializable object, not just State.
+        # (Use functools.singledispatch to choose what kind of saving to do.)
         logger.debug(
-            f"Asked to save state to path {save_dir}" +
+            f"Asked to save {type(state)} object to path {save_dir}." +
             (f" and the model weights to path {state.model_weights_path}."
                 if model_state_dict else ".")
-        )        
+        )
         save_dir.mkdir(parents=True, exist_ok=True)
 
         saved_weights_path = save_dir / "model_weights.pth"

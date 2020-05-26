@@ -37,17 +37,6 @@ from utils.utils import add_prefix, common_fields, is_nonempty_dir
 
 logger = Config.get_logger(__file__)
 
-@dataclass
-class ExperimentStateBase(JsonSerializable):
-    """ Dataclass used to store the state of the experiment.
-    
-    This object should contain everything we want to be able to save/restore.
-    NOTE: We aren't going to parse these from the command-line.
-    """
-    global_step: int = 0
-    model_weights_path: Optional[Path] = None
-    # Container for train/valid losses that are logged periodically.
-    all_losses: TrainValidLosses = mutable_field(TrainValidLosses, repr=False)
 
 
 @dataclass  # type: ignore
@@ -71,6 +60,18 @@ class ExperimentBase(JsonSerializable):
     model: Classifier = field(default=None, init=False)
 
     no_wandb_cleanup: bool = False
+        
+    @dataclass
+    class State(JsonSerializable):
+        """ Dataclass used to store the state of the experiment.
+        
+        This object should contain everything we want to be able to save/restore.
+        NOTE: We aren't going to parse these from the command-line.
+        """
+        global_step: int = 0
+        model_weights_path: Optional[Path] = None
+        # Container for train/valid losses that are logged periodically.
+        all_losses: TrainValidLosses = mutable_field(TrainValidLosses, repr=False)
 
     def __post_init__(self):
         """ Called after __init__, used to initialize all missing fields.
@@ -105,6 +106,8 @@ class ExperimentBase(JsonSerializable):
         from save_job import SaverWorker
         self.background_queue = mp.Queue()
         self.saver_worker: Optional[SaverWorker] = None
+
+        self.state = self.State()
 
     def __del__(self):
         print("Destroying the 'Experiment' object.")
@@ -150,10 +153,15 @@ class ExperimentBase(JsonSerializable):
                                       valid_dataset: Dataset,
                                       max_epochs: int,
                                       description: str=None,
-                                      patience: int=None) -> Tuple[Dict[int, LossInfo], Dict[int, LossInfo]]:
+                                      patience: int=None,
+                                      temp_save_file: Path=None) -> TrainValidLosses:
         # TODO: Add a way to resume training if it was previously interrupted.
         # For instance, it might be useful to keep track of the number of epochs
         # performed in the current task (for TaskIncremental)
+
+        # TODO: save/load the `all_losses` object to temp_save_file at a given
+        # interval during training, using a saver thread.
+
         train_dataloader = self.get_dataloader(train_dataset)
         valid_dataloader = self.get_dataloader(valid_dataset)
         n_steps = len(train_dataloader)
@@ -163,14 +171,17 @@ class ExperimentBase(JsonSerializable):
             n_steps = self.config.debug_steps
             train_dataloader = islice(train_dataloader, 0, n_steps)  # type: ignore
 
-        train_losses: Dict[int, LossInfo] = OrderedDict()
-        valid_losses: Dict[int, LossInfo] = OrderedDict()
+        all_losses = TrainValidLosses()
+        # Get the latest step
+        # NOTE: At the moment, will always be zero, but if we reload
+        # `all_losses` from a file, would give you the step to start from.
+        starting_step = all_losses.latest_step()
 
         valid_loss_gen = self.valid_performance_generator(valid_dataset)
         
         best_valid_loss: Optional[float] = None
         counter = 0
-
+        
         # Early stopping: number of validation epochs with increasing loss after
         # which we exit training.
         patience = patience or self.config.patience
@@ -191,9 +202,8 @@ class ExperimentBase(JsonSerializable):
                     valid_loss = next(valid_loss_gen)
                     valid_loss.drop_tensors()
 
-                    valid_losses[self.global_step] = valid_loss
-                    train_losses[self.global_step] = train_loss
-                    
+                    all_losses[self.global_step] = (train_loss, valid_loss)
+
                     message.update(train_loss.to_pbar_message())
                     message.update(valid_loss.to_pbar_message())
                     pbar.set_postfix(message)
@@ -216,7 +226,7 @@ class ExperimentBase(JsonSerializable):
                 if counter == patience:
                     print(f"Exiting at step {self.global_step}, as validation loss hasn't decreased over the last {patience} epochs.")
                     break
-        return train_losses, valid_losses
+        return all_losses
 
     def valid_performance_generator(self, valid_dataset: Dataset) -> Generator[LossInfo, None, None]:
         periodic_valid_dataloader = self.get_dataloader(valid_dataset)
