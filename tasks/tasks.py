@@ -77,9 +77,10 @@ class AuxiliaryTaskOptions:
             tasks[Tasks.BRIGHTNESS] = AdjustBrightnessTask(options=self.brightness)
         if self.simclr:
             tasks[Tasks.SIMCLR] = SimCLRTask(options=self.simclr)
-        return cast(Dict[str, AuxiliaryTask], tasks)
+        
         for name, task in tasks.items():
+            assert isinstance(task, AuxiliaryTask), f"Task {task} should be a subclass of {AuxiliaryTask}."
             if task.coefficient != 0:
                 logger.info(f"enabling the '{name}' auxiliary task (coefficient of {task.coefficient})")
                 task.enable()
-        return tasks
+        return cast(Dict[str, AuxiliaryTask], tasks)
