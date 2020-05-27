@@ -179,7 +179,7 @@ class ExperimentBase(JsonSerializable):
 
         valid_loss_gen = self.valid_performance_generator(valid_dataset)
         
-        best_valid_loss: Optional[float] = None
+        best_valid_acc: Optional[float] = None
         counter = 0
         
         # Early stopping: number of validation epochs with increasing loss after
@@ -215,16 +215,16 @@ class ExperimentBase(JsonSerializable):
             # perform a validation epoch.
             val_desc = desc + " Valid"
             val_loss_info = self.test(valid_dataset, description=val_desc)
-            val_loss = val_loss_info.total_loss
+            val_acc = val_loss_info.metrics[Tasks.SUPERVISED].accuracy
             
-            if best_valid_loss is None or val_loss.item() < best_valid_loss:
+            if best_valid_acc is None or val_acc.item() > best_valid_acc:
                 counter = 0
-                best_valid_loss = val_loss.item()
+                best_valid_acc = val_acc.item()
             else:
                 counter += 1
-                print(f"Validation Loss hasn't decreased over the last {counter} epochs.")
+                print(f"Validation Acc hasn't increased over the last {counter} epochs.")
                 if counter == patience:
-                    print(f"Exiting at step {self.global_step}, as validation loss hasn't decreased over the last {patience} epochs.")
+                    print(f"Exiting at step {self.global_step}, as validation acc hasn't increased over the last {patience} epochs.")
                     break
         return all_losses
 
