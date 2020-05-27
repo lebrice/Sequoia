@@ -513,9 +513,9 @@ class TaskIncremental(Experiment):
         self.samples_dir.mkdir(parents=True, exist_ok=True)
         save_image(samples, self.samples_dir / f"{prefix}task_{i}.png")
 
-    def on_task_switch(self, task: Task) -> None:
+    def on_task_switch(self, task: Task, **kwargs) -> None:
         if self.multihead:
-            self.model.on_task_switch(task)
+            self.model.on_task_switch(task=task, **kwargs)
 
     @property
     def started(self) -> bool:

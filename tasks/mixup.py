@@ -116,7 +116,7 @@ class MixupTask(AuxiliaryTask):
         # consistency_rampup_starts
         consistency_rampup_starts: int = 1
         # consistency_rampup_ends
-        consistency_rampup_ends: int = 100
+        consistency_rampup_ends: int = 20
         # mixup_consistency
         mixup_consistency: float = 1.
         # mixup_usup_alpha
@@ -178,7 +178,7 @@ class MixupTask(AuxiliaryTask):
                 old_frac=self.options.mean_teacher_mixing_coefficient
             )
     
-    def on_task_switch(self, task: Task) -> None:
+    def on_task_switch(self, task: Task, **kwargs) -> None:
         if self.enabled and task != self.previous_task:
             self.logger.info(f"Discarding the mean classifier on switch to task {task}")
             self.mean_classifier = deepcopy(AuxiliaryTask.classifier)
@@ -230,8 +230,6 @@ class MixupTask(AuxiliaryTask):
             loss_info.tensors["y_pred_mix"] = y_pred_mix.detach()
             loss = self.consistency_criterion(mix_y_pred, y_pred_mix) / batch_size  #
             #loss = torch.dist(y_pred_mix, mix_y_pred)
-
-
             loss_info.total_loss = mixup_consistency_weight * loss
         else:
             loss_info.total_loss = torch.tensor([0]).to(self.device)

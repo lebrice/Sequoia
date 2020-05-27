@@ -9,6 +9,7 @@ from .auxiliary_task import AuxiliaryTask
 from .irm import IrmTask
 from .jigsaw_puzzle import JigsawPuzzleTask
 from .mixup import ManifoldMixupTask, MixupTask
+from .ewc import EWC
 from .patch_location import PatchLocationTask
 from .reconstruction.ae import AEReconstructionTask
 from .reconstruction.vae import VAEReconstructionTask
@@ -36,6 +37,7 @@ class Tasks:
     IRM: ClassVar[str] = "irm"
     BRIGHTNESS: ClassVar[str] = "adjust_brightness"
     SIMCLR: ClassVar[str] = "simclr"
+    EWC: ClassVar[str] = "ewc"
 
 
 @dataclass
@@ -54,6 +56,7 @@ class AuxiliaryTaskOptions:
     irm:            IrmTask.Options               = mutable_field(IrmTask.Options)
     brightness:     AdjustBrightnessTask.Options  = mutable_field(AdjustBrightnessTask.Options)
     simclr:         SimCLRTask.Options            = mutable_field(SimCLRTask.Options)
+    ewc:            EWC.Options                   = mutable_field(EWC.Options)
 
     def create_tasks(self,
                     input_shape: Tuple[int, ...],
@@ -77,6 +80,8 @@ class AuxiliaryTaskOptions:
             tasks[Tasks.BRIGHTNESS] = AdjustBrightnessTask(options=self.brightness)
         if self.simclr:
             tasks[Tasks.SIMCLR] = SimCLRTask(options=self.simclr)
+        if self.ewc:
+            tasks[Tasks.EWC] = EWC(options=self.ewc)
         
         for name, task in tasks.items():
             assert isinstance(task, AuxiliaryTask), f"Task {task} should be a subclass of {AuxiliaryTask}."
