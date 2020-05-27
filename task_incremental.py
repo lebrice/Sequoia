@@ -237,7 +237,6 @@ class TaskIncremental(Experiment):
                     f"knn_losses/valid/[{i}][{j}]": valid_knn_loss,
                 })
                 self.state.knn_losses[i][j] = valid_knn_loss
-
                 accuracy = valid_knn_loss.metrics["KNN"].accuracy
                 self.logger.info(f"knn_losses/valid/[{i}][{j}] Accuracy: {accuracy:.2%}")
 

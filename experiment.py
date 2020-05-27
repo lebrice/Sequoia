@@ -176,16 +176,12 @@ class ExperimentBase(JsonSerializable):
         # NOTE: At the moment, will always be zero, but if we reload
         # `all_losses` from a file, would give you the step to start from.
         starting_step = all_losses.latest_step()
+        
+        convergence_checker = self.check_for_convergence()
+        next(convergence_checker)
 
         valid_loss_gen = self.valid_performance_generator(valid_dataset)
         
-        best_valid_acc: Optional[float] = None
-        counter = 0
-        
-        # Early stopping: number of validation epochs with increasing loss after
-        # which we exit training.
-        patience = patience or self.config.patience
-
         message: Dict[str, Any] = OrderedDict()
         for epoch in range(max_epochs):
             pbar = tqdm.tqdm(train_dataloader, total=n_steps)
@@ -215,18 +211,57 @@ class ExperimentBase(JsonSerializable):
             # perform a validation epoch.
             val_desc = desc + " Valid"
             val_loss_info = self.test(valid_dataset, description=val_desc)
-            val_acc = val_loss_info.metrics[Tasks.SUPERVISED].accuracy
             
-            if best_valid_acc is None or val_acc.item() > best_valid_acc:
+            converged = convergence_checker.send(val_loss_info)
+            if converged:
+                convergence_checker.close()
+                break
+            
+        return all_losses
+
+    def check_for_convergence(self, patience: int=3, use_acc: bool=False) -> Generator[bool, LossInfo, None]:
+        """Generator for early stopping. Yields wether or not convergence was reached.
+
+        Args:
+            patience (int, optional): Early stopping patience (epochs). Defaults to 3.
+            use_acc (bool, optional): If True, uses accuracy, else uses loss. Defaults to False.
+
+        Yields:
+            Generator[bool, LossInfo, None]: Wether or not the model converged yet.
+        """
+        best_valid_perf: Optional[float] = None
+        counter = 0
+        
+        # Early stopping: number of validation epochs with increasing loss after
+        # which we exit training.
+        patience = patience or self.config.patience
+        converged = False
+        
+        while True:
+            val_loss_info = yield converged
+            if not val_loss_info:
+                break
+
+            val_loss = val_loss_info.total_loss.item()
+            val_acc = val_loss_info.metrics[Tasks.SUPERVISED].accuracy
+
+            if use_acc and (best_valid_perf is None or val_acc > best_valid_perf):
                 counter = 0
-                best_valid_acc = val_acc.item()
+                best_valid_perf = val_acc
+            elif not use_acc and (best_valid_perf is None or val_loss < best_valid_perf):
+                counter = 0
+                best_valid_perf = val_loss
             else:
                 counter += 1
-                print(f"Validation Acc hasn't increased over the last {counter} epochs.")
+                message = (
+                    f"Validation {'accuracy' if use_acc else 'loss'} hasn't "
+                    f"{'increased' if use_acc else 'decreased'} over the last "
+                    f"{counter} epochs."
+                )
+                logger.info(message)
                 if counter == patience:
-                    print(f"Exiting at step {self.global_step}, as validation acc hasn't increased over the last {patience} epochs.")
-                    break
-        return all_losses
+                    converged = True
+
 
     def valid_performance_generator(self, valid_dataset: Dataset) -> Generator[LossInfo, None, None]:
         periodic_valid_dataloader = self.get_dataloader(valid_dataset)
