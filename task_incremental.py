@@ -515,7 +515,7 @@ class TaskIncremental(Experiment):
 
     def on_task_switch(self, task: Task, **kwargs) -> None:
         if self.multihead:
-            self.model.on_task_switch(task=task, **kwargs)
+            self.model.on_task_switch(task, **kwargs)
 
     @property
     def started(self) -> bool:

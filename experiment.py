@@ -523,12 +523,12 @@ class ExperimentBase(JsonSerializable):
 
 # Load up the addons, each of which adds independent, useful functionality to the Experiment base-class.
 # TODO: This might not be the cleanest/most elegant way to do it, but it's better than having files with 1000 lines in my opinion.
-from addons import (ExperimentWithEWC, ExperimentWithKNN, ExperimentWithVAE,
+from addons import (ExperimentWithKNN, ExperimentWithVAE,
                     LabeledPlotRegionsAddon, TestTimeTrainingAddon)
 
 
 @dataclass  # type: ignore
-class Experiment(ExperimentWithEWC, ExperimentWithKNN, ExperimentWithVAE,
+class Experiment(ExperimentWithKNN, ExperimentWithVAE,
                  TestTimeTrainingAddon, LabeledPlotRegionsAddon, ):
     """ Describes the parameters of an experimental setting.
     

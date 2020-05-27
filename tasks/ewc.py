@@ -126,7 +126,8 @@ class EWC(AuxiliaryTask):
         assert isinstance(task_number, int), f"Task number should be an int, got {task_number}"
         if task_number>0:
             if task_number not in self.tasks_seen:
-                self.model.eval()
+                AuxiliaryTask.encoder.eval()
+                AuxiliaryTask.classifier.eval()
                 assert self.current_task_loader is not None, (
                     'Task loader should be set to the loader of the current task before switching the tasks'
                 )

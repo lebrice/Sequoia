@@ -10,7 +10,6 @@ from torch.utils.data import Subset
 from datasets.subset import VisionDatasetSubset
 from common.losses import LossInfo
 from datasets.ss_dataset import get_semi_sampler
-from addons.ewc import EWC_wrapper
 from addons.curvature_analyser import Analyser
 from collections import OrderedDict, defaultdict
 from itertools import accumulate
@@ -27,11 +26,10 @@ from common.task import Task
 class TaskIncremental_Semi_Supervised(TaskIncremental):
     """ Evaluates the model in the same setting as the OML paper's Figure 3.
     """
+
     unsupervised_epochs_per_task: int = 0
+
     supervised_epochs_per_task: int = 10
-    # Coefficient of the EWC regularizer. Higher lamda -> more penalty for
-    # changing the parameters between tasks.
-    ewc_lamda: float = 10.
 
     # Ratio of samples that have a corresponding label.
     ratio_labelled: float = 0.2
@@ -52,14 +50,10 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         self.epoch_length: Optional[int] = None
         self.batch_idx: Optional[int] = None
 
-    #def init_model(self) -> Classifier:
-    #    self.logger.debug("init model")
-    #    model = super().init_model()
-    #    # model = Analyser(model)
-    #    if self.ewc_lamda > 0:
-    #        self.logger.info(f"Using EWC with a lambda of {self.ewc_lamda}")
-    #        model = EWC_wrapper(model, lamda=self.ewc_lamda, n_ways=self.n_classes_per_task, device=self.config.device)
-    #     return model
+    def init_model(self) -> Classifier:
+        self.logger.debug("init model")
+        model = super().init_model()
+        return model
 
     def load_datasets(self, tasks: List[Task]) -> None:
         """Create the train, valid and cumulative datasets for each task.
@@ -218,7 +212,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             # If we are using a multihead model, we give it the task label (so
             # that it can spawn / reuse the output head for the given task).
             if self.multihead:
-                self.on_task_switch(task=self.tasks[i], train_loader = self.get_dataloaders(
+                self.on_task_switch(self.tasks[i], train_loader = self.get_dataloaders(
                     dataset=train_i,
                     sampler_labelled=train_sampler_labeled_i,
                     sampler_unlabelled=train_sampler_unlabelled_i)[0])
@@ -402,6 +396,11 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 pbar.set_postfix(message)
         total_loss.drop_tensors()
         return total_loss
+
+    def on_task_switch(self, task: Task, **kwargs) -> None:
+        if self.multihead:
+            self.model.on_task_switch(task, **kwargs)
+
 
     def train_until_convergence(self, train_dataset: Tuple[Dataset, SubsetRandomSampler, SubsetRandomSampler],
                                 valid_dataset: Tuple[Dataset, SubsetRandomSampler, SubsetRandomSampler],
