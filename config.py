@@ -80,7 +80,9 @@ class Config:
     # environment variable is set, uses that value. Otherwise, defaults to
     # the value of "<log_dir_root>/wandb"
     wandb_path: Optional[Path] = Path(os.environ['WANDB_DIR']) if "WANDB_DIR" in os.environ else None
-    
+
+    #wandb project name
+    wandb_project: str = 'SSCL'
     def __post_init__(self):
         # set the manual seed (for reproducibility)
         set_seed(self.random_seed + (self.run_number or 0))
@@ -150,7 +152,7 @@ class Config:
         # logger.info(f"Wandb run id: {run_id}")
 
         run = wandb.init(
-            project='SSCL_resnet18_2',
+            project=self.wandb_project,
             name=self.run_name,
             # id=run_id,
             group=self.run_group,
