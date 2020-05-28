@@ -34,7 +34,7 @@ from utils import utils
 from utils.json_utils import JsonSerializable, take_out_unsuported_values
 from utils.logging import pbar
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
-
+from utils.early_stopping import EarlyStoppingOptions, early_stopping
 logger = Config.get_logger(__file__)
 
 
@@ -154,27 +154,22 @@ class ExperimentBase(JsonSerializable):
               valid_dataloader: Union[Dataset, DataLoader],                
               epochs: int,                
               description: str=None,
-              early_stopping_patience: int=None,
+              early_stopping_options: EarlyStoppingOptions=None,
               use_accuracy_as_metric: bool=None,                
               temp_save_file: Path=None) -> TrainValidLosses:
         """Trains on the `train_dataloader` and evaluates on `valid_dataloader`.
 
         Periodically evaluates on validation batches during each epoch, as well
         as doing a full pass through the validation dataset after each epoch.
-
-        If `early_stopping_patience` is a positive int, then an early stopping
-        hook is added, which will stop training after `early_stopping_patience`
-        epochs show a worse performance than the best one observed so far.
-
         The weights at the point at which the model had the best validation
         performance are always re-loaded at the end.
         
-        NOTE: If `early_stopping_patience` is None, then the value from
-        `self.config.early_stopping_patience` is used. Same goes for
+        NOTE: If `early_stopping_options` is None, then the value from
+        `self.config.early_stopping` is used. Same goes for
         `use_accuracy_as_metric`.
         
-        NOTE: The losses are no logged, you should log them yourself after this
-        method completes.
+        NOTE: The losses are no logged to wandb, so you should log them yourself
+        after this method completes.
 
         TODO: Add a way to resume training if it was previously interrupted.
         For instance, it might be useful to keep track of the number of epochs
@@ -191,8 +186,8 @@ class ExperimentBase(JsonSerializable):
             - epochs (int): Number of epochs to train for. 
             - description (str, optional): A description to use in the
                 progressbar. Defaults to None.
-            - early_stopping_patience (int, optional): [description]. Defaults to
-                None.
+            - early_stopping_options (EarlyStoppingOptions, optional): Options
+                for configuring the early stopping hook. Defaults to None.
             - use_accuracy_as_metric (bool, optional): If `True`, accuracy will
                 be used as a measure of performance. Otherwise, the total
                 validation loss is used. Defaults to False.
@@ -210,30 +205,25 @@ class ExperimentBase(JsonSerializable):
             valid_dataloader = self.get_dataloader(valid_dataloader)
         
         steps_per_epoch = len(train_dataloader)
-        logger.debug(f"Steps per epoch: {steps_per_epoch}")
-        epoch_n_samples: int = steps_per_epoch * self.hparams.batch_size
-
-        # List to hold the length of each epoch (should normally be all the same value.)
-        epoch_lengths: List[int] = []
-
         if self.config.debug_steps:
             from itertools import islice
             steps_per_epoch = self.config.debug_steps
             train_dataloader = islice(train_dataloader, 0, steps_per_epoch)  # type: ignore
+        logger.debug(f"Steps per epoch: {steps_per_epoch}")
 
         all_losses = TrainValidLosses()
         # Get the latest step
         # NOTE: At the moment, will always be zero, but if we reload
         # `all_losses` from a file, would give you the step to start from.
-        starting_step = all_losses.latest_step()
+        starting_step = all_losses.latest_step() or self.global_step
         
-        if early_stopping_patience is None:
-            early_stopping_patience = self.config.early_stopping_patience
+        if early_stopping_options is None:
+            early_stopping_options = self.config.early_stopping
         if use_accuracy_as_metric is None:
             use_accuracy_as_metric = self.config.use_accuracy_as_metric
 
-        if early_stopping_patience:
-            logger.info(f"Using early stopping with a patience of {early_stopping_patience}")
+        if early_stopping_options:
+            logger.info(f"Using early stopping with options {early_stopping_options}")
         
         # Hook to keep track of the best model.
         best_model_watcher = self.keep_best_model(
@@ -243,17 +233,20 @@ class ExperimentBase(JsonSerializable):
         next(best_model_watcher)
         
         # Hook to test for convergence.
-        convergence_checker = self.early_stopping(
+        convergence_checker = early_stopping(
+            options=early_stopping_options,
             use_acc=use_accuracy_as_metric,
-            patience=early_stopping_patience
         )
         next(convergence_checker)
-
+        
+        # Hook for evaluating the validation performance periodically.
         valid_loss_gen = self.valid_performance_generator(valid_dataloader)
         
         # Message for the progressbar
         message: Dict[str, Any] = OrderedDict()
-        
+        # List to hold the length of each epoch (should all be the same length)
+        epoch_lengths: List[int] = []
+
         for epoch in range(1, epochs+1):
             pbar = tqdm.tqdm(train_dataloader, total=steps_per_epoch)
             desc = description or "" 
@@ -324,9 +317,11 @@ class ExperimentBase(JsonSerializable):
             self.model.load_state_dict(state_dict)
         
         best_perf: Optional[float] = None
-        best_step: int = 0
+        
+        step = self.global_step
+        best_step: int = step
 
-        loss_info: Optional[LossInfo] = (yield)
+        loss_info: Optional[LossInfo] = (yield step)
 
         while loss_info is not None:
             step = self.global_step
@@ -353,52 +348,6 @@ class ExperimentBase(JsonSerializable):
         # Reload the weights of the best model.
         logger.info(f"Reloading weights of the best model (global step: {best_step})")
         load_weights()
-
-    def early_stopping(self, patience: int=3, use_acc: bool=False, min_delta: float=0.) -> Generator[bool, LossInfo, None]:
-        """Generator for early stopping. Yields wether or not convergence was reached.
-
-        Args:
-            patience (int, optional): Early stopping patience (epochs). Defaults to 3.
-            use_acc (bool, optional): If True, uses accuracy, else uses loss. Defaults to False.
-
-        Yields:
-            Generator[bool, LossInfo, None]: Wether or not the model converged yet.
-        """
-        best_valid_perf: Optional[float] = None
-        counter = 0
-        
-        # Early stopping: number of validation epochs with increasing loss after
-        # which we exit training.
-        converged = False
-        
-        while True:
-            val_loss_info = yield converged
-            if not val_loss_info:
-                break
-            
-            if not patience:
-                continue
-
-            val_loss = val_loss_info.total_loss.item()
-            val_acc = val_loss_info.metrics[Tasks.SUPERVISED].accuracy
-
-            if use_acc and (best_valid_perf is None or val_acc > (best_valid_perf + min_delta)):
-                counter = 0
-                best_valid_perf = val_acc
-            elif not use_acc and (best_valid_perf is None or val_loss < (best_valid_perf - min_delta)):
-                counter = 0
-                best_valid_perf = val_loss
-            else:
-                counter += 1
-                message = (
-                    f"Validation {'accuracy' if use_acc else 'loss'} hasn't "
-                    f"{'increased' if use_acc else 'decreased'} over the last "
-                    f"{counter} epochs."
-                )
-                logger.info(message)
-                if counter == patience:
-                    converged = True
-
 
 
     def valid_performance_generator(self, valid_dataloader: Union[Dataset, DataLoader]) -> Generator[LossInfo, None, None]:

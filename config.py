@@ -21,6 +21,8 @@ from torchvision import datasets, transforms
 from torchvision.utils import save_image
 from utils.json_utils import JsonSerializable
 from utils import cuda_available, gpus_available, set_seed
+from utils.early_stopping import EarlyStoppingOptions
+
 
 import logging
 logging.basicConfig(
@@ -70,8 +72,8 @@ class Config:
     # Save the command-line arguments that were used to create this run.
     argv: List[str] = field(init=False, default_factory=sys.argv.copy)
 
-    early_stopping_patience: int = 0
-    early_stopping_min_delta: float = 0.
+    early_stopping: EarlyStoppingOptions = mutable_field(EarlyStoppingOptions)
+
     use_accuracy_as_metric: bool = False
 
     # Path where the wandb files should be stored. If the 'WANDB_DIR'
