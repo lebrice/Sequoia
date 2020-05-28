@@ -2,6 +2,7 @@ import inspect
 import json
 import logging
 import os
+import time
 from abc import ABC, abstractmethod
 from collections import MutableMapping, OrderedDict, defaultdict
 from dataclasses import asdict, dataclass, is_dataclass
@@ -26,6 +27,7 @@ from datasets import DatasetConfig
 from datasets.cifar import Cifar10, Cifar100
 from datasets.fashion_mnist import FashionMnist
 from datasets.mnist import Mnist
+from datasets.subset import Subset
 from models.classifier import Classifier
 from simple_parsing import choice, field, mutable_field, subparsers
 from simple_parsing.helpers import FlattenedAccess
@@ -88,8 +90,10 @@ class ExperimentBase(JsonSerializable):
 
         self.train_dataset: Dataset = NotImplemented
         self.valid_dataset: Dataset = NotImplemented
+        self.test_dataset: Dataset = NotImplemented
         self.train_loader: DataLoader = NotImplemented
         self.valid_loader: DataLoader = NotImplemented
+        self.test_loader: DataLoader = NotImplemented
 
         self.global_step: int = 0
         self.logger = self.config.get_logger(inspect.getfile(type(self)))
@@ -103,6 +107,7 @@ class ExperimentBase(JsonSerializable):
                 f.write(self.notes)
         
         from save_job import SaverWorker
+        mp.set_start_method("spawn")
         self.background_queue = mp.Queue()
         self.saver_worker: Optional[SaverWorker] = None
 
@@ -124,11 +129,27 @@ class ExperimentBase(JsonSerializable):
         print("Successfully closed everything")
 
     def load_datasets(self) -> Tuple[Dataset, Dataset]:
-        """ Setup the dataloaders and other settings before training. """
-        self.train_dataset, self.valid_dataset = self.dataset.load(data_dir=self.config.data_dir)
-        self.train_loader = self.get_dataloader(self.train_dataset)
-        self.valid_loader = self.get_dataloader(self.valid_dataset)
-        return self.train_dataset, self.valid_dataset
+        """ Loads the training and test datasets. """
+        train_dataset, test_dataset = self.dataset.load(data_dir=self.config.data_dir)
+        return train_dataset, test_dataset
+
+
+    def train_valid_split(self, train_dataset: Dataset, valid_fraction: float=0.2) -> Tuple[Dataset, Dataset]:
+        n = len(train_dataset)
+        valid_len: int = int((n * valid_fraction))
+        train_len: int = n - valid_len
+        
+        indices = np.arange(n, dtype=int)
+        np.random.shuffle(indices)
+        
+        valid_indices = indices[:valid_len]
+        train_indices = indices[valid_len:]
+
+        train = Subset(train_dataset, train_indices)
+        valid = Subset(train_dataset, valid_indices)
+        logger.info(f"Training samples: {len(train)}, Valid samples: {len(valid)}")
+        return train, valid
+
 
     def init_model(self) -> Classifier:
         print("init model")
@@ -156,7 +177,7 @@ class ExperimentBase(JsonSerializable):
               description: str=None,
               early_stopping_options: EarlyStoppingOptions=None,
               use_accuracy_as_metric: bool=None,                
-              temp_save_file: Path=None) -> TrainValidLosses:
+              temp_save_dir: Path=None) -> TrainValidLosses:
         """Trains on the `train_dataloader` and evaluates on `valid_dataloader`.
 
         Periodically evaluates on validation batches during each epoch, as well
@@ -175,7 +196,7 @@ class ExperimentBase(JsonSerializable):
         For instance, it might be useful to keep track of the number of epochs
         performed in the current task (for TaskIncremental)
 
-        TODO: save/load the `all_losses` object to temp_save_file at a given
+        TODO: save/load the `all_losses` object to temp_save_dir at a given
         interval during training, using a saver thread.
 
 
@@ -204,23 +225,48 @@ class ExperimentBase(JsonSerializable):
         if isinstance(valid_dataloader, Dataset):
             valid_dataloader = self.get_dataloader(valid_dataloader)
         
+        early_stopping_options = early_stopping_options or self.config.early_stopping
+
+        if use_accuracy_as_metric is None:
+            use_accuracy_as_metric = self.config.use_accuracy_as_metric
+
+        # The --debug_steps argument can be used to shorten the dataloaders.
         steps_per_epoch = len(train_dataloader)
         if self.config.debug_steps:
             from itertools import islice
             steps_per_epoch = self.config.debug_steps
             train_dataloader = islice(train_dataloader, 0, steps_per_epoch)  # type: ignore
         logger.debug(f"Steps per epoch: {steps_per_epoch}")
-
+        
+        # LossInfo objects at each step of validation        
+        validation_losses: List[LossInfo] = []
+        # Container for the train and valid losses every `log_interval` steps.
         all_losses = TrainValidLosses()
+        
+        if temp_save_dir:
+            temp_save_dir.mkdir(exist_ok=True, parents=True)
+            
+            all_losses_path = temp_save_dir / "all_losses.json"
+            if all_losses_path.exists():
+                all_losses = TrainValidLosses.load_json(all_losses_path)
+
+            from itertools import count
+            for i in count():
+                loss_path = temp_save_dir / f"val_loss_{i}.json"
+                if not loss_path.exists():
+                    break
+                else:
+                    assert len(validation_losses) == (i-1)
+                    validation_losses = LossInfo.load_json(loss_path)
+
+            logger.info(f"Reloaded {len(validation_losses)} existing validation losses")
+            logger.info(f"Latest step: {all_losses.latest_step()}.")
+        
         # Get the latest step
         # NOTE: At the moment, will always be zero, but if we reload
         # `all_losses` from a file, would give you the step to start from.
         starting_step = all_losses.latest_step() or self.global_step
-        
-        if early_stopping_options is None:
-            early_stopping_options = self.config.early_stopping
-        if use_accuracy_as_metric is None:
-            use_accuracy_as_metric = self.config.use_accuracy_as_metric
+        starting_epoch = len(validation_losses) + 1
 
         if early_stopping_options:
             logger.info(f"Using early stopping with options {early_stopping_options}")
@@ -228,7 +274,8 @@ class ExperimentBase(JsonSerializable):
         # Hook to keep track of the best model.
         best_model_watcher = self.keep_best_model(
             use_acc=use_accuracy_as_metric,
-            save_path=self.checkpoints_dir / "best_model.pth"
+            save_path=self.checkpoints_dir / "best_model.pth",
+            # previous_losses=validation_losses,
         )
         next(best_model_watcher)
         
@@ -236,6 +283,7 @@ class ExperimentBase(JsonSerializable):
         convergence_checker = early_stopping(
             options=early_stopping_options,
             use_acc=use_accuracy_as_metric,
+            # previous_losses=validation_losses,
         )
         next(convergence_checker)
         
@@ -247,7 +295,7 @@ class ExperimentBase(JsonSerializable):
         # List to hold the length of each epoch (should all be the same length)
         epoch_lengths: List[int] = []
 
-        for epoch in range(1, epochs+1):
+        for epoch in range(starting_epoch, epochs + 1):
             pbar = tqdm.tqdm(train_dataloader, total=steps_per_epoch)
             desc = description or "" 
             desc += " " if desc and not desc.endswith(" ") else ""
@@ -268,16 +316,28 @@ class ExperimentBase(JsonSerializable):
                     message.update(train_loss.to_pbar_message())
                     message.update(valid_loss.to_pbar_message())
                     pbar.set_postfix(message)
+
+                    self.log({
+                        "Train": train_loss,
+                        "Valid": valid_loss,
+                    })
+
             epoch_length = self.global_step - epoch_start_step
             epoch_lengths.append(epoch_length)
 
             # perform a validation epoch.
             val_desc = desc + " Valid"
             val_loss_info = self.test(valid_dataloader, description=val_desc)
+            if temp_save_dir:
+                val_loss_info.drop_tensors()
+                # TODO: do this in the background saver thread.
+                val_loss_info.save_json(temp_save_dir / f"val_loss_{i}.json")
+                all_losses.save_json(temp_save_dir / f"all_losses.json")
             
             best_step = best_model_watcher.send(val_loss_info)
             logger.debug(f"Best step so far: {best_step}")
-            best_epoch = best_step // int(np.mean(epoch_length))
+
+            best_epoch = (best_step - starting_step) // int(np.mean(epoch_length))
             logger.debug(f"Best epoch so far: {best_epoch}")
 
             converged = convergence_checker.send(val_loss_info)
@@ -297,18 +357,7 @@ class ExperimentBase(JsonSerializable):
 
         logger.info(f"Best step: {best_step}, best_epoch: {best_epoch}, ")
         all_losses.keep_up_to_step(best_step)
-        
-        self.global_step = best_step
-        # TODO: add-back the wandb logging.
-        
-        for step, (train_loss, valid_loss) in all_losses.items():
-            message = {}
-            if train_loss:
-                message["Train"] = train_loss
-            if valid_loss:
-                message["Valid"] = valid_loss
-            self.log(message, step=step)
-
+       
         return all_losses
 
     def keep_best_model(self, use_acc: bool=False, save_path: Path=None) -> Generator[int, Optional[LossInfo], None]:

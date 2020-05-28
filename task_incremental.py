@@ -20,7 +20,7 @@ from common.losses import LossInfo, TrainValidLosses
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from config import Config
 from datasets import DatasetConfig
-from datasets.subset import VisionDatasetSubset
+from datasets.subset import ClassSubset
 from experiment import Experiment
 from tasks import Tasks
 from utils import utils
@@ -82,9 +82,11 @@ class TaskIncremental(Experiment):
         """ NOTE: fields that are created in __post_init__ aren't serialized to/from json! """
         super().__post_init__()
         # The entire training and validation datasets.
-        self.train_datasets: List[VisionDatasetSubset] = []
-        self.valid_datasets: List[VisionDatasetSubset] = []
-        self.valid_cumul_datasets: List[VisionDatasetSubset] = []
+        self.train_datasets: List[ClassSubset] = []
+        self.valid_datasets: List[ClassSubset] = []
+        self.valid_cumul_datasets: List[ClassSubset] = []
+        self.test_datasets: List[ClassSubset] = []
+        self.test_cumul_datasets: List[ClassSubset] = []
 
     def run(self):
         """Evaluates a model/method in the classical "task-incremental" setting.
@@ -157,7 +159,7 @@ class TaskIncremental(Experiment):
         self.save(save_model_weights=False)
         
         # Load the datasets
-        self.load_datasets(self.tasks)
+        self.load_task_datasets(self.tasks)
         self.n_tasks = len(self.tasks)
 
         self.logger.info(f"Class Ordering: {self.state.tasks}")
@@ -190,11 +192,12 @@ class TaskIncremental(Experiment):
                         # Temporarily remove the labels.
                         with train_i.without_labels(), valid_i.without_labels():
                             # Un/self-supervised training on task i.
-                            self.state.all_losses += self.train(
+                            self.state.all_losses = self.train(
                                 train_i,
                                 valid_i,
                                 epochs=self.unsupervised_epochs_per_task,
                                 description=f"Task {i} (Unsupervised)",
+                                temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
                             )
 
                     # Train (supervised) on task i.
@@ -204,6 +207,7 @@ class TaskIncremental(Experiment):
                         valid_i,
                         epochs=self.supervised_epochs_per_task,
                         description=f"Task {i} (Supervised)",
+                        temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
                     )
             
             # Save to the 'checkpoints' dir
@@ -223,29 +227,30 @@ class TaskIncremental(Experiment):
 
                 self.state.j = j
                 train_j = self.train_datasets[j]
-                valid_j = self.valid_datasets[j]
+                test_j = self.test_datasets[j]
 
                 # Measure how linearly separable the representations of task j
                 # are by training and evaluating a KNNClassifier on the data of task j.
-                train_knn_loss, valid_knn_loss = self.test_knn(
+                train_knn_loss, test_knn_loss = self.test_knn(
                     train_j,
-                    valid_j,
+                    test_j,
                     description=f"KNN[{i}][{j}]"
                 )
                 self.log({
                     f"knn_losses/train/[{i}][{j}]": train_knn_loss,
-                    f"knn_losses/valid/[{i}][{j}]": valid_knn_loss,
+                    f"knn_losses/test/[{i}][{j}]": test_knn_loss,
                 })
-                self.state.knn_losses[i][j] = valid_knn_loss
-                accuracy = valid_knn_loss.metrics["KNN"].accuracy
-                self.logger.info(f"knn_losses/valid/[{i}][{j}] Accuracy: {accuracy:.2%}")
+                self.state.knn_losses[i][j] = test_knn_loss
+                accuracy = test_knn_loss.metrics["KNN"].accuracy
+                self.logger.info(f"knn_losses/test/[{i}][{j}] Accuracy: {accuracy:.2%}")
 
                 if j <= i:
                     # If we have previously trained on this task:
                     if self.multihead:
                         self.on_task_switch(self.tasks[j])
 
-                    loss_j = self.test(dataloader=valid_j, description=f"task_losses[{i}][{j}]")
+                    # Test on the test dataset for task j.
+                    loss_j = self.test(test_j, description=f"task_losses[{i}][{j}]")
                     self.state.cumul_losses[i] += loss_j
                     self.state.task_losses[i][j] = loss_j
 
@@ -474,40 +479,46 @@ class TaskIncremental(Experiment):
         
         return tasks
 
-    def load_datasets(self, tasks: List[Task]) -> None:
-        """Create the train, valid and cumulative datasets for each task.
-        
-        Returns:
-            List[List[int]]: The groups of classes for each task.
+    def load_task_datasets(self, tasks: List[Task]) -> None:
+        """Create the train, valid, test, and cumulative valid & test datasets
+        for each task.
         """
         # download the dataset.
-        self.train_dataset, self.valid_dataset = super().load_datasets()
-
+        train_dataset, test_dataset = super().load_datasets()
+        train_full_dataset, valid_full_dataset = self.train_valid_split(train_dataset)
+        
         # safeguard the entire training dataset.
-        train_full_dataset = self.train_dataset
-        valid_full_dataset = self.valid_dataset
+        test_full_dataset = test_dataset
 
         self.train_datasets.clear()
         self.valid_datasets.clear()
+        self.test_datasets.clear()
 
         for i, task in enumerate(tasks):
-            train = VisionDatasetSubset(train_full_dataset, task)
-            valid = VisionDatasetSubset(valid_full_dataset, task)
+            train = ClassSubset(train_full_dataset, task)
+            valid = ClassSubset(valid_full_dataset, task)
+            test  = ClassSubset(test_full_dataset, task)
+
             self.train_datasets.append(train)
             self.valid_datasets.append(valid)
+            self.test_datasets.append(test)
 
-        # Use itertools.accumulate to do the summation of validation datasets.
+        # Use itertools.accumulate to do the summation of the datasets.
         self.valid_cumul_datasets = list(accumulate(self.valid_datasets))
-
-        for i, (train, valid, cumul) in enumerate(zip(self.train_datasets,
-                                                      self.valid_datasets,
-                                                      self.valid_cumul_datasets)):
-            self.save_images(i, train, prefix="train_")
-            self.save_images(i, valid, prefix="valid_")
-            self.save_images(i, cumul, prefix="valid_cumul_")
+        self.test_cumul_dataset = list(accumulate(self.test_datasets))
         
+        # if self.config.debug:
+        #     for i, (train, valid, test, cumul) in enumerate(zip(self.train_datasets,
+        #                                                 self.valid_datasets,
+        #                                                 self.test_datasets,
+        #                                                 self.valid_cumul_datasets)):
+        #         self.save_images(i, train, prefix="train_")
+        #         self.save_images(i, valid, prefix="valid_")
+        #         self.save_images(i, test, prefix="test_")
+        #         self.save_images(i, cumul, prefix="valid_cumul_")
+            
 
-    def save_images(self, i: int, dataset: VisionDatasetSubset, prefix: str=""):
+    def save_images(self, i: int, dataset: ClassSubset, prefix: str=""):
         n = 64
         samples = dataset.data[:n].view(n, *self.dataset.x_shape).float()
         self.samples_dir.mkdir(parents=True, exist_ok=True)
