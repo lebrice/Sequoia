@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 
 from common.losses import LossInfo
 from common.task import Task
+from utils import cuda_available
 from utils.nngeometry.nngeometry.layercollection import LayerCollection
 from utils.nngeometry.nngeometry.metrics import FIM
 from utils.nngeometry.nngeometry.object.pspace import (PSpaceBlockDiag,
@@ -102,17 +103,21 @@ class EWC(AuxiliaryTask):
 
     def on_task_switch(self, task: Task, **kwargs)-> None:
         """ Executed when the task switches (to either a new or known task). """
-        self.calculate_ewc_prior(task)
+        prev_task = kwargs.get('prev_task', None)
+        classifier_head = kwargs.get('classifier_head', None)
+        self.calculate_ewc_prior(prev_task, task, classifier_head)
         #set n_ways of the next task
         self.n_ways = len(task.classes)
         #set data loader of the next task
-        self.current_task_loader = kwargs.get('train_loader', None)
+        current_task_loader = kwargs.get('train_loader', None)
+        if current_task_loader is not None:
+            self.current_task_loader = current_task_loader
 
     def regularizer_ewc(self):
         if self.prior is None:
             return Variable(torch.zeros(1)).to(self.device)
         else:
-            return self.prior.regularizer(nn.Sequential(self.AuxiliaryTask.encoder))#, self.model.classifier))
+            return self.prior.regularizer(nn.Sequential(AuxiliaryTask.encoder))#, self.model.classifier))
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor = None) -> LossInfo:
         ewc_loss = LossInfo(
@@ -121,8 +126,8 @@ class EWC(AuxiliaryTask):
         )
         return ewc_loss
 
-    def calculate_ewc_prior(self, task: Task):
-        task_number: int = task.index
+    def calculate_ewc_prior(self, prev_task: Task, new_task: Task, classifier_head: nn.Module):
+        task_number: int = new_task.index
         assert isinstance(task_number, int), f"Task number should be an int, got {task_number}"
         if task_number>0:
             if task_number not in self.tasks_seen:
@@ -131,13 +136,13 @@ class EWC(AuxiliaryTask):
                 assert self.current_task_loader is not None, (
                     'Task loader should be set to the loader of the current task before switching the tasks'
                 )
-                print(f"Calculating Fisher on task {self.current_task}")
+                print(f"Calculating Fisher on task {prev_task.index}")
                 #single_head OR multi_head
                 prior = GaussianPrior(
-                    nn.Sequential(AuxiliaryTask.encoder, AuxiliaryTask.classifier),
+                    nn.Sequential(AuxiliaryTask.encoder, classifier_head),
                     self.n_ways,
                     self.current_task_loader,
-                    device= 'cuda' if self.device==torch.device("cuda") else 'cpu'
+                    device=self.device
                 )
                 if self.prior is not None:
                     self.prior.consolidate(prior, task_number)

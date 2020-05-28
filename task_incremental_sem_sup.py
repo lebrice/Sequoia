@@ -2,6 +2,7 @@ import tqdm
 import torch
 from sys import getsizeof
 from torch import Tensor, nn
+from torch.autograd import Variable
 from itertools import repeat, cycle
 from models.classifier import Classifier
 from task_incremental import TaskIncremental
@@ -38,6 +39,8 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
     #start measuring convergence after this epoch
     converge_after_epoch: int = 0
+    # for supervised loss, the alpha parameter for the beta distribution from where the mixing lambda is drawn (used for ICT)
+    mixup_sup_alpha: float = 0.
 
     def __post_init__(self):
         super().__post_init__()
@@ -212,10 +215,13 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             # If we are using a multihead model, we give it the task label (so
             # that it can spawn / reuse the output head for the given task).
             if self.multihead:
-                self.on_task_switch(self.tasks[i], train_loader = self.get_dataloaders(
-                    dataset=train_i,
-                    sampler_labelled=train_sampler_labeled_i,
-                    sampler_unlabelled=train_sampler_unlabelled_i)[0])
+                prev_task = None if i==0 else self.tasks[i-1]
+                classifier_head = None if i==0 else self.model.get_output_head(prev_task)
+                self.on_task_switch(self.tasks[i], prev_task=prev_task, classifier_head = classifier_head,
+                                    train_loader = self.get_dataloaders(
+                                        dataset=train_i,
+                                        sampler_labelled=train_sampler_labeled_i,
+                                        sampler_unlabelled=train_sampler_unlabelled_i)[0])
 
             with self.plot_region_name(f"Learn Task {i}"):
                 # We only train (unsupervised) if there is at least one enabled
@@ -349,7 +355,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 # If we have previously trained on this task:
                 self.on_task_switch(self.tasks[j])
 
-                loss_j = self.test(dataloader=valid_dataloader_labelled, description=f"task_losses[{i}][{j}]")
+                loss_j = self.test(valid_dataloader_labelled, description=f"task_losses[{i}][{j}]")
                 cumul_loss += loss_j
 
                 self.state.task_losses[i][j] = loss_j
@@ -385,7 +391,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         desc = (description or "Test Epoch")
 
         pbar.set_description(desc)
-        total_loss = LossInfo(name)
+        total_loss = LossInfo(name) 
         message: Dict[str, Any] = OrderedDict()
 
         for batch_idx, loss in enumerate(self.test_iter(pbar)):
@@ -472,16 +478,16 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                     convergence_checker.close()
                     break
         return all_losses
-    def test(self, dataloader_labelled: DataLoader, description: str = None,
+    def test_semi(self, dataloader_labelled: DataLoader, dataloader_unlabelled: DataLoader, description: str = None,
                   name: str = "Test") -> LossInfo:
-        pbar = tqdm.tqdm(dataloader_labelled)
+        pbar = tqdm.tqdm(zip(cycle(dataloader_labelled), dataloader_unlabelled))
         desc = (description or "Test Epoch")
 
         pbar.set_description(desc)
         total_loss = LossInfo(name)
         message: Dict[str, Any] = OrderedDict()
 
-        for batch_idx, loss in enumerate(self.test_iter(pbar)):
+        for batch_idx, loss in enumerate(self.test_iter_semi(pbar)):
             total_loss += loss
 
             if batch_idx % self.config.log_interval == 0:
@@ -520,9 +526,24 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             u, _ = self.preprocess(batch_unsup)
             yield self.train_batch_semi_sup(data, target, u)
 
+    def preprocess_sup_mixup(self, x,y):
+        from tasks.mixup import mixup_data_sup
+        def mixup_criterion(y_a, y_b, lam):
+            return lambda criterion, pred: lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+        mixed_input, target_a, target_b, lam = mixup_data_sup(x, y, self.mixup_sup_alpha)
+        mixed_input_var, target_a_var, target_b_var = Variable(mixed_input), Variable(target_a), Variable(target_b)
+        loss_func = mixup_criterion(target_a_var, target_b_var, lam)
+        return mixed_input_var, loss_func
+
+
     def train_batch_semi_sup(self, data: Tensor, target: Optional[Tensor], u: Tensor) -> LossInfo:
         self.model.optimizer.zero_grad()
-        batch_loss_info = self.model.get_loss(data, target) + self.model.get_loss(u, None)
+        loss_f = None
+        data, target = self.model.preprocess_inputs(data, target)
+        if self.mixup_sup_alpha>0:
+            data, loss_f = self.preprocess_sup_mixup(data,target)
+
+        batch_loss_info = self.model.supervised_loss(data, target, loss_f=loss_f) + self.model.get_loss(u, None)
 
         total_loss = batch_loss_info.total_loss
         total_loss.backward()

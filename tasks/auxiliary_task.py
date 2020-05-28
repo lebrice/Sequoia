@@ -25,6 +25,7 @@ class AuxiliaryTask(nn.Module):
     # Class variables for holding the Modules shared with with the classifier. 
     encoder: ClassVar[nn.Module]
     classifier: ClassVar[nn.Module]  # type: ignore
+
     preprocessing: ClassVar[Callable[[Tensor, Optional[Tensor]], Tuple[Tensor, Optional[Tensor]]]]
     
     @dataclass

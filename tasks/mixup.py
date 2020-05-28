@@ -16,6 +16,20 @@ import logging
 from config import Config
 logger = logging.getLogger(__file__)
 
+def mixup_data_sup(x, y, alpha=1.0):
+    '''Compute the mixup data. Return mixed inputs, pairs of targets, and lambda'''
+    if alpha > 0.:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1.
+    batch_size = x.size()[0]
+    index = np.random.permutation(batch_size)
+    #x, y = x.numpy(), y.numpy()
+    #mixed_x = torch.Tensor(lam * x + (1 - lam) * x[index,:])
+    mixed_x = lam * x + (1 - lam) * x[index,:]
+    #y_a, y_b = torch.Tensor(y).type(torch.LongTensor), torch.Tensor(y[index]).type(torch.LongTensor)
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
 
 def mixup_data(x, y, alpha=1.0):
     '''Compute the mixup data. Return mixed inputs, mixed target, and lambda'''
@@ -66,7 +80,7 @@ def mixup(x1: Tensor, x2: Tensor, coeff: Tensor) -> Tensor:
     shape.extend([1 for _ in x1.shape[1:]])
     coeff = coeff.view(shape)
     coeff = coeff.expand_as(x1)
-    # return x1 + (x2 - x1) * coeff    
+    # return x1 + (x2 - x1) * coeff
     return torch.lerp(x1, x2, coeff)
 
 
@@ -76,12 +90,12 @@ from utils.utils import add_dicts
 
 def average_models(old: nn.Module, new: nn.Module, old_frac: float = 0.1) -> None:
     """ Updates the old model weights with an exponential moving average of the new.
-    
+
     If the weight is present in both models, the new weight value will be
     `v = old_frac * old_value + (1-old_frac) * new_value`
     otherwise, if the weight is only present in either, keeps the value as-is.
 
-    Returns nothing, as it modifies the `old` module in-place.   
+    Returns nothing, as it modifies the `old` module in-place.
     """
     old_state = old.state_dict()
     new_state = new.state_dict()
@@ -111,7 +125,7 @@ class MixupTask(AuxiliaryTask):
     @dataclass
     class Options(AuxiliaryTask.Options):
         """ Options for the Mixup (ICT) Task. """
-        # Fraction of the old weights to use in the mean-teacher model. 
+        # Fraction of the old weights to use in the mean-teacher model.
         mean_teacher_mixing_coefficient: float = 0.999
         # consistency_rampup_starts
         consistency_rampup_starts: int = 1
@@ -119,8 +133,9 @@ class MixupTask(AuxiliaryTask):
         consistency_rampup_ends: int = 20
         # mixup_consistency
         mixup_consistency: float = 1.
-        # mixup_usup_alpha
-        mixup_usup_alpha: float = 2.0
+        # for unsupervised loss, the alpha parameter for the beta distribution from where the mixing lambda is drawn
+        mixup_usup_alpha: float = 1.
+
 
     def get_current_consistency_weight(self, epoch, step_in_epoch, total_steps_in_epoch):
         # Consistency ramp-up from https://arxiv.org/abs/1610.02242
@@ -135,8 +150,8 @@ class MixupTask(AuxiliaryTask):
         super().__init__(coefficient=coefficient, name=name, options=options)
         self.options: MixupTask.Options
         self.logger = Config.get_logger(__file__)
-        
-        # Exponential moving average versions of the encoder and output head. 
+
+        # Exponential moving average versions of the encoder and output head.
         self.mean_encoder: nn.Module = deepcopy(AuxiliaryTask.encoder)
         self.mean_classifier: nn.Module = deepcopy(AuxiliaryTask.encoder)
         self.previous_task: Optional[Task] = None
@@ -177,7 +192,7 @@ class MixupTask(AuxiliaryTask):
                 AuxiliaryTask.classifier,
                 old_frac=self.options.mean_teacher_mixing_coefficient
             )
-    
+
     def on_task_switch(self, task: Task, **kwargs) -> None:
         if self.enabled and task != self.previous_task:
             self.logger.info(f"Discarding the mean classifier on switch to task {task}")
@@ -187,8 +202,8 @@ class MixupTask(AuxiliaryTask):
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         # select only unlabelled examples like in ICT: https://arxiv.org/pdf/1903.03825.pdf
         # TODO: fix this, y may be None, which would break this.
-        batch_size = x.shape[0]
 
+        batch_size = x.shape[0]
         # assert batch_size % 2  == 0, f"Can only mix an even number of samples. (batch size is {batch_size})"
         if batch_size % 2 != 0:
             x = x[:-1]
@@ -213,6 +228,8 @@ class MixupTask(AuxiliaryTask):
 
             #y_pred_1 = y_pred[0::2]
             #y_pred_2 = y_pred[1::2]
+
+
             h_x = self.mean_encode(x)
             y_pred_ema = self.mean_logits(h_x)
             mix_x, y_pred_mix, lam = mixup_data(x, Variable(y_pred_ema.detach().data, requires_grad=False), self.options.mixup_usup_alpha)
@@ -233,9 +250,6 @@ class MixupTask(AuxiliaryTask):
             loss_info.total_loss = mixup_consistency_weight * loss
         else:
             loss_info.total_loss = torch.tensor([0]).to(self.device)
-
-
-
         return loss_info
 
 
@@ -251,7 +265,7 @@ class ManifoldMixupTask(AuxiliaryTask):
         h1 = h_x[0::2]
         h2 = h_x[1::2]
         mix_h_x = mixup(h1, h2, mix_coeff)
-        
+
         y_pred_1 = y_pred[0::2]
         y_pred_2 = y_pred[1::2]
         y_pred_mix = mixup(y_pred_1, y_pred_2, mix_coeff)

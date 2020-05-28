@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (Any, Dict, List, NamedTuple, Optional, Tuple, Type,
-                    TypeVar, Union)
+                    TypeVar, Union, Callable)
 
 import torch
 from simple_parsing import MutableField as mutable_field
@@ -143,11 +143,15 @@ class Classifier(nn.Module):
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)  
 
-    def supervised_loss(self, x: Tensor, y: Tensor, h_x: Tensor=None, y_pred: Tensor=None) -> LossInfo:
+    def supervised_loss(self, x: Tensor, y: Tensor, h_x: Tensor=None, y_pred: Tensor=None, loss_f: Callable[[Callable, Tensor],Tensor] = None) -> LossInfo:
         h_x = self.encode(x) if h_x is None else h_x
         y_pred = self.logits(h_x) if y_pred is None else y_pred
         y = y.view(-1)
-        loss = self.classification_loss(y_pred, y)
+        if loss_f is None:
+            loss = self.classification_loss(y_pred, y)
+            metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
+        else:
+            loss = loss_f(self.classification_loss,y_pred)
         metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
         loss_info = LossInfo(
             name=Tasks.SUPERVISED,
@@ -239,7 +243,7 @@ class Classifier(nn.Module):
                 y = new_y            
         return x, y
 
-    def on_task_switch(self, task: Task) -> None:
+    def on_task_switch(self, task: Task, **kwargs) -> None:
         """Indicates to the model that it is working on a new task.
 
         Args:
@@ -248,12 +252,14 @@ class Classifier(nn.Module):
         self.current_task = task
         # also inform the auxiliary tasks that the task switched.
         for name, aux_task in self.tasks.items():
-            aux_task.on_task_switch(task=task)
+            aux_task.on_task_switch(task, **kwargs)
 
+    def get_output_head(self, task: Task):
+        return self.output_heads[task.dumps()]
 
     @property
     def classifier(self) -> nn.Module:
-        return self.output_heads[self.current_task.dumps()]
+        return self.get_output_head(self.current_task)
 
     @property
     def current_task(self) -> Task:
