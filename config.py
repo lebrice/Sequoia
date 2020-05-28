@@ -32,6 +32,7 @@ logging.getLogger('simple_parsing').addHandler(logging.NullHandler())
 
 logger = logging.getLogger(__file__)
 
+
 @dataclass
 class Config:
     """Settings related to the training setup. """
@@ -69,10 +70,9 @@ class Config:
     # Save the command-line arguments that were used to create this run.
     argv: List[str] = field(init=False, default_factory=sys.argv.copy)
 
-    # Early stopping patience: number of validation epochs with increasing loss
-    # to wait for before stopping training.
-    # TODO: use an actual validation set instead of the test set for validation.
-    patience: int = 3
+    early_stopping_patience: int = 0
+    early_stopping_min_delta: float = 0.
+    use_accuracy_as_metric: bool = False
 
     # Path where the wandb files should be stored. If the 'WANDB_DIR'
     # environment variable is set, uses that value. Otherwise, defaults to

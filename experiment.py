@@ -15,20 +15,20 @@ import torch
 import torch.multiprocessing as mp
 import tqdm
 import wandb
-from simple_parsing import choice, field, mutable_field, subparsers
-from simple_parsing.helpers import FlattenedAccess
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset, Sampler, TensorDataset
 
 from common.losses import LossInfo, TrainValidLosses
-from common.metrics import (ClassificationMetrics, RegressionMetrics,
-                            get_metrics, Metrics)
+from common.metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
+                            get_metrics)
 from config import Config
 from datasets import DatasetConfig
 from datasets.cifar import Cifar10, Cifar100
 from datasets.fashion_mnist import FashionMnist
 from datasets.mnist import Mnist
 from models.classifier import Classifier
+from simple_parsing import choice, field, mutable_field, subparsers
+from simple_parsing.helpers import FlattenedAccess
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
 from utils.json_utils import JsonSerializable, take_out_unsuported_values
@@ -36,7 +36,6 @@ from utils.logging import pbar
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
 
 logger = Config.get_logger(__file__)
-
 
 
 @dataclass  # type: ignore
@@ -111,6 +110,7 @@ class ExperimentBase(JsonSerializable):
 
     def __del__(self):
         print("Destroying the 'Experiment' object.")
+        self.cleanup()
 
     @abstractmethod
     def run(self):
@@ -149,27 +149,77 @@ class ExperimentBase(JsonSerializable):
         else:
             raise NotImplementedError(f"TODO: add a model for dataset {dataset}.")
 
-    def train_until_convergence(self, train_dataset: Dataset,
-                                      valid_dataset: Dataset,
-                                      max_epochs: int,
-                                      description: str=None,
-                                      patience: int=None,
-                                      temp_save_file: Path=None) -> TrainValidLosses:
-        # TODO: Add a way to resume training if it was previously interrupted.
-        # For instance, it might be useful to keep track of the number of epochs
-        # performed in the current task (for TaskIncremental)
+    def train(self,
+              train_dataloader: Union[Dataset, DataLoader],                
+              valid_dataloader: Union[Dataset, DataLoader],                
+              epochs: int,                
+              description: str=None,
+              early_stopping_patience: int=None,
+              use_accuracy_as_metric: bool=None,                
+              temp_save_file: Path=None) -> TrainValidLosses:
+        """Trains on the `train_dataloader` and evaluates on `valid_dataloader`.
 
-        # TODO: save/load the `all_losses` object to temp_save_file at a given
-        # interval during training, using a saver thread.
+        Periodically evaluates on validation batches during each epoch, as well
+        as doing a full pass through the validation dataset after each epoch.
 
-        train_dataloader = self.get_dataloader(train_dataset)
-        valid_dataloader = self.get_dataloader(valid_dataset)
-        n_steps = len(train_dataloader)
+        If `early_stopping_patience` is a positive int, then an early stopping
+        hook is added, which will stop training after `early_stopping_patience`
+        epochs show a worse performance than the best one observed so far.
+
+        The weights at the point at which the model had the best validation
+        performance are always re-loaded at the end.
         
+        NOTE: If `early_stopping_patience` is None, then the value from
+        `self.config.early_stopping_patience` is used. Same goes for
+        `use_accuracy_as_metric`.
+        
+        NOTE: The losses are no logged, you should log them yourself after this
+        method completes.
+
+        TODO: Add a way to resume training if it was previously interrupted.
+        For instance, it might be useful to keep track of the number of epochs
+        performed in the current task (for TaskIncremental)
+
+        TODO: save/load the `all_losses` object to temp_save_file at a given
+        interval during training, using a saver thread.
+
+
+        Args:
+            - train_dataloader (Union[Dataset, DataLoader]): Training dataset or
+                dataloader.
+            - valid_dataloader (Union[Dataset, DataLoader]): [description]
+            - epochs (int): Number of epochs to train for. 
+            - description (str, optional): A description to use in the
+                progressbar. Defaults to None.
+            - early_stopping_patience (int, optional): [description]. Defaults to
+                None.
+            - use_accuracy_as_metric (bool, optional): If `True`, accuracy will
+                be used as a measure of performance. Otherwise, the total
+                validation loss is used. Defaults to False.
+            - temp_save_file (Path, optional): Path where the intermediate state
+                should be saved/restored from. Defaults to None.
+
+        Returns:
+            TrainValidLosses: An object containing the training and validation
+            losses during training (every `log_interval` steps) to be logged.
+        """                   
+        
+        if isinstance(train_dataloader, Dataset):
+            train_dataloader = self.get_dataloader(train_dataloader)
+        if isinstance(valid_dataloader, Dataset):
+            valid_dataloader = self.get_dataloader(valid_dataloader)
+        
+        steps_per_epoch = len(train_dataloader)
+        logger.debug(f"Steps per epoch: {steps_per_epoch}")
+        epoch_n_samples: int = steps_per_epoch * self.hparams.batch_size
+
+        # List to hold the length of each epoch (should normally be all the same value.)
+        epoch_lengths: List[int] = []
+
         if self.config.debug_steps:
             from itertools import islice
-            n_steps = self.config.debug_steps
-            train_dataloader = islice(train_dataloader, 0, n_steps)  # type: ignore
+            steps_per_epoch = self.config.debug_steps
+            train_dataloader = islice(train_dataloader, 0, steps_per_epoch)  # type: ignore
 
         all_losses = TrainValidLosses()
         # Get the latest step
@@ -177,19 +227,41 @@ class ExperimentBase(JsonSerializable):
         # `all_losses` from a file, would give you the step to start from.
         starting_step = all_losses.latest_step()
         
-        convergence_checker = self.check_for_convergence()
+        if early_stopping_patience is None:
+            early_stopping_patience = self.config.early_stopping_patience
+        if use_accuracy_as_metric is None:
+            use_accuracy_as_metric = self.config.use_accuracy_as_metric
+
+        if early_stopping_patience:
+            logger.info(f"Using early stopping with a patience of {early_stopping_patience}")
+        
+        # Hook to keep track of the best model.
+        best_model_watcher = self.keep_best_model(
+            use_acc=use_accuracy_as_metric,
+            save_path=self.checkpoints_dir / "best_model.pth"
+        )
+        next(best_model_watcher)
+        
+        # Hook to test for convergence.
+        convergence_checker = self.early_stopping(
+            use_acc=use_accuracy_as_metric,
+            patience=early_stopping_patience
+        )
         next(convergence_checker)
 
-        valid_loss_gen = self.valid_performance_generator(valid_dataset)
+        valid_loss_gen = self.valid_performance_generator(valid_dataloader)
         
+        # Message for the progressbar
         message: Dict[str, Any] = OrderedDict()
-        for epoch in range(max_epochs):
-            pbar = tqdm.tqdm(train_dataloader, total=n_steps)
+        
+        for epoch in range(1, epochs+1):
+            pbar = tqdm.tqdm(train_dataloader, total=steps_per_epoch)
             desc = description or "" 
             desc += " " if desc and not desc.endswith(" ") else ""
             desc += f"Epoch {epoch}"
             pbar.set_description(desc + " Train")
-            
+
+            epoch_start_step = self.global_step
             for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
                 train_loss.drop_tensors()
                 
@@ -203,23 +275,86 @@ class ExperimentBase(JsonSerializable):
                     message.update(train_loss.to_pbar_message())
                     message.update(valid_loss.to_pbar_message())
                     pbar.set_postfix(message)
+            epoch_length = self.global_step - epoch_start_step
+            epoch_lengths.append(epoch_length)
 
-                    train_log_dict = train_loss.to_log_dict()
-                    valid_log_dict = valid_loss.to_log_dict()
-                    self.log({"Train": train_log_dict, "Valid": valid_log_dict})
-            
             # perform a validation epoch.
             val_desc = desc + " Valid"
-            val_loss_info = self.test(valid_dataset, description=val_desc)
+            val_loss_info = self.test(valid_dataloader, description=val_desc)
             
+            best_step = best_model_watcher.send(val_loss_info)
+            logger.debug(f"Best step so far: {best_step}")
+            best_epoch = best_step // int(np.mean(epoch_length))
+            logger.debug(f"Best epoch so far: {best_epoch}")
+
             converged = convergence_checker.send(val_loss_info)
             if converged:
-                convergence_checker.close()
+                logger.info(f"Training Converged at epoch {epoch}. Best valid performance was at epoch {best_epoch}")
                 break
-            
+
+        try:
+            # Re-load the best weights
+            best_model_watcher.send(None)
+        except StopIteration:
+            pass
+        
+        convergence_checker.close()
+        best_model_watcher.close()
+        valid_loss_gen.close()
+
+        logger.info(f"Best step: {best_step}, best_epoch: {best_epoch}, ")
+        all_losses.keep_up_to_step(best_step)
         return all_losses
 
-    def check_for_convergence(self, patience: int=3, use_acc: bool=False) -> Generator[bool, LossInfo, None]:
+    def keep_best_model(self, use_acc: bool=False, save_path: Path=None) -> Generator[int, Optional[LossInfo], None]:
+        # Path where the best model weights will be saved.
+        save_path = save_path or self.checkpoints_dir / "model_best.pth"
+        # Temporary file, used to make sure we don't corrupt the best weights
+        # file if the script is killed while copying stuff.
+        save_path_tmp = save_path.with_suffix(".tmp")
+        
+        def save_weights():
+            state_dict = self.model.state_dict()
+            torch.save(state_dict, save_path_tmp)
+            save_path_tmp.replace(save_path)
+            logger.info(f"Saved best model weights to path {save_path}.")
+        
+        def load_weights():
+            state_dict = torch.load(save_path, map_location=self.config.device)
+            self.model.load_state_dict(state_dict)
+        
+        best_perf: Optional[float] = None
+        best_step: int = 0
+
+        loss_info: Optional[LossInfo] = (yield)
+
+        while loss_info is not None:
+            step = self.global_step
+
+            val_loss = loss_info.total_loss.item()
+            val_acc = loss_info.metrics[Tasks.SUPERVISED].accuracy
+
+            if use_acc and (best_perf is None or val_acc > best_perf):
+                best_step = step
+                best_perf = val_acc
+                logging.info(f"New best model at step {step}, Val Acc: {val_acc}")
+                save_weights()
+            elif not use_acc and  (best_perf is None or val_loss < best_perf):
+                best_step = step
+                best_perf = val_loss
+                logging.info(f"New best model at step {step}, Val Loss: {val_loss}")
+                save_weights()
+            else:
+                # Model at current step is not the best model.
+                pass
+
+            loss_info = yield best_step
+
+        # Reload the weights of the best model.
+        logger.info(f"Reloading weights of the best model (global step: {best_step})")
+        load_weights()
+
+    def early_stopping(self, patience: int=3, use_acc: bool=False, min_delta: float=0.) -> Generator[bool, LossInfo, None]:
         """Generator for early stopping. Yields wether or not convergence was reached.
 
         Args:
@@ -234,21 +369,23 @@ class ExperimentBase(JsonSerializable):
         
         # Early stopping: number of validation epochs with increasing loss after
         # which we exit training.
-        patience = patience or self.config.patience
         converged = False
         
         while True:
             val_loss_info = yield converged
             if not val_loss_info:
                 break
+            
+            if not patience:
+                continue
 
             val_loss = val_loss_info.total_loss.item()
             val_acc = val_loss_info.metrics[Tasks.SUPERVISED].accuracy
 
-            if use_acc and (best_valid_perf is None or val_acc > best_valid_perf):
+            if use_acc and (best_valid_perf is None or val_acc > (best_valid_perf + min_delta)):
                 counter = 0
                 best_valid_perf = val_acc
-            elif not use_acc and (best_valid_perf is None or val_loss < best_valid_perf):
+            elif not use_acc and (best_valid_perf is None or val_loss < (best_valid_perf - min_delta)):
                 counter = 0
                 best_valid_perf = val_loss
             else:
@@ -263,13 +400,16 @@ class ExperimentBase(JsonSerializable):
                     converged = True
 
 
-    def valid_performance_generator(self, valid_dataset: Dataset) -> Generator[LossInfo, None, None]:
-        periodic_valid_dataloader = self.get_dataloader(valid_dataset)
+
+    def valid_performance_generator(self, valid_dataloader: Union[Dataset, DataLoader]) -> Generator[LossInfo, None, None]:
+        if isinstance(valid_dataloader, Dataset):
+            valid_dataloader = self.get_dataloader(valid_dataloader)
         while True:
-            for batch in periodic_valid_dataloader:
+            for batch in valid_dataloader:
                 data = batch[0].to(self.model.device)
                 target = batch[1].to(self.model.device) if len(batch) == 2 else None
                 yield self.test_batch(data, target)
+        logger.info("Somehow exited the infinite while loop!")
 
     def train_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.train()
@@ -294,8 +434,10 @@ class ExperimentBase(JsonSerializable):
         self.global_step += data.shape[0]
         return batch_loss_info
 
-    def test(self, dataset: Dataset, description: str=None, name: str="Test") -> LossInfo:
-        dataloader = self.get_dataloader(dataset)
+    def test(self, dataloader: Union[Dataset, DataLoader], description: str=None, name: str="Test") -> LossInfo:
+        if isinstance(dataloader, Dataset):
+            dataloader = self.get_dataloader(dataloader)
+
         pbar = tqdm.tqdm(dataloader)
         desc = (description or "Test Epoch")
         
@@ -309,6 +451,7 @@ class ExperimentBase(JsonSerializable):
             if batch_idx % self.config.log_interval == 0:
                 message.update(total_loss.to_pbar_message())
                 pbar.set_postfix(message)
+        
         total_loss.drop_tensors()
         return total_loss
 
@@ -525,7 +668,6 @@ class ExperimentBase(JsonSerializable):
 # TODO: This might not be the cleanest/most elegant way to do it, but it's better than having files with 1000 lines in my opinion.
 from addons import (ExperimentWithKNN, ExperimentWithVAE,
                     LabeledPlotRegionsAddon, TestTimeTrainingAddon)
-
 
 @dataclass  # type: ignore
 class Experiment(ExperimentWithKNN, ExperimentWithVAE,

@@ -212,6 +212,17 @@ class TrainValidLosses(JsonSerializable):
         """Returns the latest global_step in the dicts."""
         return max(itertools.chain(self.train_losses, self.valid_losses), default=0)
 
+    def keep_up_to_step(self, step: int) -> None:
+        """Keeps only the losses up to step `step`.
+
+        Args:
+            step (int): the maximum step (inclusive) to keep.
+        """
+        for k in filter(lambda k: k > step, list(self.train_losses.keys())):
+            self.train_losses.pop(k)
+        for k in filter(lambda k: k > step, list(self.valid_losses.keys())):
+            self.valid_losses.pop(k)
+
     def add_step(self, offset: int):
         """Adds the value of `offset` to all the keys in the dictionary.
         Args:

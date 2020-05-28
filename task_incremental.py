@@ -190,19 +190,19 @@ class TaskIncremental(Experiment):
                         # Temporarily remove the labels.
                         with train_i.without_labels(), valid_i.without_labels():
                             # Un/self-supervised training on task i.
-                            self.state.all_losses += self.train_until_convergence(
+                            self.state.all_losses += self.train(
                                 train_i,
                                 valid_i,
-                                max_epochs=self.unsupervised_epochs_per_task,
+                                epochs=self.unsupervised_epochs_per_task,
                                 description=f"Task {i} (Unsupervised)",
                             )
 
                     # Train (supervised) on task i.
                     # TODO: save the state during training?.
-                    self.state.all_losses += self.train_until_convergence(
+                    self.state.all_losses += self.train(
                         train_i,
                         valid_i,
-                        max_epochs=self.supervised_epochs_per_task,
+                        epochs=self.supervised_epochs_per_task,
                         description=f"Task {i} (Supervised)",
                     )
             
@@ -245,7 +245,7 @@ class TaskIncremental(Experiment):
                     if self.multihead:
                         self.on_task_switch(self.tasks[j])
 
-                    loss_j = self.test(dataset=valid_j, description=f"task_losses[{i}][{j}]")
+                    loss_j = self.test(dataloader=valid_j, description=f"task_losses[{i}][{j}]")
                     self.state.cumul_losses[i] += loss_j
                     self.state.task_losses[i][j] = loss_j
 
