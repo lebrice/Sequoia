@@ -3,7 +3,8 @@ import logging
 from collections import OrderedDict
 from dataclasses import InitVar, asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, TypeVar
+from typing import (Any, Dict, Iterable, List, Optional, Set, Tuple, TypeVar,
+                    Union)
 
 import torch
 from torch import Tensor
@@ -200,6 +201,11 @@ class TrainValidLosses(JsonSerializable):
             self.train_losses[index],
             self.valid_losses[index]
         )
+
+    def items(self) -> Iterable[Tuple[int, Tuple[Optional[LossInfo], Optional[LossInfo]]]]:
+        train_keys = set(self.train_losses).union(set(self.valid_losses))
+        for k in sorted(train_keys):
+            yield k, (self.train_losses.get(k), self.valid_losses.get(k))
 
     def all_loss_names(self) -> Set[str]:
         all_loss_names: Set[str] = set()

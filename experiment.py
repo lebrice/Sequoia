@@ -297,6 +297,18 @@ class ExperimentBase(JsonSerializable):
 
         logger.info(f"Best step: {best_step}, best_epoch: {best_epoch}, ")
         all_losses.keep_up_to_step(best_step)
+        
+        self.global_step = best_step
+        # TODO: add-back the wandb logging.
+        
+        for step, (train_loss, valid_loss) in all_losses.items():
+            message = {}
+            if train_loss:
+                message["Train"] = train_loss
+            if valid_loss:
+                message["Valid"] = valid_loss
+            self.log(message, step=step)
+
         return all_losses
 
     def keep_best_model(self, use_acc: bool=False, save_path: Path=None) -> Generator[int, Optional[LossInfo], None]:
@@ -483,7 +495,7 @@ class ExperimentBase(JsonSerializable):
                     if isinstance(v, (LossInfo, Metrics, TrainValidLosses)):
                         v = v.to_log_dict()
                     message_dict[k] = v
-            elif isinstance(message, LossInfo):
+            elif isinstance(message, (LossInfo, Metrics)):
                 message_dict = message.to_log_dict()
             elif isinstance(message, str) and value is not None:
                 message_dict = {message: value}
