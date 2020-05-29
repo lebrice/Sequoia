@@ -126,7 +126,7 @@ class LossInfo(JsonSerializable):
     def to_log_dict(self, verbose: bool=False) -> Dict[str, Union[str, float, Dict]]:
         log_dict: Dict[str, Union[str, float, Dict]] = OrderedDict()
         # Log the total loss
-        log_dict["loss"] = float(self.total_loss)
+        log_dict["total_loss"] = float(self.total_loss)
         
         # Log the metrics
         metrics: Dict[str, Dict] = OrderedDict()
@@ -144,9 +144,12 @@ class LossInfo(JsonSerializable):
         log_dict["tensors"] = tensors
 
         # Add the loss components as nested dicts, each with their own loss and metrics.
+        losses: Dict[str, Dict] = OrderedDict()
         for name, loss_info in self.losses.items():
             subloss_log_dict = loss_info.to_log_dict(verbose=verbose)
-            log_dict[name] = subloss_log_dict
+            losses[name] = subloss_log_dict
+        log_dict["losses"] = losses
+
         return log_dict
 
     def to_pbar_message(self):
@@ -166,7 +169,9 @@ class LossInfo(JsonSerializable):
         return add_prefix(message, prefix)
 
     def to_dict(self):
-        return self.to_log_dict(verbose=False)
+        self.detach()
+        self.drop_tensors()
+        return super().to_dict()
     
     def drop_tensors(self) -> None:
         self.tensors.clear()
