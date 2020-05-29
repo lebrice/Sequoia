@@ -39,6 +39,25 @@ class Tasks:
     SIMCLR: ClassVar[str] = "simclr"
     EWC: ClassVar[str] = "ewc"
 
+from typing import overload, Optional, TypeVar, Mapping, Generic
+M = TypeVar("M")
+
+class ModuleDict(nn.ModuleDict):
+
+    @overload
+    def get(self, key: str, default: nn.Module) -> nn.Module:
+        ...
+
+    @overload
+    def get(self, key: str, default: M) -> M:
+        ...
+
+    @overload
+    def get(self, key: str) -> nn.Module:
+        ...
+
+    def get(self, key: str, default: Union[M, nn.Module]=None) -> Union[Optional[nn.Module], Optional[M]]:
+        return self[key] if key in self else default
 
 @dataclass
 class AuxiliaryTaskOptions:
@@ -61,7 +80,7 @@ class AuxiliaryTaskOptions:
     def create_tasks(self,
                     input_shape: Tuple[int, ...],
                     hidden_size: int) -> Dict[str, AuxiliaryTask]:
-        tasks = nn.ModuleDict()
+        tasks = ModuleDict()
         if self.ae:
             tasks[Tasks.AE] = AEReconstructionTask(options=self.ae)
         if self.vae:

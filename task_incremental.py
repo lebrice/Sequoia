@@ -197,6 +197,7 @@ class TaskIncremental(Experiment):
                                 valid_i,
                                 epochs=self.unsupervised_epochs_per_task,
                                 description=f"Task {i} (Unsupervised)",
+                                use_accuracy_as_metric=False, # Can't use accuracy as metric during unsupervised training.
                                 temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
                             )
 
@@ -525,6 +526,20 @@ class TaskIncremental(Experiment):
         save_image(samples, self.samples_dir / f"{prefix}task_{i}.png")
 
     def on_task_switch(self, task: Task, **kwargs) -> None:
+        # If we are using a multihead model, we give it the task label (so
+        # that it can spawn / reuse the output head for the given task).
+        i = self.state.i
+        ewc_task = self.model.tasks.get(Tasks.EWC)
+        if self.multihead and ewc_task and ewc_task.enabled:
+
+            prev_task = None if i == 0 else self.tasks[i-1]
+            classifier_head = None if i == 0 else self.model.get_output_head(prev_task)
+            train_loader = self.get_dataloader(self.train_datasets[i])
+            
+            kwargs.setdefault("prev_task", prev_task)
+            kwargs.setdefault("classifier_head", classifier_head)
+            kwargs.setdefault("train_loader", train_loader)
+
         if self.multihead:
             self.model.on_task_switch(task, **kwargs)
 
@@ -541,88 +556,6 @@ def get_supervised_accuracy(cumul_loss: LossInfo) -> float:
     except KeyError as e:
         print(cumul_loss)
         raise e
-
-
-def stack_loss_attr(losses: List[List[LossInfo]], attribute: str) -> Tensor:
-    n = len(losses)
-    length = len(losses[0])
-    result = torch.zeros([n, length], dtype=torch.float)
-    for i, run_losses in enumerate(losses):
-        for j, epoch_loss in enumerate(run_losses):
-            result[i,j] = rgetattr(epoch_loss, attribute)
-    return result
-
-
-def stack_dicts(values: List[Union[Metrics, LossInfo, Dict]]) -> Dict[str, Union[List, Dict[str, List]]]:
-    result: Dict[str, List] = OrderedDict()
-    
-    # do a pass throught the list, adding the dictionary elements.
-    for loss in values:
-        if isinstance(loss, dict):
-            loss_dict = loss
-        elif isinstance(loss, (LossInfo, Metrics)):
-            loss_dict = loss.to_log_dict()
-        
-        for key, value in loss_dict.items():
-            if key not in result:
-                result[key] = []
-            result[key].append(value)
-
-    # do a second pass, and recurse if there are non-flattened dicts
-    for key, values in result.items():
-        if isinstance(values[0], (dict, Metrics, LossInfo)):
-            result[key] = stack_dicts(values)
-    return result
-
-
-def make_results_dict(run_cumul_valid_losses: List[List[LossInfo]]) -> Dict:
-    # get a "stacked" version of the loss dicts, so that we get dicts of
-    # lists of tensors.
-    stacked: Dict[str, Union[Tensor, Dict]] = stack_dicts([
-        stack_dicts(losses) for losses in run_cumul_valid_losses 
-    ])
-    def to_lists(tensors: Union[List, Dict]) -> Union[List, Dict]:
-        """ Converts all the tensors within `tensors` to lists."""
-        if isinstance(tensors, list) and tensors:
-            if isinstance(tensors[0], Tensor):
-                return torch.stack(tensors).tolist()
-            elif isinstance(tensors[0], list):
-                return list(map(to_lists, tensors))
-        elif isinstance(tensors, dict):
-            for key, values in tensors.items():
-                if isinstance(values, (dict, list)):
-                    tensors[key] = to_lists(values)
-                elif isinstance(values, Tensor):
-                    tensors[key] = values.tolist()
-        return tensors
-
-    stacked = to_lists(stacked)
-    return stacked
-
-
-def get_mean_task_accuracy(loss: LossInfo, run_tasks: List[List[int]]) -> Tensor:
-    """Gets the mean classification accuracy for each task.
-    
-    Args:
-        loss (LossInfo): A given LossInfo. (usually the last of the cumulative
-        validation losses).
-        run_tasks (List[List[int]]): The classes within each task.
-    
-    Returns:
-        Tensor: Float tensor of shape [len(run_tasks)] containing the mean
-        accuracy for each task. 
-    """
-    # get the last validation metrics.
-    metrics = loss.losses[Tasks.SUPERVISED].metrics
-    classification_metrics: ClassificationMetrics = metrics[Tasks.SUPERVISED]  # type: ignore
-    final_class_accuracy = classification_metrics.class_accuracy
-
-    # Find the mean accuracy per task at the end of training.
-    final_accuracy_per_task = torch.zeros(len(run_tasks))
-    for task_index, classes in enumerate(run_tasks):
-        task_class_accuracies = final_class_accuracy[classes]
-        final_accuracy_per_task[task_index] = task_class_accuracies.mean()
-    return final_accuracy_per_task
 
 
 if __name__ == "__main__":

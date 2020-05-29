@@ -250,13 +250,14 @@ class ExperimentBase(JsonSerializable):
                 all_losses = TrainValidLosses.load_json(all_losses_path)
 
             from itertools import count
-            for i in count():
+            for i in count(start=1):
                 loss_path = temp_save_dir / f"val_loss_{i}.json"
                 if not loss_path.exists():
                     break
                 else:
                     assert len(validation_losses) == (i-1)
-                    validation_losses = LossInfo.load_json(loss_path)
+                    validation_loss = LossInfo.load_json(loss_path)
+                    validation_losses.append(validation_loss)
 
             logger.info(f"Reloaded {len(validation_losses)} existing validation losses")
             logger.info(f"Latest step: {all_losses.latest_step()}.")

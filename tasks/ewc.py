@@ -96,26 +96,28 @@ class EWC(AuxiliaryTask):
                  options: "EWC.Options"=None):
         super().__init__(name=name, options=options)
         self.options: EWC.Options
-        self.current_task_loader = None
-        self.n_ways = None
-        self.prior = None
-        self.tasks_seen=[]
+        self.current_task_loader: Optional[DataLoader] = None
+        self.n_ways: Optional[int] = None
+        self.prior: Optional[GaussianPrior] = None
+        self.tasks_seen: List[int] = []
 
-    def on_task_switch(self, task: Task, **kwargs)-> None:
+    def on_task_switch(self,
+                       task: Task,
+                       prev_task: Task=None,
+                       train_loader: DataLoader=None,
+                       classifier_head: Task=None, **kwargs)-> None:
         """ Executed when the task switches (to either a new or known task). """
-        prev_task = kwargs.get('prev_task', None)
-        classifier_head = kwargs.get('classifier_head', None)
         self.calculate_ewc_prior(prev_task, task, classifier_head)
         #set n_ways of the next task
         self.n_ways = len(task.classes)
         #set data loader of the next task
-        current_task_loader = kwargs.get('train_loader', None)
+        current_task_loader = train_loader
         if current_task_loader is not None:
             self.current_task_loader = current_task_loader
 
     def regularizer_ewc(self):
         if self.prior is None:
-            return Variable(torch.zeros(1)).to(self.device)
+            return torch.zeros(1, requires_grad=True, device=self.device)
         else:
             return self.prior.regularizer(nn.Sequential(AuxiliaryTask.encoder))#, self.model.classifier))
 

@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from simple_parsing.helpers import JsonSerializable as JsonSerializableBase
 from simple_parsing.helpers import SimpleEncoder, encode
-from simple_parsing.helpers.serialization import register_decoding_fn
+from simple_parsing.helpers.serialization import register_decoding_fn, from_dict
 from torch import Tensor, nn
 
 T = TypeVar("T")
@@ -45,6 +45,12 @@ class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):  # ty
         # Remove the unpicklable entries.
         return state
     
+    def to_dict(self) -> Dict:
+        self.detach()
+        if hasattr(self, "drop_tensors"):
+            self.drop_tensors()
+        return super().to_dict()
+
     def detach(self):
         """Move all tensor attributes to the CPU and then detach them in-place.
         Returns `self`, for convenience.
