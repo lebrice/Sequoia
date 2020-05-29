@@ -388,7 +388,11 @@ class ExperimentBase(JsonSerializable):
             step = self.global_step
 
             val_loss = loss_info.total_loss.item()
-            val_acc = loss_info.metrics[Tasks.SUPERVISED].accuracy
+            supervised_metrics = loss_info.metrics.get(Tasks.SUPERVISED)
+            
+            if use_acc:
+                assert supervised_metrics, "Can't use accuracy since there are no supervised metrics in given loss.."
+                val_acc = supervised_metrics.accuracy
 
             if use_acc and (best_perf is None or val_acc > best_perf):
                 best_step = step
