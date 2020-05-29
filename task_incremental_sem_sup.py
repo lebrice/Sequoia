@@ -1,6 +1,7 @@
 import tqdm
 import torch
 import wandb
+import hashlib
 import numpy as np
 from sys import getsizeof
 from torch import Tensor, nn
@@ -56,9 +57,6 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
     # Ratio of samples that have a corresponding label.
     ratio_labelled: float = 0.2
-
-    #start measuring convergence after this epoch
-    converge_after_epoch: int = 0
     # for supervised loss, the alpha parameter for the beta distribution from where the mixing lambda is drawn (used for ICT)
     mixup_sup_alpha: float = 0.
     #length of learning rate rampup in the beginning
@@ -289,7 +287,9 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                                 (train_i, train_sampler_labeled_i, train_sampler_unlabelled_i),
                                 (valid_i, valid_sampler_labelled_i, valid_sampler_unlabelled_i),
                                 epochs=self.unsupervised_epochs_per_task,
-                                description=f"Task {i} (Unsupervised)")
+                                description=f"Task {i} (Unsupervised)",
+                                temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
+                            )
                     # Train (supervised) on task i.
                     # TODO: save the state during training?.
                     self.state.all_losses += self.train(
@@ -298,6 +298,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                         epochs=self.supervised_epochs_per_task,
                         description=f"Task {i} (Supervised)",
                         use_accuracy_as_metric=self.use_accuracy_as_metric,
+                        temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
                     )
             # Save to the 'checkpoints' dir
             #self.save()
@@ -423,7 +424,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
               description: str = None,
               early_stopping_options: EarlyStoppingOptions = None,
               use_accuracy_as_metric: bool = None,
-              temp_save_file: Path = None) -> TrainValidLosses:
+              temp_save_dir: Path = None) -> TrainValidLosses:
         """Trains on the `train_dataloader` and evaluates on `valid_dataloader`.
 
         Periodically evaluates on validation batches during each epoch, as well
@@ -467,6 +468,12 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         """
         train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloaders(*train_dataset)
         valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloaders(*valid_dataset)
+        early_stopping_options = early_stopping_options or self.config.early_stopping
+
+        if use_accuracy_as_metric is None:
+            use_accuracy_as_metric = self.config.use_accuracy_as_metric
+
+        # The --debug_steps argument can be used to shorten the dataloaders.
 
         steps_per_epoch = len(train_dataloader_unlabelled) if len(train_dataloader_unlabelled) > len(
             train_dataloader_labelled) else len(train_dataloader_labelled)
@@ -477,16 +484,35 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             train_dataloader = islice(train_dataloader_labelled, 0, steps_per_epoch)  # type: ignore
         logger.debug(f"Steps per epoch: {steps_per_epoch}")
 
+        # LossInfo objects at each step of validation
+        validation_losses: List[LossInfo] = []
+        # Container for the train and valid losses every `log_interval` steps.
         all_losses = TrainValidLosses()
+
+        if temp_save_dir:
+            temp_save_dir.mkdir(exist_ok=True, parents=True)
+
+            all_losses_path = temp_save_dir / "all_losses.json"
+            if all_losses_path.exists():
+                all_losses = TrainValidLosses.load_json(all_losses_path)
+
+            from itertools import count
+            for i in count():
+                loss_path = temp_save_dir / f"val_loss_{i}.json"
+                if not loss_path.exists():
+                    break
+                else:
+                    assert len(validation_losses) == (i - 1)
+                    validation_losses = LossInfo.load_json(loss_path)
+
+            logger.info(f"Reloaded {len(validation_losses)} existing validation losses")
+            logger.info(f"Latest step: {all_losses.latest_step()}.")
+
         # Get the latest step
         # NOTE: At the moment, will always be zero, but if we reload
         # `all_losses` from a file, would give you the step to start from.
         starting_step = all_losses.latest_step() or self.global_step
-
-        if early_stopping_options is None:
-            early_stopping_options = self.config.early_stopping
-        if use_accuracy_as_metric is None:
-            use_accuracy_as_metric = self.config.use_accuracy_as_metric
+        starting_epoch = len(validation_losses) + 1
 
         if early_stopping_options:
             logger.info(f"Using early stopping with options {early_stopping_options}")
@@ -494,7 +520,8 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         # Hook to keep track of the best model.
         best_model_watcher = self.keep_best_model(
             use_acc=use_accuracy_as_metric,
-            save_path=self.checkpoints_dir / "best_model.pth"
+            save_path=self.checkpoints_dir / "best_model.pth",
+            # previous_losses=validation_losses,
         )
         next(best_model_watcher)
 
@@ -502,6 +529,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         convergence_checker = early_stopping(
             options=early_stopping_options,
             use_acc=use_accuracy_as_metric,
+            # previous_losses=validation_losses,
         )
         next(convergence_checker)
 
@@ -513,7 +541,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         # List to hold the length of each epoch (should all be the same length)
         epoch_lengths: List[int] = []
 
-        for epoch in range(1, epochs + 1):
+        for epoch in range(starting_epoch, epochs + 1):
             self.epoch = epoch
             self.epoch_length = len(train_dataloader_unlabelled)
             pbar = tqdm.tqdm(zip(cycle(train_dataloader_labelled), train_dataloader_unlabelled), total=steps_per_epoch)
@@ -533,21 +561,32 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                     valid_loss.drop_tensors()
 
                     all_losses[self.global_step] = (train_loss, valid_loss)
-                    #self.log({"Train": train_log_dict, "Valid": valid_log_dict})
 
                     message.update(train_loss.to_pbar_message())
                     message.update(valid_loss.to_pbar_message())
                     pbar.set_postfix(message)
+
+                    self.log({
+                        "Train": train_loss,
+                        "Valid": valid_loss,
+                    })
+
             epoch_length = self.global_step - epoch_start_step
             epoch_lengths.append(epoch_length)
 
             # perform a validation epoch.
             val_desc = desc + " Valid"
             val_loss_info = self.test(valid_dataloader_labelled, description=val_desc)
+            if temp_save_dir:
+                val_loss_info.drop_tensors()
+                # TODO: do this in the background saver thread.
+                val_loss_info.save_json(temp_save_dir / f"val_loss_{i}.json")
+                all_losses.save_json(temp_save_dir / f"all_losses.json")
 
             best_step = best_model_watcher.send(val_loss_info)
             logger.debug(f"Best step so far: {best_step}")
-            best_epoch = best_step // int(np.mean(epoch_length))
+
+            best_epoch = (best_step - starting_step) // int(np.mean(epoch_length))
             logger.debug(f"Best epoch so far: {best_epoch}")
 
             converged = convergence_checker.send(val_loss_info)
@@ -568,19 +607,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         logger.info(f"Best step: {best_step}, best_epoch: {best_epoch}, ")
         all_losses.keep_up_to_step(best_step)
 
-        self.global_step = best_step
-        # TODO: add-back the wandb logging.
-
-        for step, (train_loss, valid_loss) in all_losses.items():
-            message = {}
-            if train_loss:
-                message["Train"] = train_loss
-            if valid_loss:
-                message["Valid"] = valid_loss
-            self.log(message, step=step)
-
         return all_losses
-
     def train_until_convergence(self, train_dataset: Tuple[Dataset, SubsetRandomSampler, SubsetRandomSampler],
                                 valid_dataset: Tuple[Dataset, SubsetRandomSampler, SubsetRandomSampler],
                                 max_epochs: int,

@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import time
+import hashlib
 from abc import ABC, abstractmethod
 from collections import MutableMapping, OrderedDict, defaultdict
 from dataclasses import asdict, dataclass, is_dataclass
@@ -111,6 +112,7 @@ class ExperimentBase(JsonSerializable):
         self.saver_worker: Optional[SaverWorker] = None
 
         self.state = self.State()
+        self.md5 = hashlib.md5(str(self.hparams).encode('utf-8') + str(self).encode('utf-8')).hexdigest()
 
     def __del__(self):
         print("Destroying the 'Experiment' object.")
@@ -627,7 +629,7 @@ class ExperimentBase(JsonSerializable):
 
     @property
     def checkpoints_dir(self) -> Path:
-        return self.config.log_dir / "checkpoints"
+        return self.config.log_dir / "checkpoints" / self.md5
 
     @property
     def log_dir(self) -> Path:
@@ -677,6 +679,7 @@ class ExperimentBase(JsonSerializable):
 
     def to_config_dict(self) -> Dict:
         d = asdict(self)
+        d['md5'] = self.md5
         d = take_out_unsuported_values(d)
         return d
 

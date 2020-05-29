@@ -16,6 +16,7 @@ from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision import models
+from .CNN13 import CNN13
 from torchvision.utils import save_image
 
 from common.layers import ConvBlock, Flatten
@@ -62,6 +63,7 @@ class Classifier(nn.Module):
             "alexnet": models.alexnet,
             # "squeezenet": models.squeezenet1_0,  # Not supported yet (weird output shape)
             "densenet": models.densenet161,
+            "cnn13": CNN13,
             # "inception": models.inception_v3,  # Not supported yet (creating model takes forever?)
             # "googlenet": models.googlenet,  # Not supported yet (creating model takes forever?)
             # "shufflenet": models.shufflenet_v2_x1_0,

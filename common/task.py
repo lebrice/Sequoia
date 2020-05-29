@@ -13,3 +13,6 @@ class Task(JsonSerializable):
     index: int = field(default=-1, repr=False)
     # All the unique classes present within this task. (order matters)
     classes: List[int] = list_field()
+
+
+

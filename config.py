@@ -118,6 +118,7 @@ class Config:
     def log_dir(self):
         return self.log_dir_root.joinpath(
             (self.run_group or ""),
+            (os.environ['USER']),
             (self.run_name or 'default'),
             (f"run_{self.run_number}" if self.run_number is not None else ""),
         )
