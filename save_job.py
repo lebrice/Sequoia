@@ -1,7 +1,6 @@
 import torch
 import torch.multiprocessing as mp
 from pathlib import Path
-from experiment import Experiment
 import logging
 logger = mp.get_logger()
 logger.setLevel(logging.DEBUG)
@@ -11,6 +10,12 @@ from config import Config
 import wandb
 from models.classifier import Classifier
 from utils.json_utils import JsonSerializable
+
+from functools import singledispatch
+
+class SaveTuple(NamedTuple):
+    save_path: Path
+    obj: object
 
 
 class SaverWorker(mp.Process):
@@ -26,36 +31,25 @@ class SaverWorker(mp.Process):
         #     wandb.init(project="falr", config=hp.as_dict, group=hp.md5, job_type='background')
         item = self.q.get()
         while item is not None:
-            if isinstance(item, dict) and "save_dir" in item:
-                self.save(**item)
+            if isinstance(item, SaveTuple):
+                self.save(*item)
             item = self.q.get()
 
-    def save(self, save_dir: Path, state: Experiment.State, model_state_dict: Dict[str, Tensor]=None) -> None:
-        # TODO: Make this work for any kind of JsonSerializable object, not just State.
-        # (Use functools.singledispatch to choose what kind of saving to do.)
-        logger.debug(
-            f"Asked to save {type(state)} object to path {save_dir}." +
-            (f" and the model weights to path {state.model_weights_path}."
-                if model_state_dict else ".")
-        )
-        save_dir.mkdir(parents=True, exist_ok=True)
+    def save(self, save_path: Path, obj: object) -> None:
+        logger.debug(f"Asked to save {type(obj)} object to path {save_path}.")
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        save(obj, save_path)
 
-        saved_weights_path = save_dir / "model_weights.pth"
-        if model_state_dict:
-            torch.save(model_state_dict, saved_weights_path)    
-            state.model_weights_path = saved_weights_path
+@singledispatch
+def save(obj: object, save_path: Path) -> None:
+    # Save to the .tmp file (such that if the saving crashes or is interrupted,
+    # we don't leave the file in a corrupted state.)
+    save_path_tmp = save_path.with_suffix(".tmp")
+    torch.save(obj, save_path_tmp)
+    save_path_tmp.replace(save_path)
 
-        save_json_path = save_dir / "state.json"
-        save_json_tmp_path = save_json_path.with_suffix(".tmp")
-        # Save to the .tmp file (such that if the saving crashes or is interrupted,
-        # we don't leave the file in a corrupted state.)
-        state.save_json(save_json_tmp_path)
-        save_json_tmp_path.replace(save_json_path)
-        message = {
-            "global step": state.global_step,
-        }
-        if hasattr(state, "i"):
-            message["i"] = state.i
-        if hasattr(state, "j"):
-            message["j"] = state.j
-        logging.debug(f"Finished saving state {message} to directory {save_dir}")
+@save.register
+def save_json(obj: JsonSerializable, save_path: Path) -> None:
+    save_path_tmp = save_path.with_suffix(".tmp")
+    obj.save_json(save_path_tmp)
+    save_path_tmp.replace(save_path)

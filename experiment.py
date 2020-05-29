@@ -9,7 +9,6 @@ from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
                     Tuple, Type, Union)
-
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -38,7 +37,7 @@ from utils.logging import pbar
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
 logger = Config.get_logger(__file__)
-
+from save_job import SaveTuple
 
 @dataclass  # type: ignore
 class ExperimentBase(JsonSerializable):
@@ -494,10 +493,11 @@ class ExperimentBase(JsonSerializable):
             pin_memory=self.config.use_cuda,
         )
     
-    def save(self, save_dir: Path=None, save_model_weights: bool=True) -> None:
+    def save(self, save_dir: Path=None, save_model_weights: bool=True, blocking: bool=False) -> None:
         if self.saver_worker is None:
             from save_job import SaverWorker
             self.saver_worker = SaverWorker(self.config, self.background_queue)
+        if not self.saver_worker.is_alive():
             self.saver_worker.start()
 
         # If there are common attributes between the Experiment and the State
@@ -518,15 +518,17 @@ class ExperimentBase(JsonSerializable):
                 model_state_dict[k] = tensor.detach().cpu()
 
         logger.debug(f"Saving state (in background) to save_dir {save_dir}")
-        self.background_queue.put({
-            "save_dir": save_dir,
-            "state": self.state,
-            "model_state_dict": model_state_dict,
-        })
-        
 
 
+        self.background_queue.put(SaveTuple(save_dir / "state.json", self.state))
+        if model_state_dict:
+            self.background_queue.put(SaveTuple(save_dir / "model_weights.pth", model_state_dict))
         
+        if blocking:
+            self.background_queue.put(None)
+            self.saver_worker.join()
+            self.saver_worker.kill()
+      
 
     def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
         if always_print or (self.config.debug and self.config.verbose):
