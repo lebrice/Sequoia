@@ -37,7 +37,6 @@ class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):  # ty
             self.dump(f, **dump_kwargs)
         # Rename (or replace) the save path with the temp file.
         save_path_tmp.replace(path)
-
         # super().save_json(path, **dump_kwargs)
 
     def __getstate__(self):

@@ -2,6 +2,17 @@
 <project version="4">
   <component name="PublishConfigData" autoUpload="Always" serverName="mila_cluster">
     <serverData>
+      <paths name="beluga">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/dev/SSCL" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/data" />
+            <excludedPath local="true" path="$PROJECT_DIR$/results" />
+          </excludedPaths>
+        </serverdata>
+      </paths>
       <paths name="cedar">
         <serverdata>
           <mappings>

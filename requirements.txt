@@ -1,7 +1,0 @@
-torch==1.4.0
-torchvision==0.5.0
-tqdm
-simple_parsing==0.0.9
-wandb
-matplotlib
-plotly

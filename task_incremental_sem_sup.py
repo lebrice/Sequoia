@@ -232,7 +232,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             self.logger.info(f"i={self.state.i}, j={self.state.j}")
 
         self.tasks = self.state.tasks
-        self.save(save_model_weights=False)
+        #self.save(save_model_weights=False)
 
         # Load the datasets
         self.load_datasets(self.tasks)
@@ -288,7 +288,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                                 (valid_i, valid_sampler_labelled_i, valid_sampler_unlabelled_i),
                                 epochs=self.unsupervised_epochs_per_task,
                                 description=f"Task {i} (Unsupervised)",
-                                temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
+                                temp_save_dir=self.f / f"task_{i}_unsupervised",
                             )
                     # Train (supervised) on task i.
                     # TODO: save the state during training?.
@@ -361,7 +361,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
             # Save the state with the new metrics, but no need to save the
             # model weights, as they didn't change.
-            self.save(save_model_weights=False)
+            #self.save(save_model_weights=False)
 
             self.state.j = 0
             cumul_loss = self.state.cumul_losses[i]
@@ -497,13 +497,14 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 all_losses = TrainValidLosses.load_json(all_losses_path)
 
             from itertools import count
-            for i in count():
+            for i in count(start=1):
                 loss_path = temp_save_dir / f"val_loss_{i}.json"
                 if not loss_path.exists():
                     break
                 else:
                     assert len(validation_losses) == (i - 1)
-                    validation_losses = LossInfo.load_json(loss_path)
+                    validation_loss = LossInfo.load_json(loss_path)
+                    validation_losses.append(validation_loss)
 
             logger.info(f"Reloaded {len(validation_losses)} existing validation losses")
             logger.info(f"Latest step: {all_losses.latest_step()}.")

@@ -314,4 +314,5 @@ class Classifier(nn.Module):
         """
         self.optimizer.step()
         for name, task in self.tasks.items():
-            task.on_model_changed(global_step=global_step, **kwargs)
+            if task.enabled:
+                task.on_model_changed(global_step=global_step, **kwargs)

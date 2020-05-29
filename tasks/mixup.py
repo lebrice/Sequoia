@@ -10,11 +10,12 @@ from torch.nn import functional as F
 from collections import OrderedDict
 from common.losses import LossInfo
 from common.task import Task
-
+from utils import cuda_available
 from .auxiliary_task import AuxiliaryTask
 import logging
 from config import Config
 logger = logging.getLogger(__file__)
+
 
 def mixup_data_sup(x, y, alpha=1.0):
     '''Compute the mixup data. Return mixed inputs, pairs of targets, and lambda'''
@@ -42,9 +43,11 @@ def mixup_data(x, y, alpha=1.0):
     x, y = x.data.cpu().numpy(), y.data.cpu().numpy()
     mixed_x = torch.Tensor(lam * x + (1 - lam) * x[index, :])
     mixed_y = torch.Tensor(lam * y + (1 - lam) * y[index, :])
+    mixed_x = mixed_x.cuda() if cuda_available else mixed_x
+    mixed_y = mixed_y.cuda() if cuda_available else mixed_y
 
-    mixed_x = Variable(mixed_x.cuda())
-    mixed_y = Variable(mixed_y.cuda())
+    mixed_x = Variable(mixed_x)
+    mixed_y = Variable(mixed_y)
     return mixed_x, mixed_y, lam
 
 def softmax_mse_loss(input_logits, target_logits):
@@ -84,7 +87,8 @@ def mixup(x1: Tensor, x2: Tensor, coeff: Tensor) -> Tensor:
     return torch.lerp(x1, x2, coeff)
 
 
-from copy import deepcopy
+#from copy import deepcopy
+from models.CNN13 import deepcopy_cnn13
 from utils.utils import add_dicts
 
 
@@ -152,8 +156,8 @@ class MixupTask(AuxiliaryTask):
         self.logger = Config.get_logger(__file__)
 
         # Exponential moving average versions of the encoder and output head.
-        self.mean_encoder: nn.Module = deepcopy(AuxiliaryTask.encoder)
-        self.mean_classifier: nn.Module = deepcopy(AuxiliaryTask.encoder)
+        self.mean_encoder: nn.Module = deepcopy_cnn13(AuxiliaryTask.encoder)
+        self.mean_classifier: nn.Module = deepcopy_cnn13(AuxiliaryTask.classifier)
         self.previous_task: Optional[Task] = None
 
         self.epoch_in_task: Optional[int] = 0
@@ -162,8 +166,8 @@ class MixupTask(AuxiliaryTask):
         self.consistency_criterion = softmax_mse_loss
 
     def enable(self):
-        self.mean_encoder = deepcopy(AuxiliaryTask.encoder)
-        self.mean_classifier = deepcopy(AuxiliaryTask.classifier)
+        self.mean_encoder = deepcopy_cnn13(AuxiliaryTask.encoder)
+        self.mean_classifier = deepcopy_cnn13(AuxiliaryTask.classifier)
 
     def disable(self):
         del self.mean_encoder
@@ -196,7 +200,7 @@ class MixupTask(AuxiliaryTask):
     def on_task_switch(self, task: Task, **kwargs) -> None:
         if self.enabled and task != self.previous_task:
             self.logger.info(f"Discarding the mean classifier on switch to task {task}")
-            self.mean_classifier = deepcopy(AuxiliaryTask.classifier)
+            self.mean_classifier = deepcopy_cnn13(AuxiliaryTask.classifier)
             self.previous_task = task
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
