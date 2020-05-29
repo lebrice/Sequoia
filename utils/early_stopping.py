@@ -49,7 +49,7 @@ def early_stopping(options: EarlyStoppingOptions, use_acc: bool=False) -> Genera
         
         from tasks.tasks import Tasks
         val_loss = val_loss_info.total_loss.item()
-        supervised_metrics = loss_info.metrics.get(Tasks.SUPERVISED)
+        supervised_metrics = val_loss_info.metrics.get(Tasks.SUPERVISED)
             
         if use_acc:
             assert supervised_metrics, "Can't use accuracy since there are no supervised metrics in given loss.."
