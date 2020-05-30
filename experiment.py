@@ -512,7 +512,7 @@ class ExperimentBase(JsonSerializable):
         if model_state_dict:
             self.save(save_dir / "model_weights.pth", model_state_dict)
 
-    def save(self, path: Path, obj: Any, blocking: bool=False) -> None:
+    def save(self, path: Path, obj: Any, blocking: bool=True) -> None:
         """Save the object `obj` to path `path`.
 
         If `blocking` is False, uses a background process. Otherwise, blocks
