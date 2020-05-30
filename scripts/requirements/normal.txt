@@ -1,3 +1,4 @@
 wandb
 plotly
 scikit-learn
+typing-inspect
