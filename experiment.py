@@ -247,6 +247,7 @@ class ExperimentBase(JsonSerializable):
             
             all_losses_path = temp_save_dir / "all_losses.json"
             if all_losses_path.exists():
+                logger.info(f"Loading all_losses from {all_losses_path}")
                 all_losses = TrainValidLosses.load_json(all_losses_path)
 
             from itertools import count
@@ -277,6 +278,8 @@ class ExperimentBase(JsonSerializable):
             save_path=self.checkpoints_dir / "best_model.pth",
             # previous_losses=validation_losses,
         )
+        best_step = starting_step
+        best_epoch = starting_epoch
         next(best_model_watcher)
         
         # Hook to test for convergence.

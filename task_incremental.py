@@ -144,6 +144,7 @@ class TaskIncremental(Experiment):
             self.logger.info(f"Will load state from {self.restore_from_path}")
             self.load_state(self.restore_from_path)
 
+
         if self.done:
             self.logger.info(f"Experiment is already done.")
             # exit()

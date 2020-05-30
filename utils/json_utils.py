@@ -29,6 +29,17 @@ class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):  # ty
         dumps_kwargs.setdefault("sort_keys", sort_keys)
         return super().dumps(**dumps_kwargs)
 
+    def save_json(self, path: Path, **dump_kwargs) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Save to temp file, so we don't corrupt the save file.
+        save_path_tmp = path.with_suffix(".tmp")
+        with open(save_path_tmp, "w") as f:
+            self.dump(f, **dump_kwargs)
+        # Rename (or replace) the save path with the temp file.
+        save_path_tmp.replace(path)
+
+        # super().save_json(path, **dump_kwargs)
+
     def __getstate__(self):
         """ We implement this to just make sure to detach the tensors if any
         before pickling.

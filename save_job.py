@@ -36,20 +36,20 @@ class SaverWorker(mp.Process):
             item = self.q.get()
 
     def save(self, save_path: Path, obj: object) -> None:
-        logger.debug(f"Asked to save {type(obj)} object to path {save_path}.")
+        logger.debug(f"Asked to save {type(obj)} object to path {save_path}")
         save_path.parent.mkdir(parents=True, exist_ok=True)
         save(obj, save_path)
+        logger.debug(f"Done saving object to path {save_path}")
 
 @singledispatch
 def save(obj: object, save_path: Path) -> None:
     # Save to the .tmp file (such that if the saving crashes or is interrupted,
     # we don't leave the file in a corrupted state.)
     save_path_tmp = save_path.with_suffix(".tmp")
-    torch.save(obj, save_path_tmp)
+    with open(save_path_tmp, "wb") as f:
+        torch.save(obj, f)
     save_path_tmp.replace(save_path)
 
 @save.register
 def save_json(obj: JsonSerializable, save_path: Path) -> None:
-    save_path_tmp = save_path.with_suffix(".tmp")
-    obj.save_json(save_path_tmp)
-    save_path_tmp.replace(save_path)
+    obj.save_json(save_path)

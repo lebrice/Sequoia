@@ -252,7 +252,8 @@ class Classifier(nn.Module):
         self.current_task = task
         # also inform the auxiliary tasks that the task switched.
         for name, aux_task in self.tasks.items():
-            aux_task.on_task_switch(task, **kwargs)
+            if aux_task.enabled:
+                aux_task.on_task_switch(task, **kwargs)
 
     def get_output_head(self, task: Task):
         return self.output_heads[task.dumps()]
