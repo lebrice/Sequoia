@@ -58,10 +58,8 @@ class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):  # ty
     
     def to_dict(self) -> Dict:
         return self.__getstate__()
-        # self.detach()
-        # if hasattr(self, "drop_tensors"):
-        #     self.drop_tensors()
         # return super().to_dict()
+        # return asdict(self)
 
     def detach(self):
         """Move all tensor attributes to the CPU and then detach them in-place.

@@ -339,7 +339,7 @@ class ExperimentBase(JsonSerializable):
             best_step = best_model_watcher.send(val_loss_info)
             logger.debug(f"Best step so far: {best_step}")
 
-            best_epoch = (best_step - starting_step) // int(np.mean(epoch_length))
+            best_epoch = (best_step - starting_step) // int(np.mean(epoch_lengths))
             logger.debug(f"Best epoch so far: {best_epoch}")
 
             converged = convergence_checker.send(val_loss_info)
