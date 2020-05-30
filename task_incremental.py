@@ -157,7 +157,7 @@ class TaskIncremental(Experiment):
             self.logger.info(f"i={self.state.i}, j={self.state.j}")
         
         self.tasks = self.state.tasks
-        self.save(save_model_weights=False)
+        self.save_state(save_model_weights=False)
         
         # Load the datasets
         self.load_task_datasets(self.tasks)
@@ -213,7 +213,7 @@ class TaskIncremental(Experiment):
                     )
             
             # Save to the 'checkpoints' dir
-            self.save()
+            self.save_state()
             
             # Evaluation loop:
             for j in range(self.state.j, self.n_tasks):
@@ -260,7 +260,7 @@ class TaskIncremental(Experiment):
 
             # Save the state with the new metrics, but no need to save the
             # model weights, as they didn't change.
-            self.save(save_model_weights=False)
+            self.save_state(save_model_weights=False)
             
             self.state.j = 0
             cumul_loss = self.state.cumul_losses[i]
@@ -271,7 +271,7 @@ class TaskIncremental(Experiment):
         self.state.i = self.n_tasks
         self.state.j = self.n_tasks
 
-        self.save(self.results_dir) # Save to the 'results' dir.
+        self.save_state(self.results_dir) # Save to the 'results' dir.
         
         for i, cumul_loss in enumerate(self.state.cumul_losses):
             assert cumul_loss is not None, f"cumul loss at {i} should not be None!"
@@ -548,7 +548,7 @@ class TaskIncremental(Experiment):
     def started(self) -> bool:
         checkpoint_exists = (self.checkpoints_dir / "state.json").exists()
         return super().started and checkpoint_exists
-
+    
 
 def get_supervised_accuracy(cumul_loss: LossInfo) -> float:
     # TODO: this is ugly. There is probably a cleaner way, but I can't think of it right now. 

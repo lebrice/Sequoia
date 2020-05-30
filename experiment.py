@@ -332,10 +332,9 @@ class ExperimentBase(JsonSerializable):
             val_desc = desc + " Valid"
             val_loss_info = self.test(valid_dataloader, description=val_desc)
             if temp_save_dir:
-                val_loss_info.drop_tensors()
-                # TODO: do this in the background saver thread.
-                val_loss_info.save_json(temp_save_dir / f"val_loss_{i}.json")
-                all_losses.save_json(temp_save_dir / f"all_losses.json")
+                # Save these files in the background using the saver process.
+                self.save(temp_save_dir / f"val_loss_{i}.json", val_loss_info)
+                self.save(temp_save_dir / f"all_losses.json", all_losses)
             
             best_step = best_model_watcher.send(val_loss_info)
             logger.debug(f"Best step so far: {best_step}")
@@ -369,7 +368,7 @@ class ExperimentBase(JsonSerializable):
         # Temporary file, used to make sure we don't corrupt the best weights
         # file if the script is killed while copying stuff.
         save_path_tmp = save_path.with_suffix(".tmp")
-        
+
         def save_weights():
             state_dict = self.model.state_dict()
             torch.save(state_dict, save_path_tmp)
@@ -497,42 +496,45 @@ class ExperimentBase(JsonSerializable):
             pin_memory=self.config.use_cuda,
         )
     
-    def save(self, save_dir: Path=None, save_model_weights: bool=True, blocking: bool=False) -> None:
-        if self.saver_worker is None:
-            from save_job import SaverWorker
-            self.saver_worker = SaverWorker(self.config, self.background_queue)
-        if not self.saver_worker.is_alive():
-            self.saver_worker.start()
-
-        # If there are common attributes between the Experiment and the State
-        # objects, then also copy them over into the State to be saved.
-        # NOTE: (FN) This is a bit extra, I don't think its needed.
-        for name, (v1, v2) in common_fields(self, self.state):
-            logger.debug(f"Copying the '{name}' attribute into the 'State' object to be saved.")
-            setattr(self.state, name, v1)
-        
-        self.state.global_step = self.global_step
+    def save_state(self, save_dir: Path=None, save_model_weights: bool=True) -> None:
         save_dir = save_dir or self.checkpoints_dir
         
-        model_state_dict: Optional[Dict[str, Tensor]] = None
+        # Store the most up to date global step in the state object.
+        self.state.global_step = self.global_step or self.state.global_step
+        
+        model_state_dict: Dict[str, Tensor] = OrderedDict()
         if save_model_weights:
-            model_state_dict = OrderedDict()
-            tensor: Tensor
             for k, tensor in self.model.state_dict().items():
                 model_state_dict[k] = tensor.detach().cpu()
 
         logger.debug(f"Saving state (in background) to save_dir {save_dir}")
-
-
-        self.background_queue.put(SaveTuple(save_dir / "state.json", self.state))
+        self.save(save_dir / "state.json", self.state)
         if model_state_dict:
-            self.background_queue.put(SaveTuple(save_dir / "model_weights.pth", model_state_dict))
+            self.save(save_dir / "model_weights.pth", model_state_dict)
+
+    def save(self, path: Path, obj: Any, blocking: bool=False) -> None:
+        """Save the object `obj` to path `path`.
+
+        If `blocking` is False, uses a background process. Otherwise, blocks
+        until saving is complete. 
+
+        Args:
+            path (Path): Path to save to.
+            obj (Any): object to save. (if JsonSerializable, will be saved to json)
+            blocking (bool, optional): Wether to wait for the operation to
+                finish, or to delegate to a background process. Defaults to False.
+        """
+        from save_job import SaverWorker, save
+        assert isinstance(path, Path), f"positional argument 'path' should be a Path! (got {path})"
         
         if blocking:
-            self.background_queue.put(None)
-            self.saver_worker.join()
-            self.saver_worker.kill()
-      
+           save(obj=obj, save_path=path)
+        else:
+            if self.saver_worker is None:
+                self.saver_worker = SaverWorker(self.config, self.background_queue)
+            if not self.saver_worker.is_alive():
+                self.saver_worker.start()
+            self.background_queue.put(SaveTuple(save_path=path, obj=obj))
 
     def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
         if always_print or (self.config.debug and self.config.verbose):
