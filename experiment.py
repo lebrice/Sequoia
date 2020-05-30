@@ -528,7 +528,7 @@ class ExperimentBase(JsonSerializable):
         assert isinstance(path, Path), f"positional argument 'path' should be a Path! (got {path})"
         
         if blocking:
-           save(obj=obj, save_path=path)
+           save(obj, save_path=path)
         else:
             if self.saver_worker is None:
                 self.saver_worker = SaverWorker(self.config, self.background_queue)
