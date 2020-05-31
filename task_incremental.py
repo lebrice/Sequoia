@@ -271,6 +271,7 @@ class TaskIncremental(Experiment):
         self.state.i = self.n_tasks
         self.state.j = self.n_tasks
 
+        self.save_state(self.checkpoints_dir) # Save to the 'checkpoints' dir.
         self.save_state(self.results_dir) # Save to the 'results' dir.
         
         for i, cumul_loss in enumerate(self.state.cumul_losses):
@@ -333,19 +334,21 @@ class TaskIncremental(Experiment):
                 knn_loss = knn_losses[i][j] 
                 knn_acc = knn_loss.metrics["KNN"].accuracy
                 knn_accuracies[i][j] = knn_acc
-                
+                print(f"KNN accuracy {i} {j}: {knn_acc:.3%}", id(knn_loss))
                 if j <= i:
                     task_loss = task_losses[i][j]
                     sup_acc = task_loss.losses["supervised"].metrics["supervised"].accuracy
-                    print(f"Supervised accuracy {i} {j}: {sup_acc:.3%}")
+                    # print(f"Supervised accuracy {i} {j}: {sup_acc:.3%}")
                 else:
                     sup_acc = np.nan
                 classifier_accuracies[i][j] = sup_acc         
         
+        np.set_printoptions(precision=10)
+        
         fig.suptitle("KNN Accuracies")
-        knn_accs = np.array(knn_accuracies).round(2)
+        knn_accs = np.array(knn_accuracies)
         logger.info(f"KNN Accuracies: \n{knn_accs}")
-        sup_accs = np.array(classifier_accuracies).round(2)
+        sup_accs = np.array(classifier_accuracies)
         logger.info(f"Supervised Accuracies: \n{sup_accs}")
     
         im = ax.imshow(knn_accs)
@@ -403,6 +406,8 @@ class TaskIncremental(Experiment):
                 map_location=self.config.device,
             )
             self.model.load_state_dict(state_dict, strict=False)
+        else:
+            self.logger.info(f"Not restoring model weights (self.state.model_weights_path is None)")
 
         # TODO: Fix this so the global_step is nicely loaded/restored.
         self.global_step = self.state.global_step or self.state.all_losses.latest_step()

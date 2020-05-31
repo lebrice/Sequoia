@@ -373,6 +373,7 @@ class ExperimentBase(JsonSerializable):
             state_dict = self.model.state_dict()
             torch.save(state_dict, save_path_tmp)
             save_path_tmp.replace(save_path)
+            self.state.model_weights_path = save_path
             logger.info(f"Saved best model weights to path {save_path}.")
         
         def load_weights():
@@ -526,7 +527,6 @@ class ExperimentBase(JsonSerializable):
         """
         from save_job import SaverWorker, save
         assert isinstance(path, Path), f"positional argument 'path' should be a Path! (got {path})"
-        
         if blocking:
            save(obj, save_path=path)
         else:

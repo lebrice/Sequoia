@@ -150,7 +150,7 @@ class Config:
         # logger.info(f"Wandb run id: {run_id}")
 
         run = wandb.init(
-            project='SSCL_resnet18_2',
+            project='SSCL',
             name=self.run_name,
             # id=run_id,
             group=self.run_group,
