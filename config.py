@@ -147,12 +147,13 @@ class Config:
 
         # TODO: add *proper* wandb resuming, probaby by using @nitarshan 's md5 id cool idea. 
         # run_id = wandb.util.generate_id()
-        # logger.info(f"Wandb run id: {run_id}")
+        run_id = "-".join([self.run_group, self.run_name, (self.run_number or 0)])
+        logger.info(f"Wandb run id: {run_id}")
 
         run = wandb.init(
             project='SSCL',
             name=self.run_name,
-            # id=run_id,
+            id=run_id,
             group=self.run_group,
             config=config_dict,
             dir=str(self.wandb_path),
