@@ -166,10 +166,10 @@ class TaskIncremental(Experiment):
         self.logger.info(f"Class Ordering: {self.state.tasks}")
         
         if self.state.global_step == 0:
-            self.state.knn_losses   = [[None] * self.n_tasks] * self.n_tasks # [N,N]
-            self.state.task_losses  = [[None] * (i+1) for i in range(self.n_tasks)] # [N,J]
-            self.state.cumul_losses = [None] * self.n_tasks # [N]
-        
+            self.state.knn_losses   = [[None for _ in range(self.n_tasks)] for _ in range(self.n_tasks)]
+            self.state.task_losses  = [[None for _ in range(i+1)] for i in range(self.n_tasks)] # [N,J]
+            self.state.cumul_losses = [None for _ in range(self.n_tasks)] # [N]
+
         for i in range(self.state.i, self.n_tasks):
             self.state.i = i
             self.logger.info(f"Starting task {i} with classes {self.tasks[i]}")
