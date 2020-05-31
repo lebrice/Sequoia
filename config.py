@@ -147,7 +147,8 @@ class Config:
 
         # TODO: add *proper* wandb resuming, probaby by using @nitarshan 's md5 id cool idea. 
         # run_id = wandb.util.generate_id()
-        run_id = "-".join([self.run_group, self.run_name, (self.run_number or 0)])
+        run_id = "-".join([self.run_group, self.run_name, str(self.run_number or 0)])
+
         logger.info(f"Wandb run id: {run_id}")
 
         run = wandb.init(
