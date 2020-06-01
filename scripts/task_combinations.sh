@@ -3,7 +3,7 @@
 NAME="${1:?'Name must be set'}"
 OUT="$SCRATCH/slurm_out/$NAME/%x-%j.out"
 N_JOBS="${2:?'N_JOBS must be set'}"
-ARGS=${@:3}
+ARGS="${@:3}"
 
 echo "Sweep with name '$NAME' and with args '$ARGS'"
 echo "Number of jobs per task: $N_JOBS"
@@ -26,7 +26,7 @@ SIMCLR_ARGS="--simclr.coef 1"
 sbatch --output $OUT --job-name baseline            --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_baseline"                    $N_JOBS $ARGS 
 sbatch --output $OUT --job-name rotation            --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_rotation_1_nc"               $N_JOBS $ARGS $ROT_ARGS
 sbatch --output $OUT --job-name ae                  --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_ae_001"                      $N_JOBS $ARGS $AE_ARGS
-sbatch --output $OUT --job-name simclr     	        --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_simclr_1"                    $N_JOBS $ARGS $SIMCLR_ARGS
+sbatch --output $OUT --job-name simclr     	    --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_simclr_1"                    $N_JOBS $ARGS $SIMCLR_ARGS
 sbatch --output $OUT --job-name rotation_ae         --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_rotation_1_nc_ae_001"        $N_JOBS $ARGS $ROT_ARGS $AE_ARGS
 sbatch --output $OUT --job-name rotation_simclr     --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_rotation_1_nc_simclr_1"      $N_JOBS $ARGS $ROT_ARGS $SIMCLR_ARGS
 sbatch --output $OUT --job-name vae_simclr          --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_ae_001_simclr_1"             $N_JOBS $ARGS $AE_ARGS $SIMCLR_ARGS
