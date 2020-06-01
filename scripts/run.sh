@@ -5,7 +5,6 @@
 #SBATCH --mem=32G                       # Memory proportional to GPUs: 32000 Cedar, 64000 Graham.
 #SBATCH --time=24:00:00                 # The job will run for 24 hours max
 #SBATCH --output /scratch/normandf/slurm_out/%x/%x-%A_%a.out  # Write stdout in $SCRATCH
-#SBATCH --error  /scratch/normandf/slurm_out/%x/%x-%A_%a.err  # Write stderr in $SCRATCH
 
 
 cd $SCRATCH/repos/SSCL
