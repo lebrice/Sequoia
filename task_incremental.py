@@ -340,7 +340,7 @@ class TaskIncremental(Experiment):
                     sup_acc = task_loss.losses["supervised"].metrics["supervised"].accuracy
                     # print(f"Supervised accuracy {i} {j}: {sup_acc:.3%}")
                 else:
-                    sup_acc = np.nan
+                    sup_acc = -1
                 classifier_accuracies[i][j] = sup_acc         
         
         np.set_printoptions(precision=10)
