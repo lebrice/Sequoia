@@ -35,7 +35,7 @@ echo "Calling python -u main.py task-incremental \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     ${@}"
 
-python -u main.py task-incremental \
+exec python -u main.py task-incremental \
     --data_dir $SLURM_TMPDIR/data \
     --log_dir_root $SLURM_TMPDIR/SSCL \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
