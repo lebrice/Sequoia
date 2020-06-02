@@ -6,12 +6,18 @@
 
 function create_load_environment(){    
     b=`pwd` # save the current directory.
-    
-    echo "Creating the environment locally on the compute node."
     module load python/3.7
-    virtualenv --no-download $SLURM_TMPDIR/env
-    source $SLURM_TMPDIR/env/bin/activate
+    
+    if [[ $HOSTNAME == *"cedar"* ]]; then
+        echo "Creating the environment locally on the compute node."
+        virtualenv --no-download $SLURM_TMPDIR/env
+        source $SLURM_TMPDIR/env/bin/activate
+    elif [[ $HOSTNAME == *"blg"* ]]; then
+        echo "Loading up the virtualenv at ~/ENV since we're on Beluga."
+        source ~/ENV/bin/activate
+    fi
 
+    
     cd $SCRATCH/repos/SSCL
     # Install the packages that *do* need an internet connection.
     pip install -r scripts/requirements/normal.txt
