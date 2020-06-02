@@ -23,15 +23,15 @@ def download_pretrained_models(save_dir: Path=None) -> None:
         models.resnet101,
         models.resnet152,
         models.alexnet,
-        models.squeezenet1_0,  # Not supported yet (weird output shape)
+        # models.squeezenet1_0,  # Not supported yet (weird output shape)
         models.densenet161,
-        models.inception_v3,  # Not supported yet (creating model takes forever?)
-        models.googlenet,  # Not supported yet (creating model takes forever?)
-        models.shufflenet_v2_x1_0,
-        models.mobilenet_v2,
-        models.resnext50_32x4d,
-        models.wide_resnet50_2,
-        models.mnasnet1_0,
+        # models.inception_v3,  # Not supported yet (creating model takes forever?)
+        # models.googlenet,  # Not supported yet (creating model takes forever?)
+        # models.shufflenet_v2_x1_0,
+        # models.mobilenet_v2,
+        # models.resnext50_32x4d,
+        # models.wide_resnet50_2,
+        # models.mnasnet1_0,
     ]
     for model in all_models:
         print(f"Downloading model {model.__name__}")

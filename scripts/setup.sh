@@ -7,7 +7,7 @@
 function create_load_environment(){    
     b=`pwd` # save the current directory.
     module load python/3.7
-    
+
     if [[ $HOSTNAME == *"cedar"* ]]; then
         echo "Creating the environment locally on the compute node."
         virtualenv --no-download $SLURM_TMPDIR/env
@@ -16,14 +16,12 @@ function create_load_environment(){
         echo "Loading up the virtualenv at ~/ENV since we're on Beluga."
         source ~/ENV/bin/activate
     fi
-
     
     cd $SCRATCH/repos/SSCL
     # Install the packages that *do* need an internet connection.
     pip install -r scripts/requirements/normal.txt
     # Install the required packages that don't need to be downloaded from the internet.
     pip install -r scripts/requirements/no_index.txt	--no-index
-    pip install -r scripts/requirements/no_deps.txt 	--no-deps
 
     cd $b  # go back to the original directory.
 }
