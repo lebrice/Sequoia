@@ -70,4 +70,5 @@ fi
 
 create_load_environment
 download_required_stuff
-
+git submodule init
+git submodule update
