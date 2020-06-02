@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
                     Tuple, Type, Union)
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -17,6 +18,7 @@ import tqdm
 import wandb
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset, Sampler, TensorDataset
+from torchvision.datasets import VisionDataset
 
 from common.losses import LossInfo, TrainValidLosses
 from common.metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
@@ -26,18 +28,19 @@ from datasets import DatasetConfig
 from datasets.cifar import Cifar10, Cifar100
 from datasets.fashion_mnist import FashionMnist
 from datasets.mnist import Mnist
-from datasets.subset import Subset
+from datasets.subset import VisionDatasetSubset
 from models.classifier import Classifier
+from save_job import SaveTuple
 from simple_parsing import choice, field, mutable_field, subparsers
 from simple_parsing.helpers import FlattenedAccess
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
+from utils.early_stopping import EarlyStoppingOptions, early_stopping
 from utils.json_utils import JsonSerializable, take_out_unsuported_values
 from utils.logging import pbar
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
-from utils.early_stopping import EarlyStoppingOptions, early_stopping
+
 logger = Config.get_logger(__file__)
-from save_job import SaveTuple
 
 @dataclass  # type: ignore
 class ExperimentBase(JsonSerializable):
@@ -133,7 +136,7 @@ class ExperimentBase(JsonSerializable):
         return train_dataset, test_dataset
 
 
-    def train_valid_split(self, train_dataset: Dataset, valid_fraction: float=0.2) -> Tuple[Dataset, Dataset]:
+    def train_valid_split(self, train_dataset: VisionDataset, valid_fraction: float=0.2) -> Tuple[VisionDatasetSubset, VisionDatasetSubset]:
         n = len(train_dataset)
         valid_len: int = int((n * valid_fraction))
         train_len: int = n - valid_len
@@ -144,8 +147,8 @@ class ExperimentBase(JsonSerializable):
         valid_indices = indices[:valid_len]
         train_indices = indices[valid_len:]
 
-        train = Subset(train_dataset, train_indices)
-        valid = Subset(train_dataset, valid_indices)
+        train = VisionDatasetSubset(train_dataset, train_indices)
+        valid = VisionDatasetSubset(train_dataset, valid_indices)
         logger.info(f"Training samples: {len(train)}, Valid samples: {len(valid)}")
         return train, valid
 

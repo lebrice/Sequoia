@@ -13,14 +13,15 @@ import torch
 import wandb
 from simple_parsing import choice, field, list_field, mutable_field, subparsers
 from torch import Tensor
-from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.data import DataLoader, Dataset
 from torchvision.utils import save_image
 
 from common.losses import LossInfo, TrainValidLosses
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from config import Config
 from datasets import DatasetConfig
-from datasets.subset import ClassSubset
+from datasets.subset import VisionDatasetSubset
+from torchvision.datasets import VisionDataset
 from experiment import Experiment
 from tasks import Tasks
 from utils import utils
@@ -82,11 +83,11 @@ class TaskIncremental(Experiment):
         """ NOTE: fields that are created in __post_init__ aren't serialized to/from json! """
         super().__post_init__()
         # The entire training and validation datasets.
-        self.train_datasets: List[ClassSubset] = []
-        self.valid_datasets: List[ClassSubset] = []
-        self.valid_cumul_datasets: List[ClassSubset] = []
-        self.test_datasets: List[ClassSubset] = []
-        self.test_cumul_datasets: List[ClassSubset] = []
+        self.train_datasets: List[VisionDatasetSubset] = []
+        self.valid_datasets: List[VisionDatasetSubset] = []
+        self.valid_cumul_datasets: List[VisionDatasetSubset] = []
+        self.test_datasets: List[VisionDatasetSubset] = []
+        self.test_cumul_datasets: List[VisionDatasetSubset] = []
 
     def run(self):
         """Evaluates a model/method in the classical "task-incremental" setting.
@@ -502,9 +503,9 @@ class TaskIncremental(Experiment):
         self.test_datasets.clear()
 
         for i, task in enumerate(tasks):
-            train = ClassSubset(train_full_dataset, task)
-            valid = ClassSubset(valid_full_dataset, task)
-            test  = ClassSubset(test_full_dataset, task)
+            train = VisionDatasetSubset(train_full_dataset, classes=task)
+            valid = VisionDatasetSubset(valid_full_dataset, classes=task)
+            test  = VisionDatasetSubset(test_full_dataset, classes=task)
 
             self.train_datasets.append(train)
             self.valid_datasets.append(valid)
@@ -525,7 +526,7 @@ class TaskIncremental(Experiment):
         #         self.save_images(i, cumul, prefix="valid_cumul_")
             
 
-    def save_images(self, i: int, dataset: ClassSubset, prefix: str=""):
+    def save_images(self, i: int, dataset: VisionDataset, prefix: str=""):
         n = 64
         samples = dataset.data[:n].view(n, *self.dataset.x_shape).float()
         self.samples_dir.mkdir(parents=True, exist_ok=True)
