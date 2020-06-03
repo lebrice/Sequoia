@@ -428,7 +428,7 @@ class ExperimentBase(JsonSerializable):
             for batch in valid_dataloader:
                 data = batch[0].to(self.model.device)
                 target = batch[1].to(self.model.device) if len(batch) == 2 else None
-                yield self.test_batch(data, target)
+                yield self.test_batch(data, target, name="Valid")
         logger.info("Somehow exited the infinite while loop!")
 
     def train_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
@@ -445,7 +445,7 @@ class ExperimentBase(JsonSerializable):
     def train_batch(self, data: Tensor, target: Optional[Tensor]) -> LossInfo:
         self.model.optimizer.zero_grad()
 
-        batch_loss_info = self.model.get_loss(data, target)
+        batch_loss_info = self.model.get_loss(data, target, name="Train")
         total_loss = batch_loss_info.total_loss
         total_loss.backward()
 
@@ -473,7 +473,7 @@ class ExperimentBase(JsonSerializable):
                 pbar.set_postfix(message)
         
         total_loss.drop_tensors()
-        return total_loss
+        return total_loss.detach()
 
     def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.eval()
@@ -481,11 +481,11 @@ class ExperimentBase(JsonSerializable):
             data, target = self.preprocess(batch)
             yield self.test_batch(data, target)
 
-    def test_batch(self, data: Tensor, target: Tensor=None) -> LossInfo:
+    def test_batch(self, data: Tensor, target: Tensor=None, name: str="Test") -> LossInfo:
         was_training = self.model.training
         self.model.eval()
         with torch.no_grad():
-            loss = self.model.get_loss(data, target)
+            loss = self.model.get_loss(data, target, name=name)
         if was_training:
             self.model.train()
         return loss
@@ -694,9 +694,10 @@ class ExperimentBase(JsonSerializable):
 from addons import (ExperimentWithKNN, ExperimentWithVAE,
                     LabeledPlotRegionsAddon, TestTimeTrainingAddon)
 
+
 @dataclass  # type: ignore
 class Experiment(ExperimentWithKNN, ExperimentWithVAE,
-                 TestTimeTrainingAddon, LabeledPlotRegionsAddon, ):
+                 TestTimeTrainingAddon, LabeledPlotRegionsAddon):
     """ Describes the parameters of an experimental setting.
     
     (ex: Mnist_iid, Mnist_continual, Cifar10, etc. etc.)

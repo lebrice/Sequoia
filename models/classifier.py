@@ -161,12 +161,11 @@ class Classifier(nn.Module):
         loss_info.metrics[Tasks.SUPERVISED] = metrics
         return loss_info
 
-    def get_loss(self, x: Tensor, y: Tensor=None) -> LossInfo:
+    def get_loss(self, x: Tensor, y: Tensor=None, name: str="") -> LossInfo:
         if y is not None and y.shape[0] != x.shape[0]:
             raise RuntimeError("Whole batch can either be fully labeled or "
                                "fully unlabeled, but not a mix of both (for now)")
-
-        total_loss = LossInfo("Train" if self.training else "Test")
+        total_loss = LossInfo(name)
         x, y = self.preprocess_inputs(x, y)
         h_x = self.encode(x)
         y_pred = self.logits(h_x)

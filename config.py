@@ -26,7 +26,7 @@ from utils.early_stopping import EarlyStoppingOptions
 
 import logging
 logging.basicConfig(
-    format='%(asctime)s,%(msecs)d %(levelname)-8s [./%(name)s:%(lineno)d] %(message)s',
+    format='%(asctime)s,%(msecs)d %(levelname)-8s [%(name)s:%(lineno)d] %(message)s',
     datefmt='%Y-%m-%d:%H:%M:%S',
     level=logging.INFO,
 )
@@ -64,11 +64,15 @@ class Config:
     # Used to create a parent folder that will contain the `run_name` directory. 
     run_group: Optional[str] = None 
     run_name: Optional[str] = None  # Wandb run name. If None, will use wandb's automatic name generation
-    
+    project_name: str = "SSCL" # project name to use in wandb.
     # An run number is used to differentiate different iterations of the same experiment.
     # Runs with the same name can be later grouped with wandb to produce stderr plots.
     run_number: Optional[int] = None 
     
+    # Identifier unique to each individual wandb run. When given, will try to
+    # resume the corresponding run, generates a new ID each time. 
+    run_id: Optional[str] = None
+
     # Save the command-line arguments that were used to create this run.
     argv: List[str] = field(init=False, default_factory=sys.argv.copy)
 
@@ -145,16 +149,17 @@ class Config:
             self.wandb_path = self.log_dir_root / "wandb"
         self.wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
 
-        # TODO: add *proper* wandb resuming, probaby by using @nitarshan 's md5 id cool idea. 
-        # run_id = wandb.util.generate_id()
-        run_id = "-".join([self.run_group, self.run_name, str(self.run_number or 0)])
+        if self.run_id is None:
+            # TODO: add *proper* wandb resuming, probaby by using @nitarshan 's md5 id cool idea. 
+            self.run_id = wandb.util.generate_id()
+            # self.run_id = "-".join([self.run_group, self.run_name, str(self.run_number or 0)])
 
-        logger.info(f"Wandb run id: {run_id}")
+        logger.info(f"Wandb run id: {self.run_id}")
 
         run = wandb.init(
-            project='SSCL',
+            project=self.project_name,
             name=self.run_name,
-            id=run_id,
+            id=self.run_id,
             group=self.run_group,
             config=config_dict,
             dir=str(self.wandb_path),
