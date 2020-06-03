@@ -44,17 +44,18 @@ class MnistClassifier(Classifier):
         # No special preprocessing needed.
         x, y = super().preprocess_inputs(x, y)
         if self.hparams.encoder_model:
-            x = x.repeat(1, 3, 1, 1) # grayscale to rgb
+            if x.shape[1] != 3:
+                x = x.repeat(1, 3, 1, 1) # grayscale to rgb
             x = normalize(x, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225], inplace=True)
             x = torch.nn.functional.interpolate(x, size=(224, 224))
         return x, y
 
 
-def normalize(tensor, mean, std, inplace=False):
+def normalize(tensor: Tensor, mean, std, inplace=False) -> Tensor:
     if not inplace:
         tensor = tensor.clone()
     dtype = tensor.dtype
     mean = torch.as_tensor(mean, dtype=dtype, device=tensor.device)
-    std = torch.as_tensor(std, dtype=dtype, device=tensor.device)
+    std  = torch.as_tensor(std, dtype=dtype, device=tensor.device)
     tensor.sub_(mean[None, :, None, None]).div_(std[None, :, None, None])
     return tensor

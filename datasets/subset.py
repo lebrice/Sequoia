@@ -14,10 +14,11 @@ from torchvision.datasets import VisionDataset, MNIST
 class Subset(SubsetBase):
     def __init__(self, dataset, indices):
         super().__init__(dataset, indices)
-        if not isinstance(self.dataset.data, (np.ndarray, Tensor)):
-            self.dataset.data = np.asarray(self.dataset.data)
-        if not isinstance(self.indices, (np.ndarray, Tensor)):
-            self.indices = np.asarray(self.indices)
+        if isinstance(self.dataset, VisionDataset):
+            from datasets.dataset import fix_vision_dataset
+            fix_vision_dataset(self.dataset)
+        if not isinstance(self.indices, Tensor):
+            self.indices = torch.as_tensor(self.indices)
 
     @property
     def data(self) -> Tensor:
@@ -45,8 +46,8 @@ class ClassSubset(TensorDataset):
         self.labels: Set[int] = set(labels)
 
         if isinstance(self.dataset, VisionDataset):
-            self.dataset.data = np.asarray(self.dataset.data)
-            self.dataset.targets = np.asarray(self.dataset.targets)
+            from datasets.dataset import fix_vision_dataset
+            fix_vision_dataset(self.dataset)
 
         # get the mask to select only the relevant items.
         mask = get_mask(self.dataset, self.labels)

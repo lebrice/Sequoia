@@ -98,6 +98,9 @@ def loss_str(loss_tensor: Tensor) -> str:
 
 def set_seed(seed: int):
     """ Set the pytorch/numpy random seed. """
+    import random
+    import torch
+    import numpy as np
     random.seed(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)

@@ -15,7 +15,7 @@ source scripts/setup.sh
 
 function cleanup(){
     echo "Cleaning up and transfering files from $SLURM_TMPDIR to $SCRATCH/SSCL"
-    rsync -r -u $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
+    rsync -r -u -v $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
     wandb sync $SCRATCH/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
 }
 
@@ -41,5 +41,6 @@ exec python -u main.py task-incremental \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     ${@}
 
+cleanup
 exit
 

@@ -617,19 +617,45 @@ class TaskIncremental(Experiment):
         return super().started and checkpoint_exists
     
     def log(self, message: Union[str, Dict, LossInfo], **kwargs):  # type: ignore
+        assert isinstance(message, dict), (
+            f"Testing things out, but for now always pass dictionaries to "
+            f"`self.log` (at least for TaskIncremental)"
+        )
+        
         if isinstance(message, dict):
             message.setdefault("task/currently_learned_task", self.state.i)
-        assert isinstance(message, dict), f"Testing things out, but for now always pass dictionaries to self.log (at least in TaskIncremental)"
+        
         for k, v in message.items():
             if isinstance(v, (LossInfo, Metrics)):
                 message[k] = v.to_log_dict()
         
         # Flatten the log dictionary
         from utils.utils import flatten_dict
-        flattened = flatten_dict(message)
+        message = flatten_dict(message, separator="/")
 
         # TODO: Remove redondant/useless keys
-        super().log(flattened, **kwargs)
+        for k in list(message.keys()):
+            if k.endswith(("/n_samples", "/name")):
+                message.pop(k)
+                continue
+
+            v = message.pop(k)
+            # Example input:
+            # "Task_losses/Task1/losses/Test/losses/rotate/losses/270/metrics/270/accuracy"
+            
+            # Simplify the key, by getting rid of all the '/losses/' and '/metrics/' etc.
+            k = k.replace("/losses/", "/").replace("/metrics/", "/")
+            # --> "Task_losses/Task1/Test/rotate/270/270/accuracy"
+            
+            # Get rid of repetitive modifiers (ex: "/270/270" above)
+            parts = k.split("/")
+            from utils.utils import unique_consecutive
+            k = "/".join(unique_consecutive(parts))
+            # Will become:
+            # "Task_losses/Task1/Test/rotate/270/accuracy"
+            message[k] = v
+
+        super().log(message, **kwargs)
 
 
 def get_supervised_metrics(loss: LossInfo, mode: str="Test") -> Union[ClassificationMetrics, RegressionMetrics]:
