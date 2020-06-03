@@ -37,7 +37,7 @@ from tasks import AuxiliaryTask, Tasks
 from utils import utils
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
 from utils.json_utils import JsonSerializable, take_out_unsuported_values
-from utils.logging import pbar
+from utils.logging_utils import pbar
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
 
 logger = Config.get_logger(__file__)

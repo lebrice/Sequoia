@@ -72,26 +72,40 @@ def copy_over(source_dir: Path, results_dir: Path, source_runs: str, groups: Lis
 from simple_parsing import ArgumentParser, list_field
 from dataclasses import dataclass
 
+DATA_DIR: Path = Path(os.environ.get("DATA", "E:/Google Drive/"))
+print(f"Data dir: {DATA_DIR}")
+
+
 @dataclass
 class Options:
     """ Options for organizing and creating all plots. """
+    # The username on the Beluga server
+    user: str = "normandf"
+
     # Directory which contains all the runs.
-    all_runs_dir: Path = Path("E:/Google Drive/SSCL/results/beluga")
+    all_runs_dir: Path = Path(f"{DATA_DIR}/SSCL/results/beluga")
     # Directory where all the runs should be organized into.
-    organized_dir: Path = Path("E:/Google Drive/SSCL/results/beluga_organized")
+    organized_dir: Path = Path(f"{DATA_DIR}/SSCL/results/beluga_organized")
     # Directory where figures should be auto-created.
-    figures_dir: Path = Path("E:/Google Drive/SSCL/figures/auto")
+    figures_dir: Path = Path(f"{DATA_DIR}/SSCL/figures/auto")
 
     # The names of run settings (i.e, prefixes of the runs) to consider.
     settings: List[str] = list_field("cifar100-20c", "cifar100-10c", "cifar10", "mnist", "fashion-mnist")
     
     # Additional Subgroups to cluster runs into. (Runs whose name doesn't
     # contain any of the following will have a group name of 'default'.)
-    subgroups: List[str] = list_field("pretrained_ue100_se10_", "pretrained_", "ue20_se10_")
-   
+    subgroups: List[str] = list_field("pretrained_ue100_se10_", "pretrained_", "ue20_se10_", "ue100_se10")
+    
+    
+
     def copy_and_plot(self, experiment: str, run_names: str):
         from make_oml_plot import OmlFigureOptions
-        mh_paths, mh_d_paths = copy_over(self.all_runs_dir / experiment, self.organized_dir / experiment, run_names, self.subgroups)
+        mh_paths, mh_d_paths = copy_over(
+            self.all_runs_dir / experiment,
+            self.organized_dir / experiment,
+            run_names,
+            self.subgroups
+        )
         for group, runs in mh_paths.items():
             path = Path(run_names) / group.name / f"{run_names}_{group.name}_multihead.png"
             OmlFigureOptions(
@@ -112,18 +126,22 @@ class Options:
             )
 
     def __call__(self):
-        # import subprocess
-        # from shlex import split
-        # out_dir = self.all_runs_dir
-        # args = split(f"rsync -r --update --verbose normandf@beluga.computecanada.ca:/scratch/normandf/SSCL/ '{out_dir}'")
-        # print(args)
-        # proc = subprocess.run(args)
-        # res = proc.communicate()
-        # exit()
+        import subprocess
+        from shlex import split
+        out_dir = self.all_runs_dir
+        out_dir.mkdir(parents=True, exist_ok=True)
+        args = split(
+            f"rsync -r --archive --update --verbose "
+            f"--exclude 'samples' "
+            f"--exclude 'wandb' "
+            f"{self.user}@beluga.computecanada.ca:/scratch/{self.user}/SSCL/ "
+            f"'{out_dir}' "
+        )
+        print("args: ", args)
+        proc = subprocess.run(args)
         experiment = "TaskIncremental"
         for setting in self.settings:
             self.copy_and_plot(experiment, setting)
-
 
 if __name__ == "__main__":
     from simple_parsing import ArgumentParser

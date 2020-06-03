@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from common.losses import LossInfo
 from experiment import ExperimentBase
-from utils.logging import pbar
+from utils.logging_utils import pbar
 
 
 @dataclass

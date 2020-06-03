@@ -1,21 +1,21 @@
 """ Set of Utilities. """
 import collections
 import functools
+import operator
 import random
-from dataclasses import Field, fields
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import MutableMapping
+from dataclasses import Field, fields
+from itertools import groupby
 from pathlib import Path
-from typing import (
-    Any, Deque, Dict, Iterable, List, MutableMapping, Optional, Set, Tuple,
-    TypeVar, Union)
+from typing import (Any, Deque, Dict, Iterable, List, MutableMapping, Optional,
+                    Set, Tuple, TypeVar, Union, Callable)
 
 import numpy as np
-import torch
 from torch import Tensor, nn
-
-cuda_available = torch.cuda.is_available()
-gpus_available = torch.cuda.device_count()
+from torch import cuda
+cuda_available = cuda.is_available()
+gpus_available = cuda.device_count()
 
 T = TypeVar("T")
 
@@ -171,6 +171,18 @@ def flatten_dict(d: D, separator: str="/") -> D:
             result[k] = v
     return result
 
+
+def unique_consecutive(iterable: Iterable[T], key: Callable[[T], Any]=None) -> Iterable[T]:
+    """List unique elements, preserving order. Remember only the element just seen.
+    
+    >>> list(unique_consecutive('AAAABBBCCDAABBB'))
+    ['A', 'B', 'C', 'D', 'A', 'B']
+    >>> list(unique_consecutive('ABBCcAD', str.lower))
+    ['A', 'B', 'C', 'A', 'D']
+    
+    Recipe taken from itertools docs: https://docs.python.org/3/library/itertools.html
+    """
+    return map(next, map(operator.itemgetter(1), groupby(iterable, key)))
 
 if __name__ == "__main__":
     import doctest
