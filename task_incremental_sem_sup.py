@@ -1,17 +1,15 @@
-
 import tqdm
 import torch
 from sys import getsizeof
 from torch import Tensor, nn
+from torch.autograd import Variable
 from itertools import repeat, cycle
 from models.classifier import Classifier
 from task_incremental import TaskIncremental
 from dataclasses import dataclass
-from torch.utils.data import Subset
-from datasets.subset import VisionDatasetSubset
+from datasets.subset import ClassSubset
 from common.losses import LossInfo
 from datasets.ss_dataset import get_semi_sampler
-from addons.ewc import EWC_wrapper
 from addons.curvature_analyser import Analyser
 from collections import OrderedDict, defaultdict
 from itertools import accumulate
@@ -23,18 +21,25 @@ from common.losses import LossInfo, TrainValidLosses
 from simple_parsing import mutable_field, list_field
 from common.task import Task
 
+
 @dataclass
 class TaskIncremental_Semi_Supervised(TaskIncremental):
     """ Evaluates the model in the same setting as the OML paper's Figure 3.
     """
+
     unsupervised_epochs_per_task: int = 0
+
     supervised_epochs_per_task: int = 10
-    # Coefficient of the EWC regularizer. Higher lamda -> more penalty for
-    # changing the parameters between tasks.
-    ewc_lamda: float = 10.
 
     # Ratio of samples that have a corresponding label.
     ratio_labelled: float = 0.2
+    #whether to use convergence in accuracy
+    convegence_in_accuracy: bool = True
+
+    #start measuring convergence after this epoch
+    converge_after_epoch: int = 0
+    # for supervised loss, the alpha parameter for the beta distribution from where the mixing lambda is drawn (used for ICT)
+    mixup_sup_alpha: float = 0.
 
     def __post_init__(self):
         super().__post_init__()
@@ -50,12 +55,6 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     def init_model(self) -> Classifier:
         self.logger.debug("init model")
         model = super().init_model()
-        model = Analyser(model)
-        if self.ewc_lamda>0:
-            self.logger.info(f"Using EWC with a lambda of {self.ewc_lamda}")
-            #TODO: n_ways should be self.n_classes_per_task, but model outputs 10 way classifier instead of self.n_classes_per_task - way
-            model = EWC_wrapper(model, lamda=self.ewc_lamda, n_ways=100, device=self.config.device)
-
         return model
 
     def load_datasets(self, tasks: List[Task]) -> None:
@@ -75,9 +74,9 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         self.valid_datasets.clear()
 
         for i, task in enumerate(tasks):
-            train = VisionDatasetSubset(train_full_dataset, task)
-            valid = VisionDatasetSubset(valid_full_dataset, task)
-            sampler_train, sampler_train_unlabelled = get_semi_sampler(train.targets,p=self.ratio_labelled)
+            train = ClassSubset(train_full_dataset, task)
+            valid = ClassSubset(valid_full_dataset, task)
+            sampler_train, sampler_train_unlabelled = get_semi_sampler(train.targets, p=self.ratio_labelled)
             sampler_valid, sampler_valid_unlabelled = get_semi_sampler(valid.targets, p=1.)
 
             # self.train_datasets.append((train, sampler_train, sampler_train_unlabelled))
@@ -101,13 +100,12 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             self.save_images(i, cumul, prefix="valid_cumul_")
 
     def get_dataloaders(self,
-                       dataset: Dataset,
-                       sampler_labelled: SubsetRandomSampler,
-                       sampler_unlabelled: SubsetRandomSampler) -> Tuple[DataLoader,DataLoader]:
+                        dataset: Dataset,
+                        sampler_labelled: SubsetRandomSampler,
+                        sampler_unlabelled: SubsetRandomSampler) -> Tuple[DataLoader, DataLoader]:
         loader_train_labelled = super().get_dataloader(dataset, sampler=sampler_labelled)
         loader_train_unlabelled = super().get_dataloader(dataset, sampler=sampler_unlabelled)
         return (loader_train_labelled, loader_train_unlabelled)
-
 
     def run(self):
         """Evaluates a model/method in the classical "task-incremental" setting.
@@ -159,7 +157,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         self.model = self.init_model()
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
-        #if (self.started or self.restore_from_path) and not self.config.debug:
+        # if (self.started or self.restore_from_path) and not self.config.debug:
         #    self.logger.info(f"Experiment was already started in the past.")
         #    self.restore_from_path = self.checkpoints_dir / "state.json"
         #    self.logger.info(f"Will load state from {self.restore_from_path}")
@@ -172,9 +170,12 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         if self.state.global_step == 0:
             self.logger.info("Starting from scratch!")
             self.state.tasks = self.create_tasks_for_dataset(self.dataset)
+        else:
+            self.logger.info(f"Starting from global step {self.state.global_step}")
+            self.logger.info(f"i={self.state.i}, j={self.state.j}")
 
         self.tasks = self.state.tasks
-        #if not self.config.debug:
+        # if not self.config.debug:
         #    self.save()
 
         # Load the datasets
@@ -193,41 +194,14 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             self.logger.info(f"Starting task {i} with classes {self.tasks[i]}")
 
 
-
-            # If we are using a multihead model, we give it the task label (so
-            # that it can spawn / reuse the output head for the given task).
-            if self.multihead:
-                self.on_task_switch(self.tasks[i])
-            # EWC_specific: pass EWC_rapper the loader to compute fisher
-            # call befor task change
-            # ====================
-            if self.ewc_lamda > 0 and i > 0:
-                train_past = self.train_datasets[i - 1]
-                train_sampler_labeled_past = self.train_samplers_labelled[i - 1]
-                train_sampler_unlabelled_past = self.train_samplers_unlabelled[i - 1]
-                past_train_loader, _ = self.get_dataloaders(
-                    train_past,
-                    train_sampler_labeled_past,
-                    train_sampler_unlabelled_past)
-                if self.config.debug:
-                    sampler_train_, sampler_train_unlabelled_ = get_semi_sampler(
-                        Subset(train_past, range(200)).dataset.targets[:200], p=self.ratio_labelled)
-                    self.model.current_task_loader = self.get_dataloaders(
-                        Subset(train_past, range(200)),
-                        train_sampler_labeled_past,
-                        train_sampler_unlabelled_past
-                    )[0]
-                else:
-                    self.model.current_task_loader = past_train_loader
-                self.model.calculate_ewc_prior(i-1)
-            # ====================
-            if i > 0:
-                fisher_norm, sum = self.model.analyse_curvature(i - 1, self.multihead, train_dataloader_labelled, 100)
-                self.log({'Curvature/fisher_norm': fisher_norm, 'Curvature/sum_eigenvalues': sum})
+            # if i > 0:
+            #    fisher_norm, sum = self.model.analyse_curvature(i - 1, self.multihead, train_dataloader_labelled, 100)
+            #    self.log({'Curvature/fisher_norm': fisher_norm, 'Curvature/sum_eigenvalues': sum})
 
             # Training and validation datasets for task i.
             # train_i, sampler_train_i, sampler_unlabelled_i = self.train_datasets[i]
             # valid_i, sampler_valid_i, sampler_valid_unlabelled_i = self.valid_datasets[i]
+
 
             train_i = self.train_datasets[i]
             train_sampler_labeled_i = self.train_samplers_labelled[i]
@@ -237,6 +211,16 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             valid_sampler_labelled_i = self.valid_samplers_labelled[i]
             valid_sampler_unlabelled_i = self.valid_samplers_unlabelled[i]
 
+            # If we are using a multihead model, we give it the task label (so
+            # that it can spawn / reuse the output head for the given task).
+            if self.multihead:
+                prev_task = None if i==0 else self.tasks[i-1]
+                classifier_head = None if i==0 else self.model.get_output_head(prev_task)
+                self.on_task_switch(self.tasks[i], prev_task=prev_task, classifier_head = classifier_head,
+                                    train_loader = self.get_dataloaders(
+                                        dataset=train_i,
+                                        sampler_labelled=train_sampler_labeled_i,
+                                        sampler_unlabelled=train_sampler_unlabelled_i)[0])
 
             with self.plot_region_name(f"Learn Task {i}"):
                 # We only train (unsupervised) if there is at least one enabled
@@ -252,19 +236,19 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                             (train_i, train_sampler_labeled_i, train_sampler_unlabelled_i),
                             (valid_i, valid_sampler_labelled_i, valid_sampler_unlabelled_i),
                             max_epochs=self.unsupervised_epochs_per_task,
-                            description=f"Task {i} (Unsupervised)", patience=10)
+                            description=f"Task {i} (Unsupervised)", patience=self.config.patience)
 
                 # Train (supervised) on task i.
                 self.state.all_losses += self.train_until_convergence(
                     (train_i, train_sampler_labeled_i, train_sampler_unlabelled_i),
                     (valid_i, valid_sampler_labelled_i, valid_sampler_unlabelled_i),
                     max_epochs=self.supervised_epochs_per_task,
-                    description=f"Task {i} (Supervised)", patience=10
+                    description=f"Task {i} (Supervised)", patience=self.config.patience
                 )
                 self.logger.debug(f"Size the state object: {getsizeof(self.state)}")
 
             # TODO: save the state during training.
-            #self.save()
+            # self.save()
             #  Evaluate on all tasks (as described above).
             cumul_loss = LossInfo(f"cumul_losses[{i}]")
             for j in range(self.state.j, self.n_tasks):
@@ -272,11 +256,11 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 train_j = self.train_datasets[j]
                 train_sampler_labelled_j = self.train_samplers_labelled[j]
                 train_sampler_unlabelled_j = self.train_samplers_unlabelled[j]
-                
+
                 valid_j = self.valid_datasets[j]
                 valid_sampler_labelled_j = self.valid_samplers_labelled[j]
                 valid_sampler_unlabelled_j = self.valid_samplers_unlabelled[j]
-                
+
                 train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloaders(
                     dataset=train_j,
                     sampler_labelled=train_sampler_labelled_j,
@@ -308,13 +292,13 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                     # If we have previously trained on this task:
                     self.on_task_switch(self.tasks[j])
 
-                    loss_j = self.test(dataloader=valid_dataloader_labelled, description=f"task_losses[{i}][{j}]")
+                    loss_j = self.test(valid_dataloader_labelled, description=f"task_losses[{i}][{j}]")
                     cumul_loss += loss_j
 
                     self.state.task_losses[i][j] = loss_j
                     self.log({f"task_losses[{i}][{j}]": loss_j.to_log_dict()})
 
-                #self.save()
+                # self.save()
 
             self.state.cumul_losses[i] = cumul_loss
             self.state.j = 0
@@ -323,7 +307,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             self.log({f"cumul_losses[{i}]": valid_log_dict})
 
         # TODO: Save the results to a json file.
-        #self.save(self.results_dir)
+        # self.save(self.results_dir)
         #  Evaluate on all tasks (as described above).
         cumul_loss = LossInfo(f"cumul_losses[{i}]")
 
@@ -333,7 +317,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             train_j = self.train_datasets[j]
             train_sampler_labelled_j = self.train_samplers_labelled[j]
             train_sampler_unlabelled_j = self.train_samplers_unlabelled[j]
-            
+
             valid_j = self.valid_datasets[j]
             valid_sampler_labelled_j = self.valid_samplers_labelled[j]
             valid_sampler_unlabelled_j = self.valid_samplers_unlabelled[j]
@@ -370,13 +354,13 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 # If we have previously trained on this task:
                 self.on_task_switch(self.tasks[j])
 
-                loss_j = self.test(dataloader=valid_dataloader_labelled, description=f"task_losses[{i}][{j}]")
+                loss_j = self.test(valid_dataloader_labelled, description=f"task_losses[{i}][{j}]")
                 cumul_loss += loss_j
 
                 self.state.task_losses[i][j] = loss_j
                 self.log({f"task_losses[{i}][{j}]": loss_j.to_log_dict()})
 
-            #self.save()
+            # self.save()
         self.state.cumul_losses[i] = cumul_loss
         self.state.j = 0
 
@@ -385,7 +369,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
         # TODO: Save the results to a json file.
 
-        #self.save(self.results_dir)
+        # self.save(self.results_dir)
         # TODO: save the rest of the state.
 
         # from utils.plotting import maximize_figure
@@ -401,45 +385,79 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         #     fig.show()
         #     fig.waitforbuttonpress(10)
 
+    def test(self, dataloader: DataLoader, description: str = None, name: str = "Test") -> LossInfo:
+        pbar = tqdm.tqdm(dataloader)
+        desc = (description or "Test Epoch")
+
+        pbar.set_description(desc)
+        total_loss = LossInfo(name) 
+        message: Dict[str, Any] = OrderedDict()
+
+        for batch_idx, loss in enumerate(self.test_iter(pbar)):
+            total_loss += loss
+
+            if batch_idx % self.config.log_interval == 0:
+                message.update(total_loss.to_pbar_message())
+                pbar.set_postfix(message)
+        total_loss.drop_tensors()
+        return total_loss
+
+    def on_task_switch(self, task: Task, **kwargs) -> None:
+        if self.multihead:
+            self.model.on_task_switch(task, **kwargs)
+
+
     def train_until_convergence(self, train_dataset: Tuple[Dataset, SubsetRandomSampler, SubsetRandomSampler],
                                 valid_dataset: Tuple[Dataset, SubsetRandomSampler, SubsetRandomSampler],
                                 max_epochs: int,
                                 description: str = None,
-                                patience: int = 10) -> Tuple[Dict[int, LossInfo], Dict[int, LossInfo]]:
-        train_dataloader_labelled, train_dataloader_unlabelled  = self.get_dataloaders(*train_dataset)
-        valid_dataloader_labelled, valid_dataloader_unlablled  = self.get_dataloaders(*valid_dataset)
-        n_steps = len(train_dataloader_unlabelled) if len(train_dataloader_unlabelled)>len(train_dataloader_labelled) else len(train_dataloader_labelled)
+                                patience: int = 10) -> TrainValidLosses:
+        train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloaders(*train_dataset)
+        valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloaders(*valid_dataset)
+        n_steps = len(train_dataloader_unlabelled) if len(train_dataloader_unlabelled) > len(
+            train_dataloader_labelled) else len(train_dataloader_labelled)
 
         if self.config.debug_steps:
             from itertools import islice
             n_steps = self.config.debug_steps
             train_dataloader = islice(train_dataloader_labelled, 0, n_steps)  # type: ignore
 
-        train_losses: Dict[int, LossInfo] = OrderedDict()
-        valid_losses: Dict[int, LossInfo] = OrderedDict()
+        all_losses = TrainValidLosses()
+        # Get the latest step
+        # NOTE: At the moment, will always be zero, but if we reload
+        # `all_losses` from a file, would give you the step to start from.
+        starting_step = all_losses.latest_step()
 
         valid_loss_gen = self.valid_performance_generator(valid_dataloader_labelled)
 
         best_valid_loss: Optional[float] = None
         counter = 0
 
+        # Early stopping: number of validation epochs with increasing loss after
+        # which we exit training.
+        patience = patience or self.config.patience
+        convergence_checker = self.check_for_convergence(patience=patience, use_acc=self.convegence_in_accuracy)
+        next(convergence_checker)
+
         message: Dict[str, Any] = OrderedDict()
         for epoch in range(max_epochs):
-            self.epoch=epoch
-            pbar = tqdm.tqdm(zip(cycle(train_dataloader_labelled),train_dataloader_unlabelled), total=n_steps)
+            self.epoch = epoch
+            self.epoch_length = len(train_dataloader_unlabelled)
+            pbar = tqdm.tqdm(zip(cycle(train_dataloader_labelled), train_dataloader_unlabelled), total=n_steps)
             desc = description or ""
             desc += " " if desc and not desc.endswith(" ") else ""
             desc += f"Epoch {epoch}"
             pbar.set_description(desc + " Train")
-            self.epoch_length = len(train_dataloader_unlabelled)
-
             for batch_idx, train_loss in enumerate(self.train_iter_semi_sup(pbar)):
                 self.batch_idx = batch_idx
+                train_loss.drop_tensors()
+
                 if batch_idx % self.config.log_interval == 0:
                     # get loss on a batch of validation data:
                     valid_loss = next(valid_loss_gen)
-                    valid_losses[self.global_step] = valid_loss
-                    train_losses[self.global_step] = train_loss
+                    valid_loss.drop_tensors()
+
+                    all_losses[self.global_step] = (train_loss, valid_loss)
 
                     message.update(train_loss.to_pbar_message())
                     message.update(valid_loss.to_pbar_message())
@@ -452,29 +470,23 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             # perform a validation epoch.
             val_desc = desc + " Valid"
             val_loss_info = self.test(valid_dataloader_labelled, description=val_desc)
-            val_loss = val_loss_info.total_loss
 
-            if best_valid_loss is None or val_loss.item() < best_valid_loss:
-                counter = 0
-                best_valid_loss = val_loss.item()
-            else:
-                counter += 1
-                print(f"Validation Loss hasn't decreased over the last {counter} epochs.")
-                if counter == patience:
-                    print(
-                        f"Exiting at step {self.global_step}, as validation loss hasn't decreased over the last {patience} epochs.")
+            if epoch >= self.converge_after_epoch:
+                converged = convergence_checker.send(val_loss_info)
+                if converged:
+                    convergence_checker.close()
                     break
-        return train_losses, valid_losses
-
-    def test(self, dataloader: DataLoader, description: str = None, name: str = "Test") -> LossInfo:
-        pbar = tqdm.tqdm(dataloader)
+        return all_losses
+    def test_semi(self, dataloader_labelled: DataLoader, dataloader_unlabelled: DataLoader, description: str = None,
+                  name: str = "Test") -> LossInfo:
+        pbar = tqdm.tqdm(zip(cycle(dataloader_labelled), dataloader_unlabelled))
         desc = (description or "Test Epoch")
 
         pbar.set_description(desc)
         total_loss = LossInfo(name)
         message: Dict[str, Any] = OrderedDict()
 
-        for batch_idx, loss in enumerate(self.test_iter(pbar)):
+        for batch_idx, loss in enumerate(self.test_iter_semi(pbar)):
             total_loss += loss
 
             if batch_idx % self.config.log_interval == 0:
@@ -482,6 +494,22 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 pbar.set_postfix(message)
 
         return total_loss
+
+    def test_iter_semi(self, dataloader: DataLoader) -> Iterable[LossInfo]:
+        self.model.eval()
+        for batch_sup, batch_unsup in dataloader:
+            data, target = self.preprocess(batch_sup)
+            u, _ = self.preprocess(batch_unsup)
+            yield self.test_batch_semi(data, target, u)
+
+    def test_batch_semi(self, data: Tensor, target: Tensor = None, u: Tensor = None) -> LossInfo:
+        was_training = self.model.training
+        self.model.eval()
+        with torch.no_grad():
+            loss = self.model.supervised_loss(data, target) + self.model.get_loss(u, None)
+        if was_training:
+            self.model.train()
+        return loss
 
     def valid_performance_generator(self, periodic_valid_dataloader: DataLoader) -> Generator[LossInfo, None, None]:
         while True:
@@ -495,29 +523,46 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         for batch_sup, batch_unsup in dataloader:
             data, target = self.preprocess(batch_sup)
             u, _ = self.preprocess(batch_unsup)
-            yield self.train_batch_semi_sup(data,target,u)
+            yield self.train_batch_semi_sup(data, target, u)
+
+    def preprocess_sup_mixup(self, x,y):
+        from tasks.mixup import mixup_data_sup
+        def mixup_criterion(y_a, y_b, lam):
+            return lambda criterion, pred: lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+        mixed_input, target_a, target_b, lam = mixup_data_sup(x, y, self.mixup_sup_alpha)
+        mixed_input_var, target_a_var, target_b_var = Variable(mixed_input), Variable(target_a), Variable(target_b)
+        loss_func = mixup_criterion(target_a_var, target_b_var, lam)
+        return mixed_input_var, loss_func
+
 
     def train_batch_semi_sup(self, data: Tensor, target: Optional[Tensor], u: Tensor) -> LossInfo:
         self.model.optimizer.zero_grad()
-        batch_loss_info = self.model.get_loss(torch.cat((data,u), dim=0), target)
+        loss_f = None
+        data, target = self.model.preprocess_inputs(data, target)
+        if self.mixup_sup_alpha>0:
+            data, loss_f = self.preprocess_sup_mixup(data,target)
+
+        batch_loss_info = self.model.supervised_loss(data, target, loss_f=loss_f) + self.model.get_loss(u, None)
+
         total_loss = batch_loss_info.total_loss
         total_loss.backward()
         self.model.optimizer_step(global_step=self.global_step,
-                                  epoch = self.epoch,
+                                  epoch=self.epoch,
                                   epoch_length=self.epoch_length,
                                   update_number=self.batch_idx)
         self.global_step += data.shape[0]
-        return batch_loss_info
         return batch_loss_info
 
 
 if __name__ == "__main__":
     from simple_parsing import ArgumentParser
+
     parser = ArgumentParser()
     parser.add_arguments(TaskIncremental_Semi_Supervised, dest="experiment")
-    
+
     args = parser.parse_args()
     experiment: TaskIncremental = args.experiment
-    
+
     from main import launch
+
     launch(experiment)

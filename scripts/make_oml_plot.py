@@ -22,7 +22,7 @@ def n_tasks_used(run_path: Path) -> int:
     if "baseline" in run_name:
         return 0
     # Add a prefix for methods with auxiliary tasks, indicating how many tasks were used.
-    tasks = ["rot", "vae", "ae", "simclr", "irm", "mixup", "brightness"]
+    tasks = ["rot", "vae", "ae", "simclr", "irm", "mixup", "brightness", "ewc"]
     count = 0
     for t in tasks:
         if t in run_name:
@@ -40,9 +40,22 @@ def class_accuracy_v1(result_json: Dict) -> np.ndarray:
 def class_accuracy_v2(result_json: Dict) -> np.ndarray:
     return np.array(result_json["Test"]["supervised"]["metrics"]["accuracy"])
 
+def class_accuracy_v3(result_json: Dict) -> np.ndarray:
+    # NOTE: We only need to import it so that the TaskIncremental.State class is
+    # created and registered as JsonSerializable.
+    from task_incremental import TaskIncremental, get_supervised_accuracy
+    State = TaskIncremental.State
+    results = State.from_dict(result_json, drop_extra_fields=False)
+    cumul_losses = results.cumul_losses
+    accuracies = np.zeros(len(cumul_losses), dtype=float)
+    for i, cumul_loss in enumerate(cumul_losses):
+        acc = get_supervised_accuracy(cumul_loss)
+        accuracies[i] = acc
+    return accuracies
 
-def get_class_accuracy(run_dir: Path) -> np.ndarray:
-    """Gets the class accuracies for each task from a given run dir.
+
+def get_cumul_accuracy(run_dir: Path) -> np.ndarray:
+    """Gets the cumulative test accuracies for each task for a single run.
 
     Unfortunately has to account for a number of ways of getting that value,
     depending on the version of source code that launched it, as the format
@@ -55,23 +68,33 @@ def get_class_accuracy(run_dir: Path) -> np.ndarray:
     Returns:
         np.ndarray: The array of task accuracies.
     """
-    with open(run_dir / "results" / "results.json") as f:
-        result_json = json.load(f)
 
-    class_accuracy_fns = [class_accuracy_v2, class_accuracy_v1, class_accuracy_v0]
-    for class_accuracy_fn in class_accuracy_fns:
+    possible_paths: List[Path] = [
+        run_dir / "results" / "state.json",
+        run_dir / "results" / "results.json",    
+    ]
+
+    for path in possible_paths:
         try:
-            accuracy = class_accuracy_fn(result_json)
-            print("Successfully loaded with ", class_accuracy_fn.__name__)
-            return accuracy
-        except KeyError:
-            pass
-    else:
-        raise RuntimeError("Unable to load the class accuracy for run.")
+            with open(path) as f:
+                results_json = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            continue
+
+        class_accuracy_fns = [class_accuracy_v3, class_accuracy_v2, class_accuracy_v1, class_accuracy_v0]
+        for class_accuracy_fn in class_accuracy_fns:
+            try:
+                accuracy = class_accuracy_fn(results_json)
+                print("Successfully loaded with ", class_accuracy_fn.__name__)
+                return accuracy
+            except KeyError as e:
+                print(e)
+    
+    raise RuntimeError(f"Unable to load the cumulative accuracy for run dir {run_dir}")
 
 
 def get_cumul_accuracies(log_dir: Path) -> np.ndarray:
-    """Returns the cumulative classification accuracies for each run.
+    """Returns the cumulative test accuracies for each task at the end of training (for all the runs).
 
     New (upcoming format):
     If there are "run_*" (or "-0") direct subdirectories, stacks the results of
@@ -87,7 +110,7 @@ def get_cumul_accuracies(log_dir: Path) -> np.ndarray:
     """
     task_accuracies_list: List[np.ndarray] = []
     for run_dir in get_nonempty_run_dirs(log_dir):
-        accuracy = get_class_accuracy(run_dir)
+        accuracy = get_cumul_accuracy(run_dir)
         if accuracy.ndim == 2:
             task_accuracies_list.append(accuracy)
         else:
@@ -98,17 +121,52 @@ def get_cumul_accuracies(log_dir: Path) -> np.ndarray:
     return task_accuracies
 
 
+def get_task_accuracy_v1(run_dir: Path) -> np.ndarray:
+    return load_array(run_dir / "results" / "final_task_accuracy.csv")
+
+
+def get_task_accuracy_v2(run_dir: Path) -> np.ndarray:
+    from task_incremental import TaskIncremental, get_supervised_accuracy, get_supervised_metrics
+    from common.metrics import ClassificationMetrics, RegressionMetrics
+    state = TaskIncremental.State.load_json(run_dir / "results" / "state.json")
+    
+    tasks = state.tasks
+    n_tasks = len(tasks)
+
+    task_losses = state.task_losses
+    assert len(task_losses) == n_tasks
+    i = len(task_losses) -1
+    last_task_losses = task_losses[-1]
+
+    task_accuracies = np.zeros(n_tasks, dtype=float)
+
+    assert len(last_task_losses) == n_tasks
+    for j, loss in enumerate(last_task_losses):
+        acc = get_supervised_accuracy(loss)
+        metric = get_supervised_metrics(loss)
+        print(f"i: {i} j: {j} accuracy: {acc}")
+        task_accuracies[j] = acc
+    return task_accuracies
+
+
 def get_final_task_accuracy(run_dir: Path) -> np.ndarray:
-    """Loads the final task accuracy.
+    """Loads the final task accuracy for an individual run.
 
     Args:
         run_dir (Path): The directory of an individual run. 
 
     Returns:
-        np.ndarray: The array containing the mean accuracy for each task at the
-        end of training.
+        np.ndarray: float array of shape [n_tasks]. The array containing the
+        mean accuracy for each task at the end of training.
     """
-    return load_array(run_dir / "results" / "final_task_accuracy.csv")
+    potential_functions = [get_task_accuracy_v2, get_task_accuracy_v1]
+    for fn in potential_functions:
+        try:
+            return fn(run_dir)
+        except Exception as e:
+            print(f"Exception: {e}")
+            exit()
+    raise RuntimeError(f"Unable to load the final task accuracies for run dir {run_dir}")
 
 
 def get_final_task_accuracies(log_dir: Path) -> np.ndarray:
@@ -188,8 +246,8 @@ def get_nonempty_run_dirs(log_dir: Path) -> Iterable[Path]:
             yield run_dir
 
 REQUIRED_FILES: List[str] = [
-    "results/results.json",
-    "results/final_task_accuracy.csv"
+    "results/state.json",
+    # "results/final_task_accuracy.csv"
 ]
 
 def is_run_dir(path: Path) -> bool:
@@ -204,8 +262,11 @@ def is_run_dir(path: Path) -> bool:
     required_folders = ""
     if not path.is_dir():
         return False
-    return all((path / req_file_path).exists() for req_file_path in REQUIRED_FILES)
-
+    for req_fil_path in REQUIRED_FILES:
+        if not (path / req_fil_path).exists():
+            print(f"File {path / req_fil_path} doesn't exist!")
+            return False
+    return True
 
 def is_log_dir(path: Path, recursive: bool=False) -> bool:
     """Returns wether the given path points to a log_dir containing at least one non-empty run.
@@ -233,8 +294,10 @@ def filter_runs(all_log_dirs: List[Path]) -> Tuple[List[Path], List[Path]]:
     lost_runs: List[Path] = []
     for log_dir in all_log_dirs:
         if is_log_dir(log_dir):
+            print(f"dir {log_dir} is a log dir")
             kept_runs.append(log_dir)
         else:
+            print(f"dir {log_dir} isnt a log dir")
             lost_runs.append(log_dir)
     return kept_runs, lost_runs
 
@@ -282,7 +345,7 @@ class OmlFigureOptions:
                 if p.is_dir():
                     run_paths.append(p)
 
-        required_files: List[str] = ["/results/results.json", "results/final_task_accuracy.csv"]
+        required_files: List[str] = REQUIRED_FILES
 
         kept_runs, lost_runs = filter_runs(run_paths)
         
@@ -354,6 +417,7 @@ class OmlFigureOptions:
         ax3.set_yticklabels(indicators*n_runs)
         ax3.set_ylim(top=len(indicators) * n_runs)
         ax3.set_xlim(left=-0.5, right=0.5)
+        
         # technically, we don't know the amount of tasks yet.
         n_tasks: int = -1
         
@@ -371,8 +435,9 @@ class OmlFigureOptions:
             
             accuracy_means = classification_accuracies.mean(axis=0)
             accuracy_stds = classification_accuracies.std(axis=0)
-            n_tasks = len(accuracy_means)
-
+            local_n_tasks = len(accuracy_means)
+            n_tasks = max(n_tasks, local_n_tasks)
+            
             task_accuracy_means = final_task_accuracy.mean(axis=0)
             task_accuracy_std =   final_task_accuracy.std(axis=0)
             ax1.set_xticks(np.arange(n_tasks, dtype=int))
@@ -380,7 +445,10 @@ class OmlFigureOptions:
             
             label = run_path.name if not run_path.name.startswith(("run_", "-")) else run_path.parent.name
             label = label.replace(prefix, "")
-
+            if not label:
+                label = prefix
+            label = label.lstrip("-_")
+            
             n_aux_tasks = n_tasks_used(run_path)
             has_ntask_prefix = label[0].isdigit() and label[1] == "_"
             if self.add_ntasks_prefix and not has_ntask_prefix:
@@ -400,7 +468,7 @@ class OmlFigureOptions:
             
             # adding the error plot on the left
             ax1.errorbar(
-                x=np.arange(n_tasks),
+                x=np.arange(len(accuracy_means)),
                 y=accuracy_means,
                 yerr=accuracy_stds,
                 label=label
@@ -410,7 +478,7 @@ class OmlFigureOptions:
             bottom = len(indicators) * ((n_runs - 1) - i)
             height = bar_height_scale * task_accuracy_means
             rects = ax2.bar(
-                x=np.arange(n_tasks),
+                x=np.arange(len(height)),
                 height=height,
                 bottom=bottom,
                 yerr=task_accuracy_std,

@@ -44,7 +44,6 @@ class CifarClassifier(Classifier):
             input_shape=(3,32,32),
             num_classes=10,
             encoder=encoder,
-            classifier=classifier,
             hparams=hparams,
             config=config,
         )

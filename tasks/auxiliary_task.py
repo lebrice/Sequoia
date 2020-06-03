@@ -25,6 +25,7 @@ class AuxiliaryTask(nn.Module):
     # Class variables for holding the Modules shared with with the classifier. 
     encoder: ClassVar[nn.Module]
     classifier: ClassVar[nn.Module]  # type: ignore
+
     preprocessing: ClassVar[Callable[[Tensor, Optional[Tensor]], Tuple[Tensor, Optional[Tensor]]]]
     
     @dataclass
@@ -182,6 +183,6 @@ class AuxiliaryTask(nn.Module):
         """ Executed when the model was updated. """
         pass
     
-    def on_task_switch(self, task: Task)-> None:
+    def on_task_switch(self, task: Task, **kwargs)-> None:
         """ Executed when the task switches (to either a new or known task). """
         pass

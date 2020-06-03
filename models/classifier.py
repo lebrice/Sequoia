@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (Any, Dict, List, NamedTuple, Optional, Tuple, Type,
-                    TypeVar, Union)
+                    TypeVar, Union, Callable)
 
 import torch
 from simple_parsing import MutableField as mutable_field
@@ -143,11 +143,15 @@ class Classifier(nn.Module):
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)  
 
-    def supervised_loss(self, x: Tensor, y: Tensor, h_x: Tensor=None, y_pred: Tensor=None) -> LossInfo:
+    def supervised_loss(self, x: Tensor, y: Tensor, h_x: Tensor=None, y_pred: Tensor=None, loss_f: Callable[[Callable, Tensor],Tensor] = None) -> LossInfo:
         h_x = self.encode(x) if h_x is None else h_x
         y_pred = self.logits(h_x) if y_pred is None else y_pred
         y = y.view(-1)
-        loss = self.classification_loss(y_pred, y)
+        if loss_f is None:
+            loss = self.classification_loss(y_pred, y)
+            metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
+        else:
+            loss = loss_f(self.classification_loss,y_pred)
         metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
         loss_info = LossInfo(
             name=Tasks.SUPERVISED,
@@ -157,12 +161,11 @@ class Classifier(nn.Module):
         loss_info.metrics[Tasks.SUPERVISED] = metrics
         return loss_info
 
-    def get_loss(self, x: Tensor, y: Tensor=None) -> LossInfo:
+    def get_loss(self, x: Tensor, y: Tensor=None, name: str="") -> LossInfo:
         if y is not None and y.shape[0] != x.shape[0]:
             raise RuntimeError("Whole batch can either be fully labeled or "
                                "fully unlabeled, but not a mix of both (for now)")
-
-        total_loss = LossInfo("Train" if self.training else "Test")
+        total_loss = LossInfo(name)
         x, y = self.preprocess_inputs(x, y)
         h_x = self.encode(x)
         y_pred = self.logits(h_x)
@@ -209,7 +212,11 @@ class Classifier(nn.Module):
             The preprocessed inputs.
         """
         # Process 'x'
-        x = fix_channels(x)
+
+        if x.shape[1:] != self.input_shape:
+            x = fix_channels(x)
+        
+        assert x.shape[1:] == self.input_shape, f"{x.shape} != {self.input_shape}"
 
         if y is not None:
             # y_unique are the (sorted) unique values found within the batch.
@@ -218,7 +225,7 @@ class Classifier(nn.Module):
             y_unique, idx = y.unique(sorted=True, return_inverse=True)
             # TODO: Could maybe decide which output head to use depending on the labels
             # (perhaps like the "labels trick" from https://arxiv.org/abs/1803.10123)
-            if set(y_unique.tolist()) != set(self.current_task.classes):
+            if not (set(y_unique.tolist()) <= set(self.current_task.classes)):
                 print(y)
                 print(self.current_task, y_unique)
                 print(y_unique)            
@@ -239,7 +246,7 @@ class Classifier(nn.Module):
                 y = new_y            
         return x, y
 
-    def on_task_switch(self, task: Task) -> None:
+    def on_task_switch(self, task: Task, **kwargs) -> None:
         """Indicates to the model that it is working on a new task.
 
         Args:
@@ -248,12 +255,15 @@ class Classifier(nn.Module):
         self.current_task = task
         # also inform the auxiliary tasks that the task switched.
         for name, aux_task in self.tasks.items():
-            aux_task.on_task_switch(task=task)
+            if aux_task.enabled:
+                aux_task.on_task_switch(task, **kwargs)
 
+    def get_output_head(self, task: Task):
+        return self.output_heads[task.dumps()]
 
     @property
     def classifier(self) -> nn.Module:
-        return self.output_heads[self.current_task.dumps()]
+        return self.get_output_head(self.current_task)
 
     @property
     def current_task(self) -> Task:
@@ -291,9 +301,11 @@ class Classifier(nn.Module):
             if key.startswith("output_heads"):
                 task_json_str = key.split(".")[1]
                 task = Task.loads(task_json_str)
-                self.on_task_switch(task)
+                # Set the task ID attribute to create all the needed output heads.
+                self.current_task = task
+                
         # Reset the task_id to the starting value.
-        self.on_task_switch(starting_task)
+        self.current_task = starting_task
         missing, unexpected = super().load_state_dict(state_dict, strict)
         # TODO: Make sure the mean-encoder and mean-output-head modules are loaded property when using Mixup.
         return missing, unexpected

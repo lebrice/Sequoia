@@ -13,15 +13,16 @@ import torch
 import wandb
 from simple_parsing import choice, field, list_field, mutable_field, subparsers
 from torch import Tensor
-from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.data import DataLoader, Dataset
 from torchvision.utils import save_image
 
 from common.losses import LossInfo, TrainValidLosses
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from config import Config
 from datasets import DatasetConfig
-from datasets.subset import VisionDatasetSubset
-from experiment import Experiment, ExperimentStateBase
+from datasets.subset import ClassSubset
+from torchvision.datasets import VisionDataset
+from experiment import Experiment
 from tasks import Tasks
 from utils import utils
 from utils.json_utils import JsonSerializable
@@ -29,30 +30,6 @@ from utils.utils import common_fields, n_consecutive, rgetattr, rsetattr
 from common.task import Task
 
 logger = logging.getLogger(__file__)
-
-@dataclass
-class State(ExperimentStateBase):
-    """Object that contains all the state we want to be able to save/restore.
-
-    We aren't going to parse these from the command-line.
-    """
-    tasks: List[Task] = list_field()
-
-    i: int = 0
-    j: int = 0
-
-    # Container for the losses. At index [i, j], gives the validation
-    # metrics on task j after having trained on tasks [0:i], for 0 < j <= i.
-    task_losses: List[List[Optional[LossInfo]]] = list_field()
-
-    # Container for the KNN metrics. At index [i, j], gives the accuracy of
-    # a KNN classifier trained on the representations of the samples from
-    # task [i], evaluated on the representations of the the samples of task j.
-    # NOTE: The representations for task i are obtained using the encoder
-    # which was trained on tasks 0 through i.
-    knn_losses: List[List[LossInfo]] = list_field()
-    # Cumulative losses after each task
-    cumul_losses: List[Optional[LossInfo]] = list_field()
 
 
 @dataclass
@@ -78,21 +55,52 @@ class TaskIncremental(Experiment):
     # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
     restore_from_path: Optional[Path] = None
 
-    ###
-    ##  Fields that contain the state (not to be parsed from the command-line)
-    ## TODO: Figure out a neater way to separate the two than with init=False.
-    ###
-    state: State = mutable_field(State, init=False)
+    @dataclass
+    class State(Experiment.State):
+        """Object that contains all the state we want to be able to save/restore.
 
+        We aren't going to parse these from the command-line.
+        """
+        tasks: List[Task] = list_field()
+
+        i: int = 0
+        j: int = 0
+
+        # Container for the losses. At index [i, j], gives the validation
+        # metrics on task j after having trained on tasks [0:i], for 0 < j <= i.
+        task_losses: List[List[Optional[LossInfo]]] = list_field()
+
+        # Container for the KNN metrics. At index [i, j], gives the accuracy of
+        # a KNN classifier trained on the representations of the samples from
+        # task [i], evaluated on the representations of the the samples of task j.
+        # NOTE: The representations for task i are obtained using the encoder
+        # which was trained on tasks 0 through i.
+        knn_losses: List[List[LossInfo]] = list_field()
+
+        # Knn Losses on the entire test set after having learned each task.
+        knn_full_losses: List[LossInfo] = list_field()
+
+        # Cumulative losses after each task
+        cumul_losses: List[Optional[LossInfo]] = list_field()
 
     def __post_init__(self):
         """ NOTE: fields that are created in __post_init__ aren't serialized to/from json! """
         super().__post_init__()
-        # The entire training and validation datasets.
-        self.train_datasets: List[VisionDatasetSubset] = []
-        self.valid_datasets: List[VisionDatasetSubset] = []
-        self.valid_cumul_datasets: List[VisionDatasetSubset] = []
-        self.state = State()
+
+
+        # The entire training, validation and testing datasets.
+        self.full_train_dataset : VisionDataset = None
+        self.full_valid_dataset : VisionDataset = None
+        self.full_test_dataset  : VisionDataset = None
+        
+        # Datasets for each task
+        self.train_datasets: List[ClassSubset] = []
+        self.valid_datasets: List[ClassSubset] = []
+        self.test_datasets: List[ClassSubset] = []
+        
+        # Cumulative datasets: Hold the data from previously seen tasks
+        self.valid_cumul_datasets: List[ClassSubset] = []
+        self.test_cumul_datasets: List[ClassSubset] = []
 
     def run(self):
         """Evaluates a model/method in the classical "task-incremental" setting.
@@ -144,40 +152,42 @@ class TaskIncremental(Experiment):
         self.model = self.init_model()
 
         if self.started or self.restore_from_path:
-            self.logger.info(f"Experiment was already started in the past.")
+            logger.info(f"Experiment was already started in the past.")
             if not self.restore_from_path:
                 self.restore_from_path = self.checkpoints_dir / "state.json"
-            self.logger.info(f"Will load state from {self.restore_from_path}")
+            logger.info(f"Will load state from {self.restore_from_path}")
             self.load_state(self.restore_from_path)
 
+
         if self.done:
-            self.logger.info(f"Experiment is already done.")
+            logger.info(f"Experiment is already done.")
             # exit()
 
         if self.state.global_step == 0:
-            self.logger.info("Starting from scratch!")
+            logger.info("Starting from scratch!")
             self.state.tasks = self.create_tasks_for_dataset(self.dataset)
         else:
-            self.logger.info(f"Starting from global step {self.state.global_step}")
-            self.logger.info(f"i={self.state.i}, j={self.state.j}")
+            logger.info(f"Starting from global step {self.state.global_step}")
+            logger.info(f"i={self.state.i}, j={self.state.j}")
         
         self.tasks = self.state.tasks
-        self.save(save_model_weights=False)
+        self.save_state(save_model_weights=False)
         
         # Load the datasets
-        self.load_datasets(self.tasks)
+        self.load_task_datasets(self.tasks)
         self.n_tasks = len(self.tasks)
 
-        self.logger.info(f"Class Ordering: {self.state.tasks}")
+        logger.info(f"Class Ordering: {self.state.tasks}")
         
         if self.state.global_step == 0:
-            self.state.knn_losses   = [[None] * self.n_tasks] * self.n_tasks # [N,N]
-            self.state.task_losses  = [[None] * (i+1) for i in range(self.n_tasks)] # [N,J]
-            self.state.cumul_losses = [None] * self.n_tasks # [N]
-        
+            self.state.knn_losses   = [[None for _ in range(self.n_tasks)] for _ in range(self.n_tasks)]
+            self.state.knn_full_losses   = [None for _ in range(self.n_tasks)]
+            self.state.task_losses  = [[None for _ in range(i+1)] for i in range(self.n_tasks)] # [N,J]
+            self.state.cumul_losses = [None for _ in range(self.n_tasks)] # [N]
+
         for i in range(self.state.i, self.n_tasks):
             self.state.i = i
-            self.logger.info(f"Starting task {i} with classes {self.tasks[i]}")
+            logger.info(f"Starting task {i} with classes {self.tasks[i]}")
 
             # If we are using a multihead model, we give it the task label (so
             # that it can spawn / reuse the output head for the given task).
@@ -198,24 +208,27 @@ class TaskIncremental(Experiment):
                         # Temporarily remove the labels.
                         with train_i.without_labels(), valid_i.without_labels():
                             # Un/self-supervised training on task i.
-                            self.state.all_losses += self.train_until_convergence(
+                            self.state.all_losses = self.train(
                                 train_i,
                                 valid_i,
-                                max_epochs=self.unsupervised_epochs_per_task,
+                                epochs=self.unsupervised_epochs_per_task,
                                 description=f"Task {i} (Unsupervised)",
+                                use_accuracy_as_metric=False, # Can't use accuracy as metric during unsupervised training.
+                                temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
                             )
 
                     # Train (supervised) on task i.
                     # TODO: save the state during training?.
-                    self.state.all_losses += self.train_until_convergence(
+                    self.state.all_losses += self.train(
                         train_i,
                         valid_i,
-                        max_epochs=self.supervised_epochs_per_task,
+                        epochs=self.supervised_epochs_per_task,
                         description=f"Task {i} (Supervised)",
+                        temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
                     )
             
             # Save to the 'checkpoints' dir
-            self.save()
+            self.save_state()
             
             # Evaluation loop:
             for j in range(self.state.j, self.n_tasks):
@@ -225,60 +238,101 @@ class TaskIncremental(Experiment):
                         logger.warning(
                             f"Cumul loss at index {i} should have been None "
                             f"but is {self.state.cumul_losses[i]}.\n"
-                            f"This value be overwritten."
+                            f"This value will be overwritten."
                         )
-                    self.state.cumul_losses[i] = LossInfo(f"cumul_losses[{i}]")
+                    self.state.cumul_losses[i] = LossInfo("Cumulative")
 
                 self.state.j = j
+
+                # -- Evaluate Representations after having learned tasks [0:i] on data from task J. --
+
                 train_j = self.train_datasets[j]
-                valid_j = self.valid_datasets[j]
-
-                # Measure how linearly separable the representations of task j
-                # are by training and evaluating a KNNClassifier on the data of task j.
-                train_knn_loss, valid_knn_loss = self.test_knn(
+                test_j  = self.test_datasets[j]
+                # Measure the "quality" of the representations, by training and
+                # evaluating a classifier on train and test data from task J.
+                knn_j_train_loss, knn_j_test_loss = self.test_knn(
                     train_j,
-                    valid_j,
-                    description=f"KNN[{i}][{j}]"
+                    test_j,
+                    description=f"KNN [{i}][{j}]"
                 )
-                self.log({
-                    f"knn_losses/train/[{i}][{j}]": train_knn_loss,
-                    f"knn_losses/valid/[{i}][{j}]": valid_knn_loss,
-                })
-                self.state.knn_losses[i][j] = valid_knn_loss
 
-                accuracy = valid_knn_loss.metrics["KNN"].accuracy
-                self.logger.info(f"knn_losses/valid/[{i}][{j}] Accuracy: {accuracy:.2%}")
+                knn_j_train_acc = knn_j_train_loss.metric.accuracy
+                knn_j_test_acc = knn_j_test_loss.metric.accuracy
+                logger.info(f"Task{i}: KNN Train Accuracy [{j}]: {knn_j_train_acc:.2%}")
+                logger.info(f"Task{i}: KNN Test  Accuracy [{j}]: {knn_j_test_acc :.2%}")
+                # Log the accuracies to wandb.
+                self.log({
+                    f"KNN/train/task{j}": knn_j_train_acc,
+                    f"KNN/test/task{j}" : knn_j_test_acc,
+                })
+                self.state.knn_losses[i][j] = knn_j_test_loss
 
                 if j <= i:
                     # If we have previously trained on this task:
                     if self.multihead:
                         self.on_task_switch(self.tasks[j])
 
-                    loss_j = self.test(dataset=valid_j, description=f"task_losses[{i}][{j}]")
-                    self.state.cumul_losses[i] += loss_j
+                    # Test on the test dataset for task j.
+                    loss_j = self.test(test_j, description=f"Task{i}: Test on Task{j}", name=f"Task{j}")
+                    self.log({f"Task_losses/Task{j}": loss_j})
+                    
                     self.state.task_losses[i][j] = loss_j
+                    self.state.cumul_losses[i].absorb(loss_j) 
+                    # NOTE: using += above would add a "Task<j>" item in the
+                    # `losses` attribute of the cumulative loss, without merging the metrics.
+                    logger.info(f"Task {i} Supervised Test accuracy on task {j}: ")
+                    logger.debug(f"self.state.cumul_losses[i]: {self.state.cumul_losses[i]}")
+            
+            # -- Evaluate representations after task i on the whole train/test datasets. --
 
-                    self.log({f"task_losses/[{i}][{j}]": loss_j})
+            # Measure the "quality" of the representations of the data using the
+            # whole test dataset.
+            # TODO: Do this in another process (as it should take very long)
+            knn_train_loss, knn_test_loss = self.test_knn(
+                self.full_train_dataset,
+                self.full_test_dataset,
+                description=f"Task{i}: KNN (Full Test Dataset)"
+            )
+
+            knn_train_acc = knn_train_loss.accuracy
+            knn_test_acc  = knn_test_loss.accuracy
+            logger.info(f"Task{i}: KNN Train Accuracy (Full): {knn_train_acc:.2%}")
+            logger.info(f"Task{i}: KNN Test  Accuracy (Full): {knn_test_acc :.2%}")
+            self.state.knn_full_losses[i] = knn_test_loss
+
+            # Log the accuracies to wandb.
+            self.log({
+                f"KNN/train/full": knn_train_acc,
+                f"KNN/test/full" : knn_test_acc,
+            })
 
             # Save the state with the new metrics, but no need to save the
             # model weights, as they didn't change.
-            self.save(save_model_weights=False)
-            
-            self.state.j = 0
+            self.save_state(save_model_weights=False)
+            # NOTE: this has to be after, so we don't reloop through the j's if
+            # something in the next few lines fails.
+            self.state.j = 0            
             cumul_loss = self.state.cumul_losses[i]
-            self.log({f"cumul_losses[{i}]": cumul_loss})
+            logger.debug(cumul_loss.dumps(indent="\t"))
+            
+            cumul_valid_accuracy = get_supervised_accuracy(cumul_loss)
+            logger.info(f"Cumul Accuracy [{i}]: {cumul_valid_accuracy}")
+            self.log({
+                f"Cumulative": cumul_loss,
+            })
 
         # mark that we're done so we get right back here if we resume a
         # finished experiment
         self.state.i = self.n_tasks
         self.state.j = self.n_tasks
 
-        self.save(self.results_dir) # Save to the 'results' dir.
+        self.save_state(self.checkpoints_dir) # Save to the 'checkpoints' dir.
+        self.save_state(self.results_dir) # Save to the 'results' dir.
         
         for i, cumul_loss in enumerate(self.state.cumul_losses):
             assert cumul_loss is not None, f"cumul loss at {i} should not be None!"
             cumul_valid_accuracy = get_supervised_accuracy(cumul_loss)
-            self.logger.info(f"Cumul Accuracy [{i}]: {cumul_valid_accuracy}")
+            logger.info(f"Cumul Accuracy [{i}]: {cumul_valid_accuracy}")
             if self.config.use_wandb:
                 wandb.run.summary[f"Cumul Accuracy [{i}]"] = cumul_valid_accuracy
 
@@ -335,19 +389,21 @@ class TaskIncremental(Experiment):
                 knn_loss = knn_losses[i][j] 
                 knn_acc = knn_loss.metrics["KNN"].accuracy
                 knn_accuracies[i][j] = knn_acc
-                
+                print(f"KNN accuracy {i} {j}: {knn_acc:.3%}", id(knn_loss))
                 if j <= i:
                     task_loss = task_losses[i][j]
-                    sup_acc = task_loss.losses["supervised"].metrics["supervised"].accuracy
-                    print(f"Supervised accuracy {i} {j}: {sup_acc:.3%}")
+                    sup_acc = get_supervised_accuracy(task_loss)
+                    # print(f"Supervised accuracy {i} {j}: {sup_acc:.3%}")
                 else:
-                    sup_acc = np.nan
+                    sup_acc = -1
                 classifier_accuracies[i][j] = sup_acc         
         
+        np.set_printoptions(precision=10)
+        
         fig.suptitle("KNN Accuracies")
-        knn_accs = np.array(knn_accuracies).round(2)
+        knn_accs = np.array(knn_accuracies)
         logger.info(f"KNN Accuracies: \n{knn_accs}")
-        sup_accs = np.array(classifier_accuracies).round(2)
+        sup_accs = np.array(classifier_accuracies)
         logger.info(f"Supervised Accuracies: \n{sup_accs}")
     
         im = ax.imshow(knn_accs)
@@ -384,31 +440,33 @@ class TaskIncremental(Experiment):
     def load_state(self, state_json_path: Path=None) -> None:
         """ save/restore the state from a previous run. """
         # way to do this.
-        self.logger.info(f"Restoring state from {state_json_path}")        
+        logger.info(f"Restoring state from {state_json_path}")        
 
         if not state_json_path:
             state_json_path = self.checkpoints_dir / "state.json"
 
         # Load the 'State' object from json
-        self.state = State.load_json(state_json_path)
+        self.state = self.State.load_json(state_json_path)
 
         # If any attributes are common to both the Experiment and the State,
         # copy them over to the Experiment.
         for name, (v1, v2) in common_fields(self, self.state):
-            self.logger.info(f"Loaded the {field.name} attribute from the 'State' object.")
+            logger.info(f"Loaded the {field.name} attribute from the 'State' object.")
             setattr(self, name, v2)
 
         if self.state.model_weights_path:
-            self.logger.info(f"Restoring model weights from {self.state.model_weights_path}")
+            logger.info(f"Restoring model weights from {self.state.model_weights_path}")
             state_dict = torch.load(
                 self.state.model_weights_path,
                 map_location=self.config.device,
             )
             self.model.load_state_dict(state_dict, strict=False)
+        else:
+            logger.info(f"Not restoring model weights (self.state.model_weights_path is None)")
 
         # TODO: Fix this so the global_step is nicely loaded/restored.
         self.global_step = self.state.global_step or self.state.all_losses.latest_step()
-        self.logger.info(f"Starting at global step = {self.global_step}.")
+        logger.info(f"Starting at global step = {self.global_step}.")
 
     def make_loss_figure(self,
                     results: Dict,
@@ -483,144 +541,113 @@ class TaskIncremental(Experiment):
         
         return tasks
 
-    def load_datasets(self, tasks: List[Task]) -> None:
-        """Create the train, valid and cumulative datasets for each task.
-        
-        Returns:
-            List[List[int]]: The groups of classes for each task.
+    def load_task_datasets(self, tasks: List[Task]) -> None:
+        """Create the train, valid, test, and cumulative valid & test datasets
+        for each task.
         """
         # download the dataset.
-        self.train_dataset, self.valid_dataset = super().load_datasets()
-
+        train_dataset, test_dataset = super().load_datasets()
+        train_full_dataset, valid_full_dataset = self.train_valid_split(train_dataset)
         # safeguard the entire training dataset.
-        train_full_dataset = self.train_dataset
-        valid_full_dataset = self.valid_dataset
+        test_full_dataset = test_dataset
+        
+        self.full_train_dataset = train_full_dataset
+        self.full_valid_dataset = valid_full_dataset
+        self.full_test_dataset  = test_full_dataset
 
         self.train_datasets.clear()
         self.valid_datasets.clear()
+        self.test_datasets.clear()
 
         for i, task in enumerate(tasks):
-            train = VisionDatasetSubset(train_full_dataset, task)
-            valid = VisionDatasetSubset(valid_full_dataset, task)
+            train = ClassSubset(train_full_dataset, task)
+            valid = ClassSubset(valid_full_dataset, task)
+            test  = ClassSubset(test_full_dataset, task)
+
             self.train_datasets.append(train)
             self.valid_datasets.append(valid)
+            self.test_datasets.append(test)
 
-        # Use itertools.accumulate to do the summation of validation datasets.
+        # Use itertools.accumulate to do the summation of the datasets.
         self.valid_cumul_datasets = list(accumulate(self.valid_datasets))
-
-        for i, (train, valid, cumul) in enumerate(zip(self.train_datasets,
-                                                      self.valid_datasets,
-                                                      self.valid_cumul_datasets)):
-            self.save_images(i, train, prefix="train_")
-            self.save_images(i, valid, prefix="valid_")
-            self.save_images(i, cumul, prefix="valid_cumul_")
+        self.test_cumul_dataset = list(accumulate(self.test_datasets))
         
+        # if self.config.debug:
+        #     for i, (train, valid, test, cumul) in enumerate(zip(self.train_datasets,
+        #                                                 self.valid_datasets,
+        #                                                 self.test_datasets,
+        #                                                 self.valid_cumul_datasets)):
+        #         self.save_images(i, train, prefix="train_")
+        #         self.save_images(i, valid, prefix="valid_")
+        #         self.save_images(i, test, prefix="test_")
+        #         self.save_images(i, cumul, prefix="valid_cumul_")
+            
 
-    def save_images(self, i: int, dataset: VisionDatasetSubset, prefix: str=""):
+    def save_images(self, i: int, dataset: VisionDataset, prefix: str=""):
         n = 64
         samples = dataset.data[:n].view(n, *self.dataset.x_shape).float()
         self.samples_dir.mkdir(parents=True, exist_ok=True)
         save_image(samples, self.samples_dir / f"{prefix}task_{i}.png")
 
-    def on_task_switch(self, task: Task) -> None:
+    def on_task_switch(self, task: Task, **kwargs) -> None:
+        # If we are using a multihead model, we give it the task label (so
+        # that it can spawn / reuse the output head for the given task).
+        i = self.state.i
+        ewc_task = self.model.tasks.get(Tasks.EWC)
+
+        if self.multihead and ewc_task and ewc_task.enabled:
+            prev_task = None if i == 0 else self.tasks[i-1]
+            classifier_head = None if i == 0 else self.model.get_output_head(prev_task)
+            train_loader = self.get_dataloader(self.train_datasets[i])
+
+            if i != 0 and ewc_task.current_task_loader is None:
+                previous_task_loader = self.get_dataloader(self.train_datasets[i-1])
+                ewc_task.current_task_loader = previous_task_loader
+
+            kwargs.setdefault("prev_task", prev_task)
+            kwargs.setdefault("classifier_head", classifier_head)
+            kwargs.setdefault("train_loader", train_loader)
+
         if self.multihead:
-            self.model.on_task_switch(task)
+            self.model.on_task_switch(task, **kwargs)
 
     @property
     def started(self) -> bool:
         checkpoint_exists = (self.checkpoints_dir / "state.json").exists()
         return super().started and checkpoint_exists
+    
+    def log(self, message: Union[str, Dict, LossInfo], **kwargs):  # type: ignore
+        if isinstance(message, dict):
+            message.setdefault("task/currently_learned_task", self.state.i)
+        assert isinstance(message, dict), f"Testing things out, but for now always pass dictionaries to self.log (at least in TaskIncremental)"
+        for k, v in message.items():
+            if isinstance(v, (LossInfo, Metrics)):
+                message[k] = v.to_log_dict()
+        
+        # Flatten the log dictionary
+        from utils.utils import flatten_dict
+        flattened = flatten_dict(message)
+
+        # TODO: Remove redondant/useless keys
+        super().log(flattened, **kwargs)
 
 
-def get_supervised_accuracy(cumul_loss: LossInfo) -> float:
+def get_supervised_metrics(loss: LossInfo, mode: str="Test") -> Union[ClassificationMetrics, RegressionMetrics]:
+    if Tasks.SUPERVISED not in loss.losses:
+        loss = loss.losses[mode]
+    metric = loss.losses[Tasks.SUPERVISED].metrics[Tasks.SUPERVISED]
+    return metric
+
+
+def get_supervised_accuracy(loss: LossInfo, mode: str="Test") -> float:
     # TODO: this is ugly. There is probably a cleaner way, but I can't think of it right now. 
     try:
-        return cumul_loss.losses["Test"].losses["supervised"].metrics["supervised"].accuracy
+        supervised_metric = get_supervised_metrics(loss, mode=mode)
+        return supervised_metric.accuracy
     except KeyError as e:
-        print(cumul_loss)
+        print(f"Couldn't find the supervised accuracy in the `LossInfo` object: Key error: {e}")
+        print(loss.dumps(indent="\t", sort_keys=False))
         raise e
-
-
-def stack_loss_attr(losses: List[List[LossInfo]], attribute: str) -> Tensor:
-    n = len(losses)
-    length = len(losses[0])
-    result = torch.zeros([n, length], dtype=torch.float)
-    for i, run_losses in enumerate(losses):
-        for j, epoch_loss in enumerate(run_losses):
-            result[i,j] = rgetattr(epoch_loss, attribute)
-    return result
-
-
-def stack_dicts(values: List[Union[Metrics, LossInfo, Dict]]) -> Dict[str, Union[List, Dict[str, List]]]:
-    result: Dict[str, List] = OrderedDict()
-    
-    # do a pass throught the list, adding the dictionary elements.
-    for loss in values:
-        if isinstance(loss, dict):
-            loss_dict = loss
-        elif isinstance(loss, (LossInfo, Metrics)):
-            loss_dict = loss.to_log_dict()
-        
-        for key, value in loss_dict.items():
-            if key not in result:
-                result[key] = []
-            result[key].append(value)
-
-    # do a second pass, and recurse if there are non-flattened dicts
-    for key, values in result.items():
-        if isinstance(values[0], (dict, Metrics, LossInfo)):
-            result[key] = stack_dicts(values)
-    return result
-
-
-def make_results_dict(run_cumul_valid_losses: List[List[LossInfo]]) -> Dict:
-    # get a "stacked" version of the loss dicts, so that we get dicts of
-    # lists of tensors.
-    stacked: Dict[str, Union[Tensor, Dict]] = stack_dicts([
-        stack_dicts(losses) for losses in run_cumul_valid_losses 
-    ])
-    def to_lists(tensors: Union[List, Dict]) -> Union[List, Dict]:
-        """ Converts all the tensors within `tensors` to lists."""
-        if isinstance(tensors, list) and tensors:
-            if isinstance(tensors[0], Tensor):
-                return torch.stack(tensors).tolist()
-            elif isinstance(tensors[0], list):
-                return list(map(to_lists, tensors))
-        elif isinstance(tensors, dict):
-            for key, values in tensors.items():
-                if isinstance(values, (dict, list)):
-                    tensors[key] = to_lists(values)
-                elif isinstance(values, Tensor):
-                    tensors[key] = values.tolist()
-        return tensors
-
-    stacked = to_lists(stacked)
-    return stacked
-
-
-def get_mean_task_accuracy(loss: LossInfo, run_tasks: List[List[int]]) -> Tensor:
-    """Gets the mean classification accuracy for each task.
-    
-    Args:
-        loss (LossInfo): A given LossInfo. (usually the last of the cumulative
-        validation losses).
-        run_tasks (List[List[int]]): The classes within each task.
-    
-    Returns:
-        Tensor: Float tensor of shape [len(run_tasks)] containing the mean
-        accuracy for each task. 
-    """
-    # get the last validation metrics.
-    metrics = loss.losses[Tasks.SUPERVISED].metrics
-    classification_metrics: ClassificationMetrics = metrics[Tasks.SUPERVISED]  # type: ignore
-    final_class_accuracy = classification_metrics.class_accuracy
-
-    # Find the mean accuracy per task at the end of training.
-    final_accuracy_per_task = torch.zeros(len(run_tasks))
-    for task_index, classes in enumerate(run_tasks):
-        task_class_accuracies = final_class_accuracy[classes]
-        final_accuracy_per_task[task_index] = task_class_accuracies.mean()
-    return final_accuracy_per_task
 
 
 if __name__ == "__main__":

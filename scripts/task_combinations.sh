@@ -2,9 +2,11 @@
 
 NAME="${1:?'Name must be set'}"
 OUT="$SCRATCH/slurm_out/$NAME/%x-%j.out"
-ARGS=${@:2}
+N_JOBS="${2:?'N_JOBS must be set'}"
+ARGS="${@:3}"
 
 echo "Sweep with name '$NAME' and with args '$ARGS'"
+echo "Number of jobs per task: $N_JOBS"
 # Create the slurm output dir if it doesn't exist already.
 
 # activate the virtual environment (only used to download the datasets)
@@ -21,12 +23,11 @@ ROT_ARGS="--rotation.coef 1 --rotation.compare False"
 AE_ARGS="--ae.coef 0.01"
 SIMCLR_ARGS="--simclr.coef 1"
 
-
-sbatch --output $OUT --job-name baseline            ./scripts/sbatch_job.sh --run_name "${NAME}_baseline"                   $ARGS 
-sbatch --output $OUT --job-name rotation            ./scripts/sbatch_job.sh --run_name "${NAME}_rotation_1_nc"              $ARGS $ROT_ARGS
-sbatch --output $OUT --job-name ae                  ./scripts/sbatch_job.sh --run_name "${NAME}_ae_001"                     $ARGS $AE_ARGS
-sbatch --output $OUT --job-name simclr     	        ./scripts/sbatch_job.sh --run_name "${NAME}_simclr_1"                   $ARGS $SIMCLR_ARGS
-sbatch --output $OUT --job-name rotation_ae         ./scripts/sbatch_job.sh --run_name "${NAME}_rotation_1_nc_ae_001"       $ARGS $ROT_ARGS $AE_ARGS
-sbatch --output $OUT --job-name rotation_simclr     ./scripts/sbatch_job.sh --run_name "${NAME}_rotation_1_nc_simclr_1"     $ARGS $ROT_ARGS $SIMCLR_ARGS
-sbatch --output $OUT --job-name vae_simclr          ./scripts/sbatch_job.sh --run_name "${NAME}_ae_001_simclr_1"            $ARGS $AE_ARGS $SIMCLR_ARGS
-sbatch --output $OUT --job-name rotation_ae_simclr  ./scripts/sbatch_job.sh --run_name "${NAME}_rotation_01_nc_ae_001_simclr_1" $ARGS $ROT_ARGS $AE_ARGS $SIMCLR_ARGS
+sbatch --output $OUT --job-name baseline            --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_baseline"            $ARGS 
+sbatch --output $OUT --job-name rotation            --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_rotation"            $ARGS $ROT_ARGS
+sbatch --output $OUT --job-name ae                  --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_ae"                  $ARGS $AE_ARGS
+sbatch --output $OUT --job-name simclr              --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_simclr"              $ARGS $SIMCLR_ARGS
+sbatch --output $OUT --job-name rotation_ae         --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_rotation_ae"         $ARGS $ROT_ARGS $AE_ARGS
+sbatch --output $OUT --job-name rotation_simclr     --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_rotation_simclr"     $ARGS $ROT_ARGS $SIMCLR_ARGS
+sbatch --output $OUT --job-name vae_simclr          --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_ae_simclr"           $ARGS $AE_ARGS $SIMCLR_ARGS
+sbatch --output $OUT --job-name rotation_ae_simclr  --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "${NAME}_rotation_ae_simclr"  $ARGS $ROT_ARGS $AE_ARGS $SIMCLR_ARGS

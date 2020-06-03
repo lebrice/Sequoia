@@ -6,7 +6,7 @@ from typing import (Any, Dict, List, NamedTuple, Optional, Tuple, Type,
 from torch import nn as nn
 from utils.nngeometry.nngeometry.layercollection import LayerCollection
 from models.classifier import Classifier
-from .ewc import GaussianPrior
+from tasks.ewc import GaussianPrior
 from utils.nngeometry.nngeometry.metrics import FIM
 from utils.nngeometry.nngeometry.object.pspace import (PSpaceBlockDiag,
                                                        PSpaceDiag, PSpaceKFAC)

@@ -6,11 +6,30 @@ import torch
 from PIL import Image as image
 from PIL.Image import Image
 from torch import Tensor
-from torch.utils.data import TensorDataset, Dataset
+from torch.utils.data import TensorDataset, Dataset, Subset as SubsetBase
 from torchvision.transforms import Normalize
 from common.task import Task
+from torchvision.datasets import VisionDataset
 
-class VisionDatasetSubset(TensorDataset):
+class Subset(SubsetBase):
+    @property
+    def data(self) -> Tensor:
+        if not isinstance(self.dataset.data, np.ndarray):
+            self.dataset.data = np.asarray(self.dataset.data)
+        if not isinstance(self.indices, np.ndarray):
+            self.indices = np.asarray(self.indices)
+        return self.dataset.data[self.indices]
+
+    @property
+    def targets(self) -> Tensor:
+        if not isinstance(self.dataset.targets, np.ndarray):
+            self.dataset.targets = np.asarray(self.dataset.targets)
+        if not isinstance(self.indices, np.ndarray):
+            self.indices = np.asarray(self.indices)
+        return self.dataset.targets[self.indices]
+
+
+class ClassSubset(TensorDataset):
     """
     Subset of a dataset containing only the given labels.
     """
@@ -25,14 +44,28 @@ class VisionDatasetSubset(TensorDataset):
         if isinstance(labels, Task):
             labels = labels.classes
         self.labels: Set[int] = set(labels)
+
+
+        if isinstance(self.dataset, VisionDataset):
+            self.dataset.data = np.asarray(self.dataset.data)
+            self.dataset.targets = np.asarray(self.dataset.targets)
+
         # get the mask to select only the relevant items.
         mask = get_mask(self.dataset, self.labels)
         indices = mask.nonzero().flatten()
+
+        if isinstance(dataset, SubsetBase):
+            data = dataset.dataset.data[dataset.indices]
+            targets = dataset.dataset.targets[dataset.indices]
+        else:
+            data = dataset.data
+            targets = dataset.targets
+
         # only keep the elements where y is in `self.labels`
-        self.data = torch.as_tensor(dataset.data)
+        self.data = torch.as_tensor(data)
         self.data = self.data[indices]
         
-        self.targets = torch.as_tensor(dataset.targets)
+        self.targets = torch.as_tensor(targets)
         self.targets = self.targets[indices]
 
         shape_1 = self.dataset.data[0].shape
@@ -53,7 +86,7 @@ class VisionDatasetSubset(TensorDataset):
     def __add__(self, other: "VisionDatasetSubset") -> "VisionDatasetSubset":  # type: ignore
         assert self.dataset is other.dataset, "can't add subsets of different datasets"
         labels = list(set(self.labels).union(set(other.labels)))
-        return VisionDatasetSubset(self.dataset, labels=labels)
+        return ClassSubset(self.dataset, labels=labels)
     
     def __str__(self) -> str:
         return f"VisionDatasetSubset of dataset of type {type(self.dataset).__name__} with labels {self.labels}."
@@ -87,7 +120,12 @@ def get_mask(dataset: Dataset, labels: Iterable[int]) -> Tensor:
         A boolean mask to select the values from the dataset.
     """
     selected_mask = torch.zeros(len(dataset), dtype=torch.bool)
-    targets = dataset.targets
+    if isinstance(dataset, Subset):
+        targets = dataset.targets
+    elif isinstance(dataset, SubsetBase):
+        targets = dataset.dataset.targets[dataset.indices]
+    else:
+        targets = dataset.targets
     if not torch.is_tensor(targets):
         targets = torch.as_tensor(targets)
     for label in labels:

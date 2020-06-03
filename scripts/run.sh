@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --account=rrg-bengioy-ad_gpu    # Yoshua pays for your job
+#SBATCH --account=rrg-bengioy-ad    # Yoshua pays for your job
 #SBATCH --gres=gpu:1                    # Request GPU "generic resources"
 #SBATCH --cpus-per-task=6               # Cores proportional to GPUs: 6 on Cedar, 16 on Graham.
 #SBATCH --mem=32G                       # Memory proportional to GPUs: 32000 Cedar, 64000 Graham.
 #SBATCH --time=24:00:00                 # The job will run for 24 hours max
 #SBATCH --output /scratch/normandf/slurm_out/%x/%x-%A_%a.out  # Write stdout in $SCRATCH
-#SBATCH --error  /scratch/normandf/slurm_out/%x/%x-%A_%a.err  # Write stderr in $SCRATCH
 
 
 cd $SCRATCH/repos/SSCL
@@ -34,13 +33,13 @@ echo "Calling python -u main.py task-incremental \
     --data_dir $SLURM_TMPDIR/data \
     --log_dir_root $SLURM_TMPDIR/results \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
-    '${@:1}'"
+    ${@}"
 
-python -u main.py task-incremental \
+exec python -u main.py task-incremental \
     --data_dir $SLURM_TMPDIR/data \
     --log_dir_root $SLURM_TMPDIR/SSCL \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
-    "${@:1}"
+    ${@}
 
 exit
 

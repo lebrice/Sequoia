@@ -149,6 +149,28 @@ def rgetattr(obj: Any, attr: str, *args):
 def is_nonempty_dir(path: Path) -> bool:
     return path.is_dir() and len(list(path.iterdir())) > 0
 
+D = TypeVar("D", bound=Dict)
+
+def flatten_dict(d: D, separator: str="/") -> D:
+    """Flattens the given nested dict, adding `separator` between keys at different nesting levels.
+
+    Args:
+        d (Dict): A nested dictionary
+        separator (str, optional): Separator to use. Defaults to "/".
+
+    Returns:
+        Dict: A flattened dictionary.
+    """
+    result = type(d)()
+    for k, v in d.items():
+        if isinstance(v, dict):
+            for ki, vi in flatten_dict(v, separator=separator).items():
+                key = f"{k}{separator}{ki}"
+                result[key] = vi
+        else:
+            result[k] = v
+    return result
+
 
 if __name__ == "__main__":
     import doctest

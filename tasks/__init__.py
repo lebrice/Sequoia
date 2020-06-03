@@ -3,6 +3,7 @@ from .irm import IrmTask
 from .jigsaw_puzzle import JigsawPuzzleTask
 from .mixup import ManifoldMixupTask, MixupTask
 from .patch_location import PatchLocationTask
+from .ewc import EWC
 from .reconstruction.vae import VAEReconstructionTask
 from .tasks import AuxiliaryTaskOptions, Tasks
 from .transformation_based import AdjustBrightnessTask, RotationTask
@@ -10,6 +11,7 @@ from .transformation_based import AdjustBrightnessTask, RotationTask
 __all__ = [
     "AuxiliaryTask",
     "IrmTask",
+    'EWC',
     "JigsawPuzzleTask"
     "ManifoldMixupTask", "MixupTask"
     "PatchLocationTask"

@@ -44,7 +44,6 @@ class OutputHead(nn.Module):
                     f"Invalid values: hidden_layers ({self.hidden_layers}) != "
                     f"len(hidden_neurons) ({len(self.hidden_neurons)})."
                 )
-            print(self.hidden_layers, self.hidden_neurons)
 
     
     def __init__(self, input_size: int, output_size: int, hparams: "OutputHead.HParams"=None):

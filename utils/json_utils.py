@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from simple_parsing.helpers import JsonSerializable as JsonSerializableBase
 from simple_parsing.helpers import SimpleEncoder, encode
-from simple_parsing.helpers.serialization import register_decoding_fn
+from simple_parsing.helpers.serialization import register_decoding_fn, from_dict
 from torch import Tensor, nn
 
 T = TypeVar("T")
@@ -28,6 +28,17 @@ class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):  # ty
     def dumps(self, *, sort_keys=True, **dumps_kwargs) -> str:
         dumps_kwargs.setdefault("sort_keys", sort_keys)
         return super().dumps(**dumps_kwargs)
+
+    def save_json(self, path: Path, **dump_kwargs) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Save to temp file, so we don't corrupt the save file.
+        save_path_tmp = path.with_suffix(".tmp")
+        # write out to the temp file.
+        with open(save_path_tmp, "w") as f:
+            self.dump(f, **dump_kwargs)
+        # Rename the temp file to the right path, overwriting it if it exists.
+        save_path_tmp.replace(path)
+        # super().save_json(path, **dump_kwargs)
 
     def __getstate__(self):
         """ We implement this to just make sure to detach the tensors if any
@@ -44,6 +55,40 @@ class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):  # ty
                 state[key] = value.cpu()
         # Remove the unpicklable entries.
         return state
+    
+    def to_dict(self) -> Dict:
+        return self.__getstate__()
+        # return super().to_dict()
+        # return asdict(self)
+
+    def detach(self):
+        """Move all tensor attributes to the CPU and then detach them in-place.
+        Returns `self`, for convenience.
+        NOTE: also recursively moves and detaches `JsonSerializable` attributes.
+        """
+        logger.debug(f"Detaching the object of type {type(self)}")
+        self.cpu()
+        self.detach_()
+        return self
+
+    def detach_(self):
+        """ Detaches all the Tensor attributes in-place, then returns `self`.
+        
+        NOTE: also recursively detaches `JsonSerializable` attributes.
+        """
+        for key, value in vars(self).items():
+            if isinstance(value, Tensor):
+                value = value.detach()
+            if isinstance(value, JsonSerializable):
+                value = value.detach()
+            setattr(self, key, value)
+        return self
+
+    def cpu(self) -> None:
+        for key, value in vars(self).items():
+            if isinstance(value, (Tensor, JsonSerializable)):
+                value = value.cpu()
+            setattr(self, key, value)
 
 
 @encode.register
