@@ -18,7 +18,7 @@ class Cifar10(DatasetConfig):
 
 @dataclass
 class Cifar100(DatasetConfig):
-    name: str = "Cifar10"
+    name: str = "Cifar100"
     x_shape: Tuple[int, int, int] = (3, 32, 32)
     y_shape: Tuple[int] = (100,)
     dataset_class: Type[Dataset] = v_datasets.CIFAR100
