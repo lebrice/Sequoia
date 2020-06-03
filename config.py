@@ -13,7 +13,7 @@ import numpy as np
 import torch
 import tqdm
 import wandb
-from simple_parsing import field, mutable_field
+from simple_parsing import field, mutable_field, list_field
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -60,11 +60,12 @@ class Config:
     device: torch.device = torch.device("cuda" if cuda_available else "cpu")
     
     use_wandb: bool = True # Whether or not to log results to wandb
+    
+    project_name: str = "SSCL_1" # project name to use in wandb.
     # Name used to easily group runs together.
     # Used to create a parent folder that will contain the `run_name` directory. 
     run_group: Optional[str] = None 
     run_name: Optional[str] = None  # Wandb run name. If None, will use wandb's automatic name generation
-    project_name: str = "SSCL" # project name to use in wandb.
     # An run number is used to differentiate different iterations of the same experiment.
     # Runs with the same name can be later grouped with wandb to produce stderr plots.
     run_number: Optional[int] = None 
@@ -72,6 +73,8 @@ class Config:
     # Identifier unique to each individual wandb run. When given, will try to
     # resume the corresponding run, generates a new ID each time. 
     run_id: Optional[str] = None
+
+    tags: List[str] = list_field() # Tags to add to this run with wandb.
 
     # Save the command-line arguments that were used to create this run.
     argv: List[str] = field(init=False, default_factory=sys.argv.copy)
@@ -165,6 +168,7 @@ class Config:
             dir=str(self.wandb_path),
             notes=experiment.notes,
             reinit=True,
+            tags=self.tags,
             resume="allow",
         )
         wandb.run.save()
