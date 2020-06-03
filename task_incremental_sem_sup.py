@@ -7,7 +7,7 @@ from itertools import repeat, cycle
 from models.classifier import Classifier
 from task_incremental import TaskIncremental
 from dataclasses import dataclass
-from datasets.subset import VisionDatasetSubset
+from datasets.subset import ClassSubset
 from common.losses import LossInfo
 from datasets.ss_dataset import get_semi_sampler
 from addons.curvature_analyser import Analyser
@@ -74,8 +74,8 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         self.valid_datasets.clear()
 
         for i, task in enumerate(tasks):
-            train = VisionDatasetSubset(train_full_dataset, classes=task)
-            valid = VisionDatasetSubset(valid_full_dataset, classes=task)
+            train = ClassSubset(train_full_dataset, task)
+            valid = ClassSubset(valid_full_dataset, task)
             sampler_train, sampler_train_unlabelled = get_semi_sampler(train.targets, p=self.ratio_labelled)
             sampler_valid, sampler_valid_unlabelled = get_semi_sampler(valid.targets, p=1.)
 

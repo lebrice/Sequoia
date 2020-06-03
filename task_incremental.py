@@ -20,7 +20,7 @@ from common.losses import LossInfo, TrainValidLosses
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from config import Config
 from datasets import DatasetConfig
-from datasets.subset import VisionDatasetSubset
+from datasets.subset import ClassSubset
 from torchvision.datasets import VisionDataset
 from experiment import Experiment
 from tasks import Tasks
@@ -94,13 +94,13 @@ class TaskIncremental(Experiment):
         self.full_test_dataset  : VisionDataset = None
         
         # Datasets for each task
-        self.train_datasets: List[VisionDatasetSubset] = []
-        self.valid_datasets: List[VisionDatasetSubset] = []
-        self.test_datasets: List[VisionDatasetSubset] = []
+        self.train_datasets: List[ClassSubset] = []
+        self.valid_datasets: List[ClassSubset] = []
+        self.test_datasets: List[ClassSubset] = []
         
         # Cumulative datasets: Hold the data from previously seen tasks
-        self.valid_cumul_datasets: List[VisionDatasetSubset] = []
-        self.test_cumul_datasets: List[VisionDatasetSubset] = []
+        self.valid_cumul_datasets: List[ClassSubset] = []
+        self.test_cumul_datasets: List[ClassSubset] = []
 
     def run(self):
         """Evaluates a model/method in the classical "task-incremental" setting.
@@ -560,9 +560,9 @@ class TaskIncremental(Experiment):
         self.test_datasets.clear()
 
         for i, task in enumerate(tasks):
-            train = VisionDatasetSubset(train_full_dataset, classes=task)
-            valid = VisionDatasetSubset(valid_full_dataset, classes=task)
-            test  = VisionDatasetSubset(test_full_dataset, classes=task)
+            train = ClassSubset(train_full_dataset, task)
+            valid = ClassSubset(valid_full_dataset, task)
+            test  = ClassSubset(test_full_dataset, task)
 
             self.train_datasets.append(train)
             self.valid_datasets.append(valid)
@@ -627,7 +627,7 @@ class TaskIncremental(Experiment):
         # Flatten the log dictionary
         from utils.utils import flatten_dict
         flattened = flatten_dict(message)
-        
+
         # TODO: Remove redondant/useless keys
         super().log(flattened, **kwargs)
 
@@ -638,7 +638,6 @@ def get_supervised_accuracy(cumul_loss: LossInfo) -> float:
     except KeyError as e:
         print(cumul_loss)
         print(cumul_loss.dumps(indent="\t", sort_keys=False))
-        exit()
         raise e
 
 

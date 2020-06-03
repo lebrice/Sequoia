@@ -28,7 +28,7 @@ from datasets import DatasetConfig
 from datasets.cifar import Cifar10, Cifar100
 from datasets.fashion_mnist import FashionMnist
 from datasets.mnist import Mnist
-from datasets.subset import VisionDatasetSubset
+from datasets.subset import ClassSubset, Subset
 from models.classifier import Classifier
 from save_job import SaveTuple
 from simple_parsing import choice, field, mutable_field, subparsers
@@ -136,7 +136,7 @@ class ExperimentBase(JsonSerializable):
         return train_dataset, test_dataset
 
 
-    def train_valid_split(self, train_dataset: VisionDataset, valid_fraction: float=0.2) -> Tuple[VisionDatasetSubset, VisionDatasetSubset]:
+    def train_valid_split(self, train_dataset: VisionDataset, valid_fraction: float=0.2) -> Tuple[VisionDataset, VisionDataset]:
         n = len(train_dataset)
         valid_len: int = int((n * valid_fraction))
         train_len: int = n - valid_len
@@ -147,8 +147,8 @@ class ExperimentBase(JsonSerializable):
         valid_indices = indices[:valid_len]
         train_indices = indices[valid_len:]
 
-        train = VisionDatasetSubset(train_dataset, train_indices)
-        valid = VisionDatasetSubset(train_dataset, valid_indices)
+        train = Subset(train_dataset, train_indices)
+        valid = Subset(train_dataset, valid_indices)
         logger.info(f"Training samples: {len(train)}, Valid samples: {len(valid)}")
         return train, valid
 

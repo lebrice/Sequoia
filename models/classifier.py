@@ -212,7 +212,11 @@ class Classifier(nn.Module):
             The preprocessed inputs.
         """
         # Process 'x'
-        x = fix_channels(x)
+
+        if x.shape[1:] != self.input_shape:
+            x = fix_channels(x)
+        
+        assert x.shape[1:] == self.input_shape, f"{x.shape} != {self.input_shape}"
 
         if y is not None:
             # y_unique are the (sorted) unique values found within the batch.
