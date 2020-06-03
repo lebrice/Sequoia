@@ -32,7 +32,7 @@ function download_required_stuff(){
     cd $SCRATCH/repos/SSCL
 
     # Download the datasets to the $SCRATCH/data directory (if not already downloaded).
-    python -m scripts.download_datasets --data_dir "$SCRATCH/data"
+    python -m scripts.download_datasets --data_dir $SCRATCH/data
     
     # Download the pretrained model weights to the ~/.cache/(...) directory
     # (accessible from the compute node)
@@ -40,14 +40,16 @@ function download_required_stuff(){
     mkdir -p $TORCH_HOME
     python -m scripts.download_pretrained_models # --save_dir "$SCRATCH/checkpoints"
 
+    cd $SCRATCH    
     # Zip up the data folder (if it isn't already there)
-    zip -u $SCRATCH/data.zip $SCRATCH/data
+    zip -u -r -v data.zip data
 
     # 2. Copy your dataset on the compute node
     # IMPORTANT: Your dataset must be compressed in one single file (zip, hdf5, ...)!!!
     cp --update $SCRATCH/data.zip -d $SLURM_TMPDIR
+    
     # 3. Eventually unzip your dataset
-    unzip -n $SLURM_TMPDIR/data.zip -d $SLURM_TMPDIR
+    unzip -o $SLURM_TMPDIR/data.zip -d $SLURM_TMPDIR
 
     # go back to the original directory.
     cd $b
