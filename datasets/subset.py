@@ -9,23 +9,22 @@ from torch import Tensor
 from torch.utils.data import TensorDataset, Dataset, Subset as SubsetBase
 from torchvision.transforms import Normalize
 from common.task import Task
-from torchvision.datasets import VisionDataset
+from torchvision.datasets import VisionDataset, MNIST
 
 class Subset(SubsetBase):
+    def __init__(self, dataset, indices):
+        super().__init__(dataset, indices)
+        if not isinstance(self.dataset.data, (np.ndarray, Tensor)):
+            self.dataset.data = np.asarray(self.dataset.data)
+        if not isinstance(self.indices, (np.ndarray, Tensor)):
+            self.indices = np.asarray(self.indices)
+
     @property
     def data(self) -> Tensor:
-        if not isinstance(self.dataset.data, np.ndarray):
-            self.dataset.data = np.asarray(self.dataset.data)
-        if not isinstance(self.indices, np.ndarray):
-            self.indices = np.asarray(self.indices)
         return self.dataset.data[self.indices]
 
     @property
     def targets(self) -> Tensor:
-        if not isinstance(self.dataset.targets, np.ndarray):
-            self.dataset.targets = np.asarray(self.dataset.targets)
-        if not isinstance(self.indices, np.ndarray):
-            self.indices = np.asarray(self.indices)
         return self.dataset.targets[self.indices]
 
 
@@ -44,7 +43,6 @@ class ClassSubset(TensorDataset):
         if isinstance(labels, Task):
             labels = labels.classes
         self.labels: Set[int] = set(labels)
-
 
         if isinstance(self.dataset, VisionDataset):
             self.dataset.data = np.asarray(self.dataset.data)
