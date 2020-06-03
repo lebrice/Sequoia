@@ -57,7 +57,7 @@ class Metrics(JsonSerializable):
 
 
 @dataclass
-class RegressionMetrics(Metrics):
+class RegressionMetrics(Metrics, JsonSerializable):
     mse: Tensor = 0.  # type: ignore
 
     def __post_init__(self,
@@ -97,7 +97,7 @@ class RegressionMetrics(Metrics):
 class ClassificationMetrics(Metrics):
     confusion_matrix: Optional[Tensor] = field(default=None, repr=False)
     # fields we generate from the confusion matrix (if provided)
-    accuracy: float = field(default=0.)
+    accuracy: float = 0.
     class_accuracy: Tensor = field(default=None, repr=False)  # type: ignore
     
     def __post_init__(self,
@@ -122,6 +122,24 @@ class ClassificationMetrics(Metrics):
             self.class_accuracy = get_class_accuracy(self.confusion_matrix)
 
     def __add__(self, other: "ClassificationMetrics") -> "ClassificationMetrics":
+
+        # TODO: Might be a good idea to add a `task` attribute to Metrics or
+        # LossInfo objects, in order to check that we aren't adding the class
+        # accuracies or confusion matrices from different tasks by accident.
+        # We could also maybe add them but fuse them properly, for instance by
+        # merging the class accuracies and confusion matrices?
+        # 
+        # For example, if a first metric has class accuracy [0.1, 0.5] 
+        # (n_samples=100) and from a task with classes [0, 1] is added to a
+        # second Metrics with class accuracy [0.9, 0.8] (n_samples=100) for task
+        # with classes [0,3], the resulting Metrics object would have a 
+        # class_accuracy of [0.5 (from (0.1+0.9)/2 = 0.5), 0.5, 0 (no data), 0.8]
+        # n_samples would then also have to be split on a per-class basis.
+        # n_samples could maybe be just the sum of the confusion matrix entries?
+        # 
+        # As for the confusion matrices, they could be first expanded to fit the
+        # range of both by adding empty columns/rows to each and then be added
+        # together.
         confusion_matrix: Optional[Tensor] = None
         if self.n_samples == 0:
             return other
@@ -150,10 +168,11 @@ class ClassificationMetrics(Metrics):
         if self.confusion_matrix is not None:
             d["confusion_matrix"] = self.confusion_matrix.tolist()
         return d
-    
-    def __str__(self) -> str:
-        return f"metrics(n_samples={self.n_samples}, accuracy={self.accuracy:.2%})"
 
+    def __str__(self):
+        s = super().__str__()
+        s = s.replace(f"accuracy={self.accuracy}", f"accuracy={self.accuracy:.3%}")
+        return s
 
 @torch.no_grad()
 def get_metrics(y_pred: Union[Tensor, np.ndarray],

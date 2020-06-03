@@ -125,9 +125,9 @@ class ExperimentBase(JsonSerializable):
 
     def cleanup(self):
         print("Cleaning up after the experiment is done.")
-        self.background_queue.put(None)
-        if self.saver_worker and self.saver_worker.is_alive():
-            self.saver_worker.join()
+        if self.saver_worker:
+            self.background_queue.put(None)
+            self.saver_worker.join(timeout=120)
         print("Successfully closed everything")
 
     def load_datasets(self) -> Tuple[Dataset, Dataset]:
@@ -279,21 +279,19 @@ class ExperimentBase(JsonSerializable):
         best_model_watcher = self.keep_best_model(
             use_acc=use_accuracy_as_metric,
             save_path=self.checkpoints_dir / "best_model.pth",
-            # previous_losses=validation_losses,
         )
         best_step = starting_step
         best_epoch = starting_epoch
-        next(best_model_watcher)
+        next(best_model_watcher) # Prime the generator
         
         # Hook to test for convergence.
         convergence_checker = early_stopping(
             options=early_stopping_options,
             use_acc=use_accuracy_as_metric,
-            # previous_losses=validation_losses,
         )
-        next(convergence_checker)
-        
-        # Hook for evaluating the validation performance periodically.
+        next(convergence_checker) # Prime the generator
+        # Hook for periodically evaluating the performance on batches from the
+        # validation dataset during training.
         valid_loss_gen = self.valid_performance_generator(valid_dataloader)
         
         # Message for the progressbar
@@ -333,12 +331,15 @@ class ExperimentBase(JsonSerializable):
 
             # perform a validation epoch.
             val_desc = desc + " Valid"
-            val_loss_info = self.test(valid_dataloader, description=val_desc)
+            val_loss_info = self.test(valid_dataloader, description=val_desc, name="Valid")
+            validation_losses.append(val_loss_info)
+
             if temp_save_dir:
                 # Save these files in the background using the saver process.
                 self.save(temp_save_dir / f"val_loss_{i}.json", val_loss_info)
                 self.save(temp_save_dir / f"all_losses.json", all_losses)
             
+            # Inform the best model watcher of the latest performance of the model.
             best_step = best_model_watcher.send(val_loss_info)
             logger.debug(f"Best step so far: {best_step}")
 
@@ -362,7 +363,8 @@ class ExperimentBase(JsonSerializable):
 
         logger.info(f"Best step: {best_step}, best_epoch: {best_epoch}, ")
         all_losses.keep_up_to_step(best_step)
-       
+
+        # TODO: Should we also return the array of validation losses at each epoch (`validation_losses`)?
         return all_losses
 
     def keep_best_model(self, use_acc: bool=False, save_path: Path=None) -> Generator[int, Optional[LossInfo], None]:
@@ -442,10 +444,11 @@ class ExperimentBase(JsonSerializable):
         target = batch[1].to(self.model.device) if len(batch) == 2 else None  # type: ignore
         return data, target
 
-    def train_batch(self, data: Tensor, target: Optional[Tensor]) -> LossInfo:
+    def train_batch(self, data: Tensor, target: Optional[Tensor], name: str="Train") -> LossInfo:
+        self.model.train()
         self.model.optimizer.zero_grad()
 
-        batch_loss_info = self.model.get_loss(data, target, name="Train")
+        batch_loss_info = self.model.get_loss(data, target, name=name)
         total_loss = batch_loss_info.total_loss
         total_loss.backward()
 

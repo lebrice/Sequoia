@@ -631,13 +631,22 @@ class TaskIncremental(Experiment):
         # TODO: Remove redondant/useless keys
         super().log(flattened, **kwargs)
 
-def get_supervised_accuracy(cumul_loss: LossInfo) -> float:
+
+def get_supervised_metrics(loss: LossInfo, mode: str="Test") -> Union[ClassificationMetrics, RegressionMetrics]:
+    if Tasks.SUPERVISED not in loss.losses:
+        loss = loss.losses[mode]
+    metric = loss.losses[Tasks.SUPERVISED].metrics[Tasks.SUPERVISED]
+    return metric
+
+
+def get_supervised_accuracy(loss: LossInfo, mode: str="Test") -> float:
     # TODO: this is ugly. There is probably a cleaner way, but I can't think of it right now. 
     try:
-        return cumul_loss.losses["Test"].losses["supervised"].metrics["supervised"].accuracy
+        supervised_metric = get_supervised_metrics(loss, mode=mode)
+        return supervised_metric.accuracy
     except KeyError as e:
-        print(cumul_loss)
-        print(cumul_loss.dumps(indent="\t", sort_keys=False))
+        print(f"Couldn't find the supervised accuracy in the `LossInfo` object: Key error: {e}")
+        print(loss.dumps(indent="\t", sort_keys=False))
         raise e
 
 
