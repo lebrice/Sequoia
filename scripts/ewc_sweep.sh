@@ -26,11 +26,11 @@ zip -u "$SCRATCH/data.zip" "$SCRATCH/data"
 mkdir -p "$SCRATCH/slurm_out/$NAME"
 
 
-sbatch --output $OUT --job-name baseline --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "baseline"  $ARGS
-sbatch --output $OUT --job-name ewc_01   --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_01"    $ARGS --ewc.coef 0.1
-sbatch --output $OUT --job-name ewc_1    --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_1"     $ARGS --ewc.coef 1
-sbatch --output $OUT --job-name ewc_10   --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_10"    $ARGS --ewc.coef 10
-sbatch --output $OUT --job-name ewc_50   --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_50"    $ARGS --ewc.coef 50
-sbatch --output $OUT --job-name ewc_100  --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_100"   $ARGS --ewc.coef 100
-sbatch --output $OUT --job-name ewc_200  --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_200"   $ARGS --ewc.coef 200
-sbatch --output $OUT --job-name ewc_1000 --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_1000"  $ARGS --ewc.coef 1000
+sbatch --output $OUT --job-name baseline   --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "baseline"   $ARGS
+sbatch --output $OUT --job-name ewc_01     --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_01"     $ARGS --ewc.coef 0.1
+sbatch --output $OUT --job-name ewc_1      --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_1"      $ARGS --ewc.coef 1
+sbatch --output $OUT --job-name ewc_10     --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_10"     $ARGS --ewc.coef 10
+sbatch --output $OUT --job-name ewc_100    --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_100"    $ARGS --ewc.coef 100
+sbatch --output $OUT --job-name ewc_1000   --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_1000"   $ARGS --ewc.coef 1000
+sbatch --output $OUT --job-name ewc_10000  --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_10000"  $ARGS --ewc.coef 10000
+sbatch --output $OUT --job-name ewc_100000 --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_100000" $ARGS --ewc.coef 100000
