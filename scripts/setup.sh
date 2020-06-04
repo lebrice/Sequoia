@@ -10,13 +10,13 @@ function create_load_environment(){
     b=`pwd` # save the current directory.
     module load python/3.7
 
-    if [[ $HOSTNAME == *"cedar"* ]]; then
+    if [[ $HOSTNAME == *"blg"* ]]; then
+        echo "Loading up the virtualenv at ~/ENV since we're on Beluga."
+        source ~/ENV/bin/activate
+    else
         echo "Creating the environment locally on the compute node."
         virtualenv --no-download $SLURM_TMPDIR/env
         source $SLURM_TMPDIR/env/bin/activate
-    elif [[ $HOSTNAME == *"blg"* ]]; then
-        echo "Loading up the virtualenv at ~/ENV since we're on Beluga."
-        source ~/ENV/bin/activate
     fi
     
     cd $SCRATCH/repos/SSCL
