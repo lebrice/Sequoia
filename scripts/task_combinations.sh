@@ -9,13 +9,12 @@ echo "Sweep with name '$NAME' and with args '$ARGS'"
 echo "Number of jobs per task: $N_JOBS"
 # Create the slurm output dir if it doesn't exist already.
 
-# activate the virtual environment (only used to download the datasets)
-source ~/ENV/bin/activate
-python -m scripts.download_datasets --data_dir "$SCRATCH/data"
-python -m scripts.download_pretrained_models # --save_dir "$SCRATCH/checkpoints"
-deactivate
+if [[ $HOSTNAME == *"blg"* ]]; then
+    echo "Downloading the datasets and models from the login node since we're on Beluga."
+    source scripts/setup.sh
+fi
 
-zip -u "$SCRATCH/data.zip" "$SCRATCH/data"
+# activate the virtual environment (only used to download the datasets)
 
 mkdir -p "$SCRATCH/slurm_out/$NAME"
 
