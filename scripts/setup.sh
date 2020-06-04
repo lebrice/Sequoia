@@ -9,22 +9,31 @@ export SCRATCH=${SCRATCH:="~"}
 function create_load_environment(){    
     b=`pwd` # save the current directory.
     module load python/3.7
-
+    
+    cd $SCRATCH/repos/SSCL
+    
     if [[ $HOSTNAME == *"blg"* ]]; then
         echo "Loading up the virtualenv at ~/ENV since we're on Beluga."
         source ~/ENV/bin/activate
-    else
+        # Install the packages that *do* need an internet connection.
+        pip install -r scripts/requirements/beluga/requirements.txt
+        # Install the required packages that don't need to be downloaded from the internet.
+        pip install -r scripts/requirements/beluga/requirements_no_index.txt --no-index
+
+    elif [[ $HOSTNAME == *"cedar"* ]]; then
         echo "Creating the environment locally on the compute node."
         virtualenv --no-download $SLURM_TMPDIR/env
         source $SLURM_TMPDIR/env/bin/activate
+        # Install the packages that *do* need an internet connection.
+        pip install -r scripts/requirements/cedar/requirements.txt
+    else
+        echo "Using conda since we're on the MILA cluster"
+        source $CONDA_ACTIVATE
+        conda activate pytorch
+        # Install the packages that *do* need an internet connection.
+        pip install -r scripts/requirements/mila/requirements.txt
     fi
     
-    cd $SCRATCH/repos/SSCL
-    # Install the packages that *do* need an internet connection.
-    pip install -r scripts/requirements/normal.txt
-    
-    # # Install the required packages that don't need to be downloaded from the internet.
-    # pip install -r scripts/requirements/no_index.txt	--no-index?
 
     cd $b  # go back to the original directory.
 }
