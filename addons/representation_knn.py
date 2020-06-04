@@ -88,14 +88,13 @@ def evaluate_knn(x: np.ndarray, y: np.ndarray, x_t: np.ndarray, y_t: np.ndarray,
     assert np.array_equal(train_classes, test_classes), f"y and y_test should contain the same classes: (y: {train_classes}, y_t: {test_classes})."
     
     x = scaler.fit_transform(x)
-    x_t = scaler.transform(x_t)
-    
+       
     # Create and train the Knn Classifier using the options as the kwargs
     knn_classifier = KNeighborsClassifier(**asdict(options)).fit(x, y)
     classes = knn_classifier.classes_
     # print("classes: ", classes)
 
-    y_pred = knn_classifier.predict(x)
+    # y_pred = knn_classifier.predict(x)
     y_prob = knn_classifier.predict_proba(x)
     # print(y_pred.shape, y_prob.shape, train_score)
 
@@ -107,7 +106,8 @@ def evaluate_knn(x: np.ndarray, y: np.ndarray, x_t: np.ndarray, y_t: np.ndarray,
     nce = log_loss(y_true=y, y_pred=y_prob, labels=classes)
     train_loss = LossInfo("KNN", total_loss=nce, y_pred=y_logits, y=y)
 
-    y_t_pred = knn_classifier.predict(x_t)
+    x_t = scaler.transform(x_t)
+    # y_t_pred = knn_classifier.predict(x_t)
     y_t_prob = knn_classifier.predict_proba(x_t)
     # print(y_t_pred.shape, y_t_prob.shape, test_score)
 
