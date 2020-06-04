@@ -24,6 +24,6 @@ source ./scripts/task_combinations_ewc.sh fashion-mnist 5 \
     --unsupervised_epochs_per_task 0 --supervised_epochs_per_task 100 \
     --patience 10 \
     --multihead --no_wandb_cleanup \
-    --dataset fashion-mnist \
+    --dataset fashion_mnist \
     --n_neighbours 50 \
     --tags fashion-mnist
