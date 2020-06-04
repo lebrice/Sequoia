@@ -591,12 +591,17 @@ class TaskIncremental(Experiment):
         save_image(samples, self.samples_dir / f"{prefix}task_{i}.png")
 
     def on_task_switch(self, task: Task, **kwargs) -> None:
+        if not self.multihead:
+            # We aren't using a multihead model, so we aren't allowed to use this task label.
+            logger.debug(f"Ignoring task label {task} since we're not a multihead model.")
+            return
+
         # If we are using a multihead model, we give it the task label (so
         # that it can spawn / reuse the output head for the given task).
         i = self.state.i
         ewc_task = self.model.tasks.get(Tasks.EWC)
 
-        if self.multihead and ewc_task and ewc_task.enabled:
+        if ewc_task and ewc_task.enabled:
             prev_task = None if i == 0 else self.tasks[i-1]
             classifier_head = None if i == 0 else self.model.get_output_head(prev_task)
             train_loader = self.get_dataloader(self.train_datasets[i])
@@ -609,8 +614,7 @@ class TaskIncremental(Experiment):
             kwargs.setdefault("classifier_head", classifier_head)
             kwargs.setdefault("train_loader", train_loader)
 
-        if self.multihead:
-            self.model.on_task_switch(task, **kwargs)
+        self.model.on_task_switch(task, **kwargs)
 
     @property
     def started(self) -> bool:
