@@ -1,5 +1,6 @@
 #!/bin/bash
 
+export SCRATCH=${SCRATCH:="~"}
 
 source ./scripts/task_combinations_ewc.sh cifar100-20c 5 \
     --unsupervised_epochs_per_task 0 --supervised_epochs_per_task 100 \
