@@ -6,3 +6,4 @@ pandas
 typing-inspect
 simple-parsing
 tqdm
+pandas

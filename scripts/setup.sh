@@ -30,6 +30,7 @@ function create_load_environment(){
     
     else
         echo "Using conda since we're on the MILA cluster"
+        module unload python/3.7
         module load anaconda/3
         source $CONDA_ACTIVATE
         conda activate pytorch
@@ -62,8 +63,9 @@ function download_required_stuff(){
     # IMPORTANT: Your dataset must be compressed in one single file (zip, hdf5, ...)!!!
     cp --update $SCRATCH/data.zip -d $SLURM_TMPDIR
     
+    cd $SLURM_TMPDIR
     # 3. Eventually unzip your dataset
-    unzip -o $SLURM_TMPDIR/data.zip -d $SLURM_TMPDIR
+    unzip -o -u $SLURM_TMPDIR/data.zip -d $SLURM_TMPDIR
 
     # go back to the original directory.
     cd $b
