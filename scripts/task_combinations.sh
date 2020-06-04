@@ -30,11 +30,11 @@ ROT_ARGS="--rotation.coef 1 --rotation.compare False"
 AE_ARGS="--ae.coef 0.01"
 SIMCLR_ARGS="--simclr.coef 1"
 
-sbatch --output $OUT --job-name baseline            --account=$ACCOUNT -p=$PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "baseline"            $ARGS 
-sbatch --output $OUT --job-name rotation            --account=$ACCOUNT -p=$PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "rotation"            $ARGS $ROT_ARGS
-sbatch --output $OUT --job-name ae                  --account=$ACCOUNT -p=$PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "ae"                  $ARGS $AE_ARGS
-sbatch --output $OUT --job-name simclr              --account=$ACCOUNT -p=$PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "simclr"              $ARGS $SIMCLR_ARGS
-sbatch --output $OUT --job-name rotation_ae         --account=$ACCOUNT -p=$PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "rotation_ae"         $ARGS $ROT_ARGS $AE_ARGS
-sbatch --output $OUT --job-name rotation_simclr     --account=$ACCOUNT -p=$PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "rotation_simclr"     $ARGS $ROT_ARGS $SIMCLR_ARGS
-sbatch --output $OUT --job-name vae_simclr          --account=$ACCOUNT -p=$PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "ae_simclr"           $ARGS $AE_ARGS $SIMCLR_ARGS
-sbatch --output $OUT --job-name rotation_ae_simclr  --account=$ACCOUNT -p=$PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "rotation_ae_simclr"  $ARGS $ROT_ARGS $AE_ARGS $SIMCLR_ARGS
+sbatch --output $OUT --job-name baseline            --account=$ACCOUNT -p $PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "baseline"            $ARGS 
+sbatch --output $OUT --job-name rotation            --account=$ACCOUNT -p $PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "rotation"            $ARGS $ROT_ARGS
+sbatch --output $OUT --job-name ae                  --account=$ACCOUNT -p $PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "ae"                  $ARGS $AE_ARGS
+sbatch --output $OUT --job-name simclr              --account=$ACCOUNT -p $PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "simclr"              $ARGS $SIMCLR_ARGS
+sbatch --output $OUT --job-name rotation_ae         --account=$ACCOUNT -p $PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "rotation_ae"         $ARGS $ROT_ARGS $AE_ARGS
+sbatch --output $OUT --job-name rotation_simclr     --account=$ACCOUNT -p $PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "rotation_simclr"     $ARGS $ROT_ARGS $SIMCLR_ARGS
+sbatch --output $OUT --job-name vae_simclr          --account=$ACCOUNT -p $PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "ae_simclr"           $ARGS $AE_ARGS $SIMCLR_ARGS
+sbatch --output $OUT --job-name rotation_ae_simclr  --account=$ACCOUNT -p $PARTITION --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_group $NAME --run_name "rotation_ae_simclr"  $ARGS $ROT_ARGS $AE_ARGS $SIMCLR_ARGS
