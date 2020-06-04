@@ -13,6 +13,7 @@ function create_load_environment(){
     if [[ $HOSTNAME == *"blg"* ]]; then
         echo "Loading up the virtualenv at ~/ENV since we're on Beluga."
         module load python/3.7
+        module load httpproxy
         source ~/ENV/bin/activate
         # Install the packages that *do* need an internet connection.
         pip install -r scripts/requirements/beluga/requirements.txt
@@ -26,14 +27,15 @@ function create_load_environment(){
         source $SLURM_TMPDIR/env/bin/activate
         # Install the packages that *do* need an internet connection.
         pip install -r scripts/requirements/cedar/requirements.txt
+    
     else
         echo "Using conda since we're on the MILA cluster"
+        module load anaconda/3
         source $CONDA_ACTIVATE
         conda activate pytorch
         # Install the packages that *do* need an internet connection.
         pip install -r scripts/requirements/mila/requirements.txt
     fi
-    
 
     cd $b  # go back to the original directory.
 }
@@ -50,9 +52,9 @@ function download_required_stuff(){
     # (accessible from the compute node)
     export TORCH_HOME="$SCRATCH/.torch"
     mkdir -p $TORCH_HOME
-    python -m scripts.download_pretrained_models # --save_dir "$SCRATCH/checkpoints"
+    python -m scripts.download_pretrained_models --save_dir $TORCH_HOME
 
-    cd $SCRATCH    
+    cd $SCRATCH
     # Zip up the data folder (if it isn't already there)
     zip -u -r -v data.zip data
 
@@ -87,7 +89,6 @@ if [[ $HOSTNAME == *"cedar"* ]]; then
 elif [[ $HOSTNAME == *"blg"* ]]; then
     echo "Running on Beluga!"
     export BELUGA=1
-    module load httpproxy
 fi
 
 create_load_environment
