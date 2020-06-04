@@ -61,7 +61,7 @@ function download_required_stuff(){
 
     # 2. Copy your dataset on the compute node
     # IMPORTANT: Your dataset must be compressed in one single file (zip, hdf5, ...)!!!
-    cp --update $SCRATCH/data.zip -d $SLURM_TMPDIR
+    cp --update --verbose $SCRATCH/data.zip -d $SLURM_TMPDIR
     
     cd $SLURM_TMPDIR
     # 3. Eventually unzip your dataset

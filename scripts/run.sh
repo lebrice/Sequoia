@@ -34,6 +34,7 @@ if [[ $BELUGA -eq 1 ]]; then
     wandb off
 else
     echo "Logging in with wandb since we're running on Cedar."
+    export WANDB_API_KEY=8776db49aa9afcae1952308876d832cdbd11fcbe
     wandb login
 fi
 
