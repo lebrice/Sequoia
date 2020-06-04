@@ -55,6 +55,14 @@ function download_required_stuff(){
     cd $b
 }
 
+function copy_code(){
+   # TODO: copy the code over to slurm_tmpdir, so that we can edit stuff in $SCRATCH
+   # OR: checkout a given branch of the repo, something like that.
+   git submodule init
+   git submodule update
+}
+
+
 # Make the output directory for the slurm files, if not already present
 mkdir -p $SCRATCH/slurm_out
 
@@ -72,5 +80,5 @@ fi
 
 create_load_environment
 download_required_stuff
-git submodule init
-git submodule update
+copy_code
+

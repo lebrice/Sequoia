@@ -42,6 +42,5 @@ python -u main.py task-incremental \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     ${@}
 
-cleanup
 exit
 
