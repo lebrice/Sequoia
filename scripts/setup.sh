@@ -22,8 +22,9 @@ function create_load_environment(){
     cd $SCRATCH/repos/SSCL
     # Install the packages that *do* need an internet connection.
     pip install -r scripts/requirements/normal.txt
-    # Install the required packages that don't need to be downloaded from the internet.
-    pip install -r scripts/requirements/no_index.txt	--no-index
+    
+    # # Install the required packages that don't need to be downloaded from the internet.
+    # pip install -r scripts/requirements/no_index.txt	--no-index?
 
     cd $b  # go back to the original directory.
 }
