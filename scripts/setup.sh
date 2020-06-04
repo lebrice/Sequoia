@@ -8,12 +8,11 @@ export SCRATCH=${SCRATCH:="~"}
 
 function create_load_environment(){    
     b=`pwd` # save the current directory.
-    module load python/3.7
-    
     cd $SCRATCH/repos/SSCL
-    
+
     if [[ $HOSTNAME == *"blg"* ]]; then
         echo "Loading up the virtualenv at ~/ENV since we're on Beluga."
+        module load python/3.7
         source ~/ENV/bin/activate
         # Install the packages that *do* need an internet connection.
         pip install -r scripts/requirements/beluga/requirements.txt
@@ -22,6 +21,7 @@ function create_load_environment(){
 
     elif [[ $HOSTNAME == *"cedar"* ]]; then
         echo "Creating the environment locally on the compute node."
+        module load python/3.7
         virtualenv --no-download $SLURM_TMPDIR/env
         source $SLURM_TMPDIR/env/bin/activate
         # Install the packages that *do* need an internet connection.
