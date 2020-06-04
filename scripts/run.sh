@@ -12,6 +12,7 @@ cd $SCRATCH/repos/SSCL
 echo "Slurm Array Job ID: $SLURM_ARRAY_TASK_ID"
 
 source scripts/setup.sh
+export TORCH_HOME="$SCRATCH/.torch"
 
 function cleanup(){
     echo "Cleaning up and transfering files from $SLURM_TMPDIR to $SCRATCH/SSCL"
