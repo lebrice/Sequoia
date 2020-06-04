@@ -280,7 +280,8 @@ class TaskIncremental(Experiment):
                     self.state.cumul_losses[i].absorb(loss_j) 
                     # NOTE: using += above would add a "Task<j>" item in the
                     # `losses` attribute of the cumulative loss, without merging the metrics.
-                    logger.info(f"Task {i} Supervised Test accuracy on task {j}: ")
+                    supervised_acc_j = get_supervised_accuracy(loss_j)
+                    logger.info(f"Task {i} Supervised Test accuracy on task {j}: {supervised_acc_j:.2%}")
                     logger.debug(f"self.state.cumul_losses[i]: {self.state.cumul_losses[i]}")
             
             # -- Evaluate representations after task i on the whole train/test datasets. --

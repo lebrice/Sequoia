@@ -205,13 +205,14 @@ class LossInfo(JsonSerializable):
         """
         message: Dict[str, Union[str, float]] = OrderedDict()
         message["Loss"] = float(self.total_loss.item())
+
+        if self.metric:
+            message.update(self.metric.to_pbar_message())
+
         for name, loss_info in self.losses.items():
-            message[f"{name} Loss"] = float(loss_info.total_loss.item())
-            for metric_name, metrics in loss_info.metrics.items():
-                if isinstance(metrics, ClassificationMetrics):
-                    message[f"{name} Acc"] = f"{metrics.accuracy:.2%}"
-                elif isinstance(metrics, RegressionMetrics):
-                    message[f"{name} MSE"] = float(metrics.mse.item())
+            sub_message = loss_info.to_pbar_message()
+            message.update((f"{name} {k}", v) for k, v in sub_message.items())
+
         prefix = (self.name + " ") if self.name else ""
         return add_prefix(message, prefix)
 
