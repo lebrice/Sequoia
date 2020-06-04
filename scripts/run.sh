@@ -14,10 +14,17 @@ echo "Slurm Array Job ID: $SLURM_ARRAY_TASK_ID"
 source scripts/setup.sh
 export TORCH_HOME="$SCRATCH/.torch"
 
+
 function cleanup(){
     echo "Cleaning up and transfering files from $SLURM_TMPDIR to $SCRATCH/SSCL"
     rsync -r -u -v $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
-    wandb sync $SCRATCH/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
+    if [[ $BELUGA -eq 1 ]]; then
+        echo "Trying to sync just this run, since we're on Beluga.."
+        wandb sync $SLURM_TMPDIR/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
+    else
+        echo "Running wandb sync since we're not on Beluga"
+        wandb sync $SCRATCH/SSCL
+    fi
 }
 
 trap cleanup EXIT

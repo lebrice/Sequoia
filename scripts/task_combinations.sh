@@ -1,7 +1,7 @@
 #!/bin/bash
 
 NAME="${1:?'Name must be set'}"
-OUT="$SCRATCH/slurm_out/$NAME/%x-%j.out"
+OUT="$SCRATCH/slurm_out/$NAME/%x/%x-%A_%a.out"
 N_JOBS="${2:?'N_JOBS must be set'}"
 ARGS="${@:3}"
 

@@ -4,6 +4,8 @@
 #set -euo pipefail
 #IFS=$'\n\t'
 
+export SCRATCH=${SCRATCH:="~"}
+
 function create_load_environment(){    
     b=`pwd` # save the current directory.
     module load python/3.7
