@@ -3,7 +3,7 @@
 #SBATCH --gres=gpu:1                    # Request GPU "generic resources"
 #SBATCH --cpus-per-task=6               # Cores proportional to GPUs: 6 on Cedar, 16 on Graham.
 #SBATCH --mem=32G                       # Memory proportional to GPUs: 32000 Cedar, 64000 Graham.
-#SBATCH --time=24:00:00                 # The job will run for 24 hours max
+#SBATCH --time=48:00:00                 # The job will run for 24 hours max
 #SBATCH --output /network/home/normandf/slurm_out/%x-%A_%a.out  # Write stdout in $SCRATCH
 
 export TORCH_HOME="$SCRATCH/.torch"
@@ -12,7 +12,8 @@ cd $SCRATCH/repos/SSCL
 
 echo "Slurm Array Job ID: $SLURM_ARRAY_TASK_ID"
 
-source scripts/setup.sh
+#source scripts/setup.sh
+source ~/ENVS/SSCl/bin/activate
 
 function cleanup(){
     echo "Cleaning up and transfering files from $SLURM_TMPDIR to $SCRATCH/SSCL"
