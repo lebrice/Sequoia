@@ -23,8 +23,8 @@ function cleanup(){
         echo "Trying to sync just this run, since we're on Beluga.."
         wandb sync $SLURM_TMPDIR/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
     else
-        echo "Running wandb sync since we're not on Beluga"
-        wandb sync $SLURM_TMPDIR/SSCL
+        echo "No need to run wandb sync since we're not on Beluga"
+        # wandb sync $SLURM_TMPDIR/SSCL
     fi
 }
 
