@@ -1,7 +1,7 @@
 #!/bin/bash
 
 NAME="${1:?'Name must be set'}"
-OUT="$SCRATCH/slurm_out/$NAME/%x/%x-%A_%a.out"
+OUT="$SCRATCH/slurm_out/$NAME/%x-%A_%a.out"
 N_JOBS="${2:?'N_JOBS must be set'}"
 ARGS="${@:3}"
 
@@ -10,9 +10,10 @@ echo "OUT pattern: $OUT"
 echo "Number of jobs per task: $N_JOBS"
 # Create the slurm output dir if it doesn't exist already.
 
-if [[ $HOSTNAME == *"blg"* ]]; then
+if [[ $HOSTNAME == *"blg"* ]] && [[ $SETUP -eq 1 ]]; then
     echo "Downloading the datasets and models from the login node since we're on Beluga."
     source scripts/setup.sh
+    export SETUP=1
 fi
 
 # activate the virtual environment (only used to download the datasets)
