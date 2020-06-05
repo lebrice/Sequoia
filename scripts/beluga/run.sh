@@ -17,25 +17,14 @@ source scripts/setup.sh
 function cleanup(){
     echo "Cleaning up and transfering files from $SLURM_TMPDIR to $SCRATCH/SSCL"
     rsync -r -u -v $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
-    if [[ $BELUGA -eq 1 ]]; then
-        echo "Trying to sync just this run, since we're on Beluga.."
-        wandb sync $SLURM_TMPDIR/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
-    else
-        echo "No need to run wandb sync since we're not on Beluga"
-        # wandb sync $SLURM_TMPDIR/SSCL
-    fi
+    echo "Trying to sync just this run, since we're on Beluga.."
+    wandb sync $SLURM_TMPDIR/SSCL/ # Not guaranteed to work given CC's network restrictions.
 }
 
 trap cleanup EXIT
 
-if [[ $BELUGA -eq 1 ]]; then
-    echo "Turning off wandb since we're running on Beluga."
-    wandb off
-else
-    echo "Logging in with wandb since we're running on Cedar."
-    # export WANDB_API_KEY="8776db49aa9afcae1952308876d832cdbd11fcbe"
-    wandb login 8776db49aa9afcae1952308876d832cdbd11fcbe
-fi
+echo "Turning off wandb since we're running on Beluga."
+wandb off
 
 echo "Calling python -u main.py task-incremental \
     --data_dir $SLURM_TMPDIR/data \

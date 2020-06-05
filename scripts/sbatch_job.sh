@@ -1,8 +1,10 @@
 #!/bin/bash
+# Script that launches the right sbatch command depending on which cluster we are on.
 # the job name.
 NAME="${1:?'Name must be set'}"
 N_JOBS="${2:?'N_JOBS must be set'}"
-
+# Set $SCRATCH to $HOME if it isn't set. (only has an effect when running on mila cluster)
+export SCRATCH=${SCRATCH:=$HOME}
 OUT="$SCRATCH/slurm_out/$NAME/%x-%A_%a.out"
 
 # Capture the other arguments to the script, they will be passed to the launched sbatch script.
@@ -24,6 +26,6 @@ elif [[ $HOSTNAME == *"cedar"* ]]; then
     sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/cedar/run.sh $ARGS
 else
     echo "Launching \
-    sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/cedar/run.sh $ARGS"
-    sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/cedar/run.sh $ARGS
+    sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/mila/run.sh $ARGS"
+    sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/mila/run.sh $ARGS
 fi
