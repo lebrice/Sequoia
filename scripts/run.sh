@@ -6,14 +6,14 @@
 #SBATCH --time=24:00:00                 # The job will run for 24 hours max
 #SBATCH --output /network/home/normandf/slurm_out/%x/%x-%A_%a.out  # Write stdout in $SCRATCH
 
-export SCRATCH=${SCRATCH:="~"}
+export SCRATCH=${SCRATCH:=$HOME}
+export TORCH_HOME="$SCRATCH/.torch"
 
 cd $SCRATCH/repos/SSCL
 
 echo "Slurm Array Job ID: $SLURM_ARRAY_TASK_ID"
 
 source scripts/setup.sh
-export TORCH_HOME="$SCRATCH/.torch"
 
 
 function cleanup(){
@@ -35,8 +35,8 @@ if [[ $BELUGA -eq 1 ]]; then
     wandb off
 else
     echo "Logging in with wandb since we're running on Cedar."
-    export WANDB_API_KEY=8776db49aa9afcae1952308876d832cdbd11fcbe
-    wandb login
+    # export WANDB_API_KEY="8776db49aa9afcae1952308876d832cdbd11fcbe"
+    wandb login 8776db49aa9afcae1952308876d832cdbd11fcbe
 fi
 
 echo "Calling python -u main.py task-incremental \
