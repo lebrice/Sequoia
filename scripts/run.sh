@@ -24,7 +24,7 @@ function cleanup(){
         wandb sync $SLURM_TMPDIR/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
     else
         echo "Running wandb sync since we're not on Beluga"
-        wandb sync $SCRATCH/SSCL
+        wandb sync $SLURM_TMPDIR/SSCL
     fi
 }
 
