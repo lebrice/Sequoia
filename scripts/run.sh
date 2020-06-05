@@ -6,6 +6,8 @@
 #SBATCH --time=24:00:00                 # The job will run for 24 hours max
 #SBATCH --output /network/home/normandf/slurm_out/%x/%x-%A_%a.out  # Write stdout in $SCRATCH
 
+export SCRATCH=${SCRATCH:="~"}
+
 cd $SCRATCH/repos/SSCL
 
 echo "Slurm Array Job ID: $SLURM_ARRAY_TASK_ID"
