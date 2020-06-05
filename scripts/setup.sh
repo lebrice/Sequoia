@@ -4,7 +4,7 @@
 #set -euo pipefail
 #IFS=$'\n\t'
 
-export SCRATCH=${SCRATCH:="~"}
+export SCRATCH=${SCRATCH:=$HOME}
 
 function create_load_environment(){    
     b=`pwd` # save the current directory.
