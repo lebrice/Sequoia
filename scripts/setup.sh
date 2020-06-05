@@ -16,9 +16,9 @@ function create_load_environment(){
         module load httpproxy
         source ~/ENV/bin/activate
         # Install the packages that *do* need an internet connection.
-        pip install -r scripts/requirements/beluga/requirements.txt
+        pip install -r scripts/beluga/requirements.txt
         # Install the required packages that don't need to be downloaded from the internet.
-        pip install -r scripts/requirements/beluga/requirements_no_index.txt --no-index
+        pip install -r scripts/beluga/requirements_no_index.txt --no-index
 
     elif [[ $HOSTNAME == *"cedar"* ]]; then
         echo "Creating the environment locally on the compute node."
@@ -26,7 +26,7 @@ function create_load_environment(){
         virtualenv --no-download $SLURM_TMPDIR/env
         source $SLURM_TMPDIR/env/bin/activate
         # Install the packages that *do* need an internet connection.
-        pip install -r scripts/requirements/cedar/requirements.txt
+        pip install -r scripts/cedar/requirements.txt
     
     else
         echo "Using conda since we're on the MILA cluster"
@@ -35,7 +35,7 @@ function create_load_environment(){
         source $CONDA_ACTIVATE
         conda activate pytorch
         # Install the packages that *do* need an internet connection.
-        pip install -r scripts/requirements/mila/requirements.txt
+        pip install -r scripts/mila/requirements.txt
     fi
 
     cd $b  # go back to the original directory.
