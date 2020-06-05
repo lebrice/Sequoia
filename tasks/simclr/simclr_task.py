@@ -25,7 +25,9 @@ class SimCLRTask(AuxiliaryTask):
 
     @dataclass
     class Options(AuxiliaryTask.Options, HParams):
-        pass
+        """ Options for the SimCLR Task. """
+        #simclr double augmentaiton
+        double_augmentation: bool = True
 
     def __init__(self, name: str="SimCLR", options: "SimCLRTask.Options"=None):
         super().__init__(name=name, options=options)
@@ -33,7 +35,7 @@ class SimCLRTask(AuxiliaryTask):
 
         # Set the same values for equivalent hyperparameters
         self.options.image_size = AuxiliaryTask.input_shape[-1]
-        self.options.double_augmentation = True
+        self.options.double_augmentation = self.options.double_augmentation
         self.options.repr_dim = AuxiliaryTask.hidden_size
 
         self.augment = Compose([

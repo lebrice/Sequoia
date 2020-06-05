@@ -18,7 +18,7 @@ while run_counter < runs:
     cwd = os.getcwd()
     command = "python ../../task_incremental_sem_sup.py \
     --wandb_project SSCL_hp_4_resnet \
-    --dataset cifar100 \
+    --dataset cifar10 \
     --mixup.coefficient 1 \
     --ratio_labelled 0.05 \
     --learning_rate %(lr)s \
@@ -29,8 +29,8 @@ while run_counter < runs:
     --mixup_consistency %(mixup_consistency)s \
     --consistency_rampup_ends %(consistency_rampup_ends)s \
     --multihead 1 \
-    --n_classes_per_task 20 \
-    --supervised_epochs_per_task 200 \
+    --n_classes_per_task 2 \
+    --supervised_epochs_per_task 100 \
     --batch_size 128 \
     --run_name ict_hp \
     --random_class_ordering 0 \

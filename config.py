@@ -3,6 +3,7 @@ import logging
 import os
 import shutil
 import sys
+import random
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
@@ -49,7 +50,7 @@ class Config:
     log_dir_root: Path = Path("results") # Logging directory.
     log_interval: int = 10   # How many batches to wait between logging calls.
     
-    random_seed: int = 1            # Random seed.
+    random_seed: int = 1 #random.randint(0,1000)       # Random seed.
     use_cuda: bool = cuda_available # Whether or not to use CUDA.
     
     # num_workers for the dataloaders.
@@ -73,7 +74,7 @@ class Config:
     argv: List[str] = field(init=False, default_factory=sys.argv.copy)
 
     early_stopping: EarlyStoppingOptions = mutable_field(EarlyStoppingOptions)
-
+    # If `True`, accuracy will be used as a measure of performance. Otherwise, the total validation loss is used. Defaults to False.
     use_accuracy_as_metric: bool = False
 
     # Path where the wandb files should be stored. If the 'WANDB_DIR'

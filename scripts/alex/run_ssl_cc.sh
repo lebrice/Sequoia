@@ -3,7 +3,7 @@
 #SBATCH --gres=gpu:1                    # Request GPU "generic resources"
 #SBATCH --cpus-per-task=2               # Cores proportional to GPUs: 6 on Cedar, 16 on Graham.
 #SBATCH --mem=15G                       # Memory proportional to GPUs: 32000 Cedar, 64000 Graham.
-#SBATCH --time=10:00:00                 # The job will run for 24 hours max
+#SBATCH --time=24:00:00                 # The job will run for 24 hours max
 #SBATCH --output /scratch/ostapeno/output/SSCL/slurm_out.out  # Write stdout in $SCRATCH
 #SBATCH --error  /scratch/ostapeno/output/SSCL/slurm_out.err  # Write stderr in $SCRATCH
 
@@ -27,7 +27,8 @@ echo "Calling python -u main.py task-incremental \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     '${@:1}'"
 
-
+mkdir $SLURM_TMPDIR/data
+mkdir $SLURM_TMPDIR/SSCL
 python -u main.py task-incremental-semi-sup \
     --data_dir $SLURM_TMPDIR/data \
     --log_dir_root $SLURM_TMPDIR/SSCL \

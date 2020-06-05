@@ -584,7 +584,7 @@ class ExperimentBase(JsonSerializable):
                     elif 'cumul_losses' in k:
                         new_key = 'Cumulative'
 
-                    elif 'task_losses' in k:
+                    elif 'task_losses' in k: 
                         task_measuree, task_measured = [int(s) for s in k if s.isdigit()]
                         new_key = 'Task_losses'+sep + f'Task{task_measured}'
                     elif '[' in new_key and 'Verbose' not in new_key:
@@ -601,7 +601,7 @@ class ExperimentBase(JsonSerializable):
                 message_dict = wandb_cleanup(message_dict)
                 if len(avv_knn) > 0:
                     message_dict['KNN_per_task/avv_knn'] = np.mean(avv_knn)
-                message_dict['task/currently_learned_task'] = self.state.i
+                #message_dict['task/currently_learned_task'] = self.state.i
                 message_dict = wandb_cleanup(message_dict)
 
             wandb.log(message_dict, step=step)

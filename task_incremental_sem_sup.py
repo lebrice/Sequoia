@@ -28,6 +28,21 @@ from common.task import Task
 from task_incremental import get_supervised_accuracy
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
 import logging
+
+
+from tasks.simclr.simclr_task import SimCLRTask
+from torchvision.transforms import Compose, Lambda, ToPILImage, ToTensor
+try:
+    from tasks.simclr.falr.config import HParams
+    from tasks.simclr.falr.data import SimCLRAugment
+    from tasks.simclr.falr.losses import SimCLRLoss
+    from tasks.simclr.falr.models import Projector
+except ImportError as e:
+    print(f"Couldn't import the modules from the falr submodule: {e}")
+    print("Make sure to run `git submodule init; git submodule update`")
+    exit()
+
+
 logger = logging.getLogger(__file__)
 
 def linear_rampup(current, rampup_length):
@@ -65,10 +80,14 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     lr_rampdown_epochs: int = 0
     #If `True`, accuracy will be used as a measure of performance. Otherwise, the total validation loss is used. Defaults to False.
     use_accuracy_as_metric: bool= False
+    #wether to apply simclr augment
+    simclr_augment: bool = False
+    #semi setup: 0 - only current task's unsupervised data, 1 - all tasks' unsupervised samples
+    semi_setup_full: bool = 0
 
     def __post_init__(self):
         super().__post_init__()
-        self.test_datasets: List[VisionDatasetSubset] = []
+        self.test_datasets: List[SubsetRandomSampler] = []
         self.train_samplers_labelled: List[SubsetRandomSampler] = []
         self.train_samplers_unlabelled: List[SubsetRandomSampler] = []
         self.valid_samplers_labelled: List[SubsetRandomSampler] = []
@@ -127,9 +146,11 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             test_size = len(train) - train_size
             train_subset, valid_subset = torch.utils.data.random_split(train, [train_size, test_size])
             test = ClassSubset(test_full_dataset, task)
+
             sampler_train, sampler_train_unlabelled = get_semi_sampler(train.targets[train_subset.indices], p=self.ratio_labelled)
             sampler_valid, sampler_valid_unlabelled = get_semi_sampler(train.targets[valid_subset.indices], p=1.)
             sampler_test, sampler_test_unlabelled = get_semi_sampler(test.targets, p=1.)
+
 
             self.train_datasets.append(train_subset)
             self.train_samplers_labelled.append(sampler_train)
@@ -142,6 +163,8 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             self.test_datasets.append(test)
             self.test_samplers_labelled.append(sampler_test)
             self.test_samplers_unlabelled.append(sampler_test_unlabelled)
+
+
 
         # Use itertools.accumulate to do the summation of validation datasets.
         self.valid_cumul_datasets = list(accumulate(self.valid_datasets))
@@ -159,9 +182,14 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                         dataset: Dataset,
                         sampler_labelled: SubsetRandomSampler,
                         sampler_unlabelled: SubsetRandomSampler) -> Tuple[DataLoader, DataLoader]:
-        loader_train_labelled = super().get_dataloader(dataset, sampler=sampler_labelled)
-        loader_train_unlabelled = super().get_dataloader(dataset, sampler=sampler_unlabelled)
-        return (loader_train_labelled, loader_train_unlabelled)
+        if sampler_labelled is not None and sampler_unlabelled is not None:
+            loader_train_labelled = super().get_dataloader(dataset, sampler=sampler_labelled)
+            loader_train_unlabelled = super().get_dataloader(dataset, sampler=sampler_unlabelled)
+            return (loader_train_labelled, loader_train_unlabelled)
+        else:
+            loader = super().get_dataloader(dataset)
+            return (loader, loader)
+
 
     def run(self):
         """Evaluates a model/method in the classical "task-incremental" setting.
@@ -359,6 +387,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
                     self.log({f"task_losses/[{i}][{j}]": loss_j})
 
+
             # Save the state with the new metrics, but no need to save the
             # model weights, as they didn't change.
             #self.save(save_model_weights=False)
@@ -366,13 +395,13 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             self.state.j = 0
             cumul_loss = self.state.cumul_losses[i]
             self.log({f"cumul_losses[{i}]": cumul_loss})
+            self.log({"task/currently_learned_task": i})
 
         # mark that we're done so we get right back here if we resume a
         # finished experiment
         self.state.i = self.n_tasks
         self.state.j = self.n_tasks
-
-        self.save(self.results_dir)  # Save to the 'results' dir.
+        #self.save(self.results_dir)  # Save to the 'results' dir.
 
         for i, cumul_loss in enumerate(self.state.cumul_losses):
             assert cumul_loss is not None, f"cumul loss at {i} should not be None!"
@@ -388,7 +417,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         #    task_losses=self.state.task_losses,
         #    cumul_losses=self.state.cumul_losses
         #)
-        grid.savefig(self.plots_dir / "transfer_grid.png")
+        #grid.savefig(self.plots_dir / "transfer_grid.png")
 
         # if self.config.debug:
         #     grid.waitforbuttonpress(10)
@@ -467,6 +496,9 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             losses during training (every `log_interval` steps) to be logged.
         """
         train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloaders(*train_dataset)
+        if self.semi_setup_full:
+            train_dataloader_unlabelled, _ = self.get_dataloaders(self.train_dataset, None, None)
+
         valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloaders(*valid_dataset)
         early_stopping_options = early_stopping_options or self.config.early_stopping
 
@@ -697,6 +729,28 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
         return total_loss
 
+    def preprocess_simclr(self, batch: Union[Tuple[Tensor], Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Optional[Tensor]]:
+
+        data = batch[0].to(self.model.device)
+        target = batch[1].to(self.model.device) if len(batch) == 2 else None  # type: ignore
+
+        self.options = SimCLRTask.Options
+        # Set the same values for equivalent hyperparameters
+        self.options.image_size = data.shape[-1]
+        self.options.double_augmentation = False
+
+        self.augment = Compose([
+            ToPILImage(),
+            SimCLRAugment(self.options),
+            Lambda(lambda tup: torch.stack([tup[0], tup[1]]))
+        ])
+
+        data = torch.cat([self.augment(x_i) for x_i in data.cpu()], dim=0)  # [2*B, C, H, W]
+        target = torch.cat([ torch.stack([t,t]) for t in target.cpu()], dim=0) if target is not None else None
+        return data.to(self.config.device), target.to(self.config.device)
+
+
+
     def test_iter_semi(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.eval()
         for batch_sup, batch_unsup in dataloader:
@@ -723,8 +777,8 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     def train_iter_semi_sup(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.train()
         for batch_sup, batch_unsup in dataloader:
-            data, target = self.preprocess(batch_sup)
-            u, _ = self.preprocess(batch_unsup)
+            data, target = self.preprocess(batch_sup) if not self.simclr_augment else self.preprocess_simclr(batch_sup)
+            u, _ = self.preprocess(batch_unsup) if not self.simclr_augment else self.preprocess_simclr(batch_unsup)
             yield self.train_batch_semi_sup(data, target, u)
 
     def preprocess_sup_mixup(self, x,y):

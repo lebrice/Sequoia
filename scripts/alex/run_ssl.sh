@@ -4,7 +4,7 @@
 #SBATCH --time=48:00:00                            # The job will run for 3 hours
 #SBATCH --output=logs/job_output.txt
 #SBATCH --error=logs/job_error.txt
-#SBATCH -p long                               # --partition=unkillable, long
+#SBATCH -p long                                    # --partition=unkillable, long
 #SBATCH --cpus-per-task=2                     	   # Ask for 2 CPUs
 
 
