@@ -85,10 +85,10 @@ def get_cumul_accuracy(run_dir: Path) -> np.ndarray:
         for class_accuracy_fn in class_accuracy_fns:
             try:
                 accuracy = class_accuracy_fn(results_json)
-                print("Successfully loaded with ", class_accuracy_fn.__name__)
+                # print("Successfully loaded with ", class_accuracy_fn.__name__)
                 return accuracy
             except KeyError as e:
-                print(e)
+                pass
     
     raise RuntimeError(f"Unable to load the cumulative accuracy for run dir {run_dir}")
 
@@ -144,7 +144,7 @@ def get_task_accuracy_v2(run_dir: Path) -> np.ndarray:
     for j, loss in enumerate(last_task_losses):
         acc = get_supervised_accuracy(loss)
         metric = get_supervised_metrics(loss)
-        print(f"i: {i} j: {j} accuracy: {acc}")
+        # print(f"i: {i} j: {j} accuracy: {acc}")
         task_accuracies[j] = acc
     return task_accuracies
 
@@ -264,7 +264,7 @@ def is_run_dir(path: Path) -> bool:
         return False
     for req_fil_path in REQUIRED_FILES:
         if not (path / req_fil_path).exists():
-            print(f"File {path / req_fil_path} doesn't exist!")
+            # print(f"File {path / req_fil_path} doesn't exist!")
             return False
     return True
 
