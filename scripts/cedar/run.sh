@@ -12,7 +12,7 @@ cd $SCRATCH/repos/SSCL
 
 echo "Slurm Array Job ID: $SLURM_ARRAY_TASK_ID"
 
-source scripts/setup.sh
+source scripts/cedar/setup.sh
 
 function cleanup(){
     echo "Cleaning up and transfering files from $SLURM_TMPDIR to $SCRATCH/SSCL"
