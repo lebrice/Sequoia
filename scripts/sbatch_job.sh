@@ -16,14 +16,14 @@ mkdir -p "$SCRATCH/slurm_out/$NAME"
 
 if [[ $HOSTNAME == *"blg"* ]]; then
     echo "Launching \
-    sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/beluga/run.sh $ARGS"
-    sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/beluga/run.sh $ARGS
+    sbatch --output $OUT --job-name $NAME --time 48:00:00 --array=1-$N_JOBS ./scripts/beluga/run.sh $ARGS"
+    sbatch --output $OUT --job-name $NAME --time 48:00:00 --array=1-$N_JOBS ./scripts/beluga/run.sh $ARGS
 elif [[ $HOSTNAME == *"cedar"* ]]; then
     echo "Launching \
-    sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/cedar/run.sh $ARGS"
-    sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/cedar/run.sh $ARGS
+    sbatch --output $OUT --job-name $NAME --time 48:00:00 --array=1-$N_JOBS ./scripts/cedar/run.sh $ARGS"
+    sbatch --output $OUT --job-name $NAME --time 48:00:00 --array=1-$N_JOBS ./scripts/cedar/run.sh $ARGS
 else
     echo "Launching \
-    sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/cedar/run.sh $ARGS"
-    sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/cedar/run.sh $ARGS
+    sbatch --output $OUT --job-name $NAME --time 48:00:00 --array=1-$N_JOBS ./scripts/cedar/run.sh $ARGS"
+    sbatch --output $OUT --job-name $NAME --time 48:00:00 --array=1-$N_JOBS ./scripts/cedar/run.sh $ARGS
 fi
