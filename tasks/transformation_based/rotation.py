@@ -52,7 +52,8 @@ def rotate(x: Tensor, angle: int) -> Tensor:
     # TODO: Test that this works.
     assert angle % 90 == 0, "can only rotate 0, 90, 180, or 270 degrees for now."
     k = angle // 90
-    assert min(x.shape) == x.shape[-3], f"Image should be in [(b) C H W] format. (image shape: {x.shape}" 
+    # BUG: Very rarely, this condition won't work! (More specifically, only on the last batch of data!)
+    # assert min(x.shape) == x.shape[-3], f"Image should be in [(b) C H W] format. (image shape: {x.shape}" 
     return x.rot90(k, dims=(-2,-1))
 
 
