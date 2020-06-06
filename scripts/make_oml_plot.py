@@ -15,6 +15,11 @@ from simple_parsing import ArgumentParser, field, list_field
 # TODO: fill out a bug for SimpleParsing, when type is List and a custom type is
 # given, the custom type should overwrite the List type.
 
+REQUIRED_FILES: List[str] = [
+    "results/state.json",
+    # "results/final_task_accuracy.csv"
+]
+
 
 def n_tasks_used(run_path: Path) -> int:
     run_name = run_path.name
@@ -164,8 +169,9 @@ def get_final_task_accuracy(run_dir: Path) -> np.ndarray:
         try:
             return fn(run_dir)
         except Exception as e:
-            print(f"Exception: {e}")
-            exit()
+            pass
+            # print(f"Exception: {e}")
+            # exit()
     raise RuntimeError(f"Unable to load the final task accuracies for run dir {run_dir}")
 
 
@@ -244,11 +250,6 @@ def get_nonempty_run_dirs(log_dir: Path) -> Iterable[Path]:
     for run_dir in log_dir.glob("run_*"):
         if is_run_dir(run_dir) and run_dir.name.split("_", maxsplit=1)[-1].isdigit():
             yield run_dir
-
-REQUIRED_FILES: List[str] = [
-    "results/state.json",
-    # "results/final_task_accuracy.csv"
-]
 
 def is_run_dir(path: Path) -> bool:
     """Returns wether the given Path is a run directory.
@@ -363,7 +364,8 @@ class OmlFigureOptions:
             warnings.warn(
                 f"There are NO kept runs for path or pattern(s) {self.runs}. \n"
                 "Returning early without creating the figure. \n"
-                f"Lost runs: \n{lost_runs}"
+                f"Lost runs: \n"
+                +("\n".join(map(str,lost_runs)))
             )
             return
         
@@ -432,7 +434,10 @@ class OmlFigureOptions:
         run_names: List[str] = [p.name for p in runs]
         prefix = longest_common_prefix(run_names)
 
-        for i, run_path in enumerate(sorted(runs, key=n_tasks_used)):
+        # Sorted first by number of tasks, then by path.
+        runs = sorted(runs, key=lambda p: (n_tasks_used(p), p))
+        
+        for i, run_path in enumerate(runs):
             print(i, run_path)
             # Get the classification accuracy per task for all runs.
             classification_accuracies = get_cumul_accuracies(run_path)
@@ -505,8 +510,10 @@ class OmlFigureOptions:
                 yerr=final_cumul_std,
                 label=label,
             )
-            # adding the percentage labels over the bars on the right plot.
-            autolabel(ax3, rects, bar_height_scale, final_cumul_std)
+
+            n_samples = classification_accuracies.shape[0]
+            # adding the percentage labels over the bars on the middle plot.
+            autolabel(ax3, rects, bar_height_scale, final_cumul_std, n_samples=n_samples)
 
         ax2.hlines(
             y=np.arange(len(indicators)*n_runs),
@@ -571,11 +578,12 @@ def load_array(path: Path) -> np.ndarray:
     return np.loadtxt(path.with_suffix(".csv"), delimiter=",")
 
 
-def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float=1., errors: Union[list, np.ndarray, float]=None):
+def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float=1., errors: Union[list, np.ndarray, float]=None, n_samples: int=None):
     """Attach a text label above each bar in *rects*, displaying its height.
     
     Taken from https://matplotlib.org/gallery/lines_bars_and_markers/barchart.html#sphx-glr-gallery-lines-bars-and-markers-barchart-py
     """
+    print(f"rectangles: {len(rects)}")
     for i, rect in enumerate(rects):
         height = rect.get_height()
         bottom = rect.get_y()
@@ -590,6 +598,9 @@ def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float=1., erro
             value_string = f"{value:.0%}"
             if error is not None:
                 value_string = f"{value*100:.1f} ± {error:.1%}"
+            
+            if n_samples is not None:
+                value_string += f" (n={n_samples})"
 
             axis.annotate(
                 value_string,
@@ -599,6 +610,22 @@ def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float=1., erro
                 ha="center",
                 va="bottom",
             )
+
+
+def format_label(run_path: Path, current_label: str) -> str:
+    just_task_names = (current_label
+        # Get rid of the prefix that indicates the number of tasks:
+        .replace("0_", "_")
+        .replace("1_", "_")
+        .replace("2_", "_")
+        .replace("3_", "_")
+        # Get rid of the coefficients:
+        # (usually *_1* or *_01* or *_001* and *_nc_*)
+        .replace("1", "_")
+        .replace("0", "_")
+        .replace("nc", "_")
+    )
+    return " + ".join(just_task_names.replace("_", " ").split())
 
 
 if __name__ == "__main__":
