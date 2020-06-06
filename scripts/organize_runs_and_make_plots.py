@@ -109,6 +109,16 @@ class ScpOptions:
             )
         print("args: ", args)
         proc = subprocess.run(args)
+import contextlib
+from io import StringIO
+
+def run(args: Dict) -> OmlFigureOptions:
+    s = StringIO()
+    with contextlib.redirect_stdout(s):
+        obj = OmlFigureOptions(**args)
+    s.seek(0)
+    # print(s.read())
+    return obj
 
 
 @dataclass
@@ -154,24 +164,33 @@ class Options:
             self.all_runs_dir = self.all_runs_dir / "SSCL"
         
         print(self.all_runs_dir)
+        args: List[Dict] = []
         for group_name in self.all_runs_dir.iterdir():
-            print(f"Group name: {group_name}")
             if group_name.name == "wandb":
                 continue
-            OmlFigureOptions(
+            print(f"Group name: {group_name}")
+            args.append(dict(
                 runs=[str(group_name / "*")],
                 out_path=self.figures_dir / f"{group_name.name}.pdf",
                 exit_after=False,
                 add_ntasks_prefix=False,
-                title=str(group_name),
+                title=group_name.name,
                 show=False,
                 maximize_figure=False,
                 fig_size_inches=(12, 6),
-            )
-        # self.organized_dir = self.results_dir / (self.server.name + "_organised")
-
+            ))
         
-
+        import tqdm
+        import multiprocessing as mp
+        print(f"Creating figures using {mp.cpu_count()} processes.")
+        with mp.Pool() as pool:
+            for result in pool.imap_unordered(run, args):
+                if result.result_figure is not None:
+                    print(f"Figure created at path {result.out_path}")
+                else:
+                    print(f"Couldn't create figure for path {result.out_path}")
+        # self.organized_dir = self.results_dir / (self.server.name + "_organised")
+    
     
 
     def copy_and_plot(self, experiment: str, run_names: str):
