@@ -2,8 +2,10 @@
 
 export SCRATCH=${SCRATCH:=$HOME}
 
+cp -r /home/ostapeno/dev/SSCL/* /home/ostapeno/scratch/repos/SSCL/
+cd /home/ostapeno/scratch/repos/SSCL
 
-source ./scripts/task_combinations_ewc.sh cifar100-20c 5 \
+source ./scripts/task_combinations_ewc.sh cifar100-20c 3 \
     --unsupervised_epochs_per_task 0 --supervised_epochs_per_task 200 \
     --use_accuracy_as_metric 1 \
     --multihead --no_wandb_cleanup \
@@ -21,10 +23,10 @@ source ./scripts/task_combinations_ewc.sh cifar10 5 \
     --tags cifar10
 
 
-source ./scripts/task_combinations_ewc.sh fashion-mnist 5 \
-    --unsupervised_epochs_per_task 0 --supervised_epochs_per_task 200 \
-    --use_accuracy_as_metric 1 \
-    --multihead --no_wandb_cleanup \
-    --dataset fashion_mnist \
-    --n_neighbors 50 \
-    --tags fashion-mnist
+#source ./scripts/task_combinations_ewc.sh fashion-mnist 5 \
+#    --unsupervised_epochs_per_task 0 --supervised_epochs_per_task 200 \
+#    --use_accuracy_as_metric 1 \
+#    --multihead --no_wandb_cleanup \
+#    --dataset fashion_mnist \
+#    --n_neighbors 50 \
+#    --tags fashion-mnist

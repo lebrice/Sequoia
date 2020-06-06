@@ -25,7 +25,7 @@ ROT_ARGS="--rotation.coef 1 --rotation.compare False"
 AE_ARGS="--ae.coef 0.01"
 SIMCLR_ARGS="--simclr.coef 1"
 
-./scripts/sbatch_job.sh baseline            $N_JOBS --run_group $NAME --run_name "baseline"            $ARGS 
+./scripts/sbatch_job.sh baseline            $N_JOBS --run_group $NAME --run_name "baseline"            $ARGS
 ./scripts/sbatch_job.sh rotation            $N_JOBS --run_group $NAME --run_name "rotation"            $ARGS $ROT_ARGS
 ./scripts/sbatch_job.sh ae                  $N_JOBS --run_group $NAME --run_name "ae"                  $ARGS $AE_ARGS
 ./scripts/sbatch_job.sh simclr              $N_JOBS --run_group $NAME --run_name "simclr"              $ARGS $SIMCLR_ARGS

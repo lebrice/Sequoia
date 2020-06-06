@@ -14,6 +14,7 @@ echo "Slurm Array Job ID: $SLURM_ARRAY_TASK_ID"
 
 #source scripts/setup.sh
 source ~/ENVS/SSCl/bin/activate
+export WANDB_DIR=$SCRATCH/SSCL/wandb
 
 function cleanup(){
     echo "Cleaning up and transfering files from $SLURM_TMPDIR to $SCRATCH/SSCL"
@@ -40,13 +41,13 @@ fi
 
 echo "Calling python -u main.py task-incremental \
     --data_dir $SLURM_TMPDIR/data \
-    --log_dir_root $SLURM_TMPDIR/results \
+    --log_dir_root $SCRATCH/SSCL/results \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     ${@}"
 
 python -u main.py task-incremental \
     --data_dir $SLURM_TMPDIR/data \
-    --log_dir_root $SLURM_TMPDIR/SSCL \
+    --log_dir_root $SCRATCH/SSCL/results \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     ${@}
 
