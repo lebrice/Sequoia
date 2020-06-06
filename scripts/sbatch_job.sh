@@ -16,7 +16,7 @@ echo "Number of jobs per task: $N_JOBS"
 # Create the slurm output dir if it doesn't exist already.
 mkdir -p "$SCRATCH/slurm_out/$NAME"
 
-if [[ $HOSTNAME == *"blg"* ]]; then
+if [[ $HOSTNAME == *"beluga"* ]]; then
     echo "Launching \
     sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/beluga/run.sh $ARGS"
     sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/beluga/run.sh $ARGS
