@@ -600,7 +600,6 @@ class TaskIncremental(Experiment):
         # that it can spawn / reuse the output head for the given task).
         i = self.state.i
         ewc_task = self.model.tasks.get(Tasks.EWC)
-
         if ewc_task and ewc_task.enabled:
             prev_task = None if i == 0 else self.tasks[i-1]
             classifier_head = None if i == 0 else self.model.get_output_head(prev_task)

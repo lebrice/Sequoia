@@ -15,22 +15,22 @@ echo "Sweep with name '$NAME' and with args '$ARGS'"
 echo "Number of jobs per task: $N_JOBS"
 # Create the slurm output dir if it doesn't exist already.
 
-# activate the virtual environment (only used to download the datasets)
-source ~/ENV/bin/activate
-python -m scripts.download_datasets --data_dir "$SCRATCH/data"
-python -m scripts.download_pretrained_models # --save_dir "$SCRATCH/checkpoints"
-deactivate
+if [[ $HOSTNAME == *"blg"* ]] && [[ $SETUP -eq 1 ]]; then
+    # activate the virtual environment (only used to download the datasets, if we are on beluga)
+    echo "Downloading the datasets and models from the login node since we're on Beluga."
+    source scripts/beluga/setup.sh
+    export SETUP=1
+fi
 
 zip -u "$SCRATCH/data.zip" "$SCRATCH/data"
 
 mkdir -p "$SCRATCH/slurm_out/$NAME"
 
-
-sbatch --output $OUT --job-name baseline   --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "baseline"   $ARGS
-sbatch --output $OUT --job-name ewc_01     --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_01"     $ARGS --ewc.coef 0.1
-sbatch --output $OUT --job-name ewc_1      --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_1"      $ARGS --ewc.coef 1
-sbatch --output $OUT --job-name ewc_10     --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_10"     $ARGS --ewc.coef 10
-sbatch --output $OUT --job-name ewc_100    --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_100"    $ARGS --ewc.coef 100
-sbatch --output $OUT --job-name ewc_1000   --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_1000"   $ARGS --ewc.coef 1000
-sbatch --output $OUT --job-name ewc_10000  --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_10000"  $ARGS --ewc.coef 10000
-sbatch --output $OUT --job-name ewc_100000 --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh --run_name "ewc_100000" $ARGS --ewc.coef 100000
+./scripts/sbatch_job.sh baseline   $N_JOBS --run_name "baseline"   $ARGS
+./scripts/sbatch_job.sh ewc_01     $N_JOBS --run_name "ewc_01"     $ARGS --ewc.coef 0.1
+./scripts/sbatch_job.sh ewc_1      $N_JOBS --run_name "ewc_1"      $ARGS --ewc.coef 1
+./scripts/sbatch_job.sh ewc_10     $N_JOBS --run_name "ewc_10"     $ARGS --ewc.coef 10
+./scripts/sbatch_job.sh ewc_100    $N_JOBS --run_name "ewc_100"    $ARGS --ewc.coef 100
+./scripts/sbatch_job.sh ewc_1000   $N_JOBS --run_name "ewc_1000"   $ARGS --ewc.coef 1000
+./scripts/sbatch_job.sh ewc_10000  $N_JOBS --run_name "ewc_10000"  $ARGS --ewc.coef 10000
+./scripts/sbatch_job.sh ewc_100000 $N_JOBS --run_name "ewc_100000" $ARGS --ewc.coef 100000

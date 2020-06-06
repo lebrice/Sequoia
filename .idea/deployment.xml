@@ -28,7 +28,7 @@
       <paths name="mila_cluster">
         <serverdata>
           <mappings>
-            <mapping deploy="/dev/SSCL" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/dev/SSCL_copy" local="$PROJECT_DIR$" web="/" />
           </mappings>
           <excludedPaths>
             <excludedPath local="true" path="$PROJECT_DIR$/results" />

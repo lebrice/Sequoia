@@ -6,38 +6,26 @@
 #SBATCH --time=24:00:00                 # The job will run for 24 hours max
 #SBATCH --output /network/home/normandf/slurm_out/%x/%x-%A_%a.out  # Write stdout in $SCRATCH
 
-# Set $SCRATCH to the value of $HOME if it isn't set (does nothing except on mila cluster).
-export SCRATCH=${SCRATCH:=$HOME}
 export TORCH_HOME="$SCRATCH/.torch"
 echo "SCRATCH : $SCRATCH SLURM_TMPDIR: $SLURM_TMPDIR TORCH_HOME: $TORCH_HOME"
 cd $SCRATCH/repos/SSCL
 
 echo "Slurm Array Job ID: $SLURM_ARRAY_TASK_ID"
 
-source scripts/setup.sh
+source scripts/cedar/setup.sh
 
 function cleanup(){
     echo "Cleaning up and transfering files from $SLURM_TMPDIR to $SCRATCH/SSCL"
     rsync -r -u -v $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
-    if [[ $BELUGA -eq 1 ]]; then
-        echo "Trying to sync just this run, since we're on Beluga.."
-        wandb sync $SLURM_TMPDIR/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
-    else
-        echo "No need to run wandb sync since we're not on Beluga"
-        # wandb sync $SLURM_TMPDIR/SSCL
-    fi
+    echo "No need to run wandb sync since we're not on Beluga"
+    # wandb sync $SLURM_TMPDIR/SSCL
 }
 
 trap cleanup EXIT
 
-if [[ $BELUGA -eq 1 ]]; then
-    echo "Turning off wandb since we're running on Beluga."
-    wandb off
-else
-    echo "Logging in with wandb since we're running on Cedar."
-    # export WANDB_API_KEY="8776db49aa9afcae1952308876d832cdbd11fcbe"
-    wandb login 8776db49aa9afcae1952308876d832cdbd11fcbe
-fi
+echo "Logging in with wandb since we're running on Cedar."
+# export WANDB_API_KEY="8776db49aa9afcae1952308876d832cdbd11fcbe"
+wandb login 8776db49aa9afcae1952308876d832cdbd11fcbe
 
 echo "Calling python -u main.py task-incremental \
     --data_dir $SLURM_TMPDIR/data \
