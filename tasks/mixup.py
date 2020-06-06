@@ -153,7 +153,7 @@ class MixupTask(AuxiliaryTask):
 
         # Exponential moving average versions of the encoder and output head.
         self.mean_encoder: nn.Module = deepcopy(AuxiliaryTask.encoder)
-        self.mean_classifier: nn.Module = deepcopy(AuxiliaryTask.encoder)
+        self.mean_classifier: nn.Module = deepcopy(AuxiliaryTask.classifier)
         self.previous_task: Optional[Task] = None
 
         self.epoch_in_task: Optional[int] = 0
