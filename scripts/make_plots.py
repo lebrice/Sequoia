@@ -24,7 +24,7 @@ print(f"Data dir: {DATA_DIR}")
 def get_figure_title(run_group_path: Path) -> str:
     title = run_group_path.name
 
-    suffixes: List[str] = ["_ewc_d", "_ewc", "_d"]
+    suffixes: List[str] = ["_d_ewc", "_ewc", "_d"]
     # The description corresponding to each suffix
     suffix_descriptions: List[str] = [
         "(+EWC, detached classifier)",

@@ -311,6 +311,9 @@ class OmlFigureOptions:
     runs: List[str] = list_field(default=["results/TaskIncremental/*"])
     # Output path where the figure should be stored.
     out_path: Path = Path("scripts/oml_plot.png")
+
+    extension: str = ".png"
+
     # title to use for the figure.
     title: Optional[str] = None
     # Also show the figure.
@@ -386,6 +389,7 @@ class OmlFigureOptions:
         self.out_path = Path(self.out_path)
         self.out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(self.out_path)
+        fig.savefig(self.out_path.with_suffix(self.extension))
         if self.show:
             plt.show() #close the figure to run the next section
         
