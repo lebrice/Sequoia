@@ -296,10 +296,12 @@ class Classifier(nn.Module):
                 task_json_str = key.split(".")[1]
                 task = Task.loads(task_json_str)
                 # Set the task ID attribute to create all the needed output heads.
-                self.current_task = task
-                
+                #self.current_task = task
+                self.on_task_switch(task)
+
         # Reset the task_id to the starting value.
-        self.current_task = starting_task
+        #self.current_task = starting_task
+        self.on_task_switch(task)
         missing, unexpected = super().load_state_dict(state_dict, strict)
         # TODO: Make sure the mean-encoder and mean-output-head modules are loaded property when using Mixup.
         return missing, unexpected

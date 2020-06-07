@@ -12,7 +12,7 @@ cd $SCRATCH/repos/SSCL
 
 echo "Slurm Array Job ID: $SLURM_ARRAY_TASK_ID"
 
-#source scripts/setup.sh
+
 source ~/ENVS/SSCl/bin/activate
 export WANDB_DIR=$SCRATCH/SSCL/wandb
 
