@@ -31,20 +31,29 @@ def get_column_name(run_path: Path) -> str:
 
 def get_figure_title(run_group_path: Path) -> str:
     title = run_group_path.name
-
-    suffixes: List[str] = ["_d_ewc", "_ewc", "_d"]
+    
+    run_name = run_group_path.name
+    suffixes: List[str] = ["-sh", "_d", "_ewc"]
     # The description corresponding to each suffix
     suffix_descriptions: List[str] = [
-        "(+EWC, detached classifier)",
-        "(+EWC)",
-        "(detached classifier)",
+        "single head",
+        "detached classifier",
+        "EWC",
     ]
+
+    descriptions_to_add: List[str] = []
+    while any(run_name.endswith(suffix) for suffix in suffixes):
+        for suffix, desc in zip(suffixes, suffix_descriptions):
+            if run_name.endswith(suffix):
+                run_name = run_name[:run_name.rindex(suffix)]
+                descriptions_to_add.append(desc)
+                break
     
-    for suffix, desc in zip(suffixes, suffix_descriptions):
-        if title.endswith(suffix):
-            title = title.replace(suffix, "")
-            title += " " + desc
-            break
+    descriptions_to_add = sorted(descriptions_to_add)
+
+    title = run_name
+    if descriptions_to_add:
+        title += " - " + ", ".join(descriptions_to_add)
     # print(f"title for run group path {run_group_path}: {title}")
     return title
 
@@ -99,22 +108,20 @@ class Options:
                 fig_size_inches=(12, 5),
                 legend_position=legend_pos,
             ))
-
+        
         import tqdm
         import multiprocessing as mp
         processes = min(len(args), mp.cpu_count())
         print(f"Creating figures using {processes} processes.")
-        """
-        {
-            method name, ewc
-        }
-        """
+        
         import pandas as pd
         from functools import partial
-        table_data = defaultdict(partial(defaultdict, dict))
         
+        table_data = defaultdict(partial(defaultdict, dict))
+
+        mp.set_start_method("spawn")
         with mp.Pool(processes) as pool:
-            for result in pool.imap_unordered(run, args):
+            for i, result in enumerate(pool.imap_unordered(run, args)):
                 if result.result_figure is not None:
                     print(f"Figure created at path {result.out_path}")
                     
@@ -128,6 +135,11 @@ class Options:
                         table_data[row_name][column_name]["stds"] = stds
                 else:
                     print(f"Couldn't create figure for path {result.out_path}")
+                
+                if i == len(args) - 1:
+                    print("Reached last figure, closing the pool?")
+                    pool.close()
+
         pool.close()
         print("Done creating all the figures.")
         table_data = pd.DataFrame(table_data)
