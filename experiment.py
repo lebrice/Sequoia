@@ -695,12 +695,12 @@ class ExperimentBase(JsonSerializable):
 # Load up the addons, each of which adds independent, useful functionality to the Experiment base-class.
 # TODO: This might not be the cleanest/most elegant way to do it, but it's better than having files with 1000 lines in my opinion.
 from addons import (ExperimentWithKNN, ExperimentWithVAE,
-                    LabeledPlotRegionsAddon, TestTimeTrainingAddon)
+                    LabeledPlotRegionsAddon, TestTimeTrainingAddon, ExperimentWithReplay)
 
 
 @dataclass  # type: ignore
 class Experiment(ExperimentWithKNN, ExperimentWithVAE,
-                 TestTimeTrainingAddon, LabeledPlotRegionsAddon):
+                 TestTimeTrainingAddon, LabeledPlotRegionsAddon, ExperimentWithReplay):
     """ Describes the parameters of an experimental setting.
     
     (ex: Mnist_iid, Mnist_continual, Cifar10, etc. etc.)
