@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
 import torch
-from simple_parsing import ArgumentParser, field, list_field
+from simple_parsing import ArgumentParser, field, list_field, mutable_field
 
 # TODO: fill out a bug for SimpleParsing, when type is List and a custom type is
 # given, the custom type should overwrite the List type.
@@ -111,7 +111,7 @@ def get_cumul_accuracies(log_dir: Path) -> np.ndarray:
 
     Returns:
         np.ndarray: An array of shape [n_runs, n_tasks] containing the
-        cumulative validation classification accuracy during training. 
+        cumulative Test classification accuracy during training. 
     """
     task_accuracies_list: List[np.ndarray] = []
     for run_dir in get_nonempty_run_dirs(log_dir):
@@ -188,7 +188,7 @@ def get_final_task_accuracies(log_dir: Path) -> np.ndarray:
 
     Returns:
         np.ndarray: An array of shape [n_runs, n_tasks] containing the mean
-        validaiton accuracy for each task. 
+        Test accuracy for each task. 
     """
     task_accuracies_list: List[np.ndarray] = [] 
     for run_dir in get_nonempty_run_dirs(log_dir):
@@ -338,6 +338,9 @@ class OmlFigureOptions:
 
     result_figure: Optional[plt.Figure] = field(init=False, default=None)
     
+    classification_accuracies: Dict[Path, np.ndarray] = mutable_field(OrderedDict, init=False)
+    final_task_accuracies: Dict[Path, np.ndarray] = mutable_field(OrderedDict, init=False)
+
     def __post_init__(self, label_formatting_fn: Callable[[Path, str], str]=None):
         self.label_formatting_fn = label_formatting_fn
 
@@ -386,10 +389,13 @@ class OmlFigureOptions:
         else:
             fig.set_size_inches(self.fig_size_inches)
         
-        self.out_path = Path(self.out_path)
-        self.out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(self.out_path)
-        fig.savefig(self.out_path.with_suffix(self.extension))
+        if self.out_path:    
+            self.out_path = Path(self.out_path)
+            self.out_path.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(self.out_path)
+            if self.extension:
+                fig.savefig(self.out_path.with_suffix(self.extension))
+
         if self.show:
             plt.show() #close the figure to run the next section
         
@@ -405,14 +411,15 @@ class OmlFigureOptions:
         print(f"Creating the OML plot to compare the {n_runs} different methods:")
         
         fig: plt.Figure = plt.figure()
-        fig.suptitle(self.title)
+        if self.title:
+            fig.suptitle(self.title)
                 
         gs = gridspec.GridSpec(1, 3, width_ratios=[2,1,2])
 
         ax1: plt.Axes = fig.add_subplot(gs[0])
         ax1.set_title("Cumulative Accuracy")
         ax1.set_xlabel("Number of tasks learned")
-        ax1.set_ylabel("Cumulative Validation Accuracy")
+        ax1.set_ylabel("Cumulative Test Accuracy")
         ax1.set_ylim(bottom=0, top=1)
 
         indicators = ["0", "1.00"]
@@ -450,6 +457,9 @@ class OmlFigureOptions:
             # for each run.
             final_task_accuracy = get_final_task_accuracies(run_path)
             
+            self.final_task_accuracies[run_path] = final_task_accuracy
+            self.classification_accuracies[run_path] = classification_accuracies
+
             accuracy_means = classification_accuracies.mean(axis=0)
             accuracy_stds = classification_accuracies.std(axis=0)
             local_n_tasks = len(accuracy_means)
@@ -554,11 +564,11 @@ def maximize_figure():
 
 def longest_common_prefix(values: List[str]) -> str:
     if not values:
-        return ""
+        return None
 
     first = values[0]
     i = 1
-    while all(v.startswith(first[:i]) for v in values):
+    while first[:i] and all(v.startswith(first[:i]) for v in values):
         i += 1
     i -= 1
     return first[:i]
