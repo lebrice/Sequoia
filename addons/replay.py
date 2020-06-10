@@ -9,7 +9,7 @@ from common.losses import LossInfo
 import logging
 from collections import deque
 from simple_parsing import field, mutable_field
-
+from config import Config as ConfigBase
 from utils.json_utils import JsonSerializable
 
 logger = logging.getLogger(__file__)
@@ -289,26 +289,29 @@ class ReplayOptions(JsonSerializable):
 
 @dataclass  #  type: ignore
 class ExperimentWithReplay(ExperimentBase):
-    # Number of samples in the replay buffer.
-    replay: ReplayOptions = mutable_field(ReplayOptions)
+    
+    @dataclass
+    class Config(ExperimentBase.Config):
+        # Number of samples in the replay buffer.
+        replay: ReplayOptions = mutable_field(ReplayOptions)
     
     replay_buffer: CoolReplayBuffer = field(default=None, init=False)
     # labeled_replay_buffer:   Optional[LabeledReplayBuffer] = field(default=None, init=False)
     # unlabeled_replay_buffer: Optional[UnlabeledReplayBuffer] = field(default=None, init=False)
 
-    def __post_init__(self):
-        super().__post_init__()
+    def __post_init__(self, *args, **kwargs):
+        super().__post_init__(*args, **kwargs)
 
         self.replay_buffer = CoolReplayBuffer(
-            labeled_capacity=self.replay.labeled_buffer_size,
-            unlabeled_capacity=self.replay.unlabeled_buffer_size,
+            labeled_capacity=self.config.replay.labeled_buffer_size,
+            unlabeled_capacity=self.config.replay.unlabeled_buffer_size,
         )
-        if self.replay.labeled_buffer_size > 0:
-            logger.info(f"Using a (labeled) replay buffer of size {self.replay.labeled_buffer_size}.")
+        if self.config.replay.labeled_buffer_size > 0:
+            logger.info(f"Using a (labeled) replay buffer of size {self.config.replay.labeled_buffer_size}.")
             # self.labeled_replay_buffer = LabeledReplayBuffer(self.replay.labeled_buffer_size)
         
-        if self.replay.unlabeled_buffer_size > 0:
-            logger.info(f"Using an (unlabeled) replay buffer of size {self.replay.unlabeled_buffer_size}.")
+        if self.config.replay.unlabeled_buffer_size > 0:
+            logger.info(f"Using an (unlabeled) replay buffer of size {self.config.replay.unlabeled_buffer_size}.")
             # self.unlabeled_replay_buffer = UnlabeledReplayBuffer(self.replay.unlabeled_buffer_size)
 
 
