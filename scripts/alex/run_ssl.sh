@@ -4,13 +4,13 @@
 #SBATCH --time=48:00:00                            # The job will run for 3 hours
 #SBATCH --output=logs/job_output.txt
 #SBATCH --error=logs/job_error.txt
-#SBATCH -p long                                    # --partition=unkillable, long
+#SBATCH -p long                                  # --partition=unkillable, long
 #SBATCH --cpus-per-task=2                     	   # Ask for 2 CPUs
 
 
 source $CONDA_ACTIVATE
 conda activate /network/home/ostapeno/.conda/envs/falr
-cd /network/home/ostapeno/dev/SSCL
+#cd /network/home/ostapeno/dev/SSCL
 
 mkdir /network/home/ostapeno/dev/SSCL/results/wandb_$USER
 export WANDB_DIR=/network/home/ostapeno/dev/SSCL/results/wandb_$USER
@@ -30,9 +30,9 @@ echo "Calling python -u main.py task-incremental \
     '${@:1}'"
 
 
-python -u main.py task-incremental-semi-sup \
+python -u ../../main.py task-incremental-semi-sup \
     --data_dir $SLURM_TMPDIR/data \
-    --log_dir_root $SCRATCH/SSCL \
+    --log_dir_root /network/home/ostapeno/dev/SSCL \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     "${@:1}"
 

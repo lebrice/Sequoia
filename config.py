@@ -50,7 +50,7 @@ class Config:
     log_dir_root: Path = Path("results") # Logging directory.
     log_interval: int = 10   # How many batches to wait between logging calls.
     
-    random_seed: int = 1 #random.randint(0,1000)       # Random seed.
+    random_seed: int = random.randint(0,1000)       # Random seed.
     use_cuda: bool = cuda_available # Whether or not to use CUDA.
     
     # num_workers for the dataloaders.
