@@ -159,7 +159,7 @@ class Config:
             # id=run_id,
             group=self.run_group,
             config=config_dict,
-            dir=str(self.wandb_path),
+            #dir=str(self.wandb_path),
             notes=experiment.notes,
             reinit=True,
             resume="allow",

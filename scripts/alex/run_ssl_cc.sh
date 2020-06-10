@@ -11,13 +11,20 @@
 
 source ~/ENVS/SSCl/bin/activate
 export  WANDB_API_KEY=174b08e7eb88b0c57624f63c9590418be3bc4607
-export WANDB_DIR=$SCRATCH/SSCL/wandb/
-cd /home/ostapeno/scratch/repos/SSCL/
+
+mkdir $SLURM_TMPDIR/SSCL
+mkdir $SLURM_TMPDIR/SSCL/wandb
+export WANDB_MODE=dryrun
+module load httpproxy
+export WANDB_DIR=$SLURM_TMPDIR/SSCL/wandb/
+mkdir $SLURM_TMPDIR/data
+cd /home/ostapeno/projects/rrg-bengioy-ad/ostapeno/dev/SSCL/
+wandb off
 
 function cleanup(){
     echo "Cleaning up and transfering files from $SLURM_TMPDIR to $SCRATCH/SSCL"
-    rsync -r -u $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
-    wandb sync $SCRATCH/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
+    cp -r $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL/
+    ##wandb sync $SCRATCH/SSCL/wandb/ # Not guaranteed to work given CC's network restrictions.
 }
 
 trap cleanup EXIT
@@ -27,10 +34,8 @@ echo "Calling python -u main.py task-incremental \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     '${@:1}'"
 
-mkdir $SLURM_TMPDIR/data
-mkdir $SLURM_TMPDIR/SSCL
 python -u main.py task-incremental-semi-sup \
-    --data_dir $SLURM_TMPDIR/data \
+    --data_dir /home/ostapeno/projects/rrg-bengioy-ad/ostapeno/dev/SSCL/data \
     --log_dir_root $SLURM_TMPDIR/SSCL \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     "${@:1}"
