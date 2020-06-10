@@ -10,10 +10,15 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
 import torch
-from simple_parsing import ArgumentParser, field, list_field
+from simple_parsing import ArgumentParser, field, list_field, mutable_field
 
 # TODO: fill out a bug for SimpleParsing, when type is List and a custom type is
 # given, the custom type should overwrite the List type.
+
+REQUIRED_FILES: List[str] = [
+    "results/state.json",
+    # "results/final_task_accuracy.csv"
+]
 
 
 def n_tasks_used(run_path: Path) -> int:
@@ -85,10 +90,10 @@ def get_cumul_accuracy(run_dir: Path) -> np.ndarray:
         for class_accuracy_fn in class_accuracy_fns:
             try:
                 accuracy = class_accuracy_fn(results_json)
-                print("Successfully loaded with ", class_accuracy_fn.__name__)
+                # print("Successfully loaded with ", class_accuracy_fn.__name__)
                 return accuracy
             except KeyError as e:
-                print(e)
+                pass
     
     raise RuntimeError(f"Unable to load the cumulative accuracy for run dir {run_dir}")
 
@@ -106,7 +111,7 @@ def get_cumul_accuracies(log_dir: Path) -> np.ndarray:
 
     Returns:
         np.ndarray: An array of shape [n_runs, n_tasks] containing the
-        cumulative validation classification accuracy during training. 
+        cumulative Test classification accuracy during training. 
     """
     task_accuracies_list: List[np.ndarray] = []
     for run_dir in get_nonempty_run_dirs(log_dir):
@@ -144,7 +149,7 @@ def get_task_accuracy_v2(run_dir: Path) -> np.ndarray:
     for j, loss in enumerate(last_task_losses):
         acc = get_supervised_accuracy(loss)
         metric = get_supervised_metrics(loss)
-        print(f"i: {i} j: {j} accuracy: {acc}")
+        # print(f"i: {i} j: {j} accuracy: {acc}")
         task_accuracies[j] = acc
     return task_accuracies
 
@@ -164,8 +169,9 @@ def get_final_task_accuracy(run_dir: Path) -> np.ndarray:
         try:
             return fn(run_dir)
         except Exception as e:
-            print(f"Exception: {e}")
-            exit()
+            pass
+            # print(f"Exception: {e}")
+            # exit()
     raise RuntimeError(f"Unable to load the final task accuracies for run dir {run_dir}")
 
 
@@ -182,7 +188,7 @@ def get_final_task_accuracies(log_dir: Path) -> np.ndarray:
 
     Returns:
         np.ndarray: An array of shape [n_runs, n_tasks] containing the mean
-        validaiton accuracy for each task. 
+        Test accuracy for each task. 
     """
     task_accuracies_list: List[np.ndarray] = [] 
     for run_dir in get_nonempty_run_dirs(log_dir):
@@ -245,11 +251,6 @@ def get_nonempty_run_dirs(log_dir: Path) -> Iterable[Path]:
         if is_run_dir(run_dir) and run_dir.name.split("_", maxsplit=1)[-1].isdigit():
             yield run_dir
 
-REQUIRED_FILES: List[str] = [
-    "results/state.json",
-    # "results/final_task_accuracy.csv"
-]
-
 def is_run_dir(path: Path) -> bool:
     """Returns wether the given Path is a run directory.
 
@@ -264,7 +265,7 @@ def is_run_dir(path: Path) -> bool:
         return False
     for req_fil_path in REQUIRED_FILES:
         if not (path / req_fil_path).exists():
-            print(f"File {path / req_fil_path} doesn't exist!")
+            # print(f"File {path / req_fil_path} doesn't exist!")
             return False
     return True
 
@@ -294,10 +295,10 @@ def filter_runs(all_log_dirs: List[Path]) -> Tuple[List[Path], List[Path]]:
     lost_runs: List[Path] = []
     for log_dir in all_log_dirs:
         if is_log_dir(log_dir):
-            print(f"dir {log_dir} is a log dir")
+            # print(f"dir {log_dir} is a log dir")
             kept_runs.append(log_dir)
         else:
-            print(f"dir {log_dir} isnt a log dir")
+            # print(f"dir {log_dir} isnt a log dir")
             lost_runs.append(log_dir)
     return kept_runs, lost_runs
 
@@ -310,6 +311,9 @@ class OmlFigureOptions:
     runs: List[str] = list_field(default=["results/TaskIncremental/*"])
     # Output path where the figure should be stored.
     out_path: Path = Path("scripts/oml_plot.png")
+
+    extension: str = ".png"
+
     # title to use for the figure.
     title: Optional[str] = None
     # Also show the figure.
@@ -331,6 +335,11 @@ class OmlFigureOptions:
 
     # Where to place the legend.
     legend_position: str = "lower left"
+
+    result_figure: Optional[plt.Figure] = field(init=False, default=None)
+    
+    classification_accuracies: Dict[Path, np.ndarray] = mutable_field(OrderedDict, init=False)
+    final_task_accuracies: Dict[Path, np.ndarray] = mutable_field(OrderedDict, init=False)
 
     def __post_init__(self, label_formatting_fn: Callable[[Path, str], str]=None):
         self.label_formatting_fn = label_formatting_fn
@@ -358,7 +367,13 @@ class OmlFigureOptions:
             print("\t", path)
         
         if not kept_runs:
-            warnings.warn(f"There are NO kept runs for path or pattern(s) {self.runs}. \n Returning early without creating the figure.")
+            warnings.warn(
+                f"There are NO kept runs for path or pattern(s) {self.runs}. \n"
+                "Returning early without creating the figure. \n"
+                f"Lost runs: \n"
+                +("\n".join(map(str,lost_runs)))
+            )
+            return
         
         prefix = longest_common_prefix([p.name for p in kept_runs])
         print(f"Common prefix: '{prefix}'")
@@ -374,12 +389,17 @@ class OmlFigureOptions:
         else:
             fig.set_size_inches(self.fig_size_inches)
         
-        self.out_path = Path(self.out_path)
-        self.out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(self.out_path)
+        if self.out_path:    
+            self.out_path = Path(self.out_path)
+            self.out_path.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(self.out_path)
+            if self.extension:
+                fig.savefig(self.out_path.with_suffix(self.extension))
+
         if self.show:
             plt.show() #close the figure to run the next section
-
+        
+        self.result_figure = fig
         print(f"Successfully created plot at \"{self.out_path}\"")
         if self.exit_after:
             exit()
@@ -391,14 +411,15 @@ class OmlFigureOptions:
         print(f"Creating the OML plot to compare the {n_runs} different methods:")
         
         fig: plt.Figure = plt.figure()
-        fig.suptitle(self.title)
+        if self.title:
+            fig.suptitle(self.title)
                 
         gs = gridspec.GridSpec(1, 3, width_ratios=[2,1,2])
 
         ax1: plt.Axes = fig.add_subplot(gs[0])
         ax1.set_title("Cumulative Accuracy")
         ax1.set_xlabel("Number of tasks learned")
-        ax1.set_ylabel("Cumulative Validation Accuracy")
+        ax1.set_ylabel("Cumulative Test Accuracy")
         ax1.set_ylim(bottom=0, top=1)
 
         indicators = ["0", "1.00"]
@@ -424,7 +445,10 @@ class OmlFigureOptions:
         run_names: List[str] = [p.name for p in runs]
         prefix = longest_common_prefix(run_names)
 
-        for i, run_path in enumerate(sorted(runs, key=n_tasks_used)):
+        # Sorted first by number of tasks, then by path.
+        runs = sorted(runs, key=lambda p: (n_tasks_used(p), p))
+        
+        for i, run_path in enumerate(runs):
             print(i, run_path)
             # Get the classification accuracy per task for all runs.
             classification_accuracies = get_cumul_accuracies(run_path)
@@ -433,6 +457,9 @@ class OmlFigureOptions:
             # for each run.
             final_task_accuracy = get_final_task_accuracies(run_path)
             
+            self.final_task_accuracies[run_path] = final_task_accuracy
+            self.classification_accuracies[run_path] = classification_accuracies
+
             accuracy_means = classification_accuracies.mean(axis=0)
             accuracy_stds = classification_accuracies.std(axis=0)
             local_n_tasks = len(accuracy_means)
@@ -497,8 +524,10 @@ class OmlFigureOptions:
                 yerr=final_cumul_std,
                 label=label,
             )
-            # adding the percentage labels over the bars on the right plot.
-            autolabel(ax3, rects, bar_height_scale, final_cumul_std)
+
+            n_samples = classification_accuracies.shape[0]
+            # adding the percentage labels over the bars on the middle plot.
+            autolabel(ax3, rects, bar_height_scale, final_cumul_std, n_samples=n_samples)
 
         ax2.hlines(
             y=np.arange(len(indicators)*n_runs),
@@ -535,11 +564,11 @@ def maximize_figure():
 
 def longest_common_prefix(values: List[str]) -> str:
     if not values:
-        return ""
+        return None
 
     first = values[0]
     i = 1
-    while all(v.startswith(first[:i]) for v in values):
+    while first[:i] and all(v.startswith(first[:i]) for v in values):
         i += 1
     i -= 1
     return first[:i]
@@ -563,11 +592,12 @@ def load_array(path: Path) -> np.ndarray:
     return np.loadtxt(path.with_suffix(".csv"), delimiter=",")
 
 
-def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float=1., errors: Union[list, np.ndarray, float]=None):
+def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float=1., errors: Union[list, np.ndarray, float]=None, n_samples: int=None):
     """Attach a text label above each bar in *rects*, displaying its height.
     
     Taken from https://matplotlib.org/gallery/lines_bars_and_markers/barchart.html#sphx-glr-gallery-lines-bars-and-markers-barchart-py
     """
+    print(f"rectangles: {len(rects)}")
     for i, rect in enumerate(rects):
         height = rect.get_height()
         bottom = rect.get_y()
@@ -582,6 +612,9 @@ def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float=1., erro
             value_string = f"{value:.0%}"
             if error is not None:
                 value_string = f"{value*100:.1f} ± {error:.1%}"
+            
+            if n_samples is not None:
+                value_string += f" (n={n_samples})"
 
             axis.annotate(
                 value_string,
@@ -591,6 +624,22 @@ def autolabel(axis, rects: List[plt.Rectangle], bar_height_scale: float=1., erro
                 ha="center",
                 va="bottom",
             )
+
+
+def format_label(run_path: Path, current_label: str) -> str:
+    just_task_names = (current_label
+        # Get rid of the prefix that indicates the number of tasks:
+        .replace("0_", "_")
+        .replace("1_", "_")
+        .replace("2_", "_")
+        .replace("3_", "_")
+        # Get rid of the coefficients:
+        # (usually *_1* or *_01* or *_001* and *_nc_*)
+        .replace("1", "_")
+        .replace("0", "_")
+        .replace("nc", "_")
+    )
+    return " + ".join(just_task_names.replace("_", " ").split())
 
 
 if __name__ == "__main__":

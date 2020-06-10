@@ -19,30 +19,31 @@ def format_label(run_path: Path, current_label: str) -> str:
     )
     return " + ".join(just_task_names.replace("_", " ").split())
 
+from scripts.organize_runs_and_make_plots import DATA_DIR
 
 @dataclass
 class Options:
-        
-    cleaned_up_dir: Path = Path('E:/Google Drive/SSCL/results/cleaned_up')
-    cleaned_up_fig_dir: Path = Path('E:/Google Drive/SSCL/figures/cleaned_up')
+    cleaned_up_dir: Path = Path(f"{DATA_DIR}/SSCL/results/cleaned_up")
+    cleaned_up_fig_dir: Path = Path("E:/Google Drive/SSCL/figures/cleaned_up")
     settings: List[str] = list_field("cifar100-20c", "cifar10", "fashion-mnist")
     mhs: List[str] = list_field("multihead", "multihead_detached")
 
     def __call__(self):
-        for setting in self.settings:
-            for mh in self.mhs:
-                OmlFigureOptions(
-                    runs=[str(self.cleaned_up_dir / setting / mh / "*")],
-                    out_path=self.cleaned_up_fig_dir / f"{setting}_{mh}.pdf",
-                    exit_after=False,
-                    add_ntasks_prefix=False,
-                    title="",
-                    # title=setting + " " + mh.replace("_", " "),
-                    maximize_figure=False,
-                    fig_size_inches=(12, 5),
-                    label_formatting_fn=format_label,
-                    legend_position=("upper right" if "cifar100" in setting else "lower left"),
-                )
+        for run_group_path in self.cleaned_up_dir.iterdir():
+            run_group = run_group_path.name
+
+        OmlFigureOptions(
+            runs=[str(self.cleaned_up_dir / setting / mh / "*")],
+            out_path=self.cleaned_up_fig_dir / f"{setting}_{mh}.pdf",
+            exit_after=False,
+            add_ntasks_prefix=False,
+            title="",
+            # title=setting + " " + mh.replace("_", " "),
+            maximize_figure=False,
+            fig_size_inches=(12, 5),
+            label_formatting_fn=format_label,
+            legend_position=("upper right" if "cifar100" in setting else "lower left"),
+        )
 
 if __name__ == "__main__":
     parser = ArgumentParser()

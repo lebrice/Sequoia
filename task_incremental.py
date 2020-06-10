@@ -613,6 +613,7 @@ class TaskIncremental(Experiment):
             kwargs.setdefault("prev_task", prev_task)
             kwargs.setdefault("classifier_head", classifier_head)
             kwargs.setdefault("train_loader", train_loader)
+            kwargs.setdefault("loss_func", self.model.get_self_sup_loss)
 
         self.model.on_task_switch(task, **kwargs)
 

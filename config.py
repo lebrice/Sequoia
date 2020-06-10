@@ -104,6 +104,7 @@ class Config:
             if self.run_name is None:
                 self.run_name = "debug"
             
+            # logging.getLogger().setLevel(logging.DEBUG)
             # if self.log_dir.exists():
             #     # wipe out the debug folder every time.
             #     shutil.rmtree(self.log_dir)

@@ -13,7 +13,7 @@ echo "Number of jobs per task: $N_JOBS"
 
 if [[ $HOSTNAME == *"blg"* ]] && [[ $SETUP -eq 1 ]]; then
     echo "Downloading the datasets and models from the login node since we're on Beluga."
-    source scripts/setup.sh
+    source scripts/beluga/setup.sh
     export SETUP=1
 fi
 

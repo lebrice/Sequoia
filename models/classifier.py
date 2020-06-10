@@ -190,6 +190,17 @@ class Classifier(nn.Module):
                 self.logger.debug(name, loss.total_loss, loss.metrics)
         return total_loss
 
+    def get_self_sup_loss(self, x: Tensor, y: Tensor=None, name = ''):
+        total_loss = LossInfo(name)
+        x, y = self.preprocess_inputs(x, y)
+        h_x = self.encode(x)
+        y_pred = self.logits(h_x)
+        for task_name, aux_task in self.tasks.items():
+            if aux_task.enabled:
+                aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y)
+                total_loss += aux_task_loss
+        return total_loss
+
     def encode(self, x: Tensor):
         x, _ = self.preprocess_inputs(x, None)
         return self.encoder(x)
@@ -246,11 +257,12 @@ class Classifier(nn.Module):
         Args:
             task_classes (Tuple[int, ...]): Tuple of integers, indicates the classes that are currently trained on.
         """
-        self.current_task = task
+        #self.current_task = task
         # also inform the auxiliary tasks that the task switched.
         for name, aux_task in self.tasks.items():
             if aux_task.enabled:
                 aux_task.on_task_switch(task, **kwargs)
+        self.current_task = task
 
     def get_output_head(self, task: Task):
         return self.output_heads[task.dumps()]
