@@ -8,12 +8,13 @@
 
 export TORCH_HOME="$SCRATCH/.torch"
 echo "SCRATCH : $SCRATCH SLURM_TMPDIR: $SLURM_TMPDIR TORCH_HOME: $TORCH_HOME"
-cd $SCRATCH/repos/SSCL
+##cd $SCRATCH/repos/SSCL
+cd /home/ostapeno/projects/rrg-bengioy-ad/ostapeno/dev/SSCL
 
 echo "Slurm Array Job ID: $SLURM_ARRAY_TASK_ID"
 
-source scripts/cedar/setup.sh
-
+##source scripts/cedar/setup.sh
+source ~/ENVS/SSCl/bin/activate
 function cleanup(){
     echo "Cleaning up and transfering files from $SLURM_TMPDIR to $SCRATCH/SSCL"
     rsync -r -u -v $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
