@@ -53,15 +53,6 @@ class TaskIncremental(Experiment):
         task_labels_at_train_time: bool = True
         task_labels_at_test_time:  bool = True
 
-        # Wether or not we want to "cheat" and get access to the task-label at train 
-        # and test time, in order to create one output head per task.
-        multihead: bool = False
-        def __post_init__(self):
-            super().__post_init__()
-            if self.multihead:
-                self.task_labels_at_train_time = True
-                self.task_labels_at_test_time = True
-    
     # Experiment Configuration.
     config: InitVar["TaskIncremental.Config"]
 
@@ -116,7 +107,6 @@ class TaskIncremental(Experiment):
         # Keeps track of which tasks have some data stored in the replay buffer
         # (if using replay)
         self.tasks_in_buffer: List[Task] = []
-
 
     def setup(self):
         """Prepare everything before training begins: Saves/restores state,
