@@ -2,24 +2,26 @@
 
 export SCRATCH=${SCRATCH:=$HOME}
 
-
-source ./scripts/task_combinations_ewc.sh cifar100-20c-sh 5 \
-    --unsupervised_epochs_per_task --supervised_epochs_per_task 200 \
+COMMON_ARGS="\
+    --unsupervised_epochs_per_task 0 \
+    --supervised_epochs_per_task 200 \
     --no_wandb_cleanup \
+    --n_neighbors 50 \
+"
+echo "Common args: $COMMON_ARGS"
+
+source ./scripts/task_combinations_ewc.sh cifar100-20c 5 \
+    $COMMON_ARGS \
     --dataset cifar100 --n_classes_per_task 20 \
-    --n_neighbors 50 \
-    --tags cifar100-20c single-head
+    --tags cifar100-20c no-early-stopping
 
-source ./scripts/task_combinations_ewc.sh cifar10-sh 5 \
-    --unsupervised_epochs_per_task 0 --supervised_epochs_per_task 200 \
-    --no_wandb_cleanup \
+source ./scripts/task_combinations_ewc.sh cifar10 5 \
+    $COMMON_ARGS \
     --dataset cifar10 \
-    --n_neighbors 50 \
-    --tags cifar10 single-head
+    --tags cifar10 no-early-stopping replay
 
-source ./scripts/task_combinations_ewc.sh fashion-mnist-sh 5 \
-    --unsupervised_epochs_per_task 0 --supervised_epochs_per_task 200 \
-    --no_wandb_cleanup \
+source ./scripts/task_combinations_ewc.sh fashion-mnist 5 \
+    $COMMON_ARGS \
     --dataset fashion_mnist \
-    --n_neighbors 50 \
-    --tags fashion-mnist single-head
+    --tags fashion-mnist no-early-stopping resnet-18
+
