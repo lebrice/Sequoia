@@ -8,6 +8,7 @@ COMMON_ARGS="\
     --replay_buffer_size 2000 \
     --no_wandb_cleanup \
     --n_neighbors 50 \
+    --project_name SSCL_replay \
     --tags no-early-stopping replay \
 "
 echo "Common args: $COMMON_ARGS"
