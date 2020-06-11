@@ -22,7 +22,7 @@ from torchvision.utils import save_image
 from utils.json_utils import JsonSerializable
 from utils import cuda_available, gpus_available, set_seed
 from utils.early_stopping import EarlyStoppingOptions
-
+from utils.json_utils import JsonSerializable
 
 import logging
 logging.basicConfig(
@@ -36,7 +36,7 @@ logger = logging.getLogger(__file__)
 
 
 @dataclass
-class Config:
+class Config(JsonSerializable):
     """Settings related to the training setup. """
 
     debug: bool = field(alias="-d", default=False, action="store_true", nargs=0)      # enable debug mode.

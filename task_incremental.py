@@ -777,4 +777,4 @@ if __name__ == "__main__":
     config: TaskIncremental.Config = args.config
     
     experiment = TaskIncremental(config)
-    experiment.run()
+    experiment.launch()

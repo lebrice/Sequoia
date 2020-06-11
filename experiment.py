@@ -164,11 +164,11 @@ class ExperimentBase(JsonSerializable):
             # settings.experiment = torch.load(latest_checkpoints)
         
         try:
-            print("-" * 10, f"Starting experiment '{type(eselfxperiment).__name__}' ({config.log_dir})", "-" * 10)
+            print("-" * 10, f"Starting experiment '{type(self).__name__}' ({config.log_dir})", "-" * 10)
             
             self.run()
             
-            print("-" * 10, f"Experiment '{type(eselfxperiment).__name__}' is done.", "-" * 10)
+            print("-" * 10, f"Experiment '{type(self).__name__}' is done.", "-" * 10)
             self.cleanup()
         
         except Exception as e:
