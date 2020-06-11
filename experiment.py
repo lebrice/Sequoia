@@ -60,8 +60,6 @@ class ExperimentBase(JsonSerializable):
             "cifar10": Cifar10(),
             "cifar100": Cifar100(),
         }, default="mnist")
-        # Notes about this particular experiment. (will be logged to wandb if used.)
-        notes: Optional[str] = None
 
         # Path to restore the state from at the start of training.
         # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
@@ -91,8 +89,7 @@ class ExperimentBase(JsonSerializable):
         the command-line, such as `model`, etc.
         Additionally, the fields created here are not added in the wandb logs.       
         """
-        print(f"config: {config}")
-        self.config = config or self.Config()
+        self.config = config
         AuxiliaryTask.input_shape   = self.config.dataset.x_shape
 
         # Set these shared attributes so that all the Auxiliary tasks can be created.
@@ -132,6 +129,51 @@ class ExperimentBase(JsonSerializable):
     @abstractmethod
     def run(self):
         pass
+
+    def launch(self):
+        """ Launches the experiment.
+        
+        TODO: Clean this up. It isn't clear exactly where the separation is
+        between the Experiment.run() method and this one.
+        """
+        if self.config.verbose:
+            print("Experiment:")
+            pprint.pprint(asdict(self), indent=1)
+            print("=" * 40)
+
+        config: Config = self.config
+        # pprint.pprint(config_dict, indent=1)
+        config_dict = config.to_dict()
+
+        if self.config.use_wandb:
+            if config.run_name is None:
+                # TODO: Create a run name using the coefficients of the tasks, etc?
+                # At the moment, if no run name is given, the random name from wandb is used.
+                pass
+            run = self.config.wandb_init()
+            wandb.run.save()
+            print(f"Using wandb. Group name: {config.run_group} run name: {config.run_name}, log_dir: {config.log_dir}")
+        
+        # if experiment.done:
+        #     print(f"Experiment is already done. Exiting.")
+        #     exit(0)
+        if self.started:
+            print(f"Experiment is incomplete at directory {config.log_dir}.")
+            # TODO: pick up where we left off ?
+            # latest_checkpoint = log_dir / "checkpoints" / "todo"
+            # settings.experiment = torch.load(latest_checkpoints)
+        
+        try:
+            print("-" * 10, f"Starting experiment '{type(eselfxperiment).__name__}' ({config.log_dir})", "-" * 10)
+            
+            self.run()
+            
+            print("-" * 10, f"Experiment '{type(eselfxperiment).__name__}' is done.", "-" * 10)
+            self.cleanup()
+        
+        except Exception as e:
+            print(f"Experiment crashed: {e}")
+            raise e
 
     def setup(self):
         """Prepare everything before training begins: Saves/restores state,
@@ -459,7 +501,6 @@ class ExperimentBase(JsonSerializable):
         logger.info(f"Reloading weights of the best model (global step: {best_step})")
         load_weights()
 
-
     def valid_performance_generator(self, valid_dataloader: Union[Dataset, DataLoader]) -> Generator[LossInfo, None, None]:
         if isinstance(valid_dataloader, Dataset):
             valid_dataloader = self.get_dataloader(valid_dataloader)
@@ -640,14 +681,15 @@ class ExperimentBase(JsonSerializable):
                             items.append((new_key, v))
                 return dict(items)
 
-            if not self.no_wandb_cleanup:
+            if not self.config.no_wandb_cleanup:
                 message_dict = wandb_cleanup(message_dict)
                 if len(avv_knn) > 0:
                     message_dict['KNN_per_task/avv_knn'] = np.mean(avv_knn)
                 message_dict['task/currently_learned_task'] = self.state.i
                 message_dict = wandb_cleanup(message_dict)
-
-            wandb.log(message_dict, step=step)
+            
+            if self.config.use_wandb:
+                wandb.log(message_dict, step=step)
 
     def _folder(self, folder: Union[str, Path], create: bool=True) -> Path:
         path = self.config.log_dir / folder
@@ -750,8 +792,8 @@ class Experiment(ExperimentWithKNN,
 
     @dataclass
     class Config(ExperimentWithKNN.Config,
-                 ExperimentWithReplay.Config,):
-        """ Describes the parameters of an experimental setting. """
+                 ExperimentWithReplay.Config):
+        """ Describes the parameters of an experiment. """
         pass
     
     def __post_init__(self, *args, **kwargs):

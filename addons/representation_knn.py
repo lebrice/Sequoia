@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, InitVar
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -39,7 +39,7 @@ class ExperimentWithKNN(ExperimentBase):
         # Options for the KNN classifier 
         knn_options: KnnClassifierOptions = mutable_field(KnnClassifierOptions)
 
-    config: Optional[Config] = None
+    config: InitVar[Config]
 
     @torch.no_grad()
     def test_knn(self,

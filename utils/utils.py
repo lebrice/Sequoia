@@ -1,6 +1,7 @@
 """ Set of Utilities. """
 import collections
 import functools
+import itertools
 import operator
 import random
 from collections import OrderedDict, defaultdict, deque
@@ -8,12 +9,12 @@ from collections.abc import MutableMapping
 from dataclasses import Field, fields
 from itertools import groupby
 from pathlib import Path
-from typing import (Any, Deque, Dict, Iterable, List, MutableMapping, Optional,
-                    Set, Tuple, TypeVar, Union, Callable)
+from typing import (Any, Callable, Deque, Dict, Iterable, List, MutableMapping,
+                    Optional, Set, Tuple, TypeVar, Union)
 
 import numpy as np
-from torch import Tensor, nn
-from torch import cuda
+from torch import Tensor, cuda, nn
+
 cuda_available = cuda.is_available()
 gpus_available = cuda.device_count()
 
@@ -186,6 +187,26 @@ def unique_consecutive(iterable: Iterable[T], key: Callable[[T], Any]=None) -> I
     Recipe taken from itertools docs: https://docs.python.org/3/library/itertools.html
     """
     return map(next, map(operator.itemgetter(1), groupby(iterable, key)))
+
+
+def roundrobin(*iterables: Iterable[T]) -> Iterable[T]:
+    """
+    roundrobin('ABC', 'D', 'EF') --> A D E B F C
+
+    Recipe taken from itertools docs: https://docs.python.org/3/library/itertools.html
+    """
+    # Recipe credited to George Sakkis
+    num_active = len(iterables)
+    nexts = itertools.cycle(iter(it).__next__ for it in iterables)
+    while num_active:
+        try:
+            for next in nexts:
+                yield next()
+        except StopIteration:
+            # Remove the iterator we just exhausted from the cycle.
+            num_active -= 1
+            nexts = itertools.cycle(itertools.islice(nexts, num_active))
+
 
 if __name__ == "__main__":
     import doctest

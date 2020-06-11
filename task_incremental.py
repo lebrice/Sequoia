@@ -1,3 +1,4 @@
+import itertools
 import logging
 from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass, fields
@@ -5,33 +6,31 @@ from itertools import accumulate
 from pathlib import Path
 from random import shuffle
 from sys import getsizeof
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import wandb
-from simple_parsing import choice, field, list_field, mutable_field, subparsers
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
+from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
 
 from common.losses import LossInfo, TrainValidLosses
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
+from common.task import Task
 from datasets import DatasetConfig
 from datasets.subset import ClassSubset
-from torchvision.datasets import VisionDataset
 from experiment import Experiment
+from simple_parsing import choice, field, list_field, mutable_field, subparsers
 from tasks import Tasks
 from utils import utils
 from utils.json_utils import JsonSerializable
-from utils.utils import common_fields, n_consecutive, rgetattr, rsetattr
-from common.task import Task
+from utils.utils import (common_fields, n_consecutive, rgetattr, roundrobin,
+                         rsetattr)
 
 logger = logging.getLogger(__file__)
-
-
-
 
 
 @dataclass
@@ -51,15 +50,20 @@ class TaskIncremental(Experiment):
         # dataset.
         supervised_epochs_per_task: int = 1
 
-        task_labels_at_train_time: bool = False
-        task_labels_at_test_time: bool = False
+        task_labels_at_train_time: bool = True
+        task_labels_at_test_time:  bool = True
 
         # Wether or not we want to "cheat" and get access to the task-label at train 
-        # and test time.
+        # and test time, in order to create one output head per task.
         multihead: bool = False
+        def __post_init__(self):
+            super().__post_init__()
+            if self.multihead:
+                self.task_labels_at_train_time = True
+                self.task_labels_at_test_time = True
     
     # Experiment Configuration.
-    config: InitVar[Config]
+    config: InitVar["TaskIncremental.Config"]
 
     @dataclass
     class State(Experiment.State):
@@ -94,7 +98,7 @@ class TaskIncremental(Experiment):
     def __post_init__(self, *args, **kwargs):
         """ NOTE: fields that are created in __post_init__ aren't serialized to/from json! """
         super().__post_init__(*args, **kwargs)
-
+        self.config: TaskIncremental.Config
         # The entire training, validation and testing datasets.
         self.full_train_dataset : VisionDataset = None
         self.full_valid_dataset : VisionDataset = None
@@ -109,13 +113,16 @@ class TaskIncremental(Experiment):
         self.valid_cumul_datasets: List[ClassSubset] = []
         self.test_cumul_datasets: List[ClassSubset] = []
 
+        # Keeps track of which tasks have some data stored in the replay buffer
+        # (if using replay)
+        self.tasks_in_buffer: List[Task] = []
+
 
     def setup(self):
         """Prepare everything before training begins: Saves/restores state,
         loads the datasets, model weights, etc.
         """
         super().setup()
-
         if self.state.global_step == 0:
             logger.info("Starting from scratch!")
             self.state.tasks = self.create_tasks_for_dataset(self.config.dataset)
@@ -192,10 +199,8 @@ class TaskIncremental(Experiment):
             self.state.i = i
             logger.info(f"Starting task {i} with classes {self.tasks[i]}")
 
-            # If we are using a multihead model, we give it the task label (so
-            # that it can spawn / reuse the output head for the given task).
-            if self.config.multihead:
-                self.on_task_switch(self.tasks[i])
+            print("HERE")
+            self.on_task_switch(self.tasks[i])
 
             # Training and validation datasets for task i.
             train_i = self.train_datasets[i]
@@ -272,8 +277,7 @@ class TaskIncremental(Experiment):
 
                 if j <= i:
                     # If we have previously trained on this task:
-                    if self.config.multihead:
-                        self.on_task_switch(self.tasks[j])
+                    self.on_task_switch(self.tasks[j])
 
                     # Test on the test dataset for task j.
                     loss_j = self.test(test_j, description=f"Task{i}: Test on Task{j}", name=f"Task{j}")
@@ -364,16 +368,22 @@ class TaskIncremental(Experiment):
     def on_task_switch(self, task: Optional[Task], **kwargs) -> None:
         """Called when a task boundary is reached.
 
+        TODO: @lebrice Adding this method on the `Experiment` class in
+        case some addons need it?
+        TODO: Maybe we could use `.on_task_switch(<None>)` when you want to
+        inform the model that there is a task boundary, without giving the task
+        labels.
+        
         Args:
             task (Optional[Task]): If given, holds the information about the
             new task: an index which indicates in which order it was encountered,
             as well as the set of classes present in the new data. 
         """
-        if self.model.training and not self.task_labels_at_train_time:
+        if self.model.training and not self.config.task_labels_at_train_time:
             logger.warning(f"Ignoring task label {task} since model is training and we don't have access to task labels at train time.")
             return
-        elif not self.model.training and not self.task_labels_at_test_time:
-            logger.warning(f"Ignoring task label {task} since model is training and we don't have access to task labels at train time.")
+        elif not self.model.training and not self.config.task_labels_at_test_time:
+            logger.warning(f"Ignoring task label {task} since model is in evaluation mode and we don't have access to task labels at test time.")
             return
         
         # If we are using a multihead model, we give it the task label (so
@@ -382,10 +392,14 @@ class TaskIncremental(Experiment):
         i = self.state.i
         ewc_task = self.model.tasks.get(Tasks.EWC)
 
+        train_loader = self.get_dataloader(self.train_datasets[i])
+
+        if task and self.replay_buffer is not None:
+            self.update_replay_buffer(task, new_task_loader=train_loader)
+
         if ewc_task and ewc_task.enabled:
             prev_task = None if i == 0 else self.tasks[i-1]
             classifier_head = None if i == 0 else self.model.get_output_head(prev_task)
-            train_loader = self.get_dataloader(self.train_datasets[i])
 
             if i != 0 and ewc_task.current_task_loader is None:
                 previous_task_loader = self.get_dataloader(self.train_datasets[i-1])
@@ -397,6 +411,93 @@ class TaskIncremental(Experiment):
 
         self.model.on_task_switch(task, **kwargs)
 
+    def update_replay_buffer(self, new_task: Task, new_task_loader: DataLoader) -> None:
+        """Update the replay buffer, adding data for the new task.
+
+        Args:
+            new_task (Task): New task that is about to be trained on.
+            new_task_loader (DataLoader): The dataloader of the corresponding dataset.
+        """
+
+        from addons.replay import LabeledReplayBuffer
+        # TODO: For now we assume that the buffer is labeled, for simplicity.
+        assert isinstance(self.replay_buffer, LabeledReplayBuffer)
+            
+        i = new_task.index
+        current_size = len(self.replay_buffer)
+        n_tasks_in_buffer = len(self.tasks_in_buffer)        
+        print("Updating the replay buffer.")
+        print("Current buffer size: ", current_size)
+        print("number of tasks in the buffer:", n_tasks_in_buffer)
+
+        if new_task not in self.tasks_in_buffer:
+            space_per_task = self.replay_buffer.capacity // (n_tasks_in_buffer + 1)
+        elif n_tasks_in_buffer > 0:
+            space_per_task = self.replay_buffer.capacity // n_tasks_in_buffer
+        else:
+            space_per_task = self.replay_buffer.capacity
+
+        # Make a dict that maps from each class label to the samples
+        # of that class in the buffer.
+        # TODO: Idea, could use the None key for unlabeled data?
+        
+                
+        def unbatch(dataloader: Iterable[Tuple[Tensor, Tensor]]) -> Iterable[Tuple[Tensor, Tensor]]:
+            "Flatten one level of nesting"
+            for batch in dataloader:
+                x, y = batch
+                yield from zip(x, y)
+
+        # Add all the new data:
+        kept_data = self.choose_samples_to_go_in_buffer(
+            samples=itertools.chain(self.replay_buffer, unbatch(new_task_loader)),
+            n_samples=self.replay_buffer.capacity,
+        )
+        self.replay_buffer.extend(kept_data)
+
+        data_per_class: Dict[int, List[Tuple[Tensor, Tensor]]] = defaultdict(list)
+        for x, y in self.replay_buffer:
+            assert y is not None
+            label = int(y.item())
+            data_per_class[label].append((x, y))
+
+        print("Number of samples per class in the buffer", {k: len(v) for k, v in data_per_class.items()})
+
+
+
+        # if new_task is not in the buffer
+        if new_task not in self.tasks_in_buffer:
+            self.tasks_in_buffer.append(new_task)
+    
+    def choose_samples_to_go_in_buffer(self, samples: Iterable[Tuple[Tensor, Tensor]],
+                                             n_samples: int) -> Iterable[Tuple[Tensor, Tensor]]:
+        """ Choose which `n_samples` from `samples` to store in the buffer.
+        
+        By default, just takes the first `n_samples/n_classes` examples for each
+        task, but we could easily implement some K-Means thing here if we wanted.
+
+        TODO: Do we assume that the samples are already preprocessed ? or no?
+
+        Args:
+            task (Task): Object describing the new task.
+            samples (Iterable[Tuple[Tensor, Tensor]]): Samples
+            n_samples (int): Number of samples that should be returned.
+
+        Returns:
+            Iterable[Tuple[Tensor, Tensor]]: [description]
+        """
+        # We do the same for the new data.
+        samples_per_class: Dict[Optional[int], List[Tuple[Tensor, Tensor]]] = defaultdict(list)
+        
+        for x, y in samples:
+            label = int(y)
+            samples_per_class[label].append((x, y))
+
+        from itertools import islice
+        # Round robin: cycle through the labels, taking one element at a time.
+        # slice the iterator, returning only the `n_samples` first samples.
+        return islice(roundrobin(*samples_per_class.values()), n_samples)
+                
 
 
     def make_transfer_grid_figure(self,

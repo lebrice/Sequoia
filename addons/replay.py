@@ -1,24 +1,24 @@
+import logging
+import random
+from abc import ABC, abstractmethod
+from collections import deque
+from dataclasses import InitVar, dataclass
+from typing import *
+
 import numpy as np
 import torch
-from torch import nn, Tensor
-from dataclasses import dataclass
-from experiment import ExperimentBase
-from dataclasses import dataclass
-from typing import *
+from torch import Tensor, nn
+
 from common.losses import LossInfo
-import logging
-from collections import deque
-from simple_parsing import field, mutable_field
 from config import Config as ConfigBase
+from experiment import ExperimentBase
+from simple_parsing import field, mutable_field
 from utils.json_utils import JsonSerializable
 
 logger = logging.getLogger(__file__)
 T = TypeVar("T")
 
-import random
-
-
-class ReplayBuffer(nn.Module, Generic[T]):
+class ReplayBuffer(Deque[T]):
     """Simple implementation of a replay buffer.
 
     Uses a doubly-ended Queue, which unfortunately isn't registered as a buffer
@@ -26,17 +26,20 @@ class ReplayBuffer(nn.Module, Generic[T]):
     # TODO: Should figure out a way to 
     """
     def __init__(self, capacity: int):
-        super().__init__()
-        self.capacity = capacity
+        super().__init__(maxlen=capacity)
+        # self.extend("ABC")
+        self.capacity: int = capacity
         # self.register_buffer("memory", torch.zeros(1)) # TODO: figure out how to set it with a Tensor maybe?
-        self.memory: Deque[T] = deque(maxlen=capacity)
         self.labeled: Optional[bool] = None
         self.current_size: int = 0
+    
+    # def __getitem__(self, index):
+    #     return self.memory[index]
 
-    def _push(self, values: Iterable[T]) -> None:
-        self.memory.extend(values)
+    # def __iter__(self):
+    #     return iter(self.memory)
 
-    def _push_and_sample(self, values: Iterable[T], size: int) -> List[T]:
+    def _push_and_sample(self, *values: T, size: int) -> List[T]:
         """Pushes `values` into the buffer and samples `size` samples from it.
 
         NOTE: In contrast to `push`, allows sampling more than `len(self)`
@@ -46,31 +49,32 @@ class ReplayBuffer(nn.Module, Generic[T]):
             *values (T): An iterable of items to push.
             size (int): Number of samples to take.
         """
-        extended = list(self.memory)
+        extended = list(self)
         extended.extend(values)
         # NOTE: Type hints indicate that random.shuffle expects a list, not
         # a deque. Seems to work just fine though.
         random.shuffle(extended)  # type: ignore
         assert size <= len(extended), f"Asked to sample {size} values, while there are only {len(extended)} in the batch + buffer!"
         
-        self.memory.extend(extended)
+        self.extend(extended)
         return extended[:size]
 
     def _sample(self, size: int) -> List[T]:
-        assert size <= len(self.memory), f"Asked to sample {size} values while there are only {len(self)} in the buffer!"
-        return random.sample(self.memory, size)
+        assert size <= len(self), f"Asked to sample {size} values while there are only {len(self)} in the buffer!"
+        return random.sample(self, size)
 
-    def __len__(self):
-        return len(self.memory)
+    @property
+    def full(self) -> bool:
+        return len(self) == self.capacity 
 
     # def __bool__(self):
     #     if len(self) == 0:
     #         return self.capacity > 0
     #     return super().__bool__()
 
-    def clear(self) -> None:
-        """ Clears the replay buffer. """
-        self.memory.clear()
+    # def clear(self) -> None:
+    #     """ Clears the replay buffer. """
+    #     self.memory.clear()
 
 
 class UnlabeledReplayBuffer(ReplayBuffer[Tensor]):
@@ -78,10 +82,11 @@ class UnlabeledReplayBuffer(ReplayBuffer[Tensor]):
         batch = super()._sample(size)
         return torch.stack(batch)
 
-    def push(self, x_batch: Tensor) -> None:
+    def push(self, x_batch: Tensor, y_batch: Tensor=None) -> None:
         super()._push(x_batch)
 
-    def push_and_sample(self, x_batch: Tensor, size: int) -> Tensor:
+    def push_and_sample(self, x_batch: Tensor, y_batch: Tensor=None, size: int=None) -> Tensor:
+        size = x_batch.shape[0] if size is None else size
         return torch.stack(super()._push_and_sample(x_batch, size=size))
 
 
@@ -94,8 +99,9 @@ class LabeledReplayBuffer(ReplayBuffer[Tuple[Tensor, Tensor]]):
     def push(self, x_batch: Tensor, y_batch: Tensor) -> None:
         super()._push(zip(x_batch, y_batch))
 
-    def push_and_sample(self, x_batch: Tensor, y_batch: Tensor, size: int) -> Tuple[Tensor, Tensor]:
-        list_of_pairs = super()._push_and_sample(zip(x_batch, y_batch), size=size)
+    def push_and_sample(self, x_batch: Tensor, y_batch: Tensor, size: int=None) -> Tuple[Tensor, Tensor]:
+        size = x_batch.shape[0] if size is None else size
+        list_of_pairs = super()._push_and_sample(*zip(x_batch, y_batch), size=size)
         data_list, target_list = zip(*list_of_pairs)
         return torch.stack(data_list), torch.stack(target_list)
 
@@ -119,8 +125,8 @@ class CoolReplayBuffer(nn.Module):
         self.labeled_capacity = labeled_capacity
         self.unlabeled_capacity = unlabeled_capacity
 
-        self.labeled_buffer = LabeledReplayBuffer(labeled_capacity)
-        self.unlabeled_buffer = UnlabeledReplayBuffer(unlabeled_capacity)
+        self.labeled = LabeledReplayBuffer(labeled_capacity)
+        self.unlabeled = UnlabeledReplayBuffer(unlabeled_capacity)
 
     def sample(self, size: int) -> Tuple[Tensor, Tensor]:
         """Takes `size` (labeled) samples from the buffer.
@@ -131,11 +137,11 @@ class CoolReplayBuffer(nn.Module):
         Returns:
             Tuple[Tensor, Tensor]: batched data and label tensors.
         """
-        assert size <= len(self.labeled_buffer), (
+        assert size <= len(self.labeled), (
             f"Asked to sample {size} values while there are only "
-            f"{len(self.labeled_buffer)} labeled samples in the buffer! "
+            f"{len(self.labeled)} labeled samples in the buffer! "
         )
-        return self.labeled_buffer.sample(size)
+        return self.labeled.sample(size)
 
     def sample_unlabeled(self, size: int, take_from_labeled_buffer_first: bool=None) -> Tensor:
         """Samples `size` unlabeled samples.
@@ -157,9 +163,9 @@ class CoolReplayBuffer(nn.Module):
             Tensor: A batch of X's.
         """
         
-        total = len(self.unlabeled_buffer)
+        total = len(self.unlabeled)
         if take_from_labeled_buffer_first is not None:
-            total += len(self.labeled_buffer)
+            total += len(self.labeled)
 
         assert size <= total, (
             f"Asked to sample {size} values while there are only "
@@ -171,23 +177,23 @@ class CoolReplayBuffer(nn.Module):
 
         if take_from_labeled_buffer_first:
             # Take labeled samples and drop the label.
-            n_samples_from_labeled = min(len(self.labeled_buffer), samples_left)
+            n_samples_from_labeled = min(len(self.labeled), samples_left)
             if n_samples_from_labeled > 0:
-                data, _ = self.labeled_buffer.sample(size)
+                data, _ = self.labeled.sample(size)
                 samples_left -= data.shape[0]
                 tensors.append(data)
         
         # Take the rest of the samples from the unlabeled buffer.
-        n_samples_from_labeled = min(len(self.labeled_buffer), samples_left)
-        data = self.unlabeled_buffer.sample_batch(samples_left) 
+        n_samples_from_labeled = min(len(self.labeled), samples_left)
+        data = self.unlabeled.sample_batch(samples_left) 
         tensors.append(data)
         samples_left -= data.shape[0]
 
         if take_from_labeled_buffer_first is False:
             # Take the rest of the labeled samples and drop the label.
-            n_samples_from_labeled = min(len(self.labeled_buffer), samples_left)
+            n_samples_from_labeled = min(len(self.labeled), samples_left)
             if n_samples_from_labeled > 0:
-                data, _ = self.labeled_buffer.sample(size)
+                data, _ = self.labeled.sample(size)
                 samples_left -= data.shape[0]
                 tensors.append(data)
 
@@ -196,15 +202,19 @@ class CoolReplayBuffer(nn.Module):
 
     def push_and_sample(self, x: Tensor, y: Tensor, size: int=None) -> Tuple[Tensor, Tensor]:
         size = x.shape[0] if size is None else size
-        self.unlabeled_buffer.push(x)
-        return self.labeled_buffer.push_and_sample(x, y, size=size)
+        self.unlabeled.push(x)
+        return self.labeled.push_and_sample(x, y, size=size)
         
     def push_and_sample_unlabeled(self, x: Tensor, y: Tensor=None, size: int=None) -> Tensor:
         size = x.shape[0] if size is None else size
         if y is not None:
-            self.labeled_buffer.push(x, y)
-        return self.unlabeled_buffer.push_and_sample(x, size=size)
-        
+            self.labeled.push(x, y)
+        return self.unlabeled.push_and_sample(x, size=size)
+    
+    def clear(self):
+        self.labeled.clear()
+        self.unlabeled.clear()
+
     # @overload
     # def sample(self, x: Tensor) -> Tensor:
     #     pass
@@ -282,10 +292,19 @@ class CoolReplayBuffer(nn.Module):
 class ReplayOptions(JsonSerializable):
     """ Options related to Replay. """
     # Size of the labeled replay buffer.
-    labeled_buffer_size: int = field(0, alias="buffer_size")
+    labeled_buffer_size: int = field(0, alias="replay_buffer_size")
     # Size of the unlabeled replay buffer.
     unlabeled_buffer_size: int = 0
 
+    # Always use the replay buffer to help "smooth" out the data stream.
+    always_use_replay: bool = False
+    # Sampling size, when used as described above to smooth out the data stream.
+    # If not given, will use the same value as the batch size.
+    sampled_batch_size: Optional[int] = None
+
+    @property
+    def enabled(self) -> bool:
+        return self.labeled_buffer_size > 0 or self.unlabeled_buffer_size > 0
 
 @dataclass  #  type: ignore
 class ExperimentWithReplay(ExperimentBase):
@@ -295,32 +314,39 @@ class ExperimentWithReplay(ExperimentBase):
         # Number of samples in the replay buffer.
         replay: ReplayOptions = mutable_field(ReplayOptions)
     
-    replay_buffer: CoolReplayBuffer = field(default=None, init=False)
+    config: InitVar[Config]
+
+    replay_buffer: ReplayBuffer = field(default=None, init=False)
     # labeled_replay_buffer:   Optional[LabeledReplayBuffer] = field(default=None, init=False)
     # unlabeled_replay_buffer: Optional[UnlabeledReplayBuffer] = field(default=None, init=False)
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
+        self.config: ExperimentWithReplay.Config
 
-        self.replay_buffer = CoolReplayBuffer(
-            labeled_capacity=self.config.replay.labeled_buffer_size,
-            unlabeled_capacity=self.config.replay.unlabeled_buffer_size,
-        )
-        if self.config.replay.labeled_buffer_size > 0:
-            logger.info(f"Using a (labeled) replay buffer of size {self.config.replay.labeled_buffer_size}.")
-            # self.labeled_replay_buffer = LabeledReplayBuffer(self.replay.labeled_buffer_size)
-        
-        if self.config.replay.unlabeled_buffer_size > 0:
-            logger.info(f"Using an (unlabeled) replay buffer of size {self.config.replay.unlabeled_buffer_size}.")
-            # self.unlabeled_replay_buffer = UnlabeledReplayBuffer(self.replay.unlabeled_buffer_size)
-
+        if self.config.replay.labeled_buffer_size or self.config.replay.unlabeled_buffer_size:
+            if self.config.replay.labeled_buffer_size > 0 and self.config.replay.unlabeled_buffer_size > 0:
+                self.replay_buffer = CoolReplayBuffer(
+                    labeled_capacity=self.config.replay.labeled_buffer_size,
+                    unlabeled_capacity=self.config.replay.unlabeled_buffer_size,
+                )
+            
+            elif self.config.replay.labeled_buffer_size > 0:
+                logger.info(f"Using a (labeled) replay buffer of size {self.config.replay.labeled_buffer_size}.")
+                self.replay_buffer = LabeledReplayBuffer(self.config.replay.labeled_buffer_size)
+            
+            elif self.config.replay.unlabeled_buffer_size > 0:
+                logger.info(f"Using an (unlabeled) replay buffer of size {self.config.replay.unlabeled_buffer_size}.")
+                self.replay_buffer = UnlabeledReplayBuffer(self.config.replay.unlabeled_buffer_size)
 
     def train_batch(self, data: Tensor, target: Optional[Tensor], name: str="Train") -> LossInfo:
-        # If we have an unlabeled replay buffer, always push the x's to it,
-        # regarless of if 'target' is present or not.
-        if target is not None:
-            # We have labeled data.
-            data, target = self.replay_buffer.push_and_sample(data, target)
-        elif self.replay.unlabeled_buffer_size > 0:
-            data = self.replay_buffer.push_and_sample_unlabeled(data)
+        if self.config.replay.always_use_replay:
+            # If we have an unlabeled replay buffer, always push the x's to it,
+            # regarless of if 'target' is present or not.
+            if target is not None:
+                # We have labeled data.
+                sampled_batch_size = self.config.replay.sampled_batch_size or self.config.hparams.batch_size
+                data, target = self.replay_buffer.push_and_sample(data, target, size=sampled_batch_size)
+            elif self.replay.unlabeled_buffer_size > 0:
+                data = self.replay_buffer.push_and_sample_unlabeled(data, size=sampled_batch_size)
         return super().train_batch(data, target, name)
