@@ -201,10 +201,12 @@ class TaskIncremental(Experiment):
 
             print("HERE")
             self.on_task_switch(self.tasks[i])
-
+            from torch.utils.data import ConcatDataset
             # Training and validation datasets for task i.
-            train_i = self.train_datasets[i]
+            
+            train_i = ConcatDataset([self.train_datasets[i], self.replay_buffer.as_dataset()])
             valid_i = self.valid_datasets[i]
+
             if self.state.j == 0:
                 with self.plot_region_name(f"Learn Task {i}"):
                     # We only train (unsupervised) if there is at least one enabled

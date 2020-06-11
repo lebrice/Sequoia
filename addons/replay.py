@@ -14,7 +14,7 @@ from config import Config as ConfigBase
 from experiment import ExperimentBase
 from simple_parsing import field, mutable_field
 from utils.json_utils import JsonSerializable
-
+from torch.utils.data import TensorDataset
 logger = logging.getLogger(__file__)
 T = TypeVar("T")
 
@@ -32,7 +32,12 @@ class ReplayBuffer(Deque[T]):
         # self.register_buffer("memory", torch.zeros(1)) # TODO: figure out how to set it with a Tensor maybe?
         self.labeled: Optional[bool] = None
         self.current_size: int = 0
-    
+
+    def as_dataset(self) -> TensorDataset:
+        contents = zip(*self)
+        return TensorDataset(*map(torch.stack, contents))
+
+
     # def __getitem__(self, index):
     #     return self.memory[index]
 

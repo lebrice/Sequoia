@@ -70,7 +70,6 @@ class Classifier(nn.Module):
             # "wide_resnet50_2": models.wide_resnet50_2,
             # "mnasnet": models.mnasnet1_0,
         }, default=None)
-
         # Use the pretrained weights of the ImageNet model from torchvision.
         pretrained_model: bool = False
         # Freeze the weights of the pretrained encoder (except the last layer,
@@ -85,6 +84,7 @@ class Classifier(nn.Module):
                  hparams: HParams,
                  config: Config):
         super().__init__()
+        self.multihead: bool = False
         self.input_shape = input_shape
         self.num_classes = num_classes
         # Feature extractor
@@ -216,7 +216,7 @@ class Classifier(nn.Module):
         if x.shape[1:] != self.input_shape:
             x = fix_channels(x)
         
-        if y is not None:
+        if y is not None and self.multihead:
             # y_unique are the (sorted) unique values found within the batch.
             # idx[i] holds the index of the value at y[i] in y_unique, s.t. for
             # all i in range(0, len(y)) --> y[i] == y_unique[idx[i]]
@@ -257,7 +257,9 @@ class Classifier(nn.Module):
 
     @property
     def classifier(self) -> nn.Module:
-        return self.get_output_head(self.current_task)
+        if self.multihead:
+            return self.get_output_head(self.current_task)
+        return self.get_output_head(self._default_task)
 
     @property
     def current_task(self) -> Task:
