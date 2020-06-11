@@ -1,6 +1,10 @@
 from copy import copy, deepcopy
+from dataclasses import dataclass, field
 from typing import (Any, Dict, List, NamedTuple, Optional, Tuple, Type,
                     TypeVar, Union)
+
+import torch
+from torch import Tensor
 from torch import nn as nn
 from torch import optim
 from torch.autograd import Variable
@@ -8,19 +12,14 @@ from torch.utils.data import DataLoader
 
 from common.losses import LossInfo
 from common.task import Task
+from models.output_head import OutputHead
+from tasks.auxiliary_task import AuxiliaryTask
 from utils import cuda_available
 from utils.nngeometry.nngeometry.layercollection import LayerCollection
 from utils.nngeometry.nngeometry.metrics import FIM
 from utils.nngeometry.nngeometry.object.pspace import (PSpaceBlockDiag,
                                                        PSpaceDiag, PSpaceKFAC)
 from utils.nngeometry.nngeometry.object.vector import PVector
-from dataclasses import dataclass, field
-
-import torch
-from torch import Tensor
-
-from common.losses import LossInfo
-from tasks.auxiliary_task import AuxiliaryTask
 
 
 class GaussianPrior(object):
@@ -111,10 +110,11 @@ class EWC(AuxiliaryTask):
                        task: Task,
                        prev_task: Task=None,
                        train_loader: DataLoader=None,
-                       classifier_head: Task=None, **kwargs)-> None:
+                       classifier_head: OutputHead=None, **kwargs)-> None:
         """ Executed when the task switches (to either a new or known task). """
         #set n_ways of the next task
-        self.n_ways = len(task.classes)
+        if classifier_head is not None and self.n_ways is None:
+            self.n_ways = classifier_head.output_size
         if task and prev_task and train_loader and classifier_head and self.current_task_loader:
             self.calculate_ewc_prior(prev_task, task, classifier_head)
         #set data loader of the next task
@@ -164,4 +164,3 @@ class EWC(AuxiliaryTask):
                 print(f'Task {task_number} was learned before, fisher is not updated')
         else:
             print('No EWC on task 0')
-

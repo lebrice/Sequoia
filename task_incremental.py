@@ -21,15 +21,17 @@ from common.losses import LossInfo, TrainValidLosses
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from common.task import Task
 from datasets import DatasetConfig
+from datasets.data_utils import unbatch, unlabeled
 from datasets.subset import ClassSubset
 from experiment import Experiment
+from models.output_head import OutputHead
 from simple_parsing import choice, field, list_field, mutable_field, subparsers
 from tasks import Tasks
 from utils import utils
 from utils.json_utils import JsonSerializable
 from utils.utils import (common_fields, n_consecutive, rgetattr, roundrobin,
                          rsetattr)
-from datasets.data_utils import unlabeled, unbatch
+
 logger = logging.getLogger(__file__)
 
 
@@ -395,7 +397,14 @@ class TaskIncremental(Experiment):
 
         if ewc_task and ewc_task.enabled:
             prev_task = None if i == 0 else self.tasks[i-1]
-            classifier_head = None if i == 0 else self.model.get_output_head(prev_task)
+            classifier_head: Optional[OutputHead] = None
+            if i == 0:
+                # TODO: @lebrice I don't quite recall why this is here..
+                classifier_head = None
+            elif self.model.hparams.multihead:
+                classifier_head = self.model.get_output_head(prev_task)
+            else:
+                classifier_head = self.model.default_output_head
 
             if i != 0 and ewc_task.current_task_loader is None:
                 previous_task_loader = self.get_dataloader(self.train_datasets[i-1])
