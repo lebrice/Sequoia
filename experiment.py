@@ -571,11 +571,11 @@ class ExperimentBase(JsonSerializable):
             self.model.train()
         return loss
 
-    def get_dataloader(self, dataset: Dataset, sampler: Sampler=None) -> DataLoader:
+    def get_dataloader(self, dataset: Dataset, sampler: Sampler=None, shuffle: bool=True) -> DataLoader:
         return DataLoader(
             dataset,
             batch_size=self.config.hparams.batch_size,
-            shuffle=False,
+            shuffle=shuffle,
             sampler=sampler,
             num_workers=self.config.num_workers,
             pin_memory=self.config.use_cuda,

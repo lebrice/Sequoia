@@ -8,7 +8,7 @@ from typing import *
 import numpy as np
 import torch
 from torch import Tensor, nn
-
+from collections import Counter
 from common.losses import LossInfo
 from config import Config as ConfigBase
 from experiment import ExperimentBase
@@ -36,13 +36,6 @@ class ReplayBuffer(Deque[T]):
     def as_dataset(self) -> TensorDataset:
         contents = zip(*self)
         return TensorDataset(*map(torch.stack, contents))
-
-
-    # def __getitem__(self, index):
-    #     return self.memory[index]
-
-    # def __iter__(self):
-    #     return iter(self.memory)
 
     def _push_and_sample(self, *values: T, size: int) -> List[T]:
         """Pushes `values` into the buffer and samples `size` samples from it.
@@ -72,15 +65,6 @@ class ReplayBuffer(Deque[T]):
     def full(self) -> bool:
         return len(self) == self.capacity 
 
-    # def __bool__(self):
-    #     if len(self) == 0:
-    #         return self.capacity > 0
-    #     return super().__bool__()
-
-    # def clear(self) -> None:
-    #     """ Clears the replay buffer. """
-    #     self.memory.clear()
-
 
 class UnlabeledReplayBuffer(ReplayBuffer[Tensor]):
     def sample_batch(self, size: int) -> Tensor:
@@ -109,6 +93,11 @@ class LabeledReplayBuffer(ReplayBuffer[Tuple[Tensor, Tensor]]):
         list_of_pairs = super()._push_and_sample(*zip(x_batch, y_batch), size=size)
         data_list, target_list = zip(*list_of_pairs)
         return torch.stack(data_list), torch.stack(target_list)
+
+    def samples_per_class(self) -> Dict[int, int]:
+        """ Returns a Counter showing how many samples there are per class. """
+        # TODO: Idea, could use the None key for unlabeled replay buffer.
+        return Counter(int(y) for x, y in self)
 
 
 class CoolReplayBuffer(nn.Module):

@@ -29,7 +29,7 @@ from utils import utils
 from utils.json_utils import JsonSerializable
 from utils.utils import (common_fields, n_consecutive, rgetattr, roundrobin,
                          rsetattr)
-
+from datasets.data_utils import unlabeled, unbatch
 logger = logging.getLogger(__file__)
 
 
@@ -203,9 +203,15 @@ class TaskIncremental(Experiment):
             self.on_task_switch(self.tasks[i])
             from torch.utils.data import ConcatDataset
             # Training and validation datasets for task i.
-            
-            train_i = ConcatDataset([self.train_datasets[i], self.replay_buffer.as_dataset()])
-            valid_i = self.valid_datasets[i]
+            train_i_dataset = self.train_datasets[i]
+            valid_i_dataset = self.valid_datasets[i]
+            if self.replay_buffer:
+                # Append the replay buffer to the end of the training dataset.
+                # TODO: Should we shuffle them together?
+                train_i_dataset += self.replay_buffer.as_dataset()
+
+            train_i_loader = self.get_dataloader(train_i_dataset)
+            valid_i_loader = self.get_dataloader(valid_i_dataset)
 
             if self.state.j == 0:
                 with self.plot_region_name(f"Learn Task {i}"):
@@ -214,24 +220,24 @@ class TaskIncremental(Experiment):
                     # epochs per task is greater than zero.
                     self_supervision_on = any(task.enabled for task in self.model.tasks.values())
 
-                    if self_supervision_on and self.unsupervised_epochs_per_task:
-                        # Temporarily remove the labels.
-                        with train_i.without_labels(), valid_i.without_labels():
-                            # Un/self-supervised training on task i.
-                            self.state.all_losses = self.train(
-                                train_i,
-                                valid_i,
-                                epochs=self.config.unsupervised_epochs_per_task,
-                                description=f"Task {i} (Unsupervised)",
-                                use_accuracy_as_metric=False, # Can't use accuracy as metric during unsupervised training.
-                                temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
-                            )
+                    if self_supervision_on and self.config.unsupervised_epochs_per_task:
+                        # Un/self-supervised training on task i.
+                        # NOTE: Here we use the same dataloaders, but drop the
+                        # labels and treat them as unlabeled datasets. 
+                        self.state.all_losses = self.train(
+                            unlabeled(train_i_loader),
+                            unlabeled(valid_i_loader),
+                            epochs=self.config.unsupervised_epochs_per_task,
+                            description=f"Task {i} (Unsupervised)",
+                            use_accuracy_as_metric=False, # Can't use accuracy as metric during unsupervised training.
+                            temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
+                        )
 
                     # Train (supervised) on task i.
                     # TODO: save the state during training?.
                     self.state.all_losses += self.train(
-                        train_i,
-                        valid_i,
+                        train_i_loader,
+                        valid_i_loader,
                         epochs=self.config.supervised_epochs_per_task,
                         description=f"Task {i} (Supervised)",
                         temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
@@ -286,18 +292,20 @@ class TaskIncremental(Experiment):
                     self.log({f"Task_losses/Task{j}": loss_j})
                     
                     self.state.task_losses[i][j] = loss_j
-                    self.state.cumul_losses[i].absorb(loss_j) 
+                    # Merge the metrics from this task and the other tasks.
                     # NOTE: using += above would add a "Task<j>" item in the
-                    # `losses` attribute of the cumulative loss, without merging the metrics.
+                    # `losses` attribute of the cumulative loss, without merging
+                    # the metrics.
+                    self.state.cumul_losses[i].absorb(loss_j)
+
                     supervised_acc_j = get_supervised_accuracy(loss_j)
                     logger.info(f"Task {i} Supervised Test accuracy on task {j}: {supervised_acc_j:.2%}")
-                    logger.debug(f"self.state.cumul_losses[i]: {self.state.cumul_losses[i]}")
             
             # -- Evaluate representations after task i on the whole train/test datasets. --
 
             # Measure the "quality" of the representations of the data using the
             # whole test dataset.
-            # TODO: Do this in another process (as it should take very long)
+            # TODO: Do this in another process (as it might take very long)
             knn_train_loss, knn_test_loss = self.test_knn(
                 self.full_train_dataset,
                 self.full_test_dataset,
@@ -308,13 +316,13 @@ class TaskIncremental(Experiment):
             knn_test_acc  = knn_test_loss.accuracy
             logger.info(f"Task{i}: KNN Train Accuracy (Full): {knn_train_acc:.2%}")
             logger.info(f"Task{i}: KNN Test  Accuracy (Full): {knn_test_acc :.2%}")
-            self.state.knn_full_losses[i] = knn_test_loss
-
             # Log the accuracies to wandb.
             self.log({
                 f"KNN/train/full": knn_train_acc,
                 f"KNN/test/full" : knn_test_acc,
             })
+            # Save the loss object in the state.
+            self.state.knn_full_losses[i] = knn_test_loss
 
             # Save the state with the new metrics, but no need to save the
             # model weights, as they didn't change.
@@ -322,14 +330,10 @@ class TaskIncremental(Experiment):
             # NOTE: this has to be after, so we don't reloop through the j's if
             # something in the next few lines fails.
             self.state.j = 0            
-            cumul_loss = self.state.cumul_losses[i]
-            logger.debug(cumul_loss.dumps(indent="\t"))
-            
+            cumul_loss = self.state.cumul_losses[i]            
             cumul_valid_accuracy = get_supervised_accuracy(cumul_loss)
             logger.info(f"Cumul Accuracy [{i}]: {cumul_valid_accuracy}")
-            self.log({
-                f"Cumulative": cumul_loss,
-            })
+            self.log({f"Cumulative": cumul_loss})
 
         # mark that we're done so we get right back here if we resume a
         # finished experiment
@@ -416,6 +420,14 @@ class TaskIncremental(Experiment):
     def update_replay_buffer(self, new_task: Task, new_task_loader: DataLoader) -> None:
         """Update the replay buffer, adding data for the new task.
 
+        Which samples are added to the buffer can be controlled with another
+        method. By default, we just choose an even number of samples for each
+        class.
+        
+        NOTE: We update the buffer even if there is already data from this task.
+        By default, this doesn't really change anything, since we keep the same
+        amount of data from each class in the buffer.
+
         Args:
             new_task (Task): New task that is about to be trained on.
             new_task_loader (DataLoader): The dataloader of the corresponding dataset.
@@ -433,43 +445,19 @@ class TaskIncremental(Experiment):
         print("number of tasks in the buffer:", n_tasks_in_buffer)
 
         if new_task not in self.tasks_in_buffer:
+            # adding a new task to the buffer.
             space_per_task = self.replay_buffer.capacity // (n_tasks_in_buffer + 1)
-        elif n_tasks_in_buffer > 0:
-            space_per_task = self.replay_buffer.capacity // n_tasks_in_buffer
         else:
-            space_per_task = self.replay_buffer.capacity
-
-        # Make a dict that maps from each class label to the samples
-        # of that class in the buffer.
-        # TODO: Idea, could use the None key for unlabeled data?
-        
-                
-        def unbatch(dataloader: Iterable[Tuple[Tensor, Tensor]]) -> Iterable[Tuple[Tensor, Tensor]]:
-            "Flatten one level of nesting"
-            for batch in dataloader:
-                x, y = batch
-                yield from zip(x, y)
-
+            space_per_task = self.replay_buffer.capacity // n_tasks_in_buffer
         # Add all the new data:
         kept_data = self.choose_samples_to_go_in_buffer(
             samples=itertools.chain(self.replay_buffer, unbatch(new_task_loader)),
             n_samples=self.replay_buffer.capacity,
         )
         self.replay_buffer.extend(kept_data)
-
-        data_per_class: Dict[int, List[Tuple[Tensor, Tensor]]] = defaultdict(list)
-        for x, y in self.replay_buffer:
-            assert y is not None
-            label = int(y.item())
-            data_per_class[label].append((x, y))
-
-        print("Number of samples per class in the buffer", {k: len(v) for k, v in data_per_class.items()})
-
-
-
-        # if new_task is not in the buffer
-        if new_task not in self.tasks_in_buffer:
-            self.tasks_in_buffer.append(new_task)
+        # Count how many samples of each class are in the buffer.
+        print("# of samples per class in Replay buffer:", self.replay_buffer.samples_per_class())
+        
     
     def choose_samples_to_go_in_buffer(self, samples: Iterable[Tuple[Tensor, Tensor]],
                                              n_samples: int) -> Iterable[Tuple[Tensor, Tensor]]:
@@ -495,11 +483,10 @@ class TaskIncremental(Experiment):
             label = int(y)
             samples_per_class[label].append((x, y))
 
-        from itertools import islice
         # Round robin: cycle through the labels, taking one element at a time.
+        alternate_between_classes = roundrobin(*samples_per_class.values())
         # slice the iterator, returning only the `n_samples` first samples.
-        return islice(roundrobin(*samples_per_class.values()), n_samples)
-                
+        return itertools.islice(alternate_between_classes, n_samples)
 
 
     def make_transfer_grid_figure(self,
@@ -748,7 +735,7 @@ class TaskIncremental(Experiment):
             message[k] = v
 
         super().log(message, **kwargs)
-
+    
 
 def get_supervised_metrics(loss: LossInfo, mode: str="Test") -> Union[ClassificationMetrics, RegressionMetrics]:
     if Tasks.SUPERVISED not in loss.losses:
