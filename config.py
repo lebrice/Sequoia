@@ -152,8 +152,7 @@ class Config(JsonSerializable):
             # At the moment, if no run name is given, the 'random' name from wandb is used.
             pass
         logger.info(f"Using wandb. Experiment name: {self.run_name}")
-        config_dict = self.to_dict()
-
+        config_dict = asdict(self)
         if self.wandb_path is None:
             self.wandb_path = self.log_dir_root / "wandb"
         self.wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
