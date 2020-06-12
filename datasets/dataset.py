@@ -34,7 +34,7 @@ class DatasetConfig:
     name: str = "default"
 
     # which dataset class to use. (TODO: add more of them.)
-    dataset_class: Type[Dataset] = field(default=v_datasets.MNIST, repr=False)
+    dataset_class: ClassVar[Type[Dataset]] = field(default=v_datasets.MNIST, repr=False)
 
     x_shape: Tuple[int, int, int] = (1, 28, 28)
     y_shape: Tuple[int] = (10,)
@@ -44,7 +44,7 @@ class DatasetConfig:
 
     # TODO: This isn't really actually ever used. The VisionDatasets would call
     # them in __getitem__, and we don't really use that..
-    transforms: object = mutable_field(transforms.ToTensor)
+    transforms: ClassVar[object] = transforms.ToTensor()
 
     _loaded: bool = False
 
