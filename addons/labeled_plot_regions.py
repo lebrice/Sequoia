@@ -3,14 +3,20 @@ from experiment import ExperimentBase
 from contextlib import contextmanager
 from utils.plotting import PlotSectionLabel
 from typing import List
-from simple_parsing import list_field
+from simple_parsing import list_field, mutable_field
 
 
 @dataclass  # type: ignore
 class LabeledPlotRegionsAddon(ExperimentBase):
-    # TODO: Use a list of these objects to add annotated regions in the plot
-    # enclosed by vertical lines with some text, for instance "task 0", etc.
-    plot_sections: List[PlotSectionLabel] = list_field(init=False)
+    
+    @dataclass
+    class State(ExperimentBase.State):
+        """ State object of Experiment, but with added plot regions. """
+        # TODO: Use a list of these objects to add annotated regions in the plot
+        # enclosed by vertical lines with some text, for instance "task 0", etc.
+        plot_sections: List[PlotSectionLabel] = list_field()
+
+    state: State = mutable_field(State, init=False)
 
     @contextmanager
     def plot_region_name(self, description: str):

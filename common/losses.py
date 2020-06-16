@@ -9,7 +9,7 @@ from typing import (Any, Dict, Iterable, List, Optional, Set, Tuple, TypeVar,
 import torch
 from torch import Tensor
 
-from utils.json_utils import JsonSerializable
+from utils.json_utils import Serializable
 from utils.utils import add_dicts, add_prefix
 
 from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
@@ -19,7 +19,7 @@ logger = logging.getLogger(__file__)
 
 
 @dataclass
-class LossInfo(JsonSerializable):
+class LossInfo(Serializable):
     """ Simple object to store the losses and metrics for a given task. 
     
     Used to simplify the return type of the various `get_loss` functions.    
@@ -277,7 +277,7 @@ def cleanup(message: Dict[str, Union[Dict, str, float, Any]]) -> Dict[str, Union
 
 
 @dataclass
-class TrainValidLosses(JsonSerializable):
+class TrainValidLosses(Serializable):
     """ Helper class to store the train and valid losses during training. """
     train_losses: Dict[int, LossInfo] = field(default_factory=OrderedDict)
     valid_losses: Dict[int, LossInfo] = field(default_factory=OrderedDict)

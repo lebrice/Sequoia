@@ -13,18 +13,19 @@ import numpy as np
 import torch
 import tqdm
 import wandb
-from simple_parsing import field, mutable_field, list_field
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
-from utils.json_utils import JsonSerializable
+
+from simple_parsing import field, list_field, mutable_field
 from utils import cuda_available, gpus_available, set_seed
 from utils.early_stopping import EarlyStoppingOptions
-from utils.json_utils import JsonSerializable
+from utils.json_utils import Serializable
 
-import logging
+from .wandb_config import WandbConfig
+
 logging.basicConfig(
     format='%(asctime)s,%(msecs)d %(levelname)-8s [%(name)s:%(lineno)d] %(message)s',
     datefmt='%Y-%m-%d:%H:%M:%S',
@@ -34,9 +35,8 @@ logging.getLogger('simple_parsing').addHandler(logging.NullHandler())
 
 logger = logging.getLogger(__file__)
 
-
 @dataclass
-class Config(JsonSerializable):
+class Config(WandbConfig):
     """Settings related to the training setup. """
 
     debug: bool = field(alias="-d", default=False, action="store_true", nargs=0)      # enable debug mode.
@@ -61,22 +61,10 @@ class Config(JsonSerializable):
     
     use_wandb: bool = True # Whether or not to log results to wandb
     
-    project_name: str = "SSCL_replay" # project name to use in wandb.
-    # Name used to easily group runs together.
-    # Used to create a parent folder that will contain the `run_name` directory. 
-    run_group: Optional[str] = None
-    run_name: Optional[str] = None  # Wandb run name. If None, will use wandb's automatic name generation
     # An run number is used to differentiate different iterations of the same experiment.
     # Runs with the same name can be later grouped with wandb to produce stderr plots.
     run_number: Optional[int] = None 
     
-    # Identifier unique to each individual wandb run. When given, will try to
-    # resume the corresponding run, generates a new ID each time. 
-    run_id: Optional[str] = None
-
-    tags: List[str] = list_field() # Tags to add to this run with wandb.
-    # Notes about this particular experiment. (will be logged to wandb if used.)
-    notes: Optional[str] = None
     # Save the command-line arguments that were used to create this run.
     argv: List[str] = field(init=False, default_factory=sys.argv.copy)
 
@@ -84,10 +72,9 @@ class Config(JsonSerializable):
 
     use_accuracy_as_metric: bool = False
 
-    # Path where the wandb files should be stored. If the 'WANDB_DIR'
-    # environment variable is set, uses that value. Otherwise, defaults to
-    # the value of "<log_dir_root>/wandb"
-    wandb_path: Optional[Path] = Path(os.environ['WANDB_DIR']) if "WANDB_DIR" in os.environ else None
+    # Remove the existing log_dir, if any. Useful when debugging, as we don't
+    # always want to keep some intermediate checkpoints around. 
+    delete_existing_log_dir: bool = False
 
     def __post_init__(self):
         # set the manual seed (for reproducibility)
@@ -103,27 +90,28 @@ class Config(JsonSerializable):
             self.use_cuda = False
         if not self.use_cuda:
             self.device = torch.device("cpu")
-        
+
         if self.debug:
             self.use_wandb = False
             if self.run_name is None:
                 self.run_name = "debug"
             
-            # logging.getLogger().setLevel(logging.DEBUG)
-            # if self.log_dir.exists():
-            #     # wipe out the debug folder every time.
-            #     shutil.rmtree(self.log_dir)
-            #     if self.log_dir.exists():
-            #         # wipe out the debug folder every time.
-            #         shutil.rmtree(self.log_dir)
-            #         print(f"REMOVED THE LOG DIR {self.log_dir}")
-            
-            # self.log_dir.mkdir(exist_ok=False, parents=True)
-
+           
             if self.use_cuda:
                 # TODO: set CUDA deterministic.
                 torch.backends.cudnn.deterministic = True
                 torch.backends.cudnn.benchmark = False
+
+        if self.delete_existing_log_dir and self.log_dir.exists():
+            # wipe out the debug folder every time.
+            shutil.rmtree(self.log_dir)
+            logger.warning(f"REMOVED THE LOG DIR {self.log_dir}")
+            self.log_dir.mkdir(exist_ok=False, parents=True)
+
+        if self.notes:
+            with open(self.log_dir / "notes.txt", "w") as f:
+                f.write(self.notes)
+
 
     @property
     def log_dir(self):
@@ -146,7 +134,7 @@ class Config(JsonSerializable):
         logger = logging.getLogger(name)
         return logger
 
-    def wandb_init(self):    
+    def wandb_init(self) -> wandb.wandb_run.Run:
         if self.run_name is None:
             # TODO: Create a run name using the coefficients of the tasks, etc?
             # At the moment, if no run name is given, the 'random' name from wandb is used.
@@ -163,7 +151,7 @@ class Config(JsonSerializable):
             # self.run_id = "-".join([self.run_group, self.run_name, str(self.run_number or 0)])
 
         logger.info(f"Wandb run id: {self.run_id}")
-
+        logger.info(f"Using wandb. Group name: {self.run_group} run name: {self.run_name}, log_dir: {self.log_dir}")
         run = wandb.init(
             project=self.project_name,
             name=self.run_name,
@@ -176,12 +164,12 @@ class Config(JsonSerializable):
             tags=self.tags,
             resume="allow",
         )
-        wandb.run.save()
+        logger.info(f"Run: {run}")
+        run.save()
 
         if self.run_name is None:
-            self.run_name = wandb.run.name
+            self.run_name = run.name
         
-        print(f"Using wandb. Group name: {self.run_group} run name: {self.run_name}, log_dir: {self.log_dir}")
         return run
 
 # shared config object.

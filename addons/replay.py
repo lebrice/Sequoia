@@ -13,7 +13,7 @@ from common.losses import LossInfo
 from config import Config as ConfigBase
 from experiment import ExperimentBase
 from simple_parsing import field, mutable_field
-from utils.json_utils import JsonSerializable
+from utils.json_utils import Serializable
 from torch.utils.data import TensorDataset
 logger = logging.getLogger(__file__)
 T = TypeVar("T")
@@ -283,7 +283,7 @@ class CoolReplayBuffer(nn.Module):
 
 
 @dataclass
-class ReplayOptions(JsonSerializable):
+class ReplayOptions(Serializable):
     """ Options related to Replay. """
     # Size of the labeled replay buffer.
     labeled_buffer_size: int = field(0, alias="replay_buffer_size")
@@ -308,15 +308,13 @@ class ExperimentWithReplay(ExperimentBase):
         # Number of samples in the replay buffer.
         replay: ReplayOptions = mutable_field(ReplayOptions)
     
-    config: InitVar[Config]
-
-    replay_buffer: ReplayBuffer = field(default=None, init=False)
-    # labeled_replay_buffer:   Optional[LabeledReplayBuffer] = field(default=None, init=False)
-    # unlabeled_replay_buffer: Optional[UnlabeledReplayBuffer] = field(default=None, init=False)
-
+    config: Config = mutable_field(Config)
+    
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
-        self.config: ExperimentWithReplay.Config
+        self.replay_buffer: Optional[ReplayBuffer] = None
+        # labeled_replay_buffer:   Optional[LabeledReplayBuffer] = field(default=None, init=False)
+        # unlabeled_replay_buffer: Optional[UnlabeledReplayBuffer] = field(default=None, init=False)
 
         if self.config.replay.labeled_buffer_size or self.config.replay.unlabeled_buffer_size:
             if self.config.replay.labeled_buffer_size > 0 and self.config.replay.unlabeled_buffer_size > 0:

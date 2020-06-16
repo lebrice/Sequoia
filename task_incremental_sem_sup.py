@@ -53,7 +53,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         self.batch_idx: Optional[int] = None
 
     def init_model(self) -> Classifier:
-        self.logger.debug("init model")
+        logger.debug("init model")
         model = super().init_model()
         return model
 
@@ -158,21 +158,21 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
         # if (self.started or self.restore_from_path) and not self.config.debug:
-        #    self.logger.info(f"Experiment was already started in the past.")
+        #    logger.info(f"Experiment was already started in the past.")
         #    self.restore_from_path = self.checkpoints_dir / "state.json"
-        #    self.logger.info(f"Will load state from {self.restore_from_path}")
+        #    logger.info(f"Will load state from {self.restore_from_path}")
         #    self.load_state(self.restore_from_path)
 
         if self.done:
-            self.logger.info(f"Experiment is already done.")
+            logger.info(f"Experiment is already done.")
             # exit()
 
         if self.state.global_step == 0:
-            self.logger.info("Starting from scratch!")
+            logger.info("Starting from scratch!")
             self.state.tasks = self.create_tasks_for_dataset(self.dataset)
         else:
-            self.logger.info(f"Starting from global step {self.state.global_step}")
-            self.logger.info(f"i={self.state.i}, j={self.state.j}")
+            logger.info(f"Starting from global step {self.state.global_step}")
+            logger.info(f"i={self.state.i}, j={self.state.j}")
 
         self.tasks = self.state.tasks
         # if not self.config.debug:
@@ -182,7 +182,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         self.load_datasets(self.tasks)
         self.n_tasks = len(self.tasks)
 
-        self.logger.info(f"Class Ordering: {self.state.tasks}")
+        logger.info(f"Class Ordering: {self.state.tasks}")
 
         if self.state.global_step == 0:
             self.state.knn_losses = [[None] * self.n_tasks] * self.n_tasks  # [N,N]
@@ -191,7 +191,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
         for i in range(self.state.i, self.n_tasks):
             self.state.i = i
-            self.logger.info(f"Starting task {i} with classes {self.tasks[i]}")
+            logger.info(f"Starting task {i} with classes {self.tasks[i]}")
 
 
             # if i > 0:
@@ -245,7 +245,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                     max_epochs=self.supervised_epochs_per_task,
                     description=f"Task {i} (Supervised)", patience=self.config.patience
                 )
-                self.logger.debug(f"Size the state object: {getsizeof(self.state)}")
+                logger.debug(f"Size the state object: {getsizeof(self.state)}")
 
             # TODO: save the state during training.
             # self.save()
@@ -286,7 +286,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 accuracy = valid_knn_loss.metrics["KNN"].accuracy
                 loss = valid_knn_loss.total_loss
 
-                self.logger.info(f"knn_losses[{i}][{j}]/valid Accuracy: {accuracy:.2%}, loss: {loss}")
+                logger.info(f"knn_losses[{i}][{j}]/valid Accuracy: {accuracy:.2%}, loss: {loss}")
 
                 if j <= i:
                     # If we have previously trained on this task:
@@ -348,7 +348,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             accuracy = valid_knn_loss.metrics["KNN"].accuracy
             loss = valid_knn_loss.total_loss
 
-            self.logger.info(f"knn_losses[{i}][{j}]/valid Accuracy: {accuracy:.2%}, loss: {loss}")
+            logger.info(f"knn_losses[{i}][{j}]/valid Accuracy: {accuracy:.2%}, loss: {loss}")
 
             if j <= i:
                 # If we have previously trained on this task:

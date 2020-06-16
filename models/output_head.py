@@ -2,7 +2,7 @@ from torch import nn, Tensor
 from dataclasses import dataclass
 from typing import List
 from simple_parsing import list_field
-from utils.json_utils import JsonSerializable
+from utils.json_utils import Serializable
 from torch.nn import Flatten
 
 
@@ -14,7 +14,7 @@ class OutputHead(nn.Module):
     """
 
     @dataclass
-    class HParams(JsonSerializable):
+    class HParams(Serializable):
         """ Hyperparameters of the output head. """
         # Number of hidden layers in the output head.
         hidden_layers: int = 0

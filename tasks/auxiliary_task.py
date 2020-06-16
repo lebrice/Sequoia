@@ -8,6 +8,8 @@ from torch.nn import functional as F
 from common.losses import LossInfo
 from common.task import Task
 from utils import cuda_available
+from simple_parsing.helpers import Serializable
+
 
 class AuxiliaryTask(nn.Module):
     """ Represents an additional loss to apply to a `Classifier`.
@@ -29,7 +31,7 @@ class AuxiliaryTask(nn.Module):
     preprocessing: ClassVar[Callable[[Tensor, Optional[Tensor]], Tuple[Tensor, Optional[Tensor]]]]
     
     @dataclass
-    class Options:
+    class Options(Serializable):
         """Settings for this Auxiliary Task. """
         # Coefficient used to scale the task loss before adding it to the total.
         coefficient: float = 0.

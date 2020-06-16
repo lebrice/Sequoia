@@ -6,7 +6,7 @@ from torch import Tensor
 from collections import OrderedDict
 import torch.nn.functional as functional
 from utils.json_utils import encode
-from utils.json_utils import JsonSerializable
+from utils.json_utils import Serializable
 import logging
 
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__file__)
 
 
 @dataclass 
-class Metrics(JsonSerializable):
+class Metrics(Serializable):
     n_samples: int = 0
 
     x:      InitVar[Optional[Tensor]] = None
@@ -59,7 +59,7 @@ class Metrics(JsonSerializable):
         return OrderedDict()
 
 @dataclass
-class RegressionMetrics(Metrics, JsonSerializable):
+class RegressionMetrics(Metrics, Serializable):
     mse: Tensor = 0.  # type: ignore
 
     def __post_init__(self,

@@ -25,7 +25,7 @@ from common.task import Task
 from config import Config
 from models.output_head import OutputHead
 from tasks import AuxiliaryTask, AuxiliaryTaskOptions, Tasks
-from utils.json_utils import JsonSerializable
+from utils.json_utils import Serializable
 from utils.utils import fix_channels
 
 logger = logging.getLogger(__file__)
@@ -97,7 +97,7 @@ class Classifier(nn.Module):
         # Classifier output layer
         self.hparams: Classifier.HParams = hparams
         self.config = config
-        self.logger = self.config.get_logger(__file__)
+        logger = self.config.get_logger(__file__)
 
         self.hidden_size = hparams.hidden_size  
         self.classification_loss = nn.CrossEntropyLoss()
@@ -121,7 +121,7 @@ class Classifier(nn.Module):
         # Dictionary that maps from task classes to output head to be used.
         # By default, contains a single output head that serves all classes.
         self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()  # type: ignore 
-        self.logger.info(f"output heads: {self.output_heads}")
+        logger.info(f"output heads: {self.output_heads}")
 
         # Share the relevant parameters with all the auxiliary tasks.
         # We do this by setting class attributes.
@@ -138,10 +138,10 @@ class Classifier(nn.Module):
         )
 
         if self.config.debug and self.config.verbose:
-            self.logger.debug(self)
-            self.logger.debug("Auxiliary tasks:")
+            logger.debug(self)
+            logger.debug("Auxiliary tasks:")
             for task_name, task in self.tasks.items():
-                self.logger.debug(f"{task.name}: {task.coefficient}")
+                logger.debug(f"{task.name}: {task.coefficient}")
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
         
@@ -196,7 +196,7 @@ class Classifier(nn.Module):
 
         if self.config.debug and self.config.verbose:
             for name, loss in total_loss.losses.items():
-                self.logger.debug(name, loss.total_loss, loss.metrics)
+                logger.debug(name, loss.total_loss, loss.metrics)
         
         return total_loss
 
@@ -282,18 +282,22 @@ class Classifier(nn.Module):
 
     @current_task.setter
     def current_task(self, task: Task):
+        """ Sets the current task.
+        
+        Used to create output heads when using a multihead model.
+        """
         assert isinstance(task, Task), f"Please set the current_task by passing a `Task` object."
         self._current_task = task
         
         if not self.hparams.multihead:
             # not a multihead model, so we just return.
-            print("just returning, since we're not a multihead model.")
+            logger.debug(f"just returning, since we're not a multihead model.")
             return
 
         task_str = task.dumps()
         if task_str not in self.output_heads:
             # If there isn't an output head for this task
-            self.logger.debug(f"Creating a new output head for task {task}.")
+            logger.debug(f"Creating a new output head for task {task}.")
             new_output_head = OutputHead(
                 input_size=self.hidden_size,
                 output_size=len(task.classes),
@@ -310,7 +314,6 @@ class Classifier(nn.Module):
 
         # Update the classifier used by auxiliary tasks:
         AuxiliaryTask.classifier = task_head
-
 
     def logits(self, h_x: Tensor) -> Tensor:
         if self.hparams.detach_classifier:

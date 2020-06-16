@@ -8,12 +8,12 @@ from pathlib import Path
 from pprint import pprint
 from typing import (Any, Callable, Dict, Iterable, List, Optional, Tuple, Type,
                     TypeVar, Union)
-
+from enum import Enum
 import numpy as np
 import torch
-from simple_parsing.helpers import JsonSerializable as JsonSerializableBase
-from simple_parsing.helpers import SimpleEncoder, encode
-from simple_parsing.helpers.serialization import register_decoding_fn, from_dict
+from simple_parsing.helpers import Serializable as SerializableBase
+from simple_parsing.helpers import encode, SimpleJsonEncoder
+from simple_parsing.helpers.serialization import register_decoding_fn
 from torch import Tensor, nn
 
 T = TypeVar("T")
@@ -22,44 +22,62 @@ logger = logging.getLogger(__file__)
 register_decoding_fn(Tensor, torch.as_tensor)
 register_decoding_fn(np.ndarray, np.asarray)
 
-@dataclass
-class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):  # type: ignore
-    
-    def dumps(self, *, sort_keys=True, **dumps_kwargs) -> str:
-        dumps_kwargs.setdefault("sort_keys", sort_keys)
-        return super().dumps(**dumps_kwargs)
+from simple_parsing.helpers.serialization import encode
 
-    def save_json(self, path: Path, **dump_kwargs) -> None:
+@dataclass
+class ModelStateDict(Dict[str, Tensor]):
+    def __init__(self, path: Optional[Union[Path]]):
+        if isinstance(path, Path):
+            state_dict: Dict[str, Tensor] = torch.load(str(path))
+        super().__init__(state_dict)
+    
+    def save(self, path: Path):
+        # TODO: A bit of a stretch, but we could detect when a field that is
+        # supposed to be, say a state dict is instead a Path, and just load it
+        # from there!
+        model_state_dict: Dict[str, Tensor] = OrderedDict()
+        if save_model_weights:
+            for k, tensor in self.model.state_dict().items():
+                model_state_dict[k] = tensor.detach().cpu()
+
+@encode.register
+def encode_tensor(obj: Tensor) -> List:
+    return obj.detach().cpu().tolist()
+
+
+@encode.register
+def encode_ndarray(obj: np.ndarray) -> List:
+    return obj.tolist()
+
+
+
+@dataclass
+class Serializable(SerializableBase, decode_into_subclasses=True):  # type: ignore
+    
+    def save(self, path: Union[str, Path], **kwargs) -> None:
+        path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         # Save to temp file, so we don't corrupt the save file.
-        save_path_tmp = path.with_suffix(".tmp")
+        save_path_tmp = path.with_name(path.stem + "_temp" + path.suffix)
         # write out to the temp file.
-        with open(save_path_tmp, "w") as f:
-            self.dump(f, **dump_kwargs)
+        super().save(save_path_tmp)
         # Rename the temp file to the right path, overwriting it if it exists.
         save_path_tmp.replace(path)
-        # super().save_json(path, **dump_kwargs)
 
     def __getstate__(self):
         """ We implement this to just make sure to detach the tensors if any
         before pickling.
         """
-        # Copy the object's state from self.__dict__ which contains
-        # all our instance attributes. Always use the dict.copy()
-        # method to avoid modifying the original state.
-        state = self.__dict__.copy()
-        for key, value in state.items():
-            if isinstance(value, Tensor):
-                if value.requires_grad:
-                    value = value.detach()
-                state[key] = value.cpu()
-        # Remove the unpicklable entries.
-        return state
+        logger.debug(f"__getstate__ was called.")
+        # Use `vars(self)`` to get all the attributes, not just the fields.
+        d = vars(self)
+        # Overwrite with `self.to_dict()` so we get fields in nice format.
+        d.update(self.to_dict())
+        return d
     
-    def to_dict(self) -> Dict:
-        return self.__getstate__()
-        # return super().to_dict()
-        # return asdict(self)
+    def __setstate__(self, state: Dict):
+        logger.debug(f"setstate was called")
+        pass
 
     def detach(self):
         """Move all tensor attributes to the CPU and then detach them in-place.
@@ -79,14 +97,14 @@ class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):  # ty
         for key, value in vars(self).items():
             if isinstance(value, Tensor):
                 value = value.detach()
-            if isinstance(value, JsonSerializable):
+            if isinstance(value, Serializable):
                 value = value.detach()
             setattr(self, key, value)
         return self
 
     def cpu(self) -> None:
         for key, value in vars(self).items():
-            if isinstance(value, (Tensor, JsonSerializable)):
+            if isinstance(value, (Tensor, Serializable)):
                 value = value.cpu()
             setattr(self, key, value)
 
@@ -111,13 +129,18 @@ def encode_device(obj: torch.device) -> str:
     return str(obj)
 
 
+@encode.register
+def encode_enum(value: Enum):
+    return value.value
+
+
 def is_json_serializable(value: str):
-    if isinstance(value, JsonSerializable):
+    if isinstance(value, Serializable):
         return True
     elif type(value) in encode.registry:
         return True
     try:
-        return json.loads(json.dumps(value, cls=SimpleEncoder)) == value 
+        return json.loads(json.dumps(value, cls=SimpleJsonEncoder)) == value 
     except:
         return False
 

@@ -28,10 +28,8 @@ from models.output_head import OutputHead
 from simple_parsing import choice, field, list_field, mutable_field, subparsers
 from tasks import Tasks
 from utils import utils
-from utils.json_utils import JsonSerializable
-from utils.utils import (common_fields, n_consecutive, rgetattr, roundrobin,
-                         rsetattr)
-
+from simple_parsing.helpers import Serializable
+from utils.utils import n_consecutive, roundrobin
 logger = logging.getLogger(__file__)
 
 
@@ -41,6 +39,7 @@ class TaskIncremental(Experiment):
     """
     @dataclass
     class Config(Experiment.Config):
+        """ Configuration options for the TaskIncremental experiment. """
         # Number of classes per task.
         n_classes_per_task: int = 2
         # Wether to sort out the classes in the class_incremental setting.
@@ -55,8 +54,6 @@ class TaskIncremental(Experiment):
         task_labels_at_train_time: bool = True
         task_labels_at_test_time:  bool = True
 
-    # Experiment Configuration.
-    config: InitVar["TaskIncremental.Config"]
 
     @dataclass
     class State(Experiment.State):
@@ -86,7 +83,10 @@ class TaskIncremental(Experiment):
         # Cumulative losses after each task
         cumul_losses: List[Optional[LossInfo]] = list_field()
 
-    state: State = mutable_field(State)
+    # Experiment Configuration.
+    config: Config = mutable_field(Config)     # Overwrite the type from Experiment.
+    # Experiment state.
+    state: State = mutable_field(State, init=False)        # Overwrite the type from Experiment.
 
     def __post_init__(self, *args, **kwargs):
         """ NOTE: fields that are created in __post_init__ aren't serialized to/from json! """
@@ -123,6 +123,7 @@ class TaskIncremental(Experiment):
             logger.info(f"i={self.state.i}, j={self.state.j}")
         
         self.tasks = self.state.tasks
+        logger.info(f"Class Ordering: {self.state.tasks}")
         # save the state, just in case.
         self.save_state(save_model_weights=False)
         
@@ -185,7 +186,6 @@ class TaskIncremental(Experiment):
         """
         self.setup()
 
-        logger.info(f"Class Ordering: {self.state.tasks}")
         
         for i in range(self.state.i, self.n_tasks):
             self.state.i = i
@@ -193,13 +193,13 @@ class TaskIncremental(Experiment):
 
             print("HERE")
             self.on_task_switch(self.tasks[i])
-            from torch.utils.data import ConcatDataset
             # Training and validation datasets for task i.
             train_i_dataset = self.train_datasets[i]
             valid_i_dataset = self.valid_datasets[i]
             if self.replay_buffer:
                 # Append the replay buffer to the end of the training dataset.
                 # TODO: Should we shuffle them together?
+                # TODO: Should we also add some data from previous tasks in the validation dataset?
                 train_i_dataset += self.replay_buffer.as_dataset()
 
             train_i_loader = self.get_dataloader(train_i_dataset)
@@ -757,10 +757,9 @@ def get_supervised_accuracy(loss: LossInfo, mode: str="Test") -> float:
 if __name__ == "__main__":
     from simple_parsing import ArgumentParser
     parser = ArgumentParser()
-    parser.add_arguments(TaskIncremental.Config, dest="config")
     
+    parser.add_arguments(TaskIncremental, dest="experiment")
+
     args = parser.parse_args()
-    config: TaskIncremental.Config = args.config
-    
-    experiment = TaskIncremental(config)
+    experiment: TaskIncremental = args.experiment
     experiment.launch()

@@ -9,7 +9,7 @@ from torch import Tensor
 from config import Config
 import wandb
 from models.classifier import Classifier
-from utils.json_utils import JsonSerializable
+from utils.json_utils import Serializable
 
 from functools import singledispatch
 
@@ -57,5 +57,6 @@ def save(obj: object, save_path: Path) -> None:
 
 
 @save.register
-def save_json(obj: JsonSerializable, save_path: Path) -> None:
-    obj.save_json(save_path)
+def save_serializable(obj: Serializable, save_path: Path) -> None:
+    save_path.parent.mkdir(exist_ok=True, parents=True)
+    obj.save(save_path)

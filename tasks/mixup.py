@@ -149,7 +149,7 @@ class MixupTask(AuxiliaryTask):
                  options: "MixupTask.Options"=None):
         super().__init__(coefficient=coefficient, name=name, options=options)
         self.options: MixupTask.Options
-        self.logger = Config.get_logger(__file__)
+        logger = Config.get_logger(__file__)
 
         # Exponential moving average versions of the encoder and output head.
         self.mean_encoder: nn.Module = deepcopy(AuxiliaryTask.encoder)
@@ -195,7 +195,7 @@ class MixupTask(AuxiliaryTask):
 
     def on_task_switch(self, task: Task, **kwargs) -> None:
         if self.enabled and task != self.previous_task:
-            self.logger.info(f"Discarding the mean classifier on switch to task {task}")
+            logger.info(f"Discarding the mean classifier on switch to task {task}")
             self.mean_classifier = deepcopy(AuxiliaryTask.classifier)
             self.previous_task = task
 

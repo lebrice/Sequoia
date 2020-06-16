@@ -19,8 +19,10 @@ class ExperimentWithVAE(ExperimentBase):
     Reconstructs and/or generates samples periodically during training if any of
     of the autoencoder/generative model based auxiliary tasks are used.
     """
-    reconstruction_task: Optional[AEReconstructionTask] = None
-    generation_task: Optional[VAEReconstructionTask] = None
+    def __post_init__(self, *args, **kwargs):
+        super().__post_init__(*args, **kwargs)
+        self.reconstruction_task: Optional[AEReconstructionTask] = None
+        self.generation_task: Optional[VAEReconstructionTask] = None
     
     def init_model(self):
         self.model = super().init_model()
@@ -28,7 +30,7 @@ class ExperimentWithVAE(ExperimentBase):
         if Tasks.VAE in self.model.tasks:
             self.reconstruction_task = self.model.tasks[Tasks.VAE]
             self.generation_task = self.reconstruction_task
-            self.latents_batch = torch.randn(64, self.config.hparams.hidden_size)
+            self.latents_batch = torch.randn(64, self.hparams.hidden_size)
         elif Tasks.AE in self.model.tasks:
             self.reconstruction_task = self.model.tasks[Tasks.AE]
             self.generation_task = None

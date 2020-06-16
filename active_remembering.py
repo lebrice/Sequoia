@@ -53,8 +53,8 @@ class ActiveRemembering(TaskIncremental):
             TrainValidLosses()
         )
 
-        self.global_step = train_valid_losses.latest_step()
-        if self.global_step != 0:
+        self.state.global_step = train_valid_losses.latest_step()
+        if self.state.global_step != 0:
             self.plot_sections = try_load(self.results_dir / "plot_labels.pt", [])
             # TODO: reset the state of the experiment.
             print(f"Experiment is already at step {self.global_step}")
@@ -62,7 +62,7 @@ class ActiveRemembering(TaskIncremental):
             self.tasks = []
 
         for task_index, task in enumerate(self.tasks):
-            self.logger.info(f"Starting task {task_index} with classes {task}")
+            logger.info(f"Starting task {task_index} with classes {task}")
             
             train_i: VisionDatasetSubset = self.train_datasets[task_index]
             valid_i: VisionDatasetSubset = self.valid_datasets[task_index]
