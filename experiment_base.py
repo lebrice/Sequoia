@@ -28,17 +28,16 @@ from datasets import Cifar10, Cifar100, DatasetConfig, FashionMnist, Mnist
 from datasets.data_utils import train_valid_split
 from datasets.subset import ClassSubset, Subset
 from models.classifier import Classifier
-from save_job import SaveTuple
 from simple_parsing import choice, field, mutable_field, subparsers
-from simple_parsing.helpers import FlattenedAccess
+from simple_parsing.helpers import FlattenedAccess, Serializable
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
 from utils.logging_utils import pbar
+from utils.save_job import SaverWorker, SaveTuple, save
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
 
 logger = ConfigBase.get_logger(__file__)
-from simple_parsing.helpers import Serializable
 
 @dataclass
 class ExperimentBase(Serializable):
@@ -132,7 +131,7 @@ class ExperimentBase(Serializable):
             logger.setLevel(logging.DEBUG)
         
         # Background queue and worker for saving stuff to disk asynchronously.
-        from save_job import SaverWorker
+
         mp.set_start_method("spawn")
         self.background_queue: mp.Queue = mp.Queue()
         self.saver_worker: Optional[SaverWorker] = None
@@ -627,7 +626,6 @@ class ExperimentBase(Serializable):
             blocking (bool, optional): Wether to wait for the operation to
                 finish, or to delegate to a background process. Defaults to False.
         """
-        from save_job import SaverWorker, save
         assert isinstance(path, Path), f"positional argument 'path' should be a Path! (got {path})"
         if blocking:
            save(obj, save_path=path)
