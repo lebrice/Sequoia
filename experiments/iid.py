@@ -24,9 +24,10 @@ from common.metrics import get_metrics
 from config import Config
 from datasets.dataset import Dataset
 from datasets.mnist import Mnist
-from experiment import Experiment
 from models.classifier import Classifier
 from tasks import AuxiliaryTask, Tasks
+
+from .experiment import Experiment
 
 
 @dataclass

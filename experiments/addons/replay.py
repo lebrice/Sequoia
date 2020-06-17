@@ -229,7 +229,7 @@ class ReplayOptions(Serializable):
         return self.labeled_buffer_size > 0 or self.unlabeled_buffer_size > 0
 
 @dataclass  #  type: ignore
-class ExperimentWithReplay(ExperimentAddon):
+class ReplayAddon(ExperimentAddon):
     
     @dataclass
     class Config(ExperimentAddon.Config):

@@ -1,25 +1,26 @@
-import tqdm
-import torch
+from collections import OrderedDict, defaultdict
+from dataclasses import dataclass
+from itertools import accumulate, cycle, repeat
 from sys import getsizeof
+from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
+                    Tuple, Type, Union)
+
+import torch
+import tqdm
+from simple_parsing import list_field, mutable_field
 from torch import Tensor, nn
 from torch.autograd import Variable
-from itertools import repeat, cycle
-from models.classifier import Classifier
-from task_incremental import TaskIncremental
-from dataclasses import dataclass
-from datasets.subset import ClassSubset
-from common.losses import LossInfo
-from datasets.ss_dataset import get_semi_sampler
-from addons.curvature_analyser import Analyser
-from collections import OrderedDict, defaultdict
-from itertools import accumulate
-from torch.utils.data.sampler import SubsetRandomSampler
 from torch.utils.data import DataLoader, Dataset, TensorDataset
-from typing import Dict, Iterable, List, Tuple, Union, Optional, Any
-from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional, Tuple, Type, Union)
+from torch.utils.data.sampler import SubsetRandomSampler
+
 from common.losses import LossInfo, TrainValidLosses
-from simple_parsing import mutable_field, list_field
 from common.task import Task
+from datasets.ss_dataset import get_semi_sampler
+from datasets.subset import ClassSubset
+from models.classifier import Classifier
+
+from .addons.curvature_analyser import Analyser
+from .task_incremental import TaskIncremental
 
 
 @dataclass

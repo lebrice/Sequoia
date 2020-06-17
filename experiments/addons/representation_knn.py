@@ -28,7 +28,7 @@ class KnnClassifierOptions:
 
 
 @dataclass  # type: ignore
-class ExperimentWithKNN(ExperimentAddon): 
+class KnnAddon(ExperimentAddon): 
     """ Addon that adds the option of evaluating representations with a KNN.
     
     TODO: Perform the KNN evaluations in different processes using multiprocessing.

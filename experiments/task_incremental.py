@@ -23,7 +23,7 @@ from common.task import Task
 from datasets import DatasetConfig
 from datasets.data_utils import unbatch, unlabeled
 from datasets.subset import ClassSubset
-from experiment import Experiment
+from .experiment import Experiment
 from models.output_head import OutputHead
 from simple_parsing import choice, field, list_field, mutable_field, subparsers
 from tasks import Tasks
@@ -101,7 +101,6 @@ class TaskIncremental(Experiment):
         self.train_datasets: List[ClassSubset] = []
         self.valid_datasets: List[ClassSubset] = []
         self.test_datasets: List[ClassSubset] = []
-        
         # Cumulative datasets: Hold the data from previously seen tasks
         self.valid_cumul_datasets: List[ClassSubset] = []
         self.test_cumul_datasets: List[ClassSubset] = []

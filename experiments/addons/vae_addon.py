@@ -13,7 +13,7 @@ from tasks.tasks import Tasks
 import wandb
 
 @dataclass  # type: ignore
-class ExperimentWithVAE(ExperimentAddon):
+class SaveVaeSamplesAddon(ExperimentAddon):
     """ Add-on / mixin for Experiment which generates/reconstructs samples.
     
     Reconstructs and/or generates samples periodically during training if any of

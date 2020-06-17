@@ -11,13 +11,13 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from common.losses import LossInfo
+from common.losses import LossInfo, TrainValidLosses
 from datasets.subset import Dataset
-from task_incremental import TaskIncremental
 from utils.json_utils import try_load
 from utils.plotting import PlotSectionLabel
 
-from common.losses import TrainValidLosses
+from .task_incremental import TaskIncremental
+
 TrainAndValidLosses = TrainValidLosses
 
 
