@@ -166,7 +166,7 @@ class Config:
         )
         wandb.run.save()
 
-        if self.run_name is None:
+        if self.run_name is None:       
             self.run_name = wandb.run.name
         
         print(f"Using wandb. Group name: {self.run_group} run name: {self.run_name}, log_dir: {self.log_dir}")

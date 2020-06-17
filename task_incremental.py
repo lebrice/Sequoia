@@ -282,12 +282,12 @@ class TaskIncremental(Experiment):
 
         from utils.plotting import maximize_figure
         # Make the forward-backward transfer grid figure.
-        grid = self.make_transfer_grid_figure(
-            knn_losses=self.state.knn_losses,
-            task_losses=self.state.task_losses,
-            cumul_losses=self.state.cumul_losses
-        )
-        grid.savefig(self.plots_dir / "transfer_grid.png")
+        #grid = self.make_transfer_grid_figure(
+        #    knn_losses=self.state.knn_losses,
+        #    task_losses=self.state.task_losses,
+        #    cumul_losses=self.state.cumul_losses
+        #)
+        #grid.savefig(self.plots_dir / "transfer_grid.png")
         
         # if self.config.debug:
         #     grid.waitforbuttonpress(10)

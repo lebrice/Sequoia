@@ -65,7 +65,7 @@ class GaussianPrior(object):
     def consolidate(self, new_prior, task):
         self.prev_params = PVector.from_model(new_prior.model).clone().detach()
         if isinstance(self.F_linear_kfac.data, dict):
-            for (n, p), (n_, p_) in zip(self.F_linear_kfac.data.items(),new_prior.F_linear_kfac.data.items()):
+            for (n, p), (n_, p_) in zip(self.F_linear_kfac.data.items(),new_prior.F_bn_blockdiag.data.items()):
                 for item, item_ in zip(p, p_):
                     item.data = ((item.data*(task))+deepcopy(item_.data))/(task+1) #+ self.F_.data[n]
         else:

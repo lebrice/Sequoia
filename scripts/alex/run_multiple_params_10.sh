@@ -32,7 +32,7 @@ export SCRATCH=/network/tmp1/ostapeno/SSCl_$USER
 #SimCLR
 #bash sbatch_job_semi.sh 'SimCLR_conv_loss' 3 --wandb_project SSCL_6_test_005  --dataset cifar10 --simclr.coefficient 1 --multihead 1 --n_classes_per_task 2 --ratio_labelled 0.05 --supervised_epochs_per_task 200 --batch_size 128 --run_group cifar10_simclr_loss_metric --use_accuracy_as_metric 0 --random_class_ordering 0
 ##bash sbatch_job_semi.sh 'SimCLR_conv_acc' 3 --wandb_project SSCL_6_test_005  --dataset cifar10 --simclr.coefficient 1 --multihead 1 --n_classes_per_task 2 --ratio_labelled 0.05 --supervised_epochs_per_task 200 --batch_size 128 --run_group cifar10_simclr_accmetr --use_accuracy_as_metric 1 --random_class_ordering 0
-#bash sbatch_job_semi.sh 'SimCLR_conv_acc_cf10' 3 --wandb_project SSCL_6_test_005_cifar10_full_3 --semi_setup_full 1 --dataset cifar10 --simclr.coefficient 1 --double_augmentation 0 --multihead 1 --n_classes_per_task 2 --ratio_labelled 0.05 --supervised_epochs_per_task 200 --batch_size 128 --run_group cifar10_simclr_accmetr --run_name simclr_accmetr --use_accuracy_as_metric 1 --random_class_ordering 0
+bash sbatch_job_semi.sh 'SimCLR_conv_acc_cf10' 3 --wandb_project SSCL_6_test_005_cifar10_full_3 --semi_setup_full 1 --dataset cifar10 --simclr.coefficient 1 --double_augmentation 0 --multihead 1 --n_classes_per_task 2 --ratio_labelled 0.05 --supervised_epochs_per_task 200 --batch_size 128 --run_group cifar10_simclr_accmetr --run_name simclr_accmetr --use_accuracy_as_metric 1 --random_class_ordering 0
 
 
 #SimCLR + EWC
@@ -63,7 +63,6 @@ bash sbatch_job_semi.sh 'simclr_ewc_detached_conv_acc_cf10' 1 --wandb_project SS
 #bash sbatch_job_semi.sh 'simclr_ict_ewc_conv_loss' 3 --wandb_project SSCL_6_test_005  --dataset cifar10 --mixup.coefficient 1 --ewc.coefficient 100 --simclr.coefficient 1 --learning_rate 0.001 --lr_rampdown_epochs 350 --consistency_rampup_starts 1 --mixup_usup_alpha 1. --mixup_sup_alpha 0.01 --mixup_consistency 10 --consistency_rampup_ends 100 --multihead 1 --n_classes_per_task 2 --ratio_labelled 0.05 --supervised_epochs_per_task 200 --batch_size 128 --run_group cifar10_simclr_ict_ewc --use_accuracy_as_metric 0 --random_class_ordering 0
 ##bash sbatch_job_semi.sh 'simclr_ict_ewc_conv_acc' 3 --wandb_project SSCL_6_test_005  --dataset cifar10 --mixup.coefficient 1 --ewc.coefficient 100 --simclr.coefficient 1 --learning_rate 0.001 --lr_rampdown_epochs 350 --consistency_rampup_starts 1 --mixup_usup_alpha 1. --mixup_sup_alpha 0.01 --mixup_consistency 10 --consistency_rampup_ends 100 --multihead 1 --n_classes_per_task 2 --ratio_labelled 0.05 --supervised_epochs_per_task 200 --batch_size 128 --run_group cifar10_simclr_ict_ewc_accmetr --use_accuracy_as_metric 1 --random_class_ordering 0
 #bash sbatch_job_semi.sh 'simclr_ict_ewc_conv_acc_cf10' 2  --wandb_project SSCL_6_test_005_cifar10_full_3 --semi_setup_full 1 --dataset cifar10 --mixup.coefficient 1 --ewc.coefficient 100 --simclr.coefficient 1 --double_augmentation 0 --learning_rate 0.1 --lr_rampdown_epochs 300 --consistency_rampup_starts 1 --mixup_usup_alpha 1.0 --mixup_sup_alpha 0.1 --mixup_consistency 1 --consistency_rampup_ends 100 --multihead 1 --n_classes_per_task 2 --ratio_labelled 0.05 --supervised_epochs_per_task 200 --batch_size 128 --run_group cifar10_simclr_ict_ewc_accmetr --run_name simclr_ict_ewc_accmetr --use_accuracy_as_metric 1 --random_class_ordering 0
-
 
 
 
