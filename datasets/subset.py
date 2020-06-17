@@ -9,15 +9,23 @@ from torch import Tensor
 from torch.utils.data import TensorDataset, Dataset, Subset as SubsetBase
 from torchvision.transforms import Normalize
 from common.task import Task
-
+from torchvision.datasets import VisionDataset
 
 class Subset(SubsetBase):
     @property
     def data(self) -> Tensor:
+        if not isinstance(self.dataset.data, np.ndarray):
+            self.dataset.data = np.asarray(self.dataset.data)
+        if not isinstance(self.indices, np.ndarray):
+            self.indices = np.asarray(self.indices)
         return self.dataset.data[self.indices]
 
     @property
     def targets(self) -> Tensor:
+        if not isinstance(self.dataset.targets, np.ndarray):
+            self.dataset.targets = np.asarray(self.dataset.targets)
+        if not isinstance(self.indices, np.ndarray):
+            self.indices = np.asarray(self.indices)
         return self.dataset.targets[self.indices]
 
 
@@ -36,6 +44,12 @@ class ClassSubset(TensorDataset):
         if isinstance(labels, Task):
             labels = labels.classes
         self.labels: Set[int] = set(labels)
+
+
+        if isinstance(self.dataset, VisionDataset):
+            self.dataset.data = np.asarray(self.dataset.data)
+            self.dataset.targets = np.asarray(self.dataset.targets)
+
         # get the mask to select only the relevant items.
         mask = get_mask(self.dataset, self.labels)
         indices = mask.nonzero().flatten()
@@ -106,7 +120,9 @@ def get_mask(dataset: Dataset, labels: Iterable[int]) -> Tensor:
         A boolean mask to select the values from the dataset.
     """
     selected_mask = torch.zeros(len(dataset), dtype=torch.bool)
-    if isinstance(dataset, SubsetBase):
+    if isinstance(dataset, Subset):
+        targets = dataset.targets
+    elif isinstance(dataset, SubsetBase):
         targets = dataset.dataset.targets[dataset.indices]
     else:
         targets = dataset.targets

@@ -52,6 +52,25 @@ class LossInfo(JsonSerializable):
             if isinstance(loss, dict):
                 self.losses[name] = LossInfo.from_dict(loss)
 
+    @property
+    def metric(self) -> Optional[Metrics]:
+        """Shortcut for `self.metrics[self.name]`.
+
+        Returns:
+            Optional[Metrics]: The metrics associated with this LossInfo.
+        """
+        return self.metrics.get(self.name)
+
+    @property
+    def accuracy(self) -> float:
+        assert isinstance(self.metric, ClassificationMetrics)
+        return self.metric.accuracy
+    
+    @property
+    def mse(self) -> Tensor:
+        assert isinstance(self.metric, RegressionMetrics)
+        return self.metric.mse
+
     def __add__(self, other: "LossInfo") -> "LossInfo":
         """Adds two LossInfo instances together.
         
@@ -70,8 +89,6 @@ class LossInfo(JsonSerializable):
         LossInfo
             The merged/summed up LossInfo.
         """
-        
-
         name = self.name
         total_loss = self.total_loss + other.total_loss
         
@@ -85,8 +102,8 @@ class LossInfo(JsonSerializable):
             # TODO: setting in the 'metrics' dict, we are duplicating the
             # metrics, since they now reside in the `self.metrics[other.name]`
             # and `self.losses[other.name].metrics` attributes.
-            # metrics = self.metrics
-            metrics = add_dicts(self.metrics, other.metrics)
+            metrics = self.metrics
+            # metrics = add_dicts(self.metrics, {other.name: other.metrics})
         
         tensors = add_dicts(self.tensors, other.tensors, add_values=False)
         return LossInfo(
@@ -97,6 +114,35 @@ class LossInfo(JsonSerializable):
             tensors=tensors,
             metrics=metrics,
         )
+    
+    def __iadd__(self, other: "LossInfo") -> "LossInfo":
+        """Adds LossInfo to `self` in-place.
+        
+        Adds the losses, total loss and metrics. Overwrites the tensors.
+        Keeps the name of the first one. This is useful when doing something
+        like:
+        
+        ```
+        total_loss = LossInfo("Test")
+        for x, y in dataloader:
+            total_loss += model.get_loss(x=x, y=y)
+        ```      
+        
+        Returns
+        -------
+        LossInfo
+            `self`: The merged/summed up LossInfo.
+        """
+        self.total_loss = self.total_loss + other.total_loss
+        if self.name == other.name:
+            self.losses  = add_dicts(self.losses, other.losses)
+            self.metrics = add_dicts(self.metrics, other.metrics)
+        else:
+            # IDEA: when the names don't match, store the entire LossInfo
+            # object into the 'losses' dict, rather than a single loss tensor.
+            self.losses = add_dicts(self.losses, {other.name: other})
+        self.tensors = add_dicts(self.tensors, other.tensors, add_values=False)
+        return self
 
     def __mul__(self, coefficient: Union[float,Tensor]) -> "LossInfo":
         """ Scale each loss tensor by `coefficient`.
@@ -125,6 +171,7 @@ class LossInfo(JsonSerializable):
 
     def to_log_dict(self, verbose: bool=False) -> Dict[str, Union[str, float, Dict]]:
         log_dict: Dict[str, Union[str, float, Dict]] = OrderedDict()
+        log_dict["name"] = self.name
         # Log the total loss
         log_dict["total_loss"] = float(self.total_loss)
         
@@ -177,6 +224,24 @@ class LossInfo(JsonSerializable):
         self.tensors.clear()
         for n, loss in self.losses.items():
             loss.drop_tensors()
+
+    def absorb(self, other: "LossInfo") -> None:
+        """Absorbs `other` into `self`, merging the losses and metrics.
+
+        Args:
+            other ([type]): [description]
+        """
+        new_name = self.name
+        old_name = other.name
+        new_other = LossInfo(name=new_name)
+        # acumulate the metrics:
+        new_other.metrics = OrderedDict([
+            (k.replace(old_name, new_name), v) for k, v in other.metrics.items() 
+        ])
+        new_other.losses = OrderedDict([
+            (k.replace(old_name, new_name), v) for k, v in other.losses.items() 
+        ])
+        self += new_other
 
 
 @dataclass

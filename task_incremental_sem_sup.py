@@ -10,7 +10,6 @@ from itertools import repeat, cycle
 from models.classifier import Classifier
 from task_incremental import TaskIncremental
 from dataclasses import dataclass
-from torch.utils.data import Subset
 from datasets.subset import ClassSubset
 from common.losses import LossInfo
 from datasets.ss_dataset import get_semi_sampler

@@ -163,12 +163,11 @@ class Classifier(nn.Module):
         loss_info.metrics[Tasks.SUPERVISED] = metrics
         return loss_info
 
-    def get_loss(self, x: Tensor, y: Tensor=None) -> LossInfo:
+    def get_loss(self, x: Tensor, y: Tensor=None, name: str="") -> LossInfo:
         if y is not None and y.shape[0] != x.shape[0]:
             raise RuntimeError("Whole batch can either be fully labeled or "
                                "fully unlabeled, but not a mix of both (for now)")
-
-        total_loss = LossInfo("Train" if self.training else "Test")
+        total_loss = LossInfo(name)
         x, y = self.preprocess_inputs(x, y)
         h_x = self.encode(x)
         y_pred = self.logits(h_x)
@@ -215,7 +214,11 @@ class Classifier(nn.Module):
             The preprocessed inputs.
         """
         # Process 'x'
-        x = fix_channels(x)
+
+        if x.shape[1:] != self.input_shape:
+            x = fix_channels(x)
+        
+        assert x.shape[1:] == self.input_shape, f"{x.shape} != {self.input_shape}"
 
         if y is not None:
             # y_unique are the (sorted) unique values found within the batch.
@@ -300,9 +303,11 @@ class Classifier(nn.Module):
             if key.startswith("output_heads"):
                 task_json_str = key.split(".")[1]
                 task = Task.loads(task_json_str)
-                self.on_task_switch(task)
+                # Set the task ID attribute to create all the needed output heads.
+                self.current_task = task
+                
         # Reset the task_id to the starting value.
-        self.on_task_switch(starting_task)
+        self.current_task = starting_task
         missing, unexpected = super().load_state_dict(state_dict, strict)
         # TODO: Make sure the mean-encoder and mean-output-head modules are loaded property when using Mixup.
         return missing, unexpected

@@ -107,9 +107,10 @@ class EWC(AuxiliaryTask):
                        train_loader: DataLoader=None,
                        classifier_head: Task=None, **kwargs)-> None:
         """ Executed when the task switches (to either a new or known task). """
-        self.calculate_ewc_prior(prev_task, task, classifier_head)
         #set n_ways of the next task
         self.n_ways = len(task.classes)
+        if task and prev_task and train_loader and classifier_head and self.current_task_loader:
+            self.calculate_ewc_prior(prev_task, task, classifier_head)
         #set data loader of the next task
         current_task_loader = train_loader
         if current_task_loader is not None:
@@ -133,6 +134,7 @@ class EWC(AuxiliaryTask):
         assert isinstance(task_number, int), f"Task number should be an int, got {task_number}"
         if task_number>0:
             if task_number not in self.tasks_seen:
+                # TODO: should set this back to the previous mode (either Train or Val) no?
                 AuxiliaryTask.encoder.eval()
                 AuxiliaryTask.classifier.eval()
                 assert self.current_task_loader is not None, (

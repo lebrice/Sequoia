@@ -33,9 +33,10 @@ class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):  # ty
         path.parent.mkdir(parents=True, exist_ok=True)
         # Save to temp file, so we don't corrupt the save file.
         save_path_tmp = path.with_suffix(".tmp")
+        # write out to the temp file.
         with open(save_path_tmp, "w") as f:
             self.dump(f, **dump_kwargs)
-        # Rename (or replace) the save path with the temp file.
+        # Rename the temp file to the right path, overwriting it if it exists.
         save_path_tmp.replace(path)
         # super().save_json(path, **dump_kwargs)
 
@@ -56,10 +57,9 @@ class JsonSerializable(JsonSerializableBase, decode_into_subclasses=True):  # ty
         return state
     
     def to_dict(self) -> Dict:
-        self.detach()
-        if hasattr(self, "drop_tensors"):
-            self.drop_tensors()
-        return super().to_dict()
+        return self.__getstate__()
+        # return super().to_dict()
+        # return asdict(self)
 
     def detach(self):
         """Move all tensor attributes to the CPU and then detach them in-place.

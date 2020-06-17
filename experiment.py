@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
                     Tuple, Type, Union)
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -18,6 +19,7 @@ import tqdm
 import wandb
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset, Sampler, TensorDataset
+from torchvision.datasets import VisionDataset
 
 from common.losses import LossInfo, TrainValidLosses
 from common.metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
@@ -27,18 +29,19 @@ from datasets import DatasetConfig
 from datasets.cifar import Cifar10, Cifar100
 from datasets.fashion_mnist import FashionMnist
 from datasets.mnist import Mnist
-from datasets.subset import Subset
+from datasets.subset import ClassSubset, Subset
 from models.classifier import Classifier
+from save_job import SaveTuple
 from simple_parsing import choice, field, mutable_field, subparsers
 from simple_parsing.helpers import FlattenedAccess
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
+from utils.early_stopping import EarlyStoppingOptions, early_stopping
 from utils.json_utils import JsonSerializable, take_out_unsuported_values
 from utils.logging import pbar
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
-from utils.early_stopping import EarlyStoppingOptions, early_stopping
+
 logger = Config.get_logger(__file__)
-from save_job import SaveTuple
 
 @dataclass  # type: ignore
 class ExperimentBase(JsonSerializable):
@@ -124,9 +127,9 @@ class ExperimentBase(JsonSerializable):
 
     def cleanup(self):
         print("Cleaning up after the experiment is done.")
-        self.background_queue.put(None)
-        if self.saver_worker and self.saver_worker.is_alive():
-            self.saver_worker.join()
+        if self.saver_worker:
+            self.background_queue.put(None)
+            self.saver_worker.join(timeout=120)
         print("Successfully closed everything")
 
     def load_datasets(self) -> Tuple[Dataset, Dataset]:
@@ -135,7 +138,7 @@ class ExperimentBase(JsonSerializable):
         return train_dataset, test_dataset
 
 
-    def train_valid_split(self, train_dataset: Dataset, valid_fraction: float=0.2) -> Tuple[Dataset, Dataset]:
+    def train_valid_split(self, train_dataset: VisionDataset, valid_fraction: float=0.2) -> Tuple[VisionDataset, VisionDataset]:
         n = len(train_dataset)
         valid_len: int = int((n * valid_fraction))
         train_len: int = n - valid_len
@@ -278,21 +281,19 @@ class ExperimentBase(JsonSerializable):
         best_model_watcher = self.keep_best_model(
             use_acc=use_accuracy_as_metric,
             save_path=self.checkpoints_dir / "best_model.pth",
-            # previous_losses=validation_losses,
         )
         best_step = starting_step
         best_epoch = starting_epoch
-        next(best_model_watcher)
+        next(best_model_watcher) # Prime the generator
         
         # Hook to test for convergence.
         convergence_checker = early_stopping(
             options=early_stopping_options,
             use_acc=use_accuracy_as_metric,
-            # previous_losses=validation_losses,
         )
-        next(convergence_checker)
-        
-        # Hook for evaluating the validation performance periodically.
+        next(convergence_checker) # Prime the generator
+        # Hook for periodically evaluating the performance on batches from the
+        # validation dataset during training.
         valid_loss_gen = self.valid_performance_generator(valid_dataloader)
         
         # Message for the progressbar
@@ -332,17 +333,19 @@ class ExperimentBase(JsonSerializable):
 
             # perform a validation epoch.
             val_desc = desc + " Valid"
-            val_loss_info = self.test(valid_dataloader, description=val_desc)
+            val_loss_info = self.test(valid_dataloader, description=val_desc, name="Valid")
+            validation_losses.append(val_loss_info)
+
             if temp_save_dir:
-                val_loss_info.drop_tensors()
-                # TODO: do this in the background saver thread.
-                val_loss_info.save_json(temp_save_dir / f"val_loss_{i}.json")
-                all_losses.save_json(temp_save_dir / f"all_losses.json")
+                # Save these files in the background using the saver process.
+                self.save(temp_save_dir / f"val_loss_{i}.json", val_loss_info)
+                self.save(temp_save_dir / f"all_losses.json", all_losses)
             
+            # Inform the best model watcher of the latest performance of the model.
             best_step = best_model_watcher.send(val_loss_info)
             logger.debug(f"Best step so far: {best_step}")
 
-            best_epoch = (best_step - starting_step) // int(np.mean(epoch_length))
+            best_epoch = best_step // int(np.mean(epoch_lengths))
             logger.debug(f"Best epoch so far: {best_epoch}")
 
             converged = convergence_checker.send(val_loss_info)
@@ -362,7 +365,8 @@ class ExperimentBase(JsonSerializable):
 
         logger.info(f"Best step: {best_step}, best_epoch: {best_epoch}, ")
         all_losses.keep_up_to_step(best_step)
-       
+
+        # TODO: Should we also return the array of validation losses at each epoch (`validation_losses`)?
         return all_losses
 
     def keep_best_model(self, use_acc: bool=False, save_path: Path=None) -> Generator[int, Optional[LossInfo], None]:
@@ -371,11 +375,12 @@ class ExperimentBase(JsonSerializable):
         # Temporary file, used to make sure we don't corrupt the best weights
         # file if the script is killed while copying stuff.
         save_path_tmp = save_path.with_suffix(".tmp")
-        
+
         def save_weights():
             state_dict = self.model.state_dict()
             torch.save(state_dict, save_path_tmp)
             save_path_tmp.replace(save_path)
+            self.state.model_weights_path = save_path
             logger.info(f"Saved best model weights to path {save_path}.")
         
         def load_weights():
@@ -427,7 +432,7 @@ class ExperimentBase(JsonSerializable):
             for batch in valid_dataloader:
                 data = batch[0].to(self.model.device)
                 target = batch[1].to(self.model.device) if len(batch) == 2 else None
-                yield self.test_batch(data, target)
+                yield self.test_batch(data, target, name="Valid")
         logger.info("Somehow exited the infinite while loop!")
 
     def train_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
@@ -441,10 +446,11 @@ class ExperimentBase(JsonSerializable):
         target = batch[1].to(self.model.device) if len(batch) == 2 else None  # type: ignore
         return data, target
 
-    def train_batch(self, data: Tensor, target: Optional[Tensor]) -> LossInfo:
+    def train_batch(self, data: Tensor, target: Optional[Tensor], name: str="Train") -> LossInfo:
+        self.model.train()
         self.model.optimizer.zero_grad()
 
-        batch_loss_info = self.model.get_loss(data, target)
+        batch_loss_info = self.model.get_loss(data, target, name=name)
         total_loss = batch_loss_info.total_loss
         total_loss.backward()
 
@@ -472,7 +478,7 @@ class ExperimentBase(JsonSerializable):
                 pbar.set_postfix(message)
         
         total_loss.drop_tensors()
-        return total_loss
+        return total_loss.detach()
 
     def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.eval()
@@ -480,11 +486,11 @@ class ExperimentBase(JsonSerializable):
             data, target = self.preprocess(batch)
             yield self.test_batch(data, target)
 
-    def test_batch(self, data: Tensor, target: Tensor=None) -> LossInfo:
+    def test_batch(self, data: Tensor, target: Tensor=None, name: str="Test") -> LossInfo:
         was_training = self.model.training
         self.model.eval()
         with torch.no_grad():
-            loss = self.model.get_loss(data, target)
+            loss = self.model.get_loss(data, target, name=name)
         if was_training:
             self.model.train()
         return loss
@@ -499,42 +505,44 @@ class ExperimentBase(JsonSerializable):
             pin_memory=self.config.use_cuda,
         )
     
-    def save(self, save_dir: Path=None, save_model_weights: bool=True, blocking: bool=False) -> None:
-        if self.saver_worker is None:
-            from save_job import SaverWorker
-            self.saver_worker = SaverWorker(self.config, self.background_queue)
-        if not self.saver_worker.is_alive():
-            self.saver_worker.start()
-
-        # If there are common attributes between the Experiment and the State
-        # objects, then also copy them over into the State to be saved.
-        # NOTE: (FN) This is a bit extra, I don't think its needed.
-        for name, (v1, v2) in common_fields(self, self.state):
-            logger.debug(f"Copying the '{name}' attribute into the 'State' object to be saved.")
-            setattr(self.state, name, v1)
-        
-        self.state.global_step = self.global_step
+    def save_state(self, save_dir: Path=None, save_model_weights: bool=True) -> None:
         save_dir = save_dir or self.checkpoints_dir
         
-        model_state_dict: Optional[Dict[str, Tensor]] = None
+        # Store the most up to date global step in the state object.
+        self.state.global_step = self.global_step or self.state.global_step
+        
+        model_state_dict: Dict[str, Tensor] = OrderedDict()
         if save_model_weights:
-            model_state_dict = OrderedDict()
-            tensor: Tensor
             for k, tensor in self.model.state_dict().items():
                 model_state_dict[k] = tensor.detach().cpu()
 
         logger.debug(f"Saving state (in background) to save_dir {save_dir}")
-
-
-        self.background_queue.put(SaveTuple(save_dir / "state.json", self.state))
+        self.save(save_dir / "state.json", self.state)
         if model_state_dict:
-            self.background_queue.put(SaveTuple(save_dir / "model_weights.pth", model_state_dict))
-        
+            self.save(save_dir / "model_weights.pth", model_state_dict)
+
+    def save(self, path: Path, obj: Any, blocking: bool=True) -> None:
+        """Save the object `obj` to path `path`.
+
+        If `blocking` is False, uses a background process. Otherwise, blocks
+        until saving is complete. 
+
+        Args:
+            path (Path): Path to save to.
+            obj (Any): object to save. (if JsonSerializable, will be saved to json)
+            blocking (bool, optional): Wether to wait for the operation to
+                finish, or to delegate to a background process. Defaults to False.
+        """
+        from save_job import SaverWorker, save
+        assert isinstance(path, Path), f"positional argument 'path' should be a Path! (got {path})"
         if blocking:
-            self.background_queue.put(None)
-            self.saver_worker.join()
-            self.saver_worker.kill()
-      
+           save(obj, save_path=path)
+        else:
+            if self.saver_worker is None:
+                self.saver_worker = SaverWorker(self.config, self.background_queue)
+            if not self.saver_worker.is_alive():
+                self.saver_worker.start()
+            self.background_queue.put(SaveTuple(save_path=path, obj=obj))
 
     def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
         if always_print or (self.config.debug and self.config.verbose):
@@ -692,9 +700,10 @@ class ExperimentBase(JsonSerializable):
 from addons import (ExperimentWithKNN, ExperimentWithVAE,
                     LabeledPlotRegionsAddon, TestTimeTrainingAddon)
 
+
 @dataclass  # type: ignore
 class Experiment(ExperimentWithKNN, ExperimentWithVAE,
-                 TestTimeTrainingAddon, LabeledPlotRegionsAddon, ):
+                 TestTimeTrainingAddon, LabeledPlotRegionsAddon):
     """ Describes the parameters of an experimental setting.
     
     (ex: Mnist_iid, Mnist_continual, Cifar10, etc. etc.)

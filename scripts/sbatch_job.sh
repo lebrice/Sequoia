@@ -8,5 +8,5 @@ ARGS=${@:3}
 
 mkdir -p "$SCRATCH/slurm_out/$NAME"
 echo "Launching sbatch --output $OUT --job-name $NAME --array=1-$N_JOBS ./scripts/run.sh $ARGS"
-sbatch --output $OUT --job-name $NAME --time 0:10:0 --array=1-$N_JOBS ./scripts/run.sh $ARGS
+sbatch --output $OUT --job-name $NAME --time 12:00:00 --array=1-$N_JOBS ./scripts/run.sh $ARGS
 
