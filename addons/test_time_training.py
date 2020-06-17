@@ -3,16 +3,16 @@ from dataclasses import dataclass
 from torch import Tensor
 
 from common.losses import LossInfo
-from experiment import ExperimentBase
+from .addon import ExperimentAddon
 from simple_parsing import mutable_field
 
 
 @dataclass  # type: ignore
-class TestTimeTrainingAddon(ExperimentBase):
+class TestTimeTrainingAddon(ExperimentAddon):
     """ Experiment where we also perform self-supervised training at test-time.
     """
     @dataclass
-    class Config(ExperimentBase.Config):
+    class Config(ExperimentAddon.Config):
         # Wether or not to train using self-supervision even at test-time.
         test_time_training: bool = False
     

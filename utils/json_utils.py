@@ -60,7 +60,7 @@ class Serializable(SerializableBase, decode_into_subclasses=True):  # type: igno
         # Save to temp file, so we don't corrupt the save file.
         save_path_tmp = path.with_name(path.stem + "_temp" + path.suffix)
         # write out to the temp file.
-        super().save(save_path_tmp)
+        super().save(save_path_tmp, **kwargs)
         # Rename the temp file to the right path, overwriting it if it exists.
         save_path_tmp.replace(path)
 

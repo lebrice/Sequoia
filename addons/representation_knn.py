@@ -12,7 +12,7 @@ from torch.nn.functional import one_hot
 from torch.utils.data import DataLoader, Dataset
 
 from common.losses import LossInfo
-from experiment import ExperimentBase
+from .addon import ExperimentAddon
 from utils.logging_utils import pbar
 from simple_parsing import field
 
@@ -28,14 +28,14 @@ class KnnClassifierOptions:
 
 
 @dataclass  # type: ignore
-class ExperimentWithKNN(ExperimentBase): 
+class ExperimentWithKNN(ExperimentAddon): 
     """ Addon that adds the option of evaluating representations with a KNN.
     
     TODO: Perform the KNN evaluations in different processes using multiprocessing.
     """
 
     @dataclass
-    class Config(ExperimentBase.Config):
+    class Config(ExperimentAddon.Config):
         # Options for the KNN classifier 
         knn_options: KnnClassifierOptions = mutable_field(KnnClassifierOptions)
 

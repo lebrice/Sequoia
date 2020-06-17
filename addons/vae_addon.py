@@ -7,13 +7,13 @@ from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
 from common.losses import LossInfo
-from experiment import ExperimentBase
+from .addon import ExperimentAddon
 from tasks.reconstruction import AEReconstructionTask, VAEReconstructionTask
 from tasks.tasks import Tasks
 import wandb
 
 @dataclass  # type: ignore
-class ExperimentWithVAE(ExperimentBase):
+class ExperimentWithVAE(ExperimentAddon):
     """ Add-on / mixin for Experiment which generates/reconstructs samples.
     
     Reconstructs and/or generates samples periodically during training if any of

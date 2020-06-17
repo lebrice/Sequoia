@@ -40,7 +40,7 @@ from utils.utils import add_prefix, common_fields, is_nonempty_dir
 logger = ConfigBase.get_logger(__file__)
 from simple_parsing.helpers import Serializable
 
-@dataclass  # type: ignore
+@dataclass
 class ExperimentBase(Serializable):
     """Base-class for an Experiment.
 
@@ -141,9 +141,8 @@ class ExperimentBase(Serializable):
         print("Destroying the 'Experiment' object.")
         self.cleanup()
 
-    @abstractmethod
     def run(self):
-        pass
+        raise NotImplementedError("Implement your own run method in a derived class!")
 
     def launch(self):
         """ Launches the experiment.
@@ -172,11 +171,11 @@ class ExperimentBase(Serializable):
             logger.info(f"Experiment is incomplete at directory {self.config.log_dir}.")
             # TODO: Resume an interrupted experiment
         try:
-            logger.info("-" * 10, f"Starting experiment '{type(self).__name__}' ", "-" * 10)
+            logger.info("-" * 10 + f"Starting experiment '{type(self).__name__}' " + "-" * 10)
 
             self.run()
 
-            logger.info("-" * 10, f"Experiment '{type(self).__name__}' is done.", "-" * 10)
+            logger.info("-" * 10 + f"Experiment '{type(self).__name__}' is done." + "-" * 10)
             self.cleanup()
         
         except Exception as e:
@@ -349,7 +348,7 @@ class ExperimentBase(Serializable):
         # Get the latest step
         # NOTE: At the moment, will always be zero, but if we reload
         # `all_losses` from a file, would give you the step to start from.
-        starting_step = all_losses.latest_step() or self.global_step
+        starting_step = all_losses.latest_step() or self.state.global_step
         starting_epoch = len(validation_losses) + 1
 
         if early_stopping_options:
@@ -386,7 +385,7 @@ class ExperimentBase(Serializable):
             desc += f"Epoch {epoch}"
             pbar.set_description(desc + " Train")
 
-            epoch_start_step = self.global_step
+            epoch_start_step = self.state.global_step
             for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
                 train_loss.drop_tensors()
                 
@@ -395,7 +394,7 @@ class ExperimentBase(Serializable):
                     valid_loss = next(valid_loss_gen)
                     valid_loss.drop_tensors()
 
-                    all_losses[self.global_step] = (train_loss, valid_loss)
+                    all_losses[self.state.global_step] = (train_loss, valid_loss)
 
                     message.update(train_loss.to_pbar_message())
                     message.update(valid_loss.to_pbar_message())
@@ -416,8 +415,8 @@ class ExperimentBase(Serializable):
 
             if temp_save_dir:
                 # Save these files in the background using the saver process.
-                self.save(temp_save_dir / f"val_loss_{i}.json", val_loss_info)
-                self.save(temp_save_dir / f"all_losses.json", all_losses)
+                self.save_job(val_loss_info, temp_save_dir / f"val_loss_{i}.json")
+                self.save_job(all_losses, temp_save_dir / f"all_losses.json")
             
             # Inform the best model watcher of the latest performance of the model.
             best_step = best_model_watcher.send(val_loss_info)
@@ -467,13 +466,13 @@ class ExperimentBase(Serializable):
         
         best_perf: Optional[float] = None
         
-        step = self.global_step
+        step = self.state.global_step
         best_step: int = step
 
         loss_info: Optional[LossInfo] = (yield step)
 
         while loss_info is not None:
-            step = self.global_step
+            step = self.state.global_step
 
             val_loss = loss_info.total_loss.item()
             supervised_metrics = loss_info.metrics.get(Tasks.SUPERVISED)
@@ -575,28 +574,34 @@ class ExperimentBase(Serializable):
     def get_dataloader(self, dataset: Dataset, sampler: Sampler=None, shuffle: bool=True) -> DataLoader:
         return DataLoader(
             dataset,
-            batch_size=self.config.hparams.batch_size,
+            batch_size=self.hparams.batch_size,
             shuffle=shuffle,
             sampler=sampler,
             num_workers=self.config.num_workers,
             pin_memory=self.config.use_cuda,
         )
 
-    from save_job import save
-
-    @save.register
-    def save_experiment(self, save_path: Path):
+    def save_experiment(self, save_path: Path, blocking: bool=False):
         save_dir = save_path if save_path.is_dir() else save_path
         save_dir.mkdir(exist_ok=True, parents=True)
+
         saved_weights_path = save_dir / "model_weights.pth"
         state_dict = {
             k: t.detach().cpu() for k, t in self.model.state_dict().items()
         }
-        self.save_job(path=saved_weights_path, obj=state_dict, blocking=blocking)
+        self.save_job(obj=state_dict, path=saved_weights_path, blocking=blocking)
         # Update the `state` attribute to point to the new checkpoints file. 
         self.state.model_weights_path = saved_weights_path
 
     def save_state(self, save_dir: Path=None, save_model_weights: bool=True, blocking: bool=True) -> None:
+        """Saves the state of the experiment to the directory.
+
+        Args:
+            save_dir (Path, optional): Dicretory to save results in. Defaults to
+               None, in which case `self.checkpoints_dir` is used.
+            save_model_weights (bool, optional): [description]. Defaults to True.
+            blocking (bool, optional): [description]. Defaults to True.
+        """
         # Use checkpoints dir if save_dir is not given.
         save_dir = save_dir or self.checkpoints_dir
 
@@ -605,16 +610,16 @@ class ExperimentBase(Serializable):
             state_dict = {
                 k: t.detach().cpu() for k, t in self.model.state_dict().items()
             }
-            self.save_job(path=saved_weights_path, obj=state_dict, blocking=blocking)
+            self.save_job(obj=state_dict, path=saved_weights_path, blocking=blocking)
             # Update the `state` attribute to point to the new checkpoints file. 
             self.state.model_weights_path = saved_weights_path
-    
+        self.save_job(obj=self.state, path=save_dir / "state.json", blocking=blocking)
 
-    def save_job(self, path: Path, obj: Any, blocking: bool=True) -> None:
+    def save_job(self, obj: Any, path: Path, blocking: bool=True) -> None:
         """Save the object `obj` to path `path`.
 
         If `blocking` is False, uses a background process. Otherwise, blocks
-        until saving is complete. 
+        until saving is complete.
 
         Args:
             path (Path): Path to save to.
@@ -745,6 +750,14 @@ class ExperimentBase(Serializable):
     @property
     def started(self) -> bool:
         return is_nonempty_dir(self.checkpoints_dir)
+
+    @property
+    def global_step(self) -> int:
+        return self.state.global_step
+    
+    @global_step.setter
+    def global_step(self, value: int) -> None:
+        self.state.global_step = value
 
     @property
     def done(self) -> bool:

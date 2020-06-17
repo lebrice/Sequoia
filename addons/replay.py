@@ -11,7 +11,7 @@ from torch import Tensor, nn
 from collections import Counter
 from common.losses import LossInfo
 from config import Config as ConfigBase
-from experiment import ExperimentBase
+from .addon import ExperimentAddon
 from simple_parsing import field, mutable_field
 from utils.json_utils import Serializable
 from torch.utils.data import TensorDataset
@@ -209,78 +209,6 @@ class CoolReplayBuffer(nn.Module):
         self.labeled.clear()
         self.unlabeled.clear()
 
-    # @overload
-    # def sample(self, x: Tensor) -> Tensor:
-    #     pass
-
-    # @overload
-    # def sample(self, x: Tensor, y: Tensor) -> Tuple[Tensor, Tensor]:
-    #     pass
-    
-    # def sample(self, x: Tensor, y: Tensor=None) -> Union[Tensor, Tuple[Tensor, Tensor]]:
-    #     # TODO: For now we assume that we have either fully supervised data or
-    #     # fully unsupervised data.
-    #     # It should be possible to switch between the two modes by clearing the buffer.
-    #     batch_size = x.shape[0]
-    #     batch_is_labeled = y is not None
-
-    #     if self.labeled is None:
-    #         # If this is the first batch we encounter, then skip the check below
-    #         self.labeled = batch_is_labeled
-    #     elif batch_is_labeled != self.labeled:
-    #         logger.warning(UserWarning(
-    #             f"Clearing the replay buffer, as we are moving from "
-    #             f"{'un' if not self.labeled else ''}labeled to "
-    #             f"{'un' if not batch_is_labeled else ''}labeled data. "
-    #             f"(Replay buffer currently only supports either fully labeled "
-    #             f"or fully unlabeled  data, but not partially labeled data.)."
-    #         ))
-    #         self.clear()
-    #         self.labeled = batch_is_labeled
-        
-    #     if not hasattr(self, "data"):
-    #         self.register_buffer("data", x.new_empty([self.capacity, *x.shape[1:]]))
-    #     if y is not None and not hasattr(self, "labels"):
-    #         self.register_buffer("labels", y.new_empty([self.capacity, *y.shape[1:]]))
-
-    #     x = torch.cat((self.data[:self.current_size], x))
-    #     perm = torch.randperm(x.shape[0])
-    #     x = x[perm]
-
-    #     # We can only keep a maximum of `self.capacity` elements in the buffer.
-    #     cutoff = min(x.shape[0], self.capacity)
-
-    #     if y is not None:
-    #         y = torch.cat((self.labels[:self.current_size], y)) 
-    #         y = y[perm]
-    #         self.labels = y[:cutoff]
-        
-    #     self.data = x[:cutoff]
-    #     self.current_size = self.data.shape[0]
-
-    #     assert len(self) <= self.capacity
-        
-    #     if y is None:
-    #         return x[:batch_size]
-    #     else:
-    #         return x[:batch_size], y[:batch_size]
-
-    # def __len__(self) -> int:
-    #     if not hasattr(self, "data"):
-    #         return 0
-    #     if hasattr(self, "labels"):
-    #         assert len(self.data) == len(self.labels)
-    #     return self.current_size
-
-    # def clear(self) -> None:
-    #     """ Clears the replay buffer. """
-    #     if hasattr(self, "data"):
-    #         delattr(self, "data")
-    #     if hasattr(self, "labels"):
-    #         delattr(self, "labels")
-    #     self.current_size = 0
-    #     self.labeled = None
-
 
 @dataclass
 class ReplayOptions(Serializable):
@@ -301,10 +229,10 @@ class ReplayOptions(Serializable):
         return self.labeled_buffer_size > 0 or self.unlabeled_buffer_size > 0
 
 @dataclass  #  type: ignore
-class ExperimentWithReplay(ExperimentBase):
+class ExperimentWithReplay(ExperimentAddon):
     
     @dataclass
-    class Config(ExperimentBase.Config):
+    class Config(ExperimentAddon.Config):
         # Number of samples in the replay buffer.
         replay: ReplayOptions = mutable_field(ReplayOptions)
     
