@@ -218,8 +218,6 @@ class Classifier(nn.Module):
         if x.shape[1:] != self.input_shape:
             x = fix_channels(x)
         
-        assert x.shape[1:] == self.input_shape, f"{x.shape} != {self.input_shape}"
-
         if y is not None:
             # y_unique are the (sorted) unique values found within the batch.
             # idx[i] holds the index of the value at y[i] in y_unique, s.t. for
@@ -228,10 +226,6 @@ class Classifier(nn.Module):
             # TODO: Could maybe decide which output head to use depending on the labels
             # (perhaps like the "labels trick" from https://arxiv.org/abs/1803.10123)
             if not (set(y_unique.tolist()) <= set(self.current_task.classes)):
-                print(y)
-                print(self.current_task, y_unique)
-                print(y_unique)            
-                print(idx)
                 raise RuntimeError(
                     f"There are labels in the batch that aren't part of the "
                     f"current task! \n(Current task: {self.current_task}, "

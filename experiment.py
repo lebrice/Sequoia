@@ -38,7 +38,7 @@ from tasks import AuxiliaryTask, Tasks
 from utils import utils
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
 from utils.json_utils import JsonSerializable, take_out_unsuported_values
-from utils.logging import pbar
+from utils.logging_utils import pbar
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
 
 logger = Config.get_logger(__file__)
@@ -398,7 +398,8 @@ class ExperimentBase(JsonSerializable):
             step = self.global_step
 
             val_loss = loss_info.total_loss.item()
-            supervised_metrics = loss_info.metrics.get(Tasks.SUPERVISED)
+            from task_incremental import get_supervised_metrics
+            supervised_metrics = get_supervised_metrics(loss_info)
             
             if use_acc:
                 assert supervised_metrics, "Can't use accuracy since there are no supervised metrics in given loss.."
@@ -581,15 +582,15 @@ class ExperimentBase(JsonSerializable):
                 items = []
                 for k, v in d.items():
                     new_key = parent_key + sep + k if parent_key else k
-                    if 'knn_losses' in k and 'Verbose' not in k:
-                        task_measuree, task_measured = [int(s) for s in k if s.isdigit()]
-                        mode = k.split('/')[-1]
-                        if mode=='valid':
-                            avv_knn.append(message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}']['metrics']['KNN']['accuracy'])
-                        items.append((f'KNN_per_task/knn_{mode}_task_{task_measured}',message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}'][
-                                                'metrics']['KNN']['accuracy']))
+                    #if 'knn_losses' in k and 'Verbose' not in k:
+                    #    task_measuree, task_measured = [int(s) for s in k if s.isdigit()]
+                    #    mode = k.split('/')[-1]
+                    #    if mode=='valid':
+                    #        avv_knn.append(message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}']['metrics']['KNN']['accuracy'])
+                    #    items.append((f'KNN_per_task/knn_{mode}_task_{task_measured}',message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}'][
+                    #                            'metrics']['KNN']['accuracy']))
 
-                    elif 'cumul_losses' in k:
+                    if 'cumul_losses' in k:
                         new_key = 'Cumulative'
 
                     elif 'task_losses' in k: 
@@ -670,7 +671,7 @@ class ExperimentBase(JsonSerializable):
             results_dir = Path(scratch_dir) / "SSCL" / log_dir / "results"
             if results_dir.exists() and is_nonempty_dir(results_dir):
                 # Results already exists in $SCRATCH, therefore experiment is done.
-                self.log(f"Experiment is already done (non-empty folder at {results_dir}) Exiting.")
+                logger.info(f"Experiment is already done (non-empty folder at {results_dir}) Exiting.")
                 return True
         return self.started and is_nonempty_dir(self.results_dir)
     

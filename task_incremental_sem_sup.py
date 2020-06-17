@@ -10,6 +10,7 @@ from itertools import repeat, cycle
 from models.classifier import Classifier
 from task_incremental import TaskIncremental
 from dataclasses import dataclass
+from torch.utils.data import Subset
 from datasets.subset import ClassSubset
 from common.losses import LossInfo
 from datasets.ss_dataset import get_semi_sampler
@@ -27,6 +28,10 @@ from common.task import Task
 from task_incremental import get_supervised_accuracy
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
 import logging
+<<<<<<< HEAD
+=======
+from tasks import Tasks
+>>>>>>> temp_ssl
 
 
 from tasks.simclr.simclr_task import SimCLRTask
@@ -145,11 +150,19 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             test_size = len(train) - train_size
             train_subset, valid_subset = torch.utils.data.random_split(train, [train_size, test_size])
             test = ClassSubset(test_full_dataset, task)
+<<<<<<< HEAD
 
             sampler_train, sampler_train_unlabelled = get_semi_sampler(train.targets[train_subset.indices], p=self.ratio_labelled)
             sampler_valid, sampler_valid_unlabelled = get_semi_sampler(train.targets[valid_subset.indices], p=1.)
             sampler_test, sampler_test_unlabelled = get_semi_sampler(test.targets, p=1.)
 
+=======
+
+            sampler_train, sampler_train_unlabelled = get_semi_sampler(train.targets[train_subset.indices], p=self.ratio_labelled)
+            sampler_valid, sampler_valid_unlabelled = get_semi_sampler(train.targets[valid_subset.indices], p=1.)
+            sampler_test, sampler_test_unlabelled = get_semi_sampler(test.targets, p=1.)
+
+>>>>>>> temp_ssl
 
             self.train_datasets.append(train_subset)
             self.train_samplers_labelled.append(sampler_train)
@@ -189,6 +202,47 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             loader = super().get_dataloader(dataset)
             return (loader, loader)
 
+<<<<<<< HEAD
+=======
+    def on_task_switch(self, task: Task, **kwargs) -> None:
+        if not self.multihead:
+            # We aren't using a multihead model, so we aren't allowed to use this task label.
+            logger.debug(f"Ignoring task label {task} since we're not a multihead model.")
+            return
+
+        # If we are using a multihead model, we give it the task label (so
+        # that it can spawn / reuse the output head for the given task).
+        i = self.state.i
+
+        ewc_task = self.model.tasks.get(Tasks.EWC)
+        if ewc_task and ewc_task.enabled:
+            prev_task = None if i == 0 else self.tasks[i-1]
+            classifier_head = None if i == 0 else self.model.get_output_head(prev_task)
+            train_i = self.train_datasets[i]
+            train_sampler_labeled_i = self.train_samplers_labelled[i]
+            train_sampler_unlabelled_i = self.train_samplers_unlabelled[i]
+
+            train_loader = self.get_dataloaders(dataset=train_i,
+                                                             sampler_labelled=train_sampler_labeled_i,
+                                                             sampler_unlabelled=train_sampler_unlabelled_i)[0]
+
+
+            if i != 0 and ewc_task.current_task_loader is None:
+                prev_train_i = self.train_datasets[i-1]
+                prev_train_sampler_labeled_i = self.train_samplers_labelled[i-1]
+                prev_train_sampler_unlabelled_i = self.train_samplers_unlabelled[i-1]
+
+                previous_task_loader = self.get_dataloaders(dataset=prev_train_i,
+                                                    sampler_labelled=prev_train_sampler_labeled_i,
+                                                    sampler_unlabelled=prev_train_sampler_unlabelled_i)[0]
+                ewc_task.current_task_loader = previous_task_loader
+
+            kwargs.setdefault("prev_task", prev_task)
+            kwargs.setdefault("classifier_head", classifier_head)
+            kwargs.setdefault("train_loader", train_loader)
+        self.model.on_task_switch(task, **kwargs)
+
+>>>>>>> temp_ssl
 
     def run(self):
         """Evaluates a model/method in the classical "task-incremental" setting.
@@ -240,12 +294,21 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         self.model = self.init_model()
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
+<<<<<<< HEAD
         #if self.started or self.restore_from_path:
         #    self.logger.info(f"Experiment was already started in the past.")
         #    if not self.restore_from_path:
         #        self.restore_from_path = self.checkpoints_dir / "state.json"
         #    self.logger.info(f"Will load state from {self.restore_from_path}")
         #    self.load_state(self.restore_from_path)
+=======
+        if self.started or self.restore_from_path:
+            logger.info(f"Experiment was already started in the past.")
+            if not self.restore_from_path:
+                self.restore_from_path = self.checkpoints_dir / "state.json"
+            logger.info(f"Will load state from {self.restore_from_path}")
+            self.load_state(self.restore_from_path)
+>>>>>>> temp_ssl
 
         if self.done:
             self.logger.info(f"Experiment is already done.")
@@ -259,7 +322,11 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             self.logger.info(f"i={self.state.i}, j={self.state.j}")
 
         self.tasks = self.state.tasks
+<<<<<<< HEAD
         #self.save(save_model_weights=False)
+=======
+        self.save_state(save_model_weights=False)
+>>>>>>> temp_ssl
 
         # Load the datasets
         self.load_datasets(self.tasks)
@@ -275,6 +342,13 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         for i in range(self.state.i, self.n_tasks):
             self.state.i = i
             self.logger.info(f"Starting task {i} with classes {self.tasks[i]}")
+<<<<<<< HEAD
+=======
+            if self.multihead:
+                self.on_task_switch(self.tasks[i])
+
+
+>>>>>>> temp_ssl
             self.current_lr = self.hparams.learning_rate
             for param_group in self.model.optimizer.param_groups:
                 param_group['lr'] = self.current_lr
@@ -290,6 +364,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
             # If we are using a multihead model, we give it the task label (so
             # that it can spawn / reuse the output head for the given task).
+<<<<<<< HEAD
             if self.multihead:
                 prev_task = None if i==0 else self.tasks[i-1]
                 classifier_head = None if i==0 else self.model.get_output_head(prev_task)
@@ -298,6 +373,16 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                                         dataset=train_i,
                                         sampler_labelled=train_sampler_labeled_i,
                                         sampler_unlabelled=train_sampler_unlabelled_i)[0])
+=======
+            #if self.multihead:
+            #    prev_task = None if i==0 else self.tasks[i-1]
+            #    classifier_head = None if i==0 else self.model.get_output_head(prev_task)
+            #    self.on_task_switch(self.tasks[i], prev_task=prev_task, classifier_head = classifier_head,
+            #                        train_loader = self.get_dataloaders(
+            #                            dataset=train_i,
+            #                            sampler_labelled=train_sampler_labeled_i,
+            #                            sampler_unlabelled=train_sampler_unlabelled_i)[0])
+>>>>>>> temp_ssl
 
             if self.state.j == 0:
                 with self.plot_region_name(f"Learn Task {i}"):
@@ -328,7 +413,11 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                         temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
                     )
             # Save to the 'checkpoints' dir
+<<<<<<< HEAD
             #self.save()
+=======
+            self.save_state()
+>>>>>>> temp_ssl
             # Evaluation loop:
             for j in range(self.state.j, self.n_tasks):
                 if j == 0:
@@ -389,7 +478,11 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
             # Save the state with the new metrics, but no need to save the
             # model weights, as they didn't change.
+<<<<<<< HEAD
             #self.save(save_model_weights=False)
+=======
+            self.save_state(save_model_weights=False)
+>>>>>>> temp_ssl
 
             self.state.j = 0
             cumul_loss = self.state.cumul_losses[i]
@@ -400,7 +493,12 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         # finished experiment
         self.state.i = self.n_tasks
         self.state.j = self.n_tasks
+<<<<<<< HEAD
         #self.save(self.results_dir)  # Save to the 'results' dir.
+=======
+        self.save_state(self.checkpoints_dir)  # Save to the 'checkpoints' dir.
+        self.save_state(self.results_dir)  # Save to the 'results' dir.
+>>>>>>> temp_ssl
 
         for i, cumul_loss in enumerate(self.state.cumul_losses):
             assert cumul_loss is not None, f"cumul loss at {i} should not be None!"
@@ -417,10 +515,17 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         #    cumul_losses=self.state.cumul_losses
         #)
         #grid.savefig(self.plots_dir / "transfer_grid.png")
+<<<<<<< HEAD
 
         # if self.config.debug:
         #     grid.waitforbuttonpress(10)
 
+=======
+
+        # if self.config.debug:
+        #     grid.waitforbuttonpress(10)
+
+>>>>>>> temp_ssl
         # make the plot of the losses (might not be useful, since we could also just do it in wandb).
         # fig = self.make_loss_figure(self.all_losses, self.plot_sections)
         # fig.savefig(self.plots_dir / "losses.png")
@@ -489,6 +594,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 validation loss is used. Defaults to False.
             - temp_save_file (Path, optional): Path where the intermediate state
                 should be saved/restored from. Defaults to None.
+<<<<<<< HEAD
 
         Returns:
             TrainValidLosses: An object containing the training and validation
@@ -537,6 +643,56 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                     validation_loss = LossInfo.load_json(loss_path)
                     validation_losses.append(validation_loss)
 
+=======
+
+        Returns:
+            TrainValidLosses: An object containing the training and validation
+            losses during training (every `log_interval` steps) to be logged.
+        """
+        train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloaders(*train_dataset)
+        if self.semi_setup_full:
+            train_dataloader_unlabelled, _ = self.get_dataloaders(self.train_dataset, None, None)
+
+        valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloaders(*valid_dataset)
+        early_stopping_options = early_stopping_options or self.config.early_stopping
+
+        if use_accuracy_as_metric is None:
+            use_accuracy_as_metric = self.config.use_accuracy_as_metric
+
+        # The --debug_steps argument can be used to shorten the dataloaders.
+
+        steps_per_epoch = len(train_dataloader_unlabelled) if len(train_dataloader_unlabelled) > len(
+            train_dataloader_labelled) else len(train_dataloader_labelled)
+
+        if self.config.debug_steps:
+            from itertools import islice
+            steps_per_epoch = self.config.debug_steps
+            train_dataloader = islice(train_dataloader_labelled, 0, steps_per_epoch)  # type: ignore
+        logger.debug(f"Steps per epoch: {steps_per_epoch}")
+
+        # LossInfo objects at each step of validation
+        validation_losses: List[LossInfo] = []
+        # Container for the train and valid losses every `log_interval` steps.
+        all_losses = TrainValidLosses()
+
+        if temp_save_dir:
+            temp_save_dir.mkdir(exist_ok=True, parents=True)
+
+            all_losses_path = temp_save_dir / "all_losses.json"
+            if all_losses_path.exists():
+                all_losses = TrainValidLosses.load_json(all_losses_path)
+
+            from itertools import count
+            for i in count(start=1):
+                loss_path = temp_save_dir / f"val_loss_{i}.json"
+                if not loss_path.exists():
+                    break
+                else:
+                    assert len(validation_losses) == (i - 1)
+                    validation_loss = LossInfo.load_json(loss_path)
+                    validation_losses.append(validation_loss)
+
+>>>>>>> temp_ssl
             logger.info(f"Reloaded {len(validation_losses)} existing validation losses")
             logger.info(f"Latest step: {all_losses.latest_step()}.")
 
@@ -555,6 +711,11 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             save_path=self.checkpoints_dir / "best_model.pth",
             # previous_losses=validation_losses,
         )
+<<<<<<< HEAD
+=======
+        best_step = starting_step
+        best_epoch = starting_epoch
+>>>>>>> temp_ssl
         next(best_model_watcher)
 
         # Hook to test for convergence.
@@ -609,6 +770,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             # perform a validation epoch.
             val_desc = desc + " Valid"
             val_loss_info = self.test(valid_dataloader_labelled, description=val_desc)
+<<<<<<< HEAD
             if temp_save_dir:
                 val_loss_info.drop_tensors()
                 # TODO: do this in the background saver thread.
@@ -619,11 +781,30 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             logger.debug(f"Best step so far: {best_step}")
 
             best_epoch = (best_step - starting_step) // int(np.mean(epoch_length))
+=======
+            validation_losses.append(val_loss_info)
+
+            if temp_save_dir:
+                # Save these files in the background using the saver process.
+                self.save(temp_save_dir / f"val_loss_{i}.json", val_loss_info)
+                self.save(temp_save_dir / f"all_losses.json", all_losses)
+
+            # Inform the best model watcher of the latest performance of the model.
+            best_step = best_model_watcher.send(val_loss_info)
+            logger.debug(f"Best step so far: {best_step}")
+
+            best_epoch = best_step // int(np.mean(epoch_lengths))
+>>>>>>> temp_ssl
             logger.debug(f"Best epoch so far: {best_epoch}")
 
             converged = convergence_checker.send(val_loss_info)
             if converged:
+<<<<<<< HEAD
                 logger.info(f"Training Converged at epoch {epoch}. Best valid performance was at epoch {best_epoch}")
+=======
+                logger.info(
+                    f"Training Converged at epoch {epoch}. Best valid performance was at epoch {best_epoch}")
+>>>>>>> temp_ssl
                 break
 
         try:

@@ -9,23 +9,23 @@ from torch import Tensor
 from torch.utils.data import TensorDataset, Dataset, Subset as SubsetBase
 from torchvision.transforms import Normalize
 from common.task import Task
-from torchvision.datasets import VisionDataset
+from torchvision.datasets import VisionDataset, MNIST
 
 class Subset(SubsetBase):
+    def __init__(self, dataset, indices):
+        super().__init__(dataset, indices)
+        if isinstance(self.dataset, VisionDataset):
+            from datasets.dataset import fix_vision_dataset
+            fix_vision_dataset(self.dataset)
+        if not isinstance(self.indices, Tensor):
+            self.indices = torch.as_tensor(self.indices)
+
     @property
     def data(self) -> Tensor:
-        if not isinstance(self.dataset.data, np.ndarray):
-            self.dataset.data = np.asarray(self.dataset.data)
-        if not isinstance(self.indices, np.ndarray):
-            self.indices = np.asarray(self.indices)
         return self.dataset.data[self.indices]
 
     @property
     def targets(self) -> Tensor:
-        if not isinstance(self.dataset.targets, np.ndarray):
-            self.dataset.targets = np.asarray(self.dataset.targets)
-        if not isinstance(self.indices, np.ndarray):
-            self.indices = np.asarray(self.indices)
         return self.dataset.targets[self.indices]
 
 
@@ -45,10 +45,9 @@ class ClassSubset(TensorDataset):
             labels = labels.classes
         self.labels: Set[int] = set(labels)
 
-
         if isinstance(self.dataset, VisionDataset):
-            self.dataset.data = np.asarray(self.dataset.data)
-            self.dataset.targets = np.asarray(self.dataset.targets)
+            from datasets.dataset import fix_vision_dataset
+            fix_vision_dataset(self.dataset)
 
         # get the mask to select only the relevant items.
         mask = get_mask(self.dataset, self.labels)

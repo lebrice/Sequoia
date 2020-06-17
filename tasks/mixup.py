@@ -156,8 +156,13 @@ class MixupTask(AuxiliaryTask):
         self.logger = Config.get_logger(__file__)
 
         # Exponential moving average versions of the encoder and output head.
+<<<<<<< HEAD
         self.mean_encoder: nn.Module = deepcopy_cnn13(AuxiliaryTask.encoder)
         self.mean_classifier: nn.Module = deepcopy_cnn13(AuxiliaryTask.classifier)
+=======
+        self.mean_encoder: nn.Module = deepcopy(AuxiliaryTask.encoder)
+        self.mean_classifier: nn.Module = deepcopy(AuxiliaryTask.classifier)
+>>>>>>> temp_ssl
         self.previous_task: Optional[Task] = None
 
         self.epoch_in_task: Optional[int] = 0

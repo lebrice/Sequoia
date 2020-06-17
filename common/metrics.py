@@ -55,6 +55,8 @@ class Metrics(JsonSerializable):
     def to_dict(self) -> Dict:
         return self.to_log_dict()
 
+    def to_pbar_message(self) -> Dict[str, Union[str, float]]:
+        return OrderedDict()
 
 @dataclass
 class RegressionMetrics(Metrics, JsonSerializable):
@@ -91,6 +93,11 @@ class RegressionMetrics(Metrics, JsonSerializable):
         d = super().to_log_dict()
         d["mse"] = float(self.mse)
         return d
+
+    def to_pbar_message(self) -> Dict[str, Union[str, float]]:
+        message = super().to_pbar_message()
+        message["mse"] = float(self.mse.item())
+        return message
 
 
 @dataclass
@@ -173,6 +180,11 @@ class ClassificationMetrics(Metrics):
         s = super().__str__()
         s = s.replace(f"accuracy={self.accuracy}", f"accuracy={self.accuracy:.3%}")
         return s
+    
+    def to_pbar_message(self) -> Dict[str, Union[str, float]]:
+        message = super().to_pbar_message()
+        message["acc"] = f"{self.accuracy:.2%}"
+        return message
 
 @torch.no_grad()
 def get_metrics(y_pred: Union[Tensor, np.ndarray],

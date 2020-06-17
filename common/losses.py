@@ -205,16 +205,18 @@ class LossInfo(JsonSerializable):
         """
         message: Dict[str, Union[str, float]] = OrderedDict()
         message["Loss"] = float(self.total_loss.item())
-        for name, loss_info in self.losses.items():
-            message[f"{name} Loss"] = float(loss_info.total_loss.item())
-            for metric_name, metrics in loss_info.metrics.items():
-                if isinstance(metrics, ClassificationMetrics):
-                    message[f"{name} Acc"] = f"{metrics.accuracy:.2%}"
-                elif isinstance(metrics, RegressionMetrics):
-                    message[f"{name} MSE"] = float(metrics.mse.item())
-        prefix = (self.name + " ") if self.name else ""
-        return add_prefix(message, prefix)
 
+        if self.metric:
+            message[self.name] = self.metric.to_pbar_message()
+
+        for name, loss_info in self.losses.items():
+            message[name] = loss_info.to_pbar_message()
+
+        prefix = (self.name + " ") if self.name else ""
+        message = add_prefix(message, prefix)
+
+        return cleanup(message)
+    
     def to_dict(self):
         self.detach()
         self.drop_tensors()
@@ -242,6 +244,36 @@ class LossInfo(JsonSerializable):
             (k.replace(old_name, new_name), v) for k, v in other.losses.items() 
         ])
         self += new_other
+
+
+def cleanup(message: Dict[str, Union[Dict, str, float, Any]]) -> Dict[str, Union[str, float, Any]]:
+    # Flatten the log dictionary
+    from utils.utils import flatten_dict
+    sep = " "
+    message = flatten_dict(message, separator=sep)
+
+    # TODO: Remove redondant/useless keys
+    for k in list(message.keys()):
+        if k.endswith((f"{sep}n_samples", f"{sep}name")):
+            message.pop(k)
+            continue
+
+        v = message.pop(k)
+        # Example input:
+        # "Task_losses/Task1/losses/Test/losses/rotate/losses/270/metrics/270/accuracy"
+        
+        # Simplify the key, by getting rid of all the '/losses/' and '/metrics/' etc.
+        k = k.replace(f"{sep}losses{sep}", sep).replace(f"{sep}metrics{sep}", sep)
+        # --> "Task_losses/Task1/Test/rotate/270/270/accuracy"
+        
+        # Get rid of repetitive modifiers (ex: "/270/270" above)
+        parts = k.split(sep)
+        from utils.utils import unique_consecutive
+        k = sep.join(unique_consecutive(parts))
+        # Will become:
+        # "Task_losses/Task1/Test/rotate/270/accuracy"
+        message[k] = v
+    return message
 
 
 @dataclass

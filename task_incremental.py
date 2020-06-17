@@ -280,7 +280,8 @@ class TaskIncremental(Experiment):
                     self.state.cumul_losses[i].absorb(loss_j) 
                     # NOTE: using += above would add a "Task<j>" item in the
                     # `losses` attribute of the cumulative loss, without merging the metrics.
-                    logger.info(f"Task {i} Supervised Test accuracy on task {j}: ")
+                    supervised_acc_j = get_supervised_accuracy(loss_j)
+                    logger.info(f"Task {i} Supervised Test accuracy on task {j}: {supervised_acc_j:.2%}")
                     logger.debug(f"self.state.cumul_losses[i]: {self.state.cumul_losses[i]}")
             
             # -- Evaluate representations after task i on the whole train/test datasets. --
@@ -590,12 +591,16 @@ class TaskIncremental(Experiment):
         save_image(samples, self.samples_dir / f"{prefix}task_{i}.png")
 
     def on_task_switch(self, task: Task, **kwargs) -> None:
+        if not self.multihead:
+            # We aren't using a multihead model, so we aren't allowed to use this task label.
+            logger.debug(f"Ignoring task label {task} since we're not a multihead model.")
+            return
+
         # If we are using a multihead model, we give it the task label (so
         # that it can spawn / reuse the output head for the given task).
         i = self.state.i
         ewc_task = self.model.tasks.get(Tasks.EWC)
-
-        if self.multihead and ewc_task and ewc_task.enabled:
+        if ewc_task and ewc_task.enabled:
             prev_task = None if i == 0 else self.tasks[i-1]
             classifier_head = None if i == 0 else self.model.get_output_head(prev_task)
             train_loader = self.get_dataloader(self.train_datasets[i])
@@ -608,8 +613,7 @@ class TaskIncremental(Experiment):
             kwargs.setdefault("classifier_head", classifier_head)
             kwargs.setdefault("train_loader", train_loader)
 
-        if self.multihead:
-            self.model.on_task_switch(task, **kwargs)
+        self.model.on_task_switch(task, **kwargs)
 
     @property
     def started(self) -> bool:
@@ -617,19 +621,45 @@ class TaskIncremental(Experiment):
         return super().started and checkpoint_exists
     
     def log(self, message: Union[str, Dict, LossInfo], **kwargs):  # type: ignore
+        assert isinstance(message, dict), (
+            f"Testing things out, but for now always pass dictionaries to "
+            f"`self.log` (at least for TaskIncremental)"
+        )
+        
         if isinstance(message, dict):
             message.setdefault("task/currently_learned_task", self.state.i)
-        assert isinstance(message, dict), f"Testing things out, but for now always pass dictionaries to self.log (at least in TaskIncremental)"
+        
         for k, v in message.items():
             if isinstance(v, (LossInfo, Metrics)):
                 message[k] = v.to_log_dict()
         
         # Flatten the log dictionary
         from utils.utils import flatten_dict
-        flattened = flatten_dict(message)
+        message = flatten_dict(message, separator="/")
 
         # TODO: Remove redondant/useless keys
-        super().log(flattened, **kwargs)
+        for k in list(message.keys()):
+            if k.endswith(("/n_samples", "/name")):
+                message.pop(k)
+                continue
+
+            v = message.pop(k)
+            # Example input:
+            # "Task_losses/Task1/losses/Test/losses/rotate/losses/270/metrics/270/accuracy"
+            
+            # Simplify the key, by getting rid of all the '/losses/' and '/metrics/' etc.
+            k = k.replace("/losses/", "/").replace("/metrics/", "/")
+            # --> "Task_losses/Task1/Test/rotate/270/270/accuracy"
+            
+            # Get rid of repetitive modifiers (ex: "/270/270" above)
+            parts = k.split("/")
+            from utils.utils import unique_consecutive
+            k = "/".join(unique_consecutive(parts))
+            # Will become:
+            # "Task_losses/Task1/Test/rotate/270/accuracy"
+            message[k] = v
+
+        super().log(message, **kwargs)
 
 
 def get_supervised_metrics(loss: LossInfo, mode: str="Test") -> Union[ClassificationMetrics, RegressionMetrics]:

@@ -78,9 +78,11 @@ class GaussianPrior(object):
         else:
             self.F_bn_blockdiag.data = ((deepcopy(new_prior.F_bn_blockdiag.data)) + self.F_bn_blockdiag.data * (task)) / (task + 1)
 
-    def regularizer(self, model):
+    def regularizer(self, model, use_abs: bool=False):
         params0_vec = PVector.from_model(model)
         v = params0_vec - self.prev_params
+        if use_abs:
+            v = torch.abs(v)
         reg_1 = self.F_linear_kfac.vTMv(v)
         reg_2 = self.F_bn_blockdiag.vTMv(v)
         # print(reg)
@@ -90,7 +92,11 @@ class GaussianPrior(object):
 class EWC(AuxiliaryTask):
     @dataclass
     class Options(AuxiliaryTask.Options):
-        pass
+        """ Options of the EWC auxiliary task. """
+        # Wether to use the absolute difference of the weights or the difference
+        # in the `regularize` method below.
+        use_abs_diff: bool = False
+
     def __init__(self,
                  name: str="ewc",
                  options: "EWC.Options"=None):
@@ -120,7 +126,7 @@ class EWC(AuxiliaryTask):
         if self.prior is None:
             return torch.zeros(1, requires_grad=True, device=self.device)
         else:
-            return self.prior.regularizer(nn.Sequential(AuxiliaryTask.encoder))#, self.model.classifier))
+            return self.prior.regularizer(nn.Sequential(AuxiliaryTask.encoder), use_abs=self.options.use_abs_diff)#, self.model.classifier))
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor = None) -> LossInfo:
         ewc_loss = LossInfo(

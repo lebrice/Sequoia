@@ -13,13 +13,13 @@ from torch.utils.data import DataLoader, Dataset
 
 from common.losses import LossInfo
 from experiment import ExperimentBase
-from utils.logging import pbar
-
+from utils.logging_utils import pbar
+from simple_parsing import field
 
 @dataclass
 class KnnClassifierOptions:
     """ Set of options for configuring the KnnClassifier. """
-    n_neighbors: int = 5 # Number of neighbours.
+    n_neighbors: int = field(default=5, alias="n_neighbours") # Number of neighbours.
     metric: str = "cosine"
     algorithm: str = "auto" # See the sklearn docs
     leaf_size: int = 30  # See the sklearn docs
@@ -88,14 +88,13 @@ def evaluate_knn(x: np.ndarray, y: np.ndarray, x_t: np.ndarray, y_t: np.ndarray,
     assert np.array_equal(train_classes, test_classes), f"y and y_test should contain the same classes: (y: {train_classes}, y_t: {test_classes})."
     
     x = scaler.fit_transform(x)
-    x_t = scaler.transform(x_t)
-    
+       
     # Create and train the Knn Classifier using the options as the kwargs
     knn_classifier = KNeighborsClassifier(**asdict(options)).fit(x, y)
     classes = knn_classifier.classes_
     # print("classes: ", classes)
 
-    y_pred = knn_classifier.predict(x)
+    # y_pred = knn_classifier.predict(x)
     y_prob = knn_classifier.predict_proba(x)
     # print(y_pred.shape, y_prob.shape, train_score)
 
@@ -107,7 +106,8 @@ def evaluate_knn(x: np.ndarray, y: np.ndarray, x_t: np.ndarray, y_t: np.ndarray,
     nce = log_loss(y_true=y, y_pred=y_prob, labels=classes)
     train_loss = LossInfo("KNN", total_loss=nce, y_pred=y_logits, y=y)
 
-    y_t_pred = knn_classifier.predict(x_t)
+    x_t = scaler.transform(x_t)
+    # y_t_pred = knn_classifier.predict(x_t)
     y_t_prob = knn_classifier.predict_proba(x_t)
     # print(y_t_pred.shape, y_t_prob.shape, test_score)
 
