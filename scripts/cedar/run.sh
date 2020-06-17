@@ -27,13 +27,13 @@ echo "Logging in with wandb since we're running on Cedar."
 # export WANDB_API_KEY="8776db49aa9afcae1952308876d832cdbd11fcbe"
 wandb login 174b08e7eb88b0c57624f63c9590418be3bc4607
 
-echo "Calling python -u main.py task-incremental \
+echo "Calling python -u task_incremental.py \
     --data_dir $SLURM_TMPDIR/data \
     --log_dir_root $SLURM_TMPDIR/results \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     ${@}"
 
-python -u main.py task-incremental \
+python -u task_incremental.py \
     --data_dir $SLURM_TMPDIR/data \
     --log_dir_root $SLURM_TMPDIR/SSCL \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \

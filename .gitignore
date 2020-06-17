@@ -13,3 +13,7 @@ data/*
 !data/**/*.py
 scripts/*.png
 wandb
+
+notebooks/*
+notebooks
+notebooks/plots/*

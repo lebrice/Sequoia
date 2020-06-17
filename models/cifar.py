@@ -19,7 +19,6 @@ class CifarClassifier(Classifier):
                  config: Config):
         assert cifar in {10, 100}
         self.hidden_size = hparams.hidden_size
-
         if hparams.encoder_model:
             encoder = get_pretrained_encoder(
                 hidden_size=self.hidden_size,
@@ -36,13 +35,9 @@ class CifarClassifier(Classifier):
                 ConvBlock(64, 128, kernel_size=3, padding=1),
                 ConvBlock(128, self.hidden_size, kernel_size=3, padding=1),
             )
-        classifier = nn.Sequential(
-            Flatten(),
-            nn.Linear(self.hidden_size, cifar),
-        )
         super().__init__(
             input_shape=(3,32,32),
-            num_classes=10,
+            num_classes=cifar,
             encoder=encoder,
             hparams=hparams,
             config=config,

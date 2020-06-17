@@ -31,13 +31,13 @@ echo "Logging in with wandb."
 # export WANDB_API_KEY="8776db49aa9afcae1952308876d832cdbd11fcbe"
 wandb login 8776db49aa9afcae1952308876d832cdbd11fcbe
 
-echo "Calling python -u main.py task-incremental \
+echo "Calling python -u task_incremental.py \
     --data_dir $SLURM_TMPDIR/data \
     --log_dir_root $SLURM_TMPDIR/results \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     ${@}"
 
-python -u main.py task-incremental \
+python -u task_incremental.py \
     --data_dir $SLURM_TMPDIR/data \
     --log_dir_root $SLURM_TMPDIR/SSCL \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \

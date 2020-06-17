@@ -21,8 +21,8 @@ REQUIRED_FILES: List[str] = [
 ]
 
 
-def n_tasks_used(run_path: Path) -> int:
-    run_name = run_path.name
+def n_tasks_used(run_path: Union[str, Path]) -> int:
+    run_name = run_path.name if isinstance(run_path, Path) else run_path
     # prefix the baseline run with 0_ so it shows up first in plots.
     if "baseline" in run_name:
         return 0

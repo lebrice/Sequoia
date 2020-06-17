@@ -2,15 +2,15 @@ from dataclasses import dataclass
 from experiment import ExperimentBase
 from contextlib import contextmanager
 from utils.plotting import PlotSectionLabel
+from typing import List
+from simple_parsing import list_field
 
 
 @dataclass  # type: ignore
 class LabeledPlotRegionsAddon(ExperimentBase):
-    def __post_init__(self):
-        super().__post_init__()
-        # TODO: Use a list of these objects to add annotated regions in the plot
-        # enclosed by vertical lines with some text, for instance "task 0", etc.
-        self.plot_sections: List[PlotSectionLabel] = []
+    # TODO: Use a list of these objects to add annotated regions in the plot
+    # enclosed by vertical lines with some text, for instance "task 0", etc.
+    plot_sections: List[PlotSectionLabel] = list_field(init=False)
 
     @contextmanager
     def plot_region_name(self, description: str):

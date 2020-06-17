@@ -5,7 +5,7 @@ import os
 import time
 from abc import ABC, abstractmethod
 from collections import MutableMapping, OrderedDict, defaultdict
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import InitVar, asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
                     Tuple, Type, Union)
@@ -23,9 +23,10 @@ from torchvision.datasets import VisionDataset
 from common.losses import LossInfo, TrainValidLosses
 from common.metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                             get_metrics)
-from config import Config
+from config import Config as ConfigBase
 from datasets import DatasetConfig
 from datasets.cifar import Cifar10, Cifar100
+from datasets.data_utils import train_valid_split
 from datasets.fashion_mnist import FashionMnist
 from datasets.mnist import Mnist
 from datasets.subset import ClassSubset, Subset
@@ -40,29 +41,34 @@ from utils.json_utils import JsonSerializable, take_out_unsuported_values
 from utils.logging_utils import pbar
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
 
-logger = Config.get_logger(__file__)
+logger = ConfigBase.get_logger(__file__)
+
+
 
 @dataclass  # type: ignore
 class ExperimentBase(JsonSerializable):
     """Base-class for an Experiment.
     """
-    # Model Hyper-parameters
-    hparams: Classifier.HParams = mutable_field(Classifier.HParams)
-    
-    dataset: DatasetConfig = choice({
-        "mnist": Mnist(),
-        "fashion_mnist": FashionMnist(),
-        "cifar10": Cifar10(),
-        "cifar100": Cifar100(),
-    }, default="mnist")
+    @dataclass
+    class Config(ConfigBase):
+        # Model Hyper-parameters
+        hparams: Classifier.HParams = mutable_field(Classifier.HParams)
+        # Which dataset to use.
+        dataset: DatasetConfig = choice({
+            "mnist": Mnist(),
+            "fashion_mnist": FashionMnist(),
+            "cifar10": Cifar10(),
+            "cifar100": Cifar100(),
+        }, default="mnist")
 
-    config: Config = mutable_field(Config)
-    # Notes about this particular experiment. (will be logged to wandb if used.)
-    notes: Optional[str] = None
-    
-    model: Classifier = field(default=None, init=False)
+        # Path to restore the state from at the start of training.
+        # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
+        restore_from_path: Optional[Path] = None
 
-    no_wandb_cleanup: bool = False
+        no_wandb_cleanup: bool = False
+
+    config: Config
+    model: Classifier = field(default=None, init=False)  # type: ignore
         
     @dataclass
     class State(JsonSerializable):
@@ -76,19 +82,20 @@ class ExperimentBase(JsonSerializable):
         # Container for train/valid losses that are logged periodically.
         all_losses: TrainValidLosses = mutable_field(TrainValidLosses, repr=False)
 
-    def __post_init__(self):
+    def __post_init__(self, config: "Experiment.Config"):
         """ Called after __init__, used to initialize all missing fields.
         
         You can use this method to initialize the fields that aren't parsed from
         the command-line, such as `model`, etc.
         Additionally, the fields created here are not added in the wandb logs.       
         """
-        AuxiliaryTask.input_shape   = self.dataset.x_shape
+        self.config = config
+        AuxiliaryTask.input_shape   = self.config.dataset.x_shape
 
         # Set these shared attributes so that all the Auxiliary tasks can be created.
-        if isinstance(self.dataset, (Mnist, FashionMnist)):
-            AuxiliaryTask.input_shape = self.dataset.x_shape
-            AuxiliaryTask.hidden_size = self.hparams.hidden_size
+        if isinstance(self.config.dataset, (Mnist, FashionMnist)):
+            AuxiliaryTask.input_shape = self.config.dataset.x_shape
+            AuxiliaryTask.hidden_size = self.config.hparams.hidden_size
 
         self.train_dataset: Dataset = NotImplemented
         self.valid_dataset: Dataset = NotImplemented
@@ -104,9 +111,9 @@ class ExperimentBase(JsonSerializable):
         
         self._samples_dir: Optional[Path] = None
         
-        if self.notes:
-            with open(self.log_dir / "notes.txt", "w") as f:
-                f.write(self.notes)
+        if self.config.notes:
+            with open(self.config.log_dir / "notes.txt", "w") as f:
+                f.write(self.config.notes)
         
         from save_job import SaverWorker
         mp.set_start_method("spawn")
@@ -123,6 +130,70 @@ class ExperimentBase(JsonSerializable):
     def run(self):
         pass
 
+    def launch(self):
+        """ Launches the experiment.
+        
+        TODO: Clean this up. It isn't clear exactly where the separation is
+        between the Experiment.run() method and this one.
+        """
+        if self.config.verbose:
+            print("Experiment:")
+            pprint.pprint(asdict(self), indent=1)
+            print("=" * 40)
+
+        config: Config = self.config
+        # pprint.pprint(config_dict, indent=1)
+        config_dict = config.to_dict()
+
+        if self.config.use_wandb:
+            if config.run_name is None:
+                # TODO: Create a run name using the coefficients of the tasks, etc?
+                # At the moment, if no run name is given, the random name from wandb is used.
+                pass
+            run = self.config.wandb_init()
+            wandb.run.save()
+            print(f"Using wandb. Group name: {config.run_group} run name: {config.run_name}, log_dir: {config.log_dir}")
+        
+        # if experiment.done:
+        #     print(f"Experiment is already done. Exiting.")
+        #     exit(0)
+        if self.started:
+            print(f"Experiment is incomplete at directory {config.log_dir}.")
+            # TODO: pick up where we left off ?
+            # latest_checkpoint = log_dir / "checkpoints" / "todo"
+            # settings.experiment = torch.load(latest_checkpoints)
+        
+        try:
+            print("-" * 10, f"Starting experiment '{type(self).__name__}' ({config.log_dir})", "-" * 10)
+            
+            self.run()
+            
+            print("-" * 10, f"Experiment '{type(self).__name__}' is done.", "-" * 10)
+            self.cleanup()
+        
+        except Exception as e:
+            print(f"Experiment crashed: {e}")
+            raise e
+
+    def setup(self):
+        """Prepare everything before training begins: Saves/restores state,
+        loads the datasets, model weights, etc.
+        """
+        # Create the model
+        self.model = self.init_model()
+
+        # If the experiment was already started, or a 'restore_from' argument
+        # was passed:
+        if self.started or self.config.restore_from_path is not None:
+            logger.info(f"Experiment was already started in the past.")
+            self.load_state(self.config.restore_from_path)
+        elif self.done:
+            logger.info(f"Experiment is already done.")
+        else:
+            # We are starting fresh, so we save the fresh new state, but not the
+            # model weights.
+            self.save_state(save_model_weights=False)
+
     def cleanup(self):
         print("Cleaning up after the experiment is done.")
         if self.saver_worker:
@@ -130,32 +201,40 @@ class ExperimentBase(JsonSerializable):
             self.saver_worker.join(timeout=120)
         print("Successfully closed everything")
 
-    def load_datasets(self) -> Tuple[Dataset, Dataset]:
-        """ Loads the training and test datasets. """
-        train_dataset, test_dataset = self.dataset.load(data_dir=self.config.data_dir)
-        return train_dataset, test_dataset
+    def load_datasets(self, valid_fraction: float=0.2) -> Tuple[Dataset, Optional[Dataset], Dataset]:
+        """ Loads the training, validation and test datasets. """
+        train_dataset, test_dataset = self.config.dataset.load(data_dir=self.config.data_dir)
+        valid_dataset: Optional[Dataset] = None
+        if valid_fraction > 0:
+            train_dataset, valid_dataset = train_valid_split(train_dataset, valid_fraction)
+        return train_dataset, valid_dataset, test_dataset
 
+    def load_state(self, state_json_path: Path=None) -> None:
+        """ save/restore the state from a previous run. """
+        if not state_json_path:
+            state_json_path = self.checkpoints_dir / "state.json"
 
-    def train_valid_split(self, train_dataset: VisionDataset, valid_fraction: float=0.2) -> Tuple[VisionDataset, VisionDataset]:
-        n = len(train_dataset)
-        valid_len: int = int((n * valid_fraction))
-        train_len: int = n - valid_len
-        
-        indices = np.arange(n, dtype=int)
-        np.random.shuffle(indices)
-        
-        valid_indices = indices[:valid_len]
-        train_indices = indices[valid_len:]
+        logger.info(f"Restoring state from {state_json_path}")
+        # Load the 'State' object from the json file
+        self.state = self.State.load_json(state_json_path)
 
-        train = Subset(train_dataset, train_indices)
-        valid = Subset(train_dataset, valid_indices)
-        logger.info(f"Training samples: {len(train)}, Valid samples: {len(valid)}")
-        return train, valid
+        if self.state.model_weights_path:
+            logger.info(f"Restoring model weights from {self.state.model_weights_path}")
+            state_dict = torch.load(
+                self.state.model_weights_path,
+                map_location=self.config.device,
+            )
+            self.model.load_state_dict(state_dict, strict=False)
+        else:
+            logger.info(f"Not restoring model weights (self.state.model_weights_path is None)")
 
+        # TODO: Make sure that restoring at some arbitrary global_step works.
+        self.global_step = self.state.global_step or self.state.all_losses.latest_step()
+        logger.info(f"Starting at global step = {self.global_step}.")
 
     def init_model(self) -> Classifier:
         print("init model")
-        model = self.get_model_for_dataset(self.dataset)
+        model = self.get_model_for_dataset(self.config.dataset)
         model.to(self.config.device)
         return model
 
@@ -164,11 +243,11 @@ class ExperimentBase(JsonSerializable):
         from models.cifar import Cifar10Classifier, Cifar100Classifier
 
         if isinstance(dataset, (Mnist, FashionMnist)):
-            return MnistClassifier(hparams=self.hparams, config=self.config)
+            return MnistClassifier(hparams=self.config.hparams, config=self.config)
         elif isinstance(dataset, Cifar10):
-            return Cifar10Classifier(hparams=self.hparams, config=self.config)
+            return Cifar10Classifier(hparams=self.config.hparams, config=self.config)
         elif isinstance(dataset, Cifar100):
-            return Cifar100Classifier(hparams=self.hparams, config=self.config)
+            return Cifar100Classifier(hparams=self.config.hparams, config=self.config)
         else:
             raise NotImplementedError(f"TODO: add a model for dataset {dataset}.")
 
@@ -422,7 +501,6 @@ class ExperimentBase(JsonSerializable):
         logger.info(f"Reloading weights of the best model (global step: {best_step})")
         load_weights()
 
-
     def valid_performance_generator(self, valid_dataloader: Union[Dataset, DataLoader]) -> Generator[LossInfo, None, None]:
         if isinstance(valid_dataloader, Dataset):
             valid_dataloader = self.get_dataloader(valid_dataloader)
@@ -493,11 +571,11 @@ class ExperimentBase(JsonSerializable):
             self.model.train()
         return loss
 
-    def get_dataloader(self, dataset: Dataset, sampler: Sampler=None) -> DataLoader:
+    def get_dataloader(self, dataset: Dataset, sampler: Sampler=None, shuffle: bool=True) -> DataLoader:
         return DataLoader(
             dataset,
-            batch_size=self.hparams.batch_size,
-            shuffle=False,
+            batch_size=self.config.hparams.batch_size,
+            shuffle=shuffle,
             sampler=sampler,
             num_workers=self.config.num_workers,
             pin_memory=self.config.use_cuda,
@@ -603,14 +681,15 @@ class ExperimentBase(JsonSerializable):
                             items.append((new_key, v))
                 return dict(items)
 
-            if not self.no_wandb_cleanup:
+            if not self.config.no_wandb_cleanup:
                 message_dict = wandb_cleanup(message_dict)
                 if len(avv_knn) > 0:
                     message_dict['KNN_per_task/avv_knn'] = np.mean(avv_knn)
                 message_dict['task/currently_learned_task'] = self.state.i
                 message_dict = wandb_cleanup(message_dict)
-
-            wandb.log(message_dict, step=step)
+            
+            if self.config.use_wandb:
+                wandb.log(message_dict, step=step)
 
     def _folder(self, folder: Union[str, Path], create: bool=True) -> Path:
         path = self.config.log_dir / folder
@@ -694,20 +773,30 @@ class ExperimentBase(JsonSerializable):
 
 # Load up the addons, each of which adds independent, useful functionality to the Experiment base-class.
 # TODO: This might not be the cleanest/most elegant way to do it, but it's better than having files with 1000 lines in my opinion.
-from addons import (ExperimentWithKNN, ExperimentWithVAE,
-                    LabeledPlotRegionsAddon, TestTimeTrainingAddon, ExperimentWithReplay)
-
+from addons import (ExperimentWithKNN, ExperimentWithReplay, ExperimentWithVAE,
+                    LabeledPlotRegionsAddon, TestTimeTrainingAddon)
 
 @dataclass  # type: ignore
-class Experiment(ExperimentWithKNN, ExperimentWithVAE,
-                 TestTimeTrainingAddon, LabeledPlotRegionsAddon, ExperimentWithReplay):
-    """ Describes the parameters of an experimental setting.
-    
+class Experiment(ExperimentWithKNN,
+                 ExperimentWithVAE,
+                 TestTimeTrainingAddon,
+                 LabeledPlotRegionsAddon,
+                 ExperimentWithReplay):
+    """ Class used to perform a given 'method' or evaluation/experiment.
     (ex: Mnist_iid, Mnist_continual, Cifar10, etc. etc.)
     
     To create a new experiment, subclass this class, and add/change what you
-    need to customize.
-
-    TODO: Maybe add some code for saving/restoring experiments here?
+    need to customize in the Config class.
     """
     pass
+
+    @dataclass
+    class Config(ExperimentWithKNN.Config,
+                 ExperimentWithReplay.Config):
+        """ Describes the parameters of an experiment. """
+        pass
+    
+    def __post_init__(self, *args, **kwargs):
+        super().__post_init__(*args, **kwargs)
+
+    config: InitVar[Config]
