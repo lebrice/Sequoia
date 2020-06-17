@@ -12,15 +12,9 @@ from simple_parsing import ArgumentParser, list_field, choice, field
 from dataclasses import dataclass
 from .make_oml_plot import OmlFigureOptions
 
-<<<<<<< HEAD
-DATA_DIR: Path = Path(os.environ.get("DATA_DIR", "E:/Google Drive/"))
-print(f"Data dir: {DATA_DIR}")
-
-=======
 
 DATA_DIR: Path = Path(os.environ.get("DATA_DIR", "E:/Google Drive/"))
 print(f"Data dir: {DATA_DIR}")
->>>>>>> master
 
 
 def copy_over(source_dir: Path, results_dir: Path, source_runs: str, groups: List[str]) -> Tuple[Dict[Path, List[Path]], Dict[Path, List[Path]]]:

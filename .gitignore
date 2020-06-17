@@ -13,13 +13,7 @@ data/*
 !data/**/*.py
 scripts/*.png
 wandb
-<<<<<<< HEAD
-notebooks/plots/
-notebooks/*
-notebooks
-=======
 
 notebooks/*
 notebooks
-notebooks/plots/*
->>>>>>> master
+notebooks/plots/*git

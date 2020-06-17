@@ -5,7 +5,7 @@ import shutil
 import sys
 import random
 from abc import ABC, abstractmethod
-from contextlib import contextmanager
+from contextlib import contextmanager  
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, ClassVar, Generic, List, Optional, Tuple, TypeVar
@@ -14,7 +14,7 @@ import numpy as np
 import torch
 import tqdm
 import wandb
-from simple_parsing import field, mutable_field, list_field
+from simple_parsing import field, mutable_field
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -23,7 +23,7 @@ from torchvision.utils import save_image
 from utils.json_utils import JsonSerializable
 from utils import cuda_available, gpus_available, set_seed
 from utils.early_stopping import EarlyStoppingOptions
-from utils.json_utils import JsonSerializable
+
 
 import logging
 logging.basicConfig(
@@ -37,7 +37,7 @@ logger = logging.getLogger(__file__)
 
 
 @dataclass
-class Config(JsonSerializable):
+class Config:
     """Settings related to the training setup. """
 
     debug: bool = field(alias="-d", default=False, action="store_true", nargs=0)      # enable debug mode.
@@ -61,12 +61,11 @@ class Config(JsonSerializable):
     device: torch.device = torch.device("cuda" if cuda_available else "cpu")
     
     use_wandb: bool = True # Whether or not to log results to wandb
-    
-    project_name: str = "SSCL_replay" # project name to use in wandb.
     # Name used to easily group runs together.
     # Used to create a parent folder that will contain the `run_name` directory. 
-    run_group: Optional[str] = None
+    run_group: Optional[str] = None 
     run_name: Optional[str] = None  # Wandb run name. If None, will use wandb's automatic name generation
+    project_name: str = "SSCL" # project name to use in wandb.
     # An run number is used to differentiate different iterations of the same experiment.
     # Runs with the same name can be later grouped with wandb to produce stderr plots.
     run_number: Optional[int] = None 
@@ -75,9 +74,6 @@ class Config(JsonSerializable):
     # resume the corresponding run, generates a new ID each time. 
     run_id: Optional[str] = None
 
-    tags: List[str] = list_field() # Tags to add to this run with wandb.
-    # Notes about this particular experiment. (will be logged to wandb if used.)
-    notes: Optional[str] = None
     # Save the command-line arguments that were used to create this run.
     argv: List[str] = field(init=False, default_factory=sys.argv.copy)
 
@@ -90,18 +86,11 @@ class Config(JsonSerializable):
     # the value of "<log_dir_root>/wandb"
     wandb_path: Optional[Path] = Path(os.environ['WANDB_DIR']) if "WANDB_DIR" in os.environ else None
 
-<<<<<<< HEAD
     #wandb project name
     wandb_project: str = 'SSCL'
-=======
->>>>>>> master
     def __post_init__(self):
         # set the manual seed (for reproducibility)
         set_seed(self.random_seed + (self.run_number or 0))
-
-        if not self.run_group:
-            # the run group is by default the name of the experiment.
-            self.run_group = type(self).__qualname__.split(".")[0]
         
         if self.use_cuda and not cuda_available:
             print("Cannot use the passed value of argument 'use_cuda', as CUDA "
@@ -115,7 +104,6 @@ class Config(JsonSerializable):
             if self.run_name is None:
                 self.run_name = "debug"
             
-            # logging.getLogger().setLevel(logging.DEBUG)
             # if self.log_dir.exists():
             #     # wipe out the debug folder every time.
             #     shutil.rmtree(self.log_dir)
@@ -134,7 +122,6 @@ class Config(JsonSerializable):
     @property
     def log_dir(self):
         return self.log_dir_root.joinpath(
-            (self.project_name or ""),
             (self.run_group or ""),
             (os.environ['USER']),
             (self.run_name or 'default'),
@@ -153,13 +140,15 @@ class Config(JsonSerializable):
         logger = logging.getLogger(name)
         return logger
 
-    def wandb_init(self):    
+    def wandb_init(self, experiment):    
         if self.run_name is None:
             # TODO: Create a run name using the coefficients of the tasks, etc?
             # At the moment, if no run name is given, the 'random' name from wandb is used.
             pass
         logger.info(f"Using wandb. Experiment name: {self.run_name}")
-        config_dict = asdict(self)
+        config_dict = experiment.to_config_dict()
+        self.run_group = self.run_group or type(experiment).__name__
+
         if self.wandb_path is None:
             self.wandb_path = self.log_dir_root / "wandb"
         self.wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
@@ -177,15 +166,9 @@ class Config(JsonSerializable):
             id=self.run_id,
             group=self.run_group,
             config=config_dict,
-<<<<<<< HEAD
             #dir=str(self.wandb_path),
             notes=experiment.notes,
-=======
-            dir=str(self.wandb_path),
-            notes=self.notes,
->>>>>>> master
             reinit=True,
-            tags=self.tags,
             resume="allow",
         )
         wandb.run.save()

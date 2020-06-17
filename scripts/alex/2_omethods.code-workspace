@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		},
+		{
+			"name": "SSH FS - mila_cluster",
+			"uri": "ssh://mila_cluster/"
+		}
+	],
+	"settings": {}
+}

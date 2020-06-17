@@ -689,7 +689,6 @@ class TaskIncremental(Experiment):
         self.samples_dir.mkdir(parents=True, exist_ok=True)
         save_image(samples, self.samples_dir / f"{prefix}task_{i}.png")
 
-<<<<<<< HEAD
     def on_task_switch(self, task: Task, **kwargs) -> None:
         if not self.multihead:
             # We aren't using a multihead model, so we aren't allowed to use this task label.
@@ -715,8 +714,6 @@ class TaskIncremental(Experiment):
 
         self.model.on_task_switch(task, **kwargs)
 
-=======
->>>>>>> master
     @property
     def started(self) -> bool:
         checkpoint_exists = (self.checkpoints_dir / "state.json").exists()
