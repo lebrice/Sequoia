@@ -5,10 +5,14 @@
 #SBATCH --output=logs/job_output.txt
 #SBATCH --error=logs/job_error.txt
 <<<<<<< HEAD
+<<<<<<< HEAD
 #SBATCH -p long                                  # --partition=unkillable, long
 =======
 #SBATCH -p main                                    # --partition=unkillable, long
 >>>>>>> temp_ssl
+=======
+#SBATCH -p long                                    # --partition=unkillable, long
+>>>>>>> master
 #SBATCH --cpus-per-task=2                     	   # Ask for 2 CPUs
 
 
@@ -37,10 +41,14 @@ echo "Calling python -u main.py task-incremental \
 python -u ../../main.py task-incremental-semi-sup \
     --data_dir $SLURM_TMPDIR/data \
 <<<<<<< HEAD
+<<<<<<< HEAD
     --log_dir_root /network/home/ostapeno/dev/SSCL \
 =======
     --log_dir_root /network/home/ostapeno/dev/SSCL_copy \
 >>>>>>> temp_ssl
+=======
+    --log_dir_root /network/home/ostapeno/dev/SSCL_copy \
+>>>>>>> master
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     "${@:1}"
 

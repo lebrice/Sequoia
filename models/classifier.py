@@ -72,12 +72,17 @@ class Classifier(nn.Module):
             # "wide_resnet50_2": models.wide_resnet50_2,
             # "mnasnet": models.mnasnet1_0,
         }, default=None)
-
         # Use the pretrained weights of the ImageNet model from torchvision.
         pretrained_model: bool = False
         # Freeze the weights of the pretrained encoder (except the last layer,
         # which projects from their hidden size to ours).
         freeze_pretrained_model: bool = False
+
+        # Wether to create one output head per task.
+        # TODO: It makes no sense to have multihead=True when the model doesn't
+        # have access to task labels. Need to figure out how to manage this between TaskIncremental and Classifier.
+        multihead: bool = False
+
         aux_tasks: AuxiliaryTaskOptions = field(default_factory=AuxiliaryTaskOptions)
 
     def __init__(self,
@@ -109,17 +114,15 @@ class Classifier(nn.Module):
         self._default_task = Task(classes=list(range(self.num_classes)))
         self._current_task = self._default_task
         
-        # Dictionary that maps from task classes to output head to be used.
-        # By default, contains a single output head that serves all classes.
-        self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()  # type: ignore 
-         # Classifier for the default task.
-
-        self.output_heads[self._current_task.dumps()] = OutputHead(
+        # Classifier for the default task.
+        self.default_output_head = OutputHead(
             input_size=self.hidden_size,
             output_size=self.num_classes,
             hparams=self.hparams.output_head,
         )
-
+        # Dictionary that maps from task classes to output head to be used.
+        # By default, contains a single output head that serves all classes.
+        self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()  # type: ignore 
         self.logger.info(f"output heads: {self.output_heads}")
 
         # Share the relevant parameters with all the auxiliary tasks.
@@ -127,7 +130,7 @@ class Classifier(nn.Module):
         AuxiliaryTask.hidden_size   = self.hparams.hidden_size
         AuxiliaryTask.input_shape   = self.input_shape
         AuxiliaryTask.encoder       = self.encoder
-        AuxiliaryTask.classifier    = self.classifier # TODO: Also update this class attribute when switching tasks. 
+        AuxiliaryTask.classifier    = self.default_output_head # TODO: Also update this class attribute when switching tasks. 
         AuxiliaryTask.preprocessing = self.preprocess_inputs
         
         # Dictionary of auxiliary tasks.
@@ -136,24 +139,30 @@ class Classifier(nn.Module):
             hidden_size=self.hparams.hidden_size
         )
 
-        
         if self.config.debug and self.config.verbose:
             self.logger.debug(self)
             self.logger.debug("Auxiliary tasks:")
             for task_name, task in self.tasks.items():
                 self.logger.debug(f"{task.name}: {task.coefficient}")
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)  
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
+        
 
-    def supervised_loss(self, x: Tensor, y: Tensor, h_x: Tensor=None, y_pred: Tensor=None, loss_f: Callable[[Callable, Tensor],Tensor] = None) -> LossInfo:
+    def supervised_loss(self, x: Tensor,
+                              y: Tensor,
+                              h_x: Tensor=None,
+                              y_pred: Tensor=None,
+                              loss_f: Callable[[Callable, Tensor],Tensor]=None) -> LossInfo:
         h_x = self.encode(x) if h_x is None else h_x
         y_pred = self.logits(h_x) if y_pred is None else y_pred
         y = y.view(-1)
+
         if loss_f is None:
             loss = self.classification_loss(y_pred, y)
             metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
         else:
             loss = loss_f(self.classification_loss,y_pred)
+
         metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
         loss_info = LossInfo(
             name=Tasks.SUPERVISED,
@@ -167,17 +176,17 @@ class Classifier(nn.Module):
         if y is not None and y.shape[0] != x.shape[0]:
             raise RuntimeError("Whole batch can either be fully labeled or "
                                "fully unlabeled, but not a mix of both (for now)")
-        total_loss = LossInfo(name)
         x, y = self.preprocess_inputs(x, y)
         h_x = self.encode(x)
         y_pred = self.logits(h_x)
         
+        total_loss = LossInfo(name)
         total_loss.total_loss = torch.zeros(1, device=self.device)
         total_loss.tensors["x"] = x.detach()
         total_loss.tensors["h_x"] = h_x.detach()
         total_loss.tensors["y_pred"] = y_pred.detach()
 
-        # TODO: [improvement] Support a mix of labeled / unlabeled data.
+        # TODO: [improvement] Support a mix of labeled / unlabeled data at the example-level.
         if y is not None:
             supervised_loss = self.supervised_loss(x=x, y=y, h_x=h_x, y_pred=y_pred)
             total_loss += supervised_loss
@@ -186,10 +195,22 @@ class Classifier(nn.Module):
             if aux_task.enabled:
                 aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y)
                 total_loss += aux_task_loss
-        
+
         if self.config.debug and self.config.verbose:
             for name, loss in total_loss.losses.items():
                 self.logger.debug(name, loss.total_loss, loss.metrics)
+        
+        return total_loss
+
+    def get_self_sup_loss(self, x: Tensor, y: Tensor=None, name = ''):
+        total_loss = LossInfo(name)
+        x, y = self.preprocess_inputs(x, y)
+        h_x = self.encode(x)
+        y_pred = self.logits(h_x)
+        for task_name, aux_task in self.tasks.items():
+            if aux_task.enabled:
+                aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y)
+                total_loss += aux_task_loss
         return total_loss
 
     def encode(self, x: Tensor):
@@ -217,8 +238,8 @@ class Classifier(nn.Module):
 
         if x.shape[1:] != self.input_shape:
             x = fix_channels(x)
-        
-        if y is not None:
+
+        if y is not None and self.hparams.multihead:
             # y_unique are the (sorted) unique values found within the batch.
             # idx[i] holds the index of the value at y[i] in y_unique, s.t. for
             # all i in range(0, len(y)) --> y[i] == y_unique[idx[i]]
@@ -248,18 +269,26 @@ class Classifier(nn.Module):
         Args:
             task_classes (Tuple[int, ...]): Tuple of integers, indicates the classes that are currently trained on.
         """
+        # Setting the current_task attribute also creates the output head if needed.
         self.current_task = task
         # also inform the auxiliary tasks that the task switched.
         for name, aux_task in self.tasks.items():
             if aux_task.enabled:
                 aux_task.on_task_switch(task, **kwargs)
+        self.current_task = task
 
-    def get_output_head(self, task: Task):
+    def get_output_head(self, task: Task) -> OutputHead:
+        """ Returns the output head for a given task.
+        NOTE: Assumes that the model is multiheaded.
+        """
         return self.output_heads[task.dumps()]
 
     @property
-    def classifier(self) -> nn.Module:
-        return self.get_output_head(self.current_task)
+    def classifier(self) -> OutputHead:
+        if self.hparams.multihead:
+            return self.get_output_head(self.current_task)
+        # Return the default output head.
+        return self.default_output_head
 
     @property
     def current_task(self) -> Task:
@@ -270,20 +299,32 @@ class Classifier(nn.Module):
         assert isinstance(task, Task), f"Please set the current_task by passing a `Task` object."
         self._current_task = task
         
+        if not self.hparams.multihead:
+            # not a multihead model, so we just return.
+            print("just returning, since we're not a multihead model.")
+            return
+
         task_str = task.dumps()
-        # If there isn't an output head for this task
         if task_str not in self.output_heads:
+            # If there isn't an output head for this task
             self.logger.debug(f"Creating a new output head for task {task}.")
             new_output_head = OutputHead(
                 input_size=self.hidden_size,
                 output_size=len(task.classes),
                 hparams=self.hparams.output_head,
             ).to(self.device)
+
+            # Store this new head in the module dict and add params to optimizer.
             self.output_heads[task_str] = new_output_head
             self.optimizer.add_param_group({"params": new_output_head.parameters()})
 
+            task_head = new_output_head
+        else:
+            task_head = self.get_output_head(task)
+
         # Update the classifier used by auxiliary tasks:
-        AuxiliaryTask.classifier = self.classifier
+        AuxiliaryTask.classifier = task_head
+
 
     def logits(self, h_x: Tensor) -> Tensor:
         if self.hparams.detach_classifier:
@@ -298,10 +339,12 @@ class Classifier(nn.Module):
                 task_json_str = key.split(".")[1]
                 task = Task.loads(task_json_str)
                 # Set the task ID attribute to create all the needed output heads.
-                self.current_task = task
-                
+                #self.current_task = task
+                self.on_task_switch(task)
+
         # Reset the task_id to the starting value.
-        self.current_task = starting_task
+        #self.current_task = starting_task
+        self.on_task_switch(task)
         missing, unexpected = super().load_state_dict(state_dict, strict)
         # TODO: Make sure the mean-encoder and mean-output-head modules are loaded property when using Mixup.
         return missing, unexpected

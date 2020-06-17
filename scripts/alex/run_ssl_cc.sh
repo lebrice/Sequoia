@@ -34,8 +34,10 @@ echo "Calling python -u main.py task-incremental \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     '${@:1}'"
 
+mkdir $SLURM_TMPDIR/data
+mkdir $SLURM_TMPDIR/SSCL
 python -u main.py task-incremental-semi-sup \
-    --data_dir /home/ostapeno/projects/rrg-bengioy-ad/ostapeno/dev/SSCL/data \
+    --data_dir $SLURM_TMPDIR/data \
     --log_dir_root $SLURM_TMPDIR/SSCL \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     "${@:1}"

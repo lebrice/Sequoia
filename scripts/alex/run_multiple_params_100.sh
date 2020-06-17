@@ -31,7 +31,7 @@ bash sbatch_job_semi.sh 'ict_ewc_acc' 2 --wandb_project SSCL_6_test_02_full --si
 #SimCLR
 #bash sbatch_job_semi.sh 'SimCLR_conv_loss' 3 --wandb_project SSCL_6_test_01  --dataset cifar100 --simclr.coefficient 1 --multihead 1 --n_classes_per_task 20 --ratio_labelled 0.2 --supervised_epochs_per_task 200 --batch_size 128 --run_group cifar100_simclr_loss_metric --use_accuracy_as_metric 0 --random_class_ordering 0
 ##bash sbatch_job_semi.sh 'SimCLR_conv_acc' 3 --wandb_project SSCL_6_test_01  --dataset cifar100 --simclr.coefficient 1 --multihead 1 --n_classes_per_task 20 --ratio_labelled 0.2 --supervised_epochs_per_task 200 --batch_size 128 --run_group cifar100_simclr_accmetr --use_accuracy_as_metric 1 --random_class_ordering 0
-bash sbatch_job_semi.sh 'SimCLR_conv_acc' 1 --random_seed 4 --project_name SSCL_6_test_02_full --dataset cifar100 --simclr.coefficient 1 --double_augmentation 0 --multihead 1 --n_classes_per_task 20 --ratio_labelled 0.2 --supervised_epochs_per_task 200 --batch_size 128 --run_group cifar100_simclr_accmetr --run_name simclr_accmetr --use_accuracy_as_metric 1 --random_class_ordering 0 --semi_setup_full 1
+bash sbatch_job_semi.sh 'SimCLR_conv_acc' 3 --wandb_project SSCL_6_test_02_full --dataset cifar100 --simclr.coefficient 1 --double_augmentation 0 --multihead 1 --n_classes_per_task 20 --ratio_labelled 0.2 --supervised_epochs_per_task 200 --batch_size 128 --run_group cifar100_simclr_accmetr --run_name simclr_accmetr --use_accuracy_as_metric 1 --random_class_ordering 0 --semi_setup_full 1
 
 
 #SimCLR + EWC

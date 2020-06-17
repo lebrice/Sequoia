@@ -8,12 +8,13 @@
 
 export TORCH_HOME="$SCRATCH/.torch"
 echo "SCRATCH : $SCRATCH SLURM_TMPDIR: $SLURM_TMPDIR TORCH_HOME: $TORCH_HOME"
-cd $SCRATCH/repos/SSCL
+##cd $SCRATCH/repos/SSCL
+cd /home/ostapeno/projects/rrg-bengioy-ad/ostapeno/dev/SSCL
 
 echo "Slurm Array Job ID: $SLURM_ARRAY_TASK_ID"
 
-source scripts/cedar/setup.sh
-
+##source scripts/cedar/setup.sh
+source ~/ENVS/SSCl/bin/activate
 function cleanup(){
     echo "Cleaning up and transfering files from $SLURM_TMPDIR to $SCRATCH/SSCL"
     rsync -r -u -v $SLURM_TMPDIR/SSCL/* $SCRATCH/SSCL
@@ -21,19 +22,18 @@ function cleanup(){
     # wandb sync $SLURM_TMPDIR/SSCL
 }
 
-trap cleanup EXIT
-
+trap cleanup EXIT         
 echo "Logging in with wandb since we're running on Cedar."
 # export WANDB_API_KEY="8776db49aa9afcae1952308876d832cdbd11fcbe"
-wandb login 8776db49aa9afcae1952308876d832cdbd11fcbe
+wandb login 174b08e7eb88b0c57624f63c9590418be3bc4607
 
-echo "Calling python -u main.py task-incremental \
+echo "Calling python -u task_incremental.py \
     --data_dir $SLURM_TMPDIR/data \
     --log_dir_root $SLURM_TMPDIR/results \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     ${@}"
 
-python -u main.py task-incremental \
+python -u task_incremental.py \
     --data_dir $SLURM_TMPDIR/data \
     --log_dir_root $SLURM_TMPDIR/SSCL \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \

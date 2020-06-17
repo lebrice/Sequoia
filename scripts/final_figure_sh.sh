@@ -1,10 +1,11 @@
 #!/bin/bash
+
 export SCRATCH=${SCRATCH:=$HOME}
 
 COMMON_ARGS="\
     --unsupervised_epochs_per_task 0 \
     --supervised_epochs_per_task 200 \
-    --multihead --no_wandb_cleanup \
+    --no_wandb_cleanup \
     --n_neighbors 50 \
 "
 echo "Common args: $COMMON_ARGS"
@@ -24,10 +25,3 @@ source ./scripts/task_combinations_ewc.sh fashion-mnist 5 \
     --dataset fashion_mnist \
     --tags fashion-mnist no-early-stopping resnet-18
 
-#source ./scripts/task_combinations_ewc.sh fashion-mnist 5 \
-#    --unsupervised_epochs_per_task 0 --supervised_epochs_per_task 200 \
-#    --use_accuracy_as_metric 1 \
-#    --multihead --no_wandb_cleanup \
-#    --dataset fashion_mnist \
-#    --n_neighbors 50 \
-#    --tags fashion-mnist

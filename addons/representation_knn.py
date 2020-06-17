@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, InitVar
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -33,7 +33,13 @@ class ExperimentWithKNN(ExperimentBase):
     
     TODO: Perform the KNN evaluations in different processes using multiprocessing.
     """
-    knn_options: KnnClassifierOptions = mutable_field(KnnClassifierOptions)
+
+    @dataclass
+    class Config(ExperimentBase.Config):
+        # Options for the KNN classifier 
+        knn_options: KnnClassifierOptions = mutable_field(KnnClassifierOptions)
+
+    config: InitVar[Config]
 
     @torch.no_grad()
     def test_knn(self,
@@ -64,7 +70,7 @@ class ExperimentWithKNN(ExperimentBase):
         
         train_loss, test_loss = evaluate_knn(
             x=h_x, y=y,
-            x_t=h_x_test, y_t=y_test,
+            x_t=h_x_test, y_t=y_test, options=self.config.knn_options
         )
         # train_loss = LossInfo("KNN-Train", y_pred=y_pred_train, y=y)
         # test_loss = LossInfo("KNN-Test", y_pred=y_pred_train, y=y)

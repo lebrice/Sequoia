@@ -1,6 +1,10 @@
 from copy import copy, deepcopy
+from dataclasses import dataclass, field
 from typing import (Any, Dict, List, NamedTuple, Optional, Tuple, Type,
                     TypeVar, Union)
+
+import torch
+from torch import Tensor
 from torch import nn as nn
 from torch import optim
 from torch.autograd import Variable
@@ -8,23 +12,18 @@ from torch.utils.data import DataLoader
 
 from common.losses import LossInfo
 from common.task import Task
+from models.output_head import OutputHead
+from tasks.auxiliary_task import AuxiliaryTask
 from utils import cuda_available
 from utils.nngeometry.nngeometry.layercollection import LayerCollection
 from utils.nngeometry.nngeometry.metrics import FIM
 from utils.nngeometry.nngeometry.object.pspace import (PSpaceBlockDiag,
                                                        PSpaceDiag, PSpaceKFAC)
 from utils.nngeometry.nngeometry.object.vector import PVector
-from dataclasses import dataclass, field
-
-import torch
-from torch import Tensor
-
-from common.losses import LossInfo
-from tasks.auxiliary_task import AuxiliaryTask
 
 
 class GaussianPrior(object):
-    def __init__(self, model: torch.nn.Module, n_output:int, loader: DataLoader,
+    def __init__(self, model: torch.nn.Module, n_output:int, loader: DataLoader, loss = None,
                  reg_matrix: str ="kfac", variant: str ='classif_logits', device: str='cuda'):
 
         assert reg_matrix=="kfac", 'Only kfac EWC is implement'
@@ -44,18 +43,20 @@ class GaussianPrior(object):
         self.F_linear_kfac = FIM(layer_collection=layer_collection,
                             model=model,
                             loader=loader,
+                            loss = loss,
                             representation=PSpaceKFAC,
                             n_output=n_output,
-                            variant=variant,
-                            device=device)
+                            variant='semi_logits',
+                            device='cuda')
 
         self.F_bn_blockdiag = FIM(layer_collection=layer_collection_bn,
                              model=model,
                              loader=loader,
+                             loss=loss,
                              representation=PSpaceBlockDiag,
                              n_output=n_output,
-                             variant=variant,
-                             device=device)
+                             variant='semi_logits',
+                             device='cuda')
         self.prev_params = PVector.from_model(model).clone().detach()
 
         n_parameters = layer_collection_bn.numel() + layer_collection.numel()
@@ -109,14 +110,16 @@ class EWC(AuxiliaryTask):
 
     def on_task_switch(self,
                        task: Task,
+                       loss_func = None,
                        prev_task: Task=None,
                        train_loader: DataLoader=None,
-                       classifier_head: Task=None, **kwargs)-> None:
+                       classifier_head: OutputHead=None, **kwargs)-> None:
         """ Executed when the task switches (to either a new or known task). """
         #set n_ways of the next task
-        self.n_ways = len(task.classes)
+        if classifier_head is not None and self.n_ways is None:
+            self.n_ways = classifier_head.output_size
         if task and prev_task and train_loader and classifier_head and self.current_task_loader:
-            self.calculate_ewc_prior(prev_task, task, classifier_head)
+            self.calculate_ewc_prior(loss_func, prev_task, task, classifier_head)
         #set data loader of the next task
         current_task_loader = train_loader
         if current_task_loader is not None:
@@ -135,7 +138,7 @@ class EWC(AuxiliaryTask):
         )
         return ewc_loss
 
-    def calculate_ewc_prior(self, prev_task: Task, new_task: Task, classifier_head: nn.Module):
+    def calculate_ewc_prior(self, loss_func, prev_task: Task, new_task: Task, classifier_head: nn.Module, ):
         task_number: int = new_task.index
         assert isinstance(task_number, int), f"Task number should be an int, got {task_number}"
         if task_number>0:
@@ -150,8 +153,9 @@ class EWC(AuxiliaryTask):
                 #single_head OR multi_head
                 prior = GaussianPrior(
                     nn.Sequential(AuxiliaryTask.encoder, classifier_head),
-                    self.n_ways,
-                    self.current_task_loader,
+                    loss=loss_func,
+                    n_output=self.n_ways,
+                    loader=self.current_task_loader,
                     device=self.device
                 )
                 if self.prior is not None:
@@ -164,4 +168,3 @@ class EWC(AuxiliaryTask):
                 print(f'Task {task_number} was learned before, fisher is not updated')
         else:
             print('No EWC on task 0')
-

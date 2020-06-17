@@ -1,4 +1,4 @@
-#!/bin/bash     
+#!/bin/bash
 #module load anaconda/3
 #conda-activate
 #export SCRATCH=/network/tmp1/ostapeno/SSCl_$USER

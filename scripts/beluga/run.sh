@@ -12,7 +12,6 @@ cd $SCRATCH/repos/SSCL
 
 echo "Slurm Array Job ID: $SLURM_ARRAY_TASK_ID"
 
-#source scripts/setup.sh
 source ~/ENVS/SSCl/bin/activate
 export WANDB_DIR=$SCRATCH/SSCL/wandb
 
@@ -34,9 +33,9 @@ echo "Calling python -u main.py task-incremental \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     ${@}"
 
-python -u main.py task-incremental \
+python -u task_incremental.py \
     --data_dir $SLURM_TMPDIR/data \
-    --log_dir_root $SCRATCH/SSCL/results \
+    --log_dir_root $SLURM_TMPDIR/SSCL/results \
     --run_number ${SLURM_ARRAY_TASK_ID:-0} \
     ${@}
 

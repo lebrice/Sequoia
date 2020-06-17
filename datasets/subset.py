@@ -6,7 +6,7 @@ import torch
 from PIL import Image as image
 from PIL.Image import Image
 from torch import Tensor
-from torch.utils.data import TensorDataset, Dataset, Subset as SubsetBase
+from torch.utils.data import TensorDataset, Dataset, Subset as SubsetBase, ConcatDataset
 from torchvision.transforms import Normalize
 from common.task import Task
 from torchvision.datasets import VisionDataset, MNIST
@@ -82,11 +82,13 @@ class ClassSubset(TensorDataset):
         super().__init__(self.data, self.targets)
         self.tensors: List[Tensor]
 
-    def __add__(self, other: "VisionDatasetSubset") -> "VisionDatasetSubset":  # type: ignore
-        assert self.dataset is other.dataset, "can't add subsets of different datasets"
-        labels = list(set(self.labels).union(set(other.labels)))
-        return ClassSubset(self.dataset, labels=labels)
-    
+    def __add__(self, other: "ClassSubset") -> Union["ClassSubset", ConcatDataset]:  # type: ignore
+        if isinstance(other, ClassSubset):
+            assert self.dataset is other.dataset, "can't add subsets of different datasets"
+            labels = list(set(self.labels).union(set(other.labels)))
+            return ClassSubset(self.dataset, labels=labels)
+        return super().__add__(other)
+
     def __str__(self) -> str:
         return f"VisionDatasetSubset of dataset of type {type(self.dataset).__name__} with labels {self.labels}."
 
