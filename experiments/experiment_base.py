@@ -17,7 +17,7 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset, Sampler, TensorDataset
 from torchvision.datasets import VisionDataset
 
-from common.losses import LossInfo, TrainValidLosses
+from common.losses import LossInfo, TrainValidLosses, get_supervised_metrics, get_supervised_accuracy
 from common.metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                             get_metrics)
 from config import Config as ConfigBase
@@ -479,7 +479,7 @@ class ExperimentBase(Serializable):
             step = self.state.global_step
 
             val_loss = loss_info.total_loss.item()
-            supervised_metrics = loss_info.metrics.get(Tasks.SUPERVISED)
+            supervised_metrics = get_supervised_metrics(loss_info)
             
             if use_acc:
                 assert supervised_metrics, "Can't use accuracy since there are no supervised metrics in given loss.."
