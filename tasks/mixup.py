@@ -87,8 +87,7 @@ def mixup(x1: Tensor, x2: Tensor, coeff: Tensor) -> Tensor:
     return torch.lerp(x1, x2, coeff)
 
 
-#from copy import deepcopy
-from models.CNN13 import deepcopy_cnn13
+from copy import deepcopy     
 from utils.utils import add_dicts
 
 
@@ -156,8 +155,6 @@ class MixupTask(AuxiliaryTask):
         logger = get_logger(__file__)
 
         # Exponential moving average versions of the encoder and output head.
-        self.mean_encoder: nn.Module = deepcopy(AuxiliaryTask.encoder)
-        self.mean_classifier: nn.Module = deepcopy(AuxiliaryTask.classifier)
         self.previous_task: Optional[Task] = None
 
         self.epoch_in_task: Optional[int] = 0
@@ -166,8 +163,8 @@ class MixupTask(AuxiliaryTask):
         self.consistency_criterion = softmax_mse_loss
 
     def enable(self):
-        self.mean_encoder = deepcopy_cnn13(AuxiliaryTask.encoder)
-        self.mean_classifier = deepcopy_cnn13(AuxiliaryTask.classifier)
+        self.mean_encoder = deepcopy(AuxiliaryTask.encoder)
+        self.mean_classifier = deepcopy(AuxiliaryTask.classifier)
 
     def disable(self):
         del self.mean_encoder

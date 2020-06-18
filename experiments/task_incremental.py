@@ -7,6 +7,7 @@ from pathlib import Path
 from random import shuffle
 from sys import getsizeof
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from torch.utils.data.sampler import SubsetRandomSampler
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -104,6 +105,14 @@ class TaskIncremental(Experiment):
         self.train_datasets: List[ClassSubset] = []
         self.valid_datasets: List[ClassSubset] = []
         self.test_datasets: List[ClassSubset] = []
+
+        #samplers
+        self.train_samplers: List[SubsetRandomSampler] = []
+        self.valid_samplers: List[SubsetRandomSampler] = []
+        self.test_samplers: List[SubsetRandomSampler] = []
+
+
+
         # Cumulative datasets: Hold the data from previously seen tasks
         self.valid_cumul_datasets: List[ClassSubset] = []
         self.test_cumul_datasets: List[ClassSubset] = []
@@ -197,6 +206,11 @@ class TaskIncremental(Experiment):
             # Training and validation datasets for task i.
             train_i_dataset = self.train_datasets[i]
             valid_i_dataset = self.valid_datasets[i]
+
+
+
+
+
             if self.replay_buffer:
                 # Append the replay buffer to the end of the training dataset.
                 # TODO: Should we shuffle them together?
@@ -676,6 +690,12 @@ class TaskIncremental(Experiment):
             self.train_datasets.append(train)
             self.valid_datasets.append(valid)
             self.test_datasets.append(test)
+
+            self.train_samplers.append(None)
+            self.valid_samplers.append(None)
+            self.test_samplers.append(None)
+
+
 
         # Use itertools.accumulate to do the summation of the datasets.
         self.valid_cumul_datasets = list(accumulate(self.valid_datasets))

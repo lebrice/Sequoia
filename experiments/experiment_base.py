@@ -1,7 +1,7 @@
 import inspect
 import json
 import logging
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict 
 from dataclasses import InitVar, asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
@@ -680,7 +680,7 @@ class ExperimentBase(Serializable):
 
     @property
     def checkpoints_dir(self) -> Path:
-        return self.config.log_dir / "checkpoints" / self.md5
+        return self.config.log_dir / "checkpoints"
 
     @property
     def log_dir(self) -> Path:
