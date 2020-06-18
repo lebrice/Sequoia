@@ -13,3 +13,5 @@ data/*
 !data/**/*.py
 scripts/*.png
 wandb
+.idea
+.ipynb_checkpoints
