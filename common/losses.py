@@ -1,5 +1,5 @@
 import itertools
-import logging
+from utils.logging_utils import get_logger
 from collections import OrderedDict
 from dataclasses import InitVar, asdict, dataclass, field
 from pathlib import Path
@@ -9,17 +9,17 @@ from typing import (Any, Dict, Iterable, List, Optional, Set, Tuple, TypeVar,
 import torch
 from torch import Tensor
 
-from utils.json_utils import JsonSerializable
+from utils.json_utils import Serializable
 from utils.utils import add_dicts, add_prefix
+from utils.logging_utils import cleanup
 
 from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                       get_metrics)
 
-logger = logging.getLogger(__file__)
-
+logger = get_logger(__file__)
 
 @dataclass
-class LossInfo(JsonSerializable):
+class LossInfo(Serializable):
     """ Simple object to store the losses and metrics for a given task. 
     
     Used to simplify the return type of the various `get_loss` functions.    
@@ -215,7 +215,7 @@ class LossInfo(JsonSerializable):
         prefix = (self.name + " ") if self.name else ""
         message = add_prefix(message, prefix)
 
-        return cleanup(message)
+        return cleanup(message, sep=" ")
     
     def to_dict(self):
         self.detach()
@@ -246,38 +246,28 @@ class LossInfo(JsonSerializable):
         self += new_other
 
 
-def cleanup(message: Dict[str, Union[Dict, str, float, Any]]) -> Dict[str, Union[str, float, Any]]:
-    # Flatten the log dictionary
-    from utils.utils import flatten_dict
-    sep = " "
-    message = flatten_dict(message, separator=sep)
 
-    # TODO: Remove redondant/useless keys
-    for k in list(message.keys()):
-        if k.endswith((f"{sep}n_samples", f"{sep}name")):
-            message.pop(k)
-            continue
+def get_supervised_metrics(loss: LossInfo, mode: str="Test") -> Union[ClassificationMetrics, RegressionMetrics]:
+    from tasks.tasks import Tasks
+    if Tasks.SUPERVISED not in loss.losses:
+        loss = loss.losses[mode]
+    metric = loss.losses[Tasks.SUPERVISED].metrics[Tasks.SUPERVISED]
+    return metric
 
-        v = message.pop(k)
-        # Example input:
-        # "Task_losses/Task1/losses/Test/losses/rotate/losses/270/metrics/270/accuracy"
-        
-        # Simplify the key, by getting rid of all the '/losses/' and '/metrics/' etc.
-        k = k.replace(f"{sep}losses{sep}", sep).replace(f"{sep}metrics{sep}", sep)
-        # --> "Task_losses/Task1/Test/rotate/270/270/accuracy"
-        
-        # Get rid of repetitive modifiers (ex: "/270/270" above)
-        parts = k.split(sep)
-        from utils.utils import unique_consecutive
-        k = sep.join(unique_consecutive(parts))
-        # Will become:
-        # "Task_losses/Task1/Test/rotate/270/accuracy"
-        message[k] = v
-    return message
+
+def get_supervised_accuracy(loss: LossInfo, mode: str="Test") -> float:
+    # TODO: this is ugly. There is probably a cleaner way, but I can't think of it right now. 
+    try:
+        supervised_metric = get_supervised_metrics(loss, mode=mode)
+        return supervised_metric.accuracy
+    except KeyError as e:
+        print(f"Couldn't find the supervised accuracy in the `LossInfo` object: Key error: {e}")
+        print(loss.dumps(indent="\t", sort_keys=False))
+        raise e
 
 
 @dataclass
-class TrainValidLosses(JsonSerializable):
+class TrainValidLosses(Serializable):
     """ Helper class to store the train and valid losses during training. """
     train_losses: Dict[int, LossInfo] = field(default_factory=OrderedDict)
     valid_losses: Dict[int, LossInfo] = field(default_factory=OrderedDict)

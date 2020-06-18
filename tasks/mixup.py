@@ -12,9 +12,9 @@ from common.losses import LossInfo
 from common.task import Task
 from utils import cuda_available
 from .auxiliary_task import AuxiliaryTask
-import logging
+from utils.logging_utils import get_logger
 from config import Config
-logger = logging.getLogger(__file__)
+logger = get_logger(__file__)
 
 
 def mixup_data_sup(x, y, alpha=1.0):
@@ -153,7 +153,7 @@ class MixupTask(AuxiliaryTask):
                  options: "MixupTask.Options"=None):
         super().__init__(coefficient=coefficient, name=name, options=options)
         self.options: MixupTask.Options
-        self.logger = Config.get_logger(__file__)
+        logger = get_logger(__file__)
 
         # Exponential moving average versions of the encoder and output head.
         self.mean_encoder: nn.Module = deepcopy(AuxiliaryTask.encoder)
@@ -199,8 +199,8 @@ class MixupTask(AuxiliaryTask):
 
     def on_task_switch(self, task: Task, **kwargs) -> None:
         if self.enabled and task != self.previous_task:
-            self.logger.info(f"Discarding the mean classifier on switch to task {task}")
-            self.mean_classifier = deepcopy_cnn13(AuxiliaryTask.classifier)
+            logger.info(f"Discarding the mean classifier on switch to task {task}")
+            self.mean_classifier = deepcopy(AuxiliaryTask.classifier)
             self.previous_task = task
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:

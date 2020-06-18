@@ -7,7 +7,7 @@ from sys import getsizeof
 from torch import Tensor, nn  
 from torch.autograd import Variable
 from itertools import repeat, cycle
-from models.classifier import Classifier
+from models.classifier import Classifier 
 from task_incremental import TaskIncremental
 from dataclasses import dataclass
 from torch.utils.data import Subset
@@ -20,10 +20,9 @@ from itertools import accumulate
 from pathlib import Path
 from torch.utils.data.sampler import SubsetRandomSampler
 from torch.utils.data import DataLoader, Dataset, TensorDataset
-from typing import Dict, Iterable, List, Tuple, Union, Optional, Any
-from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional, Tuple, Type, Union)
+from torch.utils.data.sampler import SubsetRandomSampler
+
 from common.losses import LossInfo, TrainValidLosses
-from simple_parsing import mutable_field, list_field
 from common.task import Task
 from task_incremental import get_supervised_accuracy
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
@@ -102,7 +101,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         self.current_lr: Optional[float] = self.hparams.learning_rate
 
     def init_model(self) -> Classifier:
-        self.logger.debug("init model")
+        logger.debug("init model")
         model = super().init_model()
         return model
 
@@ -288,15 +287,15 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             self.load_state(self.restore_from_path)
 
         if self.done:
-            self.logger.info(f"Experiment is already done.")
+            logger.info(f"Experiment is already done.")
             # exit()
 
         if self.state.global_step == 0:
-            self.logger.info("Starting from scratch!")
+            logger.info("Starting from scratch!")
             self.state.tasks = self.create_tasks_for_dataset(self.dataset)
         else:
-            self.logger.info(f"Starting from global step {self.state.global_step}")
-            self.logger.info(f"i={self.state.i}, j={self.state.j}")
+            logger.info(f"Starting from global step {self.state.global_step}")
+            logger.info(f"i={self.state.i}, j={self.state.j}")
 
         self.tasks = self.state.tasks
         self.save_state(save_model_weights=False)
@@ -305,7 +304,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         self.load_datasets(self.tasks)
         self.n_tasks = len(self.tasks)
 
-        self.logger.info(f"Class Ordering: {self.state.tasks}")
+        logger.info(f"Class Ordering: {self.state.tasks}")
 
         if self.state.global_step == 0:
             self.state.knn_losses = [[None] * self.n_tasks] * self.n_tasks  # [N,N]

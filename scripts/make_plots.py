@@ -1,6 +1,5 @@
 import argparse
 import contextlib
-import logging
 import os
 import shlex
 import shutil
@@ -13,10 +12,8 @@ from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
 from simple_parsing import ArgumentParser, choice, field, list_field
-
+from utils.logging_utils import get_logger
 from .make_oml_plot import OmlFigureOptions
-
-logging.basicConfig(level=logging.CRITICAL)
 
 DATA_DIR: Path = Path(os.environ.get("DATA_DIR", "E:/Google Drive/"))
 print(f"Data dir: {DATA_DIR}")

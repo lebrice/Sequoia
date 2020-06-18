@@ -1,11 +1,7 @@
 import inspect
 import json
 import logging
-import os
-import time
-import hashlib
-from abc import ABC, abstractmethod
-from collections import MutableMapping, OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
@@ -25,35 +21,55 @@ from common.losses import LossInfo, TrainValidLosses
 from common.metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                             get_metrics)
 from config import Config as ConfigBase
-from datasets import DatasetConfig
-from datasets.cifar import Cifar10, Cifar100
+from datasets import Cifar10, Cifar100, DatasetConfig, FashionMnist, Mnist
 from datasets.data_utils import train_valid_split
-from datasets.fashion_mnist import FashionMnist
-from datasets.mnist import Mnist
 from datasets.subset import ClassSubset, Subset
 from models.classifier import Classifier
-from save_job import SaveTuple
 from simple_parsing import choice, field, mutable_field, subparsers
-from simple_parsing.helpers import FlattenedAccess
+from simple_parsing.helpers import FlattenedAccess, Serializable
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
-from utils.json_utils import JsonSerializable, take_out_unsuported_values
-from utils.logging_utils import pbar
+from utils.logging_utils import cleanup, get_logger, pbar
+from utils.save_job import SaverWorker, SaveTuple, save
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
 
-logger = ConfigBase.get_logger(__file__)
+logger = get_logger(__file__)
 
-
-
-@dataclass  # type: ignore
-class ExperimentBase(JsonSerializable):
+@dataclass
+class ExperimentBase(Serializable):
     """Base-class for an Experiment.
+
+    Important attributes:
+    - `config` (ExperimentBase.Config): Contains all the settings related to an 
+        experiment which don't have any influence on model performance (e.g.
+        log_dir, log_interval, wandb stuff, etc.).
+        NOTE: Can also be used subclassed to configure the evaluation setup.
+        For instance, in a task-incremental setup, can be used to configure the
+        number of classes seen per task, or the size of a replay buffer, etc. 
+    
+    - `hparams` (Classifier.HParams): The Hyper-parameters of the experiment.
+        It's attributes should have an impact on the performance of the model on
+        the evaluated task.
+
+    - `state` (ExperimentBase.State): Holds the state of an experiment, used for
+        checkpointing and resuming runs.
+
+    NOTE: We also use some experiment addons, which act as mixins to extend this
+    class and add some optional, use-case specific behaviour.
+    For instance, one addon adds a "callback" to periodically save some fake
+    images when using a generative auxiliary task.
+    Another adds settings related to Replay, etc.
+
+    TODO: Get some feedback about the inheritance setup used for Addons.
     """
     @dataclass
     class Config(ConfigBase):
-        # Model Hyper-parameters
-        hparams: Classifier.HParams = mutable_field(Classifier.HParams)
+        """ Configuration of an Experiment.
+
+        These settings shouldn't need to be tuned.
+        These attributes will be parsed from the command-line using simple-parsing.
+        """
         # Which dataset to use.
         dataset: DatasetConfig = choice({
             "mnist": Mnist(),
@@ -61,19 +77,13 @@ class ExperimentBase(JsonSerializable):
             "cifar10": Cifar10(),
             "cifar100": Cifar100(),
         }, default="mnist")
-
         # Path to restore the state from at the start of training.
         # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
         restore_from_path: Optional[Path] = None
 
-        no_wandb_cleanup: bool = False
-
-    config: Config
-    model: Classifier = field(default=None, init=False)  # type: ignore
-        
     @dataclass
-    class State(JsonSerializable):
-        """ Dataclass used to store the state of the experiment.
+    class State(Serializable):
+        """ Dataclass used to store the state of an experiment.
         
         This object should contain everything we want to be able to save/restore.
         NOTE: We aren't going to parse these from the command-line.
@@ -83,54 +93,52 @@ class ExperimentBase(JsonSerializable):
         # Container for train/valid losses that are logged periodically.
         all_losses: TrainValidLosses = mutable_field(TrainValidLosses, repr=False)
 
-    def __post_init__(self, config: "Experiment.Config"):
+        def __post_init__(self):
+            self.global_step = self.all_losses.latest_step()
+
+    # Experiment Config: non-tunable parameters specific to an experiment.
+    config: Config = mutable_field(Config)
+    # Model Hyper-parameters (tunable) settings.
+    hparams: Classifier.HParams = mutable_field(Classifier.HParams)
+    # State of the experiment (not parsed form command-line).
+    state: State = mutable_field(State, init=False, metadata=dict(to_dict=False))
+
+    def __post_init__(self):
         """ Called after __init__, used to initialize all missing fields.
         
         You can use this method to initialize the fields that aren't parsed from
         the command-line, such as `model`, etc.
-        Additionally, the fields created here are not added in the wandb logs.       
+        
+        NOTE: The fields created here are not included in the result of
+        `self.to_dict()`, therefore they will also not be logged to wandb 
+        when `wandb.init` is called.
         """
-        self.config = config
-        AuxiliaryTask.input_shape   = self.config.dataset.x_shape
-
         # Set these shared attributes so that all the Auxiliary tasks can be created.
-        if isinstance(self.config.dataset, (Mnist, FashionMnist)):
-            AuxiliaryTask.input_shape = self.config.dataset.x_shape
-            AuxiliaryTask.hidden_size = self.config.hparams.hidden_size
+        AuxiliaryTask.input_shape = self.config.dataset.x_shape
+        AuxiliaryTask.hidden_size = self.hparams.hidden_size
 
         self.train_dataset: Dataset = NotImplemented
         self.valid_dataset: Dataset = NotImplemented
         self.test_dataset: Dataset = NotImplemented
+
         self.train_loader: DataLoader = NotImplemented
         self.valid_loader: DataLoader = NotImplemented
         self.test_loader: DataLoader = NotImplemented
-
-        self.global_step: int = 0
-        self.logger = self.config.get_logger(inspect.getfile(type(self)))
         if self.config.debug:
             logger.setLevel(logging.DEBUG)
         
-        self._samples_dir: Optional[Path] = None
-        
-        if self.config.notes:
-            with open(self.config.log_dir / "notes.txt", "w") as f:
-                f.write(self.config.notes)
-        
-        from save_job import SaverWorker
-        mp.set_start_method("spawn")
-        self.background_queue = mp.Queue()
-        self.saver_worker: Optional[SaverWorker] = None
+        # Background queue and worker for saving stuff to disk asynchronously.
 
-        self.state = self.State()
-        self.md5 = hashlib.md5(str(self.hparams).encode('utf-8') + str(self).encode('utf-8')).hexdigest()
+        mp.set_start_method("spawn")
+        self.background_queue: mp.Queue = mp.Queue()
+        self.saver_worker: Optional[SaverWorker] = None
 
     def __del__(self):
         print("Destroying the 'Experiment' object.")
         self.cleanup()
 
-    @abstractmethod
     def run(self):
-        pass
+        raise NotImplementedError("Implement your own run method in a derived class!")
 
     def launch(self):
         """ Launches the experiment.
@@ -139,38 +147,31 @@ class ExperimentBase(JsonSerializable):
         between the Experiment.run() method and this one.
         """
         if self.config.verbose:
-            print("Experiment:")
-            pprint.pprint(asdict(self), indent=1)
+            logger.info(f"Experiment: {self.dumps_yaml(indent=4)}")
             print("=" * 40)
-
-        config: Config = self.config
-        # pprint.pprint(config_dict, indent=1)
-        config_dict = config.to_dict()
-
+        
         if self.config.use_wandb:
-            if config.run_name is None:
-                # TODO: Create a run name using the coefficients of the tasks, etc?
-                # At the moment, if no run name is given, the random name from wandb is used.
-                pass
-            run = self.config.wandb_init()
-            wandb.run.save()
-            print(f"Using wandb. Group name: {config.run_group} run name: {config.run_name}, log_dir: {config.log_dir}")
+            config_dict = self.to_dict()
+            # Take out the `state` key from the config dict:
+            config_dict.pop("state", None)
+            run = self.config.wandb_init(config_dict=config_dict)
         
-        # if experiment.done:
-        #     print(f"Experiment is already done. Exiting.")
-        #     exit(0)
+
+        logger.info(f"Launching experiment at log dir {self.config.log_dir}")
+
+        if self.done:
+            logger.info(f"Experiment is already done! Exiting.")
+            exit()
+
         if self.started:
-            print(f"Experiment is incomplete at directory {config.log_dir}.")
-            # TODO: pick up where we left off ?
-            # latest_checkpoint = log_dir / "checkpoints" / "todo"
-            # settings.experiment = torch.load(latest_checkpoints)
-        
+            logger.info(f"Experiment is incomplete at directory {self.config.log_dir}")
+            # TODO: Resume an interrupted experiment
         try:
-            print("-" * 10, f"Starting experiment '{type(self).__name__}' ({config.log_dir})", "-" * 10)
-            
+            logger.info("-" * 10 + f"Starting experiment '{type(self).__name__}' " + "-" * 10)
+
             self.run()
-            
-            print("-" * 10, f"Experiment '{type(self).__name__}' is done.", "-" * 10)
+
+            logger.info("-" * 10 + f"Experiment '{type(self).__name__}' is done." + "-" * 10)
             self.cleanup()
         
         except Exception as e:
@@ -183,6 +184,14 @@ class ExperimentBase(JsonSerializable):
         """
         # Create the model
         self.model = self.init_model()
+
+        # Save the Config, Hparams and State(?) to a file.
+        # TODO: should we also save the state here?
+        # TODO: This could potentially overwrite an existing file!
+        self.config.log_dir.mkdir(exist_ok=True, parents=True)
+        self.checkpoints_dir.mkdir(exist_ok=True, parents=True)
+
+        self.save(self.config.log_dir / "experiment.yaml")
 
         # If the experiment was already started, or a 'restore_from' argument
         # was passed:
@@ -198,7 +207,7 @@ class ExperimentBase(JsonSerializable):
 
     def cleanup(self):
         print("Cleaning up after the experiment is done.")
-        if self.saver_worker:
+        if hasattr(self, "saver_worker") and self.saver_worker:
             self.background_queue.put(None)
             self.saver_worker.join(timeout=120)
         print("Successfully closed everything")
@@ -213,26 +222,19 @@ class ExperimentBase(JsonSerializable):
 
     def load_state(self, state_json_path: Path=None) -> None:
         """ save/restore the state from a previous run. """
-        if not state_json_path:
-            state_json_path = self.checkpoints_dir / "state.json"
-
+        state_json_path = state_json_path or self.checkpoints_dir / "state.json"
         logger.info(f"Restoring state from {state_json_path}")
         # Load the 'State' object from the json file
-        self.state = self.State.load_json(state_json_path)
-
+        self.state = self.State.load(state_json_path)
         if self.state.model_weights_path:
             logger.info(f"Restoring model weights from {self.state.model_weights_path}")
             state_dict = torch.load(
                 self.state.model_weights_path,
                 map_location=self.config.device,
             )
-            self.model.load_state_dict(state_dict, strict=False)
-        else:
-            logger.info(f"Not restoring model weights (self.state.model_weights_path is None)")
-
+            self.model.load_state_dict(state_dict)
         # TODO: Make sure that restoring at some arbitrary global_step works.
-        self.global_step = self.state.global_step or self.state.all_losses.latest_step()
-        logger.info(f"Starting at global step = {self.global_step}.")
+        logger.info(f"Starting at global step = {self.state.global_step}.")
 
     def init_model(self) -> Classifier:
         print("init model")
@@ -245,11 +247,11 @@ class ExperimentBase(JsonSerializable):
         from models.cifar import Cifar10Classifier, Cifar100Classifier
 
         if isinstance(dataset, (Mnist, FashionMnist)):
-            return MnistClassifier(hparams=self.config.hparams, config=self.config)
+            return MnistClassifier(hparams=self.hparams, config=self.config)
         elif isinstance(dataset, Cifar10):
-            return Cifar10Classifier(hparams=self.config.hparams, config=self.config)
+            return Cifar10Classifier(hparams=self.hparams, config=self.config)
         elif isinstance(dataset, Cifar100):
-            return Cifar100Classifier(hparams=self.config.hparams, config=self.config)
+            return Cifar100Classifier(hparams=self.hparams, config=self.config)
         else:
             raise NotImplementedError(f"TODO: add a model for dataset {dataset}.")
 
@@ -350,7 +352,7 @@ class ExperimentBase(JsonSerializable):
         # Get the latest step
         # NOTE: At the moment, will always be zero, but if we reload
         # `all_losses` from a file, would give you the step to start from.
-        starting_step = all_losses.latest_step() or self.global_step
+        starting_step = all_losses.latest_step() or self.state.global_step
         starting_epoch = len(validation_losses) + 1
 
         if early_stopping_options:
@@ -387,7 +389,7 @@ class ExperimentBase(JsonSerializable):
             desc += f"Epoch {epoch}"
             pbar.set_description(desc + " Train")
 
-            epoch_start_step = self.global_step
+            epoch_start_step = self.state.global_step
             for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
                 train_loss.drop_tensors()
                 
@@ -396,7 +398,7 @@ class ExperimentBase(JsonSerializable):
                     valid_loss = next(valid_loss_gen)
                     valid_loss.drop_tensors()
 
-                    all_losses[self.global_step] = (train_loss, valid_loss)
+                    all_losses[self.state.global_step] = (train_loss, valid_loss)
 
                     message.update(train_loss.to_pbar_message())
                     message.update(valid_loss.to_pbar_message())
@@ -417,8 +419,8 @@ class ExperimentBase(JsonSerializable):
 
             if temp_save_dir:
                 # Save these files in the background using the saver process.
-                self.save(temp_save_dir / f"val_loss_{i}.json", val_loss_info)
-                self.save(temp_save_dir / f"all_losses.json", all_losses)
+                self.save_job(val_loss_info, temp_save_dir / f"val_loss_{i}.json")
+                self.save_job(all_losses, temp_save_dir / f"all_losses.json")
             
             # Inform the best model watcher of the latest performance of the model.
             best_step = best_model_watcher.send(val_loss_info)
@@ -468,13 +470,13 @@ class ExperimentBase(JsonSerializable):
         
         best_perf: Optional[float] = None
         
-        step = self.global_step
+        step = self.state.global_step
         best_step: int = step
 
         loss_info: Optional[LossInfo] = (yield step)
 
         while loss_info is not None:
-            step = self.global_step
+            step = self.state.global_step
 
             val_loss = loss_info.total_loss.item()
             from task_incremental import get_supervised_metrics
@@ -577,34 +579,53 @@ class ExperimentBase(JsonSerializable):
     def get_dataloader(self, dataset: Dataset, sampler: Sampler=None, shuffle: bool=True) -> DataLoader:
         return DataLoader(
             dataset,
-            batch_size=self.config.hparams.batch_size,
+            batch_size=self.hparams.batch_size,
             shuffle=shuffle,
             sampler=sampler,
             num_workers=self.config.num_workers,
             pin_memory=self.config.use_cuda,
         )
-    
-    def save_state(self, save_dir: Path=None, save_model_weights: bool=True) -> None:
+
+    def save_experiment(self, save_path: Path, blocking: bool=False):
+        save_dir = save_path if save_path.is_dir() else save_path
+        save_dir.mkdir(exist_ok=True, parents=True)
+
+        saved_weights_path = save_dir / "model_weights.pth"
+        state_dict = {
+            k: t.detach().cpu() for k, t in self.model.state_dict().items()
+        }
+        self.save_job(obj=state_dict, path=saved_weights_path, blocking=blocking)
+        # Update the `state` attribute to point to the new checkpoints file. 
+        self.state.model_weights_path = saved_weights_path
+
+    def save_state(self, save_dir: Path=None, save_model_weights: bool=True, blocking: bool=True) -> None:
+        """Saves the state of the experiment to the directory.
+
+        Args:
+            save_dir (Path, optional): Dicretory to save results in. Defaults to
+               None, in which case `self.checkpoints_dir` is used.
+            save_model_weights (bool, optional): [description]. Defaults to True.
+            blocking (bool, optional): [description]. Defaults to True.
+        """
+        # Use checkpoints dir if save_dir is not given.
         save_dir = save_dir or self.checkpoints_dir
-        
-        # Store the most up to date global step in the state object.
-        self.state.global_step = self.global_step or self.state.global_step
-        
-        model_state_dict: Dict[str, Tensor] = OrderedDict()
+        save_dir.mkdir(parents=True, exist_ok=True)
+
         if save_model_weights:
-            for k, tensor in self.model.state_dict().items():
-                model_state_dict[k] = tensor.detach().cpu()
+            saved_weights_path = save_dir / "model_weights.pth"
+            state_dict = {
+                k: t.detach().cpu() for k, t in self.model.state_dict().items()
+            }
+            self.save_job(obj=state_dict, path=saved_weights_path, blocking=blocking)
+            # Update the `state` attribute to point to the new checkpoints file. 
+            self.state.model_weights_path = saved_weights_path
+        self.save_job(obj=self.state, path=save_dir / "state.json", blocking=blocking)
 
-        logger.debug(f"Saving state (in background) to save_dir {save_dir}")
-        self.save(save_dir / "state.json", self.state)
-        if model_state_dict:
-            self.save(save_dir / "model_weights.pth", model_state_dict)
-
-    def save(self, path: Path, obj: Any, blocking: bool=True) -> None:
+    def save_job(self, obj: Any, path: Path, blocking: bool=True) -> None:
         """Save the object `obj` to path `path`.
 
         If `blocking` is False, uses a background process. Otherwise, blocks
-        until saving is complete. 
+        until saving is complete.
 
         Args:
             path (Path): Path to save to.
@@ -612,7 +633,6 @@ class ExperimentBase(JsonSerializable):
             blocking (bool, optional): Wether to wait for the operation to
                 finish, or to delegate to a background process. Defaults to False.
         """
-        from save_job import SaverWorker, save
         assert isinstance(path, Path), f"positional argument 'path' should be a Path! (got {path})"
         if blocking:
            save(obj, save_path=path)
@@ -623,76 +643,26 @@ class ExperimentBase(JsonSerializable):
                 self.saver_worker.start()
             self.background_queue.put(SaveTuple(save_path=path, obj=obj))
 
-    def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
-        if always_print or (self.config.debug and self.config.verbose):
-            print(message, value if value is not None else "")
 
-        # with open(self.log_dir / "log.txt", "a") as f:
-        #     print(message, value, file=f)
+    def log(self, message: Dict[str, Any], step: int=None, once: bool=False, prefix: str=""):
+        for k, v in message.items():
+            if isinstance(v, (LossInfo, Metrics)):
+                message[k] = v.to_log_dict()
 
+        message = cleanup(message, sep="/")
+
+        if prefix:
+            message = utils.add_prefix(message, prefix)
+        
+        # if we want to long once (like a final result, step should be None)
+        # else, if not given, we use the global step.
+        step = None if once else (step or self.global_step)
+        
         if self.config.use_wandb:
-            # if we want to long once (like a final result, step should be None)
-            # else, if not given, we use the global step.
-            step = None if once else (step or self.global_step)
-            if message is None:
-                return
-            message_dict: Dict
-            if isinstance(message, dict):
-                message_dict = OrderedDict()
-                for k, v in message.items():
-                    if isinstance(v, (LossInfo, Metrics, TrainValidLosses)):
-                        v = v.to_log_dict()
-                    message_dict[k] = v
-            elif isinstance(message, (LossInfo, Metrics)):
-                message_dict = message.to_log_dict()
-            elif isinstance(message, str) and value is not None:
-                message_dict = {message: value}
-            elif isinstance(message, str):
-                return
-            else:
-                message_dict = message  # type: ignore
-            
-            if prefix:
-                message_dict = utils.add_prefix(message_dict, prefix)
+            wandb.log(message, step=step)
 
-            avv_knn = []
-            def wandb_cleanup(d, parent_key='', sep='/', exclude_type=list):
-                items = []
-                for k, v in d.items():
-                    new_key = parent_key + sep + k if parent_key else k
-                    #if 'knn_losses' in k and 'Verbose' not in k:
-                    #    task_measuree, task_measured = [int(s) for s in k if s.isdigit()]
-                    #    mode = k.split('/')[-1]
-                    #    if mode=='valid':
-                    #        avv_knn.append(message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}']['metrics']['KNN']['accuracy'])
-                    #    items.append((f'KNN_per_task/knn_{mode}_task_{task_measured}',message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}'][
-                    #                            'metrics']['KNN']['accuracy']))
-
-                    if 'cumul_losses' in k:
-                        new_key = 'Cumulative'
-
-                    elif 'task_losses' in k: 
-                        task_measuree, task_measured = [int(s) for s in k if s.isdigit()]
-                        new_key = 'Task_losses'+sep + f'Task{task_measured}'
-                    elif '[' in new_key and 'Verbose' not in new_key:
-                        new_key = 'Verbose/'+new_key
-
-                    if isinstance(v, MutableMapping):
-                        items.extend(wandb_cleanup(v, new_key, sep=sep).items())
-                    else:
-                        if not type(v)==exclude_type:
-                            items.append((new_key, v))
-                return dict(items)
-
-            if not self.config.no_wandb_cleanup:
-                message_dict = wandb_cleanup(message_dict)
-                if len(avv_knn) > 0:
-                    message_dict['KNN_per_task/avv_knn'] = np.mean(avv_knn)
-                #message_dict['task/currently_learned_task'] = self.state.i
-                message_dict = wandb_cleanup(message_dict)
-            
-            if self.config.use_wandb:
-                wandb.log(message_dict, step=step)
+        if self.config.debug and self.config.verbose:
+            print(message)
 
     def _folder(self, folder: Union[str, Path], create: bool=True) -> Path:
         path = self.config.log_dir / folder
@@ -706,14 +676,7 @@ class ExperimentBase(JsonSerializable):
 
     @property
     def samples_dir(self) -> Path:
-        if self._samples_dir:
-            return self._samples_dir
-        self._samples_dir = self._folder("samples")
-        return self._samples_dir
-    
-    @samples_dir.setter
-    def samples_dir(self, value: Path) -> None:
-        self._samples_dir = value
+        return self._folder("samples")
 
     @property
     def checkpoints_dir(self) -> Path:
@@ -737,6 +700,15 @@ class ExperimentBase(JsonSerializable):
         return is_nonempty_dir(self.checkpoints_dir)
 
     @property
+    def global_step(self) -> int:
+        """ Proxy for `self.state.global_step`. """
+        return self.state.global_step
+    
+    @global_step.setter
+    def global_step(self, value: int) -> None:
+        self.state.global_step = value
+
+    @property
     def done(self) -> bool:
         """Returns wether or not the experiment is complete.
         
@@ -744,6 +716,7 @@ class ExperimentBase(JsonSerializable):
             bool: Wether the experiment is complete or not (wether the
             results_dir exists and contains files).
         """
+        import os
         scratch_dir = os.environ.get("SCRATCH")
         if scratch_dir:
             log_dir = self.config.log_dir.relative_to(self.config.log_dir_root)
@@ -753,6 +726,7 @@ class ExperimentBase(JsonSerializable):
                 logger.info(f"Experiment is already done (non-empty folder at {results_dir}) Exiting.")
                 return True
         return self.started and is_nonempty_dir(self.results_dir)
+<<<<<<< HEAD:experiment.py
     
     def save_to_results_dir(self, results: Dict[Union[str, Path], Any]):
         self.results_dir.mkdir(parents=True, exist_ok=True)
@@ -804,3 +778,5 @@ class Experiment(ExperimentWithKNN,
         super().__post_init__(*args, **kwargs)
 
     config: InitVar[Config]
+=======
+>>>>>>> master:experiments/experiment_base.py

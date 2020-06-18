@@ -4,6 +4,7 @@ import functools
 import itertools
 import operator
 import random
+import re
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import MutableMapping
 from dataclasses import Field, fields
@@ -206,6 +207,14 @@ def roundrobin(*iterables: Iterable[T]) -> Iterable[T]:
             # Remove the iterator we just exhausted from the cycle.
             num_active -= 1
             nexts = itertools.cycle(itertools.islice(nexts, num_active))
+
+
+def camel_case(name):
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    s2 = re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+    while "__" in s2:
+        s2 = s2.replace("__", "_")
+    return s2
 
 
 if __name__ == "__main__":

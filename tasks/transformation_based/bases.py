@@ -12,9 +12,9 @@ from common.losses import LossInfo
 from common.metrics import ClassificationMetrics, Metrics, get_metrics
 from tasks.auxiliary_task import AuxiliaryTask
 from utils.utils import fix_channels
-import logging
+from utils.logging_utils import get_logger
 
-logger = logging.getLogger(__file__)
+logger = get_logger(__file__)
 
 def wrap_pil_transform(function: Callable):
     def _transform(img_x, arg):

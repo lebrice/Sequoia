@@ -1,4 +1,4 @@
-import logging
+from utils.logging_utils import get_logger
 from typing import Iterable, Iterator, Sized, Tuple
 
 import numpy as np
@@ -8,7 +8,7 @@ from torchvision.datasets import VisionDataset
 
 from .subset import Subset
 
-logger = logging.getLogger(__file__)
+logger = get_logger(__file__)
 
 
 def train_valid_split(train_dataset: VisionDataset, valid_fraction: float=0.2) -> Tuple[VisionDataset, VisionDataset]:

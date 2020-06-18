@@ -1,5 +1,5 @@
 import itertools
-import logging
+from utils.logging_utils import get_logger
 from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass, fields
 from itertools import accumulate
@@ -17,22 +17,23 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
 
-from common.losses import LossInfo, TrainValidLosses
+from common.losses import (LossInfo, TrainValidLosses, get_supervised_accuracy,
+                           get_supervised_metrics)
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from common.task import Task
 from datasets import DatasetConfig
 from datasets.data_utils import unbatch, unlabeled
 from datasets.subset import ClassSubset
-from experiment import Experiment
 from models.output_head import OutputHead
 from simple_parsing import choice, field, list_field, mutable_field, subparsers
+from simple_parsing.helpers import Serializable
 from tasks import Tasks
 from utils import utils
-from utils.json_utils import JsonSerializable
-from utils.utils import (common_fields, n_consecutive, rgetattr, roundrobin,
-                         rsetattr)
+from utils.utils import n_consecutive, roundrobin
 
-logger = logging.getLogger(__file__)
+from .experiment import Experiment
+
+logger = get_logger(__file__)
 
 
 @dataclass
@@ -41,6 +42,7 @@ class TaskIncremental(Experiment):
     """
     @dataclass
     class Config(Experiment.Config):
+        """ Configuration options for the TaskIncremental experiment. """
         # Number of classes per task.
         n_classes_per_task: int = 2
         # Wether to sort out the classes in the class_incremental setting.
@@ -55,8 +57,6 @@ class TaskIncremental(Experiment):
         task_labels_at_train_time: bool = True
         task_labels_at_test_time:  bool = True
 
-    # Experiment Configuration.
-    config: InitVar["TaskIncremental.Config"]
 
     @dataclass
     class State(Experiment.State):
@@ -86,7 +86,10 @@ class TaskIncremental(Experiment):
         # Cumulative losses after each task
         cumul_losses: List[Optional[LossInfo]] = list_field()
 
-    state: State = mutable_field(State)
+    # Experiment Configuration.
+    config: Config = mutable_field(Config)     # Overwrite the type from Experiment.
+    # Experiment state.
+    state: State = mutable_field(State, init=False)        # Overwrite the type from Experiment.
 
     def __post_init__(self, *args, **kwargs):
         """ NOTE: fields that are created in __post_init__ aren't serialized to/from json! """
@@ -101,7 +104,6 @@ class TaskIncremental(Experiment):
         self.train_datasets: List[ClassSubset] = []
         self.valid_datasets: List[ClassSubset] = []
         self.test_datasets: List[ClassSubset] = []
-        
         # Cumulative datasets: Hold the data from previously seen tasks
         self.valid_cumul_datasets: List[ClassSubset] = []
         self.test_cumul_datasets: List[ClassSubset] = []
@@ -123,13 +125,15 @@ class TaskIncremental(Experiment):
             logger.info(f"i={self.state.i}, j={self.state.j}")
         
         self.tasks = self.state.tasks
+        logger.info(f"Class Ordering: {self.state.tasks}")
+        
         # save the state, just in case.
         self.save_state(save_model_weights=False)
-        
+
         # Load the datasets
         self.load_task_datasets(self.tasks)
         self.n_tasks = len(self.tasks)
-
+        
         if self.state.global_step == 0:
             self.state.knn_losses   = [[None for _ in range(self.n_tasks)] for _ in range(self.n_tasks)]
             self.state.knn_full_losses = [None for _ in range(self.n_tasks)]
@@ -184,22 +188,19 @@ class TaskIncremental(Experiment):
         ```
         """
         self.setup()
-
-        logger.info(f"Class Ordering: {self.state.tasks}")
         
         for i in range(self.state.i, self.n_tasks):
             self.state.i = i
             logger.info(f"Starting task {i} with classes {self.tasks[i]}")
 
-            print("HERE")
             self.on_task_switch(self.tasks[i])
-            from torch.utils.data import ConcatDataset
             # Training and validation datasets for task i.
             train_i_dataset = self.train_datasets[i]
             valid_i_dataset = self.valid_datasets[i]
             if self.replay_buffer:
                 # Append the replay buffer to the end of the training dataset.
                 # TODO: Should we shuffle them together?
+                # TODO: Should we also add some data from previous tasks in the validation dataset?
                 train_i_dataset += self.replay_buffer.as_dataset()
 
             train_i_loader = self.get_dataloader(train_i_dataset)
@@ -216,7 +217,7 @@ class TaskIncremental(Experiment):
                         # Un/self-supervised training on task i.
                         # NOTE: Here we use the same dataloaders, but drop the
                         # labels and treat them as unlabeled datasets. 
-                        self.state.all_losses = self.train(
+                        self.state.all_losses += self.train(
                             unlabeled(train_i_loader),
                             unlabeled(valid_i_loader),
                             epochs=self.config.unsupervised_epochs_per_task,
@@ -432,16 +433,16 @@ class TaskIncremental(Experiment):
             new_task_loader (DataLoader): The dataloader of the corresponding dataset.
         """
 
-        from addons.replay import LabeledReplayBuffer
+        from experiments.addons.replay import LabeledReplayBuffer
         # TODO: For now we assume that the buffer is labeled, for simplicity.
         assert isinstance(self.replay_buffer, LabeledReplayBuffer)
             
         i = new_task.index
         current_size = len(self.replay_buffer)
         n_tasks_in_buffer = len(self.tasks_in_buffer)        
-        print("Updating the replay buffer.")
-        print("Current buffer size: ", current_size)
-        print("number of tasks in the buffer:", n_tasks_in_buffer)
+        logger.debug("Updating the replay buffer.")
+        logger.debug("Current buffer size: ", current_size)
+        logger.debug("number of tasks in the buffer:", n_tasks_in_buffer)
 
         if new_task not in self.tasks_in_buffer:
             # adding a new task to the buffer.
@@ -455,7 +456,7 @@ class TaskIncremental(Experiment):
         )
         self.replay_buffer.extend(kept_data)
         # Count how many samples of each class are in the buffer.
-        print("# of samples per class in Replay buffer:", self.replay_buffer.samples_per_class())
+        logger.info(f"# of samples per class in Replay buffer: {self.replay_buffer.samples_per_class()}")
         
     
     def choose_samples_to_go_in_buffer(self, samples: Iterable[Tuple[Tensor, Tensor]],
@@ -486,6 +487,14 @@ class TaskIncremental(Experiment):
         alternate_between_classes = roundrobin(*samples_per_class.values())
         # slice the iterator, returning only the `n_samples` first samples.
         return itertools.islice(alternate_between_classes, n_samples)
+
+
+    def log(self, message: Dict[str, Any], step: int=None, once: bool=False, prefix: str=""):
+        if not once:
+            # We add the currently learned task to the logged message, if logging
+            # periodically. (`once` is not True)
+            message.setdefault("task/currently_learned_task", self.state.i)
+        super().log(message, step=step, once=once, prefix=prefix)
 
 
     def make_transfer_grid_figure(self,
@@ -718,74 +727,14 @@ class TaskIncremental(Experiment):
     def started(self) -> bool:
         checkpoint_exists = (self.checkpoints_dir / "state.json").exists()
         return super().started and checkpoint_exists
-    
-    def log(self, message: Union[str, Dict, LossInfo], **kwargs):  # type: ignore
-        assert isinstance(message, dict), (
-            f"Testing things out, but for now always pass dictionaries to "
-            f"`self.log` (at least for TaskIncremental)"
-        )
-        
-        if isinstance(message, dict):
-            message.setdefault("task/currently_learned_task", self.state.i)
-        
-        for k, v in message.items():
-            if isinstance(v, (LossInfo, Metrics)):
-                message[k] = v.to_log_dict()
-        
-        # Flatten the log dictionary
-        from utils.utils import flatten_dict
-        message = flatten_dict(message, separator="/")
-
-        # TODO: Remove redondant/useless keys
-        for k in list(message.keys()):
-            if k.endswith(("/n_samples", "/name")):
-                message.pop(k)
-                continue
-
-            v = message.pop(k)
-            # Example input:
-            # "Task_losses/Task1/losses/Test/losses/rotate/losses/270/metrics/270/accuracy"
-            
-            # Simplify the key, by getting rid of all the '/losses/' and '/metrics/' etc.
-            k = k.replace("/losses/", "/").replace("/metrics/", "/")
-            # --> "Task_losses/Task1/Test/rotate/270/270/accuracy"
-            
-            # Get rid of repetitive modifiers (ex: "/270/270" above)
-            parts = k.split("/")
-            from utils.utils import unique_consecutive
-            k = "/".join(unique_consecutive(parts))
-            # Will become:
-            # "Task_losses/Task1/Test/rotate/270/accuracy"
-            message[k] = v
-
-        super().log(message, **kwargs)
-    
-
-def get_supervised_metrics(loss: LossInfo, mode: str="Test") -> Union[ClassificationMetrics, RegressionMetrics]:
-    if Tasks.SUPERVISED not in loss.losses:
-        loss = loss.losses[mode]
-    metric = loss.losses[Tasks.SUPERVISED].metrics[Tasks.SUPERVISED]
-    return metric
-
-
-def get_supervised_accuracy(loss: LossInfo, mode: str="Test") -> float:
-    # TODO: this is ugly. There is probably a cleaner way, but I can't think of it right now. 
-    try:
-        supervised_metric = get_supervised_metrics(loss, mode=mode)
-        return supervised_metric.accuracy
-    except KeyError as e:
-        print(f"Couldn't find the supervised accuracy in the `LossInfo` object: Key error: {e}")
-        print(loss.dumps(indent="\t", sort_keys=False))
-        raise e
 
 
 if __name__ == "__main__":
     from simple_parsing import ArgumentParser
     parser = ArgumentParser()
-    parser.add_arguments(TaskIncremental.Config, dest="config")
     
+    parser.add_arguments(TaskIncremental, dest="experiment")
+
     args = parser.parse_args()
-    config: TaskIncremental.Config = args.config
-    
-    experiment = TaskIncremental(config)
+    experiment: TaskIncremental = args.experiment
     experiment.launch()
