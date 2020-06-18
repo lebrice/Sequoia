@@ -682,76 +682,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         all_losses.keep_up_to_step(best_step)
 
         return all_losses
-    def train_until_convergence(self, train_dataset: Tuple[Dataset, SubsetRandomSampler, SubsetRandomSampler],
-                                valid_dataset: Tuple[Dataset, SubsetRandomSampler, SubsetRandomSampler],
-                                max_epochs: int,
-                                description: str = None,
-                                patience: int = 10) -> TrainValidLosses:
-        train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloaders(*train_dataset)
-        valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloaders(*valid_dataset)
-        n_steps = len(train_dataloader_unlabelled) if len(train_dataloader_unlabelled) > len(
-            train_dataloader_labelled) else len(train_dataloader_labelled)
-
-        if self.config.debug_steps:
-            from itertools import islice
-            n_steps = self.config.debug_steps
-            train_dataloader = islice(train_dataloader_labelled, 0, n_steps)  # type: ignore
-
-        all_losses = TrainValidLosses()
-        # Get the latest step
-        # NOTE: At the moment, will always be zero, but if we reload
-        # `all_losses` from a file, would give you the step to start from.
-        starting_step = all_losses.latest_step()
-
-        valid_loss_gen = self.valid_performance_generator(valid_dataloader_labelled)
-
-        best_valid_loss: Optional[float] = None
-        counter = 0
-
-        # Early stopping: number of validation epochs with increasing loss after
-        # which we exit training.
-        patience = patience or self.config.patience
-        convergence_checker = self.check_for_convergence(patience=patience, use_acc=self.convegence_in_accuracy)
-        next(convergence_checker)
-
-        message: Dict[str, Any] = OrderedDict()
-        for epoch in range(max_epochs):
-            self.epoch = epoch
-            self.epoch_length = len(train_dataloader_unlabelled)
-            pbar = tqdm.tqdm(zip(cycle(train_dataloader_labelled), train_dataloader_unlabelled), total=n_steps)
-            desc = description or ""
-            desc += " " if desc and not desc.endswith(" ") else ""
-            desc += f"Epoch {epoch}"
-            pbar.set_description(desc + " Train")
-            for batch_idx, train_loss in enumerate(self.train_iter_semi_sup(pbar)):
-                self.batch_idx = batch_idx
-                train_loss.drop_tensors()
-
-                if batch_idx % self.config.log_interval == 0:
-                    # get loss on a batch of validation data:
-                    valid_loss = next(valid_loss_gen)
-                    valid_loss.drop_tensors()
-
-                    all_losses[self.global_step] = (train_loss, valid_loss)
-
-                    message.update(train_loss.to_pbar_message())
-                    message.update(valid_loss.to_pbar_message())
-                    pbar.set_postfix(message)
-
-                    train_log_dict = train_loss.to_log_dict()
-                    valid_log_dict = valid_loss.to_log_dict()
-                    self.log({"Train": train_log_dict, "Valid": valid_log_dict})
-
-            # perform a validation epoch.
-            val_desc = desc + " Valid"
-            val_loss_info = self.test(valid_dataloader_labelled, description=val_desc)
-
-            if epoch >= self.converge_after_epoch:
-                converged = convergence_checker.send(val_loss_info)
-                if converged:
-                    convergence_checker.close()
-                    break
-        return all_losses
+        
     def test_semi(self, dataloader_labelled: DataLoader, dataloader_unlabelled: DataLoader, description: str = None,
                   name: str = "Test") -> LossInfo:
         pbar = tqdm.tqdm(zip(cycle(dataloader_labelled), dataloader_unlabelled))

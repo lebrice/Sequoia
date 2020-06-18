@@ -1,5 +1,5 @@
 import itertools
-from utils.logging_utils import get_logger
+from utils.logging_utils import get_logger  
 from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass, fields
 from itertools import accumulate
@@ -53,7 +53,9 @@ class TaskIncremental(Experiment):
         unsupervised_epochs_per_task: int = 5
         # Maximum number of epochs of supervised training to perform on each task's
         # dataset.
-        supervised_epochs_per_task: int = 1
+        supervised_epochs_per_task: int = 1     
+        #If `True`, accuracy will be used as a measure of performance. Otherwise, the total validation loss is used. Defaults to False.
+        use_accuracy_as_metric: bool = False
 
         task_labels_at_train_time: bool = True
         task_labels_at_test_time:  bool = True
@@ -196,8 +198,7 @@ class TaskIncremental(Experiment):
             cumul_losses[i] = cumul_loss
         ```
         """
-        self.setup()
-        
+        self.setup()        
         for i in range(self.state.i, self.n_tasks):
             self.state.i = i
             logger.info(f"Starting task {i} with classes {self.tasks[i]}")
@@ -206,9 +207,9 @@ class TaskIncremental(Experiment):
             # Training and validation datasets for task i.
             train_i_dataset = self.train_datasets[i]
             valid_i_dataset = self.valid_datasets[i]
-
-
-
+            train_sampler = self.train_samplers[i]
+            valid_sampler = self.valid_samplers[i]
+            
 
 
             if self.replay_buffer:
@@ -217,8 +218,8 @@ class TaskIncremental(Experiment):
                 # TODO: Should we also add some data from previous tasks in the validation dataset?
                 train_i_dataset += self.replay_buffer.as_dataset()
 
-            train_i_loader = self.get_dataloader(train_i_dataset)
-            valid_i_loader = self.get_dataloader(valid_i_dataset)
+            train_i_loader = self.get_dataloader(train_i_dataset, train_sampler)
+            valid_i_loader = self.get_dataloader(valid_i_dataset, valid_sampler)
 
             if self.state.j == 0:
                 with self.plot_region_name(f"Learn Task {i}"):
@@ -236,7 +237,7 @@ class TaskIncremental(Experiment):
                             unlabeled(valid_i_loader),
                             epochs=self.config.unsupervised_epochs_per_task,
                             description=f"Task {i} (Unsupervised)",
-                            use_accuracy_as_metric=False, # Can't use accuracy as metric during unsupervised training.
+                            use_accuracy_as_metric=self.config.use_accuracy_as_metric, # Can't use accuracy as metric during unsupervised training.
                             temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
                         )
 
@@ -510,7 +511,6 @@ class TaskIncremental(Experiment):
             message.setdefault("task/currently_learned_task", self.state.i)
         super().log(message, step=step, once=once, prefix=prefix)
 
-
     def make_transfer_grid_figure(self,
                                   knn_losses: List[List[LossInfo]],
                                   task_losses: List[List[LossInfo]],
@@ -717,31 +717,6 @@ class TaskIncremental(Experiment):
         samples = dataset.data[:n].view(n, *self.dataset.x_shape).float()
         self.samples_dir.mkdir(parents=True, exist_ok=True)
         save_image(samples, self.samples_dir / f"{prefix}task_{i}.png")
-
-    def on_task_switch(self, task: Task, **kwargs) -> None:
-        if not self.multihead:
-            # We aren't using a multihead model, so we aren't allowed to use this task label.
-            logger.debug(f"Ignoring task label {task} since we're not a multihead model.")
-            return
-
-        # If we are using a multihead model, we give it the task label (so
-        # that it can spawn / reuse the output head for the given task).
-        i = self.state.i
-        ewc_task = self.model.tasks.get(Tasks.EWC)
-        if ewc_task and ewc_task.enabled:
-            prev_task = None if i == 0 else self.tasks[i-1]
-            classifier_head = None if i == 0 else self.model.get_output_head(prev_task)
-            train_loader = self.get_dataloader(self.train_datasets[i])
-
-            if i != 0 and ewc_task.current_task_loader is None:
-                previous_task_loader = self.get_dataloader(self.train_datasets[i-1])
-                ewc_task.current_task_loader = previous_task_loader
-
-            kwargs.setdefault("prev_task", prev_task)
-            kwargs.setdefault("classifier_head", classifier_head)
-            kwargs.setdefault("train_loader", train_loader)
-
-        self.model.on_task_switch(task, **kwargs)
 
     @property
     def started(self) -> bool:

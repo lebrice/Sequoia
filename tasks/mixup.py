@@ -250,7 +250,7 @@ class MixupTask(AuxiliaryTask):
             #loss = torch.dist(y_pred_mix, mix_y_pred)
             loss_info.total_loss = mixup_consistency_weight * loss
         else:
-            loss_info.total_loss = torch.tensor([0]).to(self.device)
+            loss_info.total_loss = torch.zeros(1, device=self.device, requires_grad=True)
         return loss_info
 
 

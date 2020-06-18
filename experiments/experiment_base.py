@@ -1,7 +1,7 @@
 import inspect
 import json
 import logging
-from collections import OrderedDict, defaultdict 
+from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
@@ -256,13 +256,14 @@ class ExperimentBase(Serializable):
             raise NotImplementedError(f"TODO: add a model for dataset {dataset}.")
 
     def train(self,
-              train_dataloader: Union[Dataset, DataLoader],                
-              valid_dataloader: Union[Dataset, DataLoader],                
+              train_dataloader: Union[Dataset, DataLoader, Iterable],                
+              valid_dataloader: Union[Dataset, DataLoader, Iterable],                
               epochs: int,                
               description: str=None,
               early_stopping_options: EarlyStoppingOptions=None,
               use_accuracy_as_metric: bool=None,                
-              temp_save_dir: Path=None) -> TrainValidLosses:
+              temp_save_dir: Path=None,
+              steps_per_epoch: int = None) -> TrainValidLosses:
         """Trains on the `train_dataloader` and evaluates on `valid_dataloader`.
 
         Periodically evaluates on validation batches during each epoch, as well
@@ -316,7 +317,7 @@ class ExperimentBase(Serializable):
             use_accuracy_as_metric = self.config.use_accuracy_as_metric
 
         # The --debug_steps argument can be used to shorten the dataloaders.
-        steps_per_epoch = len(train_dataloader)
+        steps_per_epoch = len(train_dataloader) if steps_per_epoch is None else steps_per_epoch
         if self.config.debug_steps:
             from itertools import islice
             steps_per_epoch = self.config.debug_steps
@@ -382,33 +383,14 @@ class ExperimentBase(Serializable):
         # List to hold the length of each epoch (should all be the same length)
         epoch_lengths: List[int] = []
 
-        for epoch in range(starting_epoch, epochs + 1):
+        for epoch in range(starting_epoch, epochs + 1):   
+            epoch_start_step = self.state.global_step             
             pbar = tqdm.tqdm(train_dataloader, total=steps_per_epoch)
             desc = description or "" 
             desc += " " if desc and not desc.endswith(" ") else ""
             desc += f"Epoch {epoch}"
             pbar.set_description(desc + " Train")
-
-            epoch_start_step = self.state.global_step
-            for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
-                train_loss.drop_tensors()
-                
-                if batch_idx % self.config.log_interval == 0:
-                    # get loss on a batch of validation data:
-                    valid_loss = next(valid_loss_gen)
-                    valid_loss.drop_tensors()
-
-                    all_losses[self.state.global_step] = (train_loss, valid_loss)
-
-                    message.update(train_loss.to_pbar_message())
-                    message.update(valid_loss.to_pbar_message())
-                    pbar.set_postfix(message)
-
-                    self.log({
-                        "Train": train_loss,
-                        "Valid": valid_loss,
-                    })
-
+            valid_loss = self.train_epoch(epoch, pbar, steps_per_epoch, message, valid_loss_gen, description, all_losses)
             epoch_length = self.global_step - epoch_start_step
             epoch_lengths.append(epoch_length)
 
@@ -433,7 +415,6 @@ class ExperimentBase(Serializable):
             if converged:
                 logger.info(f"Training Converged at epoch {epoch}. Best valid performance was at epoch {best_epoch}")
                 break
-
         try:
             # Re-load the best weights
             best_model_watcher.send(None)
@@ -449,6 +430,27 @@ class ExperimentBase(Serializable):
 
         # TODO: Should we also return the array of validation losses at each epoch (`validation_losses`)?
         return all_losses
+    
+    def train_epoch(self, epoch, pbar: Iterable, steps_per_epoch:int, message: Dict[str, Any], valid_loss_gen: Generator, description: str, all_losses:TrainValidLosses):
+        for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
+            train_loss.drop_tensors()
+            if batch_idx % self.config.log_interval == 0:
+                # get loss on a batch of validation data:
+                valid_loss = next(valid_loss_gen)
+                valid_loss.drop_tensors()
+
+                all_losses[self.state.global_step] = (train_loss, valid_loss)
+
+                message.update(train_loss.to_pbar_message())
+                message.update(valid_loss.to_pbar_message())
+                pbar.set_postfix(message)
+
+                self.log({
+                    "Train": train_loss,
+                    "Valid": valid_loss,
+                })
+        return valid_loss
+
 
     def keep_best_model(self, use_acc: bool=False, save_path: Path=None) -> Generator[int, Optional[LossInfo], None]:
         # Path where the best model weights will be saved.
@@ -479,9 +481,7 @@ class ExperimentBase(Serializable):
             step = self.state.global_step
 
             val_loss = loss_info.total_loss.item()
-            from task_incremental import get_supervised_metrics
-            supervised_metrics = get_supervised_metrics(loss_info)
-            
+            supervised_metrics = loss_info.metrics.get(Tasks.SUPERVISED)            
             if use_acc:
                 assert supervised_metrics, "Can't use accuracy since there are no supervised metrics in given loss.."
                 val_acc = supervised_metrics.accuracy
@@ -577,14 +577,22 @@ class ExperimentBase(Serializable):
         return loss
 
     def get_dataloader(self, dataset: Dataset, sampler: Sampler=None, shuffle: bool=True) -> DataLoader:
-        return DataLoader(
-            dataset,
-            batch_size=self.hparams.batch_size,
-            shuffle=shuffle,
-            sampler=sampler,
-            num_workers=self.config.num_workers,
-            pin_memory=self.config.use_cuda,
-        )
+        if sampler is None:
+            return DataLoader(
+                dataset,
+                batch_size=self.hparams.batch_size,
+                shuffle=shuffle,
+                num_workers=self.config.num_workers,
+                pin_memory=self.config.use_cuda,
+            )
+        else:
+            return DataLoader(
+                dataset,
+                batch_size=self.hparams.batch_size,
+                sampler=sampler,
+                num_workers=self.config.num_workers,
+                pin_memory=self.config.use_cuda,
+            )
 
     def save_experiment(self, save_path: Path, blocking: bool=False):
         save_dir = save_path if save_path.is_dir() else save_path
