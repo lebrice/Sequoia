@@ -6,15 +6,15 @@ import numpy as np
 from sys import getsizeof
 from torch import Tensor, nn  
 from torch.autograd import Variable
-from itertools import repeat, cycle
+from itertools import repeat, cycle 
 from models.classifier import Classifier 
-from task_incremental import TaskIncremental
+from experiments import TaskIncremental
 from dataclasses import dataclass
 from torch.utils.data import Subset
 from datasets.subset import ClassSubset
 from common.losses import LossInfo
 from datasets.ss_dataset import get_semi_sampler
-from addons.curvature_analyser import Analyser
+from .addons.curvature_analyser import Analyser
 from collections import OrderedDict, defaultdict
 from itertools import accumulate
 from pathlib import Path
@@ -22,9 +22,10 @@ from torch.utils.data.sampler import SubsetRandomSampler
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from torch.utils.data.sampler import SubsetRandomSampler
 
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union, Generator
 from common.losses import LossInfo, TrainValidLosses
 from common.task import Task
-from task_incremental import get_supervised_accuracy
+from .task_incremental import get_supervised_accuracy
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
 import logging
 from tasks import Tasks

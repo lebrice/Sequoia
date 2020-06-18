@@ -338,12 +338,9 @@ class OmlFigureOptions:
 
     result_figure: Optional[plt.Figure] = field(init=False, default=None)
     
-<<<<<<< HEAD
-=======
     classification_accuracies: Dict[Path, np.ndarray] = mutable_field(OrderedDict, init=False)
     final_task_accuracies: Dict[Path, np.ndarray] = mutable_field(OrderedDict, init=False)
 
->>>>>>> master
     def __post_init__(self, label_formatting_fn: Callable[[Path, str], str]=None):
         self.label_formatting_fn = label_formatting_fn
 
@@ -373,12 +370,8 @@ class OmlFigureOptions:
             warnings.warn(
                 f"There are NO kept runs for path or pattern(s) {self.runs}. \n"
                 "Returning early without creating the figure. \n"
-<<<<<<< HEAD
-                f"Lost runs: \n{lost_runs}"
-=======
                 f"Lost runs: \n"
                 +("\n".join(map(str,lost_runs)))
->>>>>>> master
             )
             return
         
