@@ -132,45 +132,8 @@ class Config(WandbConfig):
         except:
             pass
         logger = logging.getLogger(name)
+        # logger.addHandler(TqdmLoggingHandler())
         return logger
-
-    def wandb_init(self) -> wandb.wandb_run.Run:
-        if self.run_name is None:
-            # TODO: Create a run name using the coefficients of the tasks, etc?
-            # At the moment, if no run name is given, the 'random' name from wandb is used.
-            pass
-        logger.info(f"Using wandb. Experiment name: {self.run_name}")
-        config_dict = asdict(self)
-        if self.wandb_path is None:
-            self.wandb_path = self.log_dir_root / "wandb"
-        self.wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
-
-        if self.run_id is None:
-            # TODO: add *proper* wandb resuming, probaby by using @nitarshan 's md5 id cool idea. 
-            self.run_id = wandb.util.generate_id()
-            # self.run_id = "-".join([self.run_group, self.run_name, str(self.run_number or 0)])
-
-        logger.info(f"Wandb run id: {self.run_id}")
-        logger.info(f"Using wandb. Group name: {self.run_group} run name: {self.run_name}, log_dir: {self.log_dir}")
-        run = wandb.init(
-            project=self.project_name,
-            name=self.run_name,
-            id=self.run_id,
-            group=self.run_group,
-            config=config_dict,
-            dir=str(self.wandb_path),
-            notes=self.notes,
-            reinit=True,
-            tags=self.tags,
-            resume="allow",
-        )
-        logger.info(f"Run: {run}")
-        run.save()
-
-        if self.run_name is None:
-            self.run_name = run.name
-        
-        return run
 
 # shared config object.
 ## TODO: unused, but might be useful!

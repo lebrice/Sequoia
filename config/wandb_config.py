@@ -65,14 +65,15 @@ class WandbConfig(Serializable):
         )
         logger.info(f"Run: {run}")
         run.save()
-        print("Run directory: ", run.dir)
-        exit()
+        
         if run.resumed:
             # TODO: add *proper* wandb resuming, probaby by using @nitarshan 's md5 id cool idea.
-            wandb.restore
+            wandb.restore(self.log_dir / "checkpoints")
             
             pass
 
+        wandb.save(str(self.log_dir / "*"))
+        self.log_dir.mkdir(exist_ok=True, parents=True)
         self.save_yaml(self.log_dir / "config.yml")
 
         if self.run_name is None:

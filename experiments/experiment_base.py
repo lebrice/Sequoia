@@ -33,7 +33,7 @@ from simple_parsing.helpers import FlattenedAccess, Serializable
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
-from utils.logging_utils import pbar
+from utils.logging_utils import cleanup, pbar
 from utils.save_job import SaverWorker, SaveTuple, save
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
 
@@ -149,10 +149,6 @@ class ExperimentBase(Serializable):
         TODO: Clean this up. It isn't clear exactly where the separation is
         between the Experiment.run() method and this one.
         """
-        # Save the Config, Hparams and State(?) to a file.
-        # TODO: should we also save the state here?
-        self.save(self.config.log_dir / "config.yaml")
-
         if self.config.verbose:
             logger.info(f"Experiment: {self.dumps_yaml(indent=4)}")
             print("=" * 40)
@@ -160,6 +156,7 @@ class ExperimentBase(Serializable):
         if self.config.use_wandb:
             run = self.config.wandb_init()
         
+
         logger.info(f"Launching experiment at log dir {self.config.log_dir}")
 
         if self.done:
@@ -187,6 +184,14 @@ class ExperimentBase(Serializable):
         """
         # Create the model
         self.model = self.init_model()
+
+        # Save the Config, Hparams and State(?) to a file.
+        # TODO: should we also save the state here?
+        # TODO: This could potentially overwrite an existing file!
+        self.config.log_dir.mkdir(exist_ok=True, parents=True)
+        self.checkpoints_dir.mkdir(exist_ok=True, parents=True)
+
+        self.save(self.config.log_dir / "experiment.yaml")
 
         # If the experiment was already started, or a 'restore_from' argument
         # was passed:
@@ -636,12 +641,14 @@ class ExperimentBase(Serializable):
                 self.saver_worker.start()
             self.background_queue.put(SaveTuple(save_path=path, obj=obj))
 
-    def log(self, message: Union[str, Dict, LossInfo], value: Any=None, step: int=None, once: bool=False, prefix: str="", always_print: bool=False):
-        if always_print or (self.config.debug and self.config.verbose):
-            print(message, value if value is not None else "")
 
-        # with open(self.log_dir / "log.txt", "a") as f:
-        #     print(message, value, file=f)
+    def log(self, message: Dict[str, Any], step: int=None, once: bool=False, prefix: str=""):
+        for k, v in message.items():
+            if isinstance(v, (LossInfo, Metrics)):
+                message[k] = v.to_log_dict()
+        
+        if self.config.debug and self.config.verbose:
+            print(message)
 
         if self.config.use_wandb:
             # if we want to long once (like a final result, step should be None)
@@ -667,42 +674,6 @@ class ExperimentBase(Serializable):
             
             if prefix:
                 message_dict = utils.add_prefix(message_dict, prefix)
-
-            avv_knn = []
-            def wandb_cleanup(d, parent_key='', sep='/', exclude_type=list):
-                items = []
-                for k, v in d.items():
-                    new_key = parent_key + sep + k if parent_key else k
-                    if 'knn_losses' in k and 'Verbose' not in k:
-                        task_measuree, task_measured = [int(s) for s in k if s.isdigit()]
-                        mode = k.split('/')[-1]
-                        if mode=='valid':
-                            avv_knn.append(message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}']['metrics']['KNN']['accuracy'])
-                        items.append((f'KNN_per_task/knn_{mode}_task_{task_measured}',message_dict[f'knn_losses[{task_measuree}][{task_measured}]/{mode}'][
-                                                'metrics']['KNN']['accuracy']))
-
-                    elif 'cumul_losses' in k:
-                        new_key = 'Cumulative'
-
-                    elif 'task_losses' in k:
-                        task_measuree, task_measured = [int(s) for s in k if s.isdigit()]
-                        new_key = 'Task_losses'+sep + f'Task{task_measured}'
-                    elif '[' in new_key and 'Verbose' not in new_key:
-                        new_key = 'Verbose/'+new_key
-
-                    if isinstance(v, MutableMapping):
-                        items.extend(wandb_cleanup(v, new_key, sep=sep).items())
-                    else:
-                        if not type(v)==exclude_type:
-                            items.append((new_key, v))
-                return dict(items)
-
-            if not self.config.no_wandb_cleanup:
-                message_dict = wandb_cleanup(message_dict)
-                if len(avv_knn) > 0:
-                    message_dict['KNN_per_task/avv_knn'] = np.mean(avv_knn)
-                message_dict['task/currently_learned_task'] = self.state.i
-                message_dict = wandb_cleanup(message_dict)
             
             if self.config.use_wandb:
                 wandb.log(message_dict, step=step)
@@ -751,6 +722,7 @@ class ExperimentBase(Serializable):
 
     @property
     def global_step(self) -> int:
+        """ Proxy for `self.state.global_step`. """
         return self.state.global_step
     
     @global_step.setter

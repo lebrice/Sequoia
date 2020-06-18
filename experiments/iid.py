@@ -1,3 +1,4 @@
+import logging
 import os
 import pprint
 import sys
@@ -8,40 +9,70 @@ from pathlib import Path
 from typing import Any, ClassVar, Dict, Iterable, List, Tuple, Type
 
 import matplotlib.pyplot as plt
-import simple_parsing
 import torch
 import torch.utils.data
 import tqdm
-from simple_parsing import ArgumentParser, choice, field, subparsers
+import wandb
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
-from common.losses import LossInfo
+from simple_parsing import ArgumentParser, mutable_field
+from common.losses import LossInfo, TrainValidLosses
 from common.metrics import get_metrics
-from config import Config
 from datasets.dataset import Dataset
 from datasets.mnist import Mnist
 from models.classifier import Classifier
+from simple_parsing import ArgumentParser, choice, field, subparsers
 from tasks import AuxiliaryTask, Tasks
 
 from .experiment import Experiment
+
+logger = logging.getLogger(__file__)
 
 
 @dataclass
 class IID(Experiment):
     """ Simple IID setting. """
-    def __post_init__(self):
-        super().__post_init__()
+    @dataclass
+    class Config(Experiment.Config):
+        """ Config for the IID experiment. """
+        # Maximum number of epochs to train for. 
+        max_epochs: int = 10
     
-    def run(self):
-        self.load_datasets()
-        self.model = self.init_model()
-        train_losses, valid_losses = self.train_until_convergence(self.dataset.train, self.dataset.valid, self.hparams.epochs)
-        # make the training plots
-        plots_dict = self.make_plots(train_losses, valid_losses)
+    config: Config = mutable_field(Config)
+
+    def run(self) -> Tuple[TrainValidLosses, LossInfo]:
+        """ Simple IID Training on train/valid datasets, then evaluate on test dataset. """
+        self.setup()
+        train, valid, test = self.load_datasets()
+        assert valid is not None
+        # Get the dataloaders
+        train_loader = self.get_dataloader(train)
+        valid_loader = self.get_dataloader(valid)
+        test_loader = self.get_dataloader(test)
+
+        # Train until convergence on validation set (or for a number of epochs) 
+        all_losses = self.train(
+            train_loader,
+            valid_loader,
+            epochs=self.config.max_epochs,
+            temp_save_dir=self.checkpoints_dir,
+        )
+        # Save to results dir.
+        self.results_dir.mkdir(exist_ok=True)
+        self.save_state(self.results_dir)
+
+        test_loss = self.test(test_loader)
+        self.log({"Test": test_loss}, once=True)
+        
+        if self.config.use_wandb:
+            wandb.run.summary["Test loss"] = test_loss.losses[Tasks.SUPERVISED].total_loss
+            wandb.run.summary["Test Accuracy"] = test_loss.losses[Tasks.SUPERVISED].accuracy
+        # make training/validation plots. Not really needed when using wandb.
+        plots_dict = self.make_plots(all_losses)
 
         for figure_name, fig in plots_dict.items():    
             if self.config.debug:
@@ -50,18 +81,20 @@ class IID(Experiment):
             fig.savefig(self.plots_dir / Path(figure_name).with_suffix(".jpg"))
 
         # Get the most recent validation metrics. 
-        last_step = max(valid_losses.keys())
-        last_val_loss = valid_losses[last_step]
-        class_accuracy = last_val_loss.metrics[Tasks.SUPERVISED].class_accuracy
+        last_step = max(all_losses.valid_losses.keys())
+        last_val_loss = all_losses.valid_losses[last_step]
+        class_accuracy = last_val_loss.losses[Tasks.SUPERVISED].metric.class_accuracy
         valid_class_accuracy_mean = class_accuracy.mean()
         valid_class_accuracy_std = class_accuracy.std()
-        self.log("Validation Average Class Accuracy: ", valid_class_accuracy_mean, once=True, always_print=True)
-        self.log("Validation Class Accuracy STD:", valid_class_accuracy_std, once=True, always_print=True)
+        logger.info(f"Validation Average Class Accuracy: {valid_class_accuracy_mean:.2%}")
+        logger.info(f"Validation Class Accuracy STD: {valid_class_accuracy_std}")
         self.log(plots_dict, once=True)
 
-        return train_losses, valid_losses
+        return all_losses, test_loss
 
-    def make_plots(self, train_losses: Dict[int, LossInfo], valid_losses: Dict[int, LossInfo]) -> Dict[str, plt.Figure]:
+    def make_plots(self, all_losses: TrainValidLosses) -> Dict[str, plt.Figure]:
+        train_losses: Dict[int, LossInfo] = all_losses.train_losses
+        valid_losses: Dict[int, LossInfo] = all_losses.valid_losses
         plots_dict: Dict[str, plt.Figure] = {}
 
         fig: plt.Figure = plt.figure()
@@ -82,8 +115,8 @@ class IID(Experiment):
         ax.set_ylabel("Accuracy")
         ax.set_title("Training and Validation Accuracy")
         x = list(train_losses.keys())
-        y_train = [l.metrics[Tasks.SUPERVISED].accuracy for l in train_losses.values()]
-        y_valid = [l.metrics[Tasks.SUPERVISED].accuracy for l in valid_losses.values()]
+        y_train = [l.losses[Tasks.SUPERVISED].accuracy for l in train_losses.values()]
+        y_valid = [l.losses[Tasks.SUPERVISED].accuracy for l in valid_losses.values()]
         ax.plot(x, y_train, label="train")
         ax.plot(x, y_valid, label="valid")
         ax.legend(loc='lower right')
@@ -92,12 +125,9 @@ class IID(Experiment):
 
 
 if __name__ == "__main__":
-    from simple_parsing import ArgumentParser
     parser = ArgumentParser()
     parser.add_arguments(IID, dest="experiment")
     
     args = parser.parse_args()
     experiment: IID = args.experiment
-    
-    from main import launch
-    launch(experiment)
+    experiment.launch()

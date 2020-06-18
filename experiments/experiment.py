@@ -54,6 +54,8 @@ class Experiment(
     config: Config = mutable_field(Config)
     state: State = mutable_field(State, init=False)
 
+## Other ways of doing this dynamically, but we lose out on type hinting :(
+
 # def _register_new_experiment_addon(addon: Type[ExperimentAddon]):
 #     base_classes: List[Type] = list(Experiment.__bases__)
 #     # print(f"Current bases: {base_classes}")
@@ -69,6 +71,8 @@ class Experiment(
 # print(f"All addons: {all_addons}")
 # for addon in all_addons:
 #     _register_new_experiment_addon(addon)
+
+
 
 # # Create the Experiment.Config class.
 # config_dict = dict()

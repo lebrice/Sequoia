@@ -39,7 +39,6 @@ class Classifier(nn.Module):
         generate command-line arguments for each attribute of this class.
         """
         batch_size: int = 128   # Input batch size for training.
-        epochs: int = 10        # Number of epochs to train.
         learning_rate: float = field(default=1e-3, alias="-lr")  # learning rate.
 
         # Dimensions of the hidden state (feature extractor/encoder output).

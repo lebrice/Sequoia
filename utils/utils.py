@@ -217,7 +217,6 @@ def camel_case(name):
     return s2
 
 
-
 if __name__ == "__main__":
     import doctest
     doctest.testmod()
