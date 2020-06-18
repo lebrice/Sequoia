@@ -1,4 +1,4 @@
-import logging
+from utils.logging_utils import get_logger
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,7 +9,7 @@ import wandb
 from simple_parsing import field, list_field
 from simple_parsing.helpers import Serializable
 
-logger = logging.getLogger(__file__)
+logger = get_logger(__file__)
 
 @dataclass
 class WandbConfig(Serializable):
@@ -27,6 +27,11 @@ class WandbConfig(Serializable):
     # resume the corresponding run, generates a new ID each time. 
     run_id: str = field(default_factory=wandb.util.generate_id)
 
+    # An run number is used to differentiate different iterations of the same experiment.
+    # Runs with the same name can be later grouped with wandb to produce stderr plots.
+    # TODO: Could maybe use the run_id instead?
+    run_number: Optional[int] = None 
+
     # Path where the wandb files should be stored. If the 'WANDB_DIR'
     # environment variable is set, uses that value. Otherwise, defaults to
     # the value of "<log_dir_root>/wandb"
@@ -37,8 +42,22 @@ class WandbConfig(Serializable):
 
     # Notes about this particular experiment. (will be logged to wandb if used.)
     notes: Optional[str] = None
+    
+    # Root Logging directory.
+    log_dir_root: Path = Path("results")
 
-    def wandb_init(self) -> wandb.wandb_run.Run:
+
+
+    @property
+    def log_dir(self):
+        return self.log_dir_root.joinpath(
+            (self.project_name or ""),
+            (self.run_group or ""),
+            (self.run_name or 'default'),
+            (f"run_{self.run_number}" if self.run_number is not None else ""),
+        )
+
+    def wandb_init(self, config_dict: Dict) -> wandb.wandb_run.Run:
         if self.run_name is None:
             # TODO: Create a run name using the coefficients of the tasks, etc?
             # At the moment, if no run name is given, the 'random' name from wandb is used.
@@ -56,7 +75,7 @@ class WandbConfig(Serializable):
             name=self.run_name,
             id=self.run_id,
             group=self.run_group,
-            config=self.to_dict(),
+            config=config_dict,
             dir=str(self.wandb_path),
             notes=self.notes,
             reinit=True,

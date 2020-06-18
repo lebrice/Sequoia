@@ -1,5 +1,5 @@
 import itertools
-import logging
+from utils.logging_utils import get_logger
 from collections import OrderedDict
 from dataclasses import InitVar, asdict, dataclass, field
 from pathlib import Path
@@ -16,7 +16,7 @@ from utils.logging_utils import cleanup
 from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                       get_metrics)
 
-logger = logging.getLogger(__file__)
+logger = get_logger(__file__)
 
 @dataclass
 class LossInfo(Serializable):
@@ -215,7 +215,7 @@ class LossInfo(Serializable):
         prefix = (self.name + " ") if self.name else ""
         message = add_prefix(message, prefix)
 
-        return cleanup(message)
+        return cleanup(message, sep=" ")
     
     def to_dict(self):
         self.detach()

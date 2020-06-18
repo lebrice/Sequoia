@@ -1,4 +1,4 @@
-import logging
+from utils.logging_utils import get_logger
 import os
 import pprint
 import sys
@@ -30,7 +30,7 @@ from tasks import AuxiliaryTask, Tasks
 
 from .experiment import Experiment
 
-logger = logging.getLogger(__file__)
+logger = get_logger(__file__)
 
 
 @dataclass

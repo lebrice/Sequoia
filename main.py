@@ -2,16 +2,19 @@
 
 You can also call the experiments directly.
 """
-from dataclasses import dataclass
-from simple_parsing import ArgumentParser, field
-from typing import Optional, List, Type, Any
 import argparse
-from experiments.experiment_base import ExperimentBase
 import textwrap
-from experiments import *
+from dataclasses import dataclass
+from typing import Any, List, Optional, Type
+
 from config import Config
+from experiments import *
+from experiments.experiment_base import ExperimentBase
+from simple_parsing import ArgumentParser, field
+from utils.logging_utils import get_logger
 from utils.utils import camel_case
-logger = Config.get_logger(__file__)
+
+logger = get_logger(__file__)
 
 
 def main(argv: Optional[List[str]]=None):

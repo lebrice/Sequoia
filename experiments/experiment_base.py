@@ -1,10 +1,7 @@
 import inspect
 import json
 import logging
-import os
-import time
-from abc import ABC, abstractmethod
-from collections import MutableMapping, OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
@@ -33,11 +30,11 @@ from simple_parsing.helpers import FlattenedAccess, Serializable
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
-from utils.logging_utils import cleanup, pbar
+from utils.logging_utils import cleanup, get_logger, pbar
 from utils.save_job import SaverWorker, SaveTuple, save
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
 
-logger = ConfigBase.get_logger(__file__)
+logger = get_logger(__file__)
 
 @dataclass
 class ExperimentBase(Serializable):
@@ -154,6 +151,9 @@ class ExperimentBase(Serializable):
             print("=" * 40)
         
         if self.config.use_wandb:
+            config_dict = self.to_dict()
+            print(self.dumps(indent="\t"))
+            exit()
             run = self.config.wandb_init()
         
 
@@ -164,7 +164,7 @@ class ExperimentBase(Serializable):
             exit()
 
         if self.started:
-            logger.info(f"Experiment is incomplete at directory {self.config.log_dir}.")
+            logger.info(f"Experiment is incomplete at directory {self.config.log_dir}")
             # TODO: Resume an interrupted experiment
         try:
             logger.info("-" * 10 + f"Starting experiment '{type(self).__name__}' " + "-" * 10)
@@ -608,6 +608,7 @@ class ExperimentBase(Serializable):
         """
         # Use checkpoints dir if save_dir is not given.
         save_dir = save_dir or self.checkpoints_dir
+        save_dir.mkdir(parents=True, exist_ok=True)
 
         if save_model_weights:
             saved_weights_path = save_dir / "model_weights.pth"
@@ -646,37 +647,21 @@ class ExperimentBase(Serializable):
         for k, v in message.items():
             if isinstance(v, (LossInfo, Metrics)):
                 message[k] = v.to_log_dict()
+
+        message = cleanup(message, sep="/")
+
+        if prefix:
+            message = utils.add_prefix(message, prefix)
         
+        # if we want to long once (like a final result, step should be None)
+        # else, if not given, we use the global step.
+        step = None if once else (step or self.global_step)
+        
+        if self.config.use_wandb:
+            wandb.log(message, step=step)
+
         if self.config.debug and self.config.verbose:
             print(message)
-
-        if self.config.use_wandb:
-            # if we want to long once (like a final result, step should be None)
-            # else, if not given, we use the global step.
-            step = None if once else (step or self.global_step)
-            if message is None:
-                return
-            message_dict: Dict
-            if isinstance(message, dict):
-                message_dict = OrderedDict()
-                for k, v in message.items():
-                    if isinstance(v, (LossInfo, Metrics, TrainValidLosses)):
-                        v = v.to_log_dict()
-                    message_dict[k] = v
-            elif isinstance(message, (LossInfo, Metrics)):
-                message_dict = message.to_log_dict()
-            elif isinstance(message, str) and value is not None:
-                message_dict = {message: value}
-            elif isinstance(message, str):
-                return
-            else:
-                message_dict = message  # type: ignore
-            
-            if prefix:
-                message_dict = utils.add_prefix(message_dict, prefix)
-            
-            if self.config.use_wandb:
-                wandb.log(message_dict, step=step)
 
     def _folder(self, folder: Union[str, Path], create: bool=True) -> Path:
         path = self.config.log_dir / folder
@@ -690,14 +675,7 @@ class ExperimentBase(Serializable):
 
     @property
     def samples_dir(self) -> Path:
-        if self._samples_dir:
-            return self._samples_dir
-        self._samples_dir = self._folder("samples")
-        return self._samples_dir
-    
-    @samples_dir.setter
-    def samples_dir(self, value: Path) -> None:
-        self._samples_dir = value
+        return self._folder("samples")
 
     @property
     def checkpoints_dir(self) -> Path:
@@ -737,6 +715,7 @@ class ExperimentBase(Serializable):
             bool: Wether the experiment is complete or not (wether the
             results_dir exists and contains files).
         """
+        import os
         scratch_dir = os.environ.get("SCRATCH")
         if scratch_dir:
             log_dir = self.config.log_dir.relative_to(self.config.log_dir_root)

@@ -12,9 +12,9 @@ from common.losses import LossInfo
 from common.task import Task
 
 from .auxiliary_task import AuxiliaryTask
-import logging
+from utils.logging_utils import get_logger
 from config import Config
-logger = logging.getLogger(__file__)
+logger = get_logger(__file__)
 
 def mixup_data_sup(x, y, alpha=1.0):
     '''Compute the mixup data. Return mixed inputs, pairs of targets, and lambda'''
@@ -149,7 +149,7 @@ class MixupTask(AuxiliaryTask):
                  options: "MixupTask.Options"=None):
         super().__init__(coefficient=coefficient, name=name, options=options)
         self.options: MixupTask.Options
-        logger = Config.get_logger(__file__)
+        logger = get_logger(__file__)
 
         # Exponential moving average versions of the encoder and output head.
         self.mean_encoder: nn.Module = deepcopy(AuxiliaryTask.encoder)

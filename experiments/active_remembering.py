@@ -48,14 +48,13 @@ class ActiveRemembering(TaskIncremental):
         label_order: List[int] = sum(tasks, [])
         print("Class Ordering:", label_order)
         
-        train_valid_losses = (
+        all_losses = (
             TrainValidLosses.try_load_json(self.results_dir / "losses.json") or
             TrainValidLosses()
         )
+        self.state.global_step = all_losses.latest_step()
 
-        self.state.global_step = train_valid_losses.latest_step()
         if self.state.global_step != 0:
-            self.plot_sections = try_load(self.results_dir / "plot_labels.pt", [])
             # TODO: reset the state of the experiment.
             print(f"Experiment is already at step {self.global_step}")
             # Right now I just skip the training and just go straight to making the plot with the existing data:
@@ -77,7 +76,7 @@ class ActiveRemembering(TaskIncremental):
                 # Temporarily remove the labels.
                 with train_i.without_labels(), valid_i.without_labels():
                     # Un/self-supervised training on task i.
-                    train_valid_losses += self.train_until_convergence(
+                    all_losses += self.train_until_convergence(
                         train_i,
                         valid_i,
                         max_epochs=self.unsupervised_epochs_per_task,
@@ -85,7 +84,7 @@ class ActiveRemembering(TaskIncremental):
                     )
 
                 # Train (supervised) on task i.
-                train_valid_losses += self.train_until_convergence(
+                all_losses += self.train_until_convergence(
                     train_i,
                     valid_i,
                     max_epochs=self.supervised_epochs_per_task,
@@ -105,7 +104,7 @@ class ActiveRemembering(TaskIncremental):
                     # Here by using train_until_convergence we also periodically
                     # evaluate the validation loss on batches from the (labeled)
                     # validation set.
-                    train_valid_losses += self.train_until_convergence(
+                    all_losses += self.train_until_convergence(
                         train_0,
                         valid_0,
                         max_epochs=self.remembering_max_epochs,
@@ -113,10 +112,8 @@ class ActiveRemembering(TaskIncremental):
                     )
 
         # TODO: Save the results to a json file.
-        train_valid_losses.save_json(self.results_dir / "losses.json")
-        torch.save(self.plot_sections, str(self.results_dir / "plot_labels.pt"))
-
-        fig = make_plot(train_valid_losses, self.plot_sections)
+        all_losses.save_json(self.results_dir / "losses.json")
+        fig = make_plot(all_losses, self.state.plot_sections)
         
         from utils.plotting import maximize_figure
         maximize_figure()

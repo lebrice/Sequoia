@@ -1,15 +1,19 @@
 import enum
 from dataclasses import dataclass
-from typing import ClassVar, Dict, NewType, Tuple, Union, cast
+from typing import (ClassVar, Dict, Generic, Mapping, NewType, Optional, Tuple,
+                    TypeVar, Union, cast, overload)
 
-from simple_parsing import mutable_field
 from torch import nn
 
+from config import Config
+from simple_parsing import mutable_field
+from utils.logging_utils import get_logger
+
 from .auxiliary_task import AuxiliaryTask
+from .ewc import EWC
 from .irm import IrmTask
 from .jigsaw_puzzle import JigsawPuzzleTask
 from .mixup import ManifoldMixupTask, MixupTask
-from .ewc import EWC
 from .patch_location import PatchLocationTask
 from .reconstruction.ae import AEReconstructionTask
 from .reconstruction.vae import VAEReconstructionTask
@@ -17,9 +21,8 @@ from .simclr.simclr_task import SimCLRTask
 from .transformation_based import (AdjustBrightnessTask,
                                    ClassifyTransformationTask,
                                    RegressTransformationTask, RotationTask)
-from config import Config
 
-logger = Config.get_logger(__file__)
+logger = get_logger(__file__)
 
 class Tasks:
     """Enum-like class that just holds the names of each task.
@@ -39,7 +42,6 @@ class Tasks:
     SIMCLR: ClassVar[str] = "simclr"
     EWC: ClassVar[str] = "ewc"
 
-from typing import overload, Optional, TypeVar, Mapping, Generic
 M = TypeVar("M")
 
 class ModuleDict(nn.ModuleDict):

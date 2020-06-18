@@ -1,21 +1,23 @@
-import logging
 import random
 from abc import ABC, abstractmethod
-from collections import deque
+from collections import Counter, deque
 from dataclasses import InitVar, dataclass
 from typing import *
 
 import numpy as np
 import torch
 from torch import Tensor, nn
-from collections import Counter
+from torch.utils.data import TensorDataset
+
 from common.losses import LossInfo
 from config import Config as ConfigBase
-from .addon import ExperimentAddon
 from simple_parsing import field, mutable_field
 from utils.json_utils import Serializable
-from torch.utils.data import TensorDataset
-logger = logging.getLogger(__file__)
+from utils.logging_utils import get_logger
+
+from .addon import ExperimentAddon
+
+logger = get_logger(__file__)
 T = TypeVar("T")
 
 class ReplayBuffer(Deque[T]):

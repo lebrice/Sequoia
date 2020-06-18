@@ -1,58 +1,53 @@
 import json
-import logging
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, fields, is_dataclass
+from enum import Enum
 from functools import singledispatch
 from io import StringIO
 from pathlib import Path
 from pprint import pprint
 from typing import (Any, Callable, Dict, Iterable, List, Optional, Tuple, Type,
                     TypeVar, Union)
-from enum import Enum
+
 import numpy as np
 import torch
-from simple_parsing.helpers import Serializable as SerializableBase
-from simple_parsing.helpers import encode, SimpleJsonEncoder
-from simple_parsing.helpers.serialization import register_decoding_fn
 from torch import Tensor, nn
 
+from simple_parsing.helpers import Serializable as SerializableBase
+from simple_parsing.helpers import SimpleJsonEncoder, encode
+from simple_parsing.helpers.serialization import encode, register_decoding_fn
+from utils.logging_utils import get_logger
+
 T = TypeVar("T")
-logger = logging.getLogger(__file__)
+logger = get_logger(__file__)
 
 register_decoding_fn(Tensor, torch.as_tensor)
 register_decoding_fn(np.ndarray, np.asarray)
 
-from simple_parsing.helpers.serialization import encode
 
 @dataclass
 class ModelStateDict(Dict[str, Tensor]):
+    """ TODO: @lebrice Unused for now, was thinking of using this to make it easier to
+    save/load model dict, but it's already pretty simple.
+
+    # TODO: A bit of a stretch, but we could detect when a field that is
+    # supposed to be, say a state dict is instead a Path, and just load it
+    # from there!
+    """ 
     def __init__(self, path: Optional[Union[Path]]):
         if isinstance(path, Path):
             state_dict: Dict[str, Tensor] = torch.load(str(path))
         super().__init__(state_dict)
     
     def save(self, path: Path):
-        # TODO: A bit of a stretch, but we could detect when a field that is
-        # supposed to be, say a state dict is instead a Path, and just load it
-        # from there!
-        model_state_dict: Dict[str, Tensor] = OrderedDict()
-        if save_model_weights:
-            for k, tensor in self.model.state_dict().items():
-                model_state_dict[k] = tensor.detach().cpu()
-
-@encode.register
-def encode_tensor(obj: Tensor) -> List:
-    return obj.detach().cpu().tolist()
-
-
-@encode.register
-def encode_ndarray(obj: np.ndarray) -> List:
-    return obj.tolist()
-
+        model_state_dict: Dict[str, Tensor] = {
+            k: v.detach().cpu() for k, v in self.items()
+        }
 
 
 @dataclass
 class Serializable(SerializableBase, decode_into_subclasses=True):  # type: ignore
+    # NOTE: This currently doesn't add much compared to `Serializable` from simple-parsing.
     
     def save(self, path: Union[str, Path], **kwargs) -> None:
         path = Path(path)
@@ -77,6 +72,7 @@ class Serializable(SerializableBase, decode_into_subclasses=True):  # type: igno
     
     def __setstate__(self, state: Dict):
         logger.debug(f"setstate was called")
+        raise NotImplementedError("TODO: never used this yet.")
         pass
 
     def detach(self):
@@ -110,6 +106,16 @@ class Serializable(SerializableBase, decode_into_subclasses=True):  # type: igno
 
 
 @encode.register
+def encode_tensor(obj: Tensor) -> List:
+    return obj.detach().cpu().tolist()
+
+
+@encode.register
+def encode_ndarray(obj: np.ndarray) -> List:
+    return obj.tolist()
+
+
+@encode.register
 def encode_tensor(v: Tensor) -> List:
     return v.tolist()
 
@@ -134,49 +140,6 @@ def encode_enum(value: Enum):
     return value.value
 
 
-def is_json_serializable(value: str):
-    if isinstance(value, Serializable):
-        return True
-    elif type(value) in encode.registry:
-        return True
-    try:
-        return json.loads(json.dumps(value, cls=SimpleJsonEncoder)) == value 
-    except:
-        return False
-
-
-def take_out_unsuported_values(d: Dict, default_value: Any=None) -> Dict:
-    result: Dict = OrderedDict()
-    for k, v in d.items():
-        # logger.debug(f"key {k} with value {v} is json-serializable: {is_json_serializable(v)}")
-        if is_json_serializable(v):
-            result[k] = v
-        elif isinstance(v, dict):
-            result[k] = take_out_unsuported_values(v, default_value)
-        else:
-            result[k] = default_value
-    return result
-
-
-def get_new_file(file: Path) -> Path:
-    """Creates a new file, adding _{i} suffixes until the file doesn't exist.
-    
-    Args:
-        file (Path): A path.
-    
-    Returns:
-        Path: a path that is new. Might have a new _{i} suffix.
-    """
-    if not file.exists():
-        return file
-    else:
-        i = 0
-        file_i = file.with_name(file.stem + f"_{i}" + file.suffix)
-        while file_i.exists():
-            i += 1
-            file_i = file.with_name(file.stem + f"_{i}" + file.suffix)
-        file = file_i
-    return file
 
 def try_load(path: Path, default: T=None) -> Optional[T]:
     try:

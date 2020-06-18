@@ -1,5 +1,5 @@
 import itertools
-import logging
+from utils.logging_utils import get_logger
 from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass, fields
 from itertools import accumulate
@@ -33,7 +33,7 @@ from utils.utils import n_consecutive, roundrobin
 
 from .experiment import Experiment
 
-logger = logging.getLogger(__file__)
+logger = get_logger(__file__)
 
 
 @dataclass
@@ -439,9 +439,9 @@ class TaskIncremental(Experiment):
         i = new_task.index
         current_size = len(self.replay_buffer)
         n_tasks_in_buffer = len(self.tasks_in_buffer)        
-        print("Updating the replay buffer.")
-        print("Current buffer size: ", current_size)
-        print("number of tasks in the buffer:", n_tasks_in_buffer)
+        logger.debug("Updating the replay buffer.")
+        logger.debug("Current buffer size: ", current_size)
+        logger.debug("number of tasks in the buffer:", n_tasks_in_buffer)
 
         if new_task not in self.tasks_in_buffer:
             # adding a new task to the buffer.
@@ -455,7 +455,7 @@ class TaskIncremental(Experiment):
         )
         self.replay_buffer.extend(kept_data)
         # Count how many samples of each class are in the buffer.
-        print("# of samples per class in Replay buffer:", self.replay_buffer.samples_per_class())
+        logger.info("# of samples per class in Replay buffer:", self.replay_buffer.samples_per_class())
         
     
     def choose_samples_to_go_in_buffer(self, samples: Iterable[Tuple[Tensor, Tensor]],

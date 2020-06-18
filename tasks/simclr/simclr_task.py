@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import List
 
 import torch
@@ -11,7 +12,6 @@ from common.metrics import RegressionMetrics, get_metrics
 from simple_parsing import mutable_field
 from simple_parsing.helpers import Serializable
 from tasks.auxiliary_task import AuxiliaryTask
-from enum import Enum
 
 try:
     from .falr.config import HParams, ExperimentType

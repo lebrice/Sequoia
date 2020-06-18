@@ -7,10 +7,10 @@ from collections import OrderedDict
 import torch.nn.functional as functional
 from utils.json_utils import encode
 from utils.json_utils import Serializable
-import logging
+from utils.logging_utils import get_logger
 
 
-logger = logging.getLogger(__file__)
+logger = get_logger(__file__)
 
 
 @dataclass 

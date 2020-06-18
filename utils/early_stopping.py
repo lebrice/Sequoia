@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Generator, Optional
-import logging
-logger = logging.getLogger(__file__)
+from utils.logging_utils import get_logger
+logger = get_logger(__file__)
 
 from common.losses import LossInfo
 

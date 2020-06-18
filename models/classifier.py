@@ -1,17 +1,14 @@
 import copy
-import logging
 import os
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import (Any, Dict, List, NamedTuple, Optional, Tuple, Type,
-                    TypeVar, Union, Callable)
+from typing import (Any, Callable, Dict, List, NamedTuple, Optional, Tuple,
+                    Type, TypeVar, Union)
 
 import torch
-from simple_parsing import MutableField as mutable_field
-from simple_parsing import choice, field, list_field
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -24,11 +21,15 @@ from common.metrics import accuracy, get_metrics
 from common.task import Task
 from config import Config
 from models.output_head import OutputHead
+from simple_parsing import MutableField as mutable_field
+from simple_parsing import choice, field, list_field
 from tasks import AuxiliaryTask, AuxiliaryTaskOptions, Tasks
 from utils.json_utils import Serializable
+from utils.logging_utils import get_logger
 from utils.utils import fix_channels
 
-logger = logging.getLogger(__file__)
+logger = get_logger(__file__)
+
 
 class Classifier(nn.Module):
     @dataclass
@@ -52,7 +53,7 @@ class Classifier(nn.Module):
 
         # Use an encoder architecture from the torchvision.models package.
         encoder_model: Optional[str] = choice({
-            "vgg16": models.vgg16,  # This is the only one tested so far.
+            "vgg16": models.vgg16,
             "resnet18": models.resnet18,
             "resnet34": models.resnet34,
             "resnet50": models.resnet50,
@@ -69,6 +70,7 @@ class Classifier(nn.Module):
             # "wide_resnet50_2": models.wide_resnet50_2,
             # "mnasnet": models.mnasnet1_0,
         }, default=None)
+
         # Use the pretrained weights of the ImageNet model from torchvision.
         pretrained_model: bool = False
         # Freeze the weights of the pretrained encoder (except the last layer,
@@ -96,7 +98,6 @@ class Classifier(nn.Module):
         # Classifier output layer
         self.hparams: Classifier.HParams = hparams
         self.config = config
-        logger = self.config.get_logger(__file__)
 
         self.hidden_size = hparams.hidden_size  
         self.classification_loss = nn.CrossEntropyLoss()

@@ -52,7 +52,7 @@ class Experiment(
         pass
     
     config: Config = mutable_field(Config)
-    state: State = mutable_field(State, init=False)
+    state: State = mutable_field(State, init=False, to_dict=False)
 
 ## Other ways of doing this dynamically, but we lose out on type hinting :(
 

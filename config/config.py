@@ -1,5 +1,5 @@
 import functools
-import logging
+from utils.logging_utils import get_logger
 import os
 import shutil
 import sys
@@ -23,17 +23,10 @@ from simple_parsing import field, list_field, mutable_field
 from utils import cuda_available, gpus_available, set_seed
 from utils.early_stopping import EarlyStoppingOptions
 from utils.json_utils import Serializable
-
+from utils.logging_utils import get_logger
 from .wandb_config import WandbConfig
 
-logging.basicConfig(
-    format='%(asctime)s,%(msecs)d %(levelname)-8s [%(name)s:%(lineno)d] %(message)s',
-    datefmt='%Y-%m-%d:%H:%M:%S',
-    level=logging.INFO,
-)
-logging.getLogger('simple_parsing').addHandler(logging.NullHandler())
-
-logger = logging.getLogger(__file__)
+logger = get_logger(__file__)
 
 @dataclass
 class Config(WandbConfig):
@@ -46,7 +39,6 @@ class Config(WandbConfig):
     debug_steps: Optional[int] = None
     data_dir: Path = Path("data")  # data directory.
 
-    log_dir_root: Path = Path("results") # Logging directory.
     log_interval: int = 10   # How many batches to wait between logging calls.
     
     random_seed: int = 1            # Random seed.
@@ -60,10 +52,6 @@ class Config(WandbConfig):
     device: torch.device = torch.device("cuda" if cuda_available else "cpu")
     
     use_wandb: bool = True # Whether or not to log results to wandb
-    
-    # An run number is used to differentiate different iterations of the same experiment.
-    # Runs with the same name can be later grouped with wandb to produce stderr plots.
-    run_number: Optional[int] = None 
     
     # Save the command-line arguments that were used to create this run.
     argv: List[str] = field(init=False, default_factory=sys.argv.copy)
@@ -112,43 +100,6 @@ class Config(WandbConfig):
             with open(self.log_dir / "notes.txt", "w") as f:
                 f.write(self.notes)
 
-
-    @property
-    def log_dir(self):
-        return self.log_dir_root.joinpath(
-            (self.project_name or ""),
-            (self.run_group or ""),
-            (self.run_name or 'default'),
-            (f"run_{self.run_number}" if self.run_number is not None else ""),
-        )
-
-    @staticmethod
-    def get_logger(name: str) -> logging.Logger:
-        """ TODO: figure out if we should add handlers, etc. """
-        try:
-            p = Path(name)
-            if p.exists():
-                name = str(p.absolute().relative_to(Path.cwd()).as_posix())
-        except:
-            pass
-        logger = logging.getLogger(name)
-        # logger.addHandler(TqdmLoggingHandler())
-        return logger
-
 # shared config object.
 ## TODO: unused, but might be useful!
 # config: Config = Config()
-
-class TqdmLoggingHandler(logging.Handler):
-    def __init__(self, level=logging.NOTSET):
-        super().__init__(level)
-
-    def emit(self, record):
-        try:
-            msg = self.format(record)
-            tqdm.tqdm.write(msg)
-            self.flush()
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except:
-            self.handleError(record)  

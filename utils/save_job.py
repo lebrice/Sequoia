@@ -1,9 +1,7 @@
 import torch
 import torch.multiprocessing as mp
 from pathlib import Path
-import logging
-logger = mp.get_logger()
-logger.setLevel(logging.DEBUG)
+from utils.logging_utils import get_logger
 from typing import *
 from torch import Tensor
 from config import Config
@@ -13,6 +11,8 @@ from simple_parsing.helpers import Serializable
 from utils.json_utils import Serializable as CustomSerializable
 
 from functools import singledispatch
+
+logger = get_logger(__file__)
 
 class SaveTuple(NamedTuple):
     save_path: Path
