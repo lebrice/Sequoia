@@ -126,9 +126,10 @@ class TaskIncremental(Experiment):
         
         self.tasks = self.state.tasks
         logger.info(f"Class Ordering: {self.state.tasks}")
+        
         # save the state, just in case.
         self.save_state(save_model_weights=False)
-        
+
         # Load the datasets
         self.load_task_datasets(self.tasks)
         self.n_tasks = len(self.tasks)
@@ -216,7 +217,7 @@ class TaskIncremental(Experiment):
                         # Un/self-supervised training on task i.
                         # NOTE: Here we use the same dataloaders, but drop the
                         # labels and treat them as unlabeled datasets. 
-                        self.state.all_losses = self.train(
+                        self.state.all_losses += self.train(
                             unlabeled(train_i_loader),
                             unlabeled(valid_i_loader),
                             epochs=self.config.unsupervised_epochs_per_task,
@@ -455,7 +456,7 @@ class TaskIncremental(Experiment):
         )
         self.replay_buffer.extend(kept_data)
         # Count how many samples of each class are in the buffer.
-        logger.info("# of samples per class in Replay buffer:", self.replay_buffer.samples_per_class())
+        logger.info(f"# of samples per class in Replay buffer: {self.replay_buffer.samples_per_class()}")
         
     
     def choose_samples_to_go_in_buffer(self, samples: Iterable[Tuple[Tensor, Tensor]],

@@ -9,16 +9,21 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import wandb
 from torch import Tensor
 
 from common.losses import LossInfo, TrainValidLosses
+from common.task import Task
+from datasets.data_utils import unlabeled
 from datasets.subset import Dataset
+from simple_parsing import mutable_field
 from utils.json_utils import try_load
+from utils.logging_utils import get_logger
 from utils.plotting import PlotSectionLabel
 
 from .task_incremental import TaskIncremental
 
-TrainAndValidLosses = TrainValidLosses
+logger = get_logger(__file__)
 
 
 @dataclass
@@ -27,32 +32,34 @@ class ActiveRemembering(TaskIncremental):
     
     TODO: Add your arguments as attributes here, if any.
     """
-    unsupervised_epochs_per_task: int = 0
+    @dataclass
+    class Config(TaskIncremental.Config):
+        """Config for the active remembering experiment. """
+        # The maximum number of epochs to train on when remembering without labels.
+        remembering_max_epochs: int = 1
 
-    # The maximum number of epochs to train on when remembering without labels.
-    remembering_max_epochs: int = 1
+    config: Config = mutable_field(Config)
 
     def run(self):
+        """TODO: Evaluate remembering on the test set? validation? Report online acc? or single value? Test time training or no?
+
+        Returns:
+            [type]: [description]
+        """
+        self.setup()
         # Load the datasets and return the set of classes within each task.
-        tasks: List[List[int]] = self.load()
+        tasks: List[Task] = self.state.tasks
+        # All classes in the order in which they appear
+        print("Class Ordering:", sum((t.classes for t in tasks), []))
 
         self.model = self.init_model()
-        
         if not any(task.enabled for task in self.model.tasks.values()):
             self.log("At least one Auxiliary Task should be activated in order "
                      "to do active remembering!\n"
                      "(Set one with '--<task>.coefficient <value>').")
             exit()
 
-        # All classes in the order in which they appear
-        label_order: List[int] = sum(tasks, [])
-        print("Class Ordering:", label_order)
-        
-        all_losses = (
-            TrainValidLosses.try_load_json(self.results_dir / "losses.json") or
-            TrainValidLosses()
-        )
-        self.state.global_step = all_losses.latest_step()
+        all_losses = self.state.all_losses
 
         if self.state.global_step != 0:
             # TODO: reset the state of the experiment.
@@ -60,66 +67,77 @@ class ActiveRemembering(TaskIncremental):
             # Right now I just skip the training and just go straight to making the plot with the existing data:
             self.tasks = []
 
-        for task_index, task in enumerate(self.tasks):
+        for i, task in enumerate(self.tasks):
+            self.state.i = i
+
+            task_index = i
             logger.info(f"Starting task {task_index} with classes {task}")
             
             train_i: VisionDatasetSubset = self.train_datasets[task_index]
             valid_i: VisionDatasetSubset = self.valid_datasets[task_index]
+            train_i_loader = self.get_dataloader(train_i)
+            valid_i_loader = self.get_dataloader(valid_i)
+
             valid_0_to_i: VisionDatasetSubset = self.valid_cumul_datasets[task_index]
 
-            # If we are using a multihead model, we give it the task label (so
-            # that it can spawn / reuse the output head for the given task).
-            if self.multihead:
-                self.model.current_task_id = task_index
+
+            self.on_task_switch(task)
 
             with self.plot_region_name(f"Learn Task {task_index}"):
                 # Temporarily remove the labels.
                 with train_i.without_labels(), valid_i.without_labels():
                     # Un/self-supervised training on task i.
-                    all_losses += self.train_until_convergence(
+                    all_losses += self.train(
                         train_i,
                         valid_i,
-                        max_epochs=self.unsupervised_epochs_per_task,
-                        description=f"Task {task_index} (Unsupervised)",
+                        epochs=self.config.unsupervised_epochs_per_task,
+                        description=f"Task {i} (Unsupervised)",
+                        temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
                     )
 
                 # Train (supervised) on task i.
-                all_losses += self.train_until_convergence(
-                    train_i,
-                    valid_i,
-                    max_epochs=self.supervised_epochs_per_task,
-                    description=f"Task {task_index} (Supervised)",
+                all_losses += self.train(
+                    train_i_loader,
+                    valid_i_loader,
+                    epochs=self.config.supervised_epochs_per_task,
+                    description=f"Task {i} (Supervised)",
+                    temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
                 )
                 
             # Actively "remember" task 0 by training with self-supervised on it.
             if task_index >= 1:
                 # Use the output head for task 0 if we are in multihead setup:
-                if self.multihead:
-                    self.model.current_task_id = 0
+                self.on_task_switch(tasks[0])
 
                 train_0: VisionDatasetSubset = self.train_datasets[0]
                 valid_0: VisionDatasetSubset = self.valid_datasets[0]
-
-                with train_0.without_labels(), self.plot_region_name("Remember Task 0"):
-                    # Here by using train_until_convergence we also periodically
+                train_0_loader = self.get_dataloader(train_0)
+                valid_0_loader = self.get_dataloader(valid_0)
+                
+                with self.plot_region_name("Remember Task 0"):
+                    # Here by using train we also periodically
                     # evaluate the validation loss on batches from the (labeled)
                     # validation set.
-                    all_losses += self.train_until_convergence(
-                        train_0,
-                        valid_0,
-                        max_epochs=self.remembering_max_epochs,
-                        description=f"Task 0 Remembering (Unsupervised)"
+                    all_losses += self.train(
+                        unlabeled(train_0_loader),
+                        valid_0_loader,
+                        epochs=self.config.remembering_max_epochs,
+                        description=f"Task 0 Remembering (Unsupervised)",
+                        temp_save_dir=self.checkpoints_dir / f"task_{task_index}_remembering",
                     )
+            
+            self.save_state()
 
-        # TODO: Save the results to a json file.
-        all_losses.save_json(self.results_dir / "losses.json")
+        self.save_state(self.results_dir)
         fig = make_plot(all_losses, self.state.plot_sections)
         
         from utils.plotting import maximize_figure
         maximize_figure()
         
         fig.savefig(self.plots_dir / "remembering_plot.png")
-        
+        if self.config.use_wandb:
+            wandb.log({"Rememering": fig})
+
         if self.config.debug:
             fig.show()
             fig.waitforbuttonpress(10)

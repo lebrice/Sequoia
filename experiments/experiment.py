@@ -44,7 +44,7 @@ class Experiment(
     @dataclass
     class State(
                 LabeledPlotRegionsAddon.State,
-                # ReplayAddon.State,
+                ReplayAddon.State,
                 # KnnAddon.State,
                 # TestTimeTrainingAddon.State,
                 # SaveVaeSamplesAddon.State,
@@ -52,7 +52,7 @@ class Experiment(
         pass
     
     config: Config = mutable_field(Config)
-    state: State = mutable_field(State, init=False, to_dict=False)
+    state: State = mutable_field(State, init=False)
 
 ## Other ways of doing this dynamically, but we lose out on type hinting :(
 

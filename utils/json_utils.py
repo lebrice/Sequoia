@@ -45,20 +45,8 @@ class ModelStateDict(Dict[str, Tensor]):
         }
 
 
-@dataclass
-class Serializable(SerializableBase, decode_into_subclasses=True):  # type: ignore
-    # NOTE: This currently doesn't add much compared to `Serializable` from simple-parsing.
-    
-    def save(self, path: Union[str, Path], **kwargs) -> None:
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # Save to temp file, so we don't corrupt the save file.
-        save_path_tmp = path.with_name(path.stem + "_temp" + path.suffix)
-        # write out to the temp file.
-        super().save(save_path_tmp, **kwargs)
-        # Rename the temp file to the right path, overwriting it if it exists.
-        save_path_tmp.replace(path)
-
+class Pickleable():
+    """ Helps make a class pickleable. """
     def __getstate__(self):
         """ We implement this to just make sure to detach the tensors if any
         before pickling.
@@ -69,10 +57,10 @@ class Serializable(SerializableBase, decode_into_subclasses=True):  # type: igno
         # Overwrite with `self.to_dict()` so we get fields in nice format.
         d.update(self.to_dict())
         return d
-    
+
     def __setstate__(self, state: Dict):
         logger.debug(f"setstate was called")
-        raise NotImplementedError("TODO: never used this yet.")
+        raise NotImplementedError("TODO: not implemented yet...")
         pass
 
     def detach(self):
@@ -104,6 +92,22 @@ class Serializable(SerializableBase, decode_into_subclasses=True):  # type: igno
                 value = value.cpu()
             setattr(self, key, value)
 
+
+@dataclass
+class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  # type: ignore
+    # NOTE: This currently doesn't add much compared to `Serializable` from simple-parsing.
+    
+    def save(self, path: Union[str, Path], **kwargs) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Save to temp file, so we don't corrupt the save file.
+        save_path_tmp = path.with_name(path.stem + "_temp" + path.suffix)
+        # write out to the temp file.
+        super().save(save_path_tmp, **kwargs)
+        # Rename the temp file to the right path, overwriting it if it exists.
+        save_path_tmp.replace(path)
+
+    
 
 @encode.register
 def encode_tensor(obj: Tensor) -> List:
@@ -138,7 +142,6 @@ def encode_device(obj: torch.device) -> str:
 @encode.register
 def encode_enum(value: Enum):
     return value.value
-
 
 
 def try_load(path: Path, default: T=None) -> Optional[T]:

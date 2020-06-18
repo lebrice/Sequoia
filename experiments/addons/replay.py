@@ -3,24 +3,26 @@ from abc import ABC, abstractmethod
 from collections import Counter, deque
 from dataclasses import InitVar, dataclass
 from typing import *
-
+import json
+from pathlib import Path
 import numpy as np
 import torch
 from torch import Tensor, nn
 from torch.utils.data import TensorDataset
-
+from simple_parsing.helpers.serialization.serializable import D
 from common.losses import LossInfo
 from config import Config as ConfigBase
 from simple_parsing import field, mutable_field
 from utils.json_utils import Serializable
 from utils.logging_utils import get_logger
-
+from utils.json_utils import Pickleable
 from .addon import ExperimentAddon
 
 logger = get_logger(__file__)
 T = TypeVar("T")
 
-class ReplayBuffer(Deque[T]):
+@dataclass
+class ReplayBuffer(Deque[T], Pickleable):
     """Simple implementation of a replay buffer.
 
     Uses a doubly-ended Queue, which unfortunately isn't registered as a buffer
@@ -238,11 +240,33 @@ class ReplayAddon(ExperimentAddon):
         # Number of samples in the replay buffer.
         replay: ReplayOptions = mutable_field(ReplayOptions)
     
+    @dataclass
+    class State(ExperimentAddon.State):
+        # TODO: Fix this metadata stuff in SimpleParsing.
+        replay_buffer: Optional[ReplayBuffer] = field(None, metadata=dict(to_dict=False))
+        
+        def _save(self, path: Union[str, Path], dump_fn=json.dump, **kwargs) -> None:
+            path = Path(path)
+            super()._save(path, dump_fn=dump_fn, **kwargs)
+            if self.replay_buffer is not None:
+                buffer_save_path = path.parent / "replay_buffer.pth"
+                torch.save(self.replay_buffer, str(buffer_save_path))
+        
+        @classmethod
+        def load(cls, path: Union[Path, str], drop_extra_fields: bool=None, load_fn=None, **kwargs) -> D:
+            path = Path(path)
+            state: ReplayAddon.State = super().load(path, drop_extra_fields=drop_extra_fields, load_fn=load_fn, **kwargs)
+            buffer_load_path = path.parent / "replay_buffer.pth"
+            if buffer_load_path.exists():
+                state.replay_buffer = torch.load(buffer_load_path)
+
     config: Config = mutable_field(Config)
-    
+    state: State = mutable_field(State, init=False)
+
+
+
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
-        self.replay_buffer: Optional[ReplayBuffer] = None
         # labeled_replay_buffer:   Optional[LabeledReplayBuffer] = field(default=None, init=False)
         # unlabeled_replay_buffer: Optional[UnlabeledReplayBuffer] = field(default=None, init=False)
 
@@ -262,7 +286,7 @@ class ReplayAddon(ExperimentAddon):
                 self.replay_buffer = UnlabeledReplayBuffer(self.config.replay.unlabeled_buffer_size)
 
     def train_batch(self, data: Tensor, target: Optional[Tensor], name: str="Train") -> LossInfo:
-        if self.config.replay.always_use_replay:
+        if self.config.replay.always_use_replay and self.replay_buffer is not None:
             # If we have an unlabeled replay buffer, always push the x's to it,
             # regarless of if 'target' is present or not.
             if target is not None:
@@ -272,3 +296,11 @@ class ReplayAddon(ExperimentAddon):
             elif self.replay.unlabeled_buffer_size > 0:
                 data = self.replay_buffer.push_and_sample_unlabeled(data, size=sampled_batch_size)
         return super().train_batch(data, target, name)
+
+    @property
+    def replay_buffer(self) -> Optional[ReplayBuffer]:
+        return self.state.replay_buffer
+    
+    @replay_buffer.setter
+    def replay_buffer(self, value: Optional[ReplayBuffer]) -> None:
+        self.state.replay_buffer = value

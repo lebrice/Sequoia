@@ -101,7 +101,7 @@ class ExperimentBase(Serializable):
     # Model Hyper-parameters (tunable) settings.
     hparams: Classifier.HParams = mutable_field(Classifier.HParams)
     # State of the experiment (not parsed form command-line).
-    state: State = mutable_field(State, init=False)
+    state: State = mutable_field(State, init=False, metadata=dict(to_dict=False))
 
     def __post_init__(self):
         """ Called after __init__, used to initialize all missing fields.
@@ -152,9 +152,9 @@ class ExperimentBase(Serializable):
         
         if self.config.use_wandb:
             config_dict = self.to_dict()
-            print(self.dumps(indent="\t"))
-            exit()
-            run = self.config.wandb_init()
+            # Take out the `state` key from the config dict:
+            config_dict.pop("state", None)
+            run = self.config.wandb_init(config_dict=config_dict)
         
 
         logger.info(f"Launching experiment at log dir {self.config.log_dir}")
