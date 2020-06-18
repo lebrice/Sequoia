@@ -25,8 +25,6 @@ class SemiSupervisedBatchesAddon(ExperimentAddon):
 
         self.model.train()
         self.model.optimizer.zero_grad()
-
-        batch_loss_info = self.model.get_loss(data, target, name=name)
         
         unsupervised_x_list: List[Tensor] = []
         supervised_x_list: List[Tensor] = []
