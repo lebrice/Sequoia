@@ -17,6 +17,7 @@ from .addons.replay import ReplayAddon
 from .addons.representation_knn import KnnAddon
 from .addons.test_time_training import TestTimeTrainingAddon
 from .addons.vae_addon import SaveVaeSamplesAddon
+from .addons.semi_supervised import SemiSupervisedBatchesAddon
 from .experiment_base import ExperimentBase
 
 
@@ -27,10 +28,11 @@ class Experiment(
             KnnAddon,
             TestTimeTrainingAddon,
             SaveVaeSamplesAddon,
+            SemiSupervisedBatchesAddon,
         ):
     # If the addon has a 'Config' defined, then add it.
     # NOTE: we can't just add all the <Addon>.Config classes, since that would
-    # be 
+    # cause the error "duplicate base class `Config`".
     @dataclass
     class Config(
                 # LabeledPlotRegionsAddon.Config,
@@ -38,6 +40,7 @@ class Experiment(
                 KnnAddon.Config,
                 TestTimeTrainingAddon.Config,
                 # SaveVaeSamplesAddon.Config,
+                # SemiSupervisedBatchesAddon.Config,
             ):
         pass
     
@@ -48,6 +51,7 @@ class Experiment(
                 # KnnAddon.State,
                 # TestTimeTrainingAddon.State,
                 # SaveVaeSamplesAddon.State,
+                # SemiSupervisedBatchesAddon.State,
             ):
         pass
     
