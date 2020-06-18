@@ -17,7 +17,7 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset, Sampler, TensorDataset
 from torchvision.datasets import VisionDataset
 
-from common.losses import LossInfo, TrainValidLosses
+from common.losses import LossInfo, TrainValidLosses, get_supervised_metrics, get_supervised_accuracy
 from common.metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                             get_metrics)
 from config import Config as ConfigBase
@@ -390,7 +390,7 @@ class ExperimentBase(Serializable):
             desc += " " if desc and not desc.endswith(" ") else ""
             desc += f"Epoch {epoch}"
             pbar.set_description(desc + " Train")
-            valid_loss = self.train_epoch(epoch, pbar, steps_per_epoch, message, valid_loss_gen, description, all_losses)
+            self.train_epoch(epoch, pbar, message, valid_loss_gen, all_losses=all_losses)
             epoch_length = self.global_step - epoch_start_step
             epoch_lengths.append(epoch_length)
 
@@ -431,7 +431,7 @@ class ExperimentBase(Serializable):
         # TODO: Should we also return the array of validation losses at each epoch (`validation_losses`)?
         return all_losses
     
-    def train_epoch(self, epoch, pbar: Iterable, steps_per_epoch:int, message: Dict[str, Any], valid_loss_gen: Generator, description: str, all_losses:TrainValidLosses):
+    def train_epoch(self, epoch, pbar: Iterable, message: Dict[str, Any], valid_loss_gen: Generator, all_losses:TrainValidLosses):
         for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
             train_loss.drop_tensors()
             if batch_idx % self.config.log_interval == 0:
@@ -449,7 +449,7 @@ class ExperimentBase(Serializable):
                     "Train": train_loss,
                     "Valid": valid_loss,
                 })
-        return valid_loss
+        #return all_losses
 
 
     def keep_best_model(self, use_acc: bool=False, save_path: Path=None) -> Generator[int, Optional[LossInfo], None]:
@@ -481,7 +481,8 @@ class ExperimentBase(Serializable):
             step = self.state.global_step
 
             val_loss = loss_info.total_loss.item()
-            supervised_metrics = loss_info.metrics.get(Tasks.SUPERVISED)            
+            supervised_metrics = get_supervised_metrics(loss_info)
+            
             if use_acc:
                 assert supervised_metrics, "Can't use accuracy since there are no supervised metrics in given loss.."
                 val_acc = supervised_metrics.accuracy

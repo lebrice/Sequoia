@@ -231,11 +231,12 @@ class LossInfo(Serializable):
         """Absorbs `other` into `self`, merging the losses and metrics.
 
         Args:
-            other ([type]): [description]
+            other (LossInfo): Another loss to 'merge' into this one.
         """
         new_name = self.name
         old_name = other.name
         new_other = LossInfo(name=new_name)
+        new_other.total_loss = other.total_loss
         # acumulate the metrics:
         new_other.metrics = OrderedDict([
             (k.replace(old_name, new_name), v) for k, v in other.metrics.items() 

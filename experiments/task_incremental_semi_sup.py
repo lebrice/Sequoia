@@ -132,12 +132,12 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             train_dataloader_unlabeled = self.get_dataloader(self.train_datasets[self.state.i], self.train_samplers_unlabeled[self.state.i])
         train_dataloader = zip(cycle(train_dataloader), train_dataloader_unlabeled)
         self.epoch_length = len(train_dataloader_unlabeled)
-        super().train(train_dataloader, *args, **kwargs, steps_per_epoch=len(train_dataloader_unlabeled))
+        return super().train(train_dataloader, *args, **kwargs, steps_per_epoch=len(train_dataloader_unlabeled))
 
     def train_epoch(self, epoch, *args, **kwargs):
         self.epoch = epoch
         self.batch_idx = 0
-        super().train_epoch(epoch, *args, **kwargs)
+        return super().train_epoch(epoch, *args, **kwargs)
 
     def preprocess_simclr(self, batch: Union[Tuple[Tensor], Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Optional[Tensor]]:
             data = batch[0].to(self.model.device)
@@ -174,8 +174,6 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             data, target = self.preprocess(batch_sup) if not self.simclr_augment else self.preprocess_simclr(batch_sup)
             u, _ = self.preprocess(batch_unsup) if not self.simclr_augment else self.preprocess_simclr(batch_unsup)
             yield self.train_batch_semi(data, target, u)
-
-  
 
     def train_batch_semi(self, data: Tensor, target: Optional[Tensor], u: Tensor) -> LossInfo:
         if self.lr_rampdown_epochs > 0:
