@@ -54,14 +54,15 @@ class Pickleable():
         logger.debug(f"__getstate__ was called.")
         # Use `vars(self)`` to get all the attributes, not just the fields.
         d = vars(self)
+        return cpu(detach(d))
         # Overwrite with `self.to_dict()` so we get fields in nice format.
-        d.update(self.to_dict())
+        # d.update(self.to_dict())
         return d
 
     def __setstate__(self, state: Dict):
         logger.debug(f"setstate was called")
-        raise NotImplementedError("TODO: not implemented yet...")
-        pass
+        logger.debug(f"type(self): {type(self)}, keys in the state object: {state.keys()}")
+        self.__dict__.update(state)
 
     def detach(self):
         """Move all tensor attributes to the CPU and then detach them in-place.
@@ -73,24 +74,38 @@ class Pickleable():
         self.detach_()
         return self
 
-    def detach_(self):
+    def detach_(self) -> None:
         """ Detaches all the Tensor attributes in-place, then returns `self`.
         
         NOTE: also recursively detaches `JsonSerializable` attributes.
         """
-        for key, value in vars(self).items():
-            if isinstance(value, Tensor):
-                value = value.detach()
-            if isinstance(value, Serializable):
-                value = value.detach()
-            setattr(self, key, value)
+        self.__dict__ = detach(self.__dict__)
         return self
 
     def cpu(self) -> None:
-        for key, value in vars(self).items():
-            if isinstance(value, (Tensor, Serializable)):
-                value = value.cpu()
-            setattr(self, key, value)
+        self.__dict__ = detach(self.__dict__)
+
+def detach(d: Dict[str, Any]) -> Dict[str, Any]:
+    """ Detaches all the Tensors in a dict, as well as all nested dicts.
+    """
+    result: Dict[str, Any] = {}
+    for key, value in d.items():
+        if isinstance(value, Tensor):
+            value = value.detach()
+        if isinstance(value, Dict):
+            value = detach(value)
+        result[key] = value
+    return result
+
+def cpu(d: Dict[str, Any]) -> Dict[str, Any]:
+    result: Dict[str, Any] = {}
+    for key, value in d.items():
+        if isinstance(value, Tensor):
+            value = value.cpu()
+        if isinstance(value, Dict):
+            value = cpu(value)
+        result[key] = value
+    return result
 
 
 @dataclass
