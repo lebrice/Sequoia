@@ -20,8 +20,7 @@ def train_valid_split(train_dataset: VisionDataset, valid_fraction: float=0.2) -
     
     valid_indices = indices[:valid_len]
     train_indices = indices[valid_len:]
-
-    from .subset import Subset
+    from torch.utils.data import Subset
     train = Subset(train_dataset, train_indices)
     valid = Subset(train_dataset, valid_indices)
     logger.info(f"Training samples: {len(train)}, Valid samples: {len(valid)}")
