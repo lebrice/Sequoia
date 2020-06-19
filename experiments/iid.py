@@ -22,8 +22,7 @@ from torchvision.utils import save_image
 from simple_parsing import ArgumentParser, mutable_field
 from common.losses import LossInfo, TrainValidLosses
 from common.metrics import get_metrics
-from datasets.dataset import Dataset
-from datasets.mnist import Mnist
+from datasets import Datasets
 from models.classifier import Classifier
 from simple_parsing import ArgumentParser, choice, field, subparsers
 from tasks import AuxiliaryTask, Tasks

@@ -7,7 +7,7 @@ from typing import Callable, ClassVar, Dict, Tuple, Type
 
 from torch.utils.data import Dataset
 from torchvision.datasets import ImageNet, VisionDataset
-from torchvision.transforms import Compose, Resize, ToTensor
+from torchvision.transforms import Compose, Resize, ToTensor, Normalize
 
 from .dataset_config import DatasetConfig
 
@@ -37,6 +37,7 @@ class ImageNetConfig(DatasetConfig):
     num_classes: int = 1000
     transforms: Callable = Compose([
         Resize((224, 224)),
+        Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225], inplace=True),
         ToTensor(),
     ])
     keep_in_memory: bool=False

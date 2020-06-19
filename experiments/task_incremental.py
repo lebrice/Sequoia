@@ -16,7 +16,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
-
+from datasets import Datasets
 from common.losses import (LossInfo, TrainValidLosses, get_supervised_accuracy,
                            get_supervised_metrics)
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
@@ -26,7 +26,7 @@ from datasets.data_utils import unbatch, unlabeled
 from datasets.subset import ClassSubset
 from models.output_head import OutputHead
 from simple_parsing import choice, field, list_field, mutable_field, subparsers
-from simple_parsing.helpers import Serializable
+from utils.json_utils import Serializable
 from tasks import Tasks
 from utils import utils
 from utils.utils import n_consecutive, roundrobin
@@ -125,7 +125,7 @@ class TaskIncremental(Experiment):
             logger.info(f"i={self.state.i}, j={self.state.j}")
         
         self.tasks = self.state.tasks
-        logger.info(f"Class Ordering: {self.state.tasks}")
+        logger.info(f"Class Ordering: {[t.classes for t in self.state.tasks]}")
         
         # save the state, just in case.
         self.save_state(save_model_weights=False)
@@ -641,7 +641,7 @@ class TaskIncremental(Experiment):
         tasks: List[Task] = []
 
         # Create the tasks, if they aren't given.
-        classes = list(range(dataset.y_shape[0]))
+        classes = list(range(dataset.num_classes))
         if self.config.random_class_ordering:
             shuffle(classes)
         

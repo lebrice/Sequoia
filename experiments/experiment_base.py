@@ -28,7 +28,8 @@ from datasets.data_utils import train_valid_split
 from datasets.subset import ClassSubset, Subset
 from models.classifier import Classifier
 from simple_parsing import choice, field, mutable_field, subparsers
-from simple_parsing.helpers import FlattenedAccess, Serializable
+from simple_parsing.helpers import FlattenedAccess
+from utils.json_utils import Serializable
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
@@ -73,7 +74,9 @@ class ExperimentBase(Serializable):
         These attributes will be parsed from the command-line using simple-parsing.
         """
         # Which dataset to use.
-        dataset: Datasets = Datasets.mnist
+        dataset: DatasetConfig = choice({
+            d.name: d.value for d in Datasets
+        })
 
         # Path to restore the state from at the start of training.
         # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
@@ -112,7 +115,7 @@ class ExperimentBase(Serializable):
         when `wandb.init` is called.
         """
         # Set these shared attributes so that all the Auxiliary tasks can be created.
-        AuxiliaryTask.input_shape = self.config.dataset.value.x_shape
+        AuxiliaryTask.input_shape = self.config.dataset.x_shape
         AuxiliaryTask.hidden_size = self.hparams.hidden_size
 
         self.train_dataset: Dataset = NotImplemented
@@ -223,7 +226,18 @@ class ExperimentBase(Serializable):
         state_json_path = state_json_path or self.checkpoints_dir / "state.json"
         logger.info(f"Restoring state from {state_json_path}")
         # Load the 'State' object from the json file
-        self.state = self.State.load(state_json_path)
+        self.state = self.State.load_json(state_json_path)
+        logger.debug(f"state: {self.state}")
+        # TODO: This is a weird bug with SimpleParsing maybe, using above gives None?
+        with open(state_json_path) as f:
+            self.state = self.State.from_dict(json.load(f))
+            logger.debug(f"state (from_dict): {self.state}")
+        if self.state is None:
+            raise RuntimeError(
+                f"State shouldn't be None!\n"
+                f"(Tried to load from {state_json_path})"
+            )
+
         if self.state.model_weights_path:
             logger.info(f"Restoring model weights from {self.state.model_weights_path}")
             state_dict = torch.load(
@@ -240,19 +254,6 @@ class ExperimentBase(Serializable):
         model_class = get_model_class_for_dataset(self.config.dataset)
         model = model_class(hparams=self.hparams, config=self.config)
         return model
-    
-    def get_model_for_dataset(self, dataset: DatasetConfig) -> Classifier:
-        from models.mnist import MnistClassifier
-        from models.cifar import Cifar10Classifier, Cifar100Classifier
-
-        if isinstance(dataset, (Mnist, FashionMnist)):
-            return MnistClassifier(hparams=self.hparams, config=self.config)
-        elif isinstance(dataset, Cifar10):
-            return Cifar10Classifier(hparams=self.hparams, config=self.config)
-        elif isinstance(dataset, Cifar100):
-            return Cifar100Classifier(hparams=self.hparams, config=self.config)
-        else:
-            raise NotImplementedError(f"TODO: add a model for dataset {dataset}.")
 
     def train(self,
               train_dataloader: Union[Dataset, DataLoader],                

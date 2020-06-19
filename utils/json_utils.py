@@ -110,7 +110,8 @@ def cpu(d: Dict[str, Any]) -> Dict[str, Any]:
 
 @dataclass
 class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  # type: ignore
-    # NOTE: This currently doesn't add much compared to `Serializable` from simple-parsing.
+    # NOTE: This currently doesn't add much compared to `Serializable` from simple-parsing apart
+    # from not dropping the keys.
     
     def save(self, path: Union[str, Path], **kwargs) -> None:
         path = Path(path)
