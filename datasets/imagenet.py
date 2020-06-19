@@ -18,7 +18,8 @@ def get_imagenet_location() -> Path:
     # For each hostname prefix, the location where the torchvision ImageNet dataset can be found.
     # TODO: Add the location for your own machine.
     imagenet_locations: Dict[str, Path] = {
-        "mila": Path("/network/datasets/imagenet.var/imagenet_torchvision")
+        "mila": Path("/network/datasets/imagenet.var/imagenet_torchvision"),
+        "": Path("/network/datasets/imagenet.var/imagenet_torchvision"),
     }
     for prefix, v in imagenet_locations.items():
         if hostname.startswith(prefix):
