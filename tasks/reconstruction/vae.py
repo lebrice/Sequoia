@@ -8,9 +8,6 @@ from torch.nn import functional as F
 
 from common.layers import DeConvBlock, Flatten, Reshape
 from common.losses import LossInfo
-from datasets.cifar import Cifar10, Cifar100
-from datasets.dataset import DatasetConfig
-from datasets.mnist import Mnist
 from tasks.auxiliary_task import AuxiliaryTask
 
 from .decoders import get_decoder

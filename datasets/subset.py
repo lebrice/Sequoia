@@ -11,12 +11,14 @@ from torchvision.transforms import Normalize
 from common.task import Task
 from torchvision.datasets import VisionDataset, MNIST
 
+from .data_utils import keep_in_memory
+
+
 class Subset(SubsetBase):
     def __init__(self, dataset, indices):
         super().__init__(dataset, indices)
         if isinstance(self.dataset, VisionDataset):
-            from datasets.dataset import fix_vision_dataset
-            fix_vision_dataset(self.dataset)
+            keep_in_memory(self.dataset)
         if not isinstance(self.indices, Tensor):
             self.indices = torch.as_tensor(self.indices)
 
@@ -46,8 +48,8 @@ class ClassSubset(TensorDataset):
         self.labels: Set[int] = set(labels)
 
         if isinstance(self.dataset, VisionDataset):
-            from datasets.dataset import fix_vision_dataset
-            fix_vision_dataset(self.dataset)
+            from datasets.dataset import keep_in_memory
+            keep_in_memory(self.dataset)
 
         # get the mask to select only the relevant items.
         mask = get_mask(self.dataset, self.labels)

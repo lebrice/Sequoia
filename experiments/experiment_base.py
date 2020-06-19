@@ -21,7 +21,9 @@ from common.losses import LossInfo, TrainValidLosses, get_supervised_metrics, ge
 from common.metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                             get_metrics)
 from config import Config as ConfigBase
-from datasets import Cifar10, Cifar100, DatasetConfig, FashionMnist, Mnist
+
+from datasets import Datasets, DatasetConfig
+
 from datasets.data_utils import train_valid_split
 from datasets.subset import ClassSubset, Subset
 from models.classifier import Classifier
@@ -71,12 +73,8 @@ class ExperimentBase(Serializable):
         These attributes will be parsed from the command-line using simple-parsing.
         """
         # Which dataset to use.
-        dataset: DatasetConfig = choice({
-            "mnist": Mnist(),
-            "fashion_mnist": FashionMnist(),
-            "cifar10": Cifar10(),
-            "cifar100": Cifar100(),
-        }, default="mnist")
+        dataset: Datasets = Datasets.mnist
+
         # Path to restore the state from at the start of training.
         # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
         restore_from_path: Optional[Path] = None
@@ -114,7 +112,7 @@ class ExperimentBase(Serializable):
         when `wandb.init` is called.
         """
         # Set these shared attributes so that all the Auxiliary tasks can be created.
-        AuxiliaryTask.input_shape = self.config.dataset.x_shape
+        AuxiliaryTask.input_shape = self.config.dataset.value.x_shape
         AuxiliaryTask.hidden_size = self.hparams.hidden_size
 
         self.train_dataset: Dataset = NotImplemented
@@ -238,10 +236,11 @@ class ExperimentBase(Serializable):
 
     def init_model(self) -> Classifier:
         print("init model")
-        model = self.get_model_for_dataset(self.config.dataset)
-        model.to(self.config.device)
+        from models import get_model_class_for_dataset
+        model_class = get_model_class_for_dataset(self.config.dataset)
+        model = model_class(hparams=self.hparams, config=self.config)
         return model
-
+    
     def get_model_for_dataset(self, dataset: DatasetConfig) -> Classifier:
         from models.mnist import MnistClassifier
         from models.cifar import Cifar10Classifier, Cifar100Classifier

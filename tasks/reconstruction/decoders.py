@@ -5,17 +5,16 @@ from torch import nn
 
 from common.layers import DeConvBlock, Reshape
 from tasks.auxiliary_task import AuxiliaryTask
-from datasets import Cifar10, Mnist
+from datasets import Datasets
 
-
-def get_decoder(input_size: Union[Tuple[int, ...], torch.Size], code_size: int) -> nn.Module:
-    if input_size == Mnist.x_shape:
+def get_decoder(input_size: Union[Tuple[int, int, int], torch.Size], code_size: int) -> nn.Module:
+    if input_size == Datasets.mnist.value.x_shape:
         # TODO: get the right decoder architecture for other datasets than MNIST.
         return MnistDecoder(code_size=code_size)
-    elif input_size == Cifar10.x_shape:
+    elif input_size == Datasets.cifar10.value.x_shape:
         return CifarDecoder(code_size=code_size)
     else:
-        raise RuntimeError(f"Don't have an encoder for the given input shape: {AuxiliaryTask.input_shape}")
+        raise RuntimeError(f"Don't have a decoder for the given input shape: {input_size}")
 
 
 class MnistDecoder(nn.Sequential):

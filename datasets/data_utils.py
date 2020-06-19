@@ -48,3 +48,18 @@ class unlabeled(Iterable[Tuple[Tensor]], Sized):
 
     def __len__(self) -> int:
         return len(self.loader)
+
+
+def keep_in_memory(dataset: VisionDataset) -> None:
+    """ Converts the dataset's `data` and `targets` attributes to Tensors.
+    
+    This has the consequence of keeping the entire dataset in memory.
+    """
+    if not isinstance(dataset.data, (np.ndarray, Tensor)):
+        dataset.data = torch.as_tensor(dataset.data)
+    if not isinstance(dataset.targets, (np.ndarray, Tensor)):
+        dataset.targets = torch.as_tensor(dataset.targets)
+
+    if isinstance(dataset, v_datasets.CIFAR100):
+        # TODO: Cifar100 seems to want its 'data' to a numpy ndarray. 
+        dataset.data = np.asarray(dataset.data)

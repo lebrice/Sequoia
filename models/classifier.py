@@ -144,7 +144,8 @@ class Classifier(nn.Module):
                 logger.debug(f"{task.name}: {task.coefficient}")
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
-        
+        self.to(self.config.device)
+
 
     def supervised_loss(self, x: Tensor,
                               y: Tensor,
@@ -170,7 +171,14 @@ class Classifier(nn.Module):
         loss_info.metrics[Tasks.SUPERVISED] = metrics
         return loss_info
 
-    def get_loss(self, x: Tensor, y: Tensor=None, name: str="") -> LossInfo:
+    def get_loss(self, x: Union[Tensor, Dict[str, Tensor]], y: Tensor=None, name: str="") -> LossInfo:
+        if isinstance(x, dict):
+            # TODO: Select which 'augmented' input to use.
+            pass
+
+
+        
+        
         if y is not None and y.shape[0] != x.shape[0]:
             raise RuntimeError("Whole batch can either be fully labeled or "
                                "fully unlabeled, but not a mix of both (for now)")
@@ -204,7 +212,7 @@ class Classifier(nn.Module):
         x, _ = self.preprocess_inputs(x, None)
         return self.encoder(x)
 
-    def preprocess_inputs(self, x: Tensor, y: Tensor=None) -> Tuple[Tensor, Optional[Tensor]]:
+    def preprocess_inputs(self, x: Tensor, y: Tensor=None) -> Tuple[Dict[str, Tensor], Dict[str, Optional[Tensor]]]:
         """Preprocess the input tensor x before it is passed to the encoder.
         
         By default this does nothing. When subclassing the Classifier or 
@@ -247,7 +255,10 @@ class Classifier(nn.Module):
                 new_y = torch.empty_like(y)
                 for i, label in enumerate(self.current_task.classes):
                     new_y[y == label] = i
-                y = new_y            
+                y = new_y
+
+
+
         return x, y
 
     def on_task_switch(self, task: Task, **kwargs) -> None:
