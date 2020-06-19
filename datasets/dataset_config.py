@@ -36,7 +36,7 @@ class DatasetConfig:
         # Use the data_dir argument if given, otherwise use "./data"
         train = self.dataset_class(data_dir, train=True,  download=download, transform=self.transforms)
         test  = self.dataset_class(data_dir, train=False, download=download, transform=self.transforms)
-        
-        keep_in_memory(train)
-        keep_in_memory(test)
+        if self.keep_in_memory:
+            keep_in_memory(train)
+            keep_in_memory(test)
         return train, test

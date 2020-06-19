@@ -51,4 +51,6 @@ class ImageNetConfig(DatasetConfig):
                 f"Using data_dir has no effect when using the ImageNet dataset."
             ))
         data_dir = get_imagenet_location()
-        return super().load(data_dir=data_dir, download=False)
+        train = self.dataset_class(data_dir, split="train", transform=self.transforms)
+        test  = self.dataset_class(data_dir, split="val", transform=self.transforms)
+        return train, test
