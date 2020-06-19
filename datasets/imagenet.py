@@ -38,8 +38,8 @@ class ImageNetConfig(DatasetConfig):
     num_classes: int = 1000
     transforms: Callable = Compose([
         Resize((224, 224)),
-        Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225], inplace=True),
         ToTensor(),
+        Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225], inplace=True),
     ])
     keep_in_memory: bool=False
 
