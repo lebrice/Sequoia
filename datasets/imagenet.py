@@ -43,7 +43,7 @@ class ImageNetConfig(DatasetConfig):
     ])
     keep_in_memory: bool=False
 
-    def load(self, data_dir: Path=None) -> Tuple[Dataset, Dataset]:
+    def load(self, data_dir: Path=None, download: bool=False) -> Tuple[Dataset, Dataset]:
         """ Downloads the ImageNet dataset.
         """
         if data_dir is not None:
@@ -51,4 +51,4 @@ class ImageNetConfig(DatasetConfig):
                 f"Using data_dir has no effect when using the ImageNet dataset."
             ))
         data_dir = get_imagenet_location()
-        return super().load(data_dir=data_dir)
+        return super().load(data_dir=data_dir, download=False)

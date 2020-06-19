@@ -30,12 +30,12 @@ class DatasetConfig:
     # Wether we want to load the dataset to memory.
     keep_in_memory: bool = True
 
-    def load(self, data_dir: Path) -> Tuple[Dataset, Dataset]:
+    def load(self, data_dir: Path, download: bool=True) -> Tuple[Dataset, Dataset]:
         """ Downloads the corresponding train & test datasets and returns them.
         """
         # Use the data_dir argument if given, otherwise use "./data"
-        train = self.dataset_class(data_dir, train=True,  download=True, transform=self.transforms)
-        test  = self.dataset_class(data_dir, train=False, download=True, transform=self.transforms)
+        train = self.dataset_class(data_dir, train=True,  download=download, transform=self.transforms)
+        test  = self.dataset_class(data_dir, train=False, download=download, transform=self.transforms)
         
         keep_in_memory(train)
         keep_in_memory(test)
