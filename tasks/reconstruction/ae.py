@@ -10,7 +10,7 @@ from common.layers import DeConvBlock, Flatten, Reshape
 from common.losses import LossInfo
 from tasks.auxiliary_task import AuxiliaryTask
 
-from .decoders import get_decoder
+from .decoder_for_dataset import get_decoder_class_for_dataset
 
 class AEReconstructionTask(AuxiliaryTask):
     """ Task that adds the AE loss (reconstruction loss). 
@@ -27,8 +27,10 @@ class AEReconstructionTask(AuxiliaryTask):
                  options: "AEReconstructionTask.Options"=None):
         super().__init__(coefficient=coefficient, name=name, options=options)
         self.loss = nn.MSELoss(reduction="sum")
-        self.decoder: nn.Module = get_decoder(
-            input_size=AuxiliaryTask.input_shape,
+        
+        # TODO: This is weird, should be able to use the dataset here, no?
+        decoder_class = get_decoder_class_for_dataset(AuxiliaryTask.input_shape)
+        self.decoder: nn.Module = decoder_class(
             code_size=AuxiliaryTask.hidden_size,
         )
 
