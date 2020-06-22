@@ -51,7 +51,7 @@ class SaverWorker(mp.Process):
 def save(obj: object, save_path: Path) -> None:
     # Save to the .tmp file (such that if the saving crashes or is interrupted,
     # we don't leave the file in a corrupted state.)
-    logger.debug(f"Saving an object of type {type(obj)} to path {save_path}")
+    # logger.debug(f"Saving an object of type {type(obj)} to path {save_path}")
     save_path_tmp = save_path.with_suffix(".tmp")
     with open(save_path_tmp, "wb") as f:
         torch.save(obj, f)
@@ -60,6 +60,6 @@ def save(obj: object, save_path: Path) -> None:
 
 @save.register(Serializable)
 def save_serializable(obj: Serializable, save_path: Path) -> None:
-    logger.debug(f"Saving a serializable object of type {type(obj)} to path {save_path}")
+    # logger.debug(f"Saving a serializable object of type {type(obj)} to path {save_path}")
     save_path.parent.mkdir(exist_ok=True, parents=True)
     obj.save(save_path)
