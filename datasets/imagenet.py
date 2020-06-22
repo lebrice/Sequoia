@@ -5,7 +5,7 @@ from pathlib import Path
 from socket import gethostname
 from typing import Callable, ClassVar, Dict, Tuple, Type
 
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader, Sampler
 from torchvision.datasets import ImageNet, VisionDataset
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize
 

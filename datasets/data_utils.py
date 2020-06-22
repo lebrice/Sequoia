@@ -4,9 +4,9 @@ from typing import Iterable, Iterator, Sized, Tuple
 import numpy as np
 from torch import Tensor
 from torch.utils.data import DataLoader
-from torchvision.datasets import VisionDataset
-
-
+from torchvision.datasets import VisionDataset, CIFAR100
+import torch
+from .subset import Subset
 logger = get_logger(__file__)
 
 
@@ -20,7 +20,6 @@ def train_valid_split(train_dataset: VisionDataset, valid_fraction: float=0.2) -
     
     valid_indices = indices[:valid_len]
     train_indices = indices[valid_len:]
-    from torch.utils.data import Subset
     train = Subset(train_dataset, train_indices)
     valid = Subset(train_dataset, valid_indices)
     logger.info(f"Training samples: {len(train)}, Valid samples: {len(valid)}")
@@ -59,6 +58,6 @@ def keep_in_memory(dataset: VisionDataset) -> None:
     if not isinstance(dataset.targets, (np.ndarray, Tensor)):
         dataset.targets = torch.as_tensor(dataset.targets)
 
-    if isinstance(dataset, v_datasets.CIFAR100):
+    if isinstance(dataset, CIFAR100):
         # TODO: Cifar100 seems to want its 'data' to a numpy ndarray. 
         dataset.data = np.asarray(dataset.data)
