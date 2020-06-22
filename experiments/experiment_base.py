@@ -76,7 +76,7 @@ class ExperimentBase(Serializable):
         # Which dataset to use.
         dataset: DatasetConfig = choice({
             d.name: d.value for d in Datasets
-        })
+        }, default=Datasets.mnist.name)
 
         # Path to restore the state from at the start of training.
         # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
@@ -477,9 +477,9 @@ class ExperimentBase(Serializable):
             step = self.state.global_step
 
             val_loss = loss_info.total_loss.item()
-            supervised_metrics = get_supervised_metrics(loss_info)
             
             if use_acc:
+                supervised_metrics = get_supervised_metrics(loss_info)
                 assert supervised_metrics, "Can't use accuracy since there are no supervised metrics in given loss.."
                 val_acc = supervised_metrics.accuracy
 
