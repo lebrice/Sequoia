@@ -9,6 +9,7 @@ model_class_for_dataset: Dict[Datasets, Type[Classifier]] = {
     Datasets.mnist: MnistClassifier,
     Datasets.fashion_mnist: MnistClassifier,
     Datasets.cifar10: Cifar10Classifier,
+    Datasets.cifar100: Cifar100Classifier,
     Datasets.imagenet: ImageNetClassifier,
 }
 
