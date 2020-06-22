@@ -227,11 +227,9 @@ class ExperimentBase(Serializable):
         logger.info(f"Restoring state from {state_json_path}")
         # Load the 'State' object from the json file
         self.state = self.State.load_json(state_json_path)
-        logger.debug(f"state: {self.state}")
-        # TODO: This is a weird bug with SimpleParsing maybe, using above gives None?
-        with open(state_json_path) as f:
-            self.state = self.State.from_dict(json.load(f))
-            logger.debug(f"state (from_dict): {self.state}")
+        if self.config.debug and self.config.verbose:
+            logger.debug(f"state: {self.state}")
+        
         if self.state is None:
             raise RuntimeError(
                 f"State shouldn't be None!\n"
