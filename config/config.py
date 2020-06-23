@@ -55,9 +55,10 @@ class Config(WandbConfig):
     
     # Save the command-line arguments that were used to create this run.
     argv: List[str] = field(init=False, default_factory=sys.argv.copy)
-
+    
     early_stopping: EarlyStoppingOptions = mutable_field(EarlyStoppingOptions)
-
+    
+    #If `True`, accuracy will be used as a measure of performance. Otherwise, the total validation loss is used. Defaults to False.
     use_accuracy_as_metric: bool = False
 
     # Remove the existing log_dir, if any. Useful when debugging, as we don't

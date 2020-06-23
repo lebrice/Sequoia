@@ -285,7 +285,7 @@ class ReplayAddon(ExperimentAddon):
                 logger.info(f"Using an (unlabeled) replay buffer of size {self.config.replay.unlabeled_buffer_size}.")
                 self.replay_buffer = UnlabeledReplayBuffer(self.config.replay.unlabeled_buffer_size)
 
-    def train_batch(self, data: Tensor, target: Optional[Tensor], name: str="Train") -> LossInfo:
+    def train_batch(self, data: Tensor, target: Optional[Tensor], name: str="Train", **kwargs) -> LossInfo:
         if self.config.replay.always_use_replay and self.replay_buffer is not None:
             # If we have an unlabeled replay buffer, always push the x's to it,
             # regarless of if 'target' is present or not.
@@ -295,7 +295,7 @@ class ReplayAddon(ExperimentAddon):
                 data, target = self.replay_buffer.push_and_sample(data, target, size=sampled_batch_size)
             elif self.replay.unlabeled_buffer_size > 0:
                 data = self.replay_buffer.push_and_sample_unlabeled(data, size=sampled_batch_size)
-        return super().train_batch(data, target, name)
+        return super().train_batch(data, target, name, **kwargs)
 
     @property
     def replay_buffer(self) -> Optional[ReplayBuffer]:

@@ -17,11 +17,13 @@ from .addons.replay import ReplayAddon
 from .addons.representation_knn import KnnAddon
 from .addons.test_time_training import TestTimeTrainingAddon
 from .addons.vae_addon import SaveVaeSamplesAddon
+from .addons.lr_annealing import LRannealer
 from .addons.semi_supervised import SemiSupervisedBatchesAddon
+from .addons.preprocess import Simclr_preprocess, MixUP_preprocess
 from .experiment_base import ExperimentBase
 
 
-@dataclass
+@dataclass 
 class Experiment(
             LabeledPlotRegionsAddon,
             ReplayAddon,
@@ -29,6 +31,9 @@ class Experiment(
             TestTimeTrainingAddon,
             SaveVaeSamplesAddon,
             SemiSupervisedBatchesAddon,
+            Simclr_preprocess,
+            MixUP_preprocess,
+            LRannealer
         ):
     # If the addon has a 'Config' defined, then add it.
     # NOTE: we can't just add all the <Addon>.Config classes, since that would
@@ -39,6 +44,9 @@ class Experiment(
                 ReplayAddon.Config,
                 KnnAddon.Config,
                 TestTimeTrainingAddon.Config,
+                Simclr_preprocess.Config,
+                MixUP_preprocess.Config,
+                LRannealer.Config,
                 # SaveVaeSamplesAddon.Config,
                 # SemiSupervisedBatchesAddon.Config,
             ):

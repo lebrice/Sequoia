@@ -12,6 +12,7 @@ results/*
 data/*
 !data/**/*.py
 scripts/*.png
+scripts/alex/*
 wandb
 .idea
 .ipynb_checkpoints

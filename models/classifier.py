@@ -152,7 +152,7 @@ class Classifier(nn.Module):
                               y: Tensor,
                               h_x: Tensor=None,
                               y_pred: Tensor=None,
-                              loss_f: Callable[[Callable, Tensor],Tensor]=None) -> LossInfo:
+                              loss_f: Callable[[Tensor, Tensor],Tensor]=None) -> LossInfo:
         h_x = self.encode(x) if h_x is None else h_x
         y_pred = self.logits(h_x) if y_pred is None else y_pred
         y = y.view(-1)
@@ -161,7 +161,7 @@ class Classifier(nn.Module):
             loss = self.classification_loss(y_pred, y)
             metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
         else:
-            loss = loss_f(self.classification_loss,y_pred)
+            loss = loss_f(y_pred, y)
 
         metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
         loss_info = LossInfo(
@@ -172,7 +172,8 @@ class Classifier(nn.Module):
         loss_info.metrics[Tasks.SUPERVISED] = metrics
         return loss_info
 
-    def get_loss(self, x: Tensor, y: Tensor=None, name: str="") -> LossInfo:
+     
+    def get_loss(self, x: Tensor, y: Tensor=None, name: str="", supervised_criterion: Callable[[Tensor, Tensor],Tensor] = None, **kwargs) -> LossInfo:
         if y is not None and y.shape[0] != x.shape[0]:
             raise RuntimeError("Whole batch can either be fully labeled or "
                                "fully unlabeled, but not a mix of both (for now)")
@@ -188,7 +189,7 @@ class Classifier(nn.Module):
 
         # TODO: [improvement] Support a mix of labeled / unlabeled data at the example-level.
         if y is not None:
-            supervised_loss = self.supervised_loss(x=x, y=y, h_x=h_x, y_pred=y_pred)
+            supervised_loss = self.supervised_loss(x=x, y=y, h_x=h_x, y_pred=y_pred, loss_f=supervised_criterion)
             total_loss += supervised_loss
 
         for task_name, aux_task in self.tasks.items():
@@ -200,17 +201,6 @@ class Classifier(nn.Module):
             for name, loss in total_loss.losses.items():
                 logger.debug(name, loss.total_loss, loss.metrics)
         
-        return total_loss
-
-    def get_self_sup_loss(self, x: Tensor, y: Tensor=None, name = ''):
-        total_loss = LossInfo(name)
-        x, y = self.preprocess_inputs(x, y)
-        h_x = self.encode(x)
-        y_pred = self.logits(h_x)
-        for task_name, aux_task in self.tasks.items():
-            if aux_task.enabled:
-                aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y)
-                total_loss += aux_task_loss
         return total_loss
 
     def encode(self, x: Tensor):

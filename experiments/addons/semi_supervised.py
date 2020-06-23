@@ -23,7 +23,7 @@ class SemiSupervisedBatchesAddon(ExperimentAddon):
 
     def train_batch(self, data: Tensor,
                           target: Union[Optional[Tensor], List[Optional[Tensor]]],
-                          name: str="Train") -> LossInfo: 
+                          name: str="Train", **kwargs) -> LossInfo: 
         """Trains the model on a batch of (potentially partially labeled) data. 
 
         Args:
@@ -44,7 +44,7 @@ class SemiSupervisedBatchesAddon(ExperimentAddon):
             # Fully labeled/unlabeled batch
             labeled_ratio = float(target is not None)
             self.log(dict(labeled_ratio=labeled_ratio))
-            return super().train_batch(data, target, name=name)
+            return super().train_batch(data, target, name=name, **kwargs)
 
         self.model.train()
         self.model.optimizer.zero_grad()
@@ -65,8 +65,8 @@ class SemiSupervisedBatchesAddon(ExperimentAddon):
                 unlabeled_x_list.append(x)
             else:
                 labeled_indices.append(i)
-                labeled_x_list.append(x)
-                labeled_y_list.append(y)
+                labeled_x_list.append(x)         
+                labeled_y_list.append(torch.LongTensor([y]))
         
         labeled_ratio = len(labeled_indices) / len(unlabeled_indices + labeled_indices)
         self.log(dict(labeled_ratio=labeled_ratio))
@@ -74,20 +74,19 @@ class SemiSupervisedBatchesAddon(ExperimentAddon):
         loss = LossInfo(name=name)
         
         if unlabeled_indices:
-            unlabeled_x = torch.stack(unlabeled_x_list)
-            unsupervised_loss = self.model.get_loss(unlabeled_x, None, name=name)
+            unlabeled_x = torch.stack(unlabeled_x_list) 
+            unsupervised_loss = self.model.get_loss(unlabeled_x, None, name=name, **kwargs)
             loss += unsupervised_loss
 
         if labeled_indices:
             labeled_x = torch.stack(labeled_x_list)
             labeled_y = torch.stack(labeled_y_list)
-            supervised_loss = self.model.get_loss(labeled_x, labeled_y, name=name)
+            supervised_loss = self.model.get_loss(labeled_x, labeled_y, name=name, **kwargs)
             loss += supervised_loss
 
         total_loss = loss.total_loss
         total_loss.backward()
-
-        self.model.optimizer_step(global_step=self.global_step)
+        self.model.optimizer_step(global_step=self.global_step, **kwargs)
 
         self.global_step += data.shape[0]
         return loss

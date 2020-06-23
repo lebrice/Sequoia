@@ -378,8 +378,7 @@ class ExperimentBase(Serializable):
         # validation dataset during training.
         valid_loss_gen = self.valid_performance_generator(valid_dataloader)
         
-        # Message for the progressbar
-        message: Dict[str, Any] = OrderedDict()
+        
         # List to hold the length of each epoch (should all be the same length)
         epoch_lengths: List[int] = []
 
@@ -390,7 +389,7 @@ class ExperimentBase(Serializable):
             desc += " " if desc and not desc.endswith(" ") else ""
             desc += f"Epoch {epoch}"
             pbar.set_description(desc + " Train")
-            self.train_epoch(epoch, pbar, message, valid_loss_gen, all_losses=all_losses)
+            self.train_epoch(epoch, pbar, valid_loss_gen, all_losses=all_losses)
             epoch_length = self.global_step - epoch_start_step
             epoch_lengths.append(epoch_length)
 
@@ -431,7 +430,9 @@ class ExperimentBase(Serializable):
         # TODO: Should we also return the array of validation losses at each epoch (`validation_losses`)?
         return all_losses
     
-    def train_epoch(self, epoch, pbar: Iterable, message: Dict[str, Any], valid_loss_gen: Generator, all_losses:TrainValidLosses):
+    def train_epoch(self, epoch, pbar: Iterable, valid_loss_gen: Generator, all_losses:TrainValidLosses):
+        # Message for the progressbar
+        message: Dict[str, Any] = OrderedDict()
         for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
             train_loss.drop_tensors()
             if batch_idx % self.config.log_interval == 0:
@@ -449,7 +450,6 @@ class ExperimentBase(Serializable):
                     "Train": train_loss,
                     "Valid": valid_loss,
                 })
-        #return all_losses
 
 
     def keep_best_model(self, use_acc: bool=False, save_path: Path=None) -> Generator[int, Optional[LossInfo], None]:
@@ -520,19 +520,20 @@ class ExperimentBase(Serializable):
     def train_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.train()
         for batch in dataloader:
-            data, target = self.preprocess(batch)
-            yield self.train_batch(data, target)
+            data, target, kwargs = self.preprocess(batch)
+            yield self.train_batch(data, target, **kwargs)
 
-    def preprocess(self, batch: Union[Tuple[Tensor], Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Optional[Tensor]]:
-        data = batch[0].to(self.model.device)
-        target = batch[1].to(self.model.device) if len(batch) == 2 else None  # type: ignore
-        return data, target
+    def preprocess(self, data: Union[Tuple[Tensor], List[Tensor], Tensor], target: Tensor= None, **kwargs) -> Tuple[Tensor, Tensor, Dict]:
+        if target is None and (isinstance(data, Tuple) or isinstance(data, List)):
+            data_ = data[0].to(self.model.device)
+            target = data[1].to(self.model.device) if (len(data) == 2 and data[1] is not None) else None  # type: ignore
+            return data_, target, kwargs
+        return data, target, kwargs
 
-    def train_batch(self, data: Tensor, target: Optional[Tensor], name: str="Train") -> LossInfo:
-        self.model.train()
+    def train_batch(self, data: Tensor, target: Optional[Tensor], name: str="Train", **kwargs) -> LossInfo:
+        self.model.train() 
         self.model.optimizer.zero_grad()
-
-        batch_loss_info = self.model.get_loss(data, target, name=name)
+        batch_loss_info = self.model.get_loss(data, target, name=name, **kwargs)
         total_loss = batch_loss_info.total_loss
         total_loss.backward()
 
@@ -565,8 +566,8 @@ class ExperimentBase(Serializable):
     def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.eval()
         for batch in dataloader:
-            data, target = self.preprocess(batch)
-            yield self.test_batch(data, target)
+            kwargs = self.preprocess(batch)
+            yield self.test_batch(**kwargs)
 
     def test_batch(self, data: Tensor, target: Tensor=None, name: str="Test") -> LossInfo:
         was_training = self.model.training

@@ -51,11 +51,9 @@ class TaskIncremental(Experiment):
         # Maximum number of epochs of self-supervised training to perform on the
         # task data before switching to supervised training.
         unsupervised_epochs_per_task: int = 5
-        # Maximum number of epochs of supervised training to perform on each task's
+        # Maximum number of epochs of super ised training to perform on each task's
         # dataset.
         supervised_epochs_per_task: int = 1     
-        #If `True`, accuracy will be used as a measure of performance. Otherwise, the total validation loss is used. Defaults to False.
-        use_accuracy_as_metric: bool = False
 
         task_labels_at_train_time: bool = True
         task_labels_at_test_time:  bool = True
@@ -234,10 +232,10 @@ class TaskIncremental(Experiment):
                         # labels and treat them as unlabeled datasets. 
                         self.state.all_losses += self.train(
                             unlabeled(train_i_loader),
-                            unlabeled(valid_i_loader),
+                            unlabeled(valid_i_loader),   
                             epochs=self.config.unsupervised_epochs_per_task,
                             description=f"Task {i} (Unsupervised)",
-                            use_accuracy_as_metric=self.config.use_accuracy_as_metric, # Can't use accuracy as metric during unsupervised training.
+                            use_accuracy_as_metric=False, # Can't use accuracy as metric during unsupervised training.
                             temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
                         )
 
@@ -248,6 +246,7 @@ class TaskIncremental(Experiment):
                         valid_i_loader,
                         epochs=self.config.supervised_epochs_per_task,
                         description=f"Task {i} (Supervised)",
+                        use_accuracy_as_metric=self.config.use_accuracy_as_metric,
                         temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
                     )
             

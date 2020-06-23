@@ -17,21 +17,6 @@ from config import Config
 logger = get_logger(__file__)
 
 
-def mixup_data_sup(x, y, alpha=1.0):
-    '''Compute the mixup data. Return mixed inputs, pairs of targets, and lambda'''
-    if alpha > 0.:
-        lam = np.random.beta(alpha, alpha)
-    else:
-        lam = 1.
-    batch_size = x.size()[0]
-    index = np.random.permutation(batch_size)
-    #x, y = x.numpy(), y.numpy()
-    #mixed_x = torch.Tensor(lam * x + (1 - lam) * x[index,:])
-    mixed_x = lam * x + (1 - lam) * x[index,:]
-    #y_a, y_b = torch.Tensor(y).type(torch.LongTensor), torch.Tensor(y[index]).type(torch.LongTensor)
-    y_a, y_b = y, y[index]
-    return mixed_x, y_a, y_b, lam
-
 def mixup_data(x, y, alpha=1.0):
     '''Compute the mixup data. Return mixed inputs, mixed target, and lambda'''
     if alpha > 0.:
@@ -157,7 +142,7 @@ class MixupTask(AuxiliaryTask):
         # Exponential moving average versions of the encoder and output head.
         self.previous_task: Optional[Task] = None
 
-        self.epoch_in_task: Optional[int] = 0
+        self.epoch_in_task: int = 0
         self.epoch_length:  Optional[int] = 0
         self.update_number: Optional[int] = 0
         self.consistency_criterion = softmax_mse_loss
@@ -179,7 +164,7 @@ class MixupTask(AuxiliaryTask):
 
     def on_model_changed(self, global_step: int, **kwargs)-> None:
         """ Executed when the model was updated. """
-        self.epoch_in_task = kwargs.get('epoch')
+        self.epoch_in_task = kwargs.get('epoch', 0) 
         self.epoch_length = kwargs.get('epoch_length')
         self.update_number = kwargs.get('update_number')
         if self.enabled:

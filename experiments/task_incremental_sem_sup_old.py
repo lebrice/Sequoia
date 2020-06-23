@@ -67,24 +67,23 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     """ Evaluates the model in the same setting as the OML paper's Figure 3.
     """
 
-    unsupervised_epochs_per_task: int = 0
+    @dataclass
+    class Config(TaskIncremental.Config):
 
-    supervised_epochs_per_task: int = 10
-
-    # Ratio of samples that have a corresponding label.
-    ratio_labelled: float = 0.2
-    # for supervised loss, the alpha parameter for the beta distribution from where the mixing lambda is drawn (used for ICT)
-    mixup_sup_alpha: float = 0.
-    #length of learning rate rampup in the beginning
-    lr_rampup: int = 5
-    #length of learning rate cosine rampdown (>= length of training): the epoch at which learning rate reaches to zero
-    lr_rampdown_epochs: int = 0
-    #If `True`, accuracy will be used as a measure of performance. Otherwise, the total validation loss is used. Defaults to False.
-    use_accuracy_as_metric: bool= False
-    #wether to apply simclr augment
-    simclr_augment: bool = False
-    #semi setup: 0 - only current task's unsupervised data, 1 - all tasks' unsupervised samples
-    semi_setup_full: bool = 0
+        # Ratio of samples that have a corresponding label.
+        ratio_labelled: float = 0.2
+        # for supervised loss, the alpha parameter for the beta distribution from where the mixing lambda is drawn (used for ICT)
+        mixup_sup_alpha: float = 0.
+        #length of learning rate rampup in the beginning
+        lr_rampup: int = 5
+        #length of learning rate cosine rampdown (>= length of training): the epoch at which learning rate reaches to zero
+        lr_rampdown_epochs: int = 0
+        #If `True`, accuracy will be used as a measure of performance. Otherwise, the total validation loss is used. Defaults to False.
+        use_accuracy_as_metric: bool= False
+        #wether to apply simclr augment
+        simclr_augment: bool = False
+        #semi setup: 0 - only current task's unsupervised data, 1 - all tasks' unsupervised samples
+        semi_setup_full: bool = 0
 
     def __post_init__(self):
         super().__post_init__()
@@ -112,12 +111,12 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         epoch = epoch + step_in_epoch / total_steps_in_epoch
 
         # LR warm-up to handle large minibatch sizes from https://arxiv.org/abs/1706.02677
-        lr = linear_rampup(epoch, self.lr_rampup) * (current_lr - initial_lr) + initial_lr
+        lr = linear_rampup(epoch, self.config.lr_rampup) * (current_lr - initial_lr) + initial_lr
 
         # Cosine LR rampdown from https://arxiv.org/abs/1608.03983 (but one cycle only)
-        if self.lr_rampdown_epochs:
-            assert self.lr_rampdown_epochs >= epochs
-            lr *= cosine_rampdown(epoch, self.lr_rampdown_epochs)
+        if self.config.lr_rampdown_epochs:
+            assert self.config.lr_rampdown_epochs >= epochs
+            lr *= cosine_rampdown(epoch, self.config.lr_rampdown_epochs)
 
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
@@ -148,7 +147,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             train_subset, valid_subset = torch.utils.data.random_split(train, [train_size, test_size])
             test = ClassSubset(test_full_dataset, task)
 
-            sampler_train, sampler_train_unlabelled = get_semi_sampler(train.targets[train_subset.indices], p=self.ratio_labelled)
+            sampler_train, sampler_train_unlabelled = get_semi_sampler(train.targets[train_subset.indices], p=self.config.ratio_labelled)
             sampler_valid, sampler_valid_unlabelled = get_semi_sampler(train.targets[valid_subset.indices], p=1.)
             sampler_test, sampler_test_unlabelled = get_semi_sampler(test.targets, p=1.)
 
@@ -342,14 +341,14 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                     # epochs per task is greater than zero.
                     self_supervision_on = any(task.enabled for task in self.model.tasks.values())
 
-                    if self_supervision_on and self.unsupervised_epochs_per_task:
+                    if self_supervision_on and self.config.unsupervised_epochs_per_task:
                         # Temporarily remove the labels.
                         with train_i.without_labels(), valid_i.without_labels():
                             # Un/self-supervised training on task i.
                             self.state.all_losses += self.train(
                                 (train_i, train_sampler_labeled_i, train_sampler_unlabelled_i),
                                 (valid_i, valid_sampler_labelled_i, valid_sampler_unlabelled_i),
-                                epochs=self.unsupervised_epochs_per_task,
+                                epochs=self.config.unsupervised_epochs_per_task,
                                 description=f"Task {i} (Unsupervised)",
                                 temp_save_dir=self.f / f"task_{i}_unsupervised",
                             )
@@ -358,9 +357,9 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                     self.state.all_losses += self.train(
                         (train_i,train_sampler_labeled_i,train_sampler_unlabelled_i),
                         (valid_i,valid_sampler_labelled_i,valid_sampler_unlabelled_i),
-                        epochs=self.supervised_epochs_per_task,
+                        epochs=self.config.supervised_epochs_per_task,
                         description=f"Task {i} (Supervised)",
-                        use_accuracy_as_metric=self.use_accuracy_as_metric,
+                        use_accuracy_as_metric=self.config.use_accuracy_as_metric,
                         temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
                     )
             # Save to the 'checkpoints' dir
@@ -532,7 +531,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             losses during training (every `log_interval` steps) to be logged.
         """
         train_dataloader_labelled, train_dataloader_unlabelled = self.get_dataloaders(*train_dataset)
-        if self.semi_setup_full:
+        if self.config.semi_setup_full:
             train_dataloader_unlabelled, _ = self.get_dataloaders(self.train_dataset, None, None)
 
         valid_dataloader_labelled, valid_dataloader_unlablled = self.get_dataloaders(*valid_dataset)
@@ -749,8 +748,8 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     def train_iter_semi_sup(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.model.train()
         for batch_sup, batch_unsup in dataloader:
-            data, target = self.preprocess(batch_sup) if not self.simclr_augment else self.preprocess_simclr(batch_sup)
-            u, _ = self.preprocess(batch_unsup) if not self.simclr_augment else self.preprocess_simclr(batch_unsup)
+            data, target = self.preprocess(batch_sup) if not self.config.simclr_augment else self.preprocess_simclr(batch_sup)
+            u, _ = self.preprocess(batch_unsup) if not self.config.simclr_augment else self.preprocess_simclr(batch_unsup)
             yield self.train_batch_semi_sup(data, target, u)
 
     def preprocess_sup_mixup(self, x,y):
@@ -764,14 +763,14 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
 
     def train_batch_semi_sup(self, data: Tensor, target: Optional[Tensor], u: Tensor) -> LossInfo:
-        if self.lr_rampdown_epochs > 0:
-            self.current_lr = self.adjust_learning_rate(self.model.optimizer, self.epoch, self.batch_idx, self.epoch_length, self.supervised_epochs_per_task)
+        if self.config.lr_rampdown_epochs > 0:
+            self.current_lr = self.adjust_learning_rate(self.model.optimizer, self.epoch, self.batch_idx, self.epoch_length, self.config.supervised_epochs_per_task)
         self.log({'lr':self.current_lr})
 
         self.model.optimizer.zero_grad()
         loss_f = None
         data, target = self.model.preprocess_inputs(data, target)
-        if self.mixup_sup_alpha>0:
+        if self.config.mixup_sup_alpha>0:
             data, loss_f = self.preprocess_sup_mixup(data,target)
 
         batch_loss_info = self.model.supervised_loss(data, target, loss_f=loss_f) + self.model.get_loss(u, None)
