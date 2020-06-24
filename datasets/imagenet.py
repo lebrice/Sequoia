@@ -8,7 +8,7 @@ from typing import Callable, ClassVar, Dict, Tuple, Type
 from torch.utils.data import Dataset, DataLoader, Sampler
 from torchvision.datasets import ImageNet, VisionDataset
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize
-
+from simple_parsing import field
 from .dataset_config import DatasetConfig
 
 
@@ -31,9 +31,9 @@ def get_imagenet_location() -> Path:
         f"{hostname}. Known <prefix --> location> pairs: {imagenet_locations}"
     )
 
-@dataclass(frozen=True)
+@dataclass
 class ImageNetConfig(DatasetConfig):
-    dataset_class: Type[VisionDataset] = ImageNet
+    dataset_class: Type[VisionDataset] = field(default=ImageNet, encoding_fn=str) 
     x_shape: Tuple[int, int, int] = (3, 224, 224)
     num_classes: int = 1000
     transforms: Callable = Compose([
