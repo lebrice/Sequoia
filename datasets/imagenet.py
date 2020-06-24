@@ -31,15 +31,9 @@ def get_imagenet_location() -> Path:
         f"{hostname}. Known <prefix --> location> pairs: {imagenet_locations}"
     )
 
-<<<<<<< HEAD
-@dataclass(frozen=True)
-class ImageNetConfig(DatasetConfig):
-    dataset_class: Type[VisionDataset] = ImageNet
-=======
 @dataclass
 class ImageNetConfig(DatasetConfig):
     dataset_class: Type[VisionDataset] = field(default=ImageNet, encoding_fn=str) 
->>>>>>> master
     x_shape: Tuple[int, int, int] = (3, 224, 224)
     num_classes: int = 1000
     transforms: Callable = Compose([

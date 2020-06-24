@@ -21,11 +21,7 @@ class DatasetConfig(Serializable):
     Represents all the configuration options related to a Dataset.
     """
     # which dataset class to use.
-<<<<<<< HEAD
-    dataset_class: Type[VisionDataset] = MNIST
-=======
     dataset_class: Type[VisionDataset] = field(default=MNIST, encoding_fn=str) 
->>>>>>> master
     x_shape: Tuple[int, int, int] = (1, 28, 28)
     num_classes: int = 10
     # Transforms to apply to the data
@@ -43,8 +39,4 @@ class DatasetConfig(Serializable):
         if self.keep_in_memory:
             keep_in_memory(train)
             keep_in_memory(test)
-<<<<<<< HEAD
         return train, test
-=======
-        return train, test
->>>>>>> master
