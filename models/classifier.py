@@ -167,7 +167,7 @@ class Classifier(nn.Module):
         loss_f = self.classification_loss
         #input mixup on labeled samples
         if self.hparams.mixup_sup_alpha:
-            x, loss_f = sup_mixup(x,y, self.hparams.mixup_sup_alpha)
+            x_mixed, loss_f = sup_mixup(x,y, self.hparams.mixup_sup_alpha)
             
         loss = loss_f(y_pred, y)
         metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
