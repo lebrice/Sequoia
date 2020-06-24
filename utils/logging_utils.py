@@ -9,8 +9,8 @@ logging.basicConfig(
     datefmt='%Y-%m-%d:%H:%M:%S',
     level=logging.INFO,
 )
-logging.getLogger('simple_parsing').addHandler(logging.NullHandler())
-
+# logging.getLogger('simple_parsing').addHandler(logging.NullHandler())
+root_logger = logging.getLogger()
 T = TypeVar("T")
 
 def pbar(dataloader: Iterable[T], description: str="", *args, **kwargs) -> Iterable[T]:
@@ -31,7 +31,12 @@ def get_logger(name: str) -> logging.Logger:
                 name = str(p.absolute().relative_to(Path.cwd()).as_posix())
         except:
             pass
-        logger = logging.getLogger(name)
+        from sys import argv
+            
+        logger = root_logger.getChild(name)
+        if "-d" in argv or "--debug" in argv:
+            logger.setLevel(logging.DEBUG)
+        # logger = logging.getLogger(name)
         # logger.addHandler(TqdmLoggingHandler())
         return logger
 

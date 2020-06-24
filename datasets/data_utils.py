@@ -4,10 +4,9 @@ from typing import Iterable, Iterator, Sized, Tuple
 import numpy as np
 from torch import Tensor
 from torch.utils.data import DataLoader
-from torchvision.datasets import VisionDataset
-
+from torchvision.datasets import VisionDataset, CIFAR100
+import torch
 from .subset import Subset
-
 logger = get_logger(__file__)
 
 
@@ -21,7 +20,6 @@ def train_valid_split(train_dataset: VisionDataset, valid_fraction: float=0.2) -
     
     valid_indices = indices[:valid_len]
     train_indices = indices[valid_len:]
-
     train = Subset(train_dataset, train_indices)
     valid = Subset(train_dataset, valid_indices)
     logger.info(f"Training samples: {len(train)}, Valid samples: {len(valid)}")
@@ -48,3 +46,18 @@ class unlabeled(Iterable[Tuple[Tensor]], Sized):
 
     def __len__(self) -> int:
         return len(self.loader)
+
+
+def keep_in_memory(dataset: VisionDataset) -> None:
+    """ Converts the dataset's `data` and `targets` attributes to Tensors.
+    
+    This has the consequence of keeping the entire dataset in memory.
+    """
+    if not isinstance(dataset.data, (np.ndarray, Tensor)):
+        dataset.data = torch.as_tensor(dataset.data)
+    if not isinstance(dataset.targets, (np.ndarray, Tensor)):
+        dataset.targets = torch.as_tensor(dataset.targets)
+
+    if isinstance(dataset, CIFAR100):
+        # TODO: Cifar100 seems to want its 'data' to a numpy ndarray. 
+        dataset.data = np.asarray(dataset.data)

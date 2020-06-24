@@ -7,7 +7,7 @@ from typing import *
 import wandb
 
 from simple_parsing import field, list_field
-from simple_parsing.helpers import Serializable
+from utils.json_utils import Serializable
 
 logger = get_logger(__file__)
 
@@ -70,6 +70,7 @@ class WandbConfig(Serializable):
 
         logger.info(f"Wandb run id: {self.run_id}")
         logger.info(f"Using wandb. Group name: {self.run_group} run name: {self.run_name}, log_dir: {self.log_dir}")
+
         run = wandb.init(
             project=self.project_name,
             name=self.run_name,

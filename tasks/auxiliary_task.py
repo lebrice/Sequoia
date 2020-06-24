@@ -8,8 +8,7 @@ from torch.nn import functional as F
 from common.losses import LossInfo
 from common.task import Task
 from utils import cuda_available
-from simple_parsing.helpers import Serializable
-
+from utils.json_utils import Serializable
 
 class AuxiliaryTask(nn.Module):
     """ Represents an additional loss to apply to a `Classifier`.
