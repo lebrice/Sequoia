@@ -69,7 +69,6 @@ class Pickleable():
         Returns `self`, for convenience.
         NOTE: also recursively moves and detaches `JsonSerializable` attributes.
         """
-        logger.debug(f"Detaching the object of type {type(self)}")
         self.cpu()
         self.detach_()
         return self
@@ -80,7 +79,6 @@ class Pickleable():
         NOTE: also recursively detaches `JsonSerializable` attributes.
         """
         self.__dict__ = detach(self.__dict__)
-        return self
 
     def cpu(self) -> None:
         self.__dict__ = detach(self.__dict__)
@@ -110,7 +108,8 @@ def cpu(d: Dict[str, Any]) -> Dict[str, Any]:
 
 @dataclass
 class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  # type: ignore
-    # NOTE: This currently doesn't add much compared to `Serializable` from simple-parsing.
+    # NOTE: This currently doesn't add much compared to `Serializable` from simple-parsing apart
+    # from not dropping the keys.
     
     def save(self, path: Union[str, Path], **kwargs) -> None:
         path = Path(path)
@@ -121,22 +120,16 @@ class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  
         super().save(save_path_tmp, **kwargs)
         # Rename the temp file to the right path, overwriting it if it exists.
         save_path_tmp.replace(path)
-
     
 
 @encode.register
 def encode_tensor(obj: Tensor) -> List:
-    return obj.detach().cpu().tolist()
+    return obj.tolist()
 
 
 @encode.register
 def encode_ndarray(obj: np.ndarray) -> List:
     return obj.tolist()
-
-
-@encode.register
-def encode_tensor(v: Tensor) -> List:
-    return v.tolist()
 
 
 @encode.register
@@ -157,34 +150,6 @@ def encode_device(obj: torch.device) -> str:
 @encode.register
 def encode_enum(value: Enum):
     return value.value
-
-
-def try_load(path: Path, default: T=None) -> Optional[T]:
-    try:
-        if path.suffix == ".json":
-            with open(path) as f:
-                return json.loads(f.read())
-        elif path.suffix == ".csv":
-            import numpy as np
-            with open(path) as f:
-                return np.loadtxt(f)
-        elif path.suffix == ".pt":
-            import torch
-            with open(path, 'rb') as fb:
-                return torch.load(fb)
-        elif path.suffix == ".yml":
-            import yaml
-            with open(path) as f:
-                return yaml.load(f)
-        elif path.suffix == ".pkl":
-            import pickle
-            with open(path, 'rb') as fb:
-                return pickle.load(fb)
-        else:
-            raise RuntimeError(f"Unable to load path {path}, unsupported extension.")
-    except Exception as e:
-        print(f"couldn't load path {path}: {e}")
-        return default
 
     
 # a = {

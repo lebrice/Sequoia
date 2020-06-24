@@ -8,14 +8,10 @@ from torch.nn import functional as F
 
 from common.layers import DeConvBlock, Flatten, Reshape
 from common.losses import LossInfo
-from datasets.cifar import Cifar10, Cifar100
-from datasets.dataset import DatasetConfig
-from datasets.mnist import Mnist
 from tasks.auxiliary_task import AuxiliaryTask
 
-from .decoders import get_decoder
 from .ae import AEReconstructionTask
-
+from .decoder_for_dataset import get_decoder_class_for_dataset
 
 class VAEReconstructionTask(AEReconstructionTask):
     """ Task that adds the VAE loss (reconstruction + KL divergence). 
@@ -40,9 +36,9 @@ class VAEReconstructionTask(AEReconstructionTask):
         # add the rest of the VAE layers: (Mu, Sigma, and the decoder)
         self.mu     = nn.Linear(AuxiliaryTask.hidden_size, self.code_size)
         self.logvar = nn.Linear(AuxiliaryTask.hidden_size, self.code_size)
-        self.decoder: nn.Module = get_decoder(
+        decoder_class = get_decoder_class_for_dataset(AuxiliaryTask.input_shape)
+        self.decoder: nn.Module = decoder_class(
             code_size=self.code_size,
-            input_size=AuxiliaryTask.input_shape,
         )
 
     def forward(self, h_x: Tensor) -> Tensor:  # type: ignore

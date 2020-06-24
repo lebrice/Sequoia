@@ -17,12 +17,12 @@ from common.task import Task
 from datasets.data_utils import unlabeled
 from datasets.subset import Dataset
 from simple_parsing import mutable_field
-from utils.json_utils import try_load
 from utils.logging_utils import get_logger
 from utils.plotting import PlotSectionLabel
+from datasets.data_utils import unlabeled
 
 from .task_incremental import TaskIncremental
-
+from datasets import Datasets
 logger = get_logger(__file__)
 
 
@@ -54,10 +54,11 @@ class ActiveRemembering(TaskIncremental):
 
         self.model = self.init_model()
         if not any(task.enabled for task in self.model.tasks.values()):
-            self.log("At least one Auxiliary Task should be activated in order "
-                     "to do active remembering!\n"
-                     "(Set one with '--<task>.coefficient <value>').")
-            exit()
+            raise RuntimeError(
+                "At least one Auxiliary Task should be activated in order to "
+                "do active remembering!\n"
+                "(Set one with '--<task>.coefficient <value>')."
+            )
 
         all_losses = self.state.all_losses
 
@@ -80,20 +81,17 @@ class ActiveRemembering(TaskIncremental):
 
             valid_0_to_i: VisionDatasetSubset = self.valid_cumul_datasets[task_index]
 
-
             self.on_task_switch(task)
 
             with self.plot_region_name(f"Learn Task {task_index}"):
-                # Temporarily remove the labels.
-                with train_i.without_labels(), valid_i.without_labels():
-                    # Un/self-supervised training on task i.
-                    all_losses += self.train(
-                        train_i,
-                        valid_i,
-                        epochs=self.config.unsupervised_epochs_per_task,
-                        description=f"Task {i} (Unsupervised)",
-                        temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
-                    )
+                # Un/self-supervised training on task i.
+                all_losses += self.train(
+                    unlabeled(train_i_loader),
+                    unlabeled(valid_i_loader),
+                    epochs=self.config.unsupervised_epochs_per_task,
+                    description=f"Task {i} (Unsupervised)",
+                    temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
+                )
 
                 # Train (supervised) on task i.
                 all_losses += self.train(
@@ -167,9 +165,8 @@ def make_plot(train_and_valid_losses: TrainValidLosses,
         for step, loss_info in loss_dict.items():
             x = step
             y = None
-            if loss_name in loss_info.losses:
-                task_loss = loss_info.losses[loss_name]
-                y = task_loss.total_loss.item()
+            from common.losses import get_supervised_accuracy
+            y = get_supervised_accuracy(loss_info.losses[loss_name])
             xs.append(x)
             ys.append(y)
         return xs, ys

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field, InitVar, asdict
+from dataclasses import dataclass, InitVar, asdict
 from typing import Dict, Optional, Union
 import numpy as np
 import torch
@@ -8,7 +8,7 @@ import torch.nn.functional as functional
 from utils.json_utils import encode
 from utils.json_utils import Serializable
 from utils.logging_utils import get_logger
-
+from simple_parsing import mutable_field, field
 
 logger = get_logger(__file__)
 

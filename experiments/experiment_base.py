@@ -21,12 +21,15 @@ from common.losses import LossInfo, TrainValidLosses, get_supervised_metrics, ge
 from common.metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                             get_metrics)
 from config import Config as ConfigBase
-from datasets import Cifar10, Cifar100, DatasetConfig, FashionMnist, Mnist
+
+from datasets import Datasets, DatasetConfig
+
 from datasets.data_utils import train_valid_split
 from datasets.subset import ClassSubset, Subset
 from models.classifier import Classifier
 from simple_parsing import choice, field, mutable_field, subparsers
-from simple_parsing.helpers import FlattenedAccess, Serializable
+from simple_parsing.helpers import FlattenedAccess
+from utils.json_utils import Serializable
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
@@ -72,11 +75,9 @@ class ExperimentBase(Serializable):
         """
         # Which dataset to use.
         dataset: DatasetConfig = choice({
-            "mnist": Mnist(),
-            "fashion_mnist": FashionMnist(),
-            "cifar10": Cifar10(),
-            "cifar100": Cifar100(),
-        }, default="mnist")
+            d.name: d.value for d in Datasets
+        }, default=Datasets.mnist.name)
+
         # Path to restore the state from at the start of training.
         # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
         restore_from_path: Optional[Path] = None
@@ -225,7 +226,16 @@ class ExperimentBase(Serializable):
         state_json_path = state_json_path or self.checkpoints_dir / "state.json"
         logger.info(f"Restoring state from {state_json_path}")
         # Load the 'State' object from the json file
-        self.state = self.State.load(state_json_path)
+        self.state = self.State.load_json(state_json_path)
+        if self.config.debug and self.config.verbose:
+            logger.debug(f"state: {self.state}")
+        
+        if self.state is None:
+            raise RuntimeError(
+                f"State shouldn't be None!\n"
+                f"(Tried to load from {state_json_path})"
+            )
+
         if self.state.model_weights_path:
             logger.info(f"Restoring model weights from {self.state.model_weights_path}")
             state_dict = torch.load(
@@ -238,22 +248,10 @@ class ExperimentBase(Serializable):
 
     def init_model(self) -> Classifier:
         print("init model")
-        model = self.get_model_for_dataset(self.config.dataset)
-        model.to(self.config.device)
+        from models import get_model_class_for_dataset
+        model_class = get_model_class_for_dataset(self.config.dataset)
+        model = model_class(hparams=self.hparams, config=self.config)
         return model
-
-    def get_model_for_dataset(self, dataset: DatasetConfig) -> Classifier:
-        from models.mnist import MnistClassifier
-        from models.cifar import Cifar10Classifier, Cifar100Classifier
-
-        if isinstance(dataset, (Mnist, FashionMnist)):
-            return MnistClassifier(hparams=self.hparams, config=self.config)
-        elif isinstance(dataset, Cifar10):
-            return Cifar10Classifier(hparams=self.hparams, config=self.config)
-        elif isinstance(dataset, Cifar100):
-            return Cifar100Classifier(hparams=self.hparams, config=self.config)
-        else:
-            raise NotImplementedError(f"TODO: add a model for dataset {dataset}.")
 
     def train(self,
               train_dataloader: Union[Dataset, DataLoader, Iterable],                
@@ -481,9 +479,9 @@ class ExperimentBase(Serializable):
             step = self.state.global_step
 
             val_loss = loss_info.total_loss.item()
-            supervised_metrics = get_supervised_metrics(loss_info)
             
             if use_acc:
+                supervised_metrics = get_supervised_metrics(loss_info)
                 assert supervised_metrics, "Can't use accuracy since there are no supervised metrics in given loss.."
                 val_acc = supervised_metrics.accuracy
 

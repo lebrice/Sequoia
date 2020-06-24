@@ -7,7 +7,7 @@ from typing import *
 import wandb
 
 from simple_parsing import field, list_field
-from simple_parsing.helpers import Serializable
+from utils.json_utils import Serializable
 
 logger = get_logger(__file__)
 
