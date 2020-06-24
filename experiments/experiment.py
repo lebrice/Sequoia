@@ -19,16 +19,19 @@ from .addons.test_time_training import TestTimeTrainingAddon
 from .addons.vae_addon import SaveVaeSamplesAddon
 from .addons.semi_supervised import SemiSupervisedBatchesAddon
 from .experiment_base import ExperimentBase
+from .addons import LRannealer
 
 
 @dataclass
 class Experiment(
+            LRannealer,
             LabeledPlotRegionsAddon,
             ReplayAddon,
             KnnAddon,
             TestTimeTrainingAddon,
             SaveVaeSamplesAddon,
             SemiSupervisedBatchesAddon,
+            
         ):
     # If the addon has a 'Config' defined, then add it.
     # NOTE: we can't just add all the <Addon>.Config classes, since that would
@@ -36,9 +39,10 @@ class Experiment(
     @dataclass
     class Config(
                 # LabeledPlotRegionsAddon.Config,
+                LRannealer.Config,
                 ReplayAddon.Config,
                 KnnAddon.Config,
-                TestTimeTrainingAddon.Config,
+                TestTimeTrainingAddon.Config
                 # SaveVaeSamplesAddon.Config,
                 # SemiSupervisedBatchesAddon.Config,
             ):

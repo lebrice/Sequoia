@@ -73,7 +73,7 @@ class WandbConfig(Serializable):
         run = wandb.init(
             project=self.project_name,
             name=self.run_name,
-            id=self.run_id,
+            id=self.run_id,  
             group=self.run_group,
             config=config_dict,
             dir=str(self.wandb_path),

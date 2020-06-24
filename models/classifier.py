@@ -28,6 +28,7 @@ from tasks import AuxiliaryTask, AuxiliaryTaskOptions, Tasks
 from utils.json_utils import Serializable
 from utils.logging_utils import get_logger
 from utils.utils import fix_channels
+from tasks.mixup import sup_mixup
 
 logger = get_logger(__file__)
 
@@ -40,6 +41,12 @@ class Classifier(nn.Module):
         We use [simple_parsing](www.github.com/lebrice/simpleparsing) to
         generate command-line arguments for each attribute of this class.
         """
+
+
+
+        #for mixup of labeled data: if 0 no mixup is used, otherwise the alpha parameter for the beta distribution from where the mixing lambda is drawn (mainly implemented for ICT)
+        mixup_sup_alpha: float = 0.
+
         batch_size: int = 128   # Input batch size for training.
         learning_rate: float = field(default=1e-3, alias="-lr")  # learning rate.
 
@@ -152,18 +159,17 @@ class Classifier(nn.Module):
     def supervised_loss(self, x: Tensor,
                               y: Tensor,
                               h_x: Tensor=None,
-                              y_pred: Tensor=None,
-                              loss_f: Callable[[Callable, Tensor],Tensor]=None) -> LossInfo:
+                              y_pred: Tensor=None) -> LossInfo:
         h_x = self.encode(x) if h_x is None else h_x
         y_pred = self.logits(h_x) if y_pred is None else y_pred
         y = y.view(-1)
 
-        if loss_f is None:
-            loss = self.classification_loss(y_pred, y)
-            metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
-        else:
-            loss = loss_f(self.classification_loss,y_pred)
-
+        loss_f = self.classification_loss
+        #input mixup on labeled samples
+        if self.hparams.mixup_sup_alpha:
+            x, loss_f = sup_mixup(x,y, self.hparams.mixup_sup_alpha)
+            
+        loss = loss_f(y_pred, y)
         metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
         loss_info = LossInfo(
             name=Tasks.SUPERVISED,
@@ -208,17 +214,6 @@ class Classifier(nn.Module):
             for name, loss in total_loss.losses.items():
                 logger.debug(name, loss.total_loss, loss.metrics)
         
-        return total_loss
-
-    def get_self_sup_loss(self, x: Tensor, y: Tensor=None, name = ''):
-        total_loss = LossInfo(name)
-        x, y = self.preprocess_inputs(x, y)
-        h_x = self.encode(x)
-        y_pred = self.logits(h_x)
-        for task_name, aux_task in self.tasks.items():
-            if aux_task.enabled:
-                aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y)
-                total_loss += aux_task_loss
         return total_loss
 
     def encode(self, x: Tensor):
@@ -357,8 +352,7 @@ class Classifier(nn.Module):
                 self.on_task_switch(task)
 
         # Reset the task_id to the starting value.
-        #self.current_task = starting_task
-        self.on_task_switch(task)
+        self.current_task = starting_task
         missing, unexpected = super().load_state_dict(state_dict, strict)
         # TODO: Make sure the mean-encoder and mean-output-head modules are loaded property when using Mixup.
         return missing, unexpected

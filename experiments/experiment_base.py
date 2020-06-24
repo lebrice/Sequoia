@@ -534,10 +534,11 @@ class ExperimentBase(Serializable):
         total_loss = batch_loss_info.total_loss
         total_loss.backward()
 
-        self.model.optimizer_step(global_step=self.global_step)
+        self.step(global_step=self.global_step)
 
         self.global_step += data.shape[0]
         return batch_loss_info
+
 
     def test(self, dataloader: Union[Dataset, DataLoader], description: str=None, name: str="Test") -> LossInfo:
         if isinstance(dataloader, Dataset):
@@ -574,6 +575,10 @@ class ExperimentBase(Serializable):
         if was_training:
             self.model.train()
         return loss
+    
+    def step(self, global_step:int, **kwargs):
+        return self.model.optimizer_step(global_step=self.global_step, **kwargs)
+
 
     def get_dataloader(self, dataset: Dataset, sampler: Sampler=None, shuffle: bool=True) -> DataLoader:
         if sampler is None:

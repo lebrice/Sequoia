@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List
-
+from typing import Tuple, Union, Optional
 import torch
 from torch import Tensor
 from torchvision.transforms import Compose, Lambda, ToPILImage, ToTensor
@@ -51,6 +51,7 @@ class SimCLRTask(AuxiliaryTask):
             SimCLRAugment(self.hparams),
             Lambda(lambda tup: torch.stack([tup[0], tup[1]]))
         ])
+
         self.projector = Projector(self.hparams)
         self.i = 0
         self.loss = SimCLRLoss(self.hparams.proj_dim)
@@ -59,8 +60,34 @@ class SimCLRTask(AuxiliaryTask):
         # TODO: is there a more efficient way to do this than with a list comprehension? (torch multiprocessing-ish?)
         # concat all the x's into a single list.
         x_t = torch.cat([self.augment(x_i) for x_i in x.cpu()], dim=0)   # [2*B, C, H, W]
+        x_t, _ = self.preprocess_simclr(x,None, self.hparams, self.device)
+        #x_t = torch.cat([self.augment(x_i) for x_i in x.cpu()], dim=0)   # [2*B, C, H, W]
         h_t = self.encode(x_t.to(self.device)).flatten(start_dim=1)  # [2*B, repr_dim]
         z = self.projector(h_t)  # [2*B, proj_dim]
         loss = self.loss(z, self.hparams.xent_temp)
         loss_info = LossInfo(name=self.name, total_loss=loss)
         return loss_info
+
+    @staticmethod
+    def preprocess_simclr(data:Tensor, target:Tensor=None, hparams=None, device='cuda') -> Tuple[Tensor, Optional[Tensor]]:
+            #data = batch[0].to(device)
+            #target = batch[1].to(device) if len(batch) == 2 else None  # type: ignore
+
+            if hparams is None:
+                options = SimCLRTask.Option
+                # Set the same values for equivalent hyperparameters
+                options.image_size = data.shape[-1]
+                options.double_augmentation = True
+                options.repr_dim = AuxiliaryTask.hidden_size
+            else:
+                options = hparams
+
+            augment = Compose([
+                ToPILImage(),
+                SimCLRAugment(options),
+                Lambda(lambda tup: torch.stack([tup[0], tup[1]]))
+            ])
+
+            data = torch.cat([augment(x_i) for x_i in data.cpu()], dim=0)  # [2*B, C, H, W]
+            target = torch.cat([ torch.stack([t,t]) for t in target.cpu()], dim=0).to(device) if target is not None else None
+            return data.to(device), target

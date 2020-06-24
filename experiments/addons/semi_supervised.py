@@ -65,8 +65,8 @@ class SemiSupervisedBatchesAddon(ExperimentAddon):
                 unlabeled_x_list.append(x)
             else:
                 labeled_indices.append(i)
-                labeled_x_list.append(x)
-                labeled_y_list.append(y)
+                labeled_x_list.append(x) 
+                labeled_y_list.append(torch.LongTensor([y]))
         
         labeled_ratio = len(labeled_indices) / len(unlabeled_indices + labeled_indices)
         self.log(dict(labeled_ratio=labeled_ratio))
@@ -86,8 +86,7 @@ class SemiSupervisedBatchesAddon(ExperimentAddon):
 
         total_loss = loss.total_loss
         total_loss.backward()
-
-        self.model.optimizer_step(global_step=self.global_step)
+        self.step(global_step=self.global_step)
 
         self.global_step += data.shape[0]
         return loss

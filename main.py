@@ -50,9 +50,9 @@ def main(argv: Optional[List[str]]=None):
     # subparser = subparsers.add_parser("task_incremental", help=TaskIncremental.__doc__)
     # subparser.add_arguments(TaskIncremental, "experiment")
 
-    from experiments.task_incremental_sem_sup import TaskIncremental_Semi_Supervised
-    subparser = subparsers.add_parser("task_incremental_semi_sup", help=TaskIncremental_Semi_Supervised.__doc__)
-    subparser.add_arguments(TaskIncremental_Semi_Supervised, "experiment")
+    #from experiments.task_incremental_semi_sup import TaskIncremental_Semi_Supervised
+    #subparser = subparsers.add_parser("task_incremental_semi_sup", help=TaskIncremental_Semi_Supervised.__doc__)
+    #subparser.add_arguments(TaskIncremental_Semi_Supervised, "experiment")
 
     # from experiments.active_remembering import ActiveRemembering
     # subparser = subparsers.add_parser("active_remembering", help=ActiveRemembering.__doc__)

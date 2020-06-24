@@ -17,6 +17,14 @@ from config import Config
 logger = get_logger(__file__)
 
 
+def sup_mixup(x,y, mixup_sup_alpha): 
+    def mixup_criterion(y_a, y_b, lam):
+        return lambda pred, _: lam * torch.nn.functional.cross_entropy(pred, y_a) + (1 - lam) * torch.nn.functional.cross_entropy(pred, y_b)
+    mixed_input, target_a, target_b, lam = mixup_data_sup(x, y, mixup_sup_alpha)
+    mixed_input_var, target_a_var, target_b_var = Variable(mixed_input), Variable(target_a), Variable(target_b)
+    loss_func = mixup_criterion(target_a_var, target_b_var, lam)
+    return mixed_input_var, loss_func
+
 def mixup_data_sup(x, y, alpha=1.0):
     '''Compute the mixup data. Return mixed inputs, pairs of targets, and lambda'''
     if alpha > 0.:
