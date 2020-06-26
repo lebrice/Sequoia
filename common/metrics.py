@@ -1,5 +1,5 @@
 from dataclasses import dataclass, InitVar, asdict
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, List
 import numpy as np
 import torch
 from torch import Tensor
@@ -112,6 +112,7 @@ class ClassificationMetrics(Metrics):
                       h_x: Tensor=None,
                       y_pred: Tensor=None,
                       y: Tensor=None):
+
         # get the batch size:
         for tensor in [x, h_x, y_pred, y]:
             if tensor is not None:
@@ -184,7 +185,7 @@ class ClassificationMetrics(Metrics):
     def to_pbar_message(self) -> Dict[str, Union[str, float]]:
         message = super().to_pbar_message()
         message["acc"] = f"{self.accuracy:.2%}"
-        return message
+        return message    
 
 @torch.no_grad()
 def get_metrics(y_pred: Union[Tensor, np.ndarray],
@@ -203,6 +204,8 @@ def get_metrics(y_pred: Union[Tensor, np.ndarray],
         return ClassificationMetrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
 
 
+
+    
 @torch.no_grad()
 def get_confusion_matrix(y_pred: Tensor, y: Tensor) -> Tensor:
     """ Taken from https://discuss.pytorch.org/t/how-to-find-individual-class-accuracy/6348
@@ -232,5 +235,5 @@ def class_accuracy(y_pred: Tensor, y: Tensor) -> Tensor:
     return confusion_mat.diag()/confusion_mat.sum(1).clamp_(1e-10, 1e10)
 
 
-def get_class_accuracy(confusion_matrix: Tensor) -> Tensor:
+def get_class_accuracy(confusion_matrix: Tensor) -> Tensor:    
     return confusion_matrix.diag()/confusion_matrix.sum(1).clamp_(1e-10, 1e10)

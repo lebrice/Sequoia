@@ -5,3 +5,4 @@ simple_parsing==0.0.11.post7
 wandb
 matplotlib
 plotly
+sklearn

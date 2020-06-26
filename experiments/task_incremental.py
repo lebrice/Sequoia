@@ -89,6 +89,7 @@ class TaskIncremental(Experiment):
         # Cumulative losses after each task
         cumul_losses: List[Optional[LossInfo]] = list_field()
 
+
     # Experiment Configuration.
     config: Config = mutable_field(Config)     # Overwrite the type from Experiment.
     # Experiment state.
@@ -129,7 +130,7 @@ class TaskIncremental(Experiment):
         """
         super().setup()
         if self.state.global_step == 0:
-            logger.info("Starting from scratch!")
+            logger.info("Starting from scratch!")   
             self.state.tasks = self.create_tasks_for_dataset(self.config.dataset)
         else:
             logger.info(f"Starting from global step {self.state.global_step}")

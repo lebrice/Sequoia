@@ -1,4 +1,5 @@
-import itertools
+import itertools   
+from collections import defaultdict
 from utils.logging_utils import get_logger
 from collections import OrderedDict
 from dataclasses import InitVar, asdict, dataclass
@@ -324,3 +325,39 @@ class TrainValidLosses(Serializable):
 #         "train_losses": train_losses_dict,
 #         "valid_losses": valid_losses_dict,
 #     }
+
+
+@dataclass
+class Meter(Serializable):
+    """
+    Class to keep runing statistics about performanced.
+    Can implement metrics dependent on history of LossInfos.
+    """ 
+    def __post_init__(self):    
+        #store acc histories here to calculate things like auc
+        self.history_dict: Dict[str, List[LossInfo, int]] = defaultdict(lambda :[None, 0])
+    
+    def update(self, new_element: LossInfo) -> LossInfo:
+        if not isinstance(new_element.metric, ClassificationMetrics):
+            return new_element
+
+        if self.history_dict[new_element.name][0] is None:
+            self.history_dict[new_element.name][0] = new_element
+        else:
+            self.history_dict[new_element.name][0] += new_element
+
+        self.history_dict[new_element.name][1]+=1
+        new_element.metrics['current_AUC'] = self.get_auc(new_element)
+        return new_element
+
+    
+    def get_auc(self, key: Union[str, LossInfo]) -> float:
+        if isinstance(key, LossInfo):
+            name = key.name
+        elif isinstance(key,str):
+            name = key
+        else:
+            raise TypeError
+        return self.history_dict[name][0].accuracy/self.history_dict[name][1]
+
+

@@ -183,10 +183,6 @@ class Classifier(nn.Module):
         if isinstance(x, dict):
             # TODO: Select which 'augmented' input to use.
             pass
-
-
-        
-        
         if y is not None and y.shape[0] != x.shape[0]:
             raise RuntimeError("Whole batch can either be fully labeled or "
                                "fully unlabeled, but not a mix of both (for now)")

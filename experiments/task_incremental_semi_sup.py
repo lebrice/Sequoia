@@ -18,7 +18,7 @@ from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
 
 from common.losses import (LossInfo, TrainValidLosses, get_supervised_accuracy,
-                           get_supervised_metrics)
+                           get_supervised_metrics, Meter)   
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from common.task import Task
 from datasets import DatasetConfig, Datasets
@@ -63,6 +63,10 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     class State(TaskIncremental.State):
         epoch:int = 0  
         idx_lab_unlab: Dict[str, Tuple[Tensor, Tensor]] = field(default_factory=dict)
+
+        #Meters to keep track of AUC
+        perf_meter = Meter()
+
 
     # Experiment Configuration.
     config: Config = mutable_field(Config)     # Overwrite the type from Experiment.
@@ -183,6 +187,13 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         if self.config.simclr_augment: 
             data, target = SimCLRTask.preprocess_simclr(data, target, device=self.model.device)
         return data, target
+
+    def test(self, dataloader: Union[Dataset, DataLoader], description: str = None, name: str = "Test") -> LossInfo:
+        loss_info = super().test(dataloader, description, name)
+        loss_info = self.state.perf_meter.update(loss_info)
+        return loss_info
+
+    
 
 
 if __name__ == "__main__":
