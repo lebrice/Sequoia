@@ -166,7 +166,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     def train_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.batch_idx +=1 
         self.model.train()                    
-        for batch_sup, batch_unsup in dataloader:  
+        for batch_sup, batch_unsup in dataloader:   
             data, target = self.preprocess(batch_sup)
             u, _ = self.preprocess(batch_unsup)
             #create mixed batch  
@@ -175,7 +175,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 target = list(target)+([None]*len(u))
             yield self.train_batch(data, target)
     
-    def step(self, global_step:int, **kwargs):
+    def step(self, global_step:int, **kwargs): 
         return super().step(global_step, epoch=self.state.epoch, epoch_length=self.epoch_length, update_number=self.batch_idx, **kwargs)
 
     def preprocess(self, batch: Union[Tuple[Tensor], Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Optional[Tensor]]:
@@ -183,6 +183,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         if self.config.simclr_augment: 
             data, target = SimCLRTask.preprocess_simclr(data, target, device=self.model.device)
         return data, target
+
 
 if __name__ == "__main__":
     from simple_parsing import ArgumentParser
