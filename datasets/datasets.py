@@ -5,7 +5,7 @@ from torchvision.datasets import (CIFAR10, CIFAR100, MNIST, FashionMNIST,
 from torchvision.transforms import Compose, Resize, ToTensor
 
 from .dataset_config import DatasetConfig
-from .imagenet import ImageNetConfig
+from .imagenet import ImageNetConfig, ImageNetConfig_Folder
 
 class Datasets(Enum):
     """ Choice of dataset. """
@@ -29,4 +29,10 @@ class Datasets(Enum):
         x_shape=(3, 32, 32),
         num_classes=100,
     )
-    imagenet = ImageNetConfig()
+    imagenet = ImageNetConfig(
+        x_shape=(3, 224, 224),
+    )
+    mini_imagenet = ImageNetConfig_Folder(
+        x_shape=(3, 32, 32),
+        num_classes=200,
+    )

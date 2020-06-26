@@ -153,7 +153,7 @@ class Classifier(nn.Module):
                 logger.debug(f"{task.name}: {task.coefficient}")
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
-        self.to(self.config.device)
+        self.to(self.device)
 
 
     def supervised_loss(self, x: Tensor,
@@ -167,7 +167,7 @@ class Classifier(nn.Module):
         loss_f = self.classification_loss
         #input mixup on labeled samples
         if self.hparams.mixup_sup_alpha:
-            x_mixed, loss_f = sup_mixup(x,y, self.hparams.mixup_sup_alpha)
+            x_mixed, loss_f = sup_mixup(x,y, self.hparams.mixup_sup_alpha, device=self.device)
             
         loss = loss_f(y_pred, y)
         metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)

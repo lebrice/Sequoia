@@ -376,8 +376,6 @@ class ExperimentBase(Serializable):
         # validation dataset during training.
         valid_loss_gen = self.valid_performance_generator(valid_dataloader)
         
-        # Message for the progressbar
-        message: Dict[str, Any] = OrderedDict()
         # List to hold the length of each epoch (should all be the same length)
         epoch_lengths: List[int] = []
 
@@ -388,7 +386,7 @@ class ExperimentBase(Serializable):
             desc += " " if desc and not desc.endswith(" ") else ""
             desc += f"Epoch {epoch}"
             pbar.set_description(desc + " Train")
-            self.train_epoch(epoch, pbar, message, valid_loss_gen, all_losses=all_losses)
+            self.train_epoch(epoch, pbar, valid_loss_gen, all_losses=all_losses)
             epoch_length = self.global_step - epoch_start_step
             epoch_lengths.append(epoch_length)
 
@@ -429,7 +427,9 @@ class ExperimentBase(Serializable):
         # TODO: Should we also return the array of validation losses at each epoch (`validation_losses`)?
         return all_losses
     
-    def train_epoch(self, epoch, pbar: Iterable, message: Dict[str, Any], valid_loss_gen: Generator, all_losses:TrainValidLosses):
+    def train_epoch(self, epoch, pbar: Iterable, valid_loss_gen: Generator, all_losses:TrainValidLosses):
+        # Message for the progressbar
+        message: Dict[str, Any] = OrderedDict()
         for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
             train_loss.drop_tensors()
             if batch_idx % self.config.log_interval == 0:
@@ -447,8 +447,6 @@ class ExperimentBase(Serializable):
                     "Train": train_loss,
                     "Valid": valid_loss,
                 })
-        #return all_losses
-
 
     def keep_best_model(self, use_acc: bool=False, save_path: Path=None) -> Generator[int, Optional[LossInfo], None]:
         # Path where the best model weights will be saved.

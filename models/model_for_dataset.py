@@ -11,6 +11,7 @@ model_class_for_dataset: Dict[Datasets, Type[Classifier]] = {
     Datasets.cifar10: Cifar10Classifier,
     Datasets.cifar100: Cifar100Classifier,
     Datasets.imagenet: ImageNetClassifier,
+    Datasets.mini_imagenet: ImageNetClassifier,
 }
 
 def get_model_class_for_dataset(dataset: Union[str, Datasets, DatasetConfig]) -> Type[Classifier]:

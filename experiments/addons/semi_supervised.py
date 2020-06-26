@@ -1,6 +1,6 @@
 """ Addon that allows training on batches that are partially labeled. """
 from dataclasses import dataclass
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Tuple, Type
 
 import torch
 from torch import Tensor
@@ -10,10 +10,14 @@ from simple_parsing import mutable_field
 from utils.logging_utils import get_logger
 
 from .addon import ExperimentAddon
+from common.task import Task
+from torch.utils.data import DataLoader, Dataset, Sampler, TensorDataset
+from simple_parsing import choice, field, mutable_field, subparsers
+from datasets import Datasets, DatasetConfig
 
 logger = get_logger(__file__)
 
-@dataclass
+@dataclass 
 class SemiSupervisedBatchesAddon(ExperimentAddon):
     """ Experiment capable of training on semi-supervised batches. 
     
@@ -51,7 +55,7 @@ class SemiSupervisedBatchesAddon(ExperimentAddon):
         
         # Batch is maybe a mix of labeled / unlabeled data.
         labeled_x_list: List[Tensor] = []
-        labeled_y_list: List[Tensor] = [] 
+        labeled_y_list: List[Tensor] = []
         unlabeled_x_list: List[Tensor] = []
 
         # TODO: Might have to somehow re-order the results based on the indices?
@@ -65,8 +69,8 @@ class SemiSupervisedBatchesAddon(ExperimentAddon):
                 unlabeled_x_list.append(x)
             else:
                 labeled_indices.append(i)
-                labeled_x_list.append(x) 
-                labeled_y_list.append(torch.LongTensor([y]))
+                labeled_x_list.append(x)
+                labeled_y_list.append(y)
         
         labeled_ratio = len(labeled_indices) / len(unlabeled_indices + labeled_indices)
         self.log(dict(labeled_ratio=labeled_ratio))
