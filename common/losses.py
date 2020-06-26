@@ -220,6 +220,20 @@ class LossInfo(Serializable):
             (k.replace(old_name, new_name), v) for k, v in other.losses.items() 
         ])
         self += new_other
+    
+    def all_metrics(self) -> Dict[str, Metrics]:
+        result: Dict[str, Metrics] = {}
+        result.update(self.metrics)
+        for name, loss in self.losses.items():
+            submetrics = loss.all_metrics()
+            for metric_name in submetrics:
+                if metric_name in result:
+                    logger.warning(UserWarning(
+                        f"There is a collision between metrics with name "
+                        f"{metric_name}. Adding them together."
+                    ))
+            result.update(submetrics)
+        return result
 
 
 
