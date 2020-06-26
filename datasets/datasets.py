@@ -20,7 +20,7 @@ class Datasets(Enum):
         num_classes=10,
     )
     cifar10 = DatasetConfig(
-        CIFAR10,
+        CIFAR10,    
         x_shape=(3, 32, 32),
         num_classes=10,
     )
@@ -32,7 +32,7 @@ class Datasets(Enum):
     imagenet = ImageNetConfig(
         x_shape=(3, 224, 224),
     )
-    mini_imagenet = ImageNetConfig_Folder(
+    mini_imagenet = ImageNetConfig(
         x_shape=(3, 32, 32),
         num_classes=200,
     )
