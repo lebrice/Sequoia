@@ -70,4 +70,4 @@ class ImageNetConfig(DatasetConfig):
         #print(train.classes)
         if self.num_classes < 1000:
             return ClassSubset(train, list(range(self.num_classes))), ClassSubset(test, list(range(self.num_classes)))
-        return train, testda
+        return train, test
