@@ -1,5 +1,4 @@
 import itertools
-from utils.logging_utils import get_logger
 from collections import OrderedDict
 from dataclasses import InitVar, asdict, dataclass
 from pathlib import Path
@@ -9,10 +8,11 @@ from typing import (Any, Dict, Iterable, List, Optional, Set, Tuple, TypeVar,
 import torch
 from torch import Tensor
 
+from simple_parsing import field, mutable_field
 from utils.json_utils import Serializable
+from utils.logging_utils import cleanup, get_logger
 from utils.utils import add_dicts, add_prefix
-from utils.logging_utils import cleanup
-from simple_parsing import mutable_field, field
+
 from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                       get_metrics)
 
@@ -224,16 +224,13 @@ class LossInfo(Serializable):
         result: Dict[str, Metrics] = {}
         result.update(self.metrics)
         for name, loss in self.losses.items():
-            submetrics = loss.all_metrics()
-            for metric_name in submetrics:
-                if metric_name in result:
-                    logger.warning(UserWarning(
-                        f"There is a collision between metrics with name "
-                        f"{metric_name}. Adding them together."
-                    ))
-            result.update(submetrics)
+            result.update(loss.all_metrics())
+        if self.name:
+            prefix = self.name
+            if not prefix.endswith(" "):
+                prefix += " "
+            return add_prefix(result, prefix)
         return result
-
 
 
 def get_supervised_metrics(loss: LossInfo, mode: str="Test") -> Union[ClassificationMetrics, RegressionMetrics]:
