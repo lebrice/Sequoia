@@ -343,16 +343,19 @@ class Meter(Serializable):
     """
     Class to keep runing statistics about performance, such as AUC.
     """ 
-    def __post_init__(self):    
-        #store acc histories here to calculate things like auc
-        self.acc_sum_dict: Dict[str, Metrics] = {}
-        self.count_dict: Dict[str, int] = defaultdict(lambda : 0)
+    #store acc histories here to calculate things like auc     
+    acc_sum_dict: Dict[str, Metrics] = field(default_factory=OrderedDict)
+    count_dict: Dict[str, int] = field(default_factory=OrderedDict)
     
     def update(self, new_element: LossInfo) -> LossInfo:
         all_metrics = new_element.all_metrics()
         self.acc_sum_dict = add_dicts(self.acc_sum_dict, all_metrics)
         for k, v in all_metrics.items():
-            self.count_dict[k]+=1
+            try:
+                self.count_dict[k]+=1
+            except KeyError:  
+                self.count_dict[k]=1
+
         new_element.metrics['AUC'] = self.get_auc(all_metrics)
         return new_element
 
