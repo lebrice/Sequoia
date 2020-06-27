@@ -10,10 +10,11 @@ from typing import (Any, Dict, Iterable, List, Optional, Set, Tuple, TypeVar,
 import torch
 from torch import Tensor
 
+from simple_parsing import field, mutable_field
 from utils.json_utils import Serializable
+from utils.logging_utils import cleanup, get_logger
 from utils.utils import add_dicts, add_prefix
-from utils.logging_utils import cleanup
-from simple_parsing import mutable_field, field
+
 from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                       get_metrics)
 
@@ -225,16 +226,13 @@ class LossInfo(Serializable):
         result: Dict[str, Metrics] = {}
         result.update(self.metrics)
         for name, loss in self.losses.items():
-            submetrics = loss.all_metrics()
-            for metric_name in submetrics:
-                if metric_name in result:
-                    logger.warning(UserWarning(
-                        f"There is a collision between metrics with name "
-                        f"{metric_name}. Adding them together."
-                    ))
-            result.update(submetrics)
+            result.update(loss.all_metrics())
+        if self.name:
+            prefix = self.name
+            if not prefix.endswith(" "):
+                prefix += " "
+            return add_prefix(result, prefix)
         return result
-
 
 
 def get_supervised_metrics(loss: LossInfo, mode: str="Test") -> Union[ClassificationMetrics, RegressionMetrics]:
@@ -340,38 +338,27 @@ class TrainValidLosses(Serializable):
 #         "valid_losses": valid_losses_dict,
 #     }
 
-
 @dataclass
 class Meter(Serializable):
     """
-    Class to keep runing statistics about performanced.
-    Can implement metrics dependent on history of LossInfos.
+    Class to keep runing statistics about performance, such as AUC.
     """ 
     def __post_init__(self):    
         #store acc histories here to calculate things like auc
-        self.history_dict: Dict[str, List[LossInfo, int]] = defaultdict(lambda :[None, 0])
+        self.acc_sum_dict: Dict[str, Metrics] = {}
+        self.count_dict: Dict[str, int] = defaultdict(lambda : 0)
     
     def update(self, new_element: LossInfo) -> LossInfo:
-        if not isinstance(new_element.metric, ClassificationMetrics):
-            return new_element
-
-        if self.history_dict[new_element.name][0] is None:
-            self.history_dict[new_element.name][0] = new_element
-        else:
-            self.history_dict[new_element.name][0] += new_element
-
-        self.history_dict[new_element.name][1]+=1
-        new_element.metrics['current_AUC'] = self.get_auc(new_element)
+        all_metrics = new_element.all_metrics()
+        self.acc_sum_dict = add_dicts(self.acc_sum_dict, all_metrics)
+        for k, v in all_metrics.items():
+            self.count_dict[k]+=1
+        new_element.metrics['AUC'] = self.get_auc(all_metrics)
         return new_element
 
-    
-    def get_auc(self, key: Union[str, LossInfo]) -> float:
-        if isinstance(key, LossInfo):
-            name = key.name
-        elif isinstance(key,str):
-            name = key
-        else:
-            raise TypeError
-        return self.history_dict[name][0].accuracy/self.history_dict[name][1]
-
-
+    def get_auc(self, all_metrics: Dict[str, Metrics]) -> Dict[str,float]:
+        res = {}
+        for k,v in all_metrics.items():
+            if isinstance(self.acc_sum_dict[k], ClassificationMetrics):
+                res[k] = self.acc_sum_dict[k].accuracy/self.count_dict[k]
+        return res
