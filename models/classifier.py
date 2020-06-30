@@ -32,18 +32,56 @@ from tasks.mixup import sup_mixup
 
 logger = get_logger(__file__)
 
+encoder_models: Dict[str, Type[nn.Module]] = {
+    "vgg16": models.vgg16,
+    "resnet18": models.resnet18,
+    "resnet34": models.resnet34,
+    "resnet50": models.resnet50,
+    "resnet101": models.resnet101,
+    "resnet152": models.resnet152,
+    "alexnet": models.alexnet,
+    # "squeezenet": models.squeezenet1_0,  # Not supported yet (weird output shape)
+    "densenet": models.densenet161,
+    "cnn13": CNN13,
+    # "inception": models.inception_v3,  # Not supported yet (creating model takes forever?)
+    # "googlenet": models.googlenet,  # Not supported yet (creating model takes forever?)
+    # "shufflenet": models.shufflenet_v2_x1_0,
+    # "mobilenet": models.mobilenet_v2,
+    # "resnext50_32x4d": models.resnext50_32x4d,
+    # "wide_resnet50_2": models.wide_resnet50_2,
+    # "mnasnet": models.mnasnet1_0,
+}
+
+
+def key_for_model(encoder_model_fn: Union[Callable[[Any], nn.Module], Type[nn.Module]]) -> str:
+    """Returns the key of the given encoding model in the `encoder_models` dict.
+
+    Args:
+        encoder_model_fn (Union[Callable[[Any], nn.Module], Type[nn.Module]]): 
+            A model class or model function.
+
+    Raises:
+        RuntimeError: If there is no value of `encoder_model_fn` in the dict.
+
+    Returns:
+        str: The key in `encoder_models` which has `encoder_model_fn` as value.
+    """
+    if encoder_model_fn is None:
+        return None
+    for k, v in encoder_models.items():
+        if v is encoder_model_fn:
+            return k
+    raise RuntimeError(f"Can't find the key for encoder fn {encoder_model_fn} in the dict {encoder_models}")
+
 
 class Classifier(nn.Module):
     @dataclass
-    class HParams:
+    class HParams(Serializable):
         """ Set of hyperparameters for the classifier.
 
         We use [simple_parsing](www.github.com/lebrice/simpleparsing) to
         generate command-line arguments for each attribute of this class.
         """
-
-
-
         #for mixup of labeled data: if 0 no mixup is used, otherwise the alpha parameter for the beta distribution from where the mixing lambda is drawn (mainly implemented for ICT)
         mixup_sup_alpha: float = 0.
 
@@ -60,25 +98,12 @@ class Classifier(nn.Module):
         output_head: OutputHead.HParams = mutable_field(OutputHead.HParams)
 
         # Use an encoder architecture from the torchvision.models package.
-        encoder_model: Optional[str] = choice({
-            "vgg16": models.vgg16,
-            "resnet18": models.resnet18,
-            "resnet34": models.resnet34,
-            "resnet50": models.resnet50,
-            "resnet101": models.resnet101,
-            "resnet152": models.resnet152,
-            "alexnet": models.alexnet,
-            # "squeezenet": models.squeezenet1_0,  # Not supported yet (weird output shape)
-            "densenet": models.densenet161,
-            "cnn13": CNN13,
-            # "inception": models.inception_v3,  # Not supported yet (creating model takes forever?)
-            # "googlenet": models.googlenet,  # Not supported yet (creating model takes forever?)
-            # "shufflenet": models.shufflenet_v2_x1_0,
-            # "mobilenet": models.mobilenet_v2,
-            # "resnext50_32x4d": models.resnext50_32x4d,
-            # "wide_resnet50_2": models.wide_resnet50_2,
-            # "mnasnet": models.mnasnet1_0,
-        }, default=None)
+        encoder_model: Type[nn.Module] = choice(
+            encoder_models,
+            default=None,
+            encoding_fn=key_for_model,
+            decoding_fn=encoder_models.get,
+        )
 
         # Use the pretrained weights of the ImageNet model from torchvision.
         pretrained_model: bool = False
