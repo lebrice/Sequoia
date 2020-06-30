@@ -50,10 +50,10 @@ class TaskIncremental(Experiment):
         random_class_ordering: bool = True
         # Maximum number of epochs of self-supervised training to perform on the
         # task data before switching to supervised training.
-        unsupervised_epochs_per_task: int = 5
+        unsupervised_epochs_per_task: int = 0
         # Maximum number of epochs of supervised training to perform on each task's
         # dataset.
-        supervised_epochs_per_task: int = 1     
+        supervised_epochs_per_task: int = 5     
         #If `True`, accuracy will be used as a measure of performance. Otherwise, the total validation loss is used. Defaults to False.
         use_accuracy_as_metric: bool = False
 

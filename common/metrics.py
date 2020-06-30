@@ -58,6 +58,17 @@ class Metrics(Serializable):
     def to_pbar_message(self) -> Dict[str, Union[str, float]]:
         return OrderedDict()
 
+
+@dataclass
+class AUCMetric(Metrics, Serializable):
+    auc: Tensor = 0.  # type: ignore
+
+    def to_log_dict(self, verbose: bool=True) -> Dict:
+        d = super().to_log_dict()
+        d["auc"] = float(self.auc)
+        return d
+
+
 @dataclass
 class RegressionMetrics(Metrics, Serializable):
     mse: Tensor = 0.  # type: ignore

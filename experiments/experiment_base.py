@@ -1,11 +1,12 @@
 import inspect
 import json
 import logging
+from itertools import tee
 from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
-                    Tuple, Type, Union)
+                    Tuple, Type, Union, Iterator)
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -114,6 +115,9 @@ class ExperimentBase(Serializable):
         `self.to_dict()`, therefore they will also not be logged to wandb 
         when `wandb.init` is called.
         """
+        if isinstance(self.config.device, tuple):
+            if len(self.config.device)==1:
+                self.config.device = self.config.device[-1]
         # Set these shared attributes so that all the Auxiliary tasks can be created.
         AuxiliaryTask.input_shape = self.config.dataset.x_shape
         AuxiliaryTask.hidden_size = self.hparams.hidden_size
@@ -240,7 +244,7 @@ class ExperimentBase(Serializable):
             logger.info(f"Restoring model weights from {self.state.model_weights_path}")
             state_dict = torch.load(
                 self.state.model_weights_path,
-                map_location=self.config.device,
+                #map_location=self.config.device,
             )
             self.model.load_state_dict(state_dict)
         # TODO: Make sure that restoring at some arbitrary global_step works.
@@ -254,8 +258,8 @@ class ExperimentBase(Serializable):
         return model
 
     def train(self,
-              train_dataloader: Union[Dataset, DataLoader, Iterable],                
-              valid_dataloader: Union[Dataset, DataLoader, Iterable],                
+              train_dataloader: Union[Dataset, DataLoader, Iterator],                
+              valid_dataloader: Union[Dataset, DataLoader, Iterator],                
               epochs: int,                
               description: str=None,
               early_stopping_options: EarlyStoppingOptions=None,
@@ -378,10 +382,16 @@ class ExperimentBase(Serializable):
         
         # List to hold the length of each epoch (should all be the same length)
         epoch_lengths: List[int] = []
+        for epoch in range(starting_epoch, epochs + 1):
 
-        for epoch in range(starting_epoch, epochs + 1):   
+            #prevent iterator exhaustion
+            if isinstance(train_dataloader, Iterator):
+                train_dataloader, train_dataloader_ = tee(train_dataloader)
+            else: 
+                train_dataloader_ = train_dataloader
+
             epoch_start_step = self.state.global_step             
-            pbar = tqdm.tqdm(train_dataloader, total=steps_per_epoch)
+            pbar = tqdm.tqdm(train_dataloader_, total=steps_per_epoch)
             desc = description or "" 
             desc += " " if desc and not desc.endswith(" ") else ""
             desc += f"Epoch {epoch}"
@@ -463,7 +473,7 @@ class ExperimentBase(Serializable):
             logger.info(f"Saved best model weights to path {save_path}.")
         
         def load_weights():
-            state_dict = torch.load(save_path, map_location=self.config.device)
+            state_dict = torch.load(save_path)#, map_location=self.config.device)
             self.model.load_state_dict(state_dict)
         
         best_perf: Optional[float] = None
@@ -508,8 +518,8 @@ class ExperimentBase(Serializable):
             valid_dataloader = self.get_dataloader(valid_dataloader)
         while True:
             for batch in valid_dataloader:
-                data = batch[0].to(self.model.device)
-                target = batch[1].to(self.model.device) if len(batch) == 2 else None
+                data = batch[0].to(self.model.in_device)
+                target = batch[1].to(self.model.out_device) if len(batch) == 2 else None
                 yield self.test_batch(data, target, name="Valid")
         logger.info("Somehow exited the infinite while loop!")
 
@@ -520,8 +530,8 @@ class ExperimentBase(Serializable):
             yield self.train_batch(data, target)
 
     def preprocess(self, batch: Union[Tuple[Tensor], Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Optional[Tensor]]:
-        data = batch[0].to(self.model.device)
-        target = batch[1].to(self.model.device) if len(batch) == 2 else None  # type: ignore
+        data = batch[0].to(self.model.in_device)
+        target = batch[1].to(self.model.out_device) if len(batch) == 2 else None  # type: ignore
         return data, target
 
     def train_batch(self, data: Tensor, target: Optional[Tensor], name: str="Train") -> LossInfo:
@@ -578,11 +588,11 @@ class ExperimentBase(Serializable):
         return self.model.optimizer_step(global_step=self.global_step, **kwargs)
 
 
-    def get_dataloader(self, dataset: Dataset, sampler: Sampler=None, shuffle: bool=True) -> DataLoader:
+    def get_dataloader(self, dataset: Dataset, sampler: Sampler=None, shuffle: bool=True, batch_size:int = None) -> DataLoader:
         if sampler is None:
             return DataLoader(
                 dataset,
-                batch_size=self.hparams.batch_size,
+                batch_size = batch_size if batch_size is not None else self.hparams.batch_size,
                 shuffle=shuffle,
                 num_workers=self.config.num_workers,
                 pin_memory=self.config.use_cuda,
@@ -590,7 +600,7 @@ class ExperimentBase(Serializable):
         else:
             return DataLoader(
                 dataset,
-                batch_size=self.hparams.batch_size,
+                batch_size = batch_size if batch_size is not None else self.hparams.batch_size,
                 sampler=sampler,
                 num_workers=self.config.num_workers,
                 pin_memory=self.config.use_cuda,

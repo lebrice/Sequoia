@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import InitVar, dataclass, field
-from typing import Tuple, ClassVar, Callable, TypeVar, Optional
+from typing import Tuple, ClassVar, Callable, TypeVar, Optional, Union
 
 import torch
 from torch import Tensor, nn, optim
@@ -57,10 +57,12 @@ class AuxiliaryTask(nn.Module):
             The name of this auxiliary task. When not given, the name of the
             class is used.
         """
-        super().__init__()
+        super().__init__() 
         self.name: str = name or type(self).__qualname__
         self.options = options or type(self).Options(*args, **kwargs)
         self.device: torch.device = torch.device("cuda" if cuda_available else "cpu")
+        #self.out_device:torch.device = torch.device("cuda" if cuda_available else "cpu")
+        #self.in_device:torch.device = torch.device("cuda" if cuda_available else "cpu")
 
     def encode(self, x: Tensor) -> Tensor:
         x, _ = AuxiliaryTask.preprocessing(x, None)
@@ -108,7 +110,8 @@ class AuxiliaryTask(nn.Module):
                         x: Tensor,
                         h_x: Tensor,
                         y_pred: Tensor,
-                        y: Tensor=None) -> LossInfo:
+                        y: Tensor=None, 
+                        device: Union[int,torch.device, Tuple[torch.device]]=None) -> LossInfo:
         """Returns the scaled LossInfo, with relevant prefixes added to the dicts.
         
         Parameters
@@ -136,13 +139,19 @@ class AuxiliaryTask(nn.Module):
         """
         if not self.enabled:
             return LossInfo(self.name)
-        self.device = h_x.device
+
+        #if device is not None and isinstance(device, Tuple):
+        #    in_device, out_device = device
+        #elif device is not None:
+        #    in_device = out_device = device
+        #else:
+        #    in_device = out_device = self.device
         
-        x = x.to(self.device)
-        if y_pred is not None:
-            y_pred = y_pred.to(self.device)
-        if y is not None:
-            y = y.to(self.device)
+        #x = x.to(in_device)
+        #if y_pred is not None:           
+        #    y_pred = y_pred.to(out_device)
+        #if y is not None:
+        #    y = y.to(out_device)
 
         loss_info = self.get_loss(x, h_x, y_pred, y)
         loss_info *= self.coefficient

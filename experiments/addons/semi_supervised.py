@@ -80,6 +80,7 @@ class SemiSupervisedBatchesAddon(ExperimentAddon):
         if unlabeled_indices:
             unlabeled_x = torch.stack(unlabeled_x_list)
             unsupervised_loss = self.model.get_loss(unlabeled_x, None, name=name)
+
             loss += unsupervised_loss
 
         if labeled_indices:

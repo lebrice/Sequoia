@@ -1,6 +1,6 @@
 import warnings
 from dataclasses import dataclass
-from typing import Callable, Optional, TypeVar, Union
+from typing import Callable, Optional, TypeVar, Union, Tuple
 
 import torch
 from simple_parsing import choice

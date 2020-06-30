@@ -30,7 +30,10 @@ class AEReconstructionTask(AuxiliaryTask):
         
         # TODO: This is weird, should be able to use the dataset here, no?
         decoder_class = get_decoder_class_for_dataset(AuxiliaryTask.input_shape)
-        self.decoder: nn.Module = decoder_class(
+        self.decoder: nn.Module = None
+
+    def enable(self):
+        self.decoder: nn.Module = self.decoder_class(
             code_size=AuxiliaryTask.hidden_size,
         )
 

@@ -6,7 +6,7 @@ from itertools import accumulate, cycle
 from pathlib import Path
 from random import shuffle
 from sys import getsizeof
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,7 +18,7 @@ from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
 
 from common.losses import (LossInfo, TrainValidLosses, get_supervised_accuracy,
-                           get_supervised_metrics, Meter)   
+                           get_supervised_metrics, AUC_Meter)   
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from common.task import Task
 from datasets import DatasetConfig, Datasets
@@ -44,7 +44,7 @@ logger = get_logger(__file__)
 class TaskIncremental_Semi_Supervised(TaskIncremental):
     """Task incremental semi-supervised setting
     """
-    @dataclass
+    @dataclass  
     class Config(TaskIncremental.Config):
         #wether to apply simclr augment
         ratio_labelled: float = 0.2
@@ -57,15 +57,13 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 d.name: d.value for d in Datasets
             }, default=Datasets.mnist.name)
         #use full unlabaled dataset 
-        use_full_unlabeled: bool = True
+        use_full_unlabeled: bool = False
 
     @dataclass
     class State(TaskIncremental.State):
         epoch:int = 0  
         idx_lab_unlab: Dict[str, Tuple[Tensor, Tensor]] = field(default_factory=dict)
-
-        #Meters to keep track of AUC
-        perf_meter = Meter()
+        perf_meter: AUC_Meter = mutable_field(AUC_Meter, repr=False, init=False)
 
 
     # Experiment Configuration.
@@ -142,21 +140,29 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             self.valid_cumul_datasets = list(accumulate(self.valid_datasets))
             self.test_cumul_dataset = list(accumulate(self.test_datasets))
 
-    def train(self, train_dataloader: Union[Dataset, DataLoader, Iterable], *args, **kwargs) -> TrainValidLosses:    
+    def train(self, train_dataloader: Union[Dataset, DataLoader, Iterator], *args, **kwargs) -> TrainValidLosses:  
+        #half of the batch comes from labeled and half from unlabeled data
+        batch_size = int(self.hparams.batch_size / 2)
+        #labeled loader with a new batch size
+        if isinstance(train_dataloader, DataLoader):
+            train_dataloader = self.get_dataloader(train_dataloader.dataset, batch_size=batch_size)
+        else:
+            train_dataloader = self.get_dataloader(train_dataloader, batch_size=batch_size)
+        
         if self.config.label_incremental:
             if self.full_train_dataset_unlabelled is None:
-                train_dataloader_unlabeled = self.get_dataloader(self.full_train_dataset)
+                train_dataloader_unlabeled = self.get_dataloader(self.full_train_dataset, batch_size=batch_size)
             else:
                 logger.info("Using full unlabeled set")
                 full_unlabeled_dataset = torch.utils.data.ConcatDataset([self.full_train_dataset,self.full_train_dataset_unlabelled])
-                train_dataloader_unlabeled = self.get_dataloader(full_unlabeled_dataset)
+                train_dataloader_unlabeled = self.get_dataloader(full_unlabeled_dataset, batch_size=batch_size)
         else:
             if self.full_train_dataset_unlabelled is None:
-                train_dataloader_unlabeled = self.get_dataloader(self.train_datasets_unlabeled[self.state.i])
+                train_dataloader_unlabeled = self.get_dataloader(self.train_datasets_unlabeled[self.state.i], batch_size=batch_size)
             else:
                 logger.info("Using full unlabeled set")
                 full_unlabeled_dataset = torch.utils.data.ConcatDataset([self.train_datasets_unlabeled[self.state.i],self.full_train_dataset_unlabelled])
-                train_dataloader_unlabeled = self.get_dataloader(full_unlabeled_dataset)
+                train_dataloader_unlabeled = self.get_dataloader(full_unlabeled_dataset, batch_size=batch_size)
 
         train_dataloader = zip(cycle(train_dataloader), train_dataloader_unlabeled)
         self.epoch_length = len(train_dataloader_unlabeled)
@@ -170,7 +176,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     def train_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.batch_idx +=1 
         self.model.train()                    
-        for batch_sup, batch_unsup in dataloader:   
+        for batch_sup, batch_unsup in dataloader: 
             data, target = self.preprocess(batch_sup)
             u, _ = self.preprocess(batch_unsup)
             #create mixed batch  
@@ -185,12 +191,15 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     def preprocess(self, batch: Union[Tuple[Tensor], Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Optional[Tensor]]:
         data, target = super().preprocess(batch)
         if self.config.simclr_augment: 
-            data, target = SimCLRTask.preprocess_simclr(data, target, device=self.model.device)
+            data, target = SimCLRTask.preprocess_simclr(data, target)
         return data, target
 
     def test(self, dataloader: Union[Dataset, DataLoader], description: str = None, name: str = "Test") -> LossInfo:
         loss_info = super().test(dataloader, description, name)
-        loss_info = self.state.perf_meter.update(loss_info)
+        loss_info = self.state.perf_meter.update(loss_info).detach()
+        #log validation performance
+        if loss_info.name=='Valid': 
+            self.log({f"Task_losses/AUC/": loss_info})
         return loss_info
 
     

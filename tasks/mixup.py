@@ -17,11 +17,11 @@ from config import Config
 logger = get_logger(__file__)
 
 
-def sup_mixup(x,y, mixup_sup_alpha, device='cpu'): 
+def sup_mixup(x,y, mixup_sup_alpha): 
     def mixup_criterion(y_a, y_b, lam):
         return lambda pred, _: lam * torch.nn.functional.cross_entropy(pred, y_a) + (1 - lam) * torch.nn.functional.cross_entropy(pred, y_b)
     mixed_input, target_a, target_b, lam = mixup_data_sup(x, y, mixup_sup_alpha)
-    mixed_input_var, target_a_var, target_b_var = Variable(mixed_input).to(device), Variable(target_a).to(device), Variable(target_b).to(device)
+    mixed_input_var, target_a_var, target_b_var = Variable(mixed_input), Variable(target_a), Variable(target_b)
     loss_func = mixup_criterion(target_a_var, target_b_var, lam)
     return mixed_input_var, loss_func
 
@@ -42,6 +42,8 @@ def mixup_data_sup(x, y, alpha=1.0):
 
 def mixup_data(x, y, alpha=1.0):
     '''Compute the mixup data. Return mixed inputs, mixed target, and lambda'''
+    in_device = x.device
+    out_device = y.device
     if alpha > 0.:
         lam = np.random.beta(alpha, alpha)
     else:
@@ -51,8 +53,8 @@ def mixup_data(x, y, alpha=1.0):
     x, y = x.data.cpu().numpy(), y.data.cpu().numpy()
     mixed_x = torch.Tensor(lam * x + (1 - lam) * x[index, :])
     mixed_y = torch.Tensor(lam * y + (1 - lam) * y[index, :])
-    mixed_x = mixed_x.cuda() if cuda_available else mixed_x
-    mixed_y = mixed_y.cuda() if cuda_available else mixed_y
+    mixed_x = mixed_x.to(in_device) if cuda_available else mixed_x
+    mixed_y = mixed_y.to(out_device) if cuda_available else mixed_y
 
     mixed_x = Variable(mixed_x)
     mixed_y = Variable(mixed_y)
@@ -108,8 +110,8 @@ def average_models(old: nn.Module, new: nn.Module, old_frac: float = 0.1) -> Non
 
     Returns nothing, as it modifies the `old` module in-place.
     """
-    old_state = old.state_dict()
-    new_state = new.state_dict()
+    old_state = old.cpu().state_dict()
+    new_state = new.cpu().state_dict()
 
     all_keys: Set[str] = set(old_state.keys()).union(set(new_state.keys()))
 
@@ -170,6 +172,9 @@ class MixupTask(AuxiliaryTask):
         self.update_number: Optional[int] = 0
         self.consistency_criterion = softmax_mse_loss
 
+        self.mean_encoder = None
+        self.mean_classifier = None
+
     def enable(self):
         self.mean_encoder = deepcopy(AuxiliaryTask.encoder)
         self.mean_classifier = deepcopy(AuxiliaryTask.classifier)
@@ -180,10 +185,11 @@ class MixupTask(AuxiliaryTask):
 
     def mean_encode(self, x: Tensor) -> Tensor:
         x, _ = AuxiliaryTask.preprocessing(x, None)
+        self.mean_encoder.to(self.device)
         return self.mean_encoder(x)
 
     def mean_logits(self, h_x: Tensor) -> Tensor:
-        return self.mean_classifier(h_x)
+        return self.mean_classifier.to(h_x.device)(h_x)
 
     def on_model_changed(self, global_step: int, **kwargs)-> None:
         """ Executed when the model was updated. """
@@ -234,7 +240,7 @@ class MixupTask(AuxiliaryTask):
             #x2 = x[1::2]
 
             #mix_x = mixup(x1, x2, mix_coeff)
-
+    
             #y_pred_1 = y_pred[0::2]
             #y_pred_2 = y_pred[1::2]
 
@@ -258,7 +264,7 @@ class MixupTask(AuxiliaryTask):
             #loss = torch.dist(y_pred_mix, mix_y_pred)
             loss_info.total_loss = mixup_consistency_weight * loss
         else:
-            loss_info.total_loss = torch.zeros(1, device=self.device, requires_grad=True)
+            loss_info.total_loss = torch.zeros(1, device=h_x.device, requires_grad=True)
         return loss_info
 
 

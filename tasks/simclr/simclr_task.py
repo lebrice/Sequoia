@@ -59,20 +59,22 @@ class SimCLRTask(AuxiliaryTask):
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
         # TODO: is there a more efficient way to do this than with a list comprehension? (torch multiprocessing-ish?)
         # concat all the x's into a single list.
-        x_t = torch.cat([self.augment(x_i) for x_i in x.cpu()], dim=0)   # [2*B, C, H, W]
-        x_t, _ = self.preprocess_simclr(x,None, self.hparams, self.device)
+        x_t, _ = self.preprocess_simclr(x, None, self.hparams)
+        #print(x_t.shape)
+        del x
+        del h_x
         #x_t = torch.cat([self.augment(x_i) for x_i in x.cpu()], dim=0)   # [2*B, C, H, W]
-        h_t = self.encode(x_t.to(self.device)).flatten(start_dim=1)  # [2*B, repr_dim]
-        z = self.projector(h_t)  # [2*B, proj_dim]
-        loss = self.loss(z, self.hparams.xent_temp)
+        h_t = self.encode(x_t).flatten(start_dim=1)  # [2*B, repr_dim]
+        z = self.projector.to(h_t.device)(h_t)  # [2*B, proj_dim]
+        loss = self.loss(z, self.hparams.xent_temp, device = z.device)
         loss_info = LossInfo(name=self.name, total_loss=loss)
+        torch.cuda.empty_cache()
         return loss_info
 
     @staticmethod
-    def preprocess_simclr(data:Tensor, target:Tensor=None, hparams=None, device='cuda') -> Tuple[Tensor, Optional[Tensor]]:
-            #data = batch[0].to(device)
-            #target = batch[1].to(device) if len(batch) == 2 else None  # type: ignore
-
+    def preprocess_simclr(data:Tensor, target:Tensor=None, hparams=None) -> Tuple[Tensor, Optional[Tensor]]:
+            x_device = data.device
+            y_device = target.device if target is not None else None
             if hparams is None:
                 options = SimCLRTask.Option
                 # Set the same values for equivalent hyperparameters
@@ -87,7 +89,7 @@ class SimCLRTask(AuxiliaryTask):
                 SimCLRAugment(options),
                 Lambda(lambda tup: torch.stack([tup[0], tup[1]]))
             ])
-
-            data = torch.cat([augment(x_i) for x_i in data.cpu()], dim=0)  # [2*B, C, H, W]
-            target = torch.cat([ torch.stack([t,t]) for t in target.cpu()], dim=0).to(device) if target is not None else None
-            return data.to(device), target
+            data = data.cpu()
+            data = torch.cat([augment(x_i) for x_i in data], dim=0)  # [2*B, C, H, W]
+            target = torch.cat([ torch.stack([t,t]) for t in target.cpu()], dim=0).to(y_device) if target is not None else None
+            return data.to(x_device), target

@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Generic, List, Optional, Tuple, TypeVar
+from typing import Any, ClassVar, Generic, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
@@ -48,7 +48,8 @@ class Config(WandbConfig):
     num_workers: int = 0
 
     # Which specific device to use.
-    # NOTE: Can be set directly with the command-line! (ex: "--device cuda")
+    # NOTE: Can be set directly with the command-line! (ex: "--device cuda") For multiple GPUs pass only indicies.
+    #device: Tuple[torch.device] = (torch.device("cuda" if cuda_available else "cpu"),)
     device: torch.device = torch.device("cuda" if cuda_available else "cpu")
     
     use_wandb: bool = True # Whether or not to log results to wandb
@@ -67,6 +68,7 @@ class Config(WandbConfig):
     def __post_init__(self):
         # set the manual seed (for reproducibility)
         set_seed(self.random_seed + (self.run_number or 0))
+        
 
         if not self.run_group:
             # the run group is by default the name of the experiment.
@@ -76,6 +78,7 @@ class Config(WandbConfig):
             print("Cannot use the passed value of argument 'use_cuda', as CUDA "
                   "is not available!")
             self.use_cuda = False
+            
         if not self.use_cuda:
             self.device = torch.device("cpu")
 

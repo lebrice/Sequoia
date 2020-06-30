@@ -21,11 +21,12 @@ class ImageNetClassifier(Classifier):
         self.dataset_config = Datasets.imagenet.value
         # We use a Resnet50 by default encoder by default.
         hparams.encoder_model = hparams.encoder_model or resnet50
+
         encoder = get_pretrained_encoder(
-            hidden_size=self.hidden_size,
+            hidden_size=self.hidden_size,   
             encoder_model=hparams.encoder_model,
             pretrained=hparams.pretrained_model,
-            freeze_pretrained_weights=hparams.freeze_pretrained_model,                
+            freeze_pretrained_weights=hparams.freeze_pretrained_model
         )
         super().__init__(
             input_shape=self.dataset_config.x_shape,

@@ -14,6 +14,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision import models
 from .CNN13 import CNN13
+from model_parallel import PipelineParallelResNet50
 from torchvision.utils import save_image
 
 from common.layers import ConvBlock, Flatten
@@ -60,11 +61,12 @@ class Classifier(nn.Module):
         output_head: OutputHead.HParams = mutable_field(OutputHead.HParams)
 
         # Use an encoder architecture from the torchvision.models package.
-        encoder_model: Optional[str] = choice({
+        encoder_model: Optional[Type[nn.Module]] = choice({
             "vgg16": models.vgg16,
             "resnet18": models.resnet18,
             "resnet34": models.resnet34,
             "resnet50": models.resnet50,
+            "resnet50_parallel": PipelineParallelResNet50,
             "resnet101": models.resnet101,
             "resnet152": models.resnet152,
             "alexnet": models.alexnet,
@@ -93,6 +95,11 @@ class Classifier(nn.Module):
 
         aux_tasks: AuxiliaryTaskOptions = field(default_factory=AuxiliaryTaskOptions)
 
+        optimizer = Optional[Type[torch.optim.Optimizer]] = choice({
+            'adam': torch.optim.Adam(lr=self.hparams.learning_rate),
+            'sgd': torch.optim.SGD(lr=init_lr, momentum=0.9, weight_decay=1e-6)
+        },default = 'adam')
+
     def __init__(self,
                  input_shape: Tuple[int, ...],
                  num_classes: int,
@@ -110,7 +117,11 @@ class Classifier(nn.Module):
 
         self.hidden_size = hparams.hidden_size  
         self.classification_loss = nn.CrossEntropyLoss()
-        self.device = self.config.device
+        self.in_device = self.out_device = self.device = self.config.device
+        if isinstance(self.config.device, Tuple):
+            self.in_device = self.config.device[0]
+            self.out_device = self.config.device[-1]
+
 
         # Classes of the current "task".
         # By default, contains all the classes in `range(0, self.num_classes)`.
@@ -139,6 +150,7 @@ class Classifier(nn.Module):
         AuxiliaryTask.encoder       = self.encoder
         AuxiliaryTask.classifier    = self.default_output_head # TODO: Also update this class attribute when switching tasks. 
         AuxiliaryTask.preprocessing = self.preprocess_inputs
+        AuxiliaryTask.device        = self.device
         
         # Dictionary of auxiliary tasks.
         self.tasks: Dict[str, AuxiliaryTask] = self.hparams.aux_tasks.create_tasks(
@@ -152,8 +164,15 @@ class Classifier(nn.Module):
             for task_name, task in self.tasks.items():
                 logger.debug(f"{task.name}: {task.coefficient}")
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
+        self.optimizer = self.hparams.optimizer.add_param_group({"params": self.parameters})
         self.to(self.device)
+
+    def to(self, device: Optional[Union[int, torch.device, Tuple[torch.device]]], *args, **kwargs):
+        if isinstance(device, tuple):         
+            self.encoder.to(device)    
+            self.default_output_head.to(self.out_device)
+        else:
+            super().to(device, *args, **kwargs)
 
 
     def supervised_loss(self, x: Tensor,
@@ -167,7 +186,7 @@ class Classifier(nn.Module):
         loss_f = self.classification_loss
         #input mixup on labeled samples
         if self.hparams.mixup_sup_alpha:
-            x_mixed, loss_f = sup_mixup(x,y, self.hparams.mixup_sup_alpha, device=self.device)
+            x_mixed, loss_f = sup_mixup(x,y, self.hparams.mixup_sup_alpha)
             
         loss = loss_f(y_pred, y)
         metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
@@ -186,15 +205,17 @@ class Classifier(nn.Module):
         if y is not None and y.shape[0] != x.shape[0]:
             raise RuntimeError("Whole batch can either be fully labeled or "
                                "fully unlabeled, but not a mix of both (for now)")
+        
+        self.encoder.to(self.config.device)
         x, y = self.preprocess_inputs(x, y)
         h_x = self.encode(x)
         y_pred = self.logits(h_x)
         
         total_loss = LossInfo(name)
-        total_loss.total_loss = torch.zeros(1, device=self.device)
-        total_loss.tensors["x"] = x.detach()
-        total_loss.tensors["h_x"] = h_x.detach()
-        total_loss.tensors["y_pred"] = y_pred.detach()
+        total_loss.total_loss = torch.zeros(1, device=y_pred.device)
+        total_loss.tensors["x"] = x.detach().cpu()
+        total_loss.tensors["h_x"] = h_x.detach().cpu()
+        total_loss.tensors["y_pred"] = y_pred.detach().cpu()
 
         # TODO: [improvement] Support a mix of labeled / unlabeled data at the example-level.
         if y is not None:
@@ -203,7 +224,7 @@ class Classifier(nn.Module):
 
         for task_name, aux_task in self.tasks.items():
             if aux_task.enabled:
-                aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y)
+                aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y) #), device=self.config.device)
                 total_loss += aux_task_loss
 
         if self.config.debug and self.config.verbose:
@@ -316,9 +337,9 @@ class Classifier(nn.Module):
             logger.debug(f"Creating a new output head for task {task}.")
             new_output_head = OutputHead(
                 input_size=self.hidden_size,
-                output_size=len(task.classes),
+                output_size=len(task.classes), 
                 hparams=self.hparams.output_head,
-            ).to(self.device)
+            ).to(self.out_device)
 
             # Store this new head in the module dict and add params to optimizer.
             self.output_heads[task_str] = new_output_head
@@ -334,7 +355,7 @@ class Classifier(nn.Module):
     def logits(self, h_x: Tensor) -> Tensor:
         if self.hparams.detach_classifier:
             h_x = h_x.detach()
-        return self.classifier(h_x)
+        return self.classifier.to(h_x.device)(h_x)
     
     def load_state_dict(self, state_dict: Dict[str, Tensor], strict: bool=False) -> Tuple[List[str], List[str]]:
         starting_task = self.current_task

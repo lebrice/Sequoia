@@ -21,7 +21,7 @@ class LRannealer(ExperimentAddon):
     @dataclass  
     class Config(ExperimentAddon.Config):
         #lr scheduling: length of learning rate rampup in the beginning (mainly for ICT)
-        lr_rampup_epochs: int = 5
+        lr_rampup_epochs: int = 0
         #length of learning rate cosine rampdown (>= length of training): the epoch at which learning rate reaches to zero (mainly for ICT)
         lr_rampdown_epochs: int = 0 
     config: Config = mutable_field(Config)

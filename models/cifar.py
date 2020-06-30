@@ -24,7 +24,7 @@ class CifarClassifier(Classifier):
                 hidden_size=self.hidden_size,
                 encoder_model=hparams.encoder_model,
                 pretrained=hparams.pretrained_model,
-                freeze_pretrained_weights=hparams.freeze_pretrained_model,                
+                freeze_pretrained_weights=hparams.freeze_pretrained_model             
             )
         else:
             print("Using a simple convnet model")

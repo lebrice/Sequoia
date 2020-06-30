@@ -1,4 +1,5 @@
-import itertools   
+import itertools  
+import copy 
 from collections import defaultdict
 from utils.logging_utils import get_logger
 from collections import OrderedDict
@@ -16,7 +17,7 @@ from utils.logging_utils import cleanup, get_logger
 from utils.utils import add_dicts, add_prefix
 
 from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
-                      get_metrics)
+                      get_metrics, AUCMetric)
 
 logger = get_logger(__file__)
 
@@ -338,30 +339,30 @@ class TrainValidLosses(Serializable):
 #         "valid_losses": valid_losses_dict,
 #     }
 
-@dataclass
-class Meter(Serializable):
+@dataclass 
+class AUC_Meter(Serializable):
     """
     Class to keep runing statistics about performance, such as AUC.
     """ 
-    #store acc histories here to calculate things like auc     
-    acc_sum_dict: Dict[str, Metrics] = field(default_factory=OrderedDict)
-    count_dict: Dict[str, int] = field(default_factory=OrderedDict)
+    acc_sum_dict: Dict[str, float] = field(default_factory=dict)
+    count_dict: Dict[str, int] = field(default_factory=dict)
     
-    def update(self, new_element: LossInfo) -> LossInfo:
+    def update(self, new_element: LossInfo):
         all_metrics = new_element.all_metrics()
-        self.acc_sum_dict = add_dicts(self.acc_sum_dict, all_metrics)
+        #self.acc_sum_dict = add_dicts(self.acc_sum_dict, all_metrics)
         for k, v in all_metrics.items():
-            try:
-                self.count_dict[k]+=1
-            except KeyError:  
-                self.count_dict[k]=1
-
-        new_element.metrics['AUC'] = self.get_auc(all_metrics)
+            if isinstance(v, ClassificationMetrics):
+                try:
+                    self.acc_sum_dict[k]+=copy.deepcopy(v.accuracy)
+                    self.count_dict[k]+=1
+                except KeyError:  
+                    self.acc_sum_dict[k]=copy.deepcopy(v.accuracy)
+                    self.count_dict[k]=1
+        new_element.metrics.update(self.get_auc(all_metrics))
         return new_element
 
-    def get_auc(self, all_metrics: Dict[str, Metrics]) -> Dict[str,float]:
+    def get_auc(self, all_metrics) -> Dict[str, float]:
         res = {}
-        for k,v in all_metrics.items():
-            if isinstance(self.acc_sum_dict[k], ClassificationMetrics):
-                res[k] = self.acc_sum_dict[k].accuracy/self.count_dict[k]
+        for k, v in all_metrics.items():
+                res[f'AUC/{k}'] = AUCMetric(auc = self.acc_sum_dict[k]/self.count_dict[k])
         return res
