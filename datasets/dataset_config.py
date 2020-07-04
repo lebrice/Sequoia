@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Optional, Tuple, Type
+from typing import Callable, Optional, Tuple, Type, Union
 
 import numpy as np
 import torch
@@ -28,11 +28,12 @@ class DatasetConfig(Serializable):
     transforms: Optional[Callable] = ToTensor()
     target_transforms: Optional[Callable] = None
     # Wether we want to load the dataset to memory.
-    keep_in_memory: bool = True
+    keep_in_memory: bool = False
 
-    def load(self, data_dir: Path, download: bool=True) -> Tuple[Dataset, Dataset]:
+    def load(self, data_dir: Union[str,Path], download: bool=True) -> Tuple[Dataset, Dataset]:
         """ Downloads the corresponding train & test datasets and returns them.
         """
+        data_dir = str(data_dir)
         # Use the data_dir argument if given, otherwise use "./data"
         train = self.dataset_class(data_dir, train=True,  download=download, transform=self.transforms)
         test  = self.dataset_class(data_dir, train=False, download=download, transform=self.transforms)

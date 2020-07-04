@@ -5,7 +5,8 @@ from typing import Callable, Optional, TypeVar, Union
 import torch
 from simple_parsing import choice
 from torch import nn
-
+from utils.logging_utils import get_logger
+logger = get_logger(__file__)
 
 def get_pretrained_encoder(hidden_size: int,
                            encoder_model: Callable,
@@ -31,9 +32,9 @@ def get_pretrained_encoder(hidden_size: int,
         nn.Module: the pretrained encoder, with the classification head removed.
     """
 
-    print("Using encoder model", encoder_model.__name__,
-          "pretrained: ", pretrained,
-          "freezing the pretrained weights: ", freeze_pretrained_weights)
+    logger.debug(f"Using encoder model {encoder_model.__name__}")
+    logger.debug(f"pretrained: {pretrained}")
+    logger.debug(f"freezing the pretrained weights: {freeze_pretrained_weights}")
 
     encoder = encoder_model(pretrained=pretrained)
 
@@ -66,7 +67,7 @@ def get_pretrained_encoder(hidden_size: int,
 
     if new_classifier:
         setattr(encoder, attr, new_classifier)
-        print(f"Replaced the attribute '{attr}' of the {encoder_model.__name__} model with a new classifier: {new_classifier}")
+        logger.debug(f"Replaced the attribute '{attr}' of the {encoder_model.__name__} model with a new classifier: {new_classifier}")
     else:
         warnings.warn(
             f"Can't detect the hidden size of the model '{encoder_model.__name__}'!"
