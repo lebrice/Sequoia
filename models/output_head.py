@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import List
 from simple_parsing import list_field
 from utils.json_utils import Serializable
-from torch.nn import Flatten
+from torch.nn import Flatten  # type: ignore
 
 
 class OutputHead(nn.Module):

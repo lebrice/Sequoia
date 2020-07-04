@@ -1,7 +1,6 @@
 import itertools
-from utils.logging_utils import get_logger
 from collections import OrderedDict
-from dataclasses import InitVar, asdict, dataclass, field
+from dataclasses import InitVar, asdict, dataclass
 from pathlib import Path
 from typing import (Any, Dict, Iterable, List, Optional, Set, Tuple, TypeVar,
                     Union)
@@ -9,9 +8,10 @@ from typing import (Any, Dict, Iterable, List, Optional, Set, Tuple, TypeVar,
 import torch
 from torch import Tensor
 
+from simple_parsing import field, mutable_field
 from utils.json_utils import Serializable
+from utils.logging_utils import cleanup, get_logger
 from utils.utils import add_dicts, add_prefix
-from utils.logging_utils import cleanup
 
 from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                       get_metrics)
@@ -27,9 +27,9 @@ class LossInfo(Serializable):
     name: str = ""
     coefficient: Union[float, Tensor] = 1.0
     total_loss: Tensor = 0.  # type: ignore
-    losses:  Dict[str, "LossInfo"] = field(default_factory=OrderedDict)
-    tensors: Dict[str, Tensor] = field(default_factory=OrderedDict, repr=False)
-    metrics: Dict[str, Metrics] = field(default_factory=OrderedDict)
+    losses:  Dict[str, "LossInfo"] = mutable_field(OrderedDict)
+    tensors: Dict[str, Tensor]     = mutable_field(OrderedDict, repr=False, to_dict=False)
+    metrics: Dict[str, Metrics]    = mutable_field(OrderedDict)
 
     x:      InitVar[Optional[Tensor]] = None
     h_x:    InitVar[Optional[Tensor]] = None
@@ -170,34 +170,8 @@ class LossInfo(Serializable):
         ])
 
     def to_log_dict(self, verbose: bool=False) -> Dict[str, Union[str, float, Dict]]:
-        log_dict: Dict[str, Union[str, float, Dict]] = OrderedDict()
-        log_dict["name"] = self.name
-        # Log the total loss
-        log_dict["total_loss"] = float(self.total_loss)
-        
-        # Log the metrics
-        metrics: Dict[str, Dict] = OrderedDict()
-        for metric_name, metric in self.metrics.items():
-            metric_log_dict = metric.to_log_dict(verbose=verbose)
-            if metric_name not in metrics:
-                metrics[metric_name] = OrderedDict()
-            metrics[metric_name].update(metric_log_dict)
-        log_dict["metrics"] = metrics
-
-        tensors: Dict[str, List] = OrderedDict()
-        if verbose:
-            for name, tensor in self.tensors.items():
-                tensors[name] = tensor.tolist()
-        log_dict["tensors"] = tensors
-
-        # Add the loss components as nested dicts, each with their own loss and metrics.
-        losses: Dict[str, Dict] = OrderedDict()
-        for name, loss_info in self.losses.items():
-            subloss_log_dict = loss_info.to_log_dict(verbose=verbose)
-            losses[name] = subloss_log_dict
-        log_dict["losses"] = losses
-
-        return log_dict
+        # TODO: Could also produce some wandb plots and stuff here
+        return self.to_dict()
 
     def to_pbar_message(self):
         """ Smaller, less-detailed version of `self.to_log_dict()` (doesn't recurse into sublosses)
@@ -245,7 +219,18 @@ class LossInfo(Serializable):
             (k.replace(old_name, new_name), v) for k, v in other.losses.items() 
         ])
         self += new_other
-
+    
+    def all_metrics(self) -> Dict[str, Metrics]:
+        result: Dict[str, Metrics] = {}
+        result.update(self.metrics)
+        for name, loss in self.losses.items():
+            result.update(loss.all_metrics())
+        if self.name:
+            prefix = self.name
+            if not prefix.endswith(" "):
+                prefix += " "
+            return add_prefix(result, prefix)
+        return result
 
 
 def get_supervised_metrics(loss: LossInfo, mode: str="Test") -> Union[ClassificationMetrics, RegressionMetrics]:

@@ -259,6 +259,7 @@ class ReplayAddon(ExperimentAddon):
             buffer_load_path = path.parent / "replay_buffer.pth"
             if buffer_load_path.exists():
                 state.replay_buffer = torch.load(buffer_load_path)
+            return state
 
     config: Config = mutable_field(Config)
     state: State = mutable_field(State, init=False)
