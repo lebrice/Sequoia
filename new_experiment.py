@@ -3,7 +3,7 @@ import random
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Dict, List, Optional, Type, Union
+from typing import Dict, List, Optional, Type, Union, Any
 
 import numpy as np
 import pytorch_lightning as pl
@@ -22,7 +22,7 @@ from torchvision.datasets import MNIST
 from config.pl_config import TrainerConfig, WandbLoggerConfig
 from datasets import DatasetConfig, Datasets
 from models.pretrained_model import get_pretrained_encoder
-from simple_parsing import ArgumentParser, Serializable, choice, mutable_field
+from simple_parsing import ArgumentParser, Serializable, choice, mutable_field, field
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
@@ -123,7 +123,6 @@ class ExperimentConfig(Serializable):
 
 
 class MnistModel(pl.LightningModule):
-
     def __init__(self, classes: int, hparams: HParams, config: ExperimentConfig):
         super().__init__()
         self.classes = classes
@@ -132,8 +131,9 @@ class MnistModel(pl.LightningModule):
         self.config = config
         self.acc = metrics.Accuracy()
         self.cm = metrics.ConfusionMatrix()
-
         self.save_hyperparameters()
+        self.batch_size = self.hp.batch_size
+
         self.encoder = get_pretrained_encoder(
             hidden_size=self.hp.hidden_size,
             encoder_model=self.hp.encoder_model,
@@ -145,6 +145,22 @@ class MnistModel(pl.LightningModule):
             nn.Linear(self.hp.hidden_size, self.classes),
             nn.ReLU(),
         )
+
+    @property
+    def batch_size(self) -> int:
+        return self.hp.batch_size
+
+    @batch_size.setter
+    def batch_size(self, value: int) -> None:
+        self.hp.batch_size = value 
+    
+    @property
+    def learning_rate(self) -> float:
+        return self.hp.learning_rate
+    
+    @learning_rate.setter
+    def learning_rate(self, value: float) -> None:
+        self.hp.learning_rate = value
 
     def forward(self, x):
         h_x = self.encoder(x)
@@ -269,7 +285,7 @@ class Experiment(Serializable):
         # most basic trainer, uses good defaults
         trainer = self.config.make_trainer()
         trainer.fit(model)
-        trainer.test()
+        # trainer.test(model)
         # trainer.save_checkpoint("test")
         # MnistModel.load_from_checkpoint("test")
 

@@ -51,7 +51,7 @@ class Pickleable():
         """ We implement this to just make sure to detach the tensors if any
         before pickling.
         """
-        logger.debug(f"__getstate__ was called.")
+        # logger.debug(f"__getstate__ was called.")
         # Use `vars(self)`` to get all the attributes, not just the fields.
         d = vars(self)
         return cpu(detach(d))
@@ -60,8 +60,7 @@ class Pickleable():
         return d
 
     def __setstate__(self, state: Dict):
-        logger.debug(f"setstate was called")
-        logger.debug(f"type(self): {type(self)}, keys in the state object: {state.keys()}")
+        # logger.debug(f"__setstate__ was called")
         self.__dict__.update(state)
 
     def detach(self):

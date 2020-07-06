@@ -77,7 +77,10 @@ class TrainerConfig(Serializable):
     num_nodes: int = 1
     distributed_backend: str = "dp"
     log_gpu_memory: bool = False
+    
     auto_scale_batch_size: Optional[str] = None
+    
+    auto_lr_find: bool = False
 
     def make_trainer(self, logger: WandbLogger=None) -> Trainer:
         return Trainer(
@@ -90,6 +93,7 @@ class TrainerConfig(Serializable):
             overfit_batches=self.overfit_batches,
             fast_dev_run=self.fast_dev_run,
             auto_scale_batch_size=self.auto_scale_batch_size,
+            auto_lr_find=self.auto_lr_find,
         )
 
 
