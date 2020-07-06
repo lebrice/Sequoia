@@ -9,17 +9,7 @@ from torchvision.transforms import Compose, Resize, ToTensor
 from .dataset_config import DatasetConfig
 from .imagenet import ImageNetConfig
 import torch
-
-class FixChannels:
-    def __call__(self, x: Tensor) -> Tensor:
-        if x.ndim == 2:
-            x = x.reshape([1, *x.shape])
-            x = x.repeat(3, 1, 1)
-        if x.ndim == 3 and x.shape[0] == 1:
-            x = x.repeat(3, 1, 1)
-        if x.ndim == 4 and x.shape[1] == 1:
-            x = x.repeat(1, 3, 1, 1)
-        return x
+from .data_utils import FixChannels
 
 
 class Datasets(Enum):

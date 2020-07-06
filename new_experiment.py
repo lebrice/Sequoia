@@ -6,21 +6,26 @@ from pathlib import Path
 from typing import Dict, List, Optional, Type, Union
 
 import numpy as np
-import torch
-from torch import nn, optim
-from torch.nn import functional as F
-from torch.optim import Optimizer
-from torch.utils.data import DataLoader, Dataset
-from torchvision import models as tv_models, transforms
-from torchvision.datasets import MNIST
-
 import pytorch_lightning as pl
-from datasets import DatasetConfig, Datasets
-from models.pretrained_model import get_pretrained_encoder
+import torch
 from pytorch_lightning import Trainer
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning import metrics
+from torch import Tensor, nn, optim
+from torch.nn import functional as F
+from torch.optim import Optimizer  # type: ignore
+from torch.utils.data import DataLoader, Dataset
+from torchvision import models as tv_models
+from torchvision import transforms
+from torchvision.datasets import MNIST
+
+from config.pl_config import TrainerConfig, WandbLoggerConfig
+from datasets import DatasetConfig, Datasets
+from models.pretrained_model import get_pretrained_encoder
 from simple_parsing import ArgumentParser, Serializable, choice, mutable_field
+from utils.logging_utils import get_logger
+
+logger = get_logger(__file__)
 
 
 @dataclass
@@ -29,7 +34,10 @@ class HParams(Serializable):
     # Batch size. TODO: Do we need to change this when using dp or ddp?
     batch_size: int = 64
 
-    # Number of hidden units (before the output head)
+    # Number of hidden units (before the output head).
+    # TODO: Should we use the hidden size of the pretrained encoder instead?
+    # (At the moment, we create an additional Linear layer to map from the
+    # hidden size of the pretrained encoder to our hidden_size.
     hidden_size: int = 2048
 
     # Which optimizer to use.
@@ -37,6 +45,8 @@ class HParams(Serializable):
         "sgd": optim.SGD,
         "adam": optim.Adam,
     }, default="adam")
+
+    # Learning rate of the optimizer.
     learning_rate: float = 0.001
     # L2 regularization term for the model weights.
     weight_decay: float = 1e-6
@@ -65,69 +75,59 @@ class HParams(Serializable):
 
 
 @dataclass
-class Config(Serializable):
+class ExperimentConfig(Serializable):
     """ Options related to the experimental setup. """
-    project: str = "PL-testing"
-    run_name: str = "testing"
-
-    
     # Which dataset to use.
     dataset: DatasetConfig = choice({
         d.name: d.value for d in Datasets
-    }, default=Datasets.mnist.value)
+    }, default=Datasets.mnist.name)
     
-    log_dir: Path = Path("results")
+    log_dir_root: Path = Path("results")
     data_dir: Path = Path("data")
 
-    overfit_batches: Union[int, float] = 0.
     debug: bool = False
-    fast_dev_run: bool = False
+    
+    # Number of workers for the dataloaders.
+    num_workers: int = torch.get_num_threads()
 
-    max_epochs: int = 10
     seed: int = 0
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_workers: int = torch.get_num_threads()
-    num_gpus: int = torch.cuda.device_count()
-    num_nodes: int = 1
-    distributed_backend: str = "dp"
-
+    # Options for wandb logging.
+    wandb: WandbLoggerConfig = mutable_field(WandbLoggerConfig)
+    # Options for the trainer.
+    trainer: TrainerConfig = mutable_field(TrainerConfig)
+    
     def __post_init__(self):
         self.set_seed()
+    
+    @property
+    def log_dir(self):
+        return self.log_dir_root.joinpath(
+            (self.wandb.project or ""),
+            (self.wandb.group or ""),
+            (self.wandb.run_name or ""),
+            self.wandb.run_id,
+        )
+
+    def make_trainer(self) -> Trainer:
+        logger = None if self.debug else self.wandb.make_logger(self.log_dir_root)
+        trainer = self.trainer.make_trainer(logger=logger)
+        return trainer
 
     def set_seed(self):
         random.seed(self.seed)
         np.random.seed(self.seed)
         torch.manual_seed(self.seed)
-        torch.cuda.manual_seed_all(self.seed)
-    
-    def get_logger(self) -> pl_loggers.LightningLoggerBase:
-        self.log_dir.mkdir(exist_ok=True, parents=True)
-        print(f"creating a logger for log_dir {self.log_dir}")
-        if self.debug:
-            return None
-        logger = pl_loggers.WandbLogger(
-            name=self.run_name,
-            save_dir=str(self.log_dir),
-            # offline=self.offline,
-            # id=self.id,
-            # anonymous=self.anonymous,
-            # version=self.version,
-            project=self.project,
-            # tags=self.tags,
-            # log_model=self.log_model,
-            # experiment=experiment,
-            # entity=self.entity,
-            # group=self.group,
-        )
-        return logger
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(self.seed)
 
 
 class MnistModel(pl.LightningModule):
 
-    def __init__(self, classes: int, hparams: HParams, config: Config):
+    def __init__(self, classes: int, hparams: HParams, config: ExperimentConfig):
         super().__init__()
         self.classes = classes
-        self.hp : HParams = hparams or HParams()
+        self.hp : HParams = hparams
         # self.hparams: HParams = self.hp.to_dict()
         self.config = config
         self.acc = metrics.Accuracy()
@@ -141,7 +141,7 @@ class MnistModel(pl.LightningModule):
             freeze_pretrained_weights=False,                
         )
         self.output = nn.Sequential(
-            nn.Flatten(),
+            nn.Flatten(),  # type: ignore
             nn.Linear(self.hp.hidden_size, self.classes),
             nn.ReLU(),
         )
@@ -154,27 +154,72 @@ class MnistModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
-        loss = F.cross_entropy(y_hat, y)
         y_pred = torch.argmax(y_hat, dim=1)
+        loss = F.cross_entropy(y_hat, y)
         logs = {
             "train_loss": loss,
-            "accuracy": self.acc(y_pred, y),
+            "train_acc": self.acc(y_pred, y),
         }
-        return {"loss": loss, "log": logs}
+        return {"loss": loss, "log": logs, 'progress_bar': logs}
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
+        y_pred = torch.argmax(y_hat, dim=1)
         loss = F.cross_entropy(y_hat, y)
-        logs = {"val_loss": loss}
-        return {"loss": loss, "log": logs}
+        logs = {
+            "val_loss": loss,
+            "val_acc": self.acc(y_pred, y),
+        }
+        return {"loss": loss, "log": logs, 'progress_bar': logs}
 
     def test_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
+        y_pred = torch.argmax(y_hat, dim=1)
         loss = F.cross_entropy(y_hat, y)
-        logs = {"test_loss": loss}
+        logs = {
+            "test_loss": loss,
+            "test_acc": self.acc(y_pred, y),
+        }
         return {"loss": loss, "log": logs}
+
+    def validation_epoch_end(
+            self,
+            outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
+    ) -> Dict[str, Dict[str, Tensor]]:
+        logs: List[Dict[str, Tensor]] = [
+            output["log"] for output in outputs
+        ]
+        test_acc_mean = sum(log["val_acc"] for log in logs)
+        test_acc_mean /= len(outputs)
+        tqdm_dict = {'val_acc': test_acc_mean.item()}
+
+        # show test_loss and test_acc in progress bar but only log test_loss
+        results = {
+            'progress_bar': tqdm_dict,
+            'log': {'val_acc': test_acc_mean.item()}
+        }
+        return results
+
+    
+    def test_epoch_end(
+            self,
+            outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
+    ) -> Dict[str, Dict[str, Tensor]]:
+        logs: List[Dict[str, Tensor]] = [
+            output["log"] for output in outputs
+        ]
+        test_acc_mean = sum(log["test_acc"] for log in logs)
+        test_acc_mean /= len(outputs)
+        tqdm_dict = {'test_acc': test_acc_mean.item()}
+
+        # show test_loss and test_acc in progress bar but only log test_loss
+        results = {
+            'progress_bar': tqdm_dict,
+            'log': {'test_acc': test_acc_mean.item()}
+        }
+        return results
 
     def configure_optimizers(self):
         return self.hp.make_optimizer(self.parameters(), lr=0.001)
@@ -206,7 +251,7 @@ class MnistModel(pl.LightningModule):
     def _get_dataloader(self, dataset: Dataset) -> DataLoader:
         return DataLoader(
             dataset,
-            batch_size=self.hp.batch_size * (self.config.num_gpus or 1),
+            batch_size=self.hp.batch_size,
             num_workers=self.config.num_workers,
         )
 
@@ -216,28 +261,17 @@ class Experiment(Serializable):
     # HyperParameters of the model/experiment.
     hparams: HParams = mutable_field(HParams)
     # Configuration options for an experiment (log_dir, etc.)
-    config: Config = mutable_field(Config)
+    config: ExperimentConfig = mutable_field(ExperimentConfig)
 
-    
     def launch(self):
         dataset: DatasetConfig = self.config.dataset
-
         model = MnistModel(classes=dataset.num_classes, hparams=self.hparams, config=self.config)
         # most basic trainer, uses good defaults
-        trainer = Trainer(
-            gpus=self.config.num_gpus,
-            num_nodes=self.config.num_nodes,
-            max_epochs=self.config.max_epochs,
-            distributed_backend=self.config.distributed_backend,
-            logger=self.config.get_logger(),
-            log_gpu_memory=True,
-            overfit_batches=self.config.overfit_batches,
-            fast_dev_run=self.config.fast_dev_run,
-        )
+        trainer = self.config.make_trainer()
         trainer.fit(model)
         trainer.test()
-        trainer.save_checkpoint("test")
-        MnistModel.load_from_checkpoint("test")
+        # trainer.save_checkpoint("test")
+        # MnistModel.load_from_checkpoint("test")
 
 
 if __name__ == "__main__":

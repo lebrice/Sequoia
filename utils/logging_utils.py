@@ -22,23 +22,23 @@ def pbar(dataloader: Iterable[T], description: str="", *args, **kwargs) -> Itera
 
 
 def get_logger(name: str) -> logging.Logger:
-        """ Gets a logger for the given file. Sets a nice default format. 
-        TODO: figure out if we should add handlers, etc. 
-        """
-        try:
-            p = Path(name)
-            if p.exists():
-                name = str(p.absolute().relative_to(Path.cwd()).as_posix())
-        except:
-            pass
-        from sys import argv
-            
-        logger = root_logger.getChild(name)
-        if "-d" in argv or "--debug" in argv:
-            logger.setLevel(logging.DEBUG)
-        # logger = logging.getLogger(name)
-        # logger.addHandler(TqdmLoggingHandler())
-        return logger
+    """ Gets a logger for the given file. Sets a nice default format. 
+    TODO: figure out if we should add handlers, etc. 
+    """
+    try:
+        p = Path(name)
+        if p.exists():
+            name = str(p.absolute().relative_to(Path.cwd()).as_posix())
+    except:
+        pass
+    from sys import argv
+        
+    logger = root_logger.getChild(name)
+    if "-d" in argv or "--debug" in argv:
+        logger.setLevel(logging.DEBUG)
+    # logger = logging.getLogger(name)
+    # logger.addHandler(TqdmLoggingHandler())
+    return logger
 
 
 def get_new_file(file: Path) -> Path:
