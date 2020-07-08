@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Type, Union, Any
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning import Trainer
+from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning import metrics
 from torch import Tensor, nn, optim
@@ -27,7 +27,6 @@ from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
-
 @dataclass
 class HParams(Serializable):
     """ Model/Experiment Hyperparameters. """
@@ -44,6 +43,7 @@ class HParams(Serializable):
     optimizer: Type[Optimizer] = choice({
         "sgd": optim.SGD,
         "adam": optim.Adam,
+        "rmsprop": optim.RMSprop,
     }, default="adam")
 
     # Learning rate of the optimizer.
@@ -62,8 +62,8 @@ class HParams(Serializable):
         "alexnet": tv_models.alexnet,
         "densenet": tv_models.densenet161,
     }, default="resnet18")
-    # Use the pretrained weights of the ImageNet model from torchvision.
-    pretrained_model: bool = False
+    # Retrain the encoder from scratch.
+    not_pretrained: bool = False
 
     def make_optimizer(self, *args, **kwargs) -> Optimizer:
         options = {
@@ -72,7 +72,6 @@ class HParams(Serializable):
         }
         options.update(kwargs)
         return self.optimizer(*args, **options)
-
 
 @dataclass
 class ExperimentConfig(Serializable):
@@ -98,7 +97,7 @@ class ExperimentConfig(Serializable):
     trainer: TrainerConfig = mutable_field(TrainerConfig)
     
     def __post_init__(self):
-        self.set_seed()
+        seed_everything(self.seed)
     
     @property
     def log_dir(self):
@@ -114,18 +113,24 @@ class ExperimentConfig(Serializable):
         trainer = self.trainer.make_trainer(logger=logger)
         return trainer
 
-    def set_seed(self):
-        random.seed(self.seed)
-        np.random.seed(self.seed)
-        torch.manual_seed(self.seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(self.seed)
+
+from pl_bolts.models.self_supervised import CPCV2
+from pl_bolts.models.self_supervised import SimCLR
+from pl_bolts.models.self_supervised.simclr import SimCLREvalDataTransform, SimCLRTrainDataTransform
+
+from pl_bolts.datamodules import LightningDataModule, MNISTDataModule
+from pathlib import Path
+
+data_dir = Path("data")
+data_module = MNISTDataModule(data_dir, val_split=5000, num_workers=16, normalize=False)
+from pl_bolts.models.self_supervised import CPCV2
 
 
-class MnistModel(pl.LightningModule):
-    def __init__(self, classes: int, hparams: HParams, config: ExperimentConfig):
+class SelfSupervisedClassifierModel(pl.LightningModule):
+    def __init__(self, data_module: LightningDataModule, hparams: HParams, config: ExperimentConfig):
         super().__init__()
-        self.classes = classes
+        self.data_module = data_module
+        self.classes = data_module.
         self.hp : HParams = hparams
         # self.hparams: HParams = self.hp.to_dict()
         self.config = config
@@ -134,12 +139,21 @@ class MnistModel(pl.LightningModule):
         self.save_hyperparameters()
         self.batch_size = self.hp.batch_size
 
-        self.encoder = get_pretrained_encoder(
-            hidden_size=self.hp.hidden_size,
-            encoder_model=self.hp.encoder_model,
-            pretrained=self.hp.pretrained_model,
-            freeze_pretrained_weights=False,                
-        )
+        self.data_module = data_module
+
+
+        # load resnet18 pretrained using CPC on imagenet
+        model = CPCV2(pretrained='resnet18')
+        cpc_resnet18 = model.encoder
+        cpc_resnet18.freeze()
+        self.encoder = cpc_resnet18
+
+        # self.encoder = get_pretrained_encoder(
+        #     hidden_size=self.hp.hidden_size,
+        #     encoder_model=self.hp.encoder_model,
+        #     pretrained=self.hp.pretrained_model,
+        #     freeze_pretrained_weights=False,                
+        # )
         self.output = nn.Sequential(
             nn.Flatten(),  # type: ignore
             nn.Linear(self.hp.hidden_size, self.classes),

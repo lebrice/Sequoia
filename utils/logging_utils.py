@@ -1,7 +1,10 @@
+import inspect
 import logging
+from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, TypeVar, Union
+from typing import Any, Callable, Dict, Iterable, List, TypeVar, Union
 
+import torch.multiprocessing as mp
 import tqdm
 
 logging.basicConfig(
@@ -21,24 +24,61 @@ def pbar(dataloader: Iterable[T], description: str="", *args, **kwargs) -> Itera
     return pbar
 
 
-def get_logger(name: str) -> logging.Logger:
+def get_logger(name: str, level: int=None) -> logging.Logger:
     """ Gets a logger for the given file. Sets a nice default format. 
     TODO: figure out if we should add handlers, etc. 
     """
+    name_is_path: bool = False
     try:
         p = Path(name)
         if p.exists():
             name = str(p.absolute().relative_to(Path.cwd()).as_posix())
+            name_is_path = True
     except:
         pass
     from sys import argv
         
     logger = root_logger.getChild(name)
-    if "-d" in argv or "--debug" in argv:
-        logger.setLevel(logging.DEBUG)
+    if level is None and "-d" in argv or "--debug" in argv:
+        level = logging.DEBUG
+    if level is None:
+        level = logging.INFO
+    logger.setLevel(level)
+
+    # if the name is already something like foo.py:256
+    if not name_is_path and name[-1].isdigit():
+        formatter = logging.Formatter('%(asctime)s, %(levelname)-8s log [%(name)s] %(message)s')
+        sh = logging.StreamHandler(sys.stdout)
+        sh.setFormatter(formatter)
+        sh.setLevel(level)
+        logger.addHandler(sh)
     # logger = logging.getLogger(name)
     # logger.addHandler(TqdmLoggingHandler())
     return logger
+import sys
+
+def log(function: Callable, level=logging.INFO) -> Callable:
+    """ Decorates a function and logs the calls to it and the passed args. """
+    
+    callerframerecord = inspect.stack()[1]    # 0 represents this line
+                                            # 1 represents line at caller
+    frame = callerframerecord[0]
+    info = inspect.getframeinfo(frame)
+
+    p = Path(info.filename)
+    name = str(p.absolute().relative_to(Path.cwd()).as_posix())
+    logger = get_logger(f"{name}:{info.lineno}")
+    @wraps(function)
+    def _wrapped(*args, **kwargs):
+        process_name = mp.current_process().name
+        logger.log(level, (
+            f"Process {process_name} called {function.__name__} with "
+            f"args={args} and kwargs={kwargs}."
+        ))
+        return function(*args, **kwargs)
+    return _wrapped
+
+
 
 
 def get_new_file(file: Path) -> Path:
