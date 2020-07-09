@@ -3,14 +3,21 @@ import random
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Dict, List, Optional, Type, Union, Any
+from typing import Any, Dict, List, Optional, Type, Union
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning import Trainer, seed_everything
+from pl_bolts.datamodules import (CIFAR10DataModule, FashionMNISTDataModule,
+                                  ImagenetDataModule, LightningDataModule,
+                                  MNISTDataModule, SSLImagenetDataModule)
+from pl_bolts.models import LogisticRegression
+from pl_bolts.models.self_supervised import CPCV2, SimCLR
+from pl_bolts.models.self_supervised.simclr import (SimCLREvalDataTransform,
+                                                    SimCLRTrainDataTransform)
+from pytorch_lightning import Trainer
 from pytorch_lightning import loggers as pl_loggers
-from pytorch_lightning import metrics
+from pytorch_lightning import metrics, seed_everything
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 from torch.optim import Optimizer  # type: ignore
@@ -22,7 +29,8 @@ from torchvision.datasets import MNIST
 from config.pl_config import TrainerConfig, WandbLoggerConfig
 from datasets import DatasetConfig, Datasets
 from models.pretrained_model import get_pretrained_encoder
-from simple_parsing import ArgumentParser, Serializable, choice, mutable_field, field
+from simple_parsing import (ArgumentParser, Serializable, choice, field,
+                            mutable_field)
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
@@ -73,13 +81,20 @@ class HParams(Serializable):
         options.update(kwargs)
         return self.optimizer(*args, **options)
 
+
 @dataclass
 class ExperimentConfig(Serializable):
     """ Options related to the experimental setup. """
     # Which dataset to use.
-    dataset: DatasetConfig = choice({
-        d.name: d.value for d in Datasets
-    }, default=Datasets.mnist.name)
+    # TODO: Eventually switch this to the type of 'Environment' data module to use.
+    # TODO: Rework DatasetConfig so that you can choose the train/val/test augments, etc.
+    # TODO: Rework DatasetConfig so they give LightningDataModule instances instead of Datasets directly. 
+    dataset: Type[LightningDataModule] = choice({
+        "mnist": MNISTDataModule,
+        "cifar10": CIFAR10DataModule,
+        "fashion-mnist": FashionMNISTDataModule,
+        "imagenet": ImagenetDataModule,
+    }, default="mnist")
     
     log_dir_root: Path = Path("results")
     data_dir: Path = Path("data")
@@ -113,47 +128,33 @@ class ExperimentConfig(Serializable):
         trainer = self.trainer.make_trainer(logger=logger)
         return trainer
 
-
-from pl_bolts.models.self_supervised import CPCV2
-from pl_bolts.models.self_supervised import SimCLR
-from pl_bolts.models.self_supervised.simclr import SimCLREvalDataTransform, SimCLRTrainDataTransform
-
-from pl_bolts.datamodules import LightningDataModule, MNISTDataModule
-from pathlib import Path
-
-data_dir = Path("data")
-data_module = MNISTDataModule(data_dir, val_split=5000, num_workers=16, normalize=False)
-from pl_bolts.models.self_supervised import CPCV2
-
+    def make_datamodule(self) -> LightningDataModule:
+        """Creates the datamodule depending on the value of 'dataset' attribute.
+        """
+        return self.dataset(self.data_dir, num_workers=self.num_workers)
+        
 
 class SelfSupervisedClassifierModel(pl.LightningModule):
-    def __init__(self, data_module: LightningDataModule, hparams: HParams, config: ExperimentConfig):
+    def __init__(self, hparams: HParams, config: ExperimentConfig):
         super().__init__()
-        self.data_module = data_module
-        self.classes = data_module.
         self.hp : HParams = hparams
-        # self.hparams: HParams = self.hp.to_dict()
         self.config = config
+        self.data_module: LightningDataModule = self.config.make_datamodule()
+        
+        self.save_hyperparameters()
+        # Metrics from the pytorch-lightning package.
+        # TODO: Not sure how useful they really are or how to properly use them.
         self.acc = metrics.Accuracy()
         self.cm = metrics.ConfusionMatrix()
-        self.save_hyperparameters()
-        self.batch_size = self.hp.batch_size
 
-        self.data_module = data_module
-
-
-        # load resnet18 pretrained using CPC on imagenet
-        model = CPCV2(pretrained='resnet18')
-        cpc_resnet18 = model.encoder
-        cpc_resnet18.freeze()
-        self.encoder = cpc_resnet18
-
-        # self.encoder = get_pretrained_encoder(
-        #     hidden_size=self.hp.hidden_size,
-        #     encoder_model=self.hp.encoder_model,
-        #     pretrained=self.hp.pretrained_model,
-        #     freeze_pretrained_weights=False,                
-        # )
+        self.classes = self.data_module.num_classes
+        self.encoder = get_pretrained_encoder(
+            hidden_size=self.hp.hidden_size,
+            encoder_model=self.hp.encoder_model,
+            pretrained=not self.hp.not_pretrained,
+            freeze_pretrained_weights=False,                
+        )
+        self.hp.hidden_size = 512
         self.output = nn.Sequential(
             nn.Flatten(),  # type: ignore
             nn.Linear(self.hp.hidden_size, self.classes),
@@ -178,6 +179,8 @@ class SelfSupervisedClassifierModel(pl.LightningModule):
 
     def forward(self, x):
         h_x = self.encoder(x)
+        if isinstance(h_x, list) and len(h_x) == 1:
+            h_x = h_x[0]
         y_pred = self.output(h_x)
         return y_pred
 
@@ -256,33 +259,21 @@ class SelfSupervisedClassifierModel(pl.LightningModule):
 
     def prepare_data(self):
         # download
-        self.config.dataset.load(data_dir=self.config.data_dir, download=True)
+        self.data_module.prepare_data()
 
-    def setup(self, stage):
-        train, test = self.config.dataset.load(data_dir=self.config.data_dir, download=False)
-        n_train = int(0.8 * len(train))
-        n_valid = len(train) - n_train
-        # train/val split
-        train, valid = torch.utils.data.random_split(train, [n_train, n_valid])
-        # assign to use in dataloaders
-        self.train_dataset = train
-        self.valid_dataset = valid
-        self.test_dataset = test
-
-    def train_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        return self._get_dataloader(self.train_dataset)
+    def train_dataloader(self, **kwargs) -> Union[DataLoader, List[DataLoader]]:
+        return self.data_module.train_dataloader(
+            batch_size=self.hp.batch_size,
+        )
     
-    def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        return self._get_dataloader(self.valid_dataset)
+    def val_dataloader(self, **kwargs) -> Union[DataLoader, List[DataLoader]]:
+        return self.data_module.val_dataloader(
+            batch_size=self.hp.batch_size,
+        )
     
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        return self._get_dataloader(self.test_dataset)
-
-    def _get_dataloader(self, dataset: Dataset) -> DataLoader:
-        return DataLoader(
-            dataset,
+        return self.data_module.test_dataloader(
             batch_size=self.hp.batch_size,
-            num_workers=self.config.num_workers,
         )
 
 
@@ -294,8 +285,7 @@ class Experiment(Serializable):
     config: ExperimentConfig = mutable_field(ExperimentConfig)
 
     def launch(self):
-        dataset: DatasetConfig = self.config.dataset
-        model = MnistModel(classes=dataset.num_classes, hparams=self.hparams, config=self.config)
+        model = SelfSupervisedClassifierModel(hparams=self.hparams, config=self.config)
         # most basic trainer, uses good defaults
         trainer = self.config.make_trainer()
         trainer.fit(model)

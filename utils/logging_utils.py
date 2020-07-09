@@ -12,8 +12,8 @@ logging.basicConfig(
     datefmt='%Y-%m-%d:%H:%M:%S',
     level=logging.INFO,
 )
-# logging.getLogger('simple_parsing').addHandler(logging.NullHandler())
-root_logger = logging.getLogger()
+logging.getLogger('simple_parsing').addHandler(logging.NullHandler())
+root_logger = logging.getLogger("SSCL")
 T = TypeVar("T")
 
 def pbar(dataloader: Iterable[T], description: str="", *args, **kwargs) -> Iterable[T]:

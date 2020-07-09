@@ -15,7 +15,7 @@ decoder_class_for_input_shape: Dict[Tuple[int, int, int], Type[nn.Module]] = {
     Datasets.mnist.value.x_shape: MnistDecoder,
     Datasets.fashion_mnist.value.x_shape: MnistDecoder,
     Datasets.cifar10.value.x_shape: CifarDecoder,
-    Datasets.cifar100.value.x_shape: CifarDecoder,
+    # Datasets.cifar100.value.x_shape: CifarDecoder,
     Datasets.imagenet.value.x_shape: ImageNetDecoder,
 }
 

@@ -1,13 +1,15 @@
-from utils.logging_utils import get_logger
-from typing import Iterable, Iterator, Sized, Tuple, Callable
+from typing import Iterable, Iterator, Sized, Tuple
 
 import numpy as np
-from torch import Tensor
-from torch.utils.data import DataLoader
-from torchvision.datasets import VisionDataset, CIFAR100
 import torch
-from torch import Tensor
+from torch import Tensor, nn
+from torch.utils.data import DataLoader
+from torchvision.datasets import CIFAR100, VisionDataset
+
+from utils.logging_utils import get_logger
+
 from .subset import Subset
+
 logger = get_logger(__file__)
 
 
@@ -63,8 +65,7 @@ def keep_in_memory(dataset: VisionDataset) -> None:
         # TODO: Cifar100 seems to want its 'data' to a numpy ndarray. 
         dataset.data = np.asarray(dataset.data)
 
-
-class FixChannels(Callable[[Tensor], Tensor]):
+class FixChannels(nn.Module):
     def __call__(self, x: Tensor) -> Tensor:
         if x.ndim == 2:
             x = x.reshape([1, *x.shape])
