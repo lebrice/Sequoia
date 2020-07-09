@@ -50,7 +50,7 @@ class DatasetConfig(Serializable):
     """
     Represents all the configuration options related to a Dataset.
     """
-    datamodule_class: Type[LightningDataModule] = choice({
+    dataset: Type[LightningDataModule] = choice({
         "mnist": MNISTDataModule,
         "fashion_mnist": FashionMNISTDataModule,
         "cifar10": CIFAR10DataModule,
@@ -77,7 +77,7 @@ class DatasetConfig(Serializable):
     def load(self, data_dir: Path, valid_fraction: float=0.2) -> LightningDataModule:
         """ Downloads the corresponding train, valid and test datasets and returns them.
         """
-        return self.datamodule_class(
+        return self.dataset(
             data_dir=data_dir,
             train_transforms=self.train_transforms,
             val_transforms=self.valid_transforms,
