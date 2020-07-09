@@ -4,3 +4,6 @@
 [submodule "utils/nngeometry"]
 	path = utils/nngeometry
 	url = https://github.com/tfjgeorge/nngeometry.git
+[submodule "tasks/simclr/falr_nt/falr"]
+	path = tasks/simclr/falr_nt/falr
+	url = https://github.com/nitarshan/falr.git

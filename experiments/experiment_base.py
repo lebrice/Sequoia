@@ -134,7 +134,7 @@ class ExperimentBase(Serializable):
         
         # Background queue and worker for saving stuff to disk asynchronously.
 
-        ctx = mp.get_context("spawn")
+        ctx = mp.get_context("spawn") 
         self.background_queue: ctx.Queue = ctx.Queue()
         self.saver_worker: Optional[SaverWorker] = None
 

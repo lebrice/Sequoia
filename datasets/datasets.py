@@ -5,7 +5,7 @@ from torchvision.datasets import (CIFAR10, CIFAR100, MNIST, FashionMNIST,
 from torchvision.transforms import Compose, Resize, ToTensor
 
 from .dataset_config import DatasetConfig
-from .imagenet import ImageNetConfig
+from .imagenet import ImageNetConfig, ImageNetConfig_Folder
 
 class Datasets(Enum):
     """ Choice of dataset. """

@@ -18,6 +18,7 @@ from .patch_location import PatchLocationTask
 from .reconstruction.ae import AEReconstructionTask
 from .reconstruction.vae import VAEReconstructionTask
 from .simclr.simclr_task_ptl import SimCLRTask
+from .simclr.byol_task import BYOL_Task
 from .transformation_based import (AdjustBrightnessTask,
                                    ClassifyTransformationTask,
                                    RegressTransformationTask, RotationTask)
@@ -41,6 +42,7 @@ class Tasks:
     BRIGHTNESS: ClassVar[str] = "adjust_brightness"
     SIMCLR: ClassVar[str] = "simclr"
     EWC: ClassVar[str] = "ewc"
+    BYOL: ClassVar[str] = "byol"
 
 M = TypeVar("M")
 
@@ -78,6 +80,7 @@ class AuxiliaryTaskOptions:
     brightness:     AdjustBrightnessTask.Options  = mutable_field(AdjustBrightnessTask.Options)
     simclr:         SimCLRTask.Options            = mutable_field(SimCLRTask.Options)
     ewc:            EWC.Options                   = mutable_field(EWC.Options)
+    byol:           BYOL_Task.Options             = mutable_field(BYOL_Task.Options)
 
     def create_tasks(self,
                     input_shape: Tuple[int, ...],
@@ -103,6 +106,8 @@ class AuxiliaryTaskOptions:
             tasks[Tasks.SIMCLR] = SimCLRTask(options=self.simclr)
         if self.ewc:
             tasks[Tasks.EWC] = EWC(options=self.ewc)
+        if self.byol:
+            tasks[Tasks.BYOL] = BYOL_Task(options=self.byol)
         
         for name, task in tasks.items():
             assert isinstance(task, AuxiliaryTask), f"Task {task} should be a subclass of {AuxiliaryTask}."
