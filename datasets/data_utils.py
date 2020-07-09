@@ -7,7 +7,6 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import CIFAR100, VisionDataset
 
 from utils.logging_utils import get_logger
-
 from .subset import Subset
 
 logger = get_logger(__file__)

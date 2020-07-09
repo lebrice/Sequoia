@@ -57,7 +57,7 @@ def get_logger(name: str, level: int=None) -> logging.Logger:
     return logger
 import sys
 
-def log(function: Callable, level=logging.INFO) -> Callable:
+def log_calls(function: Callable, level=logging.INFO) -> Callable:
     """ Decorates a function and logs the calls to it and the passed args. """
     
     callerframerecord = inspect.stack()[1]    # 0 represents this line

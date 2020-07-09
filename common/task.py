@@ -1,7 +1,10 @@
 from dataclasses import dataclass, field
-from simple_parsing import list_field
-from utils.json_utils import Serializable
 from typing import List
+
+from simple_parsing import list_field
+
+from utils.json_utils import Serializable
+
 
 @dataclass
 class Task(Serializable):

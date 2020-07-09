@@ -16,7 +16,7 @@ from torch import Tensor, nn
 from simple_parsing.helpers import Serializable as SerializableBase
 from simple_parsing.helpers import SimpleJsonEncoder, encode
 from simple_parsing.helpers.serialization import encode, register_decoding_fn
-from utils.logging_utils import get_logger
+from .logging_utils import get_logger
 
 T = TypeVar("T")
 logger = get_logger(__file__)
