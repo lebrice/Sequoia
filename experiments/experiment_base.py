@@ -24,7 +24,6 @@ from config import Config as ConfigBase
 
 from datasets import Datasets, DatasetConfig
 
-from datasets.data_utils import train_valid_split
 from datasets.subset import ClassSubset, Subset
 from models.classifier import Classifier
 from simple_parsing import choice, field, mutable_field, subparsers

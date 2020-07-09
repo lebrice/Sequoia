@@ -1,18 +1,69 @@
-from utils.logging_utils import get_logger
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import *
 
 import wandb
+from pytorch_lightning.loggers import WandbLogger
 
 from simple_parsing import field, list_field
 from utils.json_utils import Serializable
+from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
+
+@dataclass
+class WandbLoggerConfig(Serializable):
+    """ Configuration options for the wandb logger of pytorch-lightning. """
+    # Which user to use
+    entity: str = "lebrice"
+    # The name of the project to which this run will belong.
+    project: str = "pl_testing" 
+    # Name used to easily group runs together.
+    # Used to create a parent folder that will contain the `run_name` directory.
+    # A unique string shared by all runs in a given group
+    group: Optional[str] = None
+    # Wandb run name. If None, will use wandb's automatic name generation
+    run_name: Optional[str] = None
+    # Identifier unique to each individual wandb run. When given, will try to
+    # resume the corresponding run, generates a new ID each time.
+    # TODO: Could also use a hash of the hparams, like @nitarshan did.     
+    run_id: str = field(default_factory=wandb.util.generate_id)
+    
+    # Tags to add to this run with wandb.
+    tags: List[str] = list_field()
+    # Notes about this particular experiment. (will be logged to wandb if used.)
+    notes: Optional[str] = None
+    # Run offline (data can be streamed later to wandb servers).
+    offline: bool = False
+    # Enables or explicitly disables anonymous logging.
+    anonymous: bool = False
+    # Sets the version, mainly used to resume a previous run.
+    version: Optional[str] = None
+    # Save checkpoints in wandb dir to upload on W&B servers.
+    log_model: bool = False
+    
+    def make_logger(self, wandb_parent_dir: Path) -> WandbLogger:
+        wandb_logger = WandbLogger(
+            name=self.run_name,
+            save_dir=str(wandb_parent_dir),
+            offline=self.offline,
+            id=self.run_id,
+            anonymous=self.anonymous,
+            version=self.version,
+            project=self.project,
+            tags=self.tags,
+            log_model=self.log_model,
+            entity=self.entity,
+            group=self.group,
+        )
+        return wandb_logger
+
+
 @dataclass
 class WandbConfig(Serializable):
+    """ Set of configurations options for calling wandb.init directly. """
     # Which user to use
     entity: str = "lebrice"
 

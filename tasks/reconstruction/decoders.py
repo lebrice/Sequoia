@@ -5,7 +5,6 @@ from torch import nn
 
 from common.layers import DeConvBlock, Reshape
 from tasks.auxiliary_task import AuxiliaryTask
-from datasets import Datasets
 from abc import ABC, abstractmethod
 
 

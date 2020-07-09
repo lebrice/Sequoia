@@ -1,4 +1,6 @@
-from typing import Iterable, Iterator, Sized, Tuple
+import os
+from pathlib import Path
+from typing import Dict, Iterable, Iterator, Sized, Tuple
 
 import numpy as np
 import torch
@@ -7,6 +9,7 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import CIFAR100, VisionDataset
 
 from utils.logging_utils import get_logger
+
 from .subset import Subset
 
 logger = get_logger(__file__)
@@ -55,7 +58,8 @@ def keep_in_memory(dataset: VisionDataset) -> None:
     
     This has the consequence of keeping the entire dataset in memory.
     """
-    if not isinstance(dataset.data, (np.ndarray, Tensor)):
+
+    if hasattr(dataset, "data") and not isinstance(dataset.data, (np.ndarray, Tensor)):
         dataset.data = torch.as_tensor(dataset.data)
     if not isinstance(dataset.targets, (np.ndarray, Tensor)):
         dataset.targets = torch.as_tensor(dataset.targets)
@@ -63,6 +67,7 @@ def keep_in_memory(dataset: VisionDataset) -> None:
     if isinstance(dataset, CIFAR100):
         # TODO: Cifar100 seems to want its 'data' to a numpy ndarray. 
         dataset.data = np.asarray(dataset.data)
+
 
 class FixChannels(nn.Module):
     def __call__(self, x: Tensor) -> Tensor:
@@ -74,3 +79,22 @@ class FixChannels(nn.Module):
         if x.ndim == 4 and x.shape[1] == 1:
             x = x.repeat(1, 3, 1, 1)
         return x
+
+def get_imagenet_location() -> Path:
+    from socket import gethostname
+    hostname = gethostname()
+    # For each hostname prefix, the location where the torchvision ImageNet dataset can be found.
+    # TODO: Add the location for your own machine.
+    imagenet_locations: Dict[str, Path] = {
+        "mila": Path("/network/datasets/imagenet.var/imagenet_torchvision"),
+        "": Path("/network/datasets/imagenet.var/imagenet_torchvision"),
+    }
+    for prefix, v in imagenet_locations.items():
+        if hostname.startswith(prefix):
+            return v
+    if "IMAGENET_DIR" in os.environ:
+        return Path(os.environ["IMAGENET_DIR"])
+    raise RuntimeError(
+        f"Could not find the ImageNet dataset on this machine with hostname "
+        f"{hostname}. Known <prefix --> location> pairs: {imagenet_locations}"
+    )

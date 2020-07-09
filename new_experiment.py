@@ -26,8 +26,8 @@ from torchvision import models as tv_models
 from torchvision import transforms
 from torchvision.datasets import MNIST
 
-from config.pl_config import TrainerConfig, WandbLoggerConfig
-from datasets import DatasetConfig, Datasets
+from config.pl_config import PLConfig as ConfigBase
+from datasets import DatasetConfig
 from models.pretrained_model import get_pretrained_encoder
 from simple_parsing import (ArgumentParser, Serializable, choice, field,
                             mutable_field)
@@ -35,55 +35,6 @@ from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 from models.classifier import Classifier
-
-
-@dataclass
-class ConfigBase(Serializable):
-    """ Options related to the experimental setup. """
-    # Which dataset to use.
-    # TODO: Eventually switch this to the type of 'Environment' data module to use.
-    # TODO: Rework DatasetConfig so that you can choose the train/val/test augments, etc.
-    # TODO: Rework DatasetConfig so they give LightningDataModule instances instead of Datasets directly. 
-    dataset: DatasetConfig = choice({
-            e.name: e.value for e in Datasets
-        }, default=Datasets.mnist.name)
-    
-    log_dir_root: Path = Path("results")
-    data_dir: Path = Path("data")
-
-    debug: bool = False
-    
-    # Number of workers for the dataloaders.
-    num_workers: int = torch.get_num_threads()
-
-    seed: int = 0
-    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # Options for wandb logging.
-    wandb: WandbLoggerConfig = mutable_field(WandbLoggerConfig)
-    # Options for the trainer.
-    trainer: TrainerConfig = mutable_field(TrainerConfig)
-    
-    def __post_init__(self):
-        seed_everything(self.seed)
-    
-    @property
-    def log_dir(self):
-        return self.log_dir_root.joinpath(
-            (self.wandb.project or ""),
-            (self.wandb.group or ""),
-            (self.wandb.run_name or ""),
-            self.wandb.run_id,
-        )
-
-    def make_trainer(self) -> Trainer:
-        logger = None if self.debug else self.wandb.make_logger(self.log_dir_root)
-        trainer = self.trainer.make_trainer(logger=logger)
-        return trainer
-
-    def make_datamodule(self) -> LightningDataModule:
-        """Creates the datamodule depending on the value of 'dataset' attribute.
-        """
-        return self.dataset.load(data_dir=self.data_dir)
 
 
 @dataclass
