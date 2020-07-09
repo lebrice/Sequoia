@@ -56,20 +56,21 @@ class SimCLRTask(AuxiliaryTask):
         self.i = 0
         self.loss = SimCLRLoss(self.hparams.proj_dim)
 
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
+    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tuple[LossInfo, Tensor, Tensor]:
         # TODO: is there a more efficient way to do this than with a list comprehension? (torch multiprocessing-ish?)
         # concat all the x's into a single list.
-        x_t, _ = self.preprocess_simclr(x, None, self.hparams)
+        x_t, y = self.preprocess_simclr(x, y, self.hparams)
         #print(x_t.shape)
         del x
         del h_x
         #x_t = torch.cat([self.augment(x_i) for x_i in x.cpu()], dim=0)   # [2*B, C, H, W]
-        h_t = self.encode(x_t).flatten(start_dim=1)  # [2*B, repr_dim]
-        z = self.projector.to(h_t.device)(h_t)  # [2*B, proj_dim]
+        h_t = self.encode(x_t.contiguous()).flatten(start_dim=1)  # [2*B, repr_dim]
+        #z = self.projector.to(h_t.device)(h_t)  # [2*B, proj_dim]
+        z  = self.projector(h_t)  # [2*B, proj_dim]
         loss = self.loss(z, self.hparams.xent_temp, device = z.device)
         loss_info = LossInfo(name=self.name, total_loss=loss)
         torch.cuda.empty_cache()
-        return loss_info
+        return loss_info, h_t, y
 
     @staticmethod
     def preprocess_simclr(data:Tensor, target:Tensor=None, hparams=None) -> Tuple[Tensor, Optional[Tensor]]:
@@ -79,7 +80,7 @@ class SimCLRTask(AuxiliaryTask):
                 options = SimCLRTask.Option
                 # Set the same values for equivalent hyperparameters
                 options.image_size = data.shape[-1]
-                options.double_augmentation = True
+                options.double_augmentation = False
                 options.repr_dim = AuxiliaryTask.hidden_size
             else:
                 options = hparams

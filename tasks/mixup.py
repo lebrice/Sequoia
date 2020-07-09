@@ -214,7 +214,7 @@ class MixupTask(AuxiliaryTask):
             self.mean_classifier = deepcopy(AuxiliaryTask.classifier)
             self.previous_task = task
 
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
+    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tuple[LossInfo, Tensor, Tensor]:
         # select only unlabelled examples like in ICT: https://arxiv.org/pdf/1903.03825.pdf
         # TODO: fix this, y may be None, which would break this.
 
@@ -263,9 +263,10 @@ class MixupTask(AuxiliaryTask):
             loss = self.consistency_criterion(mix_y_pred, y_pred_mix) / batch_size  #
             #loss = torch.dist(y_pred_mix, mix_y_pred)
             loss_info.total_loss = mixup_consistency_weight * loss
+            return loss_info, (h_x, y)
         else:
             loss_info.total_loss = torch.zeros(1, device=h_x.device, requires_grad=True)
-        return loss_info
+            return loss_info, h_x, y
 
 
 class ManifoldMixupTask(AuxiliaryTask):

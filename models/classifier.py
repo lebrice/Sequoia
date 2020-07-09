@@ -1,5 +1,7 @@
 import copy
 import os
+import hashlib
+from functools import partial
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -10,11 +12,15 @@ from typing import (Any, Callable, Dict, List, NamedTuple, Optional, Tuple,
 
 import torch
 from torch import Tensor, nn, optim
+
+from torch.optim.lr_scheduler import StepLR
+from pl_bolts.optimizers.layer_adaptive_scaling import LARS
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision import models
 from .CNN13 import CNN13
 from model_parallel import PipelineParallelResNet50
+from resnet_small import ResNet18
 from torchvision.utils import save_image
 
 from common.layers import ConvBlock, Flatten
@@ -33,26 +39,84 @@ from tasks.mixup import sup_mixup
 
 logger = get_logger(__file__)
 
+encoder_models: Dict[str, Type[nn.Module]] = {
+    "simple_cnn": None,
+    "vgg16": models.vgg16,
+    "resnet18": models.resnet18,
+    "resnet18_sm": ResNet18,
+    "resnet34": models.resnet34,
+    "resnet50": models.resnet50,
+    "resnet50_parallel": PipelineParallelResNet50,
+    "resnet101": models.resnet101,
+    "resnet152": models.resnet152,
+    "alexnet": models.alexnet,
+    # "squeezenet": models.squeezenet1_0,  # Not supported yet (weird output shape)
+    "densenet": models.densenet161,
+    "cnn13": CNN13,
+    # "inception": models.inception_v3,  # Not supported yet (creating model takes forever?)
+    # "googlenet": models.googlenet,  # Not supported yet (creating model takes forever?)
+    # "shufflenet": models.shufflenet_v2_x1_0,
+    # "mobilenet": models.mobilenet_v2,
+    # "resnext50_32x4d": models.resnext50_32x4d,
+    # "wide_resnet50_2": models.wide_resnet50_2,
+    # "mnasnet": models.mnasnet1_0,
+}
+
+optimizers: Dict[str, Type[torch.optim.Optimizer]] = {
+            "adam":torch.optim.Adam,
+            "sgd": partial(torch.optim.SGD, momentum=0.9, weight_decay=1e-6)
+        }
+
+def key_for_dict(dict_in: Dict) -> Callable:
+    def key_for_model(encoder_model_fn: Union[Callable[[Any], nn.Module], Type[nn.Module]]) -> str:
+        """Returns the key of the given encoding model in the `dict_in` dict.
+
+        Args:
+            encoder_model_fn (Union[Callable[[Any], nn.Module], Type[nn.Module]]): 
+                A model class or model function.
+
+        Raises:
+            RuntimeError: If there is no value of `encoder_model_fn` in the dict.
+
+        Returns:
+            str: The key in `dict_in` which has `encoder_model_fn` as value.
+        """
+        if encoder_model_fn is None:
+            return None
+        for k, v in dict_in.items():
+            if v is encoder_model_fn:
+                return k
+        raise RuntimeError(f"Can't find the key for encoder fn {encoder_model_fn} in the dict {dict_in}")
+    return key_for_model
+
 
 class Classifier(nn.Module):
     @dataclass
-    class HParams:
+    class HParams(Serializable):
         """ Set of hyperparameters for the classifier.
 
         We use [simple_parsing](www.github.com/lebrice/simpleparsing) to
         generate command-line arguments for each attribute of this class.
         """
-
-
-
         #for mixup of labeled data: if 0 no mixup is used, otherwise the alpha parameter for the beta distribution from where the mixing lambda is drawn (mainly implemented for ICT)
         mixup_sup_alpha: float = 0.
 
         batch_size: int = 128   # Input batch size for training.
         learning_rate: float = field(default=1e-3, alias="-lr")  # learning rate.
+        weight_decay: float = 1e-6 #weight decay
+        momentum: float = 0.9 #momentum
+        lars_eta: float = 0.001 #lars eta
+
+
+        lr_sched_step: float = 30.0 #lr scheduler step
+
+        lr_sched_gamma: float = 0.5
 
         # Dimensions of the hidden state (feature extractor/encoder output).
         hidden_size: int = 100
+
+        #compute supervised loss on top of semi-features
+        entangle_sup: bool = True 
 
         # Prevent gradients of the classifier from backpropagating into the encoder.
         detach_classifier: bool = False
@@ -61,29 +125,16 @@ class Classifier(nn.Module):
         output_head: OutputHead.HParams = mutable_field(OutputHead.HParams)
 
         # Use an encoder architecture from the torchvision.models package.
-        encoder_model: Optional[Type[nn.Module]] = choice({
-            "vgg16": models.vgg16,
-            "resnet18": models.resnet18,
-            "resnet34": models.resnet34,
-            "resnet50": models.resnet50,
-            "resnet50_parallel": PipelineParallelResNet50,
-            "resnet101": models.resnet101,
-            "resnet152": models.resnet152,
-            "alexnet": models.alexnet,
-            # "squeezenet": models.squeezenet1_0,  # Not supported yet (weird output shape)
-            "densenet": models.densenet161,
-            "cnn13": CNN13,
-            # "inception": models.inception_v3,  # Not supported yet (creating model takes forever?)
-            # "googlenet": models.googlenet,  # Not supported yet (creating model takes forever?)
-            # "shufflenet": models.shufflenet_v2_x1_0,
-            # "mobilenet": models.mobilenet_v2,
-            # "resnext50_32x4d": models.resnext50_32x4d,
-            # "wide_resnet50_2": models.wide_resnet50_2,
-            # "mnasnet": models.mnasnet1_0,
-        }, default=None)
+        encoder_model: Type[nn.Module] = choice(
+            encoder_models,
+            default="simple_cnn",
+            encoding_fn=key_for_dict(encoder_models),
+            decoding_fn=encoder_models.get,
+        )
 
         # Use the pretrained weights of the ImageNet model from torchvision.
         pretrained_model: bool = False
+
         # Freeze the weights of the pretrained encoder (except the last layer,
         # which projects from their hidden size to ours).
         freeze_pretrained_model: bool = False
@@ -95,10 +146,8 @@ class Classifier(nn.Module):
 
         aux_tasks: AuxiliaryTaskOptions = field(default_factory=AuxiliaryTaskOptions)
 
-        optimizer = Optional[Type[torch.optim.Optimizer]] = choice({
-            'adam': torch.optim.Adam(lr=self.hparams.learning_rate),
-            'sgd': torch.optim.SGD(lr=init_lr, momentum=0.9, weight_decay=1e-6)
-        },default = 'adam')
+        # Use either adam or sgd optimizer
+        optimizer: str = choice(['sgd', 'adam', 'lars'], default='sgd')
 
     def __init__(self,
                  input_shape: Tuple[int, ...],
@@ -110,7 +159,7 @@ class Classifier(nn.Module):
         self.input_shape = input_shape
         self.num_classes = num_classes
         # Feature extractor
-        self.encoder = encoder
+        self.encoder = encoder 
         # Classifier output layer
         self.hparams: Classifier.HParams = hparams
         self.config = config
@@ -164,7 +213,8 @@ class Classifier(nn.Module):
             for task_name, task in self.tasks.items():
                 logger.debug(f"{task.name}: {task.coefficient}")
 
-        self.optimizer = self.hparams.optimizer.add_param_group({"params": self.parameters})
+
+        self.optimizer, self.lr_scheduler = self.configure_optimizers() #self.hparams.optimizer(lr=self.hparams.learning_rate, params=self.parameters())
         self.to(self.device)
 
     def to(self, device: Optional[Union[int, torch.device, Tuple[torch.device]]], *args, **kwargs):
@@ -172,7 +222,29 @@ class Classifier(nn.Module):
             self.encoder.to(device)    
             self.default_output_head.to(self.out_device)
         else:
+            if torch.cuda.device_count() > 1:
+                print("Let's use", torch.cuda.device_count(), "GPUs!")
+                self.encoder = nn.DataParallel(self.encoder)
             super().to(device, *args, **kwargs)
+
+    def configure_optimizers(self):
+        if self.hparams.optimizer == 'adam':
+            optimizer = torch.optim.Adam(
+                self.parameters(), self.hparams.learning_rate, weight_decay=self.hparams.weight_decay)
+        elif self.hparams.optimizer == 'lars':
+            optimizer = LARS(
+                self.parameters(), lr=self.hparams.learning_rate, momentum=self.hparams.momentum,
+                weight_decay=self.hparams.weight_decay, eta=self.hparams.lars_eta)
+        
+        elif self.hparams.optimizer == 'sgd':
+            optimizer = torch.optim.SGD(
+                self.parameters(), lr=self.hparams.learning_rate, momentum=self.hparams.momentum,
+                weight_decay=self.hparams.weight_decay)      
+        else:
+            raise ValueError(f'Invalid optimizer: {self.optimizer}')
+        scheduler = StepLR(
+            optimizer, step_size=self.hparams.lr_sched_step, gamma=self.hparams.lr_sched_gamma)
+        return optimizer, scheduler
 
 
     def supervised_loss(self, x: Tensor,
@@ -205,27 +277,54 @@ class Classifier(nn.Module):
         if y is not None and y.shape[0] != x.shape[0]:
             raise RuntimeError("Whole batch can either be fully labeled or "
                                "fully unlabeled, but not a mix of both (for now)")
-        
-        self.encoder.to(self.config.device)
-        x, y = self.preprocess_inputs(x, y)
-        h_x = self.encode(x)
-        y_pred = self.logits(h_x)
+        x,y = self.preprocess_inputs(x,y)
+        y_pred = None
+        y_aug = None
+        h_x = None
+        if not self.hparams.entangle_sup:
+            #self.encoder.to(self.config.device)
+            h_x = self.encode(x)
+            y_pred = self.logits(h_x)
         
         total_loss = LossInfo(name)
-        total_loss.total_loss = torch.zeros(1, device=y_pred.device)
-        total_loss.tensors["x"] = x.detach().cpu()
-        total_loss.tensors["h_x"] = h_x.detach().cpu()
-        total_loss.tensors["y_pred"] = y_pred.detach().cpu()
-
-        # TODO: [improvement] Support a mix of labeled / unlabeled data at the example-level.
-        if y is not None:
-            supervised_loss = self.supervised_loss(x=x, y=y, h_x=h_x, y_pred=y_pred)
-            total_loss += supervised_loss
+        total_loss.total_loss = torch.zeros(1, device=self.out_device)       
 
         for task_name, aux_task in self.tasks.items():
             if aux_task.enabled:
-                aux_task_loss = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=y_pred, y=y) #), device=self.config.device)
+                aux_task_loss, h_x = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=None, y=y) #), device=self.config.device)
                 total_loss += aux_task_loss
+
+        
+        # TODO: [improvement] Support a mix of labeled / unlabeled data at the example-level.
+        if y is not None:
+            if h_x is None and y_pred is None:
+                h_x = self.encode(x)
+            
+            #select indicies of labeled samples 
+            indx_y = ((y>=0).nonzero()).view(-1)
+            #selet labeled samples and their representaitons
+            y = y[indx_y]
+            if isinstance(h_x, tuple):
+                hx_1, hx_2 = h_x
+                hx_1 = hx_1[indx_y]
+                hx_2 = hx_2[indx_y]
+                h_x = torch.cat([hx_1,hx_2], dim=0)
+                y = torch.cat([y,y], dim=0)
+            else:
+                h_x = h_x[indx_y]
+
+            if y_pred is None:
+                #supervised loss computed on top of semi-representations
+                y_pred = self.logits(h_x)
+            else:
+                y_pred=y_pred[indx_y]
+                
+            supervised_loss = self.supervised_loss(x=x, y=y, h_x=h_x, y_pred=y_pred)
+            total_loss.tensors["x"] = x.detach().cpu()
+            total_loss.tensors["h_x"] = h_x.detach().cpu()
+            total_loss.tensors["y_pred"] = y_pred.detach().cpu()
+            total_loss += supervised_loss
+
 
         if self.config.debug and self.config.verbose:
             for name, loss in total_loss.losses.items():
@@ -264,6 +363,8 @@ class Classifier(nn.Module):
             # idx[i] holds the index of the value at y[i] in y_unique, s.t. for
             # all i in range(0, len(y)) --> y[i] == y_unique[idx[i]]
             y_unique, idx = y.unique(sorted=True, return_inverse=True)
+            #take out negtive labels as those correspond to unlabeled samples
+            y_unique = y_unique[(y_unique>=0).nonzero().view(-1)]
             # TODO: Could maybe decide which output head to use depending on the labels
             # (perhaps like the "labels trick" from https://arxiv.org/abs/1803.10123)
             if not (set(y_unique.tolist()) <= set(self.current_task.classes)):
@@ -277,7 +378,7 @@ class Classifier(nn.Module):
             if self.current_task != self._default_task:
                 # if we are in the default task, no need to do this.
                 # Re-label the given batch so the losses/metrics work correctly.
-                new_y = torch.empty_like(y)
+                new_y = copy.copy(y) # torch.empty_like(y)
                 for i, label in enumerate(self.current_task.classes):
                     new_y[y == label] = i
                 y = new_y
@@ -305,6 +406,18 @@ class Classifier(nn.Module):
         NOTE: Assumes that the model is multiheaded.
         """
         return self.output_heads[task.dumps()]
+
+    
+    def model_pretrained_unique_attributes(self) -> List:
+        #returnsa list of unique atributes that identify a model if using pretraining (apply e.g. md5 on these attributes)
+        def get_active_self_sup_tasks()-> Dict[str, float]:
+            res = {}
+            for task_name, aux_task in self.tasks.items():
+                if aux_task.coefficient > 0 and task_name in ['vae', 'simclr','ae','rotation', 'jigsaw', 'brightness']:
+                    res[task_name]=aux_task.coefficient
+            return res
+        active_self_sup_tasks = get_active_self_sup_tasks()
+        return [active_self_sup_tasks, self.encoder]
 
     @property
     def classifier(self) -> OutputHead:
@@ -380,6 +493,7 @@ class Classifier(nn.Module):
         updated.
         """
         self.optimizer.step()
+        self.lr_scheduler.step()
         for name, task in self.tasks.items():
             if task.enabled:
                 task.on_model_changed(global_step=global_step, **kwargs)

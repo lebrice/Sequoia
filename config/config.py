@@ -40,17 +40,19 @@ class Config(WandbConfig):
     data_dir: Path = Path("data")  # data directory.
 
     log_interval: int = 10   # How many batches to wait between logging calls.
+
+    log_interval_test_epochs: int = 10 # How many epochs to wait between test iterations.
     
     random_seed: int = 1            # Random seed.
     use_cuda: bool = cuda_available # Whether or not to use CUDA.
     
     # num_workers for the dataloaders.
-    num_workers: int = 0
+    num_workers: int = 0 #torch.get_num_threads()
 
     # Which specific device to use.
     # NOTE: Can be set directly with the command-line! (ex: "--device cuda") For multiple GPUs pass only indicies.
     #device: Tuple[torch.device] = (torch.device("cuda" if cuda_available else "cpu"),)
-    device: torch.device = torch.device("cuda" if cuda_available else "cpu")
+    device: torch.device = torch.device("cuda:0" if cuda_available else "cpu")
     
     use_wandb: bool = True # Whether or not to log results to wandb
     

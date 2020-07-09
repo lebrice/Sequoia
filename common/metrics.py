@@ -61,12 +61,28 @@ class Metrics(Serializable):
 
 @dataclass
 class AUCMetric(Metrics, Serializable):
-    auc: Tensor = 0.  # type: ignore
+    acum_acc: float = 0.  # type: ignore
+    updates_counter: int = 1
 
     def to_log_dict(self, verbose: bool=True) -> Dict:
         d = super().to_log_dict()
         d["auc"] = float(self.auc)
         return d
+
+    def __add__(self, other):
+        if isinstance(other, AUCMetric):
+            acum_acc = self.acum_acc + other.acum_acc
+            updates_counter = self.updates_counter + other.updates_counter
+        elif isinstance(other,ClassificationMetrics):
+            acum_acc = self.acum_acc + other.accuracy
+            updates_counter = self.updates_counter + 1
+        else:
+            return other
+        return AUCMetric(acum_acc=acum_acc, updates_counter=updates_counter)
+
+    @property
+    def auc(self):
+        return self.acum_acc / self.updates_counter
 
 
 @dataclass

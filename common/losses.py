@@ -339,30 +339,20 @@ class TrainValidLosses(Serializable):
 #         "valid_losses": valid_losses_dict,
 #     }
 
-@dataclass 
+@dataclass
 class AUC_Meter(Serializable):
     """
     Class to keep runing statistics about performance, such as AUC.
     """ 
-    acc_sum_dict: Dict[str, float] = field(default_factory=dict)
-    count_dict: Dict[str, int] = field(default_factory=dict)
-    
-    def update(self, new_element: LossInfo):
+    online_metric_dict: Dict[str, Metrics] = field(default_factory=dict)  
+              
+    def update(self, new_element: LossInfo) -> LossInfo:
         all_metrics = new_element.all_metrics()
-        #self.acc_sum_dict = add_dicts(self.acc_sum_dict, all_metrics)
-        for k, v in all_metrics.items():
-            if isinstance(v, ClassificationMetrics):
-                try:
-                    self.acc_sum_dict[k]+=copy.deepcopy(v.accuracy)
-                    self.count_dict[k]+=1
-                except KeyError:  
-                    self.acc_sum_dict[k]=copy.deepcopy(v.accuracy)
-                    self.count_dict[k]=1
-        new_element.metrics.update(self.get_auc(all_metrics))
-        return new_element
-
-    def get_auc(self, all_metrics) -> Dict[str, float]:
+        self.online_metric_dict = add_dicts(self.online_metric_dict, all_metrics)
         res = {}
         for k, v in all_metrics.items():
-                res[f'AUC/{k}'] = AUCMetric(auc = self.acc_sum_dict[k]/self.count_dict[k])
-        return res
+            if isinstance(v, ClassificationMetrics):
+                res[f'AUC/{k}'] = self.online_metric_dict[k].accuracy
+
+        new_element.metrics.update(res)
+        return new_element

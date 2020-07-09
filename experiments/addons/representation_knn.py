@@ -19,7 +19,7 @@ from simple_parsing import field
 @dataclass
 class KnnClassifierOptions:
     """ Set of options for configuring the KnnClassifier. """
-    n_neighbors: int = field(default=5, alias="n_neighbours") # Number of neighbours.
+    n_neighbors: int = field(default=50, alias="n_neighbours") # Number of neighbours.
     metric: str = "cosine"
     algorithm: str = "auto" # See the sklearn docs
     leaf_size: int = 30  # See the sklearn docs

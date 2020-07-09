@@ -17,7 +17,7 @@ from .mixup import ManifoldMixupTask, MixupTask
 from .patch_location import PatchLocationTask
 from .reconstruction.ae import AEReconstructionTask
 from .reconstruction.vae import VAEReconstructionTask
-from .simclr.simclr_task import SimCLRTask
+from .simclr.simclr_task_ptl import SimCLRTask
 from .transformation_based import (AdjustBrightnessTask,
                                    ClassifyTransformationTask,
                                    RegressTransformationTask, RotationTask)

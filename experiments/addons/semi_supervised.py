@@ -5,7 +5,7 @@ from typing import List, Optional, Union, Tuple, Type
 import torch
 from torch import Tensor
 
-from common.losses import LossInfo
+from common.losses import LossInfo   
 from simple_parsing import mutable_field
 from utils.logging_utils import get_logger
 
@@ -46,7 +46,7 @@ class SemiSupervisedBatchesAddon(ExperimentAddon):
         """
         if target is None or isinstance(target, Tensor):
             # Fully labeled/unlabeled batch
-            labeled_ratio = float(target is not None)
+            labeled_ratio = len(((target<0).nonzero()))/len(target) if target is not None else 0. #float(target is not None)
             self.log(dict(labeled_ratio=labeled_ratio))
             return super().train_batch(data, target, name=name)
 

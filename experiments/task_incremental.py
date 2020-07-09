@@ -1,4 +1,5 @@
 import itertools
+import hashlib
 from utils.logging_utils import get_logger  
 from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass, fields
@@ -14,6 +15,8 @@ import numpy as np
 import torch
 import wandb
 from torch import Tensor
+from datasets.data_utils import train_valid_split
+from models.classifier import Classifier
 from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
@@ -54,11 +57,20 @@ class TaskIncremental(Experiment):
         # Maximum number of epochs of supervised training to perform on each task's
         # dataset.
         supervised_epochs_per_task: int = 5     
+        
         #If `True`, accuracy will be used as a measure of performance. Otherwise, the total validation loss is used. Defaults to False.
         use_accuracy_as_metric: bool = False
 
         task_labels_at_train_time: bool = True
         task_labels_at_test_time:  bool = True
+
+        #number of self-sup pretraining epochs
+        unsupervised_epochs_pretraining: int = 0
+
+        #pretraining dataset
+        pretraining_dataset: DatasetConfig = choice({
+                d.name: d.value for d in Datasets
+            }, default=Datasets.mnist.name)
 
 
     @dataclass
@@ -89,8 +101,7 @@ class TaskIncremental(Experiment):
         # Cumulative losses after each task
         cumul_losses: List[Optional[LossInfo]] = list_field()
 
-
-    # Experiment Configuration.
+        # Experiment Configuration.
     config: Config = mutable_field(Config)     # Overwrite the type from Experiment.
     # Experiment state.
     state: State = mutable_field(State, init=False)        # Overwrite the type from Experiment.
@@ -104,6 +115,10 @@ class TaskIncremental(Experiment):
         self.full_valid_dataset : VisionDataset = None
         self.full_test_dataset  : VisionDataset = None
         
+        #pretraining datasets
+        self.pretrain_train_dataset: VisionDataset = None
+        self.pretrain_valid_dataset: VisionDataset = None
+
         # Datasets for each task
         self.train_datasets: List[ClassSubset] = []
         self.valid_datasets: List[ClassSubset] = []
@@ -143,7 +158,7 @@ class TaskIncremental(Experiment):
         self.save_state(save_model_weights=False)
 
         # Load the datasets
-        self.load_task_datasets(self.tasks)
+        
         self.n_tasks = len(self.tasks)
         
         if self.state.global_step == 0:
@@ -200,6 +215,10 @@ class TaskIncremental(Experiment):
         ```
         """
         self.setup()        
+        self.load_pretrain_dataset()
+        self.pretrain_unsup()
+        self.load_task_datasets(self.tasks)
+                
         for i in range(self.state.i, self.n_tasks):
             self.state.i = i
             logger.info(f"Starting task {i} with classes {self.tasks[i]}")
@@ -208,9 +227,7 @@ class TaskIncremental(Experiment):
             # Training and validation datasets for task i.
             train_i_dataset = self.train_datasets[i]
             valid_i_dataset = self.valid_datasets[i]
-            train_sampler = self.train_samplers[i]
-            valid_sampler = self.valid_samplers[i]
-            
+            test_i_dataset = self.test_datasets[i]            
 
 
             if self.replay_buffer:
@@ -219,8 +236,9 @@ class TaskIncremental(Experiment):
                 # TODO: Should we also add some data from previous tasks in the validation dataset?
                 train_i_dataset += self.replay_buffer.as_dataset()
 
-            train_i_loader = self.get_dataloader(train_i_dataset, train_sampler)
-            valid_i_loader = self.get_dataloader(valid_i_dataset, valid_sampler)
+            train_i_loader = self.get_dataloader(train_i_dataset)
+            valid_i_loader = self.get_dataloader(valid_i_dataset)
+            test_i_loader = self.get_dataloader(test_i_dataset)
 
             if self.state.j == 0:
                 with self.plot_region_name(f"Learn Task {i}"):
@@ -236,6 +254,7 @@ class TaskIncremental(Experiment):
                         self.state.all_losses += self.train(
                             unlabeled(train_i_loader),
                             unlabeled(valid_i_loader),
+                            None,
                             epochs=self.config.unsupervised_epochs_per_task,
                             description=f"Task {i} (Unsupervised)",
                             use_accuracy_as_metric=False, # Can't use accuracy as metric during unsupervised training.
@@ -247,6 +266,7 @@ class TaskIncremental(Experiment):
                     self.state.all_losses += self.train(
                         train_i_loader,
                         valid_i_loader,
+                        test_i_loader,
                         epochs=self.config.supervised_epochs_per_task,
                         description=f"Task {i} (Supervised)",
                         use_accuracy_as_metric=self.config.use_accuracy_as_metric,
@@ -273,25 +293,25 @@ class TaskIncremental(Experiment):
                 # -- Evaluate Representations after having learned tasks [0:i] on data from task J. --
 
                 train_j = self.train_datasets[j]
-                test_j  = self.test_datasets[j]
-                # Measure the "quality" of the representations, by training and
-                # evaluating a classifier on train and test data from task J.
-                knn_j_train_loss, knn_j_test_loss = self.test_knn(
-                    train_j,
-                    test_j,
-                    description=f"KNN [{i}][{j}]"
-                )
+                test_j  = self.test_datasets[j]  
+                # # Measure the "quality" of the representations, by training and
+                # # evaluating a classifier on train and test data from task J.
+                # knn_j_train_loss, knn_j_test_loss = self.test_knn(
+                #     train_j,
+                #     test_j,
+                #     description=f"KNN [{i}][{j}]"
+                # )
 
-                knn_j_train_acc = knn_j_train_loss.metric.accuracy
-                knn_j_test_acc = knn_j_test_loss.metric.accuracy
-                logger.info(f"Task{i}: KNN Train Accuracy [{j}]: {knn_j_train_acc:.2%}")
-                logger.info(f"Task{i}: KNN Test  Accuracy [{j}]: {knn_j_test_acc :.2%}")
-                # Log the accuracies to wandb.
-                self.log({
-                    f"KNN/train/task{j}": knn_j_train_acc,
-                    f"KNN/test/task{j}" : knn_j_test_acc,
-                })
-                self.state.knn_losses[i][j] = knn_j_test_loss
+                # knn_j_train_acc = knn_j_train_loss.metric.accuracy
+                # knn_j_test_acc = knn_j_test_loss.metric.accuracy
+                # logger.info(f"Task{i}: KNN Train Accuracy [{j}]: {knn_j_train_acc:.2%}")
+                # logger.info(f"Task{i}: KNN Test  Accuracy [{j}]: {knn_j_test_acc :.2%}")
+                # # Log the accuracies to wandb.
+                # self.log({
+                #     f"KNN/train/task{j}": knn_j_train_acc,
+                #     f"KNN/test/task{j}" : knn_j_test_acc,
+                # })
+                # self.state.knn_losses[i][j] = knn_j_test_loss
 
                 if j <= i:
                     # If we have previously trained on this task:
@@ -300,6 +320,9 @@ class TaskIncremental(Experiment):
                     # Test on the test dataset for task j.
                     loss_j = self.test(test_j, description=f"Task{i}: Test on Task{j}", name=f"Task{j}")
                     self.log({f"Task_losses/Task{j}": loss_j})
+                    
+                    if j==i:
+                        self.log({f"Test_full/Final": loss_j})
                     
                     self.state.task_losses[i][j] = loss_j
                     # Merge the metrics from this task and the other tasks.
@@ -379,6 +402,25 @@ class TaskIncremental(Experiment):
         # if self.config.debug:
         #     fig.show()
         #     fig.waitforbuttonpress(10)
+
+    def pretrain_unsup(self):
+        if self.config.unsupervised_epochs_pretraining > 0:
+            logger.info(f'\n ----Start pretraining on {self.config.pretraining_dataset.name} -----')
+            pretrain_train_loader = self.get_dataloader(self.pretrain_train_dataset)
+            pretrain_valid_loader = self.get_dataloader(self.pretrain_valid_dataset)
+            self.train(
+                unlabeled(pretrain_train_loader), 
+                unlabeled(pretrain_valid_loader), 
+                None, 
+                self.config.unsupervised_epochs_pretraining,
+                'pretrain',
+                use_accuracy_as_metric=False)
+            save_path = self.get_pretrained_model_path(self.model)
+            self.save_weights(save_path)
+            logger.info(f'Pretraining finished, model stored at {save_path}')
+
+            if self.model.hparams.freeze_pretrained_model:
+                    self.model = self.freeze_encoder(self.model)
 
 
     def on_task_switch(self, task: Optional[Task], **kwargs) -> None:
@@ -667,14 +709,21 @@ class TaskIncremental(Experiment):
         
         return tasks
 
+    def load_pretrain_dataset(self):
+        if self.config.unsupervised_epochs_pretraining>0:
+                    pretrain_train_dataset, _ = self.config.pretraining_dataset.load(data_dir=self.config.data_dir)
+                    self.pretrain_train_dataset, self.pretrain_valid_dataset = train_valid_split(pretrain_train_dataset, 0.2)
+                
+
     def load_task_datasets(self, tasks: List[Task]) -> None:
         """Create the train, valid, test, and cumulative valid & test datasets
         for each task.
         """
+        self.pretrain_train_dataset = None
+        self.pretrain_valid_dataset = None
         # download the dataset.
         train_dataset, valid_dataset, test_dataset = super().load_datasets()
         assert valid_dataset # We have a validation dataset.
-
         self.full_train_dataset = train_dataset
         self.full_valid_dataset = valid_dataset
         self.full_test_dataset  = test_dataset
@@ -712,7 +761,33 @@ class TaskIncremental(Experiment):
         #         self.save_images(i, valid, prefix="valid_")
         #         self.save_images(i, test, prefix="test_")
         #         self.save_images(i, cumul, prefix="valid_cumul_")
-            
+    
+    def get_pretrained_model_path(self, model:Classifier)->Path:
+        #model is identifies by number of epochs for pretraining, encoder type and aux_tasks coefficients
+        name = hashlib.md5(str(model.model_pretrained_unique_attributes() + [self.config.unsupervised_epochs_pretraining,self.config.pretraining_dataset.name]).encode('utf-8')).hexdigest()
+        path = self.config.log_dir_root.joinpath(f'pretrained_models')
+        path.mkdir(parents=True, exist_ok=True)
+        path = path.joinpath(f'{name}.pth') 
+        return path
+    
+    def freeze_encoder(self, model:Classifier) -> Classifier:
+        logger.info("Freezing encoder")
+        for param in model.encoder.parameters():
+            param.requires_grad = False
+        return model
+
+    def init_model(self) -> Classifier:
+        model = super().init_model()
+        if self.config.unsupervised_epochs_pretraining > 0:
+            #try to load the model
+            loaded = self.load_weights(self.get_pretrained_model_path(model))
+            if loaded:
+                if model.hparams.freeze_pretrained_model:
+                    model = self.freeze_encoder(model)
+                self.config.unsupervised_epochs_pretraining = 0
+        else:
+            pass
+        return model
 
     def save_images(self, i: int, dataset: VisionDataset, prefix: str=""):
         n = 64

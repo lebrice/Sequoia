@@ -77,7 +77,7 @@ class ExperimentBase(Serializable):
         # Which dataset to use.
         dataset: DatasetConfig = choice({
             d.name: d.value for d in Datasets
-        }, default=Datasets.mnist.name)
+        }, default=Datasets.cifar100.name)
 
         # Path to restore the state from at the start of training.
         # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
@@ -134,8 +134,8 @@ class ExperimentBase(Serializable):
         
         # Background queue and worker for saving stuff to disk asynchronously.
 
-        mp.set_start_method("spawn")
-        self.background_queue: mp.Queue = mp.Queue()
+        ctx = mp.get_context("spawn")
+        self.background_queue: ctx.Queue = ctx.Queue()
         self.saver_worker: Optional[SaverWorker] = None
 
     def __del__(self):
@@ -244,7 +244,7 @@ class ExperimentBase(Serializable):
             logger.info(f"Restoring model weights from {self.state.model_weights_path}")
             state_dict = torch.load(
                 self.state.model_weights_path,
-                #map_location=self.config.device,
+                map_location=self.config.device,
             )
             self.model.load_state_dict(state_dict)
         # TODO: Make sure that restoring at some arbitrary global_step works.
@@ -259,7 +259,8 @@ class ExperimentBase(Serializable):
 
     def train(self,
               train_dataloader: Union[Dataset, DataLoader, Iterator],                
-              valid_dataloader: Union[Dataset, DataLoader, Iterator],                
+              valid_dataloader: Union[Dataset, DataLoader, Iterator],    
+              test_dataloader:Union[Dataset, DataLoader, Iterator],
               epochs: int,                
               description: str=None,
               early_stopping_options: EarlyStoppingOptions=None,
@@ -390,20 +391,28 @@ class ExperimentBase(Serializable):
             else: 
                 train_dataloader_ = train_dataloader
 
-            epoch_start_step = self.state.global_step             
+            epoch_start_step = self.state.global_step     
             pbar = tqdm.tqdm(train_dataloader_, total=steps_per_epoch)
             desc = description or "" 
             desc += " " if desc and not desc.endswith(" ") else ""
             desc += f"Epoch {epoch}"
             pbar.set_description(desc + " Train")
             self.train_epoch(epoch, pbar, valid_loss_gen, all_losses=all_losses)
+            
             epoch_length = self.global_step - epoch_start_step
             epoch_lengths.append(epoch_length)
 
             # perform a validation epoch.
             val_desc = desc + " Valid"
-            val_loss_info = self.test(valid_dataloader, description=val_desc, name="Valid")
+            val_loss_info = self.test(valid_dataloader, description=val_desc, name="Valid_full")
             validation_losses.append(val_loss_info)
+
+            if epoch % self.config.log_interval_test_epochs == 0:
+                if test_dataloader is not None and self.config.log_interval_test_epochs>0:
+                    # perform a test epoch every n iterations.
+                    test_desc = desc + " Test"
+                    test_loss_info = self.test(test_dataloader, description=test_desc, name="Test_full")
+                    self.log({'Test_full':test_loss_info.to_dict()})
 
             if temp_save_dir:
                 # Save these files in the background using the saver process.
@@ -437,7 +446,7 @@ class ExperimentBase(Serializable):
         # TODO: Should we also return the array of validation losses at each epoch (`validation_losses`)?
         return all_losses
     
-    def train_epoch(self, epoch, pbar: Iterable, valid_loss_gen: Generator, all_losses:TrainValidLosses):
+    def train_epoch(self, epoch, pbar: Iterable, valid_loss_gen: Generator, all_losses:TrainValidLosses) -> Tuple[LossInfo, LossInfo]:
         # Message for the progressbar
         message: Dict[str, Any] = OrderedDict()
         for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
@@ -452,11 +461,24 @@ class ExperimentBase(Serializable):
                 message.update(train_loss.to_pbar_message())
                 message.update(valid_loss.to_pbar_message())
                 pbar.set_postfix(message)
-
                 self.log({
                     "Train": train_loss,
                     "Valid": valid_loss,
                 })
+    
+    def load_weights(self, load_path):
+        try:
+            state_dict = torch.load(load_path, map_location=self.config.device)
+            self.model.load_state_dict(state_dict)
+            return True
+        except FileNotFoundError:
+            logger.info(f"Tried to load the self-sup. pretrained model from {load_path}, but it doesnt exist yet.")
+            return False
+
+            
+    def save_weights(self, save_path:Path):
+            state_dict = self.model.state_dict()
+            torch.save(state_dict, str(save_path))
 
     def keep_best_model(self, use_acc: bool=False, save_path: Path=None) -> Generator[int, Optional[LossInfo], None]:
         # Path where the best model weights will be saved.
@@ -471,10 +493,6 @@ class ExperimentBase(Serializable):
             save_path_tmp.replace(save_path)
             self.state.model_weights_path = save_path
             logger.info(f"Saved best model weights to path {save_path}.")
-        
-        def load_weights():
-            state_dict = torch.load(save_path)#, map_location=self.config.device)
-            self.model.load_state_dict(state_dict)
         
         best_perf: Optional[float] = None
         
@@ -511,7 +529,7 @@ class ExperimentBase(Serializable):
 
         # Reload the weights of the best model.
         logger.info(f"Reloading weights of the best model (global step: {best_step})")
-        load_weights()
+        self.load_weights(save_path)
 
     def valid_performance_generator(self, valid_dataloader: Union[Dataset, DataLoader]) -> Generator[LossInfo, None, None]:
         if isinstance(valid_dataloader, Dataset):
@@ -553,7 +571,7 @@ class ExperimentBase(Serializable):
             dataloader = self.get_dataloader(dataloader)
 
         pbar = tqdm.tqdm(dataloader)
-        desc = (description or "Test Epoch")
+        desc = (description or "Test Epoch")    
         
         pbar.set_description(desc)
         total_loss = LossInfo(name)

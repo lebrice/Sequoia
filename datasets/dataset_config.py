@@ -29,7 +29,10 @@ class DatasetConfig(Serializable):
     target_transforms: Optional[Callable] = None
     # Wether we want to load the dataset to memory.
     keep_in_memory: bool = True
-
+    
+    @property
+    def name(self):
+        return self.dataset_class.__name__
     def load(self, data_dir: Path, download: bool=True) -> Tuple[Dataset, Dataset]:
         """ Downloads the corresponding train & test datasets and returns them.
         """

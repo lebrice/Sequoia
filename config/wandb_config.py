@@ -16,7 +16,7 @@ class WandbConfig(Serializable):
     # Which user to use
     entity: str = "lebrice"
 
-    project_name: str = "SSCL_replay" # project name to use in wandb.
+    project_name: str = "SSCL" # project name to use in wandb.
     # Name used to easily group runs together.
     # Used to create a parent folder that will contain the `run_name` directory. 
     run_group: Optional[str] = None

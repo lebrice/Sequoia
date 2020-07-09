@@ -26,6 +26,8 @@ class CifarClassifier(Classifier):
                 pretrained=hparams.pretrained_model,
                 freeze_pretrained_weights=hparams.freeze_pretrained_model             
             )
+            if hasattr(encoder, 'maxpool'):
+                encoder.maxpool = torch.nn.Identity()
         else:
             print("Using a simple convnet model")
             encoder = nn.Sequential(
@@ -46,9 +48,9 @@ class CifarClassifier(Classifier):
     def preprocess_inputs(self, x: Tensor, y: Tensor=None) -> Tuple[Tensor, Optional[Tensor]]:
         # No special preprocessing needed.
         x, y = super().preprocess_inputs(x, y)
-        if self.hparams.encoder_model:
-            x = normalize(x, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225], inplace=True)
-            x = torch.nn.functional.interpolate(x, size=(224, 224))
+        #if self.hparams.encoder_model:
+        #    x = normalize(x, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225], inplace=True)
+        #    x = torch.nn.functional.interpolate(x, size=(224, 224))
         return x, y
 
 

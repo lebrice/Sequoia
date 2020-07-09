@@ -72,7 +72,7 @@ class AuxiliaryTask(nn.Module):
         return AuxiliaryTask.classifier(h_x)
 
     @abstractmethod
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> LossInfo:
+    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tuple[LossInfo, Tensor, Tensor]:
         """Calculates the Auxiliary loss for the input `x`.
         
         The parameters `h_x`, `y_pred` are given for convenience, so we don't
@@ -139,23 +139,9 @@ class AuxiliaryTask(nn.Module):
         """
         if not self.enabled:
             return LossInfo(self.name)
-
-        #if device is not None and isinstance(device, Tuple):
-        #    in_device, out_device = device
-        #elif device is not None:
-        #    in_device = out_device = device
-        #else:
-        #    in_device = out_device = self.device
-        
-        #x = x.to(in_device)
-        #if y_pred is not None:           
-        #    y_pred = y_pred.to(out_device)
-        #if y is not None:
-        #    y = y.to(out_device)
-
-        loss_info = self.get_loss(x, h_x, y_pred, y)
+        loss_info, h_x = self.get_loss(x, h_x, y_pred, y)
         loss_info *= self.coefficient
-        return loss_info
+        return loss_info, h_x
 
     @property
     def coefficient(self) -> float:

@@ -9,7 +9,7 @@ from torch import nn
 
 def get_pretrained_encoder(hidden_size: int,
                            encoder_model: Callable,
-                           pretrained: bool=True,
+                           pretrained: bool=False,
                            freeze_pretrained_weights: bool=False) -> nn.Module:
     """Returns a pretrained encoder on ImageNet from `torchvision.models`
 
@@ -34,7 +34,6 @@ def get_pretrained_encoder(hidden_size: int,
     print("Using encoder model", encoder_model.__name__,
           "pretrained: ", pretrained,
           "freezing the pretrained weights: ", freeze_pretrained_weights)
-
     encoder = encoder_model(pretrained=pretrained)
 
     if pretrained and freeze_pretrained_weights:
