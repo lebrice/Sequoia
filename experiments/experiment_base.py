@@ -83,6 +83,9 @@ class ExperimentBase(Serializable):
         # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
         restore_from_path: Optional[Path] = None
 
+        # during the warum epochs the learning rate is graually increased untill the actual lr
+        warmup_epochs:int = 10
+
     @dataclass
     class State(Serializable):
         """ Dataclass used to store the state of an experiment.
@@ -447,6 +450,12 @@ class ExperimentBase(Serializable):
         return all_losses
     
     def train_epoch(self, epoch, pbar: Iterable, valid_loss_gen: Generator, all_losses:TrainValidLosses) -> Tuple[LossInfo, LossInfo]:
+        
+        # Update Learning Rate during warmup
+        if epoch <= self.config.warmup_epochs:
+            self.model.optimizer.param_groups[0]['lr'] = min(self.model.hparams.learning_rate, self.model.hparams.learning_rate * (epoch + 1) / (
+                        self.config.warmup_epochs + 1))
+
         # Message for the progressbar
         message: Dict[str, Any] = OrderedDict()
         for batch_idx, train_loss in enumerate(self.train_iter(pbar)):

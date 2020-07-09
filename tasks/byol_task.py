@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
+import copy
 from typing import List
 from typing import Tuple, Union, Optional
 import torch
@@ -18,9 +19,8 @@ from utils import cuda_available
 from pl_bolts.models.self_supervised.simclr import SimCLREvalDataTransform, SimCLRTrainDataTransform
 
 try:
-    from .falr_nt.falr.source.models import BYOL, LinearHead
-    from .falr_nt.falr.source.config import HParams, ExperimentType
-    from .falr_nt.falr.source.data import SimCLRAugment
+    from .simclr.falr_nt.falr.source.models import BYOL, LinearHead
+    from .simclr.falr_nt.falr.source.config import HParams, ExperimentType
 
 
 except ImportError as e:
@@ -28,7 +28,7 @@ except ImportError as e:
     print("Make sure to run `git submodule init; git submodule update`")
     exit()
 
-class BYOLHParams(HParams, Serializable):
+class FalrHParams(HParams, Serializable):
     pass
 
 
@@ -39,7 +39,7 @@ class BYOL_Task(AuxiliaryTask, BYOL):
     class Options(AuxiliaryTask.Options):
         """ Options for the SimCLR aux task. """
         # Hyperparameters from the falr submodule.
-        byol_options: BYOLHParams = mutable_field(BYOLHParams)
+        byol_options: FalrHParams = mutable_field(FalrHParams)
 
         byol_momentum: float = 0.99 # the moving average decay factor for the target encoder
 
@@ -64,7 +64,7 @@ class BYOL_Task(AuxiliaryTask, BYOL):
         self.predictor = LinearHead(self.options.byol_options.proj_dim, self.options.repr_dim*2, self.options.byol_options.proj_dim)
 
         # Target network
-        self.encoder_t = self.encoder
+        self.encoder_t = copy.deepcopy(self.encoder)
         self.projector_t = LinearHead(self.options.repr_dim,  self.options.repr_dim*2, self.options.byol_options.proj_dim)
 
         for param_t in self.encoder_t.parameters():

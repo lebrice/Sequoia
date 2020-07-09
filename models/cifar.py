@@ -36,6 +36,7 @@ class CifarClassifier(Classifier):
                 ConvBlock(32, 64, kernel_size=3, padding=1),
                 ConvBlock(64, 128, kernel_size=3, padding=1),
                 ConvBlock(128, self.hidden_size, kernel_size=3, padding=1),
+                Flatten()
             )
         super().__init__(
             input_shape=(3,32,32),
