@@ -29,7 +29,7 @@ from pytorch_lightning import Trainer, seed_everything
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 
-from ..utils.logging_utils import get_logger, log_calls
+from utils.logging_utils import get_logger, log_calls
 
 ObservationType = TypeVar("ObservationType")
 ActionType = TypeVar("ActionType")
@@ -38,133 +38,114 @@ RewardType = TypeVar("RewardType")
 logger = get_logger(__file__, level=logging.DEBUG)
 
 
-class EnvironmentBase(ABC, Generic[ObservationType, ActionType, RewardType], IterableDataset):
-    """ Base class for a learning environment, wether its RL, Supervised or CL.
-    """
+class EnvironmentBase(ABC, Generator, Generic[ObservationType, ActionType, RewardType]):
+    """ ABC for a learning 'environment', wether RL, Supervised or CL. """
     @abstractmethod
     def __next__(self) -> ObservationType:
         """ Generate the next observation. """
 
     @abstractmethod
     def __iter__(self) -> Generator[ObservationType, ActionType, None]:
-        """ Iterate over the environment, yielding batches of Observations. """
+        """ Returns a generator yielding observations and accepting actions. """
 
     @abstractmethod
     def send(self, action: ActionType) -> RewardType:
         """ Send an action to the environment, and returns the corresponding reward. """
 
 
-class PassiveEnvironment(DataLoader, EnvironmentBase[Tuple[ObservationType, RewardType], None, None]):
+class PassiveEnvironment(DataLoader, EnvironmentBase, Generic[ObservationType, RewardType]):
     """Environment in which actions have no influence on future observations.
     
-    Normal supervised datasets such as Mnist, ImageNet, etc. fit under this category. 
+    Normal supervised datasets such as Mnist, ImageNet, etc. fit under this
+    category. 
+    For now, this is exactly the same as a DataLoader, basically.
+
+    TODO: Could instead subclass the ActiveEnvironment class and add a little
+    'mechanism' to yield tuples instead of observations and rewards separately.
     """
     def __next__(self) -> Tuple[ObservationType, RewardType]:
         """ Generate the next observation. """
         return super().__next__()
-
-    def __iter__(self):
-        """ Iterate over the environment, yielding batches of Observations (x) and rewards (y)"""
+    
+    def __iter__(self) -> Iterable[Tuple[ObservationType, RewardType]]:
+        """ Iterate over the environment, yielding batches of Observations (x) and rewards (y) """
         yield from super().__iter__()
-
-    def send(self, action: ActionType) -> None:
+    
+    def send(self, action: Any) -> None:
         """ Unused, since the environment is passive."""
         pass
 
 
+class ActiveEnvironment(DataLoader, EnvironmentBase[ObservationType, ActionType, RewardType]):
+    """Extends DataLoader to support sending back actions to the 'dataset'.
+    
+    This could be useful for modeling RL or Active Learning, for instance, where
+    the predictions (actions) have an impact on the data generation process.
 
-class ActiveDataLoader(DataLoader):
-    """Extends DataLoader to support sending back actions to the 'environment'.
-
-    This could be useful when in RL or Active Learning, for instance.
     When `dataset` isn't an instance of `EnvironmentBase`, i.e. when it is just
-    a regular dataset, this doesn't anything different than DataLoader.
+    a regular dataset, this doesn't do anything different than DataLoader.
+
+    What's different compared to the usual supervised environment is that
+    the observation (x) and the true label (y) are not given at the same time!
+    The true label `y` is given only after the prediction is sent back to the
     """
+    def __init__(self, dataset: Union[Dataset, IterableDataset], **dataloader_kwargs):
+        super().__init__(dataset, **dataloader_kwargs)
+        self.observation: Tensor
+        self.action: Tensor
+        self.reward: Tensor
+
+        self.manager = mp.Manager()
+        self.n_pulled: mp.Value[int] = self.manager.Value(int, 0)
+        self.n_pushed: mp.Value[int] = self.manager.Value(int, 0)
+
+    @log_calls
+    def __next__(self) -> ObservationType:
+        self.observation, self.reward = super().__next__()
+        self.n_pulled.value += 1
+        return self.observation
+
+    @log_calls
+    def __iter__(self) -> Generator[ObservationType, ActionType, RewardType]:
+        for batch in super().__iter__():
+            assert len(batch) == 2, "dataloader should yield both observations and rewards (for now)."
+            # The parent dataloader yields both the x's and y's.
+            self.observation, self.reward = batch
+
+
+            x = next(self)
+            # Yield x, receive y_pred and give y_true as a 'Reward'.
+            y_pred = yield x
+            y_true = self.send(y_pred)
+    
     @log_calls
     def send(self, action: ActionType) -> RewardType:
-        """ Sends an action to the 'Environment'.
+        """ Sends an action to the 'dataset'/'Environment'.
         
         Does nothing when the environment is a simple Dataset (when it isn't an
         instance of EnvironmentBase).        
         
         TODO: Figure out the interactions with num_workers and send, if any.
         """
-        # TODO: Should we instead create an `ActiveEnvironment` class and check for it instead? 
-        if not isinstance(self.dataset, EnvironmentBase):
-            return
+        assert action is not None, "Action shouldn't be None (for now)."
+        self.action = action
 
-        logger.debug("Receiving an action in `send` of ActiveDataloader.")
-        worker_info = torch.utils.data.get_worker_info()
-        if worker_info:
-            logger.debug(f"Worker info: {worker_info}")
-        else:
-            # single-process data loading
-            logger.debug("Single process data loading.")
-        return self.dataset.send(action)
-
-
-class ActiveEnvironment(ActiveDataLoader, EnvironmentBase[ObservationType, ActionType, RewardType]):
-    """ Environment where actions have an impact on future observations.
-    
-    This can be used to model an RL environment, for instance.
-
-    What's different compared to the usual supervised environment is that
-    the observation (x) and the true label (y) are not given at the same time!
-    The true label `y` is given only after the prediction is sent back to the
-
-    For instance:
-    ```python
-    my_model = MyModel()
-    dataset = MNIST("data")
-    env = ActiveEnvironment(data_source=dataset)
-    for x in env:
-        y_pred = my_model(x)
-        # 'send' the prediction (_action_), obtain a label (_reward_)
-        y_true = env.send(y_pred)
-        loss = my_model.get_loss(y_true, y_pred)
-        loss.backward()
-        my_model.optimizer_step()
-    ```
-    """
-    def __init__(self, data_source: Union[Dataset, ActiveDataLoader], **dataloader_kwargs):
-        if isinstance(data_source, Dataset):
-            data_source = ActiveDataLoader(data_source, **dataloader_kwargs)
-        self.dataloader = data_source
-
-        self.observation: Tensor
-        self.action: Tensor
-        self.reward: Tensor
-
-        self.dataloader_iter = iter(self.dataloader)
-        self.manager = mp.Manager()
-        self.n_pulled: mp.Value[int] = self.manager.Value(int, 0)
-        self.n_pushed: mp.Value[int] = self.manager.Value(int, 0)
-
-    @log_calls
-    def __next__(self) -> int:
-        self.x, self.y_true = next(self.dataloader_iter)
-        self.n_pulled.value += 1
-        return self.x
-
-    @log_calls
-    def __iter__(self) -> Generator[Tensor, Tensor, Tensor]:
-        y_true_prev: Optional[Tensor] = None
-        while True:
-            x = next(self)
-            # Yield x, receive y_pred and give y_true as a 'Reward'.
-            y_pred = yield x, y_true_prev
-            y_true = self.send(y_pred)
-            
-    @log_calls
-    def send(self, action: int) -> int:
-        self.y_pred = action
         if self.n_pulled.value != (self.n_pushed.value + 1):
             raise RuntimeError(
                 "Number of pulled values should be equal to number of pushed values + 1! "
                 f"n_pulled: {self.n_pulled.value} n_pushed: {self.n_pushed.value}"
             )
         self.n_pushed.value += 1
-        return self.y_true
+
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info:
+            logger.debug(f"Worker info: {worker_info}")
+        else:
+            # single-process data loading
+            logger.debug("Single process data loading.")
+
+        self.reward = self.dataset.send(action)
+        return self.reward
 
 
 class ZipEnvironments(EnvironmentBase[List[ObservationType], List[ActionType], List[RewardType]], IterableDataset):
@@ -222,11 +203,11 @@ class EnvironmentDataModule(LightningDataModule):
         super().prepare_data(*args, **kwargs)
     
     @log_calls
-    def train_dataloader(self, batch_size: int=None, num_workers: int=0) -> ActiveDataLoader:
+    def train_dataloader(self, batch_size: int=None, num_workers: int=0) -> ActiveEnvironment:
         if batch_size not in {None, 1}:
             raise NotImplementedError("Batch size can only be 1 or none for now.")
         batch_size = None
-        return ActiveDataLoader(self.env,
+        return ActiveEnvironment(self.env,
             batch_size=None,
             num_workers=num_workers,
             worker_init_fn=self.worker_env_init,

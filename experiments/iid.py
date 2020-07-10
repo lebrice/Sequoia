@@ -30,7 +30,7 @@ from .experiment import Experiment
 
 logger = get_logger(__file__)
 from pytorch_lightning import Trainer
-
+import wandb
 
 @dataclass
 class IID(Experiment):
@@ -44,6 +44,7 @@ class IID(Experiment):
 
         # Save to results dir.
         test_results = trainer.test()
+        
         print(f"test results: {test_results}")
 
         # self.log({"Test": test_loss}, once=True)

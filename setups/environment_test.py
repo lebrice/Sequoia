@@ -14,7 +14,7 @@ from torchvision.transforms import Compose, ToTensor
 
 from ..datasets.data_utils import FixChannels
 from ..utils.logging_utils import get_logger, log_calls
-from .environment_base import (ActiveEnvironment, EnvironmentBase,
+from .environment import (ActiveEnvironment, EnvironmentBase,
                                EnvironmentDataModule, PassiveEnvironment)
 from .rl import GymEnvironment
 
@@ -97,10 +97,7 @@ class ActiveMnistEnvironment(ActiveEnvironment[Tensor, Tensor, Tensor]):
     """ An Mnist environment which will keep showing the same class until a
     correct prediction is made, and then switch to another class.
     
-    which will keep giving the same class until the right prediction is made.
-
-    Args:
-        ActiveEnvironment ([type]): [description]
+    Which will keep giving the same class until the right prediction is made.
     """
     def __init__(self, start_class: int = 0, **kwargs):
         self.current_class: int = 0
@@ -112,7 +109,7 @@ class ActiveMnistEnvironment(ActiveEnvironment[Tensor, Tensor, Tensor]):
         self.y_pred: Tensor = None
 
     @log_calls
-    def __next__(self) -> int:
+    def __next__(self) -> Tensor:
         while self.y != self.current_class:
             # keep iterating while the example isn't of the right type.
             self.x = super().__next__()
@@ -130,7 +127,7 @@ class ActiveMnistEnvironment(ActiveEnvironment[Tensor, Tensor, Tensor]):
                 self.reward = self.send(action)
 
     @log_calls
-    def send(self, action: Tensor) -> int:
+    def send(self, action: Tensor) -> Tensor:
         print(f"received action {action}, returning current label {self.y}")
         self.y_pred = action
         if action == self.current_class:
@@ -165,6 +162,7 @@ def test_active_mnist_environment():
             break
     
     # current class should be 0 as last prediction was 9 and correct.
+    _current_class = 0
 
     # Second loop, where we always predict the wrong label.
     for i, x in enumerate(env):
@@ -177,7 +175,8 @@ def test_active_mnist_environment():
             break
     
     x = next(env)
-    y_true = env.send(0)
+    y_pred = 0
+    y_true = env.send(y_pred)
     assert y_true == 0
 
     x = next(env)

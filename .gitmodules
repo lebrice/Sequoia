@@ -10,3 +10,6 @@
 [submodule "pytorch-lightning-bolts"]
 	path = pytorch-lightning-bolts
 	url = https://github.com/PyTorchLightning/pytorch-lightning-bolts
+[submodule "utils/continuum"]
+	path = utils/continuum
+	url = https://github.com/lebrice/continuum.git

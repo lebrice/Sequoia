@@ -60,9 +60,6 @@ class Classifier(pl.LightningModule):
 
     [Improvements]
     - Move the 'classification' to an auxiliary task of some sort maybe?
-
-
-
     """
 
 

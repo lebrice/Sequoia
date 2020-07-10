@@ -23,7 +23,7 @@ from datasets.data_utils import FixChannels, keep_in_memory, train_valid_split
 from pl_bolts.datamodules import LightningDataModule
 from enum import Enum
 from torchvision import transforms as transform_lib
-
+from settings.base import ExperimentalSetting
 
 @dataclass
 class Config(Serializable):
@@ -32,7 +32,7 @@ class Config(Serializable):
     # TODO: Eventually switch this to the type of 'Environment' data module to use.
     # TODO: Allow the customization of which transform to use depending on the command-line maybe
     # instead of having just a choice of which DatasetConfig object to use.
-    dataset: DatasetConfig = mutable_field(DatasetConfig)
+    setting: ExperimentalSetting = mutable_field(ExperimentalSetting)
     
     log_dir_root: Path = Path("results")
     data_dir: Path = Path("data")
@@ -72,4 +72,4 @@ class Config(Serializable):
     def make_datamodule(self) -> LightningDataModule:
         """Creates the datamodule depending on the value of 'dataset' attribute.
         """
-        return self.dataset.load(data_dir=self.data_dir)
+        return self.setting

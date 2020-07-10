@@ -53,7 +53,6 @@ class Experiment(Serializable):
         """
         pass
 
-
     # HyperParameters of the model/experiment.
     hparams: Classifier.HParams = mutable_field(Classifier.HParams)
     # Configuration options for an experiment (log_dir, etc.)
@@ -62,10 +61,17 @@ class Experiment(Serializable):
     state: State = mutable_field(State, repr=False)
 
     def run(self):
-        raise RuntimeError("Implement your own run method in a subclass!")
+        """ Runs the experiment, generates plots, etc.
+
+        ``` Basically something like this: 
         model = Classifier(hparams=self.hparams, config=self.config)
         trainer = self.config.make_trainer()
         trainer.fit(model)
+        test_results = trainer.test()
+        ```
+        """
+        raise RuntimeError("Implement your own run method in a subclass!")
+        
         
 
     def launch(self):

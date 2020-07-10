@@ -6,13 +6,13 @@ import torch.multiprocessing as mp
 from torch.utils.data import IterableDataset
 
 from ..utils.logging_utils import get_logger, log_calls
-from .environment_base import (ActionType, EnvironmentBase, ObservationType,
+from .environment import (ActionType, EnvironmentBase, ObservationType,
                                RewardType)
 
 logger = get_logger(__file__)
 
 
-class GymEnvironment(gym.Wrapper, EnvironmentBase[ObservationType, ActionType, RewardType], IterableDataset):
+class GymEnvironment(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, ActionType, RewardType]):
     """ Wrapper around a GymEnvironment that exposes the EnvironmentBase "API"
         and which can be iterated on using DataLoaders.
     """
@@ -66,7 +66,7 @@ class GymEnvironment(gym.Wrapper, EnvironmentBase[ObservationType, ActionType, R
                 logger.debug("Received non-None action when yielding?")
                 self.action = action
             self._i.value += self.action or 0
-    
+
     @log_calls
     def reset(self):
         start_state = self.env.reset()
