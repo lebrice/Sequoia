@@ -129,15 +129,21 @@ class ActiveEnvironment(ActiveDataLoader, EnvironmentBase[ObservationType, Actio
     def __init__(self, data_source: Union[Dataset, ActiveDataLoader], **dataloader_kwargs):
         if isinstance(data_source, Dataset):
             data_source = ActiveDataLoader(data_source, **dataloader_kwargs)
-        self.dataloader = data_sourceloader
+        self.dataloader = data_source
 
         self.observation: Tensor
         self.action: Tensor
         self.reward: Tensor
 
+        self.dataloader_iter = iter(self.dataloader)
+        self.manager = mp.Manager()
+        self.n_pulled: mp.Value[int] = self.manager.Value(int, 0)
+        self.n_pushed: mp.Value[int] = self.manager.Value(int, 0)
+
     @log_calls
     def __next__(self) -> int:
-        self.x, self.y_true = next(self.dataloader)
+        self.x, self.y_true = next(self.dataloader_iter)
+        self.n_pulled.value += 1
         return self.x
 
     @log_calls
@@ -151,8 +157,14 @@ class ActiveEnvironment(ActiveDataLoader, EnvironmentBase[ObservationType, Actio
             
     @log_calls
     def send(self, action: int) -> int:
-        self.i.value += action
-        return np.random.random()
+        self.y_pred = action
+        if self.n_pulled.value != (self.n_pushed.value + 1):
+            raise RuntimeError(
+                "Number of pulled values should be equal to number of pushed values + 1! "
+                f"n_pulled: {self.n_pulled.value} n_pushed: {self.n_pushed.value}"
+            )
+        self.n_pushed.value += 1
+        return self.y_true
 
 
 class ZipEnvironments(EnvironmentBase[List[ObservationType], List[ActionType], List[RewardType]], IterableDataset):

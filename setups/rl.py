@@ -1,12 +1,14 @@
+from typing import Generator
+
 import gym
+import torch
+import torch.multiprocessing as mp
 from torch.utils.data import IterableDataset
 
+from ..utils.logging_utils import get_logger, log_calls
 from .environment_base import (ActionType, EnvironmentBase, ObservationType,
                                RewardType)
-from ..utils.logging_utils import log_calls, get_logger
-from typing import Generator
-import torch.multiprocessing as mp
-import torch
+
 logger = get_logger(__file__)
 
 
