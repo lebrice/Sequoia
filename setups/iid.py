@@ -29,8 +29,9 @@ from datasets.data_utils import FixChannels, keep_in_memory, train_valid_split
 from .base import PassiveEnvironment
 
 
-class CLEnvironment(LightningDataModule, PassiveEnvironment):
-    
+class IIDEnvironment(LightningDataModule, PassiveEnvironment):
+    def __init__(self)
+
 
 
 

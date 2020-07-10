@@ -25,28 +25,6 @@ from .rl import GymEnvironment
 
 logger = get_logger(__file__)
 
-@dataclass
-class ClassIncremental(Experiment):
-    """ Class Incremental setting. """
-    @dataclass
-    class Config(Experiment.Config):
-        """ Config of a ClassIncremental experiment. """
-        # Setup of the environment.
-        setting: CLSetting.Config = mutable_field(ClassIncrementalSetting.Config)
-    
-    config: Config = mutable_field(Config)
-
-    def run(self):
-        """ Simple class-incremental CL """
-        model = Classifier(hparams=self.hparams, config=self.config)
-        trainer = self.config.make_trainer()
-        trainer.fit(model)
-
-        # Save to results dir.
-        test_results = trainer.test()
-        
-        print(f"test results: {test_results}") 
-
 
 def test_class_incremental_mnist_setup():
     setup = ClassIncrementalMnist()
