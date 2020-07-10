@@ -55,6 +55,17 @@ available_encoders: Dict[str, Type[nn.Module]] = {
 
 
 class Classifier(pl.LightningModule):
+    """ Classifier model.
+    TODO Re-add the 'multihead' stuff and finish re-adding TaskIncremental
+
+    [Improvements]
+    - Move the 'classification' to an auxiliary task of some sort maybe?
+
+
+
+    """
+
+
     @dataclass
     class HParams(Serializable):
         """ Hyperparameters of the LightningModule."""
@@ -185,6 +196,16 @@ class Classifier(pl.LightningModule):
         }
     
     def get_loss(self, x: Tensor, y: Tensor=None, name: str="") -> LossInfo:
+        """Returns a LossInfo object containing the total loss and metrics. 
+
+        Args:
+            x (Tensor): The input examples.
+            y (Tensor, optional): The associated labels. Defaults to None.
+            name (str, optional): Name to give to the resulting loss object. Defaults to "".
+
+        Returns:
+            LossInfo: An object containing everything needed for logging/progressbar/metrics/etc.
+        """
         # TODO: Add a clean input preprocessing setup.
         # TODO: [improvement] Support a mix of labeled / unlabeled data at the example-level.
         x, y = self.preprocess_inputs(x, y)
