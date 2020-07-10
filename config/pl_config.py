@@ -30,17 +30,16 @@ class PLConfig(Serializable):
     """ Options related to the experimental setup. """
     # Which dataset to use.
     # TODO: Eventually switch this to the type of 'Environment' data module to use.
-    # TODO: Rework DatasetConfig so that you can choose the train/val/test augments, etc.
-    # TODO: Rework DatasetConfig so they give LightningDataModule instances instead of Datasets directly. 
     # TODO: Allow the customization of which transform to use depending on the command-line maybe
     # instead of having just a choice of which DatasetConfig object to use.
     dataset: DatasetConfig = mutable_field(DatasetConfig)
     
     log_dir_root: Path = Path("results")
     data_dir: Path = Path("data")
-
+    # Run in Debug mode: no wandb logging, extra output.
     debug: bool = False
-    
+    # Enables more verbose logging.
+    verbose: bool = False
     # Number of workers for the dataloaders.
     num_workers: int = torch.get_num_threads()
 
@@ -64,7 +63,11 @@ class PLConfig(Serializable):
         )
 
     def make_trainer(self) -> Trainer:
-        return self.trainer.make_trainer()
+        if self.debug:
+            logger = None
+        else:
+            logger = self.wandb.make_logger(self.log_dir_root)
+        return self.trainer.make_trainer(loggers=logger)
 
     def make_datamodule(self) -> LightningDataModule:
         """Creates the datamodule depending on the value of 'dataset' attribute.

@@ -44,6 +44,7 @@ def compose(transforms) -> Compose:
             return Compose(transforms)
     return transforms
 
+from utils.json_utils import encode, register_decoding_fn
 
 @dataclass
 class DatasetConfig(Serializable):
@@ -63,10 +64,10 @@ class DatasetConfig(Serializable):
     ])
 
     # TODO: Currently trying to find a way to specify the transforms from the command-line.
-    transforms: List[Transforms] = field(default=_default_transform)
-    train_transforms: List[Transforms] = list_field()
-    valid_transforms: List[Transforms] = list_field()
-    test_transforms: List[Transforms] = list_field()
+    transforms: List[Transforms] = field(default=_default_transform, to_dict=False)
+    train_transforms: List[Transforms] = list_field(to_dict=False)
+    valid_transforms: List[Transforms] = list_field(to_dict=False)
+    test_transforms: List[Transforms] = list_field(to_dict=False)
 
     def __post_init__(self):
         self.transforms = compose(self.transforms)
@@ -83,20 +84,3 @@ class DatasetConfig(Serializable):
             val_transforms=self.valid_transforms,
             test_transforms=self.test_transforms,
         )
-
-
-        # # Use the data_dir argument if given, otherwise use "./data"
-        # train = self.dataset_class(data_dir, train=True,  download=download, transform=self.transforms)
-        # test  = self.dataset_class(data_dir, train=False, download=download, transform=self.transforms)
-        # valid: Optional[Dataset] = None
-        
-        # if valid_fraction > 0:
-        #     train, valid = train_valid_split(train, valid_fraction)
-        
-        # if self.keep_in_memory:
-        #     keep_in_memory(train)
-        #     keep_in_memory(test)
-        #     if valid is not None:
-        #         keep_in_memory(valid)
-
-        # return train, valid, test

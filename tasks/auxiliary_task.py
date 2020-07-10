@@ -108,7 +108,7 @@ class AuxiliaryTask(nn.Module):
                         x: Tensor,
                         h_x: Tensor,
                         y_pred: Tensor,
-                        y: Tensor=None) -> LossInfo:
+                        y: Tensor=None) -> Optional[LossInfo]:
         """Returns the scaled LossInfo, with relevant prefixes added to the dicts.
         
         Parameters
@@ -135,7 +135,7 @@ class AuxiliaryTask(nn.Module):
             The loss, scaled.
         """
         if not self.enabled:
-            return LossInfo(self.name)
+            return None
         self.device = h_x.device
         
         x = x.to(self.device)

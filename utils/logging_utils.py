@@ -13,7 +13,7 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logging.getLogger('simple_parsing').addHandler(logging.NullHandler())
-root_logger = logging.getLogger("SSCL")
+root_logger = logging.getLogger("")
 T = TypeVar("T")
 
 def pbar(dataloader: Iterable[T], description: str="", *args, **kwargs) -> Iterable[T]:
@@ -53,7 +53,9 @@ def get_logger(name: str, level: int=None) -> logging.Logger:
         sh.setLevel(level)
         logger.addHandler(sh)
     # logger = logging.getLogger(name)
-    # logger.addHandler(TqdmLoggingHandler())
+    tqdm_handler = TqdmLoggingHandler()
+    tqdm_handler.setLevel(level)
+    logger.addHandler(tqdm_handler)
     return logger
 import sys
 
@@ -77,8 +79,6 @@ def log_calls(function: Callable, level=logging.INFO) -> Callable:
         ))
         return function(*args, **kwargs)
     return _wrapped
-
-
 
 
 def get_new_file(file: Path) -> Path:

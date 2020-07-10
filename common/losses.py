@@ -11,7 +11,7 @@ from torch import Tensor
 from simple_parsing import field, mutable_field
 from utils.json_utils import Serializable
 from utils.logging_utils import cleanup, get_logger
-from utils.utils import add_dicts, add_prefix
+from utils.utils import add_dicts, add_prefix, unique_consecutive
 
 from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                       get_metrics)
@@ -40,14 +40,24 @@ class LossInfo(Serializable):
         if self.name and self.name not in self.metrics:
             if y_pred is not None and y is not None:
                 self.metrics[self.name] = get_metrics(y_pred=y_pred, y=y)
+
+        if x is not None:
+            self.tensors["x"] = x.detach()
+        if h_x is not None:
+            self.tensors["h_x"] = h_x.detach()
+        if y_pred is not None:
+            self.tensors["y_pred"] = y_pred.detach()
+        if y is not None:
+            self.tensors["y"] = y.detach()
+
         for name, tensor in self.tensors.items():
             if not isinstance(tensor, Tensor):
                 tensor = torch.as_tensor(tensor)
             if tensor.requires_grad:
                 self.tensors[name] = tensor.detach()
-        if isinstance(self.total_loss, list):
-            self.total_loss = torch.as_tensor(self.total_loss)
-        
+            if isinstance(self.total_loss, float) and self.total_loss == 0:
+                self.total_loss = tensor.new_zeros([1], requires_grad=True)
+
         for name, loss in self.losses.items():
             if isinstance(loss, dict):
                 self.losses[name] = LossInfo.from_dict(loss)
@@ -144,6 +154,21 @@ class LossInfo(Serializable):
         self.tensors = add_dicts(self.tensors, other.tensors, add_values=False)
         return self
 
+    def __radd__(self, other: Any):
+        """Addition operator for when forward addition returned `NotImplemented`.
+
+        For example, doing something like `None + LossInfo()` will use __radd__,
+        whereas doing `LossInfo() + None` will use __add__.
+        """
+        if other is None:
+            return self
+        elif other == 0:
+            return self
+        if isinstance(other, Tensor):
+            # TODO: Other could be a loss tensor, maybe create a LossInfo object for it?
+            pass
+        return NotImplemented
+
     def __mul__(self, coefficient: Union[float,Tensor]) -> "LossInfo":
         """ Scale each loss tensor by `coefficient`.
 
@@ -152,7 +177,8 @@ class LossInfo(Serializable):
         LossInfo
             returns a scaled LossInfo instance.
         """
-        return LossInfo(
+        logger.debug(f" mul ({self.name}): before: {self.total_loss.requires_grad}")
+        result = LossInfo(
             name=self.name,
             coefficient=self.coefficient * coefficient,
             total_loss=self.total_loss * coefficient,
@@ -162,6 +188,19 @@ class LossInfo(Serializable):
             metrics=self.metrics,
             tensors=self.tensors,
         )
+        logger.debug(f" mul ({self.name}): after: {result.total_loss.requires_grad}")
+        return result
+
+    def __truediv__(self, coefficient: Union[float, Tensor]) -> "LossInfo":
+        logger.debug(f" div ({self.name}): before: {self.total_loss.requires_grad}")
+        
+        # if coefficient != 0:
+        result = self * (1 / coefficient)
+        logger.debug(f" div ({self.name}): after: {result.total_loss.requires_grad}")
+        return result
+        # else:
+        #     raise RuntimeError("Can't divide stuff")
+        # return NotImplemented
 
     @property
     def unscaled_losses(self):
@@ -186,20 +225,33 @@ class LossInfo(Serializable):
         for name, loss_info in self.losses.items():
             message[name] = loss_info.to_pbar_message()
 
-        prefix = (self.name + " ") if self.name else ""
-        message = add_prefix(message, prefix)
+        message = add_prefix(message, prefix=self.name, sep=" ")
 
         return cleanup(message, sep=" ")
     
     def to_dict(self):
-        self.detach()
         self.drop_tensors()
         return super().to_dict()
     
     def drop_tensors(self) -> None:
         self.tensors.clear()
-        for n, loss in self.losses.items():
+        for _, loss in self.losses.items():
             loss.drop_tensors()
+        return self
+
+    def detach(self) -> "LossInfo":
+        # self.tensors.clear()
+        return type(self).from_dict(self.to_dict())
+        result = LossInfo(
+            name=self.name,
+            coefficient=self.coefficient * coefficient,
+            total_loss=self.total_loss * coefficient,
+            losses=OrderedDict([
+                (k, value * coefficient) for k, value in self.losses.items()
+            ]),
+            metrics=self.metrics,
+            tensors=self.tensors,
+        )
 
     def absorb(self, other: "LossInfo") -> None:
         """Absorbs `other` into `self`, merging the losses and metrics.
@@ -221,35 +273,35 @@ class LossInfo(Serializable):
         self += new_other
     
     def all_metrics(self) -> Dict[str, Metrics]:
+        """ Returns a 'cleaned up' dictionary of all the Metrics objects. """
         result: Dict[str, Metrics] = {}
         result.update(self.metrics)
+
         for name, loss in self.losses.items():
             result.update(loss.all_metrics())
-        if self.name:
-            prefix = self.name
-            if not prefix.endswith(" "):
-                prefix += " "
-            return add_prefix(result, prefix)
+        
+        result = add_prefix(result, prefix=self.name, sep=" ")
         return result
 
+    def get_supervised_metrics(self) -> Union[ClassificationMetrics, RegressionMetrics]:
+        from tasks.tasks import Tasks
 
-def get_supervised_metrics(loss: LossInfo, mode: str="Test") -> Union[ClassificationMetrics, RegressionMetrics]:
-    from tasks.tasks import Tasks
-    if Tasks.SUPERVISED not in loss.losses:
-        loss = loss.losses[mode]
-    metric = loss.losses[Tasks.SUPERVISED].metrics[Tasks.SUPERVISED]
-    return metric
+        if Tasks.SUPERVISED in self.metrics:
+            return self.metrics[Tasks.SUPERVISED]
+        all_metrics = self.all_metrics()
+        if Tasks.SUPERVISED in all_metrics:
+            return all_metrics[Tasks.SUPERVISED]
+        
+        suffix = Tasks.SUPERVISED
+        # Return the first Metrics object which has a key ending with Tasks.SUPERVISED.
+        for name, metric in all_metrics.items():
+            if name.endswith(suffix):
+                return metric
 
+        raise RuntimeError(f"Couldn't find supervised metrics in lossinfo object {self}")
 
-def get_supervised_accuracy(loss: LossInfo, mode: str="Test") -> float:
-    # TODO: this is ugly. There is probably a cleaner way, but I can't think of it right now. 
-    try:
-        supervised_metric = get_supervised_metrics(loss, mode=mode)
-        return supervised_metric.accuracy
-    except KeyError as e:
-        print(f"Couldn't find the supervised accuracy in the `LossInfo` object: Key error: {e}")
-        print(loss.dumps(indent="\t", sort_keys=False))
-        raise e
+    def get_supervised_accuracy(self) -> float:
+        return self.get_supervised_metrics().accuracy
 
 
 @dataclass

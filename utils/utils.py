@@ -34,6 +34,7 @@ def n_consecutive(items: Iterable[T], n: int=2, yield_last_batch=True) -> Iterab
 
 
 def fix_channels(x_batch: Tensor) -> Tensor:
+    # TODO: Move this to data_utils.py
     if x_batch.dim() == 3:
         return x_batch.unsqueeze(1)
     else:
@@ -62,7 +63,7 @@ def to_dict_of_lists(list_of_dicts: Iterable[Dict[str, Any]]) -> Dict[str, List[
     return result
 
 
-def add_prefix(some_dict: Dict[str, T], prefix: str="") -> Dict[str, T]:
+def add_prefix(some_dict: Dict[str, T], prefix: str="", sep=" ") -> Dict[str, T]:
     """Adds the given prefix to all the keys in the dictionary that don't already start with it. 
     
     Parameters
@@ -74,16 +75,38 @@ def add_prefix(some_dict: Dict[str, T], prefix: str="") -> Dict[str, T]:
     
         A string prefix to append.
     
+    - sep : str, optional, by default " "
+
+        A string separator to add between the `prefix` and the existing keys
+        (which do no start by `prefix`). 
+
+    
     Returns
     -------
     Dict[str, T]
         A new dictionary where all keys start with the prefix.
+
+
+    Examples:
+    -------
+    >>> add_prefix({"a": 1}, prefix="bob", sep="")
+    {'boba': 1}
+    >>> add_prefix({"a": 1}, prefix="bob")
+    {'bob a': 1}
+    >>> add_prefix({"a": 1}, prefix="a")
+    {'a': 1}
+    >>> add_prefix({"a": 1}, prefix="a ")
+    {'a': 1}
     """
     if not prefix:
-        return OrderedDict(some_dict.items())
-    result: Dict[str, T] = OrderedDict()
+        return some_dict
+    result: Dict[str, T] = type(some_dict)()
+    
+    if sep and prefix.endswith(sep):
+        prefix = prefix.rstrip(sep)
+
     for key, value in some_dict.items():
-        new_key = key if key.startswith(prefix) else (prefix + key)
+        new_key = key if key.startswith(prefix) else (prefix + sep + key)
         result[new_key] = value
     return result
 

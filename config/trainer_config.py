@@ -1,11 +1,14 @@
-import torch
 from dataclasses import dataclass
-from typing import Optional
-from simple_parsing import Serializable, choice
+from typing import Iterable, Optional, Union
+
+import torch
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import LightningLoggerBase
+
+from simple_parsing import choice
+from utils.json_utils import Serializable
+
 from .wandb_config import WandbLoggerConfig
-from typing import Union, Iterable
 
 
 @dataclass

@@ -38,6 +38,7 @@ from utils.utils import add_prefix, common_fields, is_nonempty_dir
 
 logger = get_logger(__file__)
 
+
 @dataclass
 class ExperimentBase(Serializable):
     """Base-class for an Experiment.

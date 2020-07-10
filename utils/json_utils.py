@@ -1,3 +1,4 @@
+import inspect
 import json
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, fields, is_dataclass
@@ -16,7 +17,8 @@ from torch import Tensor, nn
 from simple_parsing.helpers import Serializable as SerializableBase
 from simple_parsing.helpers import SimpleJsonEncoder, encode
 from simple_parsing.helpers.serialization import encode, register_decoding_fn
-from .logging_utils import get_logger
+
+from .logging_utils import get_logger, log_calls
 
 T = TypeVar("T")
 logger = get_logger(__file__)
@@ -55,34 +57,35 @@ class Pickleable():
         # Use `vars(self)`` to get all the attributes, not just the fields.
         d = vars(self)
         return cpu(detach(d))
-        # Overwrite with `self.to_dict()` so we get fields in nice format.
-        # d.update(self.to_dict())
-        return d
-
+    
     def __setstate__(self, state: Dict):
         # logger.debug(f"__setstate__ was called")
         self.__dict__.update(state)
-
-    def detach(self):
+    
+    def detach(self) -> Dict:
         """Move all tensor attributes to the CPU and then detach them in-place.
         Returns `self`, for convenience.
         NOTE: also recursively moves and detaches `JsonSerializable` attributes.
         """
-        self.cpu()
-        self.detach_()
-        return self
-
+        return detach(self.__dict__)
+    
     def detach_(self) -> None:
         """ Detaches all the Tensor attributes in-place, then returns `self`.
         
         NOTE: also recursively detaches `JsonSerializable` attributes.
         """
-        self.__dict__ = detach(self.__dict__)
-
+        self.__setstate__(detach(self.__getstate__()))
+    
+    @log_calls
     def cpu(self) -> None:
-        self.__dict__ = detach(self.__dict__)
+        return cpu(self.__dict__)
 
-def detach(d: Dict[str, Any]) -> Dict[str, Any]:
+@singledispatch
+def detach(value):
+    return value.detach()
+
+@detach.register(dict)
+def detach_dict(d: Dict[str, Any]) -> Dict[str, Any]:
     """ Detaches all the Tensors in a dict, as well as all nested dicts.
     """
     result: Dict[str, Any] = {}
@@ -93,6 +96,7 @@ def detach(d: Dict[str, Any]) -> Dict[str, Any]:
             value = detach(value)
         result[key] = value
     return result
+
 
 def cpu(d: Dict[str, Any]) -> Dict[str, Any]:
     result: Dict[str, Any] = {}
@@ -124,6 +128,15 @@ class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  
 @encode.register
 def encode_tensor(obj: Tensor) -> List:
     return obj.tolist()
+
+
+@encode.register
+def encode_type(obj: type) -> List:
+    if inspect.isclass(obj):
+        return str(obj.__qualname__)
+    elif inspect.isfunction(obj):
+        return str(obj.__name__)
+    return str(obj)
 
 
 @encode.register
