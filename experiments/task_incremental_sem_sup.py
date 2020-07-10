@@ -20,7 +20,7 @@ from datasets.subset import ClassSubset
 from models.classifier import Classifier
 
 from .addons.curvature_analyser import Analyser
-from .task_incremental import TaskIncremental
+# from .task_incremental import TaskIncremental
 
 
 @dataclass

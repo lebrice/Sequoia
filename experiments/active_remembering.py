@@ -21,18 +21,18 @@ from utils.logging_utils import get_logger
 from utils.plotting import PlotSectionLabel
 from datasets.data_utils import unlabeled
 
-from .task_incremental import TaskIncremental
+from .task_incremental import ClassIncremental
 logger = get_logger(__file__)
 
 
 @dataclass
-class ActiveRemembering(TaskIncremental):
+class ActiveRemembering(ClassIncremental):
     """ Active-remembering experiment. Can we "remember" without labels?
     
     TODO: Add your arguments as attributes here, if any.
     """
     @dataclass
-    class Config(TaskIncremental.Config):
+    class Config(ClassIncremental.Config):
         """Config for the active remembering experiment. """
         # The maximum number of epochs to train on when remembering without labels.
         remembering_max_epochs: int = 1

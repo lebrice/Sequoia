@@ -111,7 +111,9 @@ class Classifier(pl.LightningModule):
         super().__init__()
         self.hp: "Classifier.HParams" = hparams
         self.config: Config = config
-        self.data_module: LightningDataModule = self.config.make_datamodule()
+        self.data_module: LightningDataModule = self.config.make_setting()
+        print(self.data_module)
+        exit()
         self.input_shape: Tuple[int, int, int] = self.data_module.dims
         self.classes = self.data_module.num_classes
 

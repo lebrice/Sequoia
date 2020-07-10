@@ -7,7 +7,7 @@ from .decoders import CifarDecoder, ImageNetDecoder, MnistDecoder
 
 def get_decoder_class_for_dataset(input_shape: Union[Tuple[int, int, int], torch.Size]) -> Type[nn.Module]:
     assert len(input_shape) == 3, input_shape
-    assert input_shape[0] == min(input_shape), f"should be in C, H, W format: {input_shape}"
+    # assert input_shape[0] == min(input_shape), f"should be in C, H, W format: {input_shape}"
     shape: Tuple[int, int, int] = tuple(input_shape)  # type: ignore
     h = shape[1]
     if h == 28:

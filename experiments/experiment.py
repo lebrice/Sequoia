@@ -27,7 +27,6 @@ from torchvision import transforms
 from torchvision.datasets import MNIST
 
 from config.config import Config as ConfigBase
-from datasets import DatasetConfig
 from models.pretrained_model import get_pretrained_encoder
 from simple_parsing import (ArgumentParser, Serializable, choice, field,
                             mutable_field)

@@ -2,8 +2,8 @@ import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import (Callable, ClassVar, Dict, List, Optional, Type, TypeVar,
-                    Union)
+from typing import (Callable, ClassVar, Dict, List, Optional, Tuple, Type,
+                    TypeVar, Union)
 
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
@@ -14,12 +14,51 @@ from continuum.datasets import *
 from continuum.datasets import _ContinuumDataset
 from continuum.scenarios.base import _BaseCLLoader
 from pl_bolts.datamodules import LightningDataModule, MNISTDataModule
-from .environment import (ActionType, ActiveEnvironment,
-                         EnvironmentBase, ObservationType, PassiveEnvironment,
-                         RewardType)
-from .base import PassiveSetting
 from simple_parsing import Serializable, choice, list_field, mutable_field
 
+from .base import PassiveSetting
+from .environment import (ActionType, ActiveEnvironment, EnvironmentBase,
+                          ObservationType, PassiveEnvironment, RewardType)
+
+num_classes_in_dataset: Dict[str, int] = {
+    "mnist": 10,
+    "fashion_mnist": 10,
+    "kmnist": 10,
+    "emnist": 10,
+    "qmnist": 10,
+    "mnist_fellowship": 30,
+    "cifar10": 10,
+    "cifar100": 100,
+    "cifar_fellowship": 110,
+    "imagenet100": 100,
+    "imagenet1000": 1000,
+    "permuted_mnist": 10,
+    "rotated_mnist": 10,
+    "core50": 50,
+    "core50-v2-79": 50,
+    "core50-v2-196": 50,
+    "core50-v2-391": 50,
+}
+
+dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
+    "mnist": [28, 28, 1],
+    "fashion_mnist": [28, 28, 1],
+    "kmnist": [28, 28, 1],
+    "emnist": [28, 28, 1],
+    "qmnist": [28, 28, 1],
+    "mnist_fellowship": [28, 28, 1],
+    "cifar10": [32, 32, 3],
+    "cifar100": [32, 32, 3],
+    "cifar_fellowship": [32, 32, 3],
+    "imagenet100": [224, 224, 3],
+    "imagenet1000": [224, 224, 3],
+    "permuted_mnist": [28, 28, 1],
+    "rotated_mnist": [28, 28, 1],
+    "core50": [224, 224, 3],
+    "core50-v2-79": [224, 224, 3],
+    "core50-v2-196": [224, 224, 3],
+    "core50-v2-391": [224, 224, 3],
+}
 
 @dataclass
 class CLSetting(PassiveSetting[ObservationType, RewardType]):
@@ -31,9 +70,10 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
 
     The current task can be set at the `current_task_id` attribute.
 
+    TODO: Add the missing members from LightningDataModule
     TODO: Maybe add a way to 'wrap' another LightningDataModule?
-    TODO: Change the base class from PassiveEnvironment to `ActiveEnvironment`
-    and change the corresponding returned types. 
+    TODO: Change the base class from PassiveSetting to `ActiveSetting` for
+    continual active learning / continual RL.
     """
 
     @dataclass
@@ -67,30 +107,34 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
             return type(self).available_datasets[self.dataset]
 
     # Configuration options for the environment / setup / datasets.
-    config: Config = mutable_field(Config)
+    config: Config = None
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config = None):
         """Creates a new CL environment / setup.
 
         Args:
             config (Config): Dataclass used for configuration.
         """
-        super().__init__(
-            train_transforms=config.train_transforms,
-            val_transforms=config.val_transforms,
-            test_transforms=config.test_transforms,
-        )
-        self.config: "CLEnvironment.Config" = config
-        self.dataset: _ContinuumDataset = config.dataset_class()
+        super().__init__(config=config or self.Config())
+        self.config: self.Config
         self.val_fraction: float = config.val_fraction
         
         self.__task_label_is_readable: bool = config.task_label_is_readable
         self.__task_label_is_writable: bool = config.task_label_is_writable
         self.__current_task_id: int = 0
 
-        self.train_datasets: List[Dataset] = []
-        self.val_datasets:   List[Dataset] = []
-        self.test_datasets:  List[Dataset] = []
+        self.dataset: _ContinuumDataset = None
+        self.train_datasets: List[_ContinuumDataset] = []
+        self.val_datasets:   List[_ContinuumDataset] = []
+        self.test_datasets:  List[_ContinuumDataset] = []
+
+    @property
+    def dims(self) -> Tuple[int, int, int]:
+        return dims_for_dataset[self.config.dataset]
+
+    @property
+    def num_classes(self) -> int:
+        return num_classes_in_dataset[self.config.dataset]
 
     @abstractmethod
     def make_train_cl_loader(self) -> _BaseCLLoader:
@@ -100,10 +144,11 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
     def make_test_cl_loader(self) -> _BaseCLLoader:
         """ Creates a test CL Loader using the continuum package.  """
 
-    def prepare_data(self, *args, **kwargs):
+    def prepare_data(self, *args, data_dir: Path="data", **kwargs):
         """ Prepares data, downloads the dataset, creates the datasets for each
         task.
         """
+        self.dataset: _ContinuumDataset = self.config.dataset_class(data_path=data_dir, download=True)
         self.train_cl_loader: _BaseCLLoader = self.make_test_cl_loader()
         self.test_cl_loader: _BaseCLLoader = self.make_test_cl_loader()
 
@@ -170,7 +215,7 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
         nb_tasks: int = 0
         # Either number of classes per task, or a list specifying for
         # every task the amount of new classes.
-        increment: Union[List[int], int] = list_field(0, type=int, nargs="+")
+        increment: Union[List[int], int] = list_field(0, type=int, nargs="*")
         # A different task size applied only for the first task.
         # Desactivated if `increment` is a list.
         initial_increment: int = 0
@@ -190,19 +235,22 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
 
         def __post_init__(self, *args, **kwargs):
             super().__post_init__(*args, **kwargs)
+            if len(self.increment) == 1:
+                self.increment = self.increment[0]
             self.test_increment = self.test_increment or self.increment
             self.test_initial_increment = self.test_initial_increment or self.test_increment
             self.test_class_order = self.test_class_order or self.class_order
 
     config: Config = mutable_field(Config)
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config=None):
         """Creates a ClassIncremental CL LightningDataModule.
 
         Args:
             config
         """
-        super().__init__(config=config)
+        super().__init__(config=config or self.Config())
+        self.nb_tasks = self.config.nb_tasks
     
 
     @abstractmethod

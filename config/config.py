@@ -12,7 +12,6 @@ import wandb
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.loggers import WandbLogger
 
-from datasets import DatasetConfig
 from pl_bolts.datamodules import LightningDataModule
 from simple_parsing import (Serializable, choice, field, list_field,
                             mutable_field)
@@ -23,17 +22,17 @@ from datasets.data_utils import FixChannels, keep_in_memory, train_valid_split
 from pl_bolts.datamodules import LightningDataModule
 from enum import Enum
 from torchvision import transforms as transform_lib
-from settings.base import ExperimentalSetting
+from setups.base import ExperimentalSetting
+from typing import ClassVar, Type
 
 @dataclass
 class Config(Serializable):
     """ Options related to the experimental setup. """
-    # Which dataset to use.
-    # TODO: Eventually switch this to the type of 'Environment' data module to use.
     # TODO: Allow the customization of which transform to use depending on the command-line maybe
-    # instead of having just a choice of which DatasetConfig object to use.
-    setting: ExperimentalSetting = mutable_field(ExperimentalSetting)
-    
+    # Options related to the the experiment's experimental setting.
+    setting_config: ExperimentalSetting.Config = mutable_field(ExperimentalSetting.Config)
+    setting_class: ClassVar[Type[ExperimentalSetting]] = ExperimentalSetting
+
     log_dir_root: Path = Path("results")
     data_dir: Path = Path("data")
     # Run in Debug mode: no wandb logging, extra output.
@@ -69,7 +68,10 @@ class Config(Serializable):
             logger = self.wandb.make_logger(self.log_dir_root)
         return self.trainer.make_trainer(loggers=logger)
 
-    def make_datamodule(self) -> LightningDataModule:
-        """Creates the datamodule depending on the value of 'dataset' attribute.
+    def make_setting(self) -> ExperimentalSetting:
+        """Creates the experimental setting (LightningDataModule) depending on
+        the value of 'dataset' attribute.
         """
-        return self.setting
+        return self.setting_class(self.setting_config) 
+
+
