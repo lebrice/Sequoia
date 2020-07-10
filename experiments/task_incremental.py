@@ -1,5 +1,4 @@
 import itertools
-from utils.logging_utils import get_logger
 from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass, fields
 from itertools import accumulate
@@ -16,9 +15,8 @@ from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
-from datasets import Datasets
-from common.losses import (LossInfo, TrainValidLosses, get_supervised_accuracy,
-                           get_supervised_metrics)
+
+from common.losses import LossInfo, TrainValidLosses
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from common.task import Task
 from datasets import DatasetConfig
@@ -26,9 +24,10 @@ from datasets.data_utils import unbatch, unlabeled
 from datasets.subset import ClassSubset
 from models.output_head import OutputHead
 from simple_parsing import choice, field, list_field, mutable_field, subparsers
-from utils.json_utils import Serializable
 from tasks import Tasks
 from utils import utils
+from utils.json_utils import Serializable
+from utils.logging_utils import get_logger
 from utils.utils import n_consecutive, roundrobin
 
 from .experiment import Experiment

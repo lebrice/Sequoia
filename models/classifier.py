@@ -23,7 +23,6 @@ from common.losses import LossInfo
 from common.metrics import Metrics, accuracy, get_metrics
 from common.task import Task
 from config import Config
-from config.pl_config import PLConfig
 from models.output_head import OutputHead
 from pl_bolts.datamodules import LightningDataModule
 from simple_parsing import MutableField as mutable_field
@@ -100,10 +99,10 @@ class Classifier(pl.LightningModule):
             options.update(kwargs)
             return optimizer_class(*args, **options)
 
-    def __init__(self, hparams: HParams, config: PLConfig):
+    def __init__(self, hparams: HParams, config: Config):
         super().__init__()
         self.hp: "Classifier.HParams" = hparams
-        self.config: PLConfig = config
+        self.config: Config = config
         self.data_module: LightningDataModule = self.config.make_datamodule()
         self.input_shape: Tuple[int, int, int] = self.data_module.dims
         self.classes = self.data_module.num_classes

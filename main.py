@@ -9,7 +9,6 @@ from typing import Any, List, Optional, Type
 
 from config import Config
 from experiments import *
-from experiments.experiment_base import ExperimentBase
 from simple_parsing import ArgumentParser, field
 from utils.logging_utils import get_logger
 from utils.utils import camel_case

@@ -22,7 +22,6 @@ from torchvision.utils import save_image
 from simple_parsing import ArgumentParser, mutable_field
 from common.losses import LossInfo, TrainValidLosses
 from common.metrics import get_metrics
-from datasets import Datasets
 from models.classifier import Classifier
 from simple_parsing import ArgumentParser, choice, field, subparsers
 from tasks import AuxiliaryTask, Tasks
@@ -30,66 +29,48 @@ from tasks import AuxiliaryTask, Tasks
 from .experiment import Experiment
 
 logger = get_logger(__file__)
+from pytorch_lightning import Trainer
 
 
 @dataclass
 class IID(Experiment):
     """ Simple IID setting. """
-    @dataclass
-    class Config(Experiment.Config):
-        """ Config for the IID experiment. """
-        # Maximum number of epochs to train for. 
-        max_epochs: int = 10
     
-    config: Config = mutable_field(Config)
-
     def run(self) -> Tuple[TrainValidLosses, LossInfo]:
         """ Simple IID Training on train/valid datasets, then evaluate on test dataset. """
-        self.setup()
-        train, valid, test = self.load_datasets()
-        assert valid is not None
-        # Get the dataloaders
-        train_loader = self.get_dataloader(train)
-        valid_loader = self.get_dataloader(valid)
-        test_loader = self.get_dataloader(test)
+        model = Classifier(hparams=self.hparams, config=self.config)
+        trainer = self.config.make_trainer()
+        trainer.fit(model)
 
-        # Train until convergence on validation set (or for a number of epochs) 
-        all_losses = self.train(
-            train_loader,
-            valid_loader,
-            epochs=self.config.max_epochs,
-            temp_save_dir=self.checkpoints_dir,
-        )
         # Save to results dir.
-        self.results_dir.mkdir(exist_ok=True)
-        self.save_state(self.results_dir)
+        test_results = trainer.test()
+        print(f"test results: {test_results}")
 
-        test_loss = self.test(test_loader)
-        self.log({"Test": test_loss}, once=True)
+        # self.log({"Test": test_loss}, once=True)
         
-        if self.config.use_wandb:
-            wandb.run.summary["Test loss"] = test_loss.losses[Tasks.SUPERVISED].total_loss
-            wandb.run.summary["Test Accuracy"] = test_loss.losses[Tasks.SUPERVISED].accuracy
-        # make training/validation plots. Not really needed when using wandb.
-        plots_dict = self.make_plots(all_losses)
+        # if self.config.use_wandb:
+        #     wandb.run.summary["Test loss"] = test_loss.losses[Tasks.SUPERVISED].total_loss
+        #     wandb.run.summary["Test Accuracy"] = test_loss.losses[Tasks.SUPERVISED].accuracy
+        # # make training/validation plots. Not really needed when using wandb.
+        # plots_dict = self.make_plots(all_losses)
 
-        for figure_name, fig in plots_dict.items():    
-            if self.config.debug:
-                fig.show()
-                fig.waitforbuttonpress(timeout=30)
-            fig.savefig(self.plots_dir / Path(figure_name).with_suffix(".jpg"))
+        # for figure_name, fig in plots_dict.items():    
+        #     if self.config.debug:
+        #         fig.show()
+        #         fig.waitforbuttonpress(timeout=30)
+        #     fig.savefig(self.plots_dir / Path(figure_name).with_suffix(".jpg"))
 
-        # Get the most recent validation metrics. 
-        last_step = max(all_losses.valid_losses.keys())
-        last_val_loss = all_losses.valid_losses[last_step]
-        class_accuracy = last_val_loss.losses[Tasks.SUPERVISED].metric.class_accuracy
-        valid_class_accuracy_mean = class_accuracy.mean()
-        valid_class_accuracy_std = class_accuracy.std()
-        logger.info(f"Validation Average Class Accuracy: {valid_class_accuracy_mean:.2%}")
-        logger.info(f"Validation Class Accuracy STD: {valid_class_accuracy_std}")
-        self.log(plots_dict, once=True)
+        # # Get the most recent validation metrics. 
+        # last_step = max(all_losses.valid_losses.keys())
+        # last_val_loss = all_losses.valid_losses[last_step]
+        # class_accuracy = last_val_loss.losses[Tasks.SUPERVISED].metric.class_accuracy
+        # valid_class_accuracy_mean = class_accuracy.mean()
+        # valid_class_accuracy_std = class_accuracy.std()
+        # logger.info(f"Validation Average Class Accuracy: {valid_class_accuracy_mean:.2%}")
+        # logger.info(f"Validation Class Accuracy STD: {valid_class_accuracy_std}")
+        # self.log(plots_dict, once=True)
 
-        return all_losses, test_loss
+        # return all_losses, test_loss
 
     def make_plots(self, all_losses: TrainValidLosses) -> Dict[str, plt.Figure]:
         train_losses: Dict[int, LossInfo] = all_losses.train_losses

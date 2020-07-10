@@ -53,9 +53,9 @@ def get_logger(name: str, level: int=None) -> logging.Logger:
         sh.setLevel(level)
         logger.addHandler(sh)
     # logger = logging.getLogger(name)
-    tqdm_handler = TqdmLoggingHandler()
-    tqdm_handler.setLevel(level)
-    logger.addHandler(tqdm_handler)
+    # tqdm_handler = TqdmLoggingHandler()
+    # tqdm_handler.setLevel(level)
+    # logger.addHandler(tqdm_handler)
     return logger
 import sys
 

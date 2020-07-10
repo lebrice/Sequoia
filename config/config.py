@@ -1,105 +1,75 @@
-import functools
-from utils.logging_utils import get_logger
+""" Config dataclasses for use with pytorch lightning.
+
+@author Fabrice Normandin (@lebrice)
+"""
 import os
-import shutil
-import sys
-from abc import ABC, abstractmethod
-from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Generic, List, Optional, Tuple, TypeVar
+from typing import List, Optional, Union
 
-import numpy as np
 import torch
-import tqdm
 import wandb
-from torch import Tensor, nn, optim
-from torch.nn import functional as F
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
-from torchvision.utils import save_image
+from pytorch_lightning import Trainer, seed_everything
+from pytorch_lightning.loggers import WandbLogger
 
-from simple_parsing import field, list_field, mutable_field
-from utils import cuda_available, gpus_available, set_seed
-from utils.early_stopping import EarlyStoppingOptions
-from utils.json_utils import Serializable
-from utils.logging_utils import get_logger
-from .wandb_config import WandbConfig
+from datasets import DatasetConfig
+from pl_bolts.datamodules import LightningDataModule
+from simple_parsing import (Serializable, choice, field, list_field,
+                            mutable_field)
 
-logger = get_logger(__file__)
+from .trainer_config import TrainerConfig
+from .wandb_config import WandbLoggerConfig
+from datasets.data_utils import FixChannels, keep_in_memory, train_valid_split
+from pl_bolts.datamodules import LightningDataModule
+from enum import Enum
+from torchvision import transforms as transform_lib
+
 
 @dataclass
-class Config(WandbConfig):
-    """Settings related to the training setup. """
-
-    debug: bool = field(alias="-d", default=False, action="store_true", nargs=0)      # enable debug mode.
-    verbose: bool = field(alias="-v", default=False, action="store_true", nargs=0)    # enable verbose mode.
-
-    # Number of steps to perform instead of complete epochs when debugging
-    debug_steps: Optional[int] = None
-    data_dir: Path = Path("data")  # data directory.
-
-    log_interval: int = 10   # How many batches to wait between logging calls.
+class Config(Serializable):
+    """ Options related to the experimental setup. """
+    # Which dataset to use.
+    # TODO: Eventually switch this to the type of 'Environment' data module to use.
+    # TODO: Allow the customization of which transform to use depending on the command-line maybe
+    # instead of having just a choice of which DatasetConfig object to use.
+    dataset: DatasetConfig = mutable_field(DatasetConfig)
     
-    random_seed: int = 1            # Random seed.
-    use_cuda: bool = cuda_available # Whether or not to use CUDA.
+    log_dir_root: Path = Path("results")
+    data_dir: Path = Path("data")
+    # Run in Debug mode: no wandb logging, extra output.
+    debug: bool = False
+    # Enables more verbose logging.
+    verbose: bool = False
+    # Number of workers for the dataloaders.
+    num_workers: int = torch.get_num_threads()
+
+    seed: int = 0
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Options for wandb logging.
+    wandb: WandbLoggerConfig = mutable_field(WandbLoggerConfig)
+    # Options for the trainer.
+    trainer: TrainerConfig = mutable_field(TrainerConfig)
     
-    # num_workers for the dataloaders.
-    num_workers: int = 0
-
-    # Which specific device to use.
-    # NOTE: Can be set directly with the command-line! (ex: "--device cuda")
-    device: torch.device = torch.device("cuda" if cuda_available else "cpu")
-    
-    use_wandb: bool = True # Whether or not to log results to wandb
-    
-    # Save the command-line arguments that were used to create this run.
-    argv: List[str] = field(init=False, default_factory=sys.argv.copy)
-
-    early_stopping: EarlyStoppingOptions = mutable_field(EarlyStoppingOptions)
-
-    use_accuracy_as_metric: bool = False
-
-    # Remove the existing log_dir, if any. Useful when debugging, as we don't
-    # always want to keep some intermediate checkpoints around. 
-    delete_existing_log_dir: bool = False
-
     def __post_init__(self):
-        # set the manual seed (for reproducibility)
-        set_seed(self.random_seed + (self.run_number or 0))
+        seed_everything(self.seed)
+    
+    @property
+    def log_dir(self):
+        return self.log_dir_root.joinpath(
+            (self.wandb.project or ""),
+            (self.wandb.group or ""),
+            (self.wandb.run_name or ""),
+            self.wandb.run_id,
+        )
 
-        if not self.run_group:
-            # the run group is by default the name of the experiment.
-            self.run_group = type(self).__qualname__.split(".")[0]
-        
-        if self.use_cuda and not cuda_available:
-            print("Cannot use the passed value of argument 'use_cuda', as CUDA "
-                  "is not available!")
-            self.use_cuda = False
-        if not self.use_cuda:
-            self.device = torch.device("cpu")
-
+    def make_trainer(self) -> Trainer:
         if self.debug:
-            self.use_wandb = False
-            if self.run_name is None:
-                self.run_name = "debug"
-            
-           
-            if self.use_cuda:
-                # TODO: set CUDA deterministic.
-                torch.backends.cudnn.deterministic = True
-                torch.backends.cudnn.benchmark = False
+            logger = None
+        else:
+            logger = self.wandb.make_logger(self.log_dir_root)
+        return self.trainer.make_trainer(loggers=logger)
 
-        if self.delete_existing_log_dir and self.log_dir.exists():
-            # wipe out the debug folder every time.
-            shutil.rmtree(self.log_dir)
-            logger.warning(f"REMOVED THE LOG DIR {self.log_dir}")
-            self.log_dir.mkdir(exist_ok=False, parents=True)
-
-        if self.notes:
-            with open(self.log_dir / "notes.txt", "w") as f:
-                f.write(self.notes)
-
-# shared config object.
-## TODO: unused, but might be useful!
-# config: Config = Config()
+    def make_datamodule(self) -> LightningDataModule:
+        """Creates the datamodule depending on the value of 'dataset' attribute.
+        """
+        return self.dataset.load(data_dir=self.data_dir)

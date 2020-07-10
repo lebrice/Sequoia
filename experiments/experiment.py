@@ -1,154 +1,86 @@
-"""Creates the Experiment class dynamically by adding all the addons on top of ExperimentBase.
+import os
+import random
+from dataclasses import dataclass
+from functools import partial
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Type, Union
 
-Also gathers all the `State` and `Config` subclasses (if the addons define them)
-and adds them on top of `
+import numpy as np
+import pytorch_lightning as pl
+import torch
+from pl_bolts.datamodules import (CIFAR10DataModule, FashionMNISTDataModule,
+                                  ImagenetDataModule, LightningDataModule,
+                                  MNISTDataModule, SSLImagenetDataModule)
+from pl_bolts.models import LogisticRegression
+from pl_bolts.models.self_supervised import CPCV2, SimCLR
+from pl_bolts.models.self_supervised.simclr import (SimCLREvalDataTransform,
+                                                    SimCLRTrainDataTransform)
+from pytorch_lightning import Trainer
+from pytorch_lightning import loggers as pl_loggers
+from pytorch_lightning import metrics, seed_everything
+from torch import Tensor, nn, optim
+from torch.nn import functional as F
+from torch.optim import Optimizer  # type: ignore
+from torch.utils.data import DataLoader, Dataset
+from torchvision import models as tv_models
+from torchvision import transforms
+from torchvision.datasets import MNIST
 
-# Load up the addons, each of which adds independent, useful functionality to the Experiment base-class.
-# TODO: This might not be the cleanest/most elegant way to do it, but it's better than having files with 1000 lines in my opinion.
-"""
-import inspect
-from dataclasses import InitVar, dataclass
-from typing import Any, List, NewType, Tuple, Type, TypeVar
+from config.config import Config as ConfigBase
+from datasets import DatasetConfig
+from models.pretrained_model import get_pretrained_encoder
+from simple_parsing import (ArgumentParser, Serializable, choice, field,
+                            mutable_field)
+from utils.logging_utils import get_logger
 
-from simple_parsing import mutable_field
-
-from .addons.labeled_plot_regions import LabeledPlotRegionsAddon
-from .addons.replay import ReplayAddon
-from .addons.representation_knn import KnnAddon
-from .addons.test_time_training import TestTimeTrainingAddon
-from .addons.vae_addon import SaveVaeSamplesAddon
-from .addons.semi_supervised import SemiSupervisedBatchesAddon
-from .experiment_base import ExperimentBase
+logger = get_logger(__file__)
+from models.classifier import Classifier
 
 
 @dataclass
-class Experiment(
-            LabeledPlotRegionsAddon,
-            ReplayAddon,
-            KnnAddon,
-            TestTimeTrainingAddon,
-            SaveVaeSamplesAddon,
-            SemiSupervisedBatchesAddon,
-        ):
-    # If the addon has a 'Config' defined, then add it.
-    # NOTE: we can't just add all the <Addon>.Config classes, since that would
-    # cause the error "duplicate base class `Config`".
+class Experiment(Serializable):
+    
     @dataclass
-    class Config(
-                # LabeledPlotRegionsAddon.Config,
-                ReplayAddon.Config,
-                KnnAddon.Config,
-                TestTimeTrainingAddon.Config,
-                # SaveVaeSamplesAddon.Config,
-                # SemiSupervisedBatchesAddon.Config,
-            ):
+    class Config(ConfigBase):
         pass
     
     @dataclass
-    class State(
-                LabeledPlotRegionsAddon.State,
-                ReplayAddon.State,
-                # KnnAddon.State,
-                # TestTimeTrainingAddon.State,
-                # SaveVaeSamplesAddon.State,
-                # SemiSupervisedBatchesAddon.State,
-            ):
+    class State(Serializable):
+        """ object which tracks the state of an experiment. 
+        
+        TODO: Might not be useful anymore.
+        TODO: (somewhat unrelated) What does the `experiment` kwarg to WandbLogger do?
+        """
         pass
-    
+
+
+    # HyperParameters of the model/experiment.
+    hparams: Classifier.HParams = mutable_field(Classifier.HParams)
+    # Configuration options for an experiment (log_dir, etc.)
     config: Config = mutable_field(Config)
-    state: State = mutable_field(State, init=False)
 
-## Other ways of doing this dynamically, but we lose out on type hinting :(
+    state: State = mutable_field(State, repr=False)
 
-# def _register_new_experiment_addon(addon: Type[ExperimentAddon]):
-#     base_classes: List[Type] = list(Experiment.__bases__)
-#     # print(f"Current bases: {base_classes}")
-#     n_bases = len(base_classes)
-#     if ExperimentBase in base_classes:
-#         index_of_exp_base = base_classes.index(ExperimentBase)
-#         # print(f"Index of exp_base: {index_of_exp_base}")
-#         base_classes.pop(index_of_exp_base)
-#     base_classes.insert(0, addon)
-#     Experiment.__bases__ = tuple(base_classes)
-#     print(Experiment.mro())
+    def run(self):
+        raise RuntimeError("Implement your own run method in a subclass!")
+        model = Classifier(hparams=self.hparams, config=self.config)
+        trainer = self.config.make_trainer()
+        trainer.fit(model)
+        
 
-# print(f"All addons: {all_addons}")
-# for addon in all_addons:
-#     _register_new_experiment_addon(addon)
-
+    def launch(self):
+        print("Launching experiment.")
+        if self.config.debug:
+            print(self.dumps_yaml(indent=1))
+        self.run()
+        # MnistModel.load_from_checkpoint("test")
+        # trainer.test(model)
+        # trainer.save_checkpoint("test")
 
 
-# # Create the Experiment.Config class.
-# config_dict = dict()
-# for base in config_bases:
-#     config_dict.update(base.__dict__)
-# Config = type("Config", tuple(config_bases), config_dict)
-
-# # Create the Experiment.State class.
-# state_dict = dict()
-# for base in state_bases:
-#     state_dict.update(base.__dict__)
-# State = type(ExperimentBase.State.__name__, tuple(state_bases), {})
-
-# # Create the Experiment class.
-# experiment_dict = dict()
-# for base in all_addons:
-#     experiment_dict.update(base.__dict__)
-# experiment_dict["State"] = State
-# experiment_dict["Config"] = Config
-# Experiment = type("Experiment", tuple(all_addons), experiment_dict)
-
-# ExperimentType = Type[ExperimentBase]
-# print("EXPERIMENT")
-
-
-
-# a = Experiment()
-# print(a)
-# exit()
-
-# @dataclass
-# class Experiment(*all_addons):
-#     @dataclass
-#     class Config(*config_bases):
-#         pass
-
-#     @dataclass
-#     class State(*state_bases):
-#         pass
-
-
-# print(all_addons)
-# exit()
-
-# @dataclass  # type: ignore
-# class Experiment(ExperimentWithKNN,
-#                  ExperimentWithVAE,
-#                  TestTimeTrainingAddon,
-#                  LabeledPlotRegionsAddon,
-#                  ExperimentWithReplay):
-#     """ Class used to perform a given 'method' or evaluation/experiment.
-#     (ex: Mnist_iid, Mnist_continual, Cifar10, etc. etc.)
-    
-#     To create a new experiment, subclass this class, and add/change what you
-#     need to customize in the Config class.
-#     """
-
-#     @dataclass
-#     class Config(ExperimentWithKNN.Config,
-#                  TestTimeTrainingAddon.Config,
-#                  ExperimentWithReplay.Config):
-#         """ Describes the parameters of an experiment. """
-#         pass
-    
-#     def __post_init__(self, *args, **kwargs):
-#         super().__post_init__(*args, **kwargs)
-
-#     config: Config = mutable_field(Config)
-
-#     # # Experiment Config: non-tunable parameters specific to an experiment.
-#     # config: Config = mutable_field(Config)
-#     # # Model Hyper-parameters (tunable) settings.
-#     # hparams: Classifier.HParams = mutable_field(Classifier.HParams)
-#     # # State of the experiment (not parsed form command-line).
-#     # state: State = mutable_field(State, init=False)
+if __name__ == "__main__":
+    parser = ArgumentParser(description=__doc__)
+    parser.add_arguments(Experiment, "experiment")
+    args = parser.parse_args()
+    experiment: Experiment = args.experiment
+    experiment.launch()
