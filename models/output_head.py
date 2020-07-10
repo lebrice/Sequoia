@@ -1,3 +1,5 @@
+import torch
+import torch.nn.functional as F
 from torch import nn, Tensor
 from dataclasses import dataclass
 from typing import List
@@ -5,8 +7,19 @@ from simple_parsing import list_field
 from utils.json_utils import Serializable
 from torch.nn import Flatten  # type: ignore
 
-
 class OutputHead(nn.Module):
+    @dataclass
+    class HParams(Serializable):
+        pass
+
+    def __init__(self, input_size: int, output_size: int, hparams: "OutputHead.HParams"=None):
+        super().__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+        self.hparams = hparams or self.HParams()
+
+
+class LinearOutputHead(OutputHead):
     """Module for the output head of the model.
     
     NOTE: Just a simple dense block for now.
@@ -14,7 +27,7 @@ class OutputHead(nn.Module):
     """
 
     @dataclass
-    class HParams(Serializable):
+    class HParams(OutputHead.HParams):
         """ Hyperparameters of the output head. """
         # Number of hidden layers in the output head.
         hidden_layers: int = 0
@@ -47,11 +60,8 @@ class OutputHead(nn.Module):
 
     
     def __init__(self, input_size: int, output_size: int, hparams: "OutputHead.HParams"=None):
-        super().__init__()
-        self.input_size = input_size
-        self.output_size = output_size
+        super().__init__(input_size,output_size,hparams)
         self.hparams = hparams or self.HParams()
-
         hidden_layers: List[nn.Module] = []
         in_features = self.input_size
         for i, neurons in enumerate(self.hparams.hidden_neurons):
@@ -67,3 +77,68 @@ class OutputHead(nn.Module):
         h_x = self.flatten(h_x)
         x = self.dense(h_x)
         return self.output(x)
+
+
+class OutputHead_DUQ(OutputHead):
+    #https://arxiv.org/pdf/2003.02037.pdf
+    """Module for the output head of the model.
+    """
+
+    @dataclass
+    class HParams(OutputHead.HParams):
+        """ Distance based output head. """
+        centroid_size: int = 512 #Size to use for centroids (default: 512)
+        length_scale: float = 0.1 #Length scale of RBF kernel (default: 0.1)",
+        gamma:float = 0.999 #Decay factor for exponential average (default: 0.999)",
+
+    
+    def __init__(self, input_size: int, output_size: int, hparams: "OutputHead.HParams"=None):
+        super().__init__(input_size, output_size, hparams)
+        self.hparams = hparams or self.HParams()
+
+        self.x_emb_upd = None
+        self.y_emb_upd = None
+        self.W = nn.Parameter(
+            torch.zeros(self.hparams.centroid_size, self.output_size, self.input_size)
+        )
+        nn.init.kaiming_normal_(self.W, nonlinearity="relu")
+
+        self.register_buffer("N", torch.zeros(self.output_size) + 13)
+        self.register_buffer(
+            "m", torch.normal(torch.zeros(self.hparams.centroid_size, self.output_size), 0.05)
+        )
+        self.m = self.m * self.N
+        self.sigma = self.hparams.length_scale
+
+
+    def rbf(self, z):
+        z = torch.einsum("ij,mnj->imn", z, self.W)
+
+        embeddings = self.m / self.N.unsqueeze(0)
+
+        diff = z - embeddings.unsqueeze(0)
+        diff = (diff ** 2).mean(1).div(2 * self.sigma ** 2).mul(-1).exp()
+
+        return diff
+    def prepare_embedings_update(self, x, y):
+        self.x_emb_upd = x
+        self.y_emb_upd = y
+    
+    def update_embeddings(self, encoder, x=None, y=None):
+        if x is None:
+            x = self.x_emb_upd
+            y = self.y_emb_upd
+        y = F.one_hot(y, self.output_size).float()
+        self.N = self.hparams.gamma * self.N + (1 - self.hparams.gamma) * y.sum(0)
+
+        z = encoder(x)
+        z = torch.einsum("ij,mnj->imn", z, self.W)
+        embedding_sum = torch.einsum("ijk,ik->jk", z, y)
+
+        self.m = self.hparams.gamma * self.m + (1 - self.hparams.gamma) * embedding_sum
+
+    def forward(self, x):
+        z = x
+        y_pred = self.rbf(z)
+
+        return (z, y_pred)

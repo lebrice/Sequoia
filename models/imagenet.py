@@ -7,7 +7,7 @@ from torchvision.models import resnet50
 
 from common.layers import ConvBlock
 from config import Config
-from datasets import Datasets
+from datasets import Datasets, DatasetConfig
 
 from .classifier import Classifier
 from .pretrained_model import get_pretrained_encoder
@@ -16,9 +16,10 @@ from .pretrained_model import get_pretrained_encoder
 class ImageNetClassifier(Classifier):
     def __init__(self,
                  hparams: Classifier.HParams,
-                 config: Config):
+                 config: Config,
+                 dataset_config: DatasetConfig = None):
         self.hidden_size = hparams.hidden_size
-        self.dataset_config = Datasets.imagenet.value
+        self.dataset_config = Datasets.imagenet.value if dataset_config is None else dataset_config.value
         # We use a Resnet50 by default encoder by default.
         hparams.encoder_model = hparams.encoder_model or resnet50
 
@@ -45,3 +46,11 @@ def normalize(tensor: Tensor, mean, std, inplace=False) -> Tensor:
     std  = torch.as_tensor(std, dtype=dtype, device=tensor.device)
     tensor.sub_(mean[None, :, None, None]).div_(std[None, :, None, None])
     return tensor
+
+class MiniImageNetClassifier(ImageNetClassifier):
+    def __init__(self,
+                 hparams: Classifier.HParams,
+                 config: Config, 
+                 dataset_config: DatasetConfig = None):
+        
+         super().__init__(hparams,config,Datasets.mini_imagenet)

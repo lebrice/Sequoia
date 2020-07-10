@@ -2,7 +2,7 @@ from datasets import Datasets, DatasetConfig
 from .classifier import Classifier
 from .cifar import Cifar10Classifier, Cifar100Classifier
 from .mnist import MnistClassifier
-from .imagenet import ImageNetClassifier
+from .imagenet import ImageNetClassifier, MiniImageNetClassifier
 from typing import Dict, Type, Union
 
 model_class_for_dataset: Dict[Datasets, Type[Classifier]] = {
@@ -11,7 +11,7 @@ model_class_for_dataset: Dict[Datasets, Type[Classifier]] = {
     Datasets.cifar10: Cifar10Classifier,
     Datasets.cifar100: Cifar100Classifier,
     Datasets.imagenet: ImageNetClassifier,
-    Datasets.mini_imagenet: ImageNetClassifier,
+    Datasets.mini_imagenet: MiniImageNetClassifier,
 }
 
 def get_model_class_for_dataset(dataset: Union[str, Datasets, DatasetConfig]) -> Type[Classifier]:

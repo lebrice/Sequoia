@@ -28,7 +28,7 @@ from common.losses import LossInfo
 from common.metrics import accuracy, get_metrics
 from common.task import Task
 from config import Config
-from models.output_head import OutputHead
+from models.output_head import OutputHead, LinearOutputHead, OutputHead_DUQ
 from simple_parsing import MutableField as mutable_field
 from simple_parsing import choice, field, list_field
 from tasks import AuxiliaryTask, AuxiliaryTaskOptions, Tasks
@@ -45,7 +45,7 @@ encoder_models: Dict[str, Type[nn.Module]] = {
     "resnet18": models.resnet18,
     "resnet18_sm": ResNet18,
     "resnet34": models.resnet34,
-    "resnet50": models.resnet50,
+    "resnet50": models.resnet50, 
     "resnet50_parallel": PipelineParallelResNet50,
     "resnet101": models.resnet101,
     "resnet152": models.resnet152,
@@ -60,6 +60,11 @@ encoder_models: Dict[str, Type[nn.Module]] = {
     # "resnext50_32x4d": models.resnext50_32x4d,
     # "wide_resnet50_2": models.wide_resnet50_2,
     # "mnasnet": models.mnasnet1_0,
+}
+
+output_heads: Dict[str, Type[nn.Module]] = {
+    "linear": LinearOutputHead,
+    "rbf": OutputHead_DUQ #https://arxiv.org/pdf/2003.02037.pdf
 }
 
 optimizers: Dict[str, Type[torch.optim.Optimizer]] = {
@@ -121,9 +126,6 @@ class Classifier(nn.Module):
         # Prevent gradients of the classifier from backpropagating into the encoder.
         detach_classifier: bool = False
 
-        # Hyperparameters of the "output head" module.
-        output_head: OutputHead.HParams = mutable_field(OutputHead.HParams)
-
         # Use an encoder architecture from the torchvision.models package.
         encoder_model: Type[nn.Module] = choice(
             encoder_models,
@@ -149,6 +151,17 @@ class Classifier(nn.Module):
         # Use either adam or sgd optimizer
         optimizer: str = choice(['sgd', 'adam', 'lars'], default='sgd')
 
+        #output head type
+        type_output_head: Type[nn.Module] = choice(
+            output_heads,
+            default="linear",
+            encoding_fn=key_for_dict(output_heads),
+            decoding_fn=output_heads.get,
+        )
+
+        #Weight for gradient penalty (default: 0)"
+        l_gradient_penalty: float = 0.
+
     def __init__(self,
                  input_shape: Tuple[int, ...],
                  num_classes: int,
@@ -158,14 +171,15 @@ class Classifier(nn.Module):
         super().__init__()
         self.input_shape = input_shape
         self.num_classes = num_classes
+        print(self.num_classes)
         # Feature extractor
         self.encoder = encoder 
-        # Classifier output layer
+        # Classifier output layer 
         self.hparams: Classifier.HParams = hparams
         self.config = config
 
         self.hidden_size = hparams.hidden_size  
-        self.classification_loss = nn.CrossEntropyLoss()
+
         self.in_device = self.out_device = self.device = self.config.device
         if isinstance(self.config.device, Tuple):
             self.in_device = self.config.device[0]
@@ -181,12 +195,30 @@ class Classifier(nn.Module):
         self._default_task = Task(classes=list(range(self.num_classes)))
         self._current_task = self._default_task
         
+        
+        # Hyperparameters of the "output head" module.
+        self.output_head: OutputHead.HParams = self.hparams.type_output_head.HParams()
         # Classifier for the default task.
-        self.default_output_head = OutputHead(
+        self.default_output_head = self.hparams.type_output_head(
             input_size=self.hidden_size,
             output_size=self.num_classes,
-            hparams=self.hparams.output_head,
+            hparams=self.output_head
         )
+
+        if isinstance(self.default_output_head, LinearOutputHead):
+            self.classification_loss = nn.CrossEntropyLoss()
+        else:
+            #we are in DUQ mode
+            def bce_loss_fn(y_pred, y):
+                y = F.one_hot(y, self.num_classes).float() 
+                bce = F.binary_cross_entropy(y_pred, y, reduction="sum").div(
+                    self.num_classes * y_pred.shape[0]
+                )
+                return bce
+            self.classification_loss = bce_loss_fn
+
+
+
         # Dictionary that maps from task classes to output head to be used.
         # By default, contains a single output head that serves all classes.
         self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()  # type: ignore 
@@ -259,10 +291,10 @@ class Classifier(nn.Module):
         #input mixup on labeled samples
         if self.hparams.mixup_sup_alpha:
             x_mixed, loss_f = sup_mixup(x,y, self.hparams.mixup_sup_alpha)
-            
         loss = loss_f(y_pred, y)
         metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
         loss_info = LossInfo(
+
             name=Tasks.SUPERVISED,
             total_loss=loss,
             tensors=(dict(x=x, h_x=h_x, y_pred=y_pred, y=y)),
@@ -278,20 +310,27 @@ class Classifier(nn.Module):
             raise RuntimeError("Whole batch can either be fully labeled or "
                                "fully unlabeled, but not a mix of both (for now)")
         x,y = self.preprocess_inputs(x,y)
+
+        if self.hparams.l_gradient_penalty > 0:
+            x.requires_grad_(True)
+
         y_pred = None
         y_aug = None
         h_x = None
+        x_aug = x
         if not self.hparams.entangle_sup:
             #self.encoder.to(self.config.device)
             h_x = self.encode(x)
             y_pred = self.logits(h_x)
+            if isinstance(y_pred, tuple):
+                y_pred = y_pred[1]
         
         total_loss = LossInfo(name)
         total_loss.total_loss = torch.zeros(1, device=self.out_device)       
 
         for task_name, aux_task in self.tasks.items():
             if aux_task.enabled:
-                aux_task_loss, h_x = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=None, y=y) #), device=self.config.device)
+                x_aug, aux_task_loss, h_x = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=None, y=y) #), device=self.config.device)
                 total_loss += aux_task_loss
 
         
@@ -305,17 +344,20 @@ class Classifier(nn.Module):
             #selet labeled samples and their representaitons
             y = y[indx_y]
             if isinstance(h_x, tuple):
-                hx_1, hx_2 = h_x
-                hx_1 = hx_1[indx_y]
-                hx_2 = hx_2[indx_y]
-                h_x = torch.cat([hx_1,hx_2], dim=0)
-                y = torch.cat([y,y], dim=0)
+                if y_pred is None:
+                    hx_1, hx_2 = h_x
+                    hx_1 = hx_1[indx_y]
+                    hx_2 = hx_2[indx_y]
+                    h_x = torch.cat([hx_1,hx_2], dim=0)
+                    y = torch.cat([y,y], dim=0)
             else:
                 h_x = h_x[indx_y]
 
             if y_pred is None:
                 #supervised loss computed on top of semi-representations
                 y_pred = self.logits(h_x)
+                if isinstance(y_pred, tuple):
+                    y_pred = y_pred[1]
             else:
                 y_pred=y_pred[indx_y]
                 
@@ -325,12 +367,51 @@ class Classifier(nn.Module):
             total_loss.tensors["y_pred"] = y_pred.detach().cpu()
             total_loss += supervised_loss
 
+        
+        if self.hparams.l_gradient_penalty>0 and self.encoder.training and not self.hparams.detach_classifier:
+            grad_penalty = LossInfo(name= 'grad_penalty')
+            if isinstance(x_aug, tuple):
+                x_aug = x_aug[0]
+            #x_aug = x_aug[indx_y]
+            grad_penalty.total_loss = self.hparams.l_gradient_penalty * self.calc_gradient_penalty(x_aug, y_pred)
+            total_loss += grad_penalty
+        
+        x.requires_grad_(False)
 
         if self.config.debug and self.config.verbose:
             for name, loss in total_loss.losses.items():
                 logger.debug(name, loss.total_loss, loss.metrics)
         
+        #update the prototypes fi we are using DUQ
+        if isinstance(self.classifier,  OutputHead_DUQ):
+            if isinstance(x_aug, tuple):
+                x_aug = x_aug[0]
+            x_aug = x_aug[indx_y]
+            self.classifier.prepare_embedings_update(x_aug, y)
         return total_loss
+    
+    def calc_gradient_penalty(self, x, y_pred):
+
+        def calc_gradients_input(x, y_pred):
+            gradients = torch.autograd.grad(
+                outputs=y_pred,
+                inputs=x,
+                grad_outputs=torch.ones_like(y_pred),
+                create_graph=True,
+            )[0]
+
+            gradients = gradients.flatten(start_dim=1)
+
+            return gradients
+        gradients = calc_gradients_input(x, y_pred)
+
+        # L2 norm
+        grad_norm = gradients.norm(2, dim=1)
+
+        # Two sided penalty
+        gradient_penalty = ((grad_norm - 1) ** 2).mean()
+
+        return gradient_penalty
 
     def encode(self, x: Tensor):
         x, _ = self.preprocess_inputs(x, None)
@@ -403,9 +484,11 @@ class Classifier(nn.Module):
 
     def get_output_head(self, task: Task) -> OutputHead:
         """ Returns the output head for a given task.
-        NOTE: Assumes that the model is multiheaded.
         """
-        return self.output_heads[task.dumps()]
+        if self.hparams.multihead:
+            return self.output_heads[task.dumps()]
+        else:
+            return self.default_output_head
 
     
     def model_pretrained_unique_attributes(self) -> List:
@@ -448,10 +531,10 @@ class Classifier(nn.Module):
         if task_str not in self.output_heads:
             # If there isn't an output head for this task
             logger.debug(f"Creating a new output head for task {task}.")
-            new_output_head = OutputHead(
+            new_output_head = LinearOutputHead(
                 input_size=self.hidden_size,
                 output_size=len(task.classes), 
-                hparams=self.hparams.output_head,
+                hparams=self.output_head,
             ).to(self.out_device)
 
             # Store this new head in the module dict and add params to optimizer.
@@ -493,7 +576,20 @@ class Classifier(nn.Module):
         updated.
         """
         self.optimizer.step()
-        self.lr_scheduler.step()
+        try:
+            self.lr_scheduler.step()
+        except:
+            pass
         for name, task in self.tasks.items():
             if task.enabled:
                 task.on_model_changed(global_step=global_step, **kwargs)
+        if isinstance(self.classifier,  OutputHead_DUQ):
+             with torch.no_grad():
+                was_training = self.training
+                self.eval()
+                self.classifier.update_embeddings(self.encoder)
+                if was_training:
+                    self.train()
+
+
+        

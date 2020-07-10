@@ -16,6 +16,8 @@ import numpy as np
 import torch
 import wandb
 from torch import Tensor
+
+from models.classifier import Classifier
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
@@ -307,6 +309,14 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
                     self.pretrain_train_dataset, self.pretrain_valid_dataset = train_valid_split(pretrain_train_dataset, 0.2)
     
+    @property
+    def checkpoints_dir(self) -> Path:
+        return self.config.log_dir / ("checkpoints"+self.md5)
+    
+    @property
+    def md5(self):
+        from tasks.byol_task import BYOL_Task
+        return hashlib.md5(str(self).encode('utf-8')+str(Classifier.HParams).encode('utf-8')+str(BYOL_Task.Options).encode('utf-8')).hexdigest()
 
 
 if __name__ == "__main__":

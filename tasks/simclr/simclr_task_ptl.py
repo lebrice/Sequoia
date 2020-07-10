@@ -39,7 +39,7 @@ class SimCLRTask(AuxiliaryTask, SimCLR):
 
         self.transform_train =  Compose([
             ToPILImage(),SimCLRTrainDataTransform(self.options.image_size)]) # img1, img2
-        self.transform_valid = Compose([ToPILImage(), SimCLREvalDataTransform(self.options.image_size)])
+        self.transform_eval = Compose([ToPILImage(), SimCLREvalDataTransform(self.options.image_size)])
 
         
     
@@ -107,5 +107,8 @@ class SimCLRTask(AuxiliaryTask, SimCLR):
     def preprocess_simclr(self, data:Tensor) -> Tensor:
         x_device = data.device
         data = data.cpu()
-        data = torch.stack([torch.stack(self.transform_train(x_i)) for x_i in data], dim=0)  # [2*B, C, H, W]        
+        if self.encoder.training:
+            data = torch.stack([torch.stack(self.transform_train(x_i)) for x_i in data], dim=0)  # [2*B, C, H, W]  
+        else:
+            data = torch.stack([torch.stack(self.transform_eval(x_i)) for x_i in data], dim=0)  # [2*B, C, H, W]                    
         return data.to(x_device)

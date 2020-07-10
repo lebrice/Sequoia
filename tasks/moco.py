@@ -48,9 +48,8 @@ class FalrHParams(HParams, Serializable):
 class MoCo_Task(AuxiliaryTask, MoCo):
     @dataclass
     class Options(AuxiliaryTask.Options):
-        """ Options for the SimCLR aux task. """
+        """ Options for the MoCo aux task. """
         # Hyperparameters from the falr submodule.
-        coefficient:int =1
 
         falr_options: FalrHParams = mutable_field(FalrHParams)
 
@@ -58,6 +57,8 @@ class MoCo_Task(AuxiliaryTask, MoCo):
 
         moco_size: int = 1280*7 #size of moco replay buffer
         xent_temp: float = 0.5 #tempreture for xent loss
+
+        proj_dim:int = 128 # the projection size
 
     def __init__(self, name: str="MoCo", options: AuxiliaryTask.Options=None):
         #instead of calling AuxiliaryTask._init_
@@ -67,17 +68,15 @@ class MoCo_Task(AuxiliaryTask, MoCo):
         self.options: MoCo_Task.Options
 
         self.options.image_size = AuxiliaryTask.input_shape[-1]
-        self.options.proj_dim = self.options.falr_options.proj_dim
         self.options.cifar = 1 #ignore
         self.options.repr_dim = AuxiliaryTask.hidden_size
         self.options._encoder_k = copy.deepcopy(self.encoder) 
         self.options.torchvision_model = self.options.falr_options.torchvision_model
         MoCo.__init__(self, self.options)
-        self.batch_size = None
 
         self.transform_train =  Compose([
             ToPILImage(),Moco2TrainImagenetTransforms(self.options.image_size)]) # img1, img2
-        self.transform_valid = Compose([ToPILImage(), Moco2EvalImagenetTransforms(self.options.image_size)])
+        self.transform_eval = Compose([ToPILImage(), Moco2EvalImagenetTransforms(self.options.image_size)])
 
     @property
     def encoder(self):
@@ -142,8 +141,6 @@ class MoCo_Task(AuxiliaryTask, MoCo):
 
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tuple[LossInfo, Tensor, Tensor]:
-        if self.batch_size is None:
-            self.batch_size = len(x)
         x = self.preprocess_moco(x)
         img_q, img_k = x.transpose(0,1)  
         u_logits, u_labels, h = self.forward(img_q, img_k)
@@ -155,5 +152,8 @@ class MoCo_Task(AuxiliaryTask, MoCo):
     def preprocess_moco(self, data:Tensor) -> Tensor:
         x_device = data.device
         data = data.cpu()
-        data = torch.stack([torch.stack(self.transform_train(x_i)) for x_i in data], dim=0)  # [2*B, C, H, W]        
+        if self.encoder.training:
+            data = torch.stack([torch.stack(self.transform_train(x_i)) for x_i in data], dim=0)  # [2*B, C, H, W]        
+        else:
+            data = torch.stack([torch.stack(self.transform_eval(x_i)) for x_i in data], dim=0)  # [2*B, C, H, W]    
         return data.to(x_device)

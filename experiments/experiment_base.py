@@ -86,6 +86,8 @@ class ExperimentBase(Serializable):
         # during the warum epochs the learning rate is graually increased untill the actual lr
         warmup_epochs:int = 10
 
+        restart_from_cp: bool = True #wether to reload from checkpoint
+
     @dataclass
     class State(Serializable):
         """ Dataclass used to store the state of an experiment.
@@ -203,7 +205,7 @@ class ExperimentBase(Serializable):
 
         # If the experiment was already started, or a 'restore_from' argument
         # was passed:
-        if self.started or self.config.restore_from_path is not None:
+        if self.started or self.config.restore_from_path is not None and self.config.restart_from_cp:
             logger.info(f"Experiment was already started in the past.")
             self.load_state(self.config.restore_from_path)
         elif self.done:

@@ -2,10 +2,14 @@ from dataclasses import dataclass, InitVar, asdict
 from typing import Dict, Optional, Union, List
 import numpy as np
 import torch
+import torch.nn as nn
+#from models import Classifier
 from torch import Tensor
+from torch.utils.data import Dataset, DataLoader
 from collections import OrderedDict
 import torch.nn.functional as functional
 from utils.json_utils import encode
+from sklearn.metrics import roc_auc_score
 from utils.json_utils import Serializable
 from utils.logging_utils import get_logger
 from simple_parsing import mutable_field, field
@@ -231,6 +235,27 @@ def get_metrics(y_pred: Union[Tensor, np.ndarray],
         return ClassificationMetrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
 
 
+@dataclass
+class AROC(Metrics):
+    aroc: float = 0.
+    def __post_init__(self, model: nn.Module, dataset: Dataset, dataset_ood: Dataset=None):
+        if dataset_ood is None:
+            self.aroc = get_auroc_classification(dataset, model)
+        else:
+            self.aroc = get_auroc_ood(dataset, dataset_ood, model)
+
+
+    def to_log_dict(self, verbose: bool=True) -> Dict:
+        d = super().to_log_dict()
+        d["aroc"] = float(self.aroc)
+        return d
+
+    def to_pbar_message(self) -> Dict[str, Union[str, float]]:
+        message = super().to_pbar_message()
+        message["aroc"] = float(self.aroc.item())
+        return message
+
+
 
     
 @torch.no_grad()
@@ -264,3 +289,70 @@ def class_accuracy(y_pred: Tensor, y: Tensor) -> Tensor:
 
 def get_class_accuracy(confusion_matrix: Tensor) -> Tensor:    
     return confusion_matrix.diag()/confusion_matrix.sum(1).clamp_(1e-10, 1e10)
+
+
+def prepare_ood_datasets(true_dataset, ood_dataset):
+    ood_dataset.transform = true_dataset.transform
+
+    datasets = [true_dataset, ood_dataset]
+
+    anomaly_targets = torch.cat(
+        (torch.zeros(len(true_dataset)), torch.ones(len(ood_dataset)))
+    )
+
+    concat_datasets = torch.utils.data.ConcatDataset(datasets)
+
+    dataloader = torch.utils.data.DataLoader(
+        concat_datasets, batch_size=500, shuffle=False, num_workers=6, pin_memory=False
+    )
+
+    return dataloader, anomaly_targets
+
+
+def get_auroc_ood(true_dataset, ood_dataset, model):
+    dataloader, anomaly_targets = prepare_ood_datasets(true_dataset, ood_dataset)
+
+    scores, accuracies = loop_over_dataloader(model, dataloader)
+
+    accuracy = np.mean(accuracies[: len(true_dataset)])
+    roc_auc = roc_auc_score(anomaly_targets, scores)
+
+    return accuracy, roc_auc
+
+
+def get_auroc_classification(dataset, model):
+    dataloader = torch.utils.data.DataLoader(
+        dataset, batch_size=500, shuffle=False, num_workers=6, pin_memory=False
+    )
+
+    scores, accuracies = loop_over_dataloader(model, dataloader)
+
+    accuracy = np.mean(accuracies)
+    roc_auc = roc_auc_score(1 - accuracies, scores)
+
+    return accuracy, roc_auc
+
+
+def loop_over_dataloader(model, dataloader):
+    was_training = model.encoder.training
+    model.eval()
+    with torch.no_grad():
+        scores = []
+        accuracies = []
+        for data, target in dataloader:
+            data = data.cuda()
+            target = target.cuda()
+
+            output = model.logits(model.encode(data))[1]
+            kernel_distance, pred = output.max(1)
+
+            accuracy = pred.eq(target)
+            accuracies.append(accuracy.cpu().numpy())
+
+            scores.append(-kernel_distance.cpu().numpy())
+
+    scores = np.concatenate(scores)
+    accuracies = np.concatenate(accuracies)
+    if was_training:
+        model.train()
+    return scores, accuracies

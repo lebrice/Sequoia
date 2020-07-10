@@ -139,9 +139,9 @@ class AuxiliaryTask(nn.Module):
         """
         if not self.enabled:
             return LossInfo(self.name)
-        loss_info, h_x = self.get_loss(x, h_x, y_pred, y)
+        x, loss_info, h_x = self.get_loss(x, h_x, y_pred, y)
         loss_info *= self.coefficient
-        return loss_info, h_x
+        return x, loss_info, h_x
 
     @property
     def coefficient(self) -> float:

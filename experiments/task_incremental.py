@@ -23,7 +23,7 @@ from torchvision.utils import save_image
 from datasets import Datasets
 from common.losses import (LossInfo, TrainValidLosses, get_supervised_accuracy,
                            get_supervised_metrics)
-from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
+from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics, AROC
 from common.task import Task
 from datasets import DatasetConfig
 from datasets.data_utils import unbatch, unlabeled
@@ -49,6 +49,10 @@ class TaskIncremental(Experiment):
         """ Configuration options for the TaskIncremental experiment. """
         # Number of classes per task.
         n_classes_per_task: int = 2
+
+        #number of tasks
+        n_tasks: int = 0
+
         # Wether to sort out the classes in the class_incremental setting.
         random_class_ordering: bool = True
         # Maximum number of epochs of self-supervised training to perform on the
@@ -158,8 +162,11 @@ class TaskIncremental(Experiment):
         self.save_state(save_model_weights=False)
 
         # Load the datasets
-        
-        self.n_tasks = len(self.tasks)
+        if self.config.n_tasks==0:
+            self.n_tasks = len(self.tasks) 
+        else:
+            self.n_tasks = self.config.n_tasks
+
         
         if self.state.global_step == 0:
             self.state.knn_losses   = [[None for _ in range(self.n_tasks)] for _ in range(self.n_tasks)]
