@@ -30,8 +30,9 @@ class Config(Serializable):
     """ Options related to the experimental setup. """
     # TODO: Allow the customization of which transform to use depending on the command-line maybe
     # Options related to the the experiment's experimental setting.
-    setting_config: ExperimentalSetting.Config = mutable_field(ExperimentalSetting.Config)
-    setting_class: ClassVar[Type[ExperimentalSetting]] = ExperimentalSetting
+    # setting_config: ExperimentalSetting.Config = mutable_field(ExperimentalSetting.Options)
+    # setting_class: ClassVar[Type[ExperimentalSetting]] = ExperimentalSetting
+    setting: ExperimentalSetting = mutable_field(ExperimentalSetting)
 
     log_dir_root: Path = Path("results")
     data_dir: Path = Path("data")
@@ -72,6 +73,8 @@ class Config(Serializable):
         """Creates the experimental setting (LightningDataModule) depending on
         the value of 'dataset' attribute.
         """
-        return self.setting_class(self.setting_config) 
+        #
+        return self.setting 
+        # return self.setting_class(self.setting_config) 
 
 

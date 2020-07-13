@@ -64,7 +64,7 @@ dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
 class CLSetting(PassiveSetting[ObservationType, RewardType]):
     """LightningDataModule for CL experiments.
 
-    This greatly simplifies the whole data generation process.
+    The hope is that this greatly simplifies the whole data generation process.
     the train_dataloader, val_dataloader and test_dataloader methods are used
     to get the dataloaders of the current task.
 
@@ -77,7 +77,7 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
     """
 
     @dataclass
-    class Config(PassiveSetting.Config):
+    class Options(PassiveSetting.Options):
         """ Config for the environment. """
         # Class variable holding all the available datasets.
         available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = {
@@ -107,20 +107,22 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
             return type(self).available_datasets[self.dataset]
 
     # Configuration options for the environment / setup / datasets.
-    config: Config = None
+    options: Options = mutable_field(Options)
 
-    def __init__(self, config: Config = None):
+    def __init__(self, options: Options=None):
         """Creates a new CL environment / setup.
 
         Args:
-            config (Config): Dataclass used for configuration.
+            options (Options): Dataclass used for configuration.
         """
-        super().__init__(config=config or self.Config())
-        self.config: self.Config
-        self.val_fraction: float = config.val_fraction
+        options = options or type(self).Options()
+        print(f"NewOptions: {options}")
+        super().__init__(options=options)
+        self.options: "CLSetting.Options"
+        self.val_fraction: float = self.options.val_fraction
         
-        self.__task_label_is_readable: bool = config.task_label_is_readable
-        self.__task_label_is_writable: bool = config.task_label_is_writable
+        self.__task_label_is_readable: bool = self.options.task_label_is_readable
+        self.__task_label_is_writable: bool = self.options.task_label_is_writable
         self.__current_task_id: int = 0
 
         self.dataset: _ContinuumDataset = None
@@ -130,11 +132,11 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
 
     @property
     def dims(self) -> Tuple[int, int, int]:
-        return dims_for_dataset[self.config.dataset]
+        return dims_for_dataset[self.options.dataset]
 
     @property
     def num_classes(self) -> int:
-        return num_classes_in_dataset[self.config.dataset]
+        return num_classes_in_dataset[self.options.dataset]
 
     @abstractmethod
     def make_train_cl_loader(self) -> _BaseCLLoader:
@@ -204,7 +206,7 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
     """ LightningDataModule for CL. 
     """
     @dataclass
-    class Config(CLSetting.Config):
+    class Options(CLSetting.Options):
         """ Config for Class Incremental Environment.
         
         'docstrings' were taken from the continuum documentation for the
@@ -241,16 +243,18 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
             self.test_initial_increment = self.test_initial_increment or self.test_increment
             self.test_class_order = self.test_class_order or self.class_order
 
-    config: Config = mutable_field(Config)
+    options: Options = mutable_field(Options)
 
-    def __init__(self, config: Config=None):
+    def __init__(self, options: Options=None):
         """Creates a ClassIncremental CL LightningDataModule.
 
         Args:
             config
         """
-        super().__init__(config=config or self.Config())
-        self.nb_tasks = self.config.nb_tasks
+        options = self.Options()
+        super().__init__(options=options)
+        print(f"type of options: {type(self.options).__qualname__}")
+        self.nb_tasks = self.options.nb_tasks
     
 
     @abstractmethod

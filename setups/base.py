@@ -45,7 +45,7 @@ Loader = TypeVar("Loader", bound=DataLoader)
 class ExperimentalSetting(LightningDataModule, Generic[Loader]):
         
     @dataclass
-    class Config(Serializable):
+    class Options(Serializable):
         """
         Represents all the configuration options related to a Setup. (LightningModule)
         """
@@ -69,21 +69,37 @@ class ExperimentalSetting(LightningDataModule, Generic[Loader]):
             self.test_transforms = compose(self.test_transforms) or self.transforms
 
     # Configuration options for the environment / setup / datasets.
-    config: Config = None
+    options: Options = None
 
-    def __init__(self, config: Config=None):
+    def __init__(self, options: Options=None):
         """Creates a new Environment / setup.
 
         Args:
             config (Config): Dataclass used for configuration.
         """
-        self.config: self.Config = config or self.Config()
+        self.config: "ExperimentalSetting.Options" = options or self.Options()
         super().__init__(
             train_transforms=self.config.train_transforms,
             val_transforms=self.config.val_transforms,
             test_transforms=self.config.test_transforms,
         )
     
+    @property
+    def dims(self) -> Tuple[int, int, int]:
+        return self._dims
+
+    @dims.setter
+    def dims(self, value: Tuple[int, int, int]) -> None:
+        self._dims = value
+
+    @property
+    def num_classes(self) -> int:
+        return self._num_classes
+
+    @num_classes.setter
+    def num_classes(self, value: int) -> None:
+        self._num_classes = value
+
     @abstractmethod
     def train_dataloader(self, *args, **kwargs) -> Loader:
         return super().train_dataloader(*args, **kwargs)
@@ -112,12 +128,12 @@ class ActiveSetup(ExperimentalSetting[ActiveEnvironment[ObservationType, ActionT
     and change the corresponding returned types. 
     """
     @dataclass
-    class Config(ExperimentalSetting.Config):
+    class Options(ExperimentalSetting.Options):
         """ Configuration options for an "active" experimental setup.
         TODO: Add RL environments here? or just some active learning stuff?
         """
 
-    config: Config = None
+    options: Options = None
 
 @dataclass
 class PassiveSetting(ExperimentalSetting[PassiveEnvironment[ObservationType, RewardType]]):
@@ -134,7 +150,7 @@ class PassiveSetting(ExperimentalSetting[PassiveEnvironment[ObservationType, Rew
     and change the corresponding returned types. 
     """
     @dataclass
-    class Config(ExperimentalSetting.Config):
+    class Options(ExperimentalSetting.Options):
         """ Configuration options for a passive experimental setup. """
         available_environments: ClassVar[Dict[str, Type[LightningDataModule]]] = {
             "mnist": MNISTDataModule,
@@ -146,4 +162,4 @@ class PassiveSetting(ExperimentalSetting[PassiveEnvironment[ObservationType, Rew
         # The setups/dataset are implemented as `LightningDataModule`s. 
         dataset: str = choice(available_environments.keys(), default="mnist")
 
-    config: Config = None
+    options: Options = mutable_field(Options)
