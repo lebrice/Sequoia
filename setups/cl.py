@@ -41,23 +41,23 @@ num_classes_in_dataset: Dict[str, int] = {
 }
 
 dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
-    "mnist": [28, 28, 1],
-    "fashion_mnist": [28, 28, 1],
-    "kmnist": [28, 28, 1],
-    "emnist": [28, 28, 1],
-    "qmnist": [28, 28, 1],
-    "mnist_fellowship": [28, 28, 1],
-    "cifar10": [32, 32, 3],
-    "cifar100": [32, 32, 3],
-    "cifar_fellowship": [32, 32, 3],
-    "imagenet100": [224, 224, 3],
-    "imagenet1000": [224, 224, 3],
-    "permuted_mnist": [28, 28, 1],
-    "rotated_mnist": [28, 28, 1],
-    "core50": [224, 224, 3],
-    "core50-v2-79": [224, 224, 3],
-    "core50-v2-196": [224, 224, 3],
-    "core50-v2-391": [224, 224, 3],
+    "mnist": (28, 28, 1),
+    "fashion_mnist": (28, 28, 1),
+    "kmnist": (28, 28, 1),
+    "emnist": (28, 28, 1),
+    "qmnist": (28, 28, 1),
+    "mnist_fellowship": (28, 28, 1),
+    "cifar10": (32, 32, 3),
+    "cifar100": (32, 32, 3),
+    "cifar_fellowship": (32, 32, 3),
+    "imagenet100": (224, 224, 3),
+    "imagenet1000": (224, 224, 3),
+    "permuted_mnist": (28, 28, 1),
+    "rotated_mnist": (28, 28, 1),
+    "core50": (224, 224, 3),
+    "core50-v2-79": (224, 224, 3),
+    "core50-v2-196": (224, 224, 3),
+    "core50-v2-391": (224, 224, 3),
 }
 
 @dataclass
@@ -109,15 +109,16 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
     # Configuration options for the environment / setup / datasets.
     options: Options = mutable_field(Options)
 
-    def __init__(self, options: Options=None):
+    def __init__(self, options: Options):
         """Creates a new CL environment / setup.
 
         Args:
             options (Options): Dataclass used for configuration.
         """
-        options = options or type(self).Options()
-        print(f"NewOptions: {options}")
         super().__init__(options=options)
+
+
+
         self.options: "CLSetting.Options"
         self.val_fraction: float = self.options.val_fraction
         
@@ -150,7 +151,7 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
         """ Prepares data, downloads the dataset, creates the datasets for each
         task.
         """
-        self.dataset: _ContinuumDataset = self.config.dataset_class(data_path=data_dir, download=True)
+        self.dataset: _ContinuumDataset = self.options.dataset_class(data_path=data_dir, download=True)
         self.train_cl_loader: _BaseCLLoader = self.make_test_cl_loader()
         self.test_cl_loader: _BaseCLLoader = self.make_test_cl_loader()
 
@@ -174,10 +175,19 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
 
     def train_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
         dataset = self.train_datasets[self.__current_task_id]
-        return PassiveEnvironment(dataset, *args, **kwargs)
+
+        env = PassiveEnvironment(dataset, *args, **kwargs)
+        for x, y in env:
+            pass
+            print(x, y)
+            exit()
 
     def val_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
         dataset = self.val_datasets[self.__current_task_id]
+        env = PassiveEnvironment(dataset, *args, **kwargs)
+        for x in env:
+            print(x, y)
+            exit()
         return PassiveEnvironment(dataset, *args, **kwargs)
 
     def test_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
@@ -202,6 +212,8 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
                 f"Trying to set task id but it is not writable! Doing nothing."
             ))
 
+
+@dataclass
 class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
     """ LightningDataModule for CL. 
     """
@@ -217,7 +229,7 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
         nb_tasks: int = 0
         # Either number of classes per task, or a list specifying for
         # every task the amount of new classes.
-        increment: Union[List[int], int] = list_field(0, type=int, nargs="*")
+        increment: Union[List[int], int] = list_field(2, type=int, nargs="*")
         # A different task size applied only for the first task.
         # Desactivated if `increment` is a list.
         initial_increment: int = 0
@@ -237,11 +249,14 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
 
         def __post_init__(self, *args, **kwargs):
             super().__post_init__(*args, **kwargs)
-            if len(self.increment) == 1:
+            if self.nb_tasks == 0:
+                self.nb_tasks = num_classes_in_dataset[self.dataset] // 2
+            if isinstance(self.increment, list) and len(self.increment) == 1:
                 self.increment = self.increment[0]
             self.test_increment = self.test_increment or self.increment
             self.test_initial_increment = self.test_initial_increment or self.test_increment
             self.test_class_order = self.test_class_order or self.class_order
+
 
     options: Options = mutable_field(Options)
 
@@ -251,10 +266,12 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
         Args:
             config
         """
-        options = self.Options()
-        super().__init__(options=options)
-        print(f"type of options: {type(self.options).__qualname__}")
+        print(f"options: {options}")
+        super().__init__(options=options or self.Options())
+        assert type(self.options) == ClassIncrementalSetting.Options, options
+        print("Num classes: ", self.num_classes)
         self.nb_tasks = self.options.nb_tasks
+        print()
     
 
     @abstractmethod
@@ -264,9 +281,9 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
         return ClassIncremental(
             self.dataset,
             nb_tasks=self.nb_tasks,
-            increment=self.increment,
-            initial_increment=self.initial_increment,
-            class_order=self.class_order,
+            increment=self.options.increment,
+            initial_increment=self.options.initial_increment,
+            class_order=self.options.class_order,
             train=True  # a different loader for test
         )
 
@@ -275,9 +292,9 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
         """ Creates a test ClassIncremental object from continuum. """
         return ClassIncremental(
             self.dataset,
-            nb_tasks=self.config.nb_tasks, 
-            increment=self.test_increment,
-            initial_increment=self.test_initial_increment,
-            class_order=self.test_class_order,
+            nb_tasks=self.nb_tasks, 
+            increment=self.options.test_increment,
+            initial_increment=self.options.test_initial_increment,
+            class_order=self.options.test_class_order,
             train=True  # a different loader for test
         )

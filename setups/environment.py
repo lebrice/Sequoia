@@ -74,7 +74,10 @@ class PassiveEnvironment(DataLoader, EnvironmentBase, Generic[ObservationType, R
     def send(self, action: Any) -> None:
         """ Unused, since the environment is passive."""
         pass
-
+    
+    def throw(ex_type: Type[Exception], value=None, traceback=None):
+        super().throw(ex_type, value=value, traceback=traceback)
+    
 
 class ActiveEnvironment(DataLoader, EnvironmentBase[ObservationType, ActionType, RewardType]):
     """Extends DataLoader to support sending back actions to the 'dataset'.

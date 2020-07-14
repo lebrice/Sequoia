@@ -14,9 +14,9 @@ from models.classifier import Classifier
 from setups.base import ExperimentalSetting
 from setups.cl import ClassIncrementalSetting
 from simple_parsing import ArgumentParser, mutable_field
-
+from utils.logging_utils import get_logger
 from .experiment import Experiment
-
+logger = get_logger(__file__)
 
 @dataclass
 class ClassIncremental(Experiment):
@@ -27,9 +27,7 @@ class ClassIncremental(Experiment):
         """ Config of a ClassIncremental experiment. """
         # setting_config: ExperimentalSetting.Config = mutable_field(ClassIncrementalSetting.Config)
         # setting_class: ClassVar[Type[ExperimentalSetting]] = ClassIncrementalSetting
-        
         setting: ClassIncrementalSetting = mutable_field(ClassIncrementalSetting)
-
 
     config: Config = mutable_field(Config)
 
@@ -38,11 +36,13 @@ class ClassIncremental(Experiment):
         print("Starting to run the ClassIncremental experiment.")
         # TODO: Figure out a way to actually get this from the command-line
         setting_options = ClassIncrementalSetting.Options()
+        logger.info(f"Options: {setting_options}")
         self.config.setting = ClassIncrementalSetting(options=setting_options)
         print(f"Setting: {self.config.setting}")
         model = Classifier(hparams=self.hparams, config=self.config)
         trainer = self.config.make_trainer()
-        for i in range(self.config.setting.nb_tasks):
+
+        for i in range(self.config.setting.options.nb_tasks):
             self.config.setting.current_task_id += 1
             trainer.fit(model)
 
