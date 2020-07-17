@@ -52,7 +52,7 @@ available_encoders: Dict[str, Type[nn.Module]] = {
     "alexnet": tv_models.alexnet,
     "densenet": tv_models.densenet161,
 }
-
+from setups.base import ExperimentalSetting
 
 class Classifier(pl.LightningModule):
     """ Classifier model.
@@ -61,7 +61,6 @@ class Classifier(pl.LightningModule):
     [Improvements]
     - Move the 'classification' to an auxiliary task of some sort maybe?
     """
-
 
     @dataclass
     class HParams(Serializable):
@@ -107,16 +106,16 @@ class Classifier(pl.LightningModule):
             options.update(kwargs)
             return optimizer_class(*args, **options)
 
-    def __init__(self, hparams: HParams, config: Config):
+    def __init__(self, setting: ExperimentalSetting, hparams: HParams, config: Config):
         super().__init__()
         self.hp: "Classifier.HParams" = hparams
         self.config: Config = config
-        self.data_module: LightningDataModule = self.config.make_setting()
-        print("data module:",self.data_module)
-        self.input_shape: Tuple[int, int, int] = self.data_module.dims
-        self.classes = self.data_module.num_classes
+        self.setting: LightningDataModule = setting
+        self.input_shape: Tuple[int, int, int] = self.setting.dims
+        self.classes = self.setting.num_classes
+        logger.debug("setting:",self.setting)
+        logger.debug(f"Input shape: {self.input_shape}, classes: {self.classes}")
 
-        
         self.save_hyperparameters()
         # Metrics from the pytorch-lightning package.
         # TODO: Not sure how useful they really are or how to properly use them.
@@ -183,7 +182,12 @@ class Classifier(pl.LightningModule):
         return self._shared_step(batch, batch_idx, prefix="test")
 
     def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]], batch_idx: int, prefix: str) -> Dict:
-        x, y = batch
+        t: Tensor = None
+        if len(batch) == 2:
+            x, y = batch
+        elif len(batch) == 3:
+            x, y, t = batch
+
         loss_info = self.get_loss(x, y, name=prefix)
         # NOTE: loss is supposed to be a tensor, but I'm testing out giving a LossInfo object instead.
         return {
@@ -309,20 +313,20 @@ class Classifier(pl.LightningModule):
 
     def prepare_data(self):
         # download
-        self.data_module.prepare_data()
+        self.setting.prepare_data(data_dir=self.config.data_dir)
 
     def train_dataloader(self, **kwargs) -> Union[DataLoader, List[DataLoader]]:
-        return self.data_module.train_dataloader(
+        return self.setting.train_dataloader(
             batch_size=self.hp.batch_size,
         )
     
     def val_dataloader(self, **kwargs) -> Union[DataLoader, List[DataLoader]]:
-        return self.data_module.val_dataloader(
+        return self.setting.val_dataloader(
             batch_size=self.hp.batch_size,
         )
     
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        return self.data_module.test_dataloader(
+        return self.setting.test_dataloader(
             batch_size=self.hp.batch_size,
         )
     

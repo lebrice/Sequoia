@@ -1,9 +1,13 @@
 
+from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import *
+from typing import Callable
 
-from torchvision.transforms import Compose, ToTensor
+from torch.utils.data import DataLoader
+from torchvision.transforms import Compose as ComposeBase
+from torchvision.transforms import ToTensor
 
 from datasets.data_utils import FixChannels
 from pl_bolts.datamodules import (CIFAR10DataModule, FashionMNISTDataModule,
@@ -12,9 +16,9 @@ from pl_bolts.datamodules import (CIFAR10DataModule, FashionMNISTDataModule,
 from simple_parsing import choice, field, list_field, mutable_field
 from utils.json_utils import Serializable
 
-from .environment import (ActionType, ActiveEnvironment, ObservationType,
-                          PassiveEnvironment, RewardType, EnvironmentBase)
-from abc import abstractmethod
+from .environment import (ActionType, ActiveEnvironment, EnvironmentBase,
+                          ObservationType, PassiveEnvironment, RewardType)
+
 
 class Transforms(Enum):
     """ Enum of possible transforms. 
@@ -26,79 +30,58 @@ class Transforms(Enum):
     def __mult__(self, other: "Transforms"):
         # TODO: maybe use multiplication as composition?
         return NotImplemented
+
     @classmethod
     def _missing_(cls, value: Any):
+        for e in cls:
+            if type(e.value) == type(value):
+                return e
+        return super()._missing_(value)
         return cls[value]
-        
 
-def compose(transforms) -> Compose:
-    if isinstance(transforms, (list, tuple)):
-        if len(transforms) == 1:
-            return transforms[0]
-        elif len(transforms) > 1:
-            return Compose(transforms)
-    return transforms
-from torch.utils.data import DataLoader
+
+class Compose(ComposeBase):
+    def __init__(self, transforms: Sequence[Union[Transforms, Callable]]):
+        self._transforms = transforms
+        transforms = [
+            t.value if isinstance(t, Transforms) else t
+            for t in transforms
+        ]
+        super().__init__(transforms=transforms)
+    
+    def __contains__(self, other: Transforms) -> bool:
+        return other in self._transforms
+    
+    def __iter__(self) -> Iterable[Callable]:
+        yield from self.transforms
+
+
 Loader = TypeVar("Loader", bound=DataLoader)
 
 @dataclass
 class ExperimentalSetting(LightningDataModule, Generic[Loader]):
-        
-    @dataclass
-    class Options(Serializable):
-        """
-        Represents all the configuration options related to a Setup. (LightningModule)
-        """
-        # Default transform to use. (not settable by the command-line.)
-        _default_transform: ClassVar[Callable] = Compose([
-            ToTensor(),
-            FixChannels(),
-        ])
+    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels)
 
-        # TODO: Currently trying to find a way to specify the transforms from the command-line.
-        # As a consequence, don't try to set these from the command-line for now.
-        transforms: List[Transforms] = field(default=_default_transform, to_dict=False)
-        train_transforms: List[Transforms] = list_field(to_dict=False)
-        val_transforms: List[Transforms] = list_field(to_dict=False)
-        test_transforms: List[Transforms] = list_field(to_dict=False)
+    # TODO: Currently trying to find a way to specify the transforms from the command-line.
+    # As a consequence, don't try to set these from the command-line for now.
+    train_transforms: List[Transforms] = list_field()
+    val_transforms: List[Transforms] = list_field()
+    test_transforms: List[Transforms] = list_field()
 
-        def __post_init__(self):
-            self.transforms = compose(self.transforms)
-            self.train_transforms = compose(self.train_transforms) or self.transforms
-            self.val_transforms = compose(self.val_transforms) or self.transforms
-            self.test_transforms = compose(self.test_transforms) or self.transforms
-
-    # Configuration options for the environment / setup / datasets.
-    options: Options = None
-
-    def __init__(self, options: Options=None):
+    def __post_init__(self):
         """Creates a new Environment / setup.
 
         Args:
-            config (Config): Dataclass used for configuration.
+            options (Options): Dataclass used for configuration.
         """
-        self.config: "ExperimentalSetting.Options" = options or self.Options()
+        train_transforms: Callable = Compose(self.train_transforms or self.transforms)
+        val_transforms: Callable = Compose(self.val_transforms or self.transforms)
+        test_transforms: Callable = Compose(self.test_transforms or self.transforms)
         super().__init__(
-            train_transforms=self.config.train_transforms,
-            val_transforms=self.config.val_transforms,
-            test_transforms=self.config.test_transforms,
+            train_transforms=train_transforms,
+            val_transforms=val_transforms,
+            test_transforms=test_transforms,
         )
-    
-    @property
-    def dims(self) -> Tuple[int, int, int]:
-        return self._dims
-
-    @dims.setter
-    def dims(self, value: Tuple[int, int, int]) -> None:
-        self._dims = value
-
-    @property
-    def num_classes(self) -> int:
-        return self._num_classes
-
-    @num_classes.setter
-    def num_classes(self, value: int) -> None:
-        self._num_classes = value
 
     @abstractmethod
     def train_dataloader(self, *args, **kwargs) -> Loader:
@@ -127,13 +110,6 @@ class ActiveSetup(ExperimentalSetting[ActiveEnvironment[ObservationType, ActionT
     TODO: Change the base class from PassiveEnvironment to `ActiveEnvironment`
     and change the corresponding returned types. 
     """
-    @dataclass
-    class Options(ExperimentalSetting.Options):
-        """ Configuration options for an "active" experimental setup.
-        TODO: Add RL environments here? or just some active learning stuff?
-        """
-
-    options: Options = None
 
 @dataclass
 class PassiveSetting(ExperimentalSetting[PassiveEnvironment[ObservationType, RewardType]]):
@@ -149,17 +125,12 @@ class PassiveSetting(ExperimentalSetting[PassiveEnvironment[ObservationType, Rew
     TODO: Change the base class from PassiveEnvironment to `ActiveEnvironment`
     and change the corresponding returned types. 
     """
-    @dataclass
-    class Options(ExperimentalSetting.Options):
-        """ Configuration options for a passive experimental setup. """
-        available_environments: ClassVar[Dict[str, Type[LightningDataModule]]] = {
-            "mnist": MNISTDataModule,
-            "fashion_mnist": FashionMNISTDataModule,
-            "cifar10": CIFAR10DataModule,
-            "imagenet": ImagenetDataModule,
-        }
-        # Which setup / dataset to use.
-        # The setups/dataset are implemented as `LightningDataModule`s. 
-        dataset: str = choice(available_environments.keys(), default="mnist")
-
-    options: Options = mutable_field(Options)
+    available_environments: ClassVar[Dict[str, Type[LightningDataModule]]] = {
+        "mnist": MNISTDataModule,
+        "fashion_mnist": FashionMNISTDataModule,
+        "cifar10": CIFAR10DataModule,
+        "imagenet": ImagenetDataModule,
+    }
+    # Which setup / dataset to use.
+    # The setups/dataset are implemented as `LightningDataModule`s. 
+    dataset: str = choice(available_environments.keys(), default="mnist")

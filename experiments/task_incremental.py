@@ -21,13 +21,14 @@ logger = get_logger(__file__)
 @dataclass
 class ClassIncremental(Experiment):
     """ Class Incremental setting. """
-
+    # Experimental Setting.
+    setting: ClassIncrementalSetting = mutable_field(ClassIncrementalSetting)
+    
     @dataclass
     class Config(Experiment.Config):
         """ Config of a ClassIncremental experiment. """
         # setting_config: ExperimentalSetting.Config = mutable_field(ClassIncrementalSetting.Config)
         # setting_class: ClassVar[Type[ExperimentalSetting]] = ClassIncrementalSetting
-        setting: ClassIncrementalSetting = mutable_field(ClassIncrementalSetting)
 
     config: Config = mutable_field(Config)
 
@@ -35,21 +36,23 @@ class ClassIncremental(Experiment):
         """ Simple class-incremental CL """
         print("Starting to run the ClassIncremental experiment.")
         # TODO: Figure out a way to actually get this from the command-line
-        setting_options = ClassIncrementalSetting.Options()
-        logger.info(f"Options: {setting_options}")
-        self.config.setting = ClassIncrementalSetting(options=setting_options)
-        print(f"Setting: {self.config.setting}")
-        model = Classifier(hparams=self.hparams, config=self.config)
+        print(f"Setting: {self.setting}")
+        logger.debug(f"Setting: {self.setting}")
+        model = Classifier(setting=self.setting, hparams=self.hparams, config=self.config)
+        
         trainer = self.config.make_trainer()
-
-        for i in range(self.config.setting.options.nb_tasks):
-            self.config.setting.current_task_id += 1
+        logger.info(f"Number of tasks: {self.setting.nb_tasks}")
+        for i in range(self.setting.nb_tasks):
+            logger.info(f"Starting task #{i}")
+            logger.info(f"(setting current task id: {self.setting.current_task_id})")
             trainer.fit(model)
 
+            self.setting.current_task_id += 1
+
         # Save to results dir.
-        test_results = trainer.test()
-        
+        test_results = trainer.test()        
         print(f"test results: {test_results}") 
+
 
 if __name__ == "__main__":
     parser = ArgumentParser(description=__doc__)

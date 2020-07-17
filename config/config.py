@@ -27,13 +27,7 @@ from typing import ClassVar, Type
 
 @dataclass
 class Config(Serializable):
-    """ Options related to the experimental setup. """
-    # TODO: Allow the customization of which transform to use depending on the command-line maybe
-    # Options related to the the experiment's experimental setting.
-    # setting_config: ExperimentalSetting.Config = mutable_field(ExperimentalSetting.Options)
-    # setting_class: ClassVar[Type[ExperimentalSetting]] = ExperimentalSetting
-    setting: ExperimentalSetting = mutable_field(ExperimentalSetting)
-
+    """ Options related to the setup of an experiment (log_dir, cuda, debug etc.) """
     log_dir_root: Path = Path("results")
     data_dir: Path = Path("data")
     # Run in Debug mode: no wandb logging, extra output.
@@ -68,13 +62,3 @@ class Config(Serializable):
         else:
             logger = self.wandb.make_logger(self.log_dir_root)
         return self.trainer.make_trainer(loggers=logger)
-
-    def make_setting(self) -> ExperimentalSetting:
-        """Creates the experimental setting (LightningDataModule) depending on
-        the value of 'dataset' attribute.
-        """
-        #
-        return self.setting 
-        # return self.setting_class(self.setting_config) 
-
-

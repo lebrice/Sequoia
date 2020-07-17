@@ -46,12 +46,12 @@ def get_logger(name: str, level: int=None) -> logging.Logger:
     logger.setLevel(level)
 
     # if the name is already something like foo.py:256
-    if not name_is_path and name[-1].isdigit():
-        formatter = logging.Formatter('%(asctime)s, %(levelname)-8s log [%(name)s] %(message)s')
-        sh = logging.StreamHandler(sys.stdout)
-        sh.setFormatter(formatter)
-        sh.setLevel(level)
-        logger.addHandler(sh)
+    # if not name_is_path and name[-1].isdigit():
+    #     formatter = logging.Formatter('%(asctime)s, %(levelname)-8s log [%(name)s] %(message)s')
+        # sh = logging.StreamHandler(sys.stdout)
+        # sh.setFormatter(formatter)
+        # sh.setLevel(level)
+        # logger.addHandler(sh)
     # logger = logging.getLogger(name)
     # tqdm_handler = TqdmLoggingHandler()
     # tqdm_handler.setLevel(level)

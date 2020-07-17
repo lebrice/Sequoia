@@ -75,9 +75,11 @@ class PassiveEnvironment(DataLoader, EnvironmentBase, Generic[ObservationType, R
         """ Unused, since the environment is passive."""
         pass
     
-    def throw(ex_type: Type[Exception], value=None, traceback=None):
-        super().throw(ex_type, value=value, traceback=traceback)
+    def throw(self, ex_type: Type[BaseException], value=None, traceback=None):
+        return super().throw(ex_type, value=value, traceback=traceback)
     
+    def close(self):
+        pass
 
 class ActiveEnvironment(DataLoader, EnvironmentBase[ObservationType, ActionType, RewardType]):
     """Extends DataLoader to support sending back actions to the 'dataset'.
@@ -91,13 +93,21 @@ class ActiveEnvironment(DataLoader, EnvironmentBase[ObservationType, ActionType,
     What's different compared to the usual supervised environment is that
     the observation (x) and the true label (y) are not given at the same time!
     The true label `y` is given only after the prediction is sent back to the
+
+    # TODO: Maybe add a custom `map` class for generators?
+
     """
-    def __init__(self, dataset: Union[Dataset, IterableDataset], **dataloader_kwargs):
+    def __init__(self, dataset: Union[Dataset, IterableDataset],
+                       x_transform: Callable=None,
+                       y_transform: Callable=None,
+                       **dataloader_kwargs):
         super().__init__(dataset, **dataloader_kwargs)
         self.observation: Tensor
         self.action: Tensor
         self.reward: Tensor
 
+        self.x_transform = x_transform
+        self.y_transform = y_transform
         self.manager = mp.Manager()
         self.n_pulled: mp.Value[int] = self.manager.Value(int, 0)
         self.n_pushed: mp.Value[int] = self.manager.Value(int, 0)
