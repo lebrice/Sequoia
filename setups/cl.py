@@ -170,9 +170,9 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
         """ Prepares data, downloads the dataset, creates the datasets for each
         task.
 
-        # TODO: Not supposed to assign stuff to `self` because of DP training.. need to check. 
+        TODO: Not supposed to assign stuff to `self` because of DP training.. need to check. 
         """
-        self.cl_dataset = self.make_dataset(data_dir, download=True, transform=self.transforms)
+        self.cl_dataset = self.make_dataset(data_dir, download=True)
         self.train_cl_loader: _BaseCLLoader = self.make_train_cl_loader(self.cl_dataset)
         self.test_cl_loader: _BaseCLLoader = self.make_test_cl_loader(self.cl_dataset)
 
@@ -197,6 +197,7 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
     def train_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
         dataset = self.train_datasets[self.__current_task_id]
         env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
+        return env
         for x, y, t in env:
             x = self.train_transforms(x)
             yield x, y

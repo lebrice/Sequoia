@@ -38,7 +38,7 @@ RewardType = TypeVar("RewardType")
 logger = get_logger(__file__, level=logging.DEBUG)
 
 
-class EnvironmentBase(ABC, Generator, Generic[ObservationType, ActionType, RewardType]):
+class EnvironmentBase(ABC, Generic[ObservationType, ActionType, RewardType]):
     """ ABC for a learning 'environment', wether RL, Supervised or CL. """
     @abstractmethod
     def __next__(self) -> ObservationType:
@@ -102,9 +102,9 @@ class ActiveEnvironment(DataLoader, EnvironmentBase[ObservationType, ActionType,
                        y_transform: Callable=None,
                        **dataloader_kwargs):
         super().__init__(dataset, **dataloader_kwargs)
-        self.observation: Tensor
-        self.action: Tensor
-        self.reward: Tensor
+        self.observation: Tensor = None
+        self.action: Tensor = None
+        self.reward: Tensor = None
 
         self.x_transform = x_transform
         self.y_transform = y_transform
@@ -114,7 +114,7 @@ class ActiveEnvironment(DataLoader, EnvironmentBase[ObservationType, ActionType,
 
     @log_calls
     def __next__(self) -> ObservationType:
-        self.observation, self.reward = super().__next__()
+        # self.observation, self.reward = super().__next__()
         self.n_pulled.value += 1
         return self.observation
 
@@ -125,10 +125,11 @@ class ActiveEnvironment(DataLoader, EnvironmentBase[ObservationType, ActionType,
             # The parent dataloader yields both the x's and y's.
             self.observation, self.reward = batch
 
+            next(self)
 
-            x = next(self)
             # Yield x, receive y_pred and give y_true as a 'Reward'.
-            y_pred = yield x
+            y_pred = yield self.observation
+            print(f"y_pred: {y_pred}")
             y_true = self.send(y_pred)
     
     @log_calls
@@ -140,7 +141,6 @@ class ActiveEnvironment(DataLoader, EnvironmentBase[ObservationType, ActionType,
         
         TODO: Figure out the interactions with num_workers and send, if any.
         """
-        assert action is not None, "Action shouldn't be None (for now)."
         self.action = action
 
         if self.n_pulled.value != (self.n_pushed.value + 1):
@@ -156,115 +156,60 @@ class ActiveEnvironment(DataLoader, EnvironmentBase[ObservationType, ActionType,
         else:
             # single-process data loading
             logger.debug("Single process data loading.")
-
-        self.reward = self.dataset.send(action)
+        if isinstance(self.dataset, EnvironmentBase):
+            self.reward = self.dataset.send(self.action)
         return self.reward
-
-
-class ZipEnvironments(EnvironmentBase[List[ObservationType], List[ActionType], List[RewardType]], IterableDataset):
-    """TODO: Trying to create a 'batched' version of a Generator.
-    """
-    def __init__(self, *generators: EnvironmentBase[ObservationType, ActionType, RewardType]):
-        self.generators = generators
-    
-    def __next__(self) -> List[ObservationType]:
-        return list(next(gen) for gen in self.generators)
-    
-    def __iter__(self) -> Generator[List[ObservationType], List[ActionType], None]:
-        iterators = (
-            iter(g) for g in self.generators
-        )
-        while True:
-            actions = yield next(self)
-
-        values = yield from zip(*iterators)
-    
-    def send(self, actions: List[ActionType]) -> List[RewardType]:
-        if action is not None:
-            assert len(actions) == len(self.generators)
-            self.action = action
-        return [
-            gen.send(action) for gen, action in zip(self.generators, actions)
-        ]
-
 
 # data_dir = Path("data")
 # # data_module = MNISTDataModule(data_dir, val_split=5000, num_workers=16, normalize=False)
 # # env = SupervisedEnvironment(data_module=data_module)
 
-class EnvironmentDataModule(LightningDataModule):
-    """ Expose a Gym Environment as a LightningDataModule. """
+# class EnvironmentDataModule(LightningDataModule):
+#     """ Expose an Environment as a LightningDataModule. """
 
-    def __init__(
-            self,
-            env: EnvironmentBase[ObservationType, ActionType, RewardType],
-            train_transforms=None,
-            val_transforms=None,
-            test_transforms=None,
-    ):
-        super().__init__(
-            train_transforms=train_transforms,
-            val_transforms=val_transforms,
-            test_transforms=test_transforms,
-        )
-        self.envs: List[GymEnvironment] = []
-        self.env = env
+#     def __init__(
+#             self,
+#             env: EnvironmentBase[ObservationType, ActionType, RewardType],
+#             train_transforms=None,
+#             val_transforms=None,
+#             test_transforms=None,
+#     ):
+#         super().__init__(
+#             train_transforms=train_transforms,
+#             val_transforms=val_transforms,
+#             test_transforms=test_transforms,
+#         )
+#         self.envs: List[GymEnvironment] = []
+#         self.env = env
 
 
-    @log_calls
-    def prepare_data(self, *args, **kwargs):
-        super().prepare_data(*args, **kwargs)
+#     @log_calls
+#     def prepare_data(self, *args, **kwargs):
+#         super().prepare_data(*args, **kwargs)
     
-    @log_calls
-    def train_dataloader(self, batch_size: int=None, num_workers: int=0) -> ActiveEnvironment:
-        if batch_size not in {None, 1}:
-            raise NotImplementedError("Batch size can only be 1 or none for now.")
-        batch_size = None
-        return ActiveEnvironment(self.env,
-            batch_size=None,
-            num_workers=num_workers,
-            worker_init_fn=self.worker_env_init,
-        )
+#     @log_calls
+#     def train_dataloader(self, batch_size: int=None, num_workers: int=0) -> ActiveEnvironment:
+#         if batch_size not in {None, 1}:
+#             raise NotImplementedError("Batch size can only be 1 or none for now.")
+#         batch_size = None
+#         return ActiveEnvironment(self.env,
+#             batch_size=None,
+#             num_workers=num_workers,
+#             worker_init_fn=self.worker_env_init,
+#         )
 
-    @log_calls
-    def val_dataloader(self, batch_size: int, **kwargs) -> DataLoader:
-        return DataLoader(self.env,
-            batch_size=batch_size,
-            num_workers=0,
-            worker_init_fn=self.worker_env_init
-        )
+#     @log_calls
+#     def val_dataloader(self, batch_size: int, **kwargs) -> DataLoader:
+#         return DataLoader(self.env,
+#             batch_size=batch_size,
+#             num_workers=0,
+#             worker_init_fn=self.worker_env_init
+#         )
 
-    @log_calls
-    def test_dataloader(self, batch_size: int, **kwargs) -> DataLoader:
-        return DataLoader(self.env,
-            batch_size=batch_size,
-            num_workers=0,
-            worker_init_fn=self.worker_env_init,
-        )
-
-    def worker_env_init(self, worker_id: int):
-        logger.debug(f"Initializing dataloader worker {worker_id}")
-        worker_info = torch.utils.data.get_worker_info()
-        dataset: GymEnvironment = worker_info.dataset  # the dataset copy in this worker process
-        
-        
-        seed = worker_info.seed
-        # Sometimes the numpy seed is too large.
-        if seed > 4294967295:
-            seed %= 4294967295
-        logger.debug(f"Seed for worker {worker_id}: {seed}")
-
-        seed_everything(seed)
-        
-        # TODO: Use this maybe to add an Environemnt in the Batched version of the Environment above?
-        # assert len(dataset.envs) == worker_id
-        # logger.debug(f"Creating environment copy for worker {worker_id}.")
-        # dataset.envs.append(dataset.env_factory())
-
-        # overall_start = dataset.start
-        # overall_end = dataset.end
-        # configure the dataset to only process the split workload
-        # dataset.env_name = ['SpaceInvaders-v0', 'Pong-v0'][worker_info.id]
-        # logger.debug(f" ENV: {dataset.env}")
-        logger.debug('dataset: ', dataset)
-
+#     @log_calls
+#     def test_dataloader(self, batch_size: int, **kwargs) -> DataLoader:
+#         return DataLoader(self.env,
+#             batch_size=batch_size,
+#             num_workers=0,
+#             worker_init_fn=self.worker_env_init,
+#         )

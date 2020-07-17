@@ -1,4 +1,4 @@
-from typing import Generator
+from typing import Generator, Union
 
 import gym
 import torch
@@ -7,21 +7,21 @@ from torch.utils.data import IterableDataset
 
 from ..utils.logging_utils import get_logger, log_calls
 from .environment import (ActionType, EnvironmentBase, ObservationType,
-                               RewardType)
+                          RewardType)
 
 logger = get_logger(__file__)
-
 
 class GymEnvironment(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, ActionType, RewardType]):
     """ Wrapper around a GymEnvironment that exposes the EnvironmentBase "API"
         and which can be iterated on using DataLoaders.
     """
-    def __init__(self, env: gym.Env, observe_pixels: bool=False):
+    def __init__(self, env: Union[gym.Env, str], observe_pixels: bool=False):
+        env = gym.make(env) if isinstance(env, str) else env
         super().__init__(env=env)
         self.observe_pixels = observe_pixels
 
         self.action: ActionType
-        self.next_state: ObservationType
+        self.state: ObservationType
         self.reward: RewardType
         self.done: bool = False
 
@@ -44,11 +44,11 @@ class GymEnvironment(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationTy
     def _step(self, action: ActionType):
         self._i.value += 1
 
-        next_state, self.reward, self.done, self.info = self.env.step(action)
+        state, self.reward, self.done, self.info = self.env.step(action)
         if self.observe_pixels:
-            self.next_state = self.env.render(mode="rgb_array")
+            self.state = self.env.render(mode="rgb_array")
         else:
-            self.next_state = next_state
+            self.state = state
 
     
     @log_calls
@@ -93,3 +93,30 @@ class GymEnvironment(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationTy
         if action is not None:
             self.action = action
         return self.reward
+
+
+def worker_env_init(self, worker_id: int):
+    logger.debug(f"Initializing dataloader worker {worker_id}")
+    worker_info = torch.utils.data.get_worker_info()
+    dataset: GymEnvironment = worker_info.dataset  # the dataset copy in this worker process
+    
+    
+    seed = worker_info.seed
+    # Sometimes the numpy seed is too large.
+    if seed > 4294967295:
+        seed %= 4294967295
+    logger.debug(f"Seed for worker {worker_id}: {seed}")
+
+    seed_everything(seed)
+    
+    # TODO: Use this maybe to add an Environemnt in the Batched version of the Environment above?
+    # assert len(dataset.envs) == worker_id
+    # logger.debug(f"Creating environment copy for worker {worker_id}.")
+    # dataset.envs.append(dataset.env_factory())
+
+    # overall_start = dataset.start
+    # overall_end = dataset.end
+    # configure the dataset to only process the split workload
+    # dataset.env_name = ['SpaceInvaders-v0', 'Pong-v0'][worker_info.id]
+    # logger.debug(f" ENV: {dataset.env}")
+    logger.debug('dataset: ', dataset)
