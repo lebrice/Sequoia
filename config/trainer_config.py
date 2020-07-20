@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from typing import Iterable, Optional, Union
+from typing import Iterable, List, Optional, Union
 
 import torch
-from pytorch_lightning import Trainer
+from pytorch_lightning import Trainer, Callback
 from pytorch_lightning.loggers import LightningLoggerBase
 
 from simple_parsing import choice
@@ -28,7 +28,9 @@ class TrainerConfig(Serializable):
     auto_lr_find: bool = False
     precision: int = choice(16, 32, default=32)
 
-    def make_trainer(self, loggers: Union[LightningLoggerBase, Iterable[LightningLoggerBase], bool]=True) -> Trainer:
+    def make_trainer(self,
+                     loggers: Union[LightningLoggerBase, Iterable[LightningLoggerBase], bool]=True,
+                     callbacks: Optional[List[Callback]]=None) -> Trainer:
         """ Create a Trainer object from the command-line args.
         Adds the given logger as well.
         """
@@ -43,4 +45,5 @@ class TrainerConfig(Serializable):
             fast_dev_run=self.fast_dev_run,
             auto_scale_batch_size=self.auto_scale_batch_size,
             auto_lr_find=self.auto_lr_find,
+            callbacks=callbacks,
         )

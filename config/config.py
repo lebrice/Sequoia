@@ -61,4 +61,8 @@ class Config(Serializable):
             logger = None
         else:
             logger = self.wandb.make_logger(self.log_dir_root)
-        return self.trainer.make_trainer(loggers=logger)
+        from experiments.callbacks.vae_callback import SaveVaeSamplesCallback
+        callbacks = [
+            SaveVaeSamplesCallback()
+        ]
+        return self.trainer.make_trainer(loggers=logger, callbacks=callbacks)

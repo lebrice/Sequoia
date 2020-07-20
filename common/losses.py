@@ -177,7 +177,7 @@ class LossInfo(Serializable):
         LossInfo
             returns a scaled LossInfo instance.
         """
-        logger.debug(f" mul ({self.name}): before: {self.total_loss.requires_grad}")
+        # logger.debug(f" mul ({self.name}): before: {self.total_loss.requires_grad}")
         result = LossInfo(
             name=self.name,
             coefficient=self.coefficient * coefficient,
@@ -188,15 +188,15 @@ class LossInfo(Serializable):
             metrics=self.metrics,
             tensors=self.tensors,
         )
-        logger.debug(f" mul ({self.name}): after: {result.total_loss.requires_grad}")
+        # logger.debug(f" mul ({self.name}): after: {result.total_loss.requires_grad}")
         return result
 
     def __truediv__(self, coefficient: Union[float, Tensor]) -> "LossInfo":
-        logger.debug(f" div ({self.name}): before: {self.total_loss.requires_grad}")
+        # logger.debug(f" div ({self.name}): before: {self.total_loss.requires_grad}")
         
         # if coefficient != 0:
         result = self * (1 / coefficient)
-        logger.debug(f" div ({self.name}): after: {result.total_loss.requires_grad}")
+        # logger.debug(f" div ({self.name}): after: {result.total_loss.requires_grad}")
         return result
         # else:
         #     raise RuntimeError("Can't divide stuff")
@@ -240,18 +240,12 @@ class LossInfo(Serializable):
         return self
 
     def detach(self) -> "LossInfo":
-        # self.tensors.clear()
+        """ 'detaches' this LossInfo object. 
+        TODO: At the moment, does this by serializing and then deserializing,
+        which works, but is a bit hacky. We could instead return a new LossInfo
+        object where all the tensors and metrics and sublosses have also been detached.
+        """ 
         return type(self).from_dict(self.to_dict())
-        result = LossInfo(
-            name=self.name,
-            coefficient=self.coefficient * coefficient,
-            total_loss=self.total_loss * coefficient,
-            losses=OrderedDict([
-                (k, value * coefficient) for k, value in self.losses.items()
-            ]),
-            metrics=self.metrics,
-            tensors=self.tensors,
-        )
 
     def absorb(self, other: "LossInfo") -> None:
         """Absorbs `other` into `self`, merging the losses and metrics.
