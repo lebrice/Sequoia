@@ -6,10 +6,12 @@ from torch import nn
 from common.layers import DeConvBlock, Reshape
 from tasks.auxiliary_task import AuxiliaryTask
 from abc import ABC, abstractmethod
+from common.dims import Dims
 
 
 class MnistDecoder(nn.Sequential):
-    def __init__(self, code_size: int):
+    """ Decoder that generates images of shape [`out_channels`, 28, 28] """
+    def __init__(self, code_size: int, out_channels: int=1):
         self.code_size = code_size
         super().__init__(
             Reshape([self.code_size, 1, 1]),
@@ -22,12 +24,13 @@ class MnistDecoder(nn.Sequential):
             nn.ConvTranspose2d(16,16,kernel_size=5, stride=2),
             nn.BatchNorm2d(16),
             nn.ELU(alpha=1.0, inplace=True),
-            nn.ConvTranspose2d(16, 1, kernel_size=4, stride=1),
+            nn.ConvTranspose2d(16, out_channels, kernel_size=4, stride=1),
             nn.Sigmoid(),
         )
 
 
 class CifarDecoder(nn.Sequential):
+    """ Decoder that generates images of shape [3, 32, 32] """
     def __init__(self, code_size: int):
         self.code_size = code_size
         super().__init__(
@@ -42,6 +45,7 @@ class CifarDecoder(nn.Sequential):
 
 
 class ImageNetDecoder(nn.Sequential):
+    """ Decoder that generates images of shape [3, 224, 224] """
     def __init__(self, code_size: int):
         self.code_size = code_size
         super().__init__(

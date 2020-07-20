@@ -57,6 +57,18 @@ class ConvBlock(nn.Module):
         return self.pool(x)
 
 class DeConvBlock(nn.Module):
+    """Block that performs:
+    Upsample (2x)
+    Conv
+    BatchNorm2D
+    Relu
+    Conv
+    BatchNorm2D
+    Relu (optional)
+
+    Args:
+        nn ([type]): [description]
+    """
     def __init__(self,
                  in_channels: int,
                  out_channels: int,
@@ -71,6 +83,7 @@ class DeConvBlock(nn.Module):
         self.kernel_size = kernel_size
         self.last_relu = last_relu
         super().__init__()
+        self.upsample = nn.Upsample(scale_factor=2)
         self.conv1 = nn.Conv2d(
             in_channels=in_channels,
             out_channels=self.hidden_channels,
@@ -88,7 +101,6 @@ class DeConvBlock(nn.Module):
         )
         self.norm2 = nn.BatchNorm2d(self.hidden_channels)
         self.relu = nn.ReLU()
-        self.upsample = nn.Upsample(scale_factor=2)
     
     def forward(self, x):
         x = self.upsample(x)

@@ -82,9 +82,5 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
             initial_increment=self.test_initial_increment,
             class_order=self.test_class_order,
             common_transformations=self.transforms,
-            train_transformations=self.test_transforms,
             train=False  # a different loader for test
         )
-
-    def train_dataloader(self, *args, **kwargs):
-        return super().train_dataloader(*args, **kwargs)

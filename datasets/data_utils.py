@@ -46,7 +46,9 @@ class unlabeled(Iterable[Tuple[Tensor]], Sized):
         self.loader = labeled_dataloader
 
     def __iter__(self) -> Iterator[Tuple[Tensor]]:
-        for x, y in self.loader:
+        for batch in self.loader:
+            assert isinstance(batch, tuple)
+            x = batch[0]
             yield x,
 
     def __len__(self) -> int:
@@ -70,6 +72,14 @@ def keep_in_memory(dataset: VisionDataset) -> None:
 
 
 class FixChannels(nn.Module):
+    """ Transform that fixes the number of channels in input images. 
+    
+    For instance, if the input shape is:
+    [28, 28] -> [3, 28, 28] (copy the image three times)
+    [1, 28, 28] -> [3, 28, 28] (same idea)
+    [10, 1, 28, 28] -> [10, 3, 28, 28] (keep batch intact, do the same again.)
+    
+    """
     def __call__(self, x: Tensor) -> Tensor:
         if x.ndim == 2:
             x = x.reshape([1, *x.shape])

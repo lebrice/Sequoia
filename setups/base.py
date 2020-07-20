@@ -9,7 +9,6 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import Compose as ComposeBase
 from torchvision.transforms import ToTensor
 
-from datasets.data_utils import FixChannels
 from pl_bolts.datamodules import (CIFAR10DataModule, FashionMNISTDataModule,
                                   ImagenetDataModule, LightningDataModule,
                                   MNISTDataModule)
@@ -21,64 +20,8 @@ from .environment import (ActionType, ActiveEnvironment, EnvironmentBase,
 from torch import Tensor
 
 
-class ToTensorIfNeeded(ToTensor):
-
-    def __call__(self, pic):
-        """
-        Args:
-            pic (PIL Image or numpy.ndarray): Image to be converted to tensor.
-
-        Returns:
-            Tensor: Converted image.
-        """
-        if isinstance(pic, Tensor):
-            return pic
-        return super().__call__(pic)
-
-
-class Transforms(Enum):
-    """ Enum of possible transforms. 
-    TODO: Maybe use this to create a customizable input pipeline (with the Simclr MoCo/etc augments?)
-    """
-    fix_channels = FixChannels()
-    to_tensor = ToTensorIfNeeded()
-
-    def __call__(self, x):
-        return self.value(x)
-
-    @classmethod
-    def _missing_(cls, value: Any):
-        for e in cls:
-            if type(e.value) == type(value):
-                return e
-        return super()._missing_(value)
-
-
-class Compose(List[Transforms], ComposeBase):
-    pass
-    # def __init__(self, transforms: Sequence[Union[Transforms, Callable]]):
-    #     self._transforms = transforms
-    #     transforms = [
-    #         t.value if isinstance(t, Transforms) else t
-    #         for t in transforms
-    #     ]
-    #     super().__init__(transforms=transforms)
-    
-    # def __contains__(self, other: Transforms) -> bool:
-    #     return other in self._transforms
-    
-    # def __call__(self, x):
-    #     for t in self:
-    #         if isinstance(t, Transforms):
-    #             x = t.value(x)
-    #         else:
-    #             x = t(x)
-    #     return x
-
-    # def __add__(self, other: Union[Compose, List[Callable]]) -> Compose:
-
-
 Loader = TypeVar("Loader", bound=DataLoader)
+from .transforms import Transforms, Compose
 
 @dataclass
 class ExperimentalSetting(LightningDataModule, Generic[Loader]):
@@ -120,7 +63,7 @@ class ExperimentalSetting(LightningDataModule, Generic[Loader]):
 
 @dataclass
 class ActiveSetup(ExperimentalSetting[ActiveEnvironment[ObservationType, ActionType, RewardType]]):
-    """LightningDataModule for CL experiments.
+    """LightningDataModule for an 'active' setting.
 
     This greatly simplifies the whole data generation process.
     the train_dataloader, val_dataloader and test_dataloader methods are used

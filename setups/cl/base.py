@@ -64,6 +64,8 @@ dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
     "core50-v2-196": (224, 224, 3),
     "core50-v2-391": (224, 224, 3),
 }
+from common.dims import Dims
+
 
 @dataclass
 class CLSetting(PassiveSetting[ObservationType, RewardType]):
@@ -137,14 +139,23 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
         )
 
     @property
-    def dims(self) -> Tuple[int, int, int]:
+    def dims(self) -> Dims:
         """Gets the dimensions of the input, taking into account the transforms.
         
         # TODO: Could transforms just specify their impact on the shape directly instead, à-la Tensorflow?
         """
-        if Transforms.fix_channels in self.train_transforms:
+        dims = Dims(*self._dims)
+        assert dims.c < dims.h and dims.c < dims.w and dims.h == dims.w
+
+        if Transforms.fix_channels in self.transforms:
             # give back the 'transposed' shape.
-            return self._dims[2], self._dims[0], self._dims[1]
+            print("HEY. Channels were fixed!")
+            print(f"dims before: {dims}")
+            dims = dims._replace(c=3)
+            print(f"dims after: {dims}")
+            return dims
+        print(f"Channels weren't 'fixed'!: {dims}")
+        exit()
         return self._dims
 
     @dims.setter

@@ -28,7 +28,10 @@ class AEReconstructionTask(AuxiliaryTask):
         super().__init__(coefficient=coefficient, name=name, options=options)
         self.loss = nn.MSELoss(reduction="sum")
         
-        # TODO: This is weird, should be able to use the dataset here, no?
+        # BUG: The decoder for mnist has output shape of [1, 28, 28], but the
+        # transforms 'fix' that shape to be [3, 28, 28].
+        # Therefore: TODO: Should we adapt the output shape of the decoder
+        # depending on the shape of the input?
         decoder_class = get_decoder_class_for_dataset(AuxiliaryTask.input_shape)
         self.decoder: nn.Module = decoder_class(
             code_size=AuxiliaryTask.hidden_size,
@@ -37,7 +40,7 @@ class AEReconstructionTask(AuxiliaryTask):
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> LossInfo:
         z = h_x.view([h_x.shape[0], -1])
         x_hat = self.decoder(z)
-
+        
         recon_loss = self.reconstruction_loss(x_hat, x)
 
         loss_info = LossInfo(self.name, total_loss=recon_loss)
