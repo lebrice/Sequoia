@@ -37,7 +37,6 @@ class SaveVaeSamplesCallback(Callback):
 
     def on_epoch_end(self, trainer: Trainer, pl_module: Classifier):
         # do something
-        logger.info(f"HERE! trainer: {trainer}, pl_module: {pl_module}")
         self.trainer = trainer
         self.model = pl_module
 
@@ -93,8 +92,8 @@ class SaveVaeSamplesCallback(Callback):
         generation_images_dir.mkdir(parents=True, exist_ok=True)
         file_name = generation_images_dir / f"step_{self.trainer.global_step:08d}.png"
 
-        if self.trainer.logger:
-            self.trainer.logger.log({"generated": wandb.Image(fake_samples)})
+        if self.model.logger:
+            self.model.logger.experiment.log({"generated": wandb.Image(fake_samples)})
         
         save_image(fake_samples, file_name, normalize=True)
         logger.debug(f"saved image at path {file_name}")

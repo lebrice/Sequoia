@@ -149,13 +149,11 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
 
         if Transforms.fix_channels in self.transforms:
             # give back the 'transposed' shape.
-            print("HEY. Channels were fixed!")
-            print(f"dims before: {dims}")
+            logger.debug("HEY. Channels were fixed!")
+            logger.debug(f"dims before: {dims}")
             dims = dims._replace(c=3)
-            print(f"dims after: {dims}")
+            logger.debug(f"dims after: {dims}")
             return dims
-        print(f"Channels weren't 'fixed'!: {dims}")
-        exit()
         return self._dims
 
     @dims.setter
@@ -192,6 +190,7 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
         logger.info(f"Number of train tasks: {self.train_cl_loader.nb_tasks}.")
         logger.info(f"Number of test classes: {self.train_cl_loader.nb_classes}.")
         logger.info(f"Number of test tasks: {self.train_cl_loader.nb_tasks}.")
+        
         self.train_datasets.clear()
         self.val_datasets.clear()
         self.test_datasets.clear()
@@ -209,23 +208,17 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
     def train_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
         dataset = self.train_datasets[self.__current_task_id]
         env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
-        for x, y, t in env:
-            # x = self.train_transforms(x)
-            yield x, y
+        return env
 
     def val_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
         dataset = self.val_datasets[self.__current_task_id]
         env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
-        for x, y, t in env:
-            # x = self.val_transforms(x)
-            yield x, y
+        return env
 
     def test_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
         dataset = self.test_datasets[self.__current_task_id]
         env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
-        for x, y, t in env:
-            # x = self.test_transforms(x)
-            yield x, y
+        return env
 
     @property
     def current_task_id(self) -> Optional[int]:

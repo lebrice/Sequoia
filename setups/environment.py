@@ -38,7 +38,7 @@ RewardType = TypeVar("RewardType")
 logger = get_logger(__file__, level=logging.DEBUG)
 
 
-class EnvironmentBase(ABC, Generic[ObservationType, ActionType, RewardType]):
+class EnvironmentBase(Generic[ObservationType, ActionType, RewardType], ABC):
     """ ABC for a learning 'environment', wether RL, Supervised or CL. """
     @abstractmethod
     def __next__(self) -> ObservationType:
@@ -74,9 +74,6 @@ class PassiveEnvironment(DataLoader, EnvironmentBase, Generic[ObservationType, R
     def send(self, action: Any) -> None:
         """ Unused, since the environment is passive."""
         pass
-    
-    def throw(self, ex_type: Type[BaseException], value=None, traceback=None):
-        return super().throw(ex_type, value=value, traceback=traceback)
     
     def close(self):
         pass

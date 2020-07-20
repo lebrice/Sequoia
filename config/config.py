@@ -62,7 +62,9 @@ class Config(Serializable):
         else:
             logger = self.wandb.make_logger(self.log_dir_root)
         from experiments.callbacks.vae_callback import SaveVaeSamplesCallback
+        from experiments.callbacks.knn_callback import KnnCallback
         callbacks = [
-            SaveVaeSamplesCallback()
+            SaveVaeSamplesCallback(),
+            KnnCallback(),
         ]
         return self.trainer.make_trainer(loggers=logger, callbacks=callbacks)

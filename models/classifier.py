@@ -154,7 +154,7 @@ class Classifier(pl.LightningModule):
         AuxiliaryTask.input_shape   = self.input_shape
         AuxiliaryTask.encoder       = self.encoder
         AuxiliaryTask.classifier    = self.output
-        AuxiliaryTask.preprocessing = self.preprocess_inputs
+        AuxiliaryTask.preprocessing = self.preprocess_batch
 
         return self.hp.aux_tasks.create_tasks(
             input_shape=self.input_shape,
@@ -182,12 +182,7 @@ class Classifier(pl.LightningModule):
         return self._shared_step(batch, batch_idx, prefix="test")
 
     def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]], batch_idx: int, prefix: str) -> Dict:
-        if len(batch) == 2:
-            x, y = batch
-        elif len(batch) == 3:
-            # Not using the 'task' information on the individual examples just yet.
-            x, y, _ = batch
-
+        x, y = self.preprocess_batch(batch)
         loss_info = self.get_loss(x, y, name=prefix)
         # NOTE: loss is supposed to be a tensor, but I'm testing out giving a LossInfo object instead.
         return {
@@ -210,7 +205,7 @@ class Classifier(pl.LightningModule):
         """
         # TODO: Add a clean input preprocessing setup.
         # TODO: [improvement] Support a mix of labeled / unlabeled data at the example-level.
-        x, y = self.preprocess_inputs(x, y)
+        x, y = self.preprocess_batch(x, y)
         h_x = self.encode(x)
         y_pred = self.output(h_x)
 
@@ -251,15 +246,27 @@ class Classifier(pl.LightningModule):
         else:
             super().backward(trainer, loss, optimizer, optimizer_idx)
 
-    def preprocess_inputs(self, x: Tensor, y: Tensor=None) -> Tuple[Dict[str, Tensor], Dict[str, Optional[Tensor]]]:
-        """Preprocess the input tensor x before it is passed to the encoder.
+    def preprocess_batch(self, *batch: Union[Tensor,
+                                            Tuple[Tensor],
+                                            Tuple[Tensor, Tensor],
+                                            Tuple[Tensor, Tensor, Tensor]],
+                        ) -> Tuple[Tensor, Optional[Tensor]]:
+        """Preprocess the input batch before it is used for training.
+                
+        By default this just splits a (potentially unsupervised) batch into x
+        and y's. 
+        When tackling a different problem or if additional preprocessing or data
+        augmentations are needed, you could just subclass Classifier and change
+        this method's behaviour.
+
+        NOTE: This also discards the task labels for each example, which are
+        normally given by the dataloaders from Continuum.
         
-        By default this does nothing. When subclassing the Classifier or 
-        switching datasets, you might want to change this behaviour.
+        TODO: Re-add the multi-task stuff if needed.
 
         Parameters
         ----------
-        - x : Tensor
+        - batch : Tensor
         
             a batch of inputs.
         
@@ -267,9 +274,20 @@ class Classifier(pl.LightningModule):
         -------
         Tensor
             The preprocessed inputs.
+        Optional[Tensor]
+            The processed labels, if there are any.
         """
-        # TODO: Re-add the multi-task stuff if needed.
-        return x, y
+        assert isinstance(batch, tuple)
+        if len(batch) == 1:
+            batch = batch[0]
+        if isinstance(batch, Tensor):
+            return batch, None
+
+        if len(batch) == 2:
+            return batch[0], batch[1]
+        elif len(batch) == 3:
+            return batch[0], batch[1]
+        
 
     def logits(self, h_x: Tensor) -> Tensor:
         if self.hparams.detach_classifier:
@@ -277,7 +295,7 @@ class Classifier(pl.LightningModule):
         return self.classifier(h_x)
 
     def encode(self, x: Tensor):
-        x, _ = self.preprocess_inputs(x, None)
+        x, _ = self.preprocess_batch(x, None)
         return self.encoder(x)
     
     def validation_epoch_end(
@@ -319,16 +337,19 @@ class Classifier(pl.LightningModule):
     def train_dataloader(self, **kwargs) -> Union[DataLoader, List[DataLoader]]:
         return self.setting.train_dataloader(
             batch_size=self.hp.batch_size,
+            num_workers=self.config.num_workers,
         )
     
     def val_dataloader(self, **kwargs) -> Union[DataLoader, List[DataLoader]]:
         return self.setting.val_dataloader(
             batch_size=self.hp.batch_size,
+            num_workers=self.config.num_workers,
         )
     
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         return self.setting.test_dataloader(
             batch_size=self.hp.batch_size,
+            num_workers=self.config.num_workers,
         )
     
     @property

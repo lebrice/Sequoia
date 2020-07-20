@@ -1,20 +1,23 @@
-from dataclasses import asdict, dataclass, InitVar
-from typing import List, Optional, Tuple, Union
+import itertools
+from dataclasses import InitVar, asdict, dataclass
+from typing import Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from simple_parsing import mutable_field
+from pytorch_lightning import Callback, Trainer
+from sklearn.metrics import log_loss
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import log_loss
 from torch import Tensor
 from torch.nn.functional import one_hot
 from torch.utils.data import DataLoader, Dataset
 
 from common.losses import LossInfo
-from .addon import ExperimentAddon
-from utils.logging_utils import pbar
-from simple_parsing import field
+from models.classifier import Classifier
+from simple_parsing import field, mutable_field
+from utils.logging_utils import pbar, get_logger
+
+logger = get_logger(__file__)
 
 @dataclass
 class KnnClassifierOptions:
@@ -27,40 +30,54 @@ class KnnClassifierOptions:
     n_jobs: Optional[int] = -1  # see the sklearn docs.
 
 
+
 @dataclass  # type: ignore
-class KnnAddon(ExperimentAddon): 
+class KnnCallback(Callback): 
     """ Addon that adds the option of evaluating representations with a KNN.
     
     TODO: Perform the KNN evaluations in different processes using multiprocessing.
     """
 
-    @dataclass
-    class Config(ExperimentAddon.Config):
-        # Options for the KNN classifier 
-        knn_options: KnnClassifierOptions = mutable_field(KnnClassifierOptions)
+    # Options for the KNN classifier 
+    knn_options: KnnClassifierOptions = mutable_field(KnnClassifierOptions)
 
-    config: InitVar[Config]
+    def on_epoch_end(self, trainer: Trainer, pl_module: Classifier):
+        self.trainer = trainer
+        self.model = pl_module
+
+        train = self.trainer.train_dataloader
+        if self.trainer.val_dataloaders:
+            test = itertools.chain(*self.trainer.val_dataloaders)
+        if self.trainer.test_dataloaders:
+            test = itertools.chain(*self.trainer.test_dataloaders)
+
+        train_loss, test_loss = self.test_knn(train=train, test=test)
+        logger.debug(f"Train knn loss: {train_loss.dumps()}")
+        logger.debug(f"Train knn loss: {test_loss.dumps()}")
+        if self.trainer.logger:
+            train_loss.name = "KNN/Train"
+            test_loss.name = "KNN/Test"
+            self.trainer.logger.log_metrics(train_loss.to_log_dict())
+            self.trainer.logger.log_metrics(test_loss.to_log_dict())
+
 
     @torch.no_grad()
     def test_knn(self,
-                 train: Union[Dataset,DataLoader],
-                 test: Union[Dataset, DataLoader],
+                 train: Iterable[Tuple[Tensor, ...]],
+                 test: Iterable[Tuple[Tensor, ...]],
                  description: str="") -> Tuple[LossInfo, LossInfo]:
         """TODO: Test the representations using a KNN classifier. """
-        if not isinstance(train, DataLoader):
-            train = self.get_dataloader(train)
-        if not isinstance(test, DataLoader):
-            test = self.get_dataloader(test)
         
         def get_hidden_codes_array(dataloader: DataLoader) -> Tuple[np.ndarray, np.ndarray]:
             """ Gets the hidden vectors and corresponding labels. """
             h_x_list: List[np.ndarray] = []
             y_list: List[np.ndarray] = []
             for batch in pbar(dataloader, description):
-                x, y = self.preprocess(batch)
+                self.trainer.training_forward
+                x, y = self.model.preprocess_batch(batch)
                 # We only do KNN with examples that have a label.
                 if y is not None:
-                    h_x = self.model.encode(x)
+                    h_x = self.model.encode(x.to(self.model.device))
                     h_x_list.append(h_x.detach().cpu().numpy())
                     y_list.append(y.detach().cpu().numpy())
             return np.concatenate(h_x_list), np.concatenate(y_list)
@@ -70,10 +87,8 @@ class KnnAddon(ExperimentAddon):
         
         train_loss, test_loss = evaluate_knn(
             x=h_x, y=y,
-            x_t=h_x_test, y_t=y_test, options=self.config.knn_options
+            x_t=h_x_test, y_t=y_test, options=self.knn_options
         )
-        # train_loss = LossInfo("KNN-Train", y_pred=y_pred_train, y=y)
-        # test_loss = LossInfo("KNN-Test", y_pred=y_pred_train, y=y)
         return train_loss, test_loss
 
 
@@ -129,4 +144,3 @@ def evaluate_knn(x: np.ndarray, y: np.ndarray, x_t: np.ndarray, y_t: np.ndarray,
     # print(f"train_acc: {train_acc:.2%}")
     # print(f"test_acc: {test_acc:.2%}")
     return train_loss, test_loss
-

@@ -46,9 +46,9 @@ class LossInfo(Serializable):
         if h_x is not None:
             self.tensors["h_x"] = h_x.detach()
         if y_pred is not None:
-            self.tensors["y_pred"] = y_pred.detach()
+            self.tensors["y_pred"] = torch.as_tensor(y_pred).detach()
         if y is not None:
-            self.tensors["y"] = y.detach()
+            self.tensors["y"] = torch.as_tensor(y).detach()
 
         for name, tensor in self.tensors.items():
             if not isinstance(tensor, Tensor):
@@ -210,7 +210,8 @@ class LossInfo(Serializable):
 
     def to_log_dict(self, verbose: bool=False) -> Dict[str, Union[str, float, Dict]]:
         # TODO: Could also produce some wandb plots and stuff here
-        return self.to_dict()
+        d = self.to_dict()
+        return cleanup(d)
 
     def to_pbar_message(self):
         """ Smaller, less-detailed version of `self.to_log_dict()` (doesn't recurse into sublosses)
