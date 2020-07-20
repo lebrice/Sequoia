@@ -16,12 +16,12 @@ from experiments.experiment import Experiment
 from models.classifier import Classifier
 from simple_parsing import ArgumentParser, mutable_field
 
-from ..datasets.data_utils import FixChannels
-from ..utils.logging_utils import get_logger, log_calls
-from .cl import ClassIncrementalSetting, CLSetting
-from .environment import (ActiveEnvironment, EnvironmentBase, PassiveEnvironment)
-from .rl import GymEnvironment
-
+from datasets.data_utils import FixChannels
+from utils.logging_utils import get_logger, log_calls
+from .base import CLSetting
+from ..environment import (ActiveEnvironment, EnvironmentBase, PassiveEnvironment)
+from ..rl import GymEnvironment
+from .class_incremental import ClassIncrementalSetting
 logger = get_logger(__file__)
 
 import itertools

@@ -80,6 +80,7 @@ class FixChannels(nn.Module):
             x = x.repeat(1, 3, 1, 1)
         return x
 
+
 def get_imagenet_location() -> Path:
     from socket import gethostname
     hostname = gethostname()

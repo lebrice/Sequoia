@@ -18,6 +18,22 @@ from utils.json_utils import Serializable
 
 from .environment import (ActionType, ActiveEnvironment, EnvironmentBase,
                           ObservationType, PassiveEnvironment, RewardType)
+from torch import Tensor
+
+
+class ToTensorIfNeeded(ToTensor):
+
+    def __call__(self, pic):
+        """
+        Args:
+            pic (PIL Image or numpy.ndarray): Image to be converted to tensor.
+
+        Returns:
+            Tensor: Converted image.
+        """
+        if isinstance(pic, Tensor):
+            return pic
+        return super().__call__(pic)
 
 
 class Transforms(Enum):
@@ -25,11 +41,10 @@ class Transforms(Enum):
     TODO: Maybe use this to create a customizable input pipeline (with the Simclr MoCo/etc augments?)
     """
     fix_channels = FixChannels()
-    to_tensor = ToTensor()
+    to_tensor = ToTensorIfNeeded()
 
-    def __mult__(self, other: "Transforms"):
-        # TODO: maybe use multiplication as composition?
-        return NotImplemented
+    def __call__(self, x):
+        return self.value(x)
 
     @classmethod
     def _missing_(cls, value: Any):
@@ -37,23 +52,30 @@ class Transforms(Enum):
             if type(e.value) == type(value):
                 return e
         return super()._missing_(value)
-        return cls[value]
 
 
-class Compose(ComposeBase):
-    def __init__(self, transforms: Sequence[Union[Transforms, Callable]]):
-        self._transforms = transforms
-        transforms = [
-            t.value if isinstance(t, Transforms) else t
-            for t in transforms
-        ]
-        super().__init__(transforms=transforms)
+class Compose(List[Transforms], ComposeBase):
+    pass
+    # def __init__(self, transforms: Sequence[Union[Transforms, Callable]]):
+    #     self._transforms = transforms
+    #     transforms = [
+    #         t.value if isinstance(t, Transforms) else t
+    #         for t in transforms
+    #     ]
+    #     super().__init__(transforms=transforms)
     
-    def __contains__(self, other: Transforms) -> bool:
-        return other in self._transforms
+    # def __contains__(self, other: Transforms) -> bool:
+    #     return other in self._transforms
     
-    def __iter__(self) -> Iterable[Callable]:
-        yield from self.transforms
+    # def __call__(self, x):
+    #     for t in self:
+    #         if isinstance(t, Transforms):
+    #             x = t.value(x)
+    #         else:
+    #             x = t(x)
+    #     return x
+
+    # def __add__(self, other: Union[Compose, List[Callable]]) -> Compose:
 
 
 Loader = TypeVar("Loader", bound=DataLoader)

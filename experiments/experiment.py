@@ -70,8 +70,6 @@ class Experiment(Serializable):
         ```
         """
         raise RuntimeError("Implement your own run method in a subclass!")
-        
-        
 
     def launch(self):
         print("Launching experiment.")

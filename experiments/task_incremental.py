@@ -27,8 +27,6 @@ class ClassIncremental(Experiment):
     @dataclass
     class Config(Experiment.Config):
         """ Config of a ClassIncremental experiment. """
-        # setting_config: ExperimentalSetting.Config = mutable_field(ClassIncrementalSetting.Config)
-        # setting_class: ClassVar[Type[ExperimentalSetting]] = ClassIncrementalSetting
 
     config: Config = mutable_field(Config)
 
@@ -46,12 +44,13 @@ class ClassIncremental(Experiment):
             logger.info(f"Starting task #{i}")
             logger.info(f"(setting current task id: {self.setting.current_task_id})")
             trainer.fit(model)
-
-            self.setting.current_task_id += 1
+            
+            self.setting.current_task_id = i
 
         # Save to results dir.
-        test_results = trainer.test()        
-        print(f"test results: {test_results}") 
+        test_results = trainer.test()
+        print(f"test results: {test_results}")
+        return test_results 
 
 
 if __name__ == "__main__":
