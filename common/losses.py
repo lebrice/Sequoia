@@ -218,7 +218,7 @@ class LossInfo(Serializable):
         meant to be used in progressbars.
         """
         message: Dict[str, Union[str, float]] = OrderedDict()
-        message["Loss"] = float(self.total_loss.item())
+        message["Loss"] = float(self.total_loss)
 
         if self.metric:
             message[self.name] = self.metric.to_pbar_message()

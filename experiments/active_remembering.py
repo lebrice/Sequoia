@@ -21,7 +21,7 @@ from utils.logging_utils import get_logger
 from utils.plotting import PlotSectionLabel
 from datasets.data_utils import unlabeled
 
-from .task_incremental import ClassIncremental
+from .cl import ClassIncremental
 logger = get_logger(__file__)
 
 

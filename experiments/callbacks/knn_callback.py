@@ -45,73 +45,73 @@ class KnnCallback(Callback):
         self.trainer = trainer
         self.model = pl_module
 
-        train = self.trainer.train_dataloader
-        if self.trainer.val_dataloaders:
-            test = itertools.chain(*self.trainer.val_dataloaders)
-        if self.trainer.test_dataloaders:
-            test = itertools.chain(*self.trainer.test_dataloaders)
+        train = pl_module.train_dataloader()
+        test  = pl_module.test_dataloader()
+        val  = pl_module.val_dataloader()
 
-        train_loss, test_loss = self.test_knn(train=train, test=test)
-        logger.debug(f"Train knn loss: {train_loss.dumps()}")
-        logger.debug(f"Train knn loss: {test_loss.dumps()}")
+        if isinstance(test, DataLoader):
+            test = [test]
+        if isinstance(val, DataLoader):
+            val = [val]
+
+        h_x, y = self.get_hidden_codes_array(train, description="KNN (Train)")
+        train_classes = np.unique(y)
+        train_loss, scaler, knn_classifier = fit_knn(
+            x=h_x,
+            y=y,
+            options=self.knn_options
+        )
+        logger.info(f"Train KNN Acc: {train_loss.accuracy:.2%}")
+        total_test_knn_loss = LossInfo("KNN/Test")
+        
+        for i, (val_dataloader, test_dataloader) in enumerate(zip(test, val)):
+            h_x_test, y_test = self.get_hidden_codes_array(test_dataloader,  description=f"KNN (test[{i}])")
+            test_classes = np.unique(y_test)
+            assert np.array_equal(train_classes, test_classes), (
+                f"y and y_test should contain the same classes: "
+                f"(train classes: {train_classes}, "
+                f"test classes: {test_classes})."
+            )
+            test_loss = evaluate_knn(
+                x_t=h_x_test, y_t=y_test, scaler=scaler, knn_classifier=knn_classifier,
+            )
+            logger.info(f"Test[{i}]  KNN Acc: {test_loss.accuracy:.2%}")
+            total_test_knn_loss.absorb(test_loss)
+
+        logger.info(f"Average Test KNN Acc: {total_test_knn_loss.accuracy:.2%}")
+
         if self.trainer.logger:
             train_loss.name = "KNN/Train"
             test_loss.name = "KNN/Test"
             self.trainer.logger.log_metrics(train_loss.to_log_dict())
-            self.trainer.logger.log_metrics(test_loss.to_log_dict())
+            self.trainer.logger.log_metrics(total_test_knn_loss.to_log_dict())
+
+    def get_hidden_codes_array(self, dataloader: DataLoader, description: str="KNN") -> Tuple[np.ndarray, np.ndarray]:
+        """ Gets the hidden vectors and corresponding labels. """
+        h_x_list: List[np.ndarray] = []
+        y_list: List[np.ndarray] = []
+        for batch in pbar(dataloader, description):
+            x, y = self.model.preprocess_batch(batch)
+            # We only do KNN with examples that have a label.
+            assert y is not None, f"Should have a 'y' for now! {x}, {y}"
+            if y is not None:
+                h_x = self.model.encode(x.to(self.model.device))
+                h_x_list.append(h_x.detach().cpu().numpy())
+                y_list.append(y.detach().cpu().numpy())
+        codes = np.concatenate(h_x_list)
+        labels = np.concatenate(y_list)
+        return codes.reshape(codes.shape[0], -1), labels
 
 
-    @torch.no_grad()
-    def test_knn(self,
-                 train: Iterable[Tuple[Tensor, ...]],
-                 test: Iterable[Tuple[Tensor, ...]],
-                 description: str="") -> Tuple[LossInfo, LossInfo]:
-        """TODO: Test the representations using a KNN classifier. """
-        
-        def get_hidden_codes_array(dataloader: DataLoader) -> Tuple[np.ndarray, np.ndarray]:
-            """ Gets the hidden vectors and corresponding labels. """
-            h_x_list: List[np.ndarray] = []
-            y_list: List[np.ndarray] = []
-            for batch in pbar(dataloader, description):
-                self.trainer.training_forward
-                x, y = self.model.preprocess_batch(batch)
-                # We only do KNN with examples that have a label.
-                if y is not None:
-                    h_x = self.model.encode(x.to(self.model.device))
-                    h_x_list.append(h_x.detach().cpu().numpy())
-                    y_list.append(y.detach().cpu().numpy())
-            return np.concatenate(h_x_list), np.concatenate(y_list)
-
-        h_x, y = get_hidden_codes_array(train)
-        h_x_test, y_test = get_hidden_codes_array(test)
-        
-        train_loss, test_loss = evaluate_knn(
-            x=h_x, y=y,
-            x_t=h_x_test, y_t=y_test, options=self.knn_options
-        )
-        return train_loss, test_loss
-
-
-def evaluate_knn(x: np.ndarray, y: np.ndarray, x_t: np.ndarray, y_t: np.ndarray, options: KnnClassifierOptions=None) -> Tuple[LossInfo, LossInfo]:
+def fit_knn(x: np.ndarray, y: np.ndarray, options: KnnClassifierOptions=None) -> Tuple[LossInfo, StandardScaler, KNeighborsClassifier]:
     # print(x.shape, y.shape, x_t.shape, y_t.shape)
     options = options or KnnClassifierOptions()
-    
-    # Flatten the inputs to two dimensions only.
-    x = x.reshape(x.shape[0], -1)
-    x_t = x_t.reshape(x_t.shape[0], -1)
-
+   
     scaler = StandardScaler()
-
-    assert len(x.shape) == 2
-    assert len(x_t.shape) == 2
-    train_classes = np.unique(y)
-    test_classes = np.unique(y_t)
-    assert np.array_equal(train_classes, test_classes), f"y and y_test should contain the same classes: (y: {train_classes}, y_t: {test_classes})."
-    
     x = scaler.fit_transform(x)
-       
     # Create and train the Knn Classifier using the options as the kwargs
     knn_classifier = KNeighborsClassifier(**asdict(options)).fit(x, y)
+
     classes = knn_classifier.classes_
     # print("classes: ", classes)
 
@@ -127,20 +127,20 @@ def evaluate_knn(x: np.ndarray, y: np.ndarray, x_t: np.ndarray, y_t: np.ndarray,
     nce = log_loss(y_true=y, y_pred=y_prob, labels=classes)
     train_loss = LossInfo("KNN", total_loss=nce, y_pred=y_logits, y=y)
 
-    x_t = scaler.transform(x_t)
-    # y_t_pred = knn_classifier.predict(x_t)
-    y_t_prob = knn_classifier.predict_proba(x_t)
-    # print(y_t_pred.shape, y_t_prob.shape, test_score)
+    return train_loss, scaler, knn_classifier
 
+
+def evaluate_knn(x_t: np.ndarray, y_t: np.ndarray, scaler: StandardScaler, knn_classifier: KNeighborsClassifier) -> LossInfo:
+    # Flatten the inputs to two dimensions only.
+    x_t = x_t.reshape(x_t.shape[0], -1)
+    assert len(x_t.shape) == 2
+    x_t = scaler.transform(x_t)
+    y_t_prob = knn_classifier.predict_proba(x_t)
     y_t_logits = np.zeros((y_t.size, y_t.max() + 1))
+    
+    classes = knn_classifier.classes_
     for i, label in enumerate(classes):
         y_t_logits[:, label] = y_t_prob[:, i]
-    
     nce_t = log_loss(y_true=y_t, y_pred=y_t_prob, labels=classes)
     test_loss = LossInfo("KNN", total_loss=nce_t, y_pred=y_t_logits, y=y_t)
-
-    # train_acc = np.mean(y_pred == y)
-    # test_acc = np.mean(y_t_pred == y_t)
-    # print(f"train_acc: {train_acc:.2%}")
-    # print(f"test_acc: {test_acc:.2%}")
-    return train_loss, test_loss
+    return test_loss

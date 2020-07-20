@@ -145,14 +145,10 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
         # TODO: Could transforms just specify their impact on the shape directly instead, à-la Tensorflow?
         """
         dims = Dims(*self._dims)
-        assert dims.c < dims.h and dims.c < dims.w and dims.h == dims.w
+        assert dims.c < dims.h and dims.c < dims.w and dims.h == dims.w, dims
 
         if Transforms.fix_channels in self.transforms:
-            # give back the 'transposed' shape.
-            logger.debug("HEY. Channels were fixed!")
-            logger.debug(f"dims before: {dims}")
             dims = dims._replace(c=3)
-            logger.debug(f"dims after: {dims}")
             return dims
         return self._dims
 
@@ -190,7 +186,7 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
         logger.info(f"Number of train tasks: {self.train_cl_loader.nb_tasks}.")
         logger.info(f"Number of test classes: {self.train_cl_loader.nb_classes}.")
         logger.info(f"Number of test tasks: {self.train_cl_loader.nb_tasks}.")
-        
+
         self.train_datasets.clear()
         self.val_datasets.clear()
         self.test_datasets.clear()
@@ -211,14 +207,20 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
         return env
 
     def val_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
-        dataset = self.val_datasets[self.__current_task_id]
-        env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
-        return env
+        loaders: List[DataLoader] = []
+        for i in range(self.__current_task_id + 1):
+            dataset = self.val_datasets[i]
+            env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
+            loaders.append(env)
+        return loaders
 
     def test_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
-        dataset = self.test_datasets[self.__current_task_id]
-        env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
-        return env
+        loaders: List[DataLoader] = []
+        for i in range(self.__current_task_id + 1):
+            dataset = self.val_datasets[i]
+            env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
+            loaders.append(env)
+        return loaders
 
     @property
     def current_task_id(self) -> Optional[int]:

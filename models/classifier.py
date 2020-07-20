@@ -173,12 +173,16 @@ class Classifier(pl.LightningModule):
         self.train()
         return self._shared_step(batch, batch_idx, prefix="train")
 
-    def validation_step(self, batch, batch_idx: int):
+    def validation_step(self, batch, batch_idx: int, dataloader_idx: int=None):
         self.eval()
+        # TODO: something like this:
+        self.on_task_switch(dataloader_idx)
         return self._shared_step(batch, batch_idx, prefix="val")
 
-    def test_step(self, batch, batch_idx: int):
+    def test_step(self, batch, batch_idx: int, dataloader_idx: int=None):
         self.eval()
+        # TODO: something like this:
+        self.on_task_switch(dataloader_idx)
         return self._shared_step(batch, batch_idx, prefix="test")
 
     def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]], batch_idx: int, prefix: str) -> Dict:
@@ -316,12 +320,12 @@ class Classifier(pl.LightningModule):
     ) -> Dict[str, Dict[str, Tensor]]:
         
         for output in outputs:
-            loss_info = output["loss_info"]
+            loss_info = output["loss_info"] 
             loss = output["loss"]
             assert loss.item() == loss_info.total_loss.item(), (
                 f"{loss} should be {loss_info.total_loss}"
             )
-        total_loss = sum(output["loss_info"] for output in outputs)
+        total_loss = sum((output["loss_info"] for output in outputs), LossInfo())
         return {
             "log": total_loss.to_log_dict(),
             "progress_bar": total_loss.to_pbar_message(),
@@ -368,3 +372,6 @@ class Classifier(pl.LightningModule):
     def learning_rate(self, value: float) -> None:
         self.hp.learning_rate = value
 
+    def on_task_switch(self, task_id: int):
+        # TODO: Re-add the CL/multihead stuff here, or in a derived class?
+        pass
