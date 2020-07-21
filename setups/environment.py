@@ -45,7 +45,7 @@ class EnvironmentBase(Generic[ObservationType, ActionType, RewardType], ABC):
         """ Generate the next observation. """
 
     @abstractmethod
-    def __iter__(self) -> Generator[ObservationType, ActionType, None]:
+    def __iter__(self) -> Iterable[ObservationType]:
         """ Returns a generator yielding observations and accepting actions. """
 
     @abstractmethod
@@ -78,6 +78,7 @@ class PassiveEnvironment(DataLoader, EnvironmentBase, Generic[ObservationType, R
     def close(self):
         pass
 
+
 class ActiveEnvironment(DataLoader, EnvironmentBase[ObservationType, ActionType, RewardType]):
     """Extends DataLoader to support sending back actions to the 'dataset'.
     
@@ -99,9 +100,9 @@ class ActiveEnvironment(DataLoader, EnvironmentBase[ObservationType, ActionType,
                        y_transform: Callable=None,
                        **dataloader_kwargs):
         super().__init__(dataset, **dataloader_kwargs)
-        self.observation: Tensor = None
-        self.action: Tensor = None
-        self.reward: Tensor = None
+        self.observation: ObservationType = None
+        self.action: ActionType = None
+        self.reward: RewardType = None
 
         self.x_transform = x_transform
         self.y_transform = y_transform

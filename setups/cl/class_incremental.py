@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Union
+from typing import List, Union, Optional
 
 from torch import Tensor
 
@@ -8,7 +8,7 @@ from continuum.datasets import *
 from continuum.datasets import _ContinuumDataset
 from continuum.scenarios.base import _BaseCLLoader
 from simple_parsing import list_field
-
+from setups.environment import PassiveEnvironment
 from .base import CLSetting, num_classes_in_dataset
 
 
@@ -24,12 +24,12 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
     nb_tasks: int = 0
     # Either number of classes per task, or a list specifying for
     # every task the amount of new classes.
-    increment: Union[List[int], int] = list_field(2, type=int, nargs="*")
+    increment: Union[List[int], int] = list_field(2, type=int, nargs="*", alias="num_classes_per_task")
     # A different task size applied only for the first task.
     # Desactivated if `increment` is a list.
     initial_increment: int = 0
     # An optional custom class order, used for NC.
-    class_order = None
+    class_order: Optional[List[int]] = None
     # Either number of classes per task, or a list specifying for
     # every task the amount of new classes (defaults to the value of
     # `increment`).
@@ -49,13 +49,18 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
             config
         """
         super().__post_init__()
-        if self.nb_tasks == 0:
-            self.nb_tasks = num_classes_in_dataset[self.dataset] // 2
         if isinstance(self.increment, list) and len(self.increment) == 1:
             self.increment = self.increment[0]
+        if self.nb_tasks == 0:
+            self.nb_tasks = num_classes_in_dataset[self.dataset] // self.increment
+        # Test values default to the same as train.
         self.test_increment = self.test_increment or self.increment
         self.test_initial_increment = self.test_initial_increment or self.test_increment
         self.test_class_order = self.test_class_order or self.class_order
+
+    @property
+    def num_classes_per_task(self) -> Union[int, List[int]]:
+        return self.increment
 
     def make_train_cl_loader(self, dataset: _ContinuumDataset) -> _BaseCLLoader:
         """ Creates a train ClassIncremental object from continuum. """
@@ -84,3 +89,32 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
             common_transformations=self.transforms,
             train=False  # a different loader for test
         )
+
+    def train_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
+        """Returns a DataLoader for the train dataset of the current task.
+        
+        NOTE: The dataloader is passive for now (just a regular DataLoader).
+        """
+        dataset = self.train_datasets[self._current_task_id]
+        env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
+        return env
+
+    def val_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
+        """Returns a DataLoader for the validation dataset of the current task.
+        
+        NOTE: The dataloader is passive for now (just a regular DataLoader).
+        """
+        dataset = self.val_datasets[self._current_task_id]
+        env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
+        return env
+
+    def test_dataloader(self, *args, **kwargs) -> List[PassiveEnvironment]:
+        """Returns a list of DataLoaders, one for each of the test datasets.
+        
+        NOTE: The dataloader is passive for now (just a regular DataLoader).
+        """
+        loaders: List[DataLoader] = []
+        for i, dataset in enumerate(self.test_datasets):
+            env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
+            loaders.append(env)
+        return loaders

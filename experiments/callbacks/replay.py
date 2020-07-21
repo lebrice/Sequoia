@@ -1,3 +1,8 @@
+"""TODO: Migrate the ReplayAddon to Pytorch-Lightning. 
+
+Ideas:
+- Could maybe be an extension for the Classifier instead?
+"""
 import random
 from abc import ABC, abstractmethod
 from collections import Counter, deque
@@ -16,7 +21,6 @@ from simple_parsing import field, mutable_field
 from utils.json_utils import Serializable
 from utils.logging_utils import get_logger
 from utils.json_utils import Pickleable
-from .addon import ExperimentAddon
 
 logger = get_logger(__file__)
 T = TypeVar("T")
@@ -69,7 +73,7 @@ class ReplayBuffer(Deque[T], Pickleable):
     def full(self) -> bool:
         return len(self) == self.capacity 
 
-
+@dataclass
 class UnlabeledReplayBuffer(ReplayBuffer[Tensor]):
     def sample_batch(self, size: int) -> Tensor:
         batch = super()._sample(size)
@@ -83,6 +87,7 @@ class UnlabeledReplayBuffer(ReplayBuffer[Tensor]):
         return torch.stack(super()._push_and_sample(x_batch, size=size))
 
 
+@dataclass
 class LabeledReplayBuffer(ReplayBuffer[Tuple[Tensor, Tensor]]):
     def sample(self, size: int) -> Tuple[Tensor, Tensor]:
         list_of_pairs = super()._sample(size)
@@ -104,7 +109,7 @@ class LabeledReplayBuffer(ReplayBuffer[Tuple[Tensor, Tensor]]):
         return Counter(int(y) for x, y in self)
 
 
-class CoolReplayBuffer(nn.Module):
+class CoolReplayBuffer(object):
     def __init__(self, labeled_capacity: int, unlabeled_capacity: int=0):
         """Semi-Supervised (ish) version of a replay buffer.
         With the default parameters, acts just like a regular replay buffer.
@@ -232,76 +237,76 @@ class ReplayOptions(Serializable):
     def enabled(self) -> bool:
         return self.labeled_buffer_size > 0 or self.unlabeled_buffer_size > 0
 
-@dataclass  #  type: ignore
-class ReplayAddon(ExperimentAddon):
+# @dataclass  #  type: ignore
+# class ReplayAddon(ExperimentAddon):
     
-    @dataclass
-    class Config(ExperimentAddon.Config):
-        # Number of samples in the replay buffer.
-        replay: ReplayOptions = mutable_field(ReplayOptions)
+#     @dataclass
+#     class Config(ExperimentAddon.Config):
+#         # Number of samples in the replay buffer.
+#         replay: ReplayOptions = mutable_field(ReplayOptions)
     
-    @dataclass
-    class State(ExperimentAddon.State):
-        # TODO: Fix this metadata stuff in SimpleParsing.
-        replay_buffer: Optional[ReplayBuffer] = field(None, metadata=dict(to_dict=False))
+#     @dataclass
+#     class State(ExperimentAddon.State):
+#         # TODO: Fix this metadata stuff in SimpleParsing.
+#         replay_buffer: Optional[ReplayBuffer] = field(None, metadata=dict(to_dict=False))
         
-        def _save(self, path: Union[str, Path], dump_fn=json.dump, **kwargs) -> None:
-            path = Path(path)
-            super()._save(path, dump_fn=dump_fn, **kwargs)
-            if self.replay_buffer is not None:
-                buffer_save_path = path.parent / "replay_buffer.pth"
-                torch.save(self.replay_buffer, str(buffer_save_path))
+#         def _save(self, path: Union[str, Path], dump_fn=json.dump, **kwargs) -> None:
+#             path = Path(path)
+#             super()._save(path, dump_fn=dump_fn, **kwargs)
+#             if self.replay_buffer is not None:
+#                 buffer_save_path = path.parent / "replay_buffer.pth"
+#                 torch.save(self.replay_buffer, str(buffer_save_path))
         
-        @classmethod
-        def load(cls, path: Union[Path, str], drop_extra_fields: bool=None, load_fn=None, **kwargs) -> D:
-            path = Path(path)
-            state: ReplayAddon.State = super().load(path, drop_extra_fields=drop_extra_fields, load_fn=load_fn, **kwargs)
-            buffer_load_path = path.parent / "replay_buffer.pth"
-            if buffer_load_path.exists():
-                state.replay_buffer = torch.load(buffer_load_path)
-            return state
+#         @classmethod
+#         def load(cls, path: Union[Path, str], drop_extra_fields: bool=None, load_fn=None, **kwargs) -> D:
+#             path = Path(path)
+#             state: ReplayAddon.State = super().load(path, drop_extra_fields=drop_extra_fields, load_fn=load_fn, **kwargs)
+#             buffer_load_path = path.parent / "replay_buffer.pth"
+#             if buffer_load_path.exists():
+#                 state.replay_buffer = torch.load(buffer_load_path)
+#             return state
 
-    config: Config = mutable_field(Config)
-    state: State = mutable_field(State, init=False)
+#     config: Config = mutable_field(Config)
+#     state: State = mutable_field(State, init=False)
 
 
 
-    def __post_init__(self, *args, **kwargs):
-        super().__post_init__(*args, **kwargs)
-        # labeled_replay_buffer:   Optional[LabeledReplayBuffer] = field(default=None, init=False)
-        # unlabeled_replay_buffer: Optional[UnlabeledReplayBuffer] = field(default=None, init=False)
+#     def __post_init__(self, *args, **kwargs):
+#         super().__post_init__(*args, **kwargs)
+#         # labeled_replay_buffer:   Optional[LabeledReplayBuffer] = field(default=None, init=False)
+#         # unlabeled_replay_buffer: Optional[UnlabeledReplayBuffer] = field(default=None, init=False)
 
-        if self.config.replay.labeled_buffer_size or self.config.replay.unlabeled_buffer_size:
-            if self.config.replay.labeled_buffer_size > 0 and self.config.replay.unlabeled_buffer_size > 0:
-                self.replay_buffer = CoolReplayBuffer(
-                    labeled_capacity=self.config.replay.labeled_buffer_size,
-                    unlabeled_capacity=self.config.replay.unlabeled_buffer_size,
-                )
+#         if self.config.replay.labeled_buffer_size or self.config.replay.unlabeled_buffer_size:
+#             if self.config.replay.labeled_buffer_size > 0 and self.config.replay.unlabeled_buffer_size > 0:
+#                 self.replay_buffer = CoolReplayBuffer(
+#                     labeled_capacity=self.config.replay.labeled_buffer_size,
+#                     unlabeled_capacity=self.config.replay.unlabeled_buffer_size,
+#                 )
             
-            elif self.config.replay.labeled_buffer_size > 0:
-                logger.info(f"Using a (labeled) replay buffer of size {self.config.replay.labeled_buffer_size}.")
-                self.replay_buffer = LabeledReplayBuffer(self.config.replay.labeled_buffer_size)
+#             elif self.config.replay.labeled_buffer_size > 0:
+#                 logger.info(f"Using a (labeled) replay buffer of size {self.config.replay.labeled_buffer_size}.")
+#                 self.replay_buffer = LabeledReplayBuffer(self.config.replay.labeled_buffer_size)
             
-            elif self.config.replay.unlabeled_buffer_size > 0:
-                logger.info(f"Using an (unlabeled) replay buffer of size {self.config.replay.unlabeled_buffer_size}.")
-                self.replay_buffer = UnlabeledReplayBuffer(self.config.replay.unlabeled_buffer_size)
+#             elif self.config.replay.unlabeled_buffer_size > 0:
+#                 logger.info(f"Using an (unlabeled) replay buffer of size {self.config.replay.unlabeled_buffer_size}.")
+#                 self.replay_buffer = UnlabeledReplayBuffer(self.config.replay.unlabeled_buffer_size)
 
-    def train_batch(self, data: Tensor, target: Optional[Tensor], name: str="Train") -> LossInfo:
-        if self.config.replay.always_use_replay and self.replay_buffer is not None:
-            # If we have an unlabeled replay buffer, always push the x's to it,
-            # regarless of if 'target' is present or not.
-            if target is not None:
-                # We have labeled data.
-                sampled_batch_size = self.config.replay.sampled_batch_size or self.config.hparams.batch_size
-                data, target = self.replay_buffer.push_and_sample(data, target, size=sampled_batch_size)
-            elif self.replay.unlabeled_buffer_size > 0:
-                data = self.replay_buffer.push_and_sample_unlabeled(data, size=sampled_batch_size)
-        return super().train_batch(data, target, name)
+#     def train_batch(self, data: Tensor, target: Optional[Tensor], name: str="Train") -> LossInfo:
+#         if self.config.replay.always_use_replay and self.replay_buffer is not None:
+#             # If we have an unlabeled replay buffer, always push the x's to it,
+#             # regarless of if 'target' is present or not.
+#             if target is not None:
+#                 # We have labeled data.
+#                 sampled_batch_size = self.config.replay.sampled_batch_size or self.config.hparams.batch_size
+#                 data, target = self.replay_buffer.push_and_sample(data, target, size=sampled_batch_size)
+#             elif self.replay.unlabeled_buffer_size > 0:
+#                 data = self.replay_buffer.push_and_sample_unlabeled(data, size=sampled_batch_size)
+#         return super().train_batch(data, target, name)
 
-    @property
-    def replay_buffer(self) -> Optional[ReplayBuffer]:
-        return self.state.replay_buffer
+#     @property
+#     def replay_buffer(self) -> Optional[ReplayBuffer]:
+#         return self.state.replay_buffer
     
-    @replay_buffer.setter
-    def replay_buffer(self, value: Optional[ReplayBuffer]) -> None:
-        self.state.replay_buffer = value
+#     @replay_buffer.setter
+#     def replay_buffer(self, value: Optional[ReplayBuffer]) -> None:
+#         self.state.replay_buffer = value

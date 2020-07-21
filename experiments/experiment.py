@@ -52,8 +52,8 @@ class Experiment(Serializable):
         """
         pass
 
-    # HyperParameters of the model/experiment.
-    hparams: Classifier.HParams = mutable_field(Classifier.HParams)
+    # # HyperParameters of the model/experiment.
+    # hparams: Classifier.HParams = mutable_field(Classifier.HParams)
     # Configuration options for an experiment (log_dir, etc.)
     config: Config = mutable_field(Config)
 

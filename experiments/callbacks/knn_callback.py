@@ -30,8 +30,7 @@ class KnnClassifierOptions:
     n_jobs: Optional[int] = -1  # see the sklearn docs.
 
 
-
-@dataclass  # type: ignore
+@dataclass
 class KnnCallback(Callback): 
     """ Addon that adds the option of evaluating representations with a KNN.
     
@@ -74,6 +73,7 @@ class KnnCallback(Callback):
             )
             test_loss = evaluate_knn(
                 x_t=h_x_test, y_t=y_test, scaler=scaler, knn_classifier=knn_classifier,
+                loss_name=f"KNN/Test[{i}]"
             )
             logger.info(f"Test[{i}]  KNN Acc: {test_loss.accuracy:.2%}")
             total_test_knn_loss.absorb(test_loss)
@@ -130,7 +130,7 @@ def fit_knn(x: np.ndarray, y: np.ndarray, options: KnnClassifierOptions=None) ->
     return train_loss, scaler, knn_classifier
 
 
-def evaluate_knn(x_t: np.ndarray, y_t: np.ndarray, scaler: StandardScaler, knn_classifier: KNeighborsClassifier) -> LossInfo:
+def evaluate_knn(x_t: np.ndarray, y_t: np.ndarray, scaler: StandardScaler, knn_classifier: KNeighborsClassifier, loss_name: str="KNN") -> LossInfo:
     # Flatten the inputs to two dimensions only.
     x_t = x_t.reshape(x_t.shape[0], -1)
     assert len(x_t.shape) == 2
@@ -142,5 +142,5 @@ def evaluate_knn(x_t: np.ndarray, y_t: np.ndarray, scaler: StandardScaler, knn_c
     for i, label in enumerate(classes):
         y_t_logits[:, label] = y_t_prob[:, i]
     nce_t = log_loss(y_true=y_t, y_pred=y_t_prob, labels=classes)
-    test_loss = LossInfo("KNN", total_loss=nce_t, y_pred=y_t_logits, y=y_t)
+    test_loss = LossInfo(loss_name, total_loss=nce_t, y_pred=y_t_logits, y=y_t)
     return test_loss

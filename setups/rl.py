@@ -5,8 +5,8 @@ import torch
 import torch.multiprocessing as mp
 from torch.utils.data import IterableDataset
 
-from ..utils.logging_utils import get_logger, log_calls
-from .environment import (ActionType, EnvironmentBase, ObservationType,
+from utils.logging_utils import get_logger, log_calls
+from setups.environment import (ActionType, EnvironmentBase, ObservationType,
                           RewardType)
 
 logger = get_logger(__file__)

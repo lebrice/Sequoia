@@ -116,7 +116,7 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
             options (Options): Dataclass used for configuration.
         """
         super().__post_init__()
-        self.__current_task_id: int = 0
+        self._current_task_id: int = 0
 
         self.train_dataset: _ContinuumDataset = None
         self.test_dataset: _ContinuumDataset = None
@@ -202,22 +202,30 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
         return super().prepare_data(**kwargs)
 
     def train_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
-        dataset = self.train_datasets[self.__current_task_id]
+        """Returns a DataLoader for the train dataset of the current task.
+        
+        NOTE: The dataloader is passive for now (just a regular DataLoader).
+        """
+        dataset = self.train_datasets[self._current_task_id]
         env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
         return env
 
     def val_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
-        loaders: List[DataLoader] = []
-        for i in range(self.__current_task_id + 1):
-            dataset = self.val_datasets[i]
-            env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
-            loaders.append(env)
-        return loaders
+        """Returns a DataLoader for the validation dataset of the current task.
+        
+        NOTE: The dataloader is passive for now (just a regular DataLoader).
+        """
+        dataset = self.val_datasets[self._current_task_id]
+        env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
+        return env
 
-    def test_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
+    def test_dataloader(self, *args, **kwargs) -> List[PassiveEnvironment]:
+        """Returns a list of DataLoaders, one for each of the test datasets.
+        
+        NOTE: The dataloader is passive for now (just a regular DataLoader).
+        """
         loaders: List[DataLoader] = []
-        for i in range(self.__current_task_id + 1):
-            dataset = self.val_datasets[i]
+        for i, dataset in enumerate(self.test_datasets):
             env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
             loaders.append(env)
         return loaders
@@ -226,7 +234,7 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
     def current_task_id(self) -> Optional[int]:
         """ Get the current task or None when it is not available. """
         if self.task_label_is_readable:
-            return self.__current_task_id
+            return self._current_task_id
         else:
             return None
     
@@ -234,7 +242,7 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
     def current_task_id(self, value: int) -> None:
         """ Set the current task when it is writable else raises a warning. """
         if self.task_label_is_writable:
-            self.__current_task_id = value
+            self._current_task_id = value
         else:
             warnings.warn(UserWarning(
                 f"Trying to set task id but it is not writable! Doing nothing."

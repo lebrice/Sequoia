@@ -177,13 +177,19 @@ class Classifier(pl.LightningModule):
         self.eval()
         # TODO: something like this:
         self.on_task_switch(dataloader_idx)
-        return self._shared_step(batch, batch_idx, prefix="val")
+        prefix = "val"
+        if dataloader_idx is not None:
+            prefix += f"/{dataloader_idx}"
+        return self._shared_step(batch, batch_idx, prefix=prefix)
 
     def test_step(self, batch, batch_idx: int, dataloader_idx: int=None):
         self.eval()
         # TODO: something like this:
         self.on_task_switch(dataloader_idx)
-        return self._shared_step(batch, batch_idx, prefix="test")
+        prefix = "test"
+        if dataloader_idx is not None:
+            prefix += f"/{dataloader_idx}"
+        return self._shared_step(batch, batch_idx, prefix=prefix)
 
     def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]], batch_idx: int, prefix: str) -> Dict:
         x, y = self.preprocess_batch(batch)
@@ -319,16 +325,41 @@ class Classifier(pl.LightningModule):
         outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]],
     ) -> Dict[str, Dict[str, Tensor]]:
         
+        # Sum of the metrics acquired during the epoch.
+        # NOTE: This is the 'online' metrics in the case of a training/val epoch
+        # and the 'average' & 'online' in the case of a test epoch (as they are
+        # the same in that case).
+
+        total_loss = LossInfo()
+
+        # TODO: Log this somehow?
         for output in outputs:
-            loss_info = output["loss_info"] 
-            loss = output["loss"]
-            assert loss.item() == loss_info.total_loss.item(), (
-                f"{loss} should be {loss_info.total_loss}"
-            )
-        total_loss = sum((output["loss_info"] for output in outputs), LossInfo())
+            if isinstance(output, list):
+                # we had multiple dataloaders (multiple tasks or test datasets.)
+                for dataloader_output in output:
+                    # The outputs are for each of the dataloaders.
+                    loss_info = dataloader_output["loss_info"] 
+                    total_loss += loss_info
+                    # Just a little sanity check:
+                    loss = dataloader_output["loss"]
+                    assert loss.item() == loss_info.total_loss.item(), (
+                        f"{loss} should be {loss_info.total_loss}"
+                    )
+            else:
+                assert isinstance(output, dict)
+                # The outputs are for each of the dataloaders.
+                loss_info = output["loss_info"] 
+                total_loss += loss_info
+
+                loss = output["loss"]
+                assert loss.item() == loss_info.total_loss.item(), (
+                    f"{loss} should be {loss_info.total_loss}"
+                )
+
         return {
             "log": total_loss.to_log_dict(),
             "progress_bar": total_loss.to_pbar_message(),
+            "loss_info": total_loss.detach(),
         }
 
     def configure_optimizers(self):
@@ -355,7 +386,7 @@ class Classifier(pl.LightningModule):
             batch_size=self.hp.batch_size,
             num_workers=self.config.num_workers,
         )
-    
+        
     @property
     def batch_size(self) -> int:
         return self.hp.batch_size

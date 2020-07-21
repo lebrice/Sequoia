@@ -41,8 +41,7 @@ class Config(Serializable):
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Options for wandb logging.
     wandb: WandbLoggerConfig = mutable_field(WandbLoggerConfig)
-    # Options for the trainer.
-    trainer: TrainerConfig = mutable_field(TrainerConfig)
+
     
     def __post_init__(self):
         seed_everything(self.seed)
@@ -56,15 +55,3 @@ class Config(Serializable):
             self.wandb.run_id,
         )
 
-    def make_trainer(self) -> Trainer:
-        if self.debug:
-            logger = None
-        else:
-            logger = self.wandb.make_logger(self.log_dir_root)
-        from experiments.callbacks.vae_callback import SaveVaeSamplesCallback
-        from experiments.callbacks.knn_callback import KnnCallback
-        callbacks = [
-            SaveVaeSamplesCallback(),
-            KnnCallback(),
-        ]
-        return self.trainer.make_trainer(loggers=logger, callbacks=callbacks)

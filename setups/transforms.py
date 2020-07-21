@@ -43,6 +43,8 @@ class FixChannels(Callable[[Tensor], Tensor]):
             x = x.repeat(1, 3, 1, 1)
         return x
 
+from torchvision.transforms import RandomGrayscale
+
 
 class Transforms(Enum):
     """ Enum of possible transforms. 
@@ -53,9 +55,11 @@ class Transforms(Enum):
     particular transform was used.  
 
     TODO: Add the SimCLR/MOCO/etc transforms from  https://pytorch-lightning-bolts.readthedocs.io/en/latest/transforms.html
+    TODO: Figure out a way to let people customize the arguments to the transforms?
     """
     fix_channels = FixChannels()
     to_tensor = ToTensorIfNeeded()
+    random_grayscale = RandomGrayscale()
 
     def __call__(self, x):
         return self.value(x)
@@ -71,8 +75,23 @@ class Transforms(Enum):
 
 
 class Compose(List[Transforms], ComposeBase):
-    """ Extend the Compose class of torchvision with the list methods. """
+    """ Extend the Compose class of torchvision with methods of `list`.
+    
+    This can also be passed in members of the `Transforms` enum, which makes it
+    possible to do something like this:
+    >>> from transforms import Compose, Transforms
+    >>> transforms = Compose([Transforms.to_tensor, Transforms.fix_channels,])
+    >>> Transforms.fix_channels in transforms
+    True
+    >>> transforms += [Transforms.random_grayscale]
+    >>> transforms
+    [<Transforms.to_tensor: ToTensorIfNeeded()>, <Transforms.fix_channels: FixChannels()>, <Transforms.random_grayscale: RandomGrayscale(p=0.1)>]
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         ComposeBase.__init__(self, transforms=self)
 
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod()

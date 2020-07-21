@@ -1,17 +1,18 @@
-from dataclasses import dataclass, InitVar, asdict
+from collections import OrderedDict
+from dataclasses import InitVar, asdict, dataclass
 from typing import Dict, Optional, Union
+
 import numpy as np
 import torch
-from torch import Tensor
-from collections import OrderedDict
 import torch.nn.functional as functional
-from utils.json_utils import encode
-from utils.json_utils import Serializable
+import wandb
+from torch import Tensor
+
+from simple_parsing import field, mutable_field
+from utils.json_utils import Serializable, detach, encode
 from utils.logging_utils import get_logger
-from simple_parsing import mutable_field, field
 
 logger = get_logger(__file__)
-
 
 @dataclass 
 class Metrics(Serializable):
@@ -58,6 +59,11 @@ class Metrics(Serializable):
     def to_pbar_message(self) -> Dict[str, Union[str, float]]:
         return OrderedDict()
 
+    def detach(self) -> "Metrics":
+        return Metrics(
+            n_samples=self.n_samples,
+        )
+
 @dataclass
 class RegressionMetrics(Metrics, Serializable):
     mse: Tensor = 0.  # type: ignore
@@ -99,6 +105,11 @@ class RegressionMetrics(Metrics, Serializable):
         message["mse"] = float(self.mse.item())
         return message
 
+    def detach(self) -> "RegressionMetrics":
+        return RegressionMetrics(
+            n_samples=detach(self.n_samples),
+            mse=detach(self.mse),
+        )
 
 @dataclass
 class ClassificationMetrics(Metrics):
@@ -174,6 +185,12 @@ class ClassificationMetrics(Metrics):
         d["class_accuracy"] = self.class_accuracy.tolist()
         if self.confusion_matrix is not None:
             d["confusion_matrix"] = self.confusion_matrix.tolist()
+            # TODO: Maybe we could create the Heatmap or some other wandb thing every time?
+            # d["confusion_matrix"] = wandb.plots.HeatMap(
+            #     x_labels=range(len(self.confusion_matrix)),
+            #     y_labels=range(len(self.confusion_matrix)),
+            #     matrix_values=self.confusion_matrix,
+            # )
         return d
 
     def __str__(self):
@@ -185,6 +202,15 @@ class ClassificationMetrics(Metrics):
         message = super().to_pbar_message()
         message["acc"] = f"{self.accuracy:.2%}"
         return message
+
+    def detach(self) -> "ClassificationMetrics":
+        return ClassificationMetrics(
+            n_samples=detach(self.n_samples),
+            accuracy=float(self.accuracy),
+            class_accuracy=detach(self.class_accuracy),
+            confusion_matrix=detach(self.confusion_matrix),
+        )
+
 
 @torch.no_grad()
 def get_metrics(y_pred: Union[Tensor, np.ndarray],

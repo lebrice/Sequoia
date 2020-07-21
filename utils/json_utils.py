@@ -80,9 +80,17 @@ class Pickleable():
     def cpu(self) -> None:
         return cpu(self.__dict__)
 
+
 @singledispatch
 def detach(value):
-    return value.detach()
+    if hasattr(value, "detach") and callable(value.detach):
+        return value.detach()
+    else:
+        return value
+
+@detach.register
+def detach_array(value: np.ndarray) -> np.ndarray:
+    return array # no need to 'detach' an ndarray!
 
 @detach.register(dict)
 def detach_dict(d: Dict[str, Any]) -> Dict[str, Any]:

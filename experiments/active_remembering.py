@@ -16,12 +16,11 @@ from common.losses import LossInfo, TrainValidLosses
 from common.task import Task
 from datasets.data_utils import unlabeled
 from datasets.subset import Dataset
+from experiments.class_incremental import ClassIncremental
 from simple_parsing import mutable_field
 from utils.logging_utils import get_logger
 from utils.plotting import PlotSectionLabel
-from datasets.data_utils import unlabeled
 
-from .cl import ClassIncremental
 logger = get_logger(__file__)
 
 

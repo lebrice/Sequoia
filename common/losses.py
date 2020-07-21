@@ -9,7 +9,7 @@ import torch
 from torch import Tensor
 
 from simple_parsing import field, mutable_field
-from utils.json_utils import Serializable
+from utils.json_utils import Serializable, detach
 from utils.logging_utils import cleanup, get_logger
 from utils.utils import add_dicts, add_prefix, unique_consecutive
 
@@ -73,12 +73,13 @@ class LossInfo(Serializable):
 
     @property
     def accuracy(self) -> float:
-        assert isinstance(self.metric, ClassificationMetrics)
-        return self.metric.accuracy
+        if isinstance(self.metric, ClassificationMetrics):
+            return self.metric.accuracy
+        return self.get_supervised_accuracy()
     
     @property
     def mse(self) -> Tensor:
-        assert isinstance(self.metric, RegressionMetrics)
+        assert isinstance(self.metric, RegressionMetrics), self
         return self.metric.mse
 
     def __add__(self, other: "LossInfo") -> "LossInfo":
@@ -144,6 +145,7 @@ class LossInfo(Serializable):
             `self`: The merged/summed up LossInfo.
         """
         self.total_loss = self.total_loss + other.total_loss
+        
         if self.name == other.name:
             self.losses  = add_dicts(self.losses, other.losses)
             self.metrics = add_dicts(self.metrics, other.metrics)
@@ -151,6 +153,7 @@ class LossInfo(Serializable):
             # IDEA: when the names don't match, store the entire LossInfo
             # object into the 'losses' dict, rather than a single loss tensor.
             self.losses = add_dicts(self.losses, {other.name: other})
+        
         self.tensors = add_dicts(self.tensors, other.tensors, add_values=False)
         return self
 
@@ -246,7 +249,23 @@ class LossInfo(Serializable):
         which works, but is a bit hacky. We could instead return a new LossInfo
         object where all the tensors and metrics and sublosses have also been detached.
         """ 
-        return type(self).from_dict(self.to_dict())
+        # logger.debug(f" mul ({self.name}): before: {self.total_loss.requires_grad}")
+        result = LossInfo(
+            name=self.name,
+            coefficient=detach(self.coefficient),
+            total_loss=detach(self.total_loss),
+            losses=OrderedDict(
+                (k, subloss.detach()) for k, subloss in self.losses.items()
+            ),
+            metrics=OrderedDict(
+                (k, metric.detach()) for k, metric in self.metrics.items()
+            ),
+            tensors=OrderedDict(
+                (k, tensor.detach()) for k, tensor in self.tensors.items()
+            ),
+        )
+        # logger.debug(f" mul ({self.name}): after: {result.total_loss.requires_grad}")
+        return result
 
     def absorb(self, other: "LossInfo") -> None:
         """Absorbs `other` into `self`, merging the losses and metrics.
@@ -256,9 +275,10 @@ class LossInfo(Serializable):
         """
         new_name = self.name
         old_name = other.name
+        # Here we create a new 'other' and use __iadd__ to merge the attributes.
         new_other = LossInfo(name=new_name)
         new_other.total_loss = other.total_loss
-        # acumulate the metrics:
+        # We also replace the name in the keys, if present.
         new_other.metrics = OrderedDict([
             (k.replace(old_name, new_name), v) for k, v in other.metrics.items() 
         ])
