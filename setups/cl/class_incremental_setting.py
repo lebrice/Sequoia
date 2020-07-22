@@ -86,35 +86,22 @@ class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
             increment=self.test_increment,
             initial_increment=self.test_initial_increment,
             class_order=self.test_class_order,
+            # TODO: Figure out what/how to pass in test transforms, if it
+            # makes any sense to do so.
             common_transformations=self.transforms,
             train=False  # a different loader for test
         )
 
-    def train_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
-        """Returns a DataLoader for the train dataset of the current task.
-        
-        NOTE: The dataloader is passive for now (just a regular DataLoader).
-        """
-        dataset = self.train_datasets[self._current_task_id]
-        env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
-        return env
-
-    def val_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
-        """Returns a DataLoader for the validation dataset of the current task.
-        
-        NOTE: The dataloader is passive for now (just a regular DataLoader).
-        """
-        dataset = self.val_datasets[self._current_task_id]
-        env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
-        return env
-
-    def test_dataloader(self, *args, **kwargs) -> List[PassiveEnvironment]:
+    def test_dataloader(self, **kwargs) -> List[PassiveEnvironment]:
         """Returns a list of DataLoaders, one for each of the test datasets.
         
-        NOTE: The dataloader is passive for now (just a regular DataLoader).
+        NOTE: This and `self.test_dataloaders() returns the same thing for now.
+
+        TODO: We do this (return all the dataloaders instead of just the current
+        task) so that PL evaluates sequentially on all the test datasets for us
+        after each training epoch.
+        This is convenient, as we would otherwise have to do it ourselves
+        manually.
+        There might be a cleaner way to do this, but I'm not aware of it yet.
         """
-        loaders: List[DataLoader] = []
-        for i, dataset in enumerate(self.test_datasets):
-            env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
-            loaders.append(env)
-        return loaders
+        return self.test_dataloaders(**kwargs)

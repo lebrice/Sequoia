@@ -14,7 +14,6 @@ from pytorch_lightning import Callback, Trainer
 from pytorch_lightning.loggers.base import LightningLoggerBase
 
 from config.trainer_config import TrainerConfig
-from models.classifier import Classifier
 from setups.base import ExperimentalSetting
 from setups.cl import ClassIncrementalSetting
 from simple_parsing import ArgumentParser, mutable_field
@@ -23,6 +22,7 @@ from utils.logging_utils import get_logger
 from common.losses import LossInfo
 from common.metrics import ClassificationMetrics, Metrics
 from .experiment import Experiment
+from models.cl_classifier import ContinualClassifier
 
 logger = get_logger(__file__)
 
@@ -45,8 +45,8 @@ class ClassIncrementalMethod():
 
     TODO: Should the Config attribute be on the experiment, or on the method?
     """
-    # HyperParameters of the LightningModule (in this case a Classifier).
-    hparams: Classifier.HParams = mutable_field(Classifier.HParams)
+    # HyperParameters of the LightningModule (in this case a ContinualClassifier).
+    hparams: ContinualClassifier.HParams = mutable_field(ContinualClassifier.HParams)
     # Options for the Trainer.
     trainer: TrainerConfig = mutable_field(TrainerConfig)
 
@@ -76,31 +76,55 @@ class ClassIncrementalMethod():
         trainer = self.create_trainer()
         model = self.create_model()
 
-        logger.info(f"Number of tasks: {self.setting.nb_tasks}")
+        n_tasks = self.setting.nb_tasks
+        logger.info(f"Number of tasks: {n_tasks}")
         
-        loss_grid: List[List[LossInfo]] = []
+        # Matrix of task losses:
+        # loss_grid[i][j] gives the loss (and metrics) on task j after having
+        # learned tasks 0 through i.
 
-        for i in range(self.setting.nb_tasks):
-            loss_grid.append([])
+        loss_grid: List[List[Optional[LossInfo]]] = [
+            [None for i in range(n_tasks)]
+            for j in range(n_tasks)
+        ]
 
-            assert model.setting is self.setting is setting
+        # Just a sanity check:
+        assert model.setting is self.setting is setting
+
+        for i in range(n_tasks):
+            logger.info(f"Starting task #{i}")
             self.setting.current_task_id = i
             assert model.setting.current_task_id == i
 
-            logger.info(f"Starting task #{i}")
             trainer.fit(model)
 
-            for j in range(self.setting.nb_tasks):
-                self.setting.current_task_id = j
+            test_outputs: List[Dict] = trainer.test(model)
+            print(len(test_outputs))
+            exit()
+            test_output: Dict = test_outputs[0]
+
+            # TODO: This `test_loss` contains the losses for each task because the
+            # ClassIncrementalSetting returns all the test dataloaders in `test_dataloader`,
+            # which makes it so PL evaluates on each dataloader.
+            task_losses: List[LossInfo] = output["losses"]
+            for j, task_loss in enumerate(test_losses):
+                print(f"Task {j} test acc: {task_loss.accuracy}")
+                loss_grid[i].append(task_loss)
+            
+            exit()
+
+            # Try to test each task individually
+            # TODO: Doesn't quite work, This seems to be a bit finicky to use.
+            # for j in range(self.setting.nb_tasks):
+            #     # TODO: this actually gets all 5 dataloaders, not just the one of the current task.
+            #     self.setting.current_task_id = j
+            #     # Need to clarify or fix this by creating a subclass of Classifier specifically for CL maybe.
+            #     task_j_loader = model.test_dataloader()[j]
+            #     task_j_output = trainer.test(model, task_j_loader)
+            #     task_j_loss: LossInfo = task_j_output[0]["loss_info"]
+            #     logger.info(f"Accuracy on task {j} after learning task {i}: {task_j_loss.accuracy:.2%}")
                 
-                # TODO: this actually gets all 5 dataloaders, not just the one of the current task.
-                # Need to clarify or fix this by creating a subclass of Classifier specifically for CL maybe.
-                task_j_loader = model.test_dataloader()[j]
-                task_j_output = trainer.test(model, task_j_loader)
-                task_j_loss: LossInfo = task_j_output[0]["loss_info"]
-                logger.info(f"Accuracy on task {j} after learning task {i}: {task_j_loss.accuracy:.2%}")
-                
-                loss_grid[i].append(task_j_loss.detach())
+            #     loss_grid[i].append(task_j_loss.detach())
         
         results = self.create_results_from_outputs(loss_grid)
         print(f"test results: {results}")
@@ -110,6 +134,7 @@ class ClassIncrementalMethod():
         """ Create a ClassIncrementalExperimentResults object from the outputs of
         Trainer.fit().
         """
+        raise NotImplementedError("TODO")
         print(f"Num outputs: {len(outputs)}")
         result_dict = outputs[0]
         total_test_loss: LossInfo = result_dict["loss_info"]
@@ -152,8 +177,8 @@ class ClassIncrementalMethod():
             logger = self.config.wandb.make_logger(self.config.log_dir_root)
         return logger
 
-    def create_model(self) -> Classifier:
-        model = Classifier(setting=self.setting, hparams=self.hparams, config=self.config)
+    def create_model(self) -> ContinualClassifier:
+        model = ContinualClassifier(setting=self.setting, hparams=self.hparams, config=self.config)
         return model
 
 

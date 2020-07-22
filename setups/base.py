@@ -25,11 +25,31 @@ from .transforms import Transforms, Compose
 
 @dataclass
 class ExperimentalSetting(LightningDataModule, Generic[Loader]):
+    """Extends LightningDataModule to allow setting the transforms and options
+    from the command-line.
+
+    This class is Generic, which allows us to pass a different `Loader` type, 
+    which should be the type of dataloader returned by the `train_dataloader`,
+    `val_dataloader` and `test_dataloader` methods.
+
+    Args:
+        LightningDataModule ([type]): [description]
+        Generic ([type]): [description]
+
+    Returns:
+        [type]: [description]
+    """
+
+    # Transforms to be used.
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels)
 
     # TODO: Currently trying to find a way to specify the transforms from the command-line.
     # As a consequence, don't try to set these from the command-line for now.
     train_transforms: List[Transforms] = list_field()
+
+    # TODO: These two aren't being used atm (at least not in ClassIncremental), 
+    # since the CL Loader from Continuum only takes in common_transforms and
+    # train_transforms.
     val_transforms: List[Transforms] = list_field()
     test_transforms: List[Transforms] = list_field()
 
@@ -49,31 +69,23 @@ class ExperimentalSetting(LightningDataModule, Generic[Loader]):
         )
 
     @abstractmethod
-    def train_dataloader(self, *args, **kwargs) -> Loader:
-        return super().train_dataloader(*args, **kwargs)
+    def train_dataloader(self, **kwargs) -> Loader:
+        return super().train_dataloader(**kwargs)
     
     @abstractmethod
-    def val_dataloader(self, *args, **kwargs) -> Loader:
-        return super().val_dataloader(*args, **kwargs)
+    def val_dataloader(self, **kwargs) -> Loader:
+        return super().val_dataloader(**kwargs)
     
     @abstractmethod
-    def test_dataloader(self, *args, **kwargs) -> Loader:
-        return super().test_dataloader(*args, **kwargs)
+    def test_dataloader(self, **kwargs) -> Loader:
+        return super().test_dataloader(**kwargs)
 
 
 @dataclass
 class ActiveSetup(ExperimentalSetting[ActiveEnvironment[ObservationType, ActionType, RewardType]]):
     """LightningDataModule for an 'active' setting.
-
-    This greatly simplifies the whole data generation process.
-    the train_dataloader, val_dataloader and test_dataloader methods are used
-    to get the dataloaders of the current task.
-
-    The current task can be set at the `current_task_id` attribute.
-
-    TODO: Maybe add a way to 'wrap' another LightningDataModule?
-    TODO: Change the base class from PassiveEnvironment to `ActiveEnvironment`
-    and change the corresponding returned types. 
+    
+    TODO: Use this for something like RL or Active Learning.
     """
 
 @dataclass

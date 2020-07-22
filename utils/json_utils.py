@@ -7,8 +7,8 @@ from functools import singledispatch
 from io import StringIO
 from pathlib import Path
 from pprint import pprint
-from typing import (Any, Callable, Dict, Iterable, List, Optional, Tuple, Type,
-                    TypeVar, Union)
+from typing import (Any, Callable, Dict, Iterable, List, Optional, Sequence,
+                    Tuple, Type, TypeVar, Union)
 
 import numpy as np
 import torch
@@ -82,28 +82,49 @@ class Pickleable():
 
 
 @singledispatch
-def detach(value):
+def detach(value: T) -> T:
+    """ Detaches a value when possible, else returns the value unchanged. """
     if hasattr(value, "detach") and callable(value.detach):
         return value.detach()
     else:
         return value
 
-@detach.register
-def detach_array(value: np.ndarray) -> np.ndarray:
-    return array # no need to 'detach' an ndarray!
+@detach.register(list)
+@detach.register(tuple)
+@detach.register(set)
+def detach_sequence(x: Sequence[T]) -> Sequence[T]:
+    return type(x)(detach(v) for v in x)
 
 @detach.register(dict)
 def detach_dict(d: Dict[str, Any]) -> Dict[str, Any]:
-    """ Detaches all the Tensors in a dict, as well as all nested dicts.
+    """ Detaches all the keys and tensors in a dict, as well as all nested dicts.
     """
-    result: Dict[str, Any] = {}
-    for key, value in d.items():
-        if isinstance(value, Tensor):
-            value = value.detach()
-        if isinstance(value, Dict):
-            value = detach(value)
-        result[key] = value
-    return result
+    return type(d)((detach(k), detach(v)) for k, v in d.items())
+
+
+@singledispatch
+def move(x: T, device: Union[str, torch.device]) -> T:
+    """Moves x to the specified device if possible, else returns x unchanged."""
+    if hasattr(x, "to") and callable(x.to):
+        return x.to(device)
+    return x
+
+
+@move.register
+def move_tensor(x: Tensor, device: Union[str, torch.device]) -> Tensor:
+    return x.to(device)
+
+
+@move.register(dict)
+def move_dict(x: Dict[str, Any], device: Union[str, torch.device]) -> Dict[str, Any]:
+    return type(x)(
+        (move(k, device), move(v, device)) for k, v in x.items() 
+    )
+
+
+@move.register(list)
+def move_list(x: List[T], device: Union[str, torch.device]) -> List[T]:
+    return type(x)(move(v, device) for v in x)
 
 
 def cpu(d: Dict[str, Any]) -> Dict[str, Any]:

@@ -232,6 +232,11 @@ def roundrobin(*iterables: Iterable[T]) -> Iterable[T]:
             nexts = itertools.cycle(itertools.islice(nexts, num_active))
 
 
+def take(iterable: Iterable[T], n: int) -> Iterable[T]:
+    """ Takes only the first `n` elements from `iterable`. """
+    return itertools.islice(iterable, n)
+
+
 def camel_case(name):
     s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
     s2 = re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()

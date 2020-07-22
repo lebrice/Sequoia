@@ -102,7 +102,7 @@ def get_new_file(file: Path) -> Path:
     return file
 
 
-def cleanup(message: Dict[str, Union[Dict, str, float, Any]], sep: str="/") -> Dict[str, Union[str, float, Any]]:
+def cleanup(message: Dict[str, Union[Dict, str, float, Any]], sep: str="/", keys_to_remove: List[str]=None) -> Dict[str, Union[str, float, Any]]:
     """Cleanup a message dict before it is logged to wandb.
 
     Args:
@@ -117,9 +117,10 @@ def cleanup(message: Dict[str, Union[Dict, str, float, Any]], sep: str="/") -> D
     
     message = flatten_dict(message, separator=sep)
 
-    # TODO: Remove redondant/useless keys
-    for k in list(message.keys()):
-        if k.endswith((f"{sep}n_samples", f"{sep}name")):
+    keys_to_remove = keys_to_remove or []
+    
+    for k in list(message.keys()):    
+        if any(flag in k for flag in keys_to_remove):
             message.pop(k)
             continue
 
@@ -133,7 +134,7 @@ def cleanup(message: Dict[str, Union[Dict, str, float, Any]], sep: str="/") -> D
                 k = k.replace(thing, sep)
         # --> "Task_losses/Task1/Test/rotate/270/270/accuracy"
 
-        
+
         # Get rid of repetitive modifiers (ex: "/270/270" above)
         parts = k.split(sep)
         from utils.utils import unique_consecutive

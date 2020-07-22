@@ -5,8 +5,8 @@ from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import (Any, Callable, ClassVar, Dict, List, NamedTuple, Optional,
-                    Tuple, Type, TypeVar, Union)
+from typing import (Any, Callable, ClassVar, Dict, Generic, List, NamedTuple,
+                    Optional, Tuple, Type, TypeVar, Union)
 
 import pytorch_lightning as pl
 import torch
@@ -25,6 +25,7 @@ from common.task import Task
 from config import Config
 from models.output_head import OutputHead
 from pl_bolts.datamodules import LightningDataModule
+from setups.base import ExperimentalSetting
 from simple_parsing import MutableField as mutable_field
 from simple_parsing import choice, field, list_field
 from tasks import AuxiliaryTask, AuxiliaryTaskOptions, Tasks
@@ -52,9 +53,9 @@ available_encoders: Dict[str, Type[nn.Module]] = {
     "alexnet": tv_models.alexnet,
     "densenet": tv_models.densenet161,
 }
-from setups.base import ExperimentalSetting
 
-class Classifier(pl.LightningModule):
+Setting = TypeVar("Setting", bound=ExperimentalSetting)
+class Classifier(pl.LightningModule, Generic[Setting]):
     """ Classifier model.
     TODO Re-add the 'multihead' stuff and finish re-adding TaskIncremental
 
@@ -106,11 +107,11 @@ class Classifier(pl.LightningModule):
             options.update(kwargs)
             return optimizer_class(*args, **options)
 
-    def __init__(self, setting: ExperimentalSetting, hparams: HParams, config: Config):
+    def __init__(self, setting: Setting, hparams: HParams, config: Config):
         super().__init__()
         self.hp: "Classifier.HParams" = hparams
         self.config: Config = config
-        self.setting: LightningDataModule = setting
+        self.setting: Setting = setting
         self.input_shape: Tuple[int, int, int] = self.setting.dims
         self.classes = self.setting.num_classes
         logger.debug(f"setting: {self.setting}")
@@ -312,17 +313,18 @@ class Classifier(pl.LightningModule):
             self,
             outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
         ) -> Dict[str, Dict[str, Tensor]]:
-        return self._shared_epoch_end(outputs)
+        return self._shared_epoch_end(outputs, loss_name="val")
 
     def test_epoch_end(
             self,
             outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
         ) -> Dict[str, Dict[str, Tensor]]:
-        return self._shared_epoch_end(outputs)
+        return self._shared_epoch_end(outputs, loss_name="test")
 
     def _shared_epoch_end(
         self,
         outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]],
+        loss_name: str="",
     ) -> Dict[str, Dict[str, Tensor]]:
         
         # Sum of the metrics acquired during the epoch.
@@ -330,36 +332,28 @@ class Classifier(pl.LightningModule):
         # and the 'average' & 'online' in the case of a test epoch (as they are
         # the same in that case).
 
-        total_loss = LossInfo()
-
+        total_loss: LossInfo = LossInfo(name=loss_name)
+        output = outputs[0]
         # TODO: Log this somehow?
         for output in outputs:
             if isinstance(output, list):
-                # we had multiple dataloaders (multiple tasks or test datasets.)
-                for dataloader_output in output:
-                    # The outputs are for each of the dataloaders.
-                    loss_info = dataloader_output["loss_info"] 
-                    total_loss += loss_info
-                    # Just a little sanity check:
-                    loss = dataloader_output["loss"]
-                    assert loss.item() == loss_info.total_loss.item(), (
-                        f"{loss} should be {loss_info.total_loss}"
-                    )
-            else:
-                assert isinstance(output, dict)
-                # The outputs are for each of the dataloaders.
-                loss_info = output["loss_info"] 
+                # we had multiple test/val dataloaders (i.e. multiple tasks)
+                # We get the loss for each task at each step. The outputs are for each of the dataloaders.
+                for i, task_output in enumerate(output):
+                    task_loss = task_output["loss_info"] 
+                    total_loss += task_loss
+            elif isinstance(output, dict):
+                # There was a single dataloader: `output` is the dict returned
+                # by (val/test)_step.
+                loss_info = output["loss_info"]
                 total_loss += loss_info
-
-                loss = output["loss"]
-                assert loss.item() == loss_info.total_loss.item(), (
-                    f"{loss} should be {loss_info.total_loss}"
-                )
+            else:
+                raise RuntimeError(f"Unexpected output: {output}")
 
         return {
             "log": total_loss.to_log_dict(),
             "progress_bar": total_loss.to_pbar_message(),
-            "loss_info": total_loss.detach(),
+            "loss_info": total_loss,
         }
 
     def configure_optimizers(self):
@@ -370,23 +364,33 @@ class Classifier(pl.LightningModule):
         self.setting.prepare_data(data_dir=self.config.data_dir)
 
     def train_dataloader(self, **kwargs) -> Union[DataLoader, List[DataLoader]]:
-        return self.setting.train_dataloader(
-            batch_size=self.hp.batch_size,
-            num_workers=self.config.num_workers,
-        )
+        kwargs = self.dataloader_kwargs(**kwargs)
+        return self.setting.train_dataloader(**kwargs)
     
     def val_dataloader(self, **kwargs) -> Union[DataLoader, List[DataLoader]]:
-        return self.setting.val_dataloader(
-            batch_size=self.hp.batch_size,
-            num_workers=self.config.num_workers,
-        )
+        kwargs = self.dataloader_kwargs(**kwargs)
+        return self.setting.val_dataloader(**kwargs)
     
-    def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        return self.setting.test_dataloader(
-            batch_size=self.hp.batch_size,
+    def test_dataloader(self, **kwargs) -> Union[DataLoader, List[DataLoader]]:
+        kwargs = self.dataloader_kwargs(**kwargs)
+        return self.setting.test_dataloader(**kwargs)
+    
+    def dataloader_kwargs(self, **kwargs) -> Dict[str, Any]:
+        """Returns the keyword arguments to be passed to the dataloader.
+
+        Updates the defaults with the values from `kwargs` and returns the
+        resulting dictionary.
+
+        Returns:
+            Dict[str, Any]: The keyword arguments to be passed to DataLoader.
+        """
+        defaults = dict(
+            batch_size=self.batch_size,
             num_workers=self.config.num_workers,
         )
-        
+        defaults.update(kwargs)
+        return defaults
+
     @property
     def batch_size(self) -> int:
         return self.hp.batch_size

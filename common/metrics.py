@@ -9,7 +9,7 @@ import wandb
 from torch import Tensor
 
 from simple_parsing import field, mutable_field
-from utils.json_utils import Serializable, detach, encode
+from utils.json_utils import Serializable, detach, encode, move
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
@@ -109,6 +109,13 @@ class RegressionMetrics(Metrics, Serializable):
         return RegressionMetrics(
             n_samples=detach(self.n_samples),
             mse=detach(self.mse),
+        )
+    
+    def to(self, device: Union[str, torch.device]) -> "RegressionMetrics":
+        """Returns a new Metrics with all the attributes 'moved' to `device`."""
+        return RegressionMetrics(
+            n_samples=move(self.n_samples, device),
+            mse=move(self.mse, device),
         )
 
 @dataclass
@@ -211,6 +218,14 @@ class ClassificationMetrics(Metrics):
             confusion_matrix=detach(self.confusion_matrix),
         )
 
+    def to(self, device: Union[str, torch.device]) -> "ClassificationMetrics":
+        """Returns a new Metrics with all the attributes 'moved' to `device`."""
+        return ClassificationMetrics(
+            n_samples=move(self.n_samples, device),
+            accuracy=move(self.accuracy, device),
+            class_accuracy=move(self.class_accuracy, device),
+            confusion_matrix=move(self.confusion_matrix, device),
+        )
 
 @torch.no_grad()
 def get_metrics(y_pred: Union[Tensor, np.ndarray],

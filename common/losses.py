@@ -214,7 +214,19 @@ class LossInfo(Serializable):
     def to_log_dict(self, verbose: bool=False) -> Dict[str, Union[str, float, Dict]]:
         # TODO: Could also produce some wandb plots and stuff here
         d = self.to_dict()
-        return cleanup(d)
+        keys_to_remove: List[str] = []
+        if not verbose:
+            # when NOT verbose, remove any entries with this matching key.
+            # TODO: add/remove keys here if you want to customize what doesn't get logged to wandb.
+            # TODO: Could maybe make this a class variable so that it could be
+            # extended/overwritten, but that sounds like a bit too much rn.
+            keys_to_remove = [
+                "n_samples",
+                "name",
+                "confusion_matrix",
+                "class_accuracy",
+            ] 
+        return cleanup(d, keys_to_remove=keys_to_remove)
 
     def to_pbar_message(self):
         """ Smaller, less-detailed version of `self.to_log_dict()` (doesn't recurse into sublosses)
@@ -244,27 +256,29 @@ class LossInfo(Serializable):
         return self
 
     def detach(self) -> "LossInfo":
-        """ 'detaches' this LossInfo object. 
-        TODO: At the moment, does this by serializing and then deserializing,
-        which works, but is a bit hacky. We could instead return a new LossInfo
-        object where all the tensors and metrics and sublosses have also been detached.
-        """ 
-        # logger.debug(f" mul ({self.name}): before: {self.total_loss.requires_grad}")
+        """ Returns a LossInfo with all the tensors, sublosses and metrics from `self` detached. """ 
         result = LossInfo(
             name=self.name,
             coefficient=detach(self.coefficient),
             total_loss=detach(self.total_loss),
-            losses=OrderedDict(
-                (k, subloss.detach()) for k, subloss in self.losses.items()
-            ),
-            metrics=OrderedDict(
-                (k, metric.detach()) for k, metric in self.metrics.items()
-            ),
-            tensors=OrderedDict(
-                (k, tensor.detach()) for k, tensor in self.tensors.items()
-            ),
+            losses=detach(self.losses),
+            metrics=detach(self.metrics),
+            tensors=detach(self.tensors),
         )
-        # logger.debug(f" mul ({self.name}): after: {result.total_loss.requires_grad}")
+        return result
+
+    def to(self, device: Union[str, torch.device]) -> "LossInfo":
+        """Moves all the tensors, sublosses, and metrics over to `device`.""" 
+        # We use the `move` utils function when we're not sure if it's a Tensor
+        # or a ndarray or a float or something like that. 
+        result = LossInfo(
+            name=self.name,
+            coefficient=move(self.coefficient, device),
+            total_loss=move(self.total_loss, device),
+            losses=move(self.losses, device),
+            metrics=move(self.metrics, device),
+            tensors=move(self.tensors, device),
+        )
         return result
 
     def absorb(self, other: "LossInfo") -> None:
@@ -393,12 +407,3 @@ class TrainValidLosses(Serializable):
             l.drop_tensors()
         for l in self.valid_losses.values():
             l.drop_tensors()
-
-# @encode.register
-# def encode_losses(obj: TrainValidLosses) -> Dict:
-#     train_losses_dict = OrderedDict((k, encode(v)) for k, v in obj.train_losses.items())
-#     valid_losses_dict = OrderedDict((k, encode(v)) for k, v in obj.valid_losses.items())
-#     return {
-#         "train_losses": train_losses_dict,
-#         "valid_losses": valid_losses_dict,
-#     }

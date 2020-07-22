@@ -201,32 +201,54 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
 
         return super().prepare_data(**kwargs)
 
-    def train_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
+    def train_dataloader(self, **kwargs) -> PassiveEnvironment:
         """Returns a DataLoader for the train dataset of the current task.
         
         NOTE: The dataloader is passive for now (just a regular DataLoader).
         """
         dataset = self.train_datasets[self._current_task_id]
-        env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
+        env: DataLoader = PassiveEnvironment(dataset, **kwargs)
         return env
 
-    def val_dataloader(self, *args, **kwargs) -> PassiveEnvironment:
+    def val_dataloader(self, **kwargs) -> PassiveEnvironment:
         """Returns a DataLoader for the validation dataset of the current task.
         
         NOTE: The dataloader is passive for now (just a regular DataLoader).
         """
         dataset = self.val_datasets[self._current_task_id]
-        env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
+        env: DataLoader = PassiveEnvironment(dataset, **kwargs)
         return env
 
-    def test_dataloader(self, *args, **kwargs) -> List[PassiveEnvironment]:
-        """Returns a list of DataLoaders, one for each of the test datasets.
+    def test_dataloader(self, **kwargs) -> PassiveEnvironment:
+        """Returns a DataLoader for the test dataset of the current task.
         
         NOTE: The dataloader is passive for now (just a regular DataLoader).
         """
+        dataset = self.test_datasets[self._current_task_id]
+        env: DataLoader = PassiveEnvironment(dataset, **kwargs)
+        return env
+
+    def train_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
+        """Returns the DataLoaders for all the train datasets. """
+        loaders: List[DataLoader] = []
+        for i, dataset in enumerate(self.train_datasets):
+            env: DataLoader = PassiveEnvironment(dataset, **kwargs)
+            loaders.append(env)
+        return loaders
+
+    def test_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
+        """Returns the DataLoaders for all the test datasets. """
         loaders: List[DataLoader] = []
         for i, dataset in enumerate(self.test_datasets):
-            env: DataLoader = PassiveEnvironment(dataset, *args, **kwargs)
+            env: DataLoader = PassiveEnvironment(dataset, **kwargs)
+            loaders.append(env)
+        return loaders
+
+    def val_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
+        """Returns the DataLoaders for all the validation datasets. """
+        loaders: List[DataLoader] = []
+        for i, dataset in enumerate(self.val_datasets):
+            env: DataLoader = PassiveEnvironment(dataset, **kwargs)
             loaders.append(env)
         return loaders
 
