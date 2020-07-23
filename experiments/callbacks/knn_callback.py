@@ -182,7 +182,7 @@ def evaluate(model: Classifier,
         scaler=scaler,
         knn_classifier=knn_classifier,
     )
-    logger.info(f"{loss_name} Acc: {test_loss.accuracy:.2%}")
+    # logger.info(f"{loss_name} Acc: {test_loss.accuracy:.2%}")
     return test_loss
 
 def get_hidden_codes_array(model: Classifier, dataloader: DataLoader, description: str="KNN") -> Tuple[np.ndarray, np.ndarray]:
@@ -210,30 +210,10 @@ def fit_knn(x: np.ndarray, y: np.ndarray, options: KnnClassifierOptions=None, lo
     options = options or KnnClassifierOptions()
    
     scaler = StandardScaler()
-    x = scaler.fit_transform(x)
+    x_s = scaler.fit_transform(x)
     # Create and train the Knn Classifier using the options as the kwargs
-    knn_classifier = KNeighborsClassifier(**asdict(options)).fit(x, y)
-
-    classes = knn_classifier.classes_
-    # print("classes: ", classes)
-    # We will get the accuracy and such metrics from using the LossInfo object,
-    # rather than through using those of the KNeighborsClassifier.
-    # y_pred = knn_classifier.predict(x)
-    y_prob = knn_classifier.predict_proba(x)
-    
-    # Create/re-order the logits vector, as the KNeighborsClassifier might have
-    # a different set of classes, like [6, 7] instead of [0, 1] when doing 
-    # multiple tasks (as in ClassIncremental CL).
-    y_logits = np.zeros((y.size, y.max() + 1))
-    for i, label in enumerate(classes):
-        y_logits[:, label] = y_prob[:, i]
-
-    # We get the Negative Cross Entropy using the scikit-learn function, but we
-    # could instead get it using pytorch's function (maybe even inside the
-    # LossInfo object!
-    nce = log_loss(y_true=y, y_pred=y_prob, labels=classes)
-    train_loss = LossInfo(name=loss_name, total_loss=nce, y_pred=y_logits, y=y)
-
+    knn_classifier = KNeighborsClassifier(**asdict(options)).fit(x_s, y)
+    train_loss = evaluate_knn(x_t=x, y_t=y, scaler=scaler, knn_classifier=knn_classifier)
     return train_loss, scaler, knn_classifier
 
 
@@ -243,11 +223,22 @@ def evaluate_knn(x_t: np.ndarray, y_t: np.ndarray, scaler: StandardScaler, knn_c
     assert len(x_t.shape) == 2
     x_t = scaler.transform(x_t)
     y_t_prob = knn_classifier.predict_proba(x_t)
-    y_t_logits = np.zeros((y_t.size, y_t.max() + 1))
     
+    y_t_logits = y_t_prob
     classes = knn_classifier.classes_
-    for i, label in enumerate(classes):
-        y_t_logits[:, label] = y_t_prob[:, i]
+    
+    assert np.array_equal(sorted(classes), classes)
+    ## We were constructing this to reorder the classes in case the ordering was
+    ## not the same between the KNN's internal `classes_` attribute and the task
+    ## classes, However I'm not sure if this is necessary anymore.
+
+    # y_t_logits = np.zeros((y_t.size, y_t.max() + 1))
+    # for i, label in enumerate(classes):
+    #     y_t_logits[:, label] = y_t_prob[:, i]
+
+    # We get the Negative Cross Entropy using the scikit-learn function, but we
+    # could instead get it using pytorch's function (maybe even inside the
+    # LossInfo object!
     nce_t = log_loss(y_true=y_t, y_pred=y_t_prob, labels=classes)
     test_loss = LossInfo(loss_name, total_loss=nce_t, y_pred=y_t_logits, y=y_t)
     return test_loss
