@@ -53,6 +53,9 @@ class ExperimentalSetting(LightningDataModule, Generic[Loader]):
     val_transforms: List[Transforms] = list_field()
     test_transforms: List[Transforms] = list_field()
 
+    # fraction of training data to devote to validation. Defaults to 0.2.
+    val_fraction: float = 0.2
+
     def __post_init__(self):
         """Creates a new Environment / setup.
 

@@ -68,12 +68,25 @@ from common.dims import Dims
 
 
 @dataclass
-class CLSetting(PassiveSetting[ObservationType, RewardType]):
-    """LightningDataModule for CL experiments.
+class ContinualSetting(PassiveSetting[ObservationType, RewardType]):
+    """Settings where the data is online non-stationary.
 
+    At the moment, this is basically just a base class for the Class-Incremental
+    Setting (ClassIncrementalSetting) where the data is split up into 'tasks'.
+
+    However in the future, as we add more CL setups, they should extend this
+    class, and we might need to move some of the stuff here into
+    ClassIncremental if needed.
+
+    For example, we might want to create something like a 'stream' learning of
+    some sort, where the transitions are smooth and there are no task labels.
+
+    This implements the LightningDataModule API from pytorch-lightning-bolts.
     The hope is that this greatly simplifies the whole data generation process.
-    the train_dataloader, val_dataloader and test_dataloader methods are used
-    to get the dataloaders of the current task.
+    - `train_dataloader`, `val_dataloader` and `test_dataloader` give
+        dataloaders of the current task.
+    - `train_dataloaders`, `val_dataloaders` and `test_dataloaders` give the 
+        dataloaders of all the tasks. 
 
     The current task can be set at the `current_task_id` attribute.
 
@@ -97,16 +110,15 @@ class CLSetting(PassiveSetting[ObservationType, RewardType]):
     }
     # A continual dataset to use. (Should be taken from the continuum package).
     dataset: str = choice(available_datasets.keys(), default="mnist")
-    # fraction of training data to devote to validation. Defaults to 0.2.
-    val_fraction: float = 0.2
+    
     # Wether the current task id can be read from outside this class.
     # NOTE: Loosely enforced, could be bypassed if people want to 'cheat'.
-    # TODO: Adding a mechanism for making task label only available at test time?
+    # TODO: Adding a mechanism for making task label only available at train time?
     task_label_is_readable: bool = True
     # Wether the current task id can be set from outside this class.
     task_label_is_writable: bool = True
 
-    # Here we change the default transform so it only fixes channels.
+    # Transformations to use. See the Transforms enum for the available values.
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels, to_dict=False)
 
     def __post_init__(self):

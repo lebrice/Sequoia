@@ -172,29 +172,30 @@ class Classifier(pl.LightningModule, Generic[Setting]):
 
     def training_step(self, batch: Tuple[Tensor, Optional[Tensor]], batch_idx: int):
         self.train()
-        return self._shared_step(batch, batch_idx, prefix="train")
+        return self._shared_step(batch, batch_idx, loss_name="train", training=True)
 
     def validation_step(self, batch, batch_idx: int, dataloader_idx: int=None):
-        self.eval()
-        # TODO: something like this:
-        self.on_task_switch(dataloader_idx)
-        prefix = "val"
+        loss_name = "val"
         if dataloader_idx is not None:
-            prefix += f"/{dataloader_idx}"
-        return self._shared_step(batch, batch_idx, prefix=prefix)
+            loss_name += f"/{dataloader_idx}"
+        return self._shared_step(batch, batch_idx, loss_name=loss_name, training=False)
 
     def test_step(self, batch, batch_idx: int, dataloader_idx: int=None):
-        self.eval()
-        # TODO: something like this:
-        self.on_task_switch(dataloader_idx)
-        prefix = "test"
+        loss_name = "test"
         if dataloader_idx is not None:
-            prefix += f"/{dataloader_idx}"
-        return self._shared_step(batch, batch_idx, prefix=prefix)
+            loss_name += f"/{dataloader_idx}"
+        return self._shared_step(batch, batch_idx, loss_name=loss_name, training=False)
 
-    def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]], batch_idx: int, prefix: str) -> Dict:
+    def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]],
+                           batch_idx: int,
+                           dataloader_idx: int=None,
+                           loss_name: str="",
+                           training: bool=True,
+                    ) -> Dict:
+        if not training:
+            self.eval()
         x, y = self.preprocess_batch(batch)
-        loss_info = self.get_loss(x, y, name=prefix)
+        loss_info = self.get_loss(x, y, name=loss_name)
         # NOTE: loss is supposed to be a tensor, but I'm testing out giving a LossInfo object instead.
         return {
             "loss": loss_info.total_loss,
@@ -356,6 +357,9 @@ class Classifier(pl.LightningModule, Generic[Setting]):
             "loss_info": total_loss,
         }
 
+    def setup(self, stage):
+        return super().setup(stage)
+
     def configure_optimizers(self):
         return self.hp.make_optimizer(self.parameters())
 
@@ -406,7 +410,3 @@ class Classifier(pl.LightningModule, Generic[Setting]):
     @learning_rate.setter
     def learning_rate(self, value: float) -> None:
         self.hp.learning_rate = value
-
-    def on_task_switch(self, task_id: int):
-        # TODO: Re-add the CL/multihead stuff here, or in a derived class?
-        pass

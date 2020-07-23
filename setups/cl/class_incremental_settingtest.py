@@ -22,7 +22,7 @@ from utils.logging_utils import get_logger, log_calls
 from setups.environment import (ActiveEnvironment, EnvironmentBase,
                            PassiveEnvironment)
 from setups.rl import GymEnvironment
-from setups.cl.base import CLSetting
+from setups.cl.base import ContinualSetting
 from setups.cl.class_incremental import ClassIncrementalSetting
 
 logger = get_logger(__file__)

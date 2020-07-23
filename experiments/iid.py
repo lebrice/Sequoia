@@ -23,6 +23,7 @@ from simple_parsing import ArgumentParser, mutable_field
 from common.losses import LossInfo, TrainValidLosses
 from common.metrics import get_metrics
 from models.classifier import Classifier
+from models.cl_classifier import ContinualClassifier
 from simple_parsing import ArgumentParser, choice, field, subparsers
 from tasks import AuxiliaryTask, Tasks
 
@@ -31,79 +32,136 @@ from .experiment import Experiment
 logger = get_logger(__file__)
 from pytorch_lightning import Trainer
 import wandb
+"""Simple CL experiments.
+
+TODO: Add the other supported scenarios from continuum here, since that would
+probably be pretty easy:
+- New Instances
+- New Classes
+- New Instances & Classes
+"""
+
+from dataclasses import dataclass
+from typing import ClassVar, Dict, List, Optional, Type, Union
+
+from pytorch_lightning import Callback, Trainer
+from pytorch_lightning.loggers.base import LightningLoggerBase
+
+from config.trainer_config import TrainerConfig
+from setups.base import ExperimentalSetting
+from setups.cl import ClassIncrementalSetting
+from simple_parsing import ArgumentParser, mutable_field
+from utils.json_utils import Serializable
+from utils.logging_utils import get_logger
+from common.losses import LossInfo
+from common.metrics import ClassificationMetrics, Metrics
+from .experiment import Experiment
+from models.classifier import Classifier
+from setups.iid_setting import IIDSetting
+logger = get_logger(__file__)
+from .class_incremental import ClassIncrementalMethod, SelfSupervisedMethod
+
+
+@dataclass
+class IIDExperimentResults(Serializable):
+    """TODO: A class which represents the results expected of a ClassIncremental CL experiment. """
+    hparams: Classifier.HParams
+    test_loss: float
+    test_accuracy: float
+
+from .class_incremental import ClassIncrementalMethod
+
+@dataclass
+class IIDMethod(ClassIncrementalMethod):
+    """A Method gets applied to a Setting to produce some ExperimentalResults.
+
+    The IID method is an extension of the ClassIncrementalMethod, in the sense
+    that it reuses all the logic form ClassIncrementalMethod, but always has
+    only one task containing all the classes.
+    """
+    # HyperParameters of the LightningModule (Classifier).
+    hparams: Classifier.HParams = mutable_field(Classifier.HParams)
+    # Options for the Trainer.
+    trainer: TrainerConfig = mutable_field(TrainerConfig)
+
+    def __post_init__(self):
+        self.setting: IIDSetting
+        self.config: Experiment.Config
+
+    def apply(self, setting: IIDSetting, config: Experiment.Config) -> IIDExperimentResults:
+        """ Applies this method to the particular experimental setting.    
+        """
+        if not isinstance(setting, IIDSetting):
+            raise RuntimeError(
+                f"Can only apply this method on a IID setting or "
+                f"on a setting which inherits from IIDSetting! "
+                f"(setting is of type {type(setting)})."
+            )
+        
+        self.setting = setting
+        self.config = config
+
+        logger.debug(f"Setting: {self.setting}")
+        logger.debug(f"Config: {self.config}")
+
+        self.trainer = self.create_trainer()
+        self.model = self.create_model()
+
+        n_tasks = self.setting.nb_tasks
+        assert n_tasks == 1, f"iid setting has only one task!"
+        logger.info(f"Number of tasks: {n_tasks}")
+        
+        # Just a sanity check:
+        assert self.model.setting is self.setting is setting
+
+        self.trainer.fit(self.model)
+        test_outputs: List[Dict] = self.trainer.test()
+        results = self.create_results_from_outputs(test_outputs)
+        print(f"test results: {results}")
+        return results 
+
+    def create_results_from_outputs(self, outputs: List[Dict]) -> IIDExperimentResults:
+        """Creates a Results object from the outputs of `self.trainer.test()`.
+        """
+        assert len(outputs) == 1
+        output = outputs[0]
+        test_loss: LossInfo = output["loss_info"]
+        print(f"Test accuracy: {test_loss.accuracy:.2%}")        
+        print(f"Test loss: {test_loss.total_loss}")
+        return IIDExperimentResults(
+            hparams=self.hparams,
+            test_loss=test_loss.total_loss,
+            test_accuracy=test_loss.accuracy,
+        )
+
+    def create_model(self) -> ContinualClassifier:
+        model = ContinualClassifier(setting=self.setting, hparams=self.hparams, config=self.config)
+        return model
+
 
 @dataclass
 class IID(Experiment):
-    """ Simple IID setting. """
-    
-    def run(self) -> Tuple[TrainValidLosses, LossInfo]:
-        """ Simple IID Training on train/valid datasets, then evaluate on test dataset. """
-        model = Classifier(hparams=self.hparams, config=self.config)
-        trainer = self.config.make_trainer()
-        trainer.fit(model)
+    """ IID Experiment. """
+    # Experimental Setting.
+    setting: IIDSetting = mutable_field(IIDSetting)
+    # Experimental method.
+    method: SelfSupervisedMethod = mutable_field(SelfSupervisedMethod)
 
-        # Save to results dir.
-        test_results = trainer.test()
-        
-        print(f"test results: {test_results}")
+    @dataclass
+    class Config(Experiment.Config):
+        """ Config of an IID Experiment.
 
-        # self.log({"Test": test_loss}, once=True)
-        
-        # if self.config.use_wandb:
-        #     wandb.run.summary["Test loss"] = test_loss.losses[Tasks.SUPERVISED].total_loss
-        #     wandb.run.summary["Test Accuracy"] = test_loss.losses[Tasks.SUPERVISED].accuracy
-        # # make training/validation plots. Not really needed when using wandb.
-        # plots_dict = self.make_plots(all_losses)
+        Could use this to add some more command-line arguments if needed.
+        """
 
-        # for figure_name, fig in plots_dict.items():    
-        #     if self.config.debug:
-        #         fig.show()
-        #         fig.waitforbuttonpress(timeout=30)
-        #     fig.savefig(self.plots_dir / Path(figure_name).with_suffix(".jpg"))
+    # Configuration options for the Experiment.
+    config: Config = mutable_field(Config)
 
-        # # Get the most recent validation metrics. 
-        # last_step = max(all_losses.valid_losses.keys())
-        # last_val_loss = all_losses.valid_losses[last_step]
-        # class_accuracy = last_val_loss.losses[Tasks.SUPERVISED].metric.class_accuracy
-        # valid_class_accuracy_mean = class_accuracy.mean()
-        # valid_class_accuracy_std = class_accuracy.std()
-        # logger.info(f"Validation Average Class Accuracy: {valid_class_accuracy_mean:.2%}")
-        # logger.info(f"Validation Class Accuracy STD: {valid_class_accuracy_std}")
-        # self.log(plots_dict, once=True)
-
-        # return all_losses, test_loss
-
-    def make_plots(self, all_losses: TrainValidLosses) -> Dict[str, plt.Figure]:
-        train_losses: Dict[int, LossInfo] = all_losses.train_losses
-        valid_losses: Dict[int, LossInfo] = all_losses.valid_losses
-        plots_dict: Dict[str, plt.Figure] = {}
-
-        fig: plt.Figure = plt.figure()
-        ax: plt.Axes = fig.subplots()
-        ax.set_title("Total Loss")
-        ax.set_xlabel("# of Samples seen")
-        ax.set_ylabel("Loss")
-        ax.plot(list(train_losses.keys()), [l.total_loss for l in train_losses.values()], label="train")
-        ax.plot(list(valid_losses.keys()), [l.total_loss for l in valid_losses.values()], label="valid")
-        ax.legend(loc="upper right")
-        plots_dict["losses"] = fig
-
-        # TODO: add the loss plots for all the auxiliary tasks here?
-
-        fig, ax = plt.subplots()
-        ax.set_xlabel("Epoch")
-        ax.set_ylim(0.0, 1.0)
-        ax.set_ylabel("Accuracy")
-        ax.set_title("Training and Validation Accuracy")
-        x = list(train_losses.keys())
-        y_train = [l.losses[Tasks.SUPERVISED].accuracy for l in train_losses.values()]
-        y_valid = [l.losses[Tasks.SUPERVISED].accuracy for l in valid_losses.values()]
-        ax.plot(x, y_train, label="train")
-        ax.plot(x, y_valid, label="valid")
-        ax.legend(loc='lower right')
-        plots_dict["accuracy"] = fig
-        return plots_dict
-
+    def run(self):
+        """ Simple IID Experiment. """
+        logger.info(f"Starting the IID experiment with log dir: {self.config.log_dir}")
+        results = self.method.apply(setting=self.setting, config=self.config)
+        results.save(self.config.log_dir / "results.json")    
 
 if __name__ == "__main__":
     parser = ArgumentParser()

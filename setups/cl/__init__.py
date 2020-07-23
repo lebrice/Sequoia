@@ -1,2 +1,2 @@
 from .class_incremental_setting import ClassIncrementalSetting
-from .base import CLSetting
+from .continual_setting import ContinualSetting

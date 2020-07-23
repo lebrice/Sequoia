@@ -9,11 +9,12 @@ from continuum.datasets import _ContinuumDataset
 from continuum.scenarios.base import _BaseCLLoader
 from simple_parsing import list_field
 from setups.environment import PassiveEnvironment
-from .base import CLSetting, num_classes_in_dataset
+from .continual_setting import ContinualSetting, num_classes_in_dataset
+from ..transforms import Transforms
 
 
 @dataclass
-class ClassIncrementalSetting(CLSetting[Tensor, Tensor]):
+class ClassIncrementalSetting(ContinualSetting[Tensor, Tensor]):
     """ LightningDataModule for CL. 
         
     'docstrings' were taken from the continuum documentation for the

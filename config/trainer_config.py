@@ -32,7 +32,7 @@ class TrainerConfig(Serializable):
                      loggers: Union[LightningLoggerBase, Iterable[LightningLoggerBase], bool]=True,
                      callbacks: Optional[List[Callback]]=None) -> Trainer:
         """ Create a Trainer object from the command-line args.
-        Adds the given logger as well.
+        Adds the given loggers and callbacks as well.
         """
         return Trainer(
             gpus=self.gpus,

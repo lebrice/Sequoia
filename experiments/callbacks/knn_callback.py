@@ -1,3 +1,10 @@
+""" Callback that evaluates representations with a KNN after each epoch.
+
+TODO: The code here is split into too many functions and its a bit confusing.
+    Will Need to rework that at some point.
+
+"""
+
 import itertools
 from dataclasses import InitVar, asdict, dataclass
 from typing import Iterable, List, Optional, Tuple, Union
@@ -45,25 +52,20 @@ class KnnCallback(Callback):
     entirely! This could be nice when trying to argue about better generalization
     in the model's representations.
     """
-    # Options for the KNN classifier 
+    # Options for the KNN classifier
     knn_options: KnnClassifierOptions = mutable_field(KnnClassifierOptions)
 
     def on_epoch_end(self, trainer: Trainer, pl_module: Classifier):
         self.trainer = trainer
         self.model = pl_module
-
-        if isinstance(pl_module, ContinualClassifier):
-            self.evaluate_knn_class_incremental(pl_module)
-        else:
-            raise NotImplementedError("TODO: Re-implement the KNN evaluation for IID training (should be pretty simple).")
+        self.evaluate_knn(pl_module)
     
     def log(self, loss_info: LossInfo):
         if self.trainer.logger:
             self.trainer.logger.log_metrics(loss_info.to_log_dict())
 
-
-    def evaluate_knn_class_incremental(self, pl_module: ContinualClassifier,
-                                             max_num_samples: int = 10_000):
+    def evaluate_knn(self, pl_module: ContinualClassifier,
+                                             max_num_samples: int = 10_000) -> None:
         """ Evaluate the representations with a KNN in the context of CL.
 
         We shorten the train dataloaders to take only the first
@@ -71,7 +73,7 @@ class KnnCallback(Callback):
         # TODO: Figure out a way to cleanly add the metrics from the callback to
         # the ``log dict'' which is returned by the model. Right now they are
         # only printed / logged to wandb from here. 
-        
+
         """
         train_loaders: List[DataLoader] = pl_module.train_dataloaders()
         valid_loaders: List[DataLoader] = pl_module.val_dataloaders()
@@ -82,21 +84,18 @@ class KnnCallback(Callback):
         # Only take the first `max_num_samples` samples from that iterator.
         # We round this up so we always take at least batch_size samples.
         max_num_batches = int(max_num_samples / pl_module.hp.batch_size)
-        train_loader = take(entire_train_dataset_iterator, n=max_num_batches)        
-
-        
+        train_loader = take(entire_train_dataset_iterator, n=max_num_batches)
 
         h_x, y = get_hidden_codes_array(
             model=pl_module,
             dataloader=train_loader,
             description="KNN (Train)"
         )
-        train_classes = np.unique(y)
         train_loss, scaler, knn_classifier = fit_knn(
             x=h_x,
             y=y,
             options=self.knn_options,
-            loss_name="train"
+            loss_name="knn/train"
         )
         logger.info(f"KNN Train Acc: {train_loss.accuracy:.2%}")
         self.log(train_loss)
@@ -140,9 +139,6 @@ class KnnCallback(Callback):
 
         logger.info(f"KNN Average Test Acc: {total_test_loss.accuracy:.2%}")
         self.log(total_test_loss)
-        
-
-
 
 
 def evaluate(model: Classifier,
@@ -167,7 +163,11 @@ def evaluate(model: Classifier,
         which isn't a tensor in this case (since passing through the KNN
         isn't a differentiable operation).
     """
-    h_x_test, y_test = get_hidden_codes_array(model, dataloader,  description=f"KNN ({loss_name})")
+    h_x_test, y_test = get_hidden_codes_array(
+        model,
+        dataloader,
+        description=f"KNN ({loss_name})",
+    )
     train_classes = set(knn_classifier.classes_)
     test_classes = set(y_test)
     # Check that the same classes were used.
@@ -176,7 +176,7 @@ def evaluate(model: Classifier,
         f"(train classes: {train_classes}, "
         f"test classes: {test_classes})."
     )
-    test_loss = evaluate_knn(
+    test_loss = get_knn_performance(
         x_t=h_x_test, y_t=y_test,
         loss_name=loss_name,
         scaler=scaler,
@@ -213,11 +213,11 @@ def fit_knn(x: np.ndarray, y: np.ndarray, options: KnnClassifierOptions=None, lo
     x_s = scaler.fit_transform(x)
     # Create and train the Knn Classifier using the options as the kwargs
     knn_classifier = KNeighborsClassifier(**asdict(options)).fit(x_s, y)
-    train_loss = evaluate_knn(x_t=x, y_t=y, scaler=scaler, knn_classifier=knn_classifier)
+    train_loss = get_knn_performance(x_t=x, y_t=y, scaler=scaler, knn_classifier=knn_classifier)
     return train_loss, scaler, knn_classifier
 
 
-def evaluate_knn(x_t: np.ndarray, y_t: np.ndarray, scaler: StandardScaler, knn_classifier: KNeighborsClassifier, loss_name: str="KNN") -> LossInfo:
+def get_knn_performance(x_t: np.ndarray, y_t: np.ndarray, scaler: StandardScaler, knn_classifier: KNeighborsClassifier, loss_name: str="KNN") -> LossInfo:
     # Flatten the inputs to two dimensions only.
     x_t = x_t.reshape(x_t.shape[0], -1)
     assert len(x_t.shape) == 2
