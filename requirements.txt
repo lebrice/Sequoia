@@ -10,3 +10,6 @@ pytorch-lightning
 -e pytorch-lightning-bolts
 -e utils/continuum
 pytest-xdist
+gym
+gym[atari]
+scikit-image

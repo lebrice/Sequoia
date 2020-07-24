@@ -108,7 +108,6 @@ class ClassIncrementalMethod(Method):
             Results: the Results object.
         """
         # This uses the test_dataloader from the model.
-
         test_outputs = self.trainer.test(model, verbose=False)
         # NOTE: This here is a simple example that might not always make sense.
         # Extend/overwrite this method for you particular method. 
@@ -190,10 +189,5 @@ class ClassIncremental(Experiment):
         return results
 
 
-
 if __name__ == "__main__":
-    parser = ArgumentParser(description=__doc__)
-    parser.add_arguments(ClassIncremental, "experiment")
-    args = parser.parse_args()
-    experiment: ClassIncremental = args.experiment
-    experiment.launch()
+    ClassIncremental.main()

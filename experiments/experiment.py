@@ -7,6 +7,7 @@ probably be pretty easy:
 - New Instances & Classes
 """
 
+import sys
 from abc import abstractmethod
 from dataclasses import dataclass
 from typing import (ClassVar, Dict, Generic, List, Optional, Type, TypeVar,
@@ -174,6 +175,8 @@ class Method(Serializable, Generic[Setting]):
         return model
 
 
+ExperimentType = TypeVar("ExperimentType", bound="Experiment")
+
 @dataclass
 class Experiment(Serializable, Generic[Setting]):
     """ Experiment base class """
@@ -197,9 +200,22 @@ class Experiment(Serializable, Generic[Setting]):
 
     config: Config = mutable_field(Config)
 
-    def launch(self) -> None:
+    def launch(self) -> Results:
         """ Applies the Method to the Setting to generate Results. """
         self.method.configure(self.config)
         results = self.method.apply(setting=self.setting)
         results.save(self.config.log_dir / "results.json")
+        return results
+    
 
+    @classmethod
+    def main(cls: Type[ExperimentType], argv: Optional[List[str]]=None) -> Results:
+        parser = ArgumentParser(description=__doc__)
+        parser.add_arguments(cls, dest="experiment")
+        args = parser.parse_args(argv)
+        experiment: ExperimentType = args.experiment
+        return experiment.launch()
+
+
+if __name__ == "__main__":
+    Experiment.main()

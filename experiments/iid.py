@@ -119,13 +119,5 @@ class IID(BaseExperiment):
         return results
 
 
-def main(args: List[str]=None):
-    parser = ArgumentParser()
-    parser.add_arguments(IID, dest="experiment")
-    args = parser.parse_args(argv or sys.argv)
-    experiment: IID = args.experiment
-    experiment.launch()
-
-
 if __name__ == "__main__":
-    main()
+    IID.main()

@@ -5,14 +5,12 @@ import pytest
 from simple_parsing import ArgumentParser
 from tasks.tasks import Tasks
 
-from .iid import IID, Results, main
+from .iid import IID, Results
 
 # Shouldn't take longer than 30 secs to run.
 @pytest.mark.execution_timeout(30) 
 def test_iid_fast_dev_run_self_supervised():
-    parser = ArgumentParser()
-    parser.add_arguments(IID, dest="experiment")
-    args = parser.parse_args(shlex.split(
+    results: IIDResults = IID.main(shlex.split(
         """
         --debug
         --seed 123
@@ -26,8 +24,6 @@ def test_iid_fast_dev_run_self_supervised():
         --rotation.coef 1
         """
     ))
-    experiment: IID = args.experiment
-    results: IIDResults = experiment.launch()
     test_loss = results.test_loss
     print(test_loss.losses.keys())
     assert Tasks.SIMCLR in test_loss.losses
