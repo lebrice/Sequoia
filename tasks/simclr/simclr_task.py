@@ -27,7 +27,6 @@ class SimclrHParams(HParams, Serializable):
     pass
 
 
-
 class SimCLRTask(AuxiliaryTask):
 
     @dataclass
@@ -36,7 +35,7 @@ class SimCLRTask(AuxiliaryTask):
         # Hyperparameters from the falr submodule.
         simclr_options: SimclrHParams = mutable_field(SimclrHParams)
 
-    def __init__(self, name: str="SimCLR", options: "SimCLRTask.Options"=None):
+    def __init__(self, name: str="simclr", options: "SimCLRTask.Options"=None):
         super().__init__(name=name, options=options)
         self.options: SimCLRTask.Options
 

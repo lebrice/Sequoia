@@ -71,9 +71,10 @@ class RotationTask(ClassifyTransformationTask):
         # TODO: Maybe try with this set to False, to learn "innate" orientation rather than relative orientation. 
         compare_with_original: bool = True
 
-    def __init__(self, options: "RotationTask.Options"=None):
+    def __init__(self, name="rotation", options: "RotationTask.Options"=None):
         super().__init__(
             function=rotate,
             function_args=[0, 90, 180, 270],
+            name=name,
             options=options or RotationTask.Options(),
         )

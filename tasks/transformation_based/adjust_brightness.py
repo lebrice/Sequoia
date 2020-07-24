@@ -21,11 +21,13 @@ class AdjustBrightnessTask(RegressTransformationTask):
                  min_brightness: float=0.1,
                  max_brightness: float=2.0,
                  n_calls: int=2,
+                 name: str="adjust_brightness",
                  options: RegressTransformationTask.Options=None):
         super().__init__(
             function=wrap_pil_transform(TF.adjust_brightness),
             function_args=brightness_values,
             function_arg_range=(min_brightness, max_brightness),
             n_calls=n_calls,
+            name=name,
             options=options or RegressTransformationTask.Options()
         )

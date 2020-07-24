@@ -58,7 +58,7 @@ class AuxiliaryTask(nn.Module):
             class is used.
         """
         super().__init__()
-        self.name: str = name or type(self).__qualname__
+        self.name: str = name or type(self).__qualname__.lower()
         self.options = options or type(self).Options(*args, **kwargs)
         self.device: torch.device = torch.device("cuda" if cuda_available else "cpu")
 
