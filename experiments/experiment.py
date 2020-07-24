@@ -34,7 +34,11 @@ Setting = TypeVar("Setting", bound=ExperimentalSetting)
 
 @dataclass
 class Results(Serializable):
-    """ Represents the results of an experiment. """
+    """ Represents the results of an experiment.
+    
+    Here you can define what the quantity to maximize/minize is.
+    This could be helpful when doing Hyper-Parameter Optimization.
+    """
     hparams: Classifier.HParams
     test_loss: LossInfo
 
@@ -126,7 +130,7 @@ class Method(Serializable, Generic[Setting]):
         test_outputs = self.trainer.test(model, verbose=False)
         # NOTE: This here is a simple example that might not always make sense.
         # Extend/overwrite this method for you particular method. 
-        test_loss: LossInfo = outputs[0]["loss_info"]
+        test_loss: LossInfo = test_outputs[0]["loss_info"]
         return Results(
             hparams=self.hparams,
             test_loss=test_loss,

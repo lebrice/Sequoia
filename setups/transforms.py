@@ -92,6 +92,19 @@ class Compose(List[Transforms], ComposeBase):
         ComposeBase.__init__(self, transforms=self)
 
 
+from utils.json_utils import encode, register_decoding_fn
+
+@encode.register
+def encode_transforms(v: Transforms) -> str:
+    return v.name
+
+def decode_transforms(v: str) -> Transforms:
+    print(f"Decoding a Transforms object: {v}, {Transforms[v]}")
+    return Transforms[v]
+register_decoding_fn
+
+
+
 if __name__ == "__main__":
     import doctest
     doctest.testmod()

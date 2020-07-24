@@ -54,6 +54,8 @@ class ClassIncrementalSetting(ContinualSetting[Tensor, Tensor]):
             self.increment = self.increment[0]
         if self.nb_tasks == 0:
             self.nb_tasks = num_classes_in_dataset[self.dataset] // self.increment
+        else:
+            self.increment = num_classes_in_dataset[self.dataset] // self.nb_tasks
         # Test values default to the same as train.
         self.test_increment = self.test_increment or self.increment
         self.test_initial_increment = self.test_initial_increment or self.test_increment

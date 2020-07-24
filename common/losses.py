@@ -245,7 +245,7 @@ class LossInfo(Serializable):
 
         return cleanup(message, sep=" ")
     
-    def to_dict(self):
+    def to_dict(self) -> Dict:
         self.drop_tensors()
         return super().to_dict()
     

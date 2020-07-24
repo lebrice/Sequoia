@@ -2,6 +2,23 @@
 Self-Supervised Learning for Continual Learning.
 
 
+
+## Installation
+Requires python >= 3.7
+
+```console
+git submodule init
+git submodule update
+pip install -r requirements.txt
+```
+
+## TODOs:
+- **Rewrite this outdated README**
+- Write some tests for LossInfo in `common/losses_test.py` to make it easier to
+    understand for people coming in.
+- Add some kind of /methods and /settings folders.
+
+
 ## Debugging / Running experiments:
 run `python main.py <setting_name> [--<hparam_name> <hparam_value>]`.
 
@@ -97,16 +114,3 @@ There are currently three settings:
     ```
 
 Note that we use [simple_parsing](https://github.com/lebrice/SimpleParsing) (A python package I'm currently developing) to generate the command-line arguments for the experiments.
-
-## Installation
-Requires python >= 3.6
-- Python 3.6:
-    ```console
-    pip install dataclasses
-    pip install -r requirements.txt
-    ```
-- Python >= 3.7:
-    ```console
-    pip install -r requirements.txt
-    ```
-

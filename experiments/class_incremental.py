@@ -23,6 +23,7 @@ from simple_parsing import ArgumentParser, mutable_field
 from utils.json_utils import Serializable
 from utils.logging_utils import get_logger
 
+from .callbacks import KnnCallback
 from .experiment import Experiment, Method
 from .experiment import Results as BaseResults
 from .experiment import Setting
@@ -65,6 +66,8 @@ class ClassIncrementalMethod(Method):
         # Trainer object was already constructed.
         assert self.config and self.trainer
         self.setting = setting
+        logger.debug(f"Setting: {self.setting.dumps()}")
+
         # 1. Create a model for the given setting:
         model = self.create_model(setting)
         # 2. Train the method on the setting.
@@ -91,9 +94,29 @@ class ClassIncrementalMethod(Method):
             assert model.setting.current_task_id == self.setting.current_task_id == i
 
             self.trainer.fit(model)
+            # test_outputs: List[Dict] = self.trainer.test(model)
 
-            test_outputs: List[Dict] = self.trainer.test(model)
-            print(len(test_outputs))
+    def test(self, model: LightningModule) -> Results:
+        """Tests the model and returns the Results. 
+
+        Overwrite this to customize testing.
+
+        Args:
+            model (LightningModule): The model that was trained.
+
+        Returns:
+            Results: the Results object.
+        """
+        # This uses the test_dataloader from the model.
+
+        test_outputs = self.trainer.test(model, verbose=False)
+        # NOTE: This here is a simple example that might not always make sense.
+        # Extend/overwrite this method for you particular method. 
+        test_loss: LossInfo = test_outputs[0]["loss_info"]
+        return Results(
+            hparams=self.hparams,
+            test_loss=test_loss,
+        )
 
     def create_model(self, setting: Setting) -> ContinualClassifier:
         """Creates the Model (a LightningModule).
@@ -138,14 +161,34 @@ class ClassIncremental(Experiment):
 
         Could use this to add some more command-line arguments if needed.
         """
+
+        # Options for the KNN classifier callback, which is used to evaluate the
+        # quality of the representations on each test task after each training 
+        # epoch.
+        knn: KnnCallback = mutable_field(KnnCallback)
+
+        def create_callbacks(self) -> List[Callback]:
+            callbacks = super().create_callbacks()
+            callbacks.extend([
+                self.knn
+            ])
+            return callbacks
+
+
     # Configuration of the Experiment.
     config: Config = mutable_field(Config)
 
     def launch(self):
         """ Simple Class-Incremental CL Experiment. """
+        logger.info(f"Starting experiment with log dir: {self.config.log_dir}")
         self.method.configure(self.config)
         results = self.method.apply(setting=self.setting)
-        results.save(self.config.log_dir / "results.json")
+        save_results_path = self.config.log_dir / "results.json"
+        results.save(save_results_path)
+        print("\n"*3, "EXPERIMENT DONE", "\n"*3)
+        logger.info(f"Saved results of experiment at path {save_results_path}")
+        return results
+
 
 
 if __name__ == "__main__":

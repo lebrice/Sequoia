@@ -191,13 +191,3 @@ def encode_device(obj: torch.device) -> str:
 @encode.register
 def encode_enum(value: Enum):
     return value.value
-
-    
-# a = {
-#     "bob.txt": Path("bob.txt")
-# }
-# s = dumps(a)
-# print(s)
-# b = loads(s)
-# print(b)
-# exit()

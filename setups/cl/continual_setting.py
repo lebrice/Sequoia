@@ -194,9 +194,7 @@ class ContinualSetting(PassiveSetting[ObservationType, RewardType]):
         self.train_cl_loader: _BaseCLLoader = self.make_train_cl_loader(self.cl_dataset)
         self.test_cl_loader: _BaseCLLoader = self.make_test_cl_loader(self.cl_dataset)
 
-        logger.info(f"Number of train classes: {self.train_cl_loader.nb_classes}.")
         logger.info(f"Number of train tasks: {self.train_cl_loader.nb_tasks}.")
-        logger.info(f"Number of test classes: {self.train_cl_loader.nb_classes}.")
         logger.info(f"Number of test tasks: {self.train_cl_loader.nb_tasks}.")
 
         self.train_datasets.clear()

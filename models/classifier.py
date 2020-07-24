@@ -22,7 +22,7 @@ from common.layers import ConvBlock, Flatten
 from common.losses import LossInfo
 from common.metrics import Metrics, accuracy, get_metrics
 from common.task import Task
-from config import Config
+from config.config import Config
 from models.output_head import OutputHead
 from pl_bolts.datamodules import LightningDataModule
 from setups.base import ExperimentalSetting

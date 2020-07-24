@@ -23,7 +23,6 @@ from simple_parsing import (Serializable, choice, field, list_field,
 from .trainer_config import TrainerConfig
 from .wandb_config import WandbLoggerConfig
 
-
 @dataclass
 class Config(Serializable):
     """ Options related to the setup of an experiment (log_dir, cuda, debug etc.) """
@@ -45,14 +44,11 @@ class Config(Serializable):
 
     def __post_init__(self):
         seed_everything(self.seed)
-    
 
     def create_callbacks(self) -> List[Callback]:
         from experiments.callbacks.vae_callback import SaveVaeSamplesCallback
-        from experiments.callbacks.knn_callback import KnnCallback
         return [
             SaveVaeSamplesCallback(),
-            KnnCallback(),
         ]
 
     def create_loggers(self) -> Optional[Union[LightningLoggerBase, List[LightningLoggerBase]]]:

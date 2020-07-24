@@ -6,6 +6,7 @@ TODO: The code here is split into too many functions and its a bit confusing.
 """
 
 import itertools
+import math
 from dataclasses import InitVar, asdict, dataclass
 from typing import Iterable, List, Optional, Tuple, Union
 
@@ -20,7 +21,6 @@ from torch.nn.functional import one_hot
 from torch.utils.data import DataLoader, Dataset
 
 from common.losses import LossInfo
-from models.cl_classifier import ContinualClassifier
 from models.classifier import Classifier
 from setups.cl.class_incremental_setting import ClassIncrementalSetting
 from simple_parsing import field, mutable_field
@@ -54,38 +54,57 @@ class KnnCallback(Callback):
     """
     # Options for the KNN classifier
     knn_options: KnnClassifierOptions = mutable_field(KnnClassifierOptions)
+    # Maximum number of examples to take from the dataloaders. When None, uses
+    # the entire training/validaton/test datasets.
+    max_knn_samples: Optional[int] = 1_000
+
+    def __post_init__(self):
+        self.max_num_batches: int = 0
 
     def on_epoch_end(self, trainer: Trainer, pl_module: Classifier):
         self.trainer = trainer
         self.model = pl_module
-        self.evaluate_knn(pl_module)
+
+        if self.max_knn_samples is not None:
+            batch_size = pl_module.batch_size
+            # We round this up so we always take at least one batch_size of
+            # samples from each dataloader.
+            self.max_num_batches = math.ceil(self.max_knn_samples / batch_size)
+            logger.debug(f"Taking a maximum of {self.max_num_batches} batches from each dataloader.")
+
+        if self.max_knn_samples > 0:
+            self.evaluate_knn(pl_module)
     
     def log(self, loss_info: LossInfo):
         if self.trainer.logger:
             self.trainer.logger.log_metrics(loss_info.to_log_dict())
 
-    def evaluate_knn(self, pl_module: ContinualClassifier,
-                                             max_num_samples: int = 10_000) -> None:
+    def evaluate_knn(self, pl_module) -> None:
         """ Evaluate the representations with a KNN in the context of CL.
 
         We shorten the train dataloaders to take only the first
-        `max_num_samples` samples in order to save some compute.
-        # TODO: Figure out a way to cleanly add the metrics from the callback to
-        # the ``log dict'' which is returned by the model. Right now they are
-        # only printed / logged to wandb from here. 
-
+        `max_knn_samples` samples in order to save some compute.
+        TODO: Figure out a way to cleanly add the metrics from the callback to
+        the ``log dict'' which is returned by the model. Right now they are
+        only printed / logged to wandb from here. 
         """
+        # TODO: Fix this typing
+        from models.cl_classifier import ContinualClassifier
+        pl_module: ContinualClassifier
+        assert isinstance(pl_module, ContinualClassifier), "pl module should be a ContinualClassifier for now."
         train_loaders: List[DataLoader] = pl_module.train_dataloaders()
         valid_loaders: List[DataLoader] = pl_module.val_dataloaders()
         test_loaders:  List[DataLoader] = pl_module.test_dataloaders()
 
-        # Create an iterator that alternates between each of the train dataloaders.
-        entire_train_dataset_iterator = roundrobin(*train_loaders)
-        # Only take the first `max_num_samples` samples from that iterator.
-        # We round this up so we always take at least batch_size samples.
-        max_num_batches = int(max_num_samples / pl_module.hp.batch_size)
-        train_loader = take(entire_train_dataset_iterator, n=max_num_batches)
+        # Only take the first `max_knn_samples` samples from each dataloader.
+        shorten = lambda dataloader: take(dataloader, n=self.max_num_batches)
+        if self.max_num_batches:
+            train_loaders = list(map(shorten, train_loaders))
+            valid_loaders = list(map(shorten, valid_loaders))
+            test_loaders = list(map(shorten, test_loaders))
 
+        # Create an iterator that alternates between each of the train dataloaders.
+        train_loader = roundrobin(*train_loaders)
         h_x, y = get_hidden_codes_array(
             model=pl_module,
             dataloader=train_loader,
@@ -102,7 +121,6 @@ class KnnCallback(Callback):
 
         total_valid_loss = LossInfo("knn/valid")
         for i, dataloader in enumerate(valid_loaders):
-            dataloader = take(dataloader, max_num_batches)
             loss_i = evaluate(
                 model=pl_module,
                 dataloader=dataloader,
@@ -125,7 +143,6 @@ class KnnCallback(Callback):
 
         total_test_loss = LossInfo("knn/test")
         for i, dataloader in enumerate(test_loaders):
-            dataloader = take(dataloader, max_num_batches)
             loss_i = evaluate(
                 model=pl_module,
                 dataloader=dataloader,
@@ -189,8 +206,11 @@ def get_hidden_codes_array(model: Classifier, dataloader: DataLoader, descriptio
     """ Gets the hidden vectors and corresponding labels. """
     h_x_list: List[np.ndarray] = []
     y_list: List[np.ndarray] = []
+
     for batch in pbar(dataloader, description, leave=False):
         x, y = model.preprocess_batch(batch)
+        assert isinstance(x, Tensor), type(x)
+
         # We only do KNN with examples that have a label.
         assert y is not None, f"Should have a 'y' for now! {x}, {y}"
         if y is not None:

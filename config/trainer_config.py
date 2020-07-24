@@ -18,6 +18,7 @@ class TrainerConfig(Serializable):
     gpus: int = torch.cuda.device_count()
     overfit_batches: float = 0.
     fast_dev_run: bool = False
+    # Maximum number of epochs to train for.
     max_epochs: int = 10
     # Number of nodes to use.
     num_nodes: int = 1

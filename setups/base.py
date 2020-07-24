@@ -24,7 +24,7 @@ Loader = TypeVar("Loader", bound=DataLoader)
 from .transforms import Transforms, Compose
 
 @dataclass
-class ExperimentalSetting(LightningDataModule, Generic[Loader]):
+class ExperimentalSetting(LightningDataModule, Generic[Loader], Serializable):
     """Extends LightningDataModule to allow setting the transforms and options
     from the command-line.
 

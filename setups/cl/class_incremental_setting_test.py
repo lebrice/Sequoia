@@ -22,8 +22,8 @@ from utils.logging_utils import get_logger, log_calls
 from setups.environment import (ActiveEnvironment, EnvironmentBase,
                            PassiveEnvironment)
 from setups.rl import GymEnvironment
-from setups.cl.base import ContinualSetting
-from setups.cl.class_incremental import ClassIncrementalSetting
+from setups.cl.continual_setting import ContinualSetting
+from setups.cl.class_incremental_setting import ClassIncrementalSetting
 
 logger = get_logger(__file__)
 
@@ -67,6 +67,7 @@ def test_class_incremental_mnist_setup():
     env.prepare_data(data_dir="data")
     check_only_right_classes_present(env)
 
+
 @pytest.mark.xfail(reason=(
     "Continuum actually re-labels the images to 0-10, regardless of the class "
     "order. The actual images are of the right type though. "
@@ -74,4 +75,13 @@ def test_class_incremental_mnist_setup():
 def test_class_incremental_mnist_setup_reversed_class_order():
     env = ClassIncrementalSetting(dataset="mnist", increment=2, class_order=list(reversed(range(10))))
     env.prepare_data(data_dir="data")
+    check_only_right_classes_present(env)
+
+
+def test_class_incremental_mnist_setup_with_nb_tasks():
+    env = ClassIncrementalSetting(dataset="mnist", nb_tasks=2)
+    env.prepare_data(data_dir="data")
+    assert len(env.train_datasets) == 2
+    assert len(env.val_datasets) == 2
+    assert len(env.test_datasets) == 2
     check_only_right_classes_present(env)

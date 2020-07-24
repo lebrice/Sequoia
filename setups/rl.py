@@ -8,6 +8,7 @@ from torch.utils.data import IterableDataset
 from utils.logging_utils import get_logger, log_calls
 from setups.environment import (ActionType, EnvironmentBase, ObservationType,
                           RewardType)
+import matplotlib.pyplot as plt
 
 logger = get_logger(__file__)
 
@@ -93,6 +94,10 @@ class GymEnvironment(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationTy
         if action is not None:
             self.action = action
         return self.reward
+    
+    def close(self) -> None:
+        plt.close()
+        super().close()
 
 
 def worker_env_init(self, worker_id: int):
