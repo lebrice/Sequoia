@@ -57,11 +57,7 @@ class ExperimentalSetting(LightningDataModule, Generic[Loader], Serializable):
     val_fraction: float = 0.2
 
     def __post_init__(self):
-        """Creates a new Environment / setup.
-
-        Args:
-            options (Options): Dataclass used for configuration.
-        """
+        """Creates a new Environment / setup. """
         train_transforms: Callable = Compose(self.train_transforms or self.transforms)
         val_transforms: Callable = Compose(self.val_transforms or self.transforms)
         test_transforms: Callable = Compose(self.test_transforms or self.transforms)
@@ -85,7 +81,7 @@ class ExperimentalSetting(LightningDataModule, Generic[Loader], Serializable):
 
 
 @dataclass
-class ActiveSetup(ExperimentalSetting[ActiveEnvironment[ObservationType, ActionType, RewardType]]):
+class ActiveSetting(ExperimentalSetting[ActiveEnvironment[ObservationType, ActionType, RewardType]]):
     """LightningDataModule for an 'active' setting.
     
     TODO: Use this for something like RL or Active Learning.
