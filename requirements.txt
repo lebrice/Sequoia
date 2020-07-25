@@ -7,7 +7,7 @@ matplotlib
 plotly
 pytest-timeout
 pytorch-lightning
--e pytorch-lightning-bolts
+-e utils/pytorch-lightning-bolts
 -e utils/continuum
 pytest-xdist
 gym
