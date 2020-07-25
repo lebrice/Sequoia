@@ -21,7 +21,6 @@ from utils.logging_utils import get_logger, log_calls
 
 from setups.environment import (ActiveEnvironment, EnvironmentBase,
                            PassiveEnvironment)
-from setups.rl import GymEnvironment
 from setups.cl.continual_setting import ContinualSetting
 from setups.cl.class_incremental_setting import ClassIncrementalSetting
 

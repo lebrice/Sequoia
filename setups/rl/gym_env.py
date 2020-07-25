@@ -1,16 +1,20 @@
-from typing import Generator, Union
+from typing import Generator, List, Union, Callable, Any
 
 import gym
+import matplotlib.pyplot as plt
 import torch
 import torch.multiprocessing as mp
 from torch.utils.data import IterableDataset
 
-from utils.logging_utils import get_logger, log_calls
 from setups.environment import (ActionType, EnvironmentBase, ObservationType,
-                          RewardType)
-import matplotlib.pyplot as plt
+                                RewardType)
+from utils.logging_utils import get_logger, log_calls
+
+from ..base import ActiveEnvironment
+from .batched_env import BatchEnvironments
 
 logger = get_logger(__file__)
+
 
 class GymEnvironment(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, ActionType, RewardType]):
     """ Wrapper around a GymEnvironment that exposes the EnvironmentBase "API"
@@ -28,7 +32,6 @@ class GymEnvironment(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationTy
 
         self.reset()
 
-        obs = self.env.render(mode="rgb_array")
         self.manager = mp.Manager()
         # Number of steps performed in the environment.
         self._i: mp.Value[int] = self.manager.Value(int, 0)
@@ -98,6 +101,22 @@ class GymEnvironment(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationTy
     def close(self) -> None:
         plt.close()
         super().close()
+
+class BatchedGymEnvironment(BatchEnvironments,
+                            ActiveEnvironment[
+                                List[ObservationType],
+                                List[ActionType],
+                                List[RewardType]
+                            ]):
+    def __init__(self, *environments: GymEnvironment[ObservationType, ActionType, RewardType], collate_fn: Callable[[List], ObservationType]=None):
+        self.environments = environments
+        super().__init__(*environments)
+        self.collate_fn = collate_fn
+
+    def random_actions(self) -> List[ActionType]:
+        return [
+            env.action_space.sample() for env in self.environments
+        ]
 
 
 def worker_env_init(self, worker_id: int):

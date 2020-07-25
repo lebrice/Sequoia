@@ -10,12 +10,10 @@ import torch.multiprocessing as mp
 from torch import Tensor
 from torch.utils.data import DataLoader, IterableDataset
 from torchvision.datasets import MNIST
-from torchvision.transforms import Compose, ToTensor
 
-from ..datasets.data_utils import FixChannels
-from ..utils.logging_utils import get_logger, log_calls
+from utils.logging_utils import get_logger, log_calls
 from .environment import (ActiveEnvironment, EnvironmentBase, PassiveEnvironment)
-from .rl import GymEnvironment
+from .transforms import Transforms, Compose
 
 logger = get_logger(__file__)
 
@@ -42,39 +40,16 @@ class DummyEnvironment(EnvironmentBase[int, int, float], IterableDataset):
     def send(self, action: int) -> int:
         self.i.value += action
         return np.random.random()
+    
+    def peek(self):
+        return self.i.value
 
-
-def test_dummy_environment():
-    # observations are Tensors, actions are ints (0, 1) and reward is a float.
-    # bob: GymEnvironment[Tensor, int, float] = GymEnvironment(env=env)
-    bob = DummyEnvironment()
-
-    for i, x in enumerate(bob):
-        assert x == i * 2
-
-        bob.send(1)
-        if i > 5:
-            break
-
-
-
-def test_passive_mnist_environment():
-
-    dataset = MNIST("data", transform=Compose([ToTensor(), FixChannels()]))
-    env: Iterable[Tuple[Tensor, Tensor]] = PassiveEnvironment(dataset)
-
-    for x, y in env:
-        print(x.shape, type(x), y)
-        assert x.shape == (1, 3, 28, 28)
-        x = x.permute(0, 2, 3, 1)
-        assert y.item() == 5
-
-        reward = env.send(4)
-        assert reward is None, reward
-        # plt.imshow(x[0])
-        # plt.title(f"y: {y[0]}")
-        # plt.waitforbuttonpress(10)
-        break
+    def add(self, value: int) -> int:
+        self.i.value += value
+        return self.i.value
+    
+    def reset(self):
+        self.i.value = 0
 
 
 class ActiveMnistEnvironment(ActiveEnvironment[Tensor, Tensor, Tensor]):
@@ -122,6 +97,40 @@ class ActiveMnistEnvironment(ActiveEnvironment[Tensor, Tensor, Tensor]):
         else:
             print("Prediction was wrong, staying on the same class.")
         return self.reward
+
+
+def test_dummy_environment():
+    # observations are Tensors, actions are ints (0, 1) and reward is a float.
+    # bob: GymEnvironment[Tensor, int, float] = GymEnvironment(env=env)
+    bob = DummyEnvironment()
+
+    for i, x in enumerate(bob):
+        assert x == i * 2
+
+        bob.send(1)
+        if i > 5:
+            break
+
+
+
+def test_passive_mnist_environment():
+    
+    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.fix_channels]))
+    env: Iterable[Tuple[Tensor, Tensor]] = PassiveEnvironment(dataset)
+
+    for x, y in env:
+        print(x.shape, type(x), y)
+        assert x.shape == (1, 3, 28, 28)
+        x = x.permute(0, 2, 3, 1)
+        assert y.item() == 5
+
+        reward = env.send(4)
+        assert reward is None, reward
+        # plt.imshow(x[0])
+        # plt.title(f"y: {y[0]}")
+        # plt.waitforbuttonpress(10)
+        break
+
 
 
 def test_active_mnist_environment():
