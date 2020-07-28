@@ -67,6 +67,9 @@ class AuxiliaryTask(nn.Module):
     def encode(self, x: Tensor) -> Tensor:
         x, _ = AuxiliaryTask.preprocessing(x, None)
         return AuxiliaryTask.encoder(x)
+    
+    def reinit(self):
+        pass
 
     def logits(self, h_x: Tensor) -> Tensor:
         return AuxiliaryTask.classifier(h_x)

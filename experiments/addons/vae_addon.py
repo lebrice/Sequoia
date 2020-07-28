@@ -30,7 +30,7 @@ class SaveVaeSamplesAddon(ExperimentAddon):
         if Tasks.VAE in self.model.tasks:
             self.reconstruction_task = self.model.tasks[Tasks.VAE]
             self.generation_task = self.reconstruction_task
-            self.latents_batch = torch.randn(64, self.hparams.hidden_size)
+            self.latents_batch = torch.randn(64, self.model.hidden_size)
         elif Tasks.AE in self.model.tasks:
             self.reconstruction_task = self.model.tasks[Tasks.AE]
             self.generation_task = None
@@ -71,7 +71,7 @@ class SaveVaeSamplesAddon(ExperimentAddon):
         if not self.generation_task or not self.generation_task.enabled:
             return
         n = 64
-        latents = torch.randn(64, self.hparams.hidden_size)
+        latents = torch.randn(64, self.model.hidden_size)
         fake_samples = self.generation_task.generate(latents)
         fake_samples = fake_samples.cpu().view(n, *self.dataset.x_shape)
 

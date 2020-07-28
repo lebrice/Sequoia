@@ -64,18 +64,21 @@ class LinearOutputHead(OutputHead):
         self.hparams = hparams or self.HParams()
         hidden_layers: List[nn.Module] = []
         in_features = self.input_size
+        #self.relu = nn.ReLU()
         for i, neurons in enumerate(self.hparams.hidden_neurons):
             out_features = neurons
             hidden_layers.append(nn.Linear(in_features, out_features))
+            hidden_layers.append(nn.ReLU())
             in_features = out_features # next input size is output size of prev.
         
-        self.flatten = Flatten()
+        self.flatten = Flatten() 
         self.dense = nn.Sequential(*hidden_layers)
         self.output = nn.Linear(in_features, output_size)
 
     def forward(self, h_x: Tensor) -> Tensor:  # type: ignore
-        h_x = self.flatten(h_x)
-        x = self.dense(h_x)
+        x = self.flatten(h_x)
+        #x = self.relu(h_x)
+        x = self.dense(x)
         return self.output(x)
 
 
@@ -132,7 +135,12 @@ class OutputHead_DUQ(OutputHead):
         self.N = self.hparams.gamma * self.N + (1 - self.hparams.gamma) * y.sum(0)
 
         z = encoder(x)
+        #print(x.shape)
+        #print(z.shape)
+        #print(self.W.shape)
+        #print(y.shape)
         z = torch.einsum("ij,mnj->imn", z, self.W)
+        #print(z.shape)
         embedding_sum = torch.einsum("ijk,ik->jk", z, y)
 
         self.m = self.hparams.gamma * self.m + (1 - self.hparams.gamma) * embedding_sum
@@ -140,5 +148,4 @@ class OutputHead_DUQ(OutputHead):
     def forward(self, x):
         z = x
         y_pred = self.rbf(z)
-
         return (z, y_pred)

@@ -92,7 +92,14 @@ def cleanup(message: Dict[str, Union[Dict, str, float, Any]], sep: str="/") -> D
             while thing in k:
                 k = k.replace(thing, sep)
         # --> "Task_losses/Task1/Test/rotate/270/270/accuracy"
+        if 'Task_losses' in k and 'accuracy' in k and not 'AUC' in k:
+            k = k.replace('Task_losses', 'Task_accuracies')
 
+        if 'Cumulative' in k and 'accuracy' in k and not 'AUC' in k:
+            k = 'Task_accuracies/'+k
+        
+        if 'coefficient' in k:
+            k = 'coefficients/'+k
         
         # Get rid of repetitive modifiers (ex: "/270/270" above)
         parts = k.split(sep)

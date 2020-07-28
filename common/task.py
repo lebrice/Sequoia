@@ -13,6 +13,8 @@ class Task(Serializable):
     index: int = field(default=-1, repr=False)
     # All the unique classes present within this task. (order matters)
     classes: List[int] = list_field()
+    #number of data points in the task
+    n_data_points: int = field(default=-1, repr=False)
 
 
 

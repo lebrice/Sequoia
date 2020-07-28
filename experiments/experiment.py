@@ -15,6 +15,7 @@ from simple_parsing import mutable_field
 from .addons.labeled_plot_regions import LabeledPlotRegionsAddon
 from .addons.replay import ReplayAddon
 from .addons.representation_knn import KnnAddon
+from .addons.representation_linear import LinearClassifierAddon
 from .addons.test_time_training import TestTimeTrainingAddon
 from .addons.vae_addon import SaveVaeSamplesAddon
 from .addons.semi_supervised import SemiSupervisedBatchesAddon
@@ -28,6 +29,7 @@ class Experiment(
             LabeledPlotRegionsAddon,
             ReplayAddon,
             KnnAddon,
+            LinearClassifierAddon,
             TestTimeTrainingAddon,
             SaveVaeSamplesAddon,
             SemiSupervisedBatchesAddon,
@@ -42,6 +44,7 @@ class Experiment(
                 LRannealer.Config,
                 ReplayAddon.Config,
                 KnnAddon.Config,
+                LinearClassifierAddon.Config,
                 TestTimeTrainingAddon.Config
                 # SaveVaeSamplesAddon.Config,
                 # SemiSupervisedBatchesAddon.Config,

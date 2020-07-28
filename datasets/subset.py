@@ -30,7 +30,7 @@ class Subset(SubsetBase, Generic[D]):
         # We try to get the 'targets' attribute of the dataset.
         # If it doesn't have one, this will throw an AttributeError.
         # (This is what we want, so we put a "#type: ignore" comment here.)
-        return self.dataset.targets[self._indices]  # type: ignore
+        return torch.as_tensor(self.dataset.targets)[self._indices]  # type: ignore
 
 
 class ClassSubset(Subset[D]):

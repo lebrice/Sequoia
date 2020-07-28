@@ -47,7 +47,7 @@ class Config(WandbConfig):
     use_cuda: bool = cuda_available # Whether or not to use CUDA.
     
     # num_workers for the dataloaders.
-    num_workers: int = 0 #torch.get_num_threads()
+    num_workers: int = torch.get_num_threads()
 
     # Which specific device to use.
     # NOTE: Can be set directly with the command-line! (ex: "--device cuda") For multiple GPUs pass only indicies.

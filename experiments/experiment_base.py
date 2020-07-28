@@ -6,7 +6,7 @@ from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, ClassVar, Dict, Generator, Iterable, List, Optional,
-                    Tuple, Type, Union, Iterator)
+                    Tuple, Type, Union, Iterator, Callable)
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -83,10 +83,10 @@ class ExperimentBase(Serializable):
         # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
         restore_from_path: Optional[Path] = None
 
-        # during the warum epochs the learning rate is graually increased untill the actual lr
-        warmup_epochs:int = 10
-
         restart_from_cp: bool = True #wether to reload from checkpoint
+
+        #valid_fraction
+        valid_fraction: float = 0.1
 
     @dataclass
     class State(Serializable):
@@ -123,9 +123,6 @@ class ExperimentBase(Serializable):
         if isinstance(self.config.device, tuple):
             if len(self.config.device)==1:
                 self.config.device = self.config.device[-1]
-        # Set these shared attributes so that all the Auxiliary tasks can be created.
-        AuxiliaryTask.input_shape = self.config.dataset.x_shape
-        AuxiliaryTask.hidden_size = self.hparams.hidden_size
 
         self.train_dataset: Dataset = NotImplemented
         self.valid_dataset: Dataset = NotImplemented
@@ -222,12 +219,13 @@ class ExperimentBase(Serializable):
             self.saver_worker.join(timeout=120)
         print("Successfully closed everything")
 
-    def load_datasets(self, valid_fraction: float=0.2) -> Tuple[Dataset, Optional[Dataset], Dataset]:
+    def load_datasets(self, valid_fraction: float=0.1, train_transform = None, valid_transform = None, test_transform = None) -> Tuple[Dataset, Optional[Dataset], Dataset]:
         """ Loads the training, validation and test datasets. """
-        train_dataset, test_dataset = self.config.dataset.load(data_dir=self.config.data_dir)
-        valid_dataset: Optional[Dataset] = None
+        train_dataset, valid_dataset, test_dataset = self.config.dataset.load(data_dir=self.config.data_dir, train_transform = train_transform, valid_transform=valid_transform, test_transform=test_transform)
+        #valid_dataset: Optional[Dataset] = None
+        valid_fraction = self.config.valid_fraction
         if valid_fraction > 0:
-            train_dataset, valid_dataset = train_valid_split(train_dataset, valid_fraction)
+            train_dataset, valid_dataset = train_valid_split(train_dataset, valid_dataset, valid_fraction)
         return train_dataset, valid_dataset, test_dataset
 
     def load_state(self, state_json_path: Path=None) -> None:
@@ -260,6 +258,7 @@ class ExperimentBase(Serializable):
         from models import get_model_class_for_dataset
         model_class = get_model_class_for_dataset(self.config.dataset)
         model = model_class(hparams=self.hparams, config=self.config)
+        
         return model
 
     def train(self,
@@ -370,8 +369,8 @@ class ExperimentBase(Serializable):
         # Hook to keep track of the best model.
         best_model_watcher = self.keep_best_model(
             use_acc=use_accuracy_as_metric,
-            save_path=self.checkpoints_dir / "best_model.pth",
-        )
+            save_path=self.checkpoints_dir / f"best_model{description.replace(' ', '_').lower()}.pth",
+        )        
         best_step = starting_step
         best_epoch = starting_epoch
         next(best_model_watcher) # Prime the generator
@@ -384,7 +383,10 @@ class ExperimentBase(Serializable):
         next(convergence_checker) # Prime the generator
         # Hook for periodically evaluating the performance on batches from the
         # validation dataset during training.
-        valid_loss_gen = self.valid_performance_generator(valid_dataloader)
+        if valid_dataloader is not None:
+            valid_loss_gen = self.valid_performance_generator(valid_dataloader)
+        else: 
+            valid_loss_gen = None
         
         # List to hold the length of each epoch (should all be the same length)
         epoch_lengths: List[int] = []
@@ -407,11 +409,6 @@ class ExperimentBase(Serializable):
             epoch_length = self.global_step - epoch_start_step
             epoch_lengths.append(epoch_length)
 
-            # perform a validation epoch.
-            val_desc = desc + " Valid"
-            val_loss_info = self.test(valid_dataloader, description=val_desc, name="Valid_full")
-            validation_losses.append(val_loss_info)
-
             if epoch % self.config.log_interval_test_epochs == 0:
                 if test_dataloader is not None and self.config.log_interval_test_epochs>0:
                     # perform a test epoch every n iterations.
@@ -419,19 +416,30 @@ class ExperimentBase(Serializable):
                     test_loss_info = self.test(test_dataloader, description=test_desc, name="Test_full")
                     self.log({'Test_full':test_loss_info.to_dict()})
 
-            if temp_save_dir:
-                # Save these files in the background using the saver process.
-                self.save_job(val_loss_info, temp_save_dir / f"val_loss_{i}.json")
-                self.save_job(all_losses, temp_save_dir / f"all_losses.json")
+            # perform a validation epoch.
+            if valid_dataloader is not None:
+                val_desc = desc + " Valid"
+                val_loss_info = self.test(valid_dataloader, description=val_desc, name="Valid_full")
+                validation_losses.append(val_loss_info)
+
             
-            # Inform the best model watcher of the latest performance of the model.
-            best_step = best_model_watcher.send(val_loss_info)
-            logger.debug(f"Best step so far: {best_step}")
 
-            best_epoch = best_step // int(np.mean(epoch_lengths))
-            logger.debug(f"Best epoch so far: {best_epoch}")
+                if temp_save_dir:
+                    # Save these files in the background using the saver process.
+                    self.save_job(val_loss_info, temp_save_dir / f"val_loss_{i}.json")
+                    self.save_job(all_losses, temp_save_dir / f"all_losses.json")
+                
+                # Inform the best model watcher of the latest performance of the model.
+                best_step = best_model_watcher.send(val_loss_info)
+                logger.debug(f"Best step so far: {best_step}")
 
-            converged = convergence_checker.send(val_loss_info)
+                best_epoch = best_step // int(np.mean(epoch_lengths))
+                logger.debug(f"Best epoch so far: {best_epoch}")
+
+                converged = convergence_checker.send(val_loss_info)
+            else:
+                converged = False
+
             if converged:
                 logger.info(f"Training Converged at epoch {epoch}. Best valid performance was at epoch {best_epoch}")
                 break
@@ -441,9 +449,12 @@ class ExperimentBase(Serializable):
         except StopIteration:
             pass
         
-        convergence_checker.close()
-        best_model_watcher.close()
-        valid_loss_gen.close()
+        try:
+            convergence_checker.close()
+            best_model_watcher.close()
+            valid_loss_gen.close()
+        except:
+            pass
         
         logger.info(f"Best step: {best_step}, best_epoch: {best_epoch}, ")
         all_losses.keep_up_to_step(best_step)
@@ -452,25 +463,23 @@ class ExperimentBase(Serializable):
         return all_losses
     
     def train_epoch(self, epoch, pbar: Iterable, valid_loss_gen: Generator, all_losses:TrainValidLosses) -> Tuple[LossInfo, LossInfo]:
-        
-        # Update Learning Rate during warmup
-        if epoch <= self.config.warmup_epochs:
-            self.model.optimizer.param_groups[0]['lr'] = min(self.model.hparams.learning_rate, self.model.hparams.learning_rate * (epoch + 1) / (
-                        self.config.warmup_epochs + 1))
-
         # Message for the progressbar
         message: Dict[str, Any] = OrderedDict()
         for batch_idx, train_loss in enumerate(self.train_iter(pbar)):
             train_loss.drop_tensors()
             if batch_idx % self.config.log_interval == 0:
-                # get loss on a batch of validation data:
-                valid_loss = next(valid_loss_gen)
-                valid_loss.drop_tensors()
+                # get loss on a batch of validation data:if 
+                if valid_loss_gen is not None:
+                    valid_loss = next(valid_loss_gen)
+                    valid_loss.drop_tensors()
+                    message.update(valid_loss.to_pbar_message())
+                else:
+                    valid_loss = LossInfo(total_loss=0)
 
                 all_losses[self.state.global_step] = (train_loss, valid_loss)
 
                 message.update(train_loss.to_pbar_message())
-                message.update(valid_loss.to_pbar_message())
+                
                 pbar.set_postfix(message)
                 self.log({
                     "Train": train_loss,
@@ -547,8 +556,7 @@ class ExperimentBase(Serializable):
             valid_dataloader = self.get_dataloader(valid_dataloader)
         while True:
             for batch in valid_dataloader:
-                data = batch[0].to(self.model.in_device)
-                target = batch[1].to(self.model.out_device) if len(batch) == 2 else None
+                data, target = self.preprocess(batch)
                 yield self.test_batch(data, target, name="Valid")
         logger.info("Somehow exited the infinite while loop!")
 
@@ -558,7 +566,7 @@ class ExperimentBase(Serializable):
             data, target = self.preprocess(batch)
             yield self.train_batch(data, target)
 
-    def preprocess(self, batch: Union[Tuple[Tensor], Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Optional[Tensor]]:
+    def preprocess(self, batch: Union[Tuple[Tensor], Tuple[Tensor, Tensor], Tuple[Tuple[Tensor, Tensor], Tensor]]) -> Tuple[Tensor, Optional[Tensor]]:
         data = batch[0].to(self.model.in_device)
         target = batch[1].to(self.model.out_device) if len(batch) == 2 else None  # type: ignore
         return data, target
@@ -599,7 +607,7 @@ class ExperimentBase(Serializable):
         return total_loss.detach()
 
     def test_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
-        self.model.eval()
+        #self.model.eval()
         for batch in dataloader:
             data, target = self.preprocess(batch)
             yield self.test_batch(data, target)

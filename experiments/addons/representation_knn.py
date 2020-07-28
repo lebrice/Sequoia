@@ -58,8 +58,10 @@ class KnnAddon(ExperimentAddon):
             y_list: List[np.ndarray] = []
             for batch in pbar(dataloader, description):
                 x, y = self.preprocess(batch)
+                #y = self.model.rescale_target(y)
                 # We only do KNN with examples that have a label.
                 if y is not None:
+                    x, y, _ = self.model.preprocess_inputs(x,y, None)
                     h_x = self.model.encode(x)
                     h_x_list.append(h_x.detach().cpu().numpy())
                     y_list.append(y.detach().cpu().numpy())

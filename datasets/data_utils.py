@@ -18,9 +18,10 @@ def get_lab_unlab_idxs(labels: Tensor, p: float = 0.2):
     classes = np.unique(labels)
     # Ensure uniform distribution of labels
     np.random.shuffle(indices)
-    indices_train = [list(filter(lambda idx: labels[idx] == i, indices))[:] for i in classes] 
+    indices_train = [list(filter(lambda idx: labels[idx] == i, indices))[:] for i in classes]
     indices_train_lab = np.hstack([indices_train[i][:int(p*len(indices_train[i]))] for i in range(len(indices_train))])
     indices_train_unlab = np.hstack([indices_train[i][int(p*len(indices_train[i])):] for i in range(len(indices_train))])
+    #lab and unlab indicies dont overlap
     indices_train_lab = torch.from_numpy(indices_train_lab)
     indices_train_unlab = torch.from_numpy(indices_train_unlab)
 
@@ -49,7 +50,7 @@ def get_semi_sampler(labels, p:float=None):
     sampler_unlabelled = SubsetRandomSampler(indices_unlabelled)
     return sampler_train, sampler_unlabelled
 
-def train_valid_split(train_dataset: VisionDataset, valid_fraction: float=0.2) -> Tuple[VisionDataset, VisionDataset]:
+def train_valid_split(train_dataset: VisionDataset, valid_dataset: VisionDataset, valid_fraction: float=0.2) -> Tuple[VisionDataset, VisionDataset]:
     n = len(train_dataset)
     valid_len: int = int((n * valid_fraction))
     train_len: int = n - valid_len
@@ -60,7 +61,7 @@ def train_valid_split(train_dataset: VisionDataset, valid_fraction: float=0.2) -
     valid_indices = indices[:valid_len]
     train_indices = indices[valid_len:]
     train = Subset(train_dataset, train_indices)
-    valid = Subset(train_dataset, valid_indices)
+    valid = Subset(valid_dataset, valid_indices)
     logger.info(f"Training samples: {len(train)}, Valid samples: {len(valid)}")
     return train, valid
 

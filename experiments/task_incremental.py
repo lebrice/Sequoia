@@ -1,5 +1,6 @@
 import itertools
 import hashlib
+import copy
 from utils.logging_utils import get_logger  
 from collections import OrderedDict, defaultdict
 from dataclasses import InitVar, asdict, dataclass, fields
@@ -22,7 +23,7 @@ from torchvision.datasets import VisionDataset
 from torchvision.utils import save_image
 from datasets import Datasets
 from common.losses import (LossInfo, TrainValidLosses, get_supervised_accuracy,
-                           get_supervised_metrics)
+                           get_supervised_metrics, AUC_Meter)
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics, AROC
 from common.task import Task
 from datasets import DatasetConfig
@@ -34,6 +35,8 @@ from utils.json_utils import Serializable
 from tasks import Tasks
 from utils import utils
 from utils.utils import n_consecutive, roundrobin
+from tasks.simclr.simclr_task_ptl import SimCLRTrainDataTransform_
+from torchvision.transforms import Compose, ToPILImage, ToTensor
 
 from .experiment import Experiment
 
@@ -51,16 +54,16 @@ class TaskIncremental(Experiment):
         n_classes_per_task: int = 2
 
         #number of tasks
-        n_tasks: int = 0
+        n_tasks: int = 5
 
         # Wether to sort out the classes in the class_incremental setting.
-        random_class_ordering: bool = True
+        random_class_ordering: bool = False
         # Maximum number of epochs of self-supervised training to perform on the
         # task data before switching to supervised training.
         unsupervised_epochs_per_task: int = 0
         # Maximum number of epochs of supervised training to perform on each task's
         # dataset.
-        supervised_epochs_per_task: int = 5     
+        supervised_epochs_per_task: int = 1 
         
         #If `True`, accuracy will be used as a measure of performance. Otherwise, the total validation loss is used. Defaults to False.
         use_accuracy_as_metric: bool = False
@@ -75,6 +78,19 @@ class TaskIncremental(Experiment):
         pretraining_dataset: DatasetConfig = choice({
                 d.name: d.value for d in Datasets
             }, default=Datasets.mnist.name)
+
+        #reinitialize after each task
+        reinit_each_step: bool = 0
+        #wether to apply simclr augmentation to training set
+        simclr_augment_train: bool = 0
+        #wether to apply simclr dobble  augmentation to training set
+        simclr_augment_train_dobble: bool = 0
+
+        #wether to apply simclr augmentation to test set
+        simclr_augment_test: bool = 0
+
+        #active_remembering  
+        active_remembering_epochs: int = 0
 
 
     @dataclass
@@ -104,6 +120,9 @@ class TaskIncremental(Experiment):
 
         # Cumulative losses after each task
         cumul_losses: List[Optional[LossInfo]] = list_field()
+
+
+        perf_meter: AUC_Meter = mutable_field(AUC_Meter, repr=False, init=False)
 
         # Experiment Configuration.
     config: Config = mutable_field(Config)     # Overwrite the type from Experiment.
@@ -142,7 +161,7 @@ class TaskIncremental(Experiment):
         # Keeps track of which tasks have some data stored in the replay buffer
         # (if using replay)
         self.tasks_in_buffer: List[Task] = []
-
+        
     def setup(self):
         """Prepare everything before training begins: Saves/restores state,
         loads the datasets, model weights, etc.
@@ -229,6 +248,7 @@ class TaskIncremental(Experiment):
         for i in range(self.state.i, self.n_tasks):
             self.state.i = i
             logger.info(f"Starting task {i} with classes {self.tasks[i]}")
+            self.log({"task/currently_learned_task": self.state.i})
 
             self.on_task_switch(self.tasks[i])
             # Training and validation datasets for task i.
@@ -319,17 +339,40 @@ class TaskIncremental(Experiment):
                 #     f"KNN/test/task{j}" : knn_j_test_acc,
                 # })
                 # self.state.knn_losses[i][j] = knn_j_test_loss
+                
 
-                if j <= i:
+                if j <= i: 
+                    self.model.current_task = self.tasks[j]
+
+                    # Measure the "quality" of the representations, by training and
+                    # evaluating a classifier on train and test data from task J.
+                    linear_j_train_loss, linear_j_test_loss = self.evaluate_MLP(
+                        train_j,
+                        test_j,
+                        description=f"Linear [{i}][{j}]"
+                    )
+                    linear_j_train_acc = linear_j_train_loss.metric.accuracy
+                    linear_j_test_acc = linear_j_test_loss.metric.accuracy
+                    logger.info(f"Task{i}: Linear Train Accuracy [{j}]: {linear_j_train_acc:.2%}")
+                    logger.info(f"Task{i}: Linear Test  Accuracy [{j}]: {linear_j_test_acc :.2%}")
+                    # Log the accuracies to wandb.
+                    self.log({
+                        f"Linear/train/task{j}": linear_j_train_acc,
+                        f"Linear/test/task{j}" : linear_j_test_acc,
+                    })
+
                     # If we have previously trained on this task:
-                    self.on_task_switch(self.tasks[j])
+                    #self.on_task_switch(self.tasks[j])
+                    #instruct the model to take the output head on the task j
+                    
+                    
 
                     # Test on the test dataset for task j.
                     loss_j = self.test(test_j, description=f"Task{i}: Test on Task{j}", name=f"Task{j}")
                     self.log({f"Task_losses/Task{j}": loss_j})
                     
                     if j==i:
-                        self.log({f"Test_full/Final": loss_j})
+                        self.log({f"Test_full_Final": loss_j})
                     
                     self.state.task_losses[i][j] = loss_j
                     # Merge the metrics from this task and the other tasks.
@@ -429,7 +472,6 @@ class TaskIncremental(Experiment):
             if self.model.hparams.freeze_pretrained_model:
                     self.model = self.freeze_encoder(self.model)
 
-
     def on_task_switch(self, task: Optional[Task], **kwargs) -> None:
         """Called when a task boundary is reached.
 
@@ -482,6 +524,8 @@ class TaskIncremental(Experiment):
             kwargs.setdefault("train_loader", train_loader)
 
         self.model.on_task_switch(task, **kwargs)
+        if self.config.reinit_each_step and self.state.i>0:    
+            self.model.reset_encoder_parameters()
 
     def update_replay_buffer(self, new_task: Task, new_task_loader: DataLoader) -> None:
         """Update the replay buffer, adding data for the new task.
@@ -524,6 +568,34 @@ class TaskIncremental(Experiment):
         # Count how many samples of each class are in the buffer.
         logger.info(f"# of samples per class in Replay buffer: {self.replay_buffer.samples_per_class()}")
         
+    def preprocess(self, batch: Union[Tuple[Tensor], Tuple[Tensor, Tensor], Tuple[Tuple[Tensor,Tensor], Tensor]]) -> Tuple[Tensor, Optional[Tensor]]:
+        if len(batch)==1:
+            if isinstance(batch[0], tuple) or isinstance(batch[0], list):
+                batch = (torch.stack(batch[0], dim=1))#.transpose(1,0),)
+        elif isinstance(batch[0], tuple) or isinstance(batch[0], list):
+            batch[0] = torch.stack(batch[0], dim=1)#.transpose(1,0)
+        data, target = super().preprocess(batch)
+        #use simclr augmentation
+        #if self.config.simclr_augment and self.model.training: 
+        #    from tasks.simclr.simclr_task_ptl import SimCLRTrainDataTransform_
+        #    from torchvision.transforms import Compose, ToPILImage
+        #    transform = Compose([ToPILImage(), SimCLRTrainDataTransform_(dobble=False, input_height=data.shape[-1])])
+        #    dev = data.device
+        #    data = torch.stack([torch.stack(transform(x_i)) for x_i in data.cpu()], dim=0)  # [2*B, C, H, W]    
+        #    data = data.view((-1, *data.shape[2:])).to(dev)
+        #    target = torch.cat([target,target], dim=0)
+        return data, target
+        
+    # @property
+    # def checkpoints_dir(self) -> Path:
+    #     return self.config.log_dir / ("checkpoints"+self.md5)
+    
+    # @property
+    # def md5(self):
+    #     from tasks.byol_task import BYOL_Task
+    #     return hashlib.md5(str(self).encode('utf-8')+str(Classifier.HParams).encode('utf-8')+str(BYOL_Task.Options).encode('utf-8')).hexdigest()
+
+
     
     def choose_samples_to_go_in_buffer(self, samples: Iterable[Tuple[Tensor, Tensor]],
                                              n_samples: int) -> Iterable[Tuple[Tensor, Tensor]]:
@@ -556,10 +628,10 @@ class TaskIncremental(Experiment):
 
 
     def log(self, message: Dict[str, Any], step: int=None, once: bool=False, prefix: str=""):
-        if not once:
+        #if not once:
             # We add the currently learned task to the logged message, if logging
             # periodically. (`once` is not True)
-            message.setdefault("task/currently_learned_task", self.state.i)
+        #    message.setdefault("task/currently_learned_task", self.state.i)
         super().log(message, step=step, once=once, prefix=prefix)
 
     def make_transfer_grid_figure(self,
@@ -708,8 +780,7 @@ class TaskIncremental(Experiment):
         # Create the tasks, if they aren't given.
         classes = list(range(dataset.num_classes))
         if self.config.random_class_ordering:
-            shuffle(classes)
-        
+            shuffle(classes)        
         for i, label_group in enumerate(n_consecutive(classes, self.config.n_classes_per_task)):
             task = Task(index=i, classes=sorted(label_group))
             tasks.append(task)
@@ -720,7 +791,50 @@ class TaskIncremental(Experiment):
         if self.config.unsupervised_epochs_pretraining>0:
                     pretrain_train_dataset, _ = self.config.pretraining_dataset.load(data_dir=self.config.data_dir)
                     self.pretrain_train_dataset, self.pretrain_valid_dataset = train_valid_split(pretrain_train_dataset, 0.2)
-                
+    
+    def test(self, dataloader: Union[Dataset, DataLoader], description: str = None, name: str = "Test") -> LossInfo:
+        model_st_dict_before = None
+        optimizer_st_dict_before = None
+        remembering_losses = LossInfo()
+        tasks_copy = None
+        if self.config.active_remembering_epochs>0 and 'Task' in name and self.state.j != self.state.i:
+            #we copy the model and do some epochs on test data
+            model_st_dict_before = copy.deepcopy(self.model.state_dict())
+            optimizer_st_dict_before = copy.deepcopy(self.model.optimizer.state_dict())
+            tasks_copy = self.model.copy_tasks()
+            if isinstance(dataloader, Dataset):
+                dataloader = self.get_dataloader(dataloader)
+            for g in self.model.optimizer.param_groups:
+                g['lr'] = 0.001
+            _ = self.train(
+                        train_dataloader=unlabeled(dataloader),
+                        valid_dataloader=None,
+                        test_dataloader=dataloader,
+                        epochs=self.config.active_remembering_epochs,
+                        description=f"{name} Remembering (Unsupervised)",
+                        temp_save_dir=self.checkpoints_dir / f"{name}_remembering",
+                    )
+        loss_info = super().test(dataloader, description=description, name=name)
+        #if 'Cumulative' in name:
+        loss_info = self.state.perf_meter.update(loss_info).detach()
+        #log validation EPOCH performance
+        if loss_info.name=='Valid_full':
+            self.log({'Valid_full':loss_info.to_dict()})
+        
+        #reload the model as before the remembering phase
+        if model_st_dict_before is not None:
+            self.model.load_state_dict(model_st_dict_before)
+        if optimizer_st_dict_before is not None:
+            self.model.optimizer.load_state_dict(optimizer_st_dict_before)
+        for g in self.model.optimizer.param_groups:
+            g['lr'] = self.model.hparams.learning_rate
+        if tasks_copy is not None:
+            for name, task in self.model.tasks.items():
+                if name in  tasks_copy.keys() and task.enabled:
+                        task = copy.deepcopy(tasks_copy.get(name))
+            del tasks_copy
+        return loss_info 
+    
 
     def load_task_datasets(self, tasks: List[Task]) -> None:
         """Create the train, valid, test, and cumulative valid & test datasets
@@ -729,7 +843,26 @@ class TaskIncremental(Experiment):
         self.pretrain_train_dataset = None
         self.pretrain_valid_dataset = None
         # download the dataset.
-        train_dataset, valid_dataset, test_dataset = super().load_datasets()
+        
+        transform_train = None
+        transform_test = None
+        transform_valid = None    
+
+        if self.config.simclr_augment_train and not self.config.simclr_augment_test :
+                from tasks.simclr.simclr_task_ptl import SimCLRTrainDataTransform_
+                transform_train = Compose([ToTensor(), ToPILImage(), SimCLRTrainDataTransform_(dobble=self.config.simclr_augment_train_dobble, input_height=self.config.dataset.x_shape[-1])])
+                transform_test = ToTensor()
+                transform_valid = ToTensor()
+                #in order not to effect validation dataset subset, which refers tot he same underlying dataset
+
+        elif self.config.simclr_augment_train and self.config.simclr_augment_test:
+                from tasks.simclr.simclr_task_ptl import SimCLRTrainDataTransform_, SimCLREvalDataTransform_
+                transform_train = SimCLRTrainDataTransform_(dobble=self.config.simclr_augment_train_dobble, input_height=self.config.dataset.x_shape[-1])
+                transform_valid = SimCLREvalDataTransform_(dobble=self.config.simclr_augment_train_dobble, input_height=self.config.dataset.x_shape[-1])
+                transform_test = SimCLREvalDataTransform_(dobble=self.config.simclr_augment_train_dobble, input_height=self.config.dataset.x_shape[-1])
+                #in order not to effect validation dataset subset, which refers tot he same underlying dataset
+
+        train_dataset, valid_dataset, test_dataset = self.load_datasets(train_transform =transform_train,valid_transform =transform_valid,test_transform = transform_test)
         assert valid_dataset # We have a validation dataset.
         self.full_train_dataset = train_dataset
         self.full_valid_dataset = valid_dataset
@@ -739,11 +872,19 @@ class TaskIncremental(Experiment):
         self.train_datasets.clear()
         self.valid_datasets.clear()
         self.test_datasets.clear()
+        
 
         for i, task in enumerate(tasks):
+            #train_dataset_ = copy.deepcopy(train_dataset)
             train = ClassSubset(train_dataset, task)
+
+            #valid_dataset_ = copy.deepcopy(valid_dataset)
             valid = ClassSubset(valid_dataset, task)
-            test  = ClassSubset(test_dataset, task)
+            #valid.dataset.dataset.target_transform = target_transform
+
+            #test_dataset_ = copy.deepcopy(test_dataset)
+            test  = ClassSubset(test_dataset, task) 
+            #test.dataset.target_transform = target_transform
 
             self.train_datasets.append(train)
             self.valid_datasets.append(valid)
@@ -783,6 +924,10 @@ class TaskIncremental(Experiment):
             param.requires_grad = False
         return model
 
+    def train_epoch(self, epoch, *args, **kwargs):
+        self.log({'tasks/epoch':epoch+( (self.config.supervised_epochs_per_task+self.config.unsupervised_epochs_per_task) * self.state.i)})
+        return super().train_epoch(epoch, *args, **kwargs)
+
     def init_model(self) -> Classifier:
         model = super().init_model()
         if self.config.unsupervised_epochs_pretraining > 0:
@@ -808,11 +953,13 @@ class TaskIncremental(Experiment):
         return super().started and checkpoint_exists
 
 
+
 if __name__ == "__main__":
     from simple_parsing import ArgumentParser
     parser = ArgumentParser()
     
     parser.add_arguments(TaskIncremental, dest="experiment")
+    parser.add_arguments(DatasetConfig, dest="dataset_config")
 
     args = parser.parse_args()
     experiment: TaskIncremental = args.experiment

@@ -11,3 +11,5 @@ tqdm
 matplotlib
 numpy
 pandas
+pytorch-lightning-bolts
+pytorch-lightning

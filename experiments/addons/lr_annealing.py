@@ -66,6 +66,6 @@ class LRannealer(ExperimentAddon):
             assert epoch!=None
             assert epoch_length!= None
             assert update_number!=None
-            current_lr = self.adjust_learning_rate(self.model.optimizer, epoch, update_number, epoch_length, self.config.supervised_epochs_per_task)
+            current_lr = self.adjust_learning_rate(self.model.optimizer, epoch, update_number, epoch_length, self.config.supervised_epochs_per_task+self.config.unsupervised_epochs_per_task)
             self.log({'lr':current_lr})
         return super().step(global_step=global_step, epoch=epoch, epoch_length=epoch_length, update_number=update_number, **kwargs)

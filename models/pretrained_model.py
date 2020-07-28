@@ -72,5 +72,8 @@ def get_pretrained_encoder(hidden_size: int,
             f" (last layer is :{classifier}).\n"
             "Returning the model as-is."
         )
+
+    if hasattr(encoder, 'maxpool'):
+        setattr(encoder, 'maxpool', nn.Identity())
     return encoder
     
