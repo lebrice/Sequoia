@@ -43,8 +43,6 @@ class RLSetting(ActiveSetting[ObservationType, RewardType, ActionType]):
         print(self.train_env.action_space)
         exit()
 
-
-
     def prepare_data(self, *args, **kwargs):
         gym_env_name = self.available_datasets[self.dataset]
         self.train_env = GymEnvironment(gym_env_name)

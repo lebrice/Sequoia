@@ -41,11 +41,11 @@ class GymEnvironment(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationTy
     @log_calls
     def __next__(self) -> ObservationType:
         """ Generate the next observation. """
-        self._step(self.action)
+        self.step(self.action)
         return self.next_state
 
     @log_calls
-    def _step(self, action: ActionType):
+    def step(self, action: ActionType):
         self._i.value += 1
 
         state, self.reward, self.done, self.info = self.env.step(action)
@@ -53,6 +53,7 @@ class GymEnvironment(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationTy
             self.state = self.env.render(mode="rgb_array")
         else:
             self.state = state
+        return self.state, self.reward, self.done, self.info 
 
     
     @log_calls
