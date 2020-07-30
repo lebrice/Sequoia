@@ -18,6 +18,7 @@ from common.metrics import RegressionMetrics, get_metrics
 from simple_parsing import mutable_field, choice
 from simple_parsing.helpers import Serializable
 from tasks.auxiliary_task import AuxiliaryTask
+from tasks.byol_task import BYOL_loss
 
 from pl_bolts.models.self_supervised import SimCLR
 from pl_bolts.models.self_supervised.simclr.simclr_module import Projection
@@ -108,55 +109,55 @@ class SimCLRTask(AuxiliaryTask, SimCLR):
         self.projector_lt = None
 
         self.current_task: Task = Task(index=0)
-        #self.u_loss_lt = F.mse_loss
 
         if self.options.lt_loss == 'pkt':
             self.distil_loss_lt = PKT()
         elif self.options.lt_loss == 'crd':
+            raise NotImplementedError
             self.distil_loss_lt = CRDLoss(nce_k=16384, nce_t = 0.07, nce_m = 0.5, s_dim = self.options.repr_dim, t_dim = self.options.repr_dim, feat_dim = self.options.proj_dim, n_data = 1000)
-        
-        self.l_lt = None
+        else:
+            self.distil_loss_lt = BYOL_loss()
+
+        #factor for distilation loss: used to at the beginning of a task to bring simnclr loss and distillation loss on the same scale
+        self.factor_loss_lt = None
     
     
-    @staticmethod
-    def u_loss_lt(x, y):
-        return -2 * F.cosine_similarity(x,y).mean()#(x * y).sum(dim=-1)
     
     def init_encoder(self):
         return AuxiliaryTask.encoder
     
     def init_projection(self):
         return LinearHead(self.options.repr_dim, self.options.repr_dim*2, self.options.proj_dim)
-        #return Projection(input_dim=AuxiliaryTask.hidden_size, output_dim = 128)
     
     def forward(self, x):
         h = self.encoder(x)
-        h = F.normalize(h, p=2, dim=1)
         z = self.projection(h.view(-1,self.options.repr_dim))
         return h, z
 
-    def training_step(self, img_1, img_2, img_3, y, batch_idx, name):
+    def training_step(self, img_1, img_2, y, batch_idx, name):
         #if isinstance(self.datamodule, STL10DataModule):
         #    labeled_batch = batch[1]
         #    unlabeled_batch = batch[0]
         #    batch = unlabeled_batch
 
         #(img_1, img_2), y = batch
+
         h1, z1 = self.forward(img_1)
-        z1 = F.normalize(z1, p=2, dim=1)
+        z1_norm = F.normalize(z1, p=2, dim=1)
         h2, z2 = self.forward(img_2)
-        z2 = F.normalize(z2, p=2, dim=1)
+        z2_norm = F.normalize(z2, p=2, dim=1)
 
         loss_lt = None
+        #long term loss: distilation of representation between the tasks
         if self.current_task.index>0 and self.options.lt_lambda>0:
             with torch.no_grad():
                 h3_1 = self.encoder_lt(img_1)
                 z3_1 = self.projector_lt(h3_1)
-                z3_1 = F.normalize(z3_1, p=2, dim=1)
+                z3_1_norm = F.normalize(z3_1, p=2, dim=1)
 
                 h3_2 = self.encoder_lt(img_2)   
                 z3_2 = self.projector_lt(h3_2)  
-                z3_2 = F.normalize(z3_2, p=2, dim=1)
+                z3_2_norm = F.normalize(z3_2, p=2, dim=1)
 
             #lt losses
             if self.options.l_distil == 'repr':
@@ -172,18 +173,28 @@ class SimCLRTask(AuxiliaryTask, SimCLR):
 
                 lt_q_1 = z1
                 lt_q_2 = z2
+            
+            if not isinstance(self.distil_loss_lt, CRDLoss) and not isinstance(self.distil_loss_lt, PKT):
+                # CRD and PKT normalize internaly
+                lt_target_1 = F.normalize(lt_target_1, p=2, dim=1)
+                lt_target_2 = F.normalize(lt_target_2, p=2, dim=1)
+
+                lt_q_1 = F.normalize(lt_q_1, p=2, dim=1)
+                lt_q_2 = F.normalize(lt_q_2, p=2, dim=1)
 
             loss_lt_1 = self.distil_loss_lt(lt_q_1, lt_target_2.detach())
             loss_lt_2 = self.distil_loss_lt(lt_q_2, lt_target_1.detach())
             loss_lt = ((loss_lt_1 + loss_lt_2)/2)
 
         
-        loss_ntx = self.loss_func(z1, z2, self.options.loss_temperature)
+        loss_ntx = self.loss_func(z1_norm, z2_norm, self.options.loss_temperature)
 
         if loss_lt is not None:
-            if self.l_lt is None:
-                self.l_lt = (loss_ntx / loss_lt).detach()
-            loss_lt = 0.5 * (self.l_lt * loss_lt)
+            if self.factor_loss_lt is None:
+                #set once at the beginning of a task
+                self.factor_loss_lt = (loss_ntx / loss_lt).detach()
+
+            loss_lt = 0.5 * (self.factor_loss_lt * loss_lt)
             loss_ntx = 0.5 * loss_ntx
             loss_into_lt = LossInfo(name=f'{name}_{self.options.lt_loss}', total_loss=loss_lt)
             loss_info_ntx = LossInfo(name='{name}_ntx_loss', total_loss=loss_ntx)
@@ -197,22 +208,25 @@ class SimCLRTask(AuxiliaryTask, SimCLR):
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tuple[LossInfo, Tensor, Tensor]:
         rg = x.requires_grad
-        x = self.preprocess_simclr(x)
-        im_q, im_k, im_lt = x.transpose(0,1)
+
+        if len(x.shape)==4:
+            x = self.preprocess(x)
+        elif len(x.shape)==5:
+            pass
+        else:
+            raise Exception(f'wrong X shape {x.shape}')
+
+        im_q, im_k = x.transpose(0,1)
+
         im_q.requires_grad_(rg)
         im_k.requires_grad_(rg)
-        im_lt.requires_grad_(rg)
+
         if self.encoder.training:
-            loss, h = self.training_step(im_q, im_k, im_lt, y, batch_idx=0, name='train')
-            #loss_info = LossInfo(name=self.name, total_loss=loss)
+            loss, h = self.training_step(im_q, im_k, y, batch_idx=0, name='train')
         else:
             loss, h = self.training_step(im_q, im_k, im_lt, y, batch_idx=0, name='valid')
-            #loss_info = LossInfo(name=self.name, total_loss=loss)
-        #try:
-        #    loss_info.metrics = result['log']
-        #except:
-        #    pass
-        return (im_q,im_k), loss, h
+        #we return concateneted augmentations of images, loss, and concateneted hidden representations
+        return torch.cat([im_q,im_k], dim=0), loss, torch.cat(h, dim=0)
 
     def preprocess_simclr(self, data:Tensor) -> Tensor:
         x_device = data.device
@@ -225,12 +239,11 @@ class SimCLRTask(AuxiliaryTask, SimCLR):
 
     def on_task_switch(self, new_task: Task, **kwargs) -> None:
         if new_task.index > self.current_task.index:
-            #if self.options.lt_lambda>0:
-            #self._update_lt_target_network()
-            #self.previous_task = new_task
-            #current encoder becomes long-term techer for the encoder model
             self.current_task = new_task
-            self.l_lt = None
+            self.factor_loss_lt = None
             if self.enabled:
                 self.encoder_lt = copy.deepcopy(self.encoder).to(self.device)
-                self.projector_lt = copy.deepcopy(self.projection).to(self.device)#LinearHead(self.options.repr_dim,  self.options.repr_dim*2, self.options.proj_dim)
+                self.projector_lt = copy.deepcopy(self.projection).to(self.device)#
+                if torch.cuda.device_count() > 1:
+                    print("Let's use", torch.cuda.device_count(), "GPUs!")
+                    self.projector_lt = nn.DataParallel(self.projector_lt)

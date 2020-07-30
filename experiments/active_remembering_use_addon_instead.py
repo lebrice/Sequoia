@@ -36,7 +36,7 @@ class ActiveRemembering(TaskIncremental):
     class Config(TaskIncremental.Config):
         """Config for the active remembering experiment. """
         # The maximum number of epochs to train on when remembering without labels.
-        remembering_max_epochs: int = 1
+        remembering_max_epochs: int = 0
 
     config: Config = mutable_field(Config)
 

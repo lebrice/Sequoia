@@ -97,8 +97,8 @@ class LinearClassifierAddon(ExperimentAddon):
         nce_t = log_loss(y_true=yt, y_pred=y_t_prob, labels=classes)
         
 
-        train_loss = LossInfo("Linear", total_loss=nce, y_pred=y_logits, y=y)
-        test_loss = LossInfo("Linear", total_loss=nce_t, y_pred=y_t_logits, y=yt)
+        train_loss = LossInfo("Linear_train", total_loss=nce, y_pred=y_logits, y=y)
+        test_loss = LossInfo("Linear_test", total_loss=nce_t, y_pred=y_t_logits, y=yt)
         del X, Xt, yt, y
 
         return train_loss, test_loss
@@ -154,10 +154,13 @@ class LinearClassifierAddon(ExperimentAddon):
 
         nce = log_loss(y_true=y, y_pred=y_prob, labels=classes)
         nce_t = log_loss(y_true=yt, y_pred=y_t_prob, labels=classes)
-        
 
-        train_loss = LossInfo("Linear", total_loss=nce, y_pred=y_logits, y=y)
-        test_loss = LossInfo("Linear", total_loss=nce_t, y_pred=y_t_logits, y=yt)
+        from tasks.tasks import Tasks
+        train_loss = LossInfo("Linear_train")
+        train_loss= train_loss + LossInfo(Tasks.SUPERVISED, total_loss=nce, y_pred=y_logits, y=y)
+
+        test_loss = LossInfo("Linear_test")
+        test_loss = test_loss + LossInfo(Tasks.SUPERVISED, total_loss=nce_t, y_pred=y_t_logits, y=yt)
         del X, Xt, yt, y
 
         return train_loss, test_loss

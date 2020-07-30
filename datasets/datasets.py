@@ -15,12 +15,6 @@ from typing import Callable
 from pl_bolts.models.self_supervised.simclr import SimCLREvalDataTransform, SimCLRTrainDataTransform
 
 
-class tmp(object):
-    def __call__(self, y):
-        return np.array([y, y])
-    def __repr__(self):
-        return self.__class__.__name__ + '()'  
-
 @dataclass
 class DatasetsHParams(Serializable):
     """ Options for dataset """
@@ -58,8 +52,8 @@ class Datasets(Enum):
         CIFAR100,
         x_shape=(3,32,32),
         num_classes=100,
-        transforms = ToTensor(), #Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))]),
-        transforms_test = ToTensor(), #Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))])
+        transforms = ToTensor(),
+        transforms_test = ToTensor(), 
     )
     cifar100_normalized = DatasetConfig(
         CIFAR100,
@@ -68,9 +62,7 @@ class Datasets(Enum):
         transforms = Compose([ToTensor(), Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))]),
         transforms_test = Compose([ToTensor(), Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))])
     )
-
-
-
+    
     cifar100_simclrtrnsform = DatasetConfig(
         CIFAR100,
         x_shape=(3,32,32),

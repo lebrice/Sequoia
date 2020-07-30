@@ -21,7 +21,8 @@ from simple_parsing.helpers import Serializable
 from tasks.auxiliary_task import AuxiliaryTask
 
 from utils import cuda_available
-from tasks.simclr.simclr_task_ptl import SimCLREvalDataTransform_, SimCLRTrainDataTransform_
+from pl_bolts.models.self_supervised.simclr import SimCLREvalDataTransform, SimCLRTrainDataTransform
+#from tasks.simclr.simclr_task_ptl import SimCLREvalDataTransform_, SimCLRTrainDataTransform_
 
 try:
     from .simclr.falr_nt.falr.source.models import BYOL, LinearHead
@@ -55,27 +56,20 @@ class BYOL_Task(AuxiliaryTask, BYOL):
     class Options(AuxiliaryTask.Options):
         """ Options for the SimCLR aux task. """
         # Hyperparameters from the falr submodule.
-        #coefficient: int = 1
+        #coefficient: int = 1 #this one is set in 'aux_task', can b e hardcoded here for debuging
 
         byol_options: FalrHParams = mutable_field(FalrHParams)
 
-        byol_momentum: float = 0.99 # the moving average decay factor for the target encoder
-
-        #byol_lt_momentum: float = 0.99
+        # the moving average decay factor for the target encoder
+        byol_momentum: float = 0.99 
 
         # the projection size
         proj_dim: int = 128 # the projection size
 
         #weight given to the long term loss (it 0 its not used)
         lt_lambda: float = 0.
-
-        #whether to use predictor for cl
-        #byol_use_predictor_cl: bool = 0
-
-        #use_cosine_distil
-        #use_cosine_distil: bool = True
-
-        #which distilation loss to use
+        
+        #which distilation loss to use between the tasks
         lt_loss: str = choice(['crd', 'pkt','cosine'], default='pkt')
 
         #where to apply distilation loss
@@ -96,8 +90,8 @@ class BYOL_Task(AuxiliaryTask, BYOL):
         self.options.repr_dim = AuxiliaryTask.hidden_size
 
         ###init BYOLD###
-        #self.u_loss_fn =  F.cosine_similarity #F.mse_loss
         self.m = self.options.byol_momentum
+        self.u_loss_fn = BYOL_loss()
 
         # Online network
         self.projector = LinearHead(self.options.repr_dim, self.options.repr_dim*2, self.options.proj_dim)
@@ -108,7 +102,7 @@ class BYOL_Task(AuxiliaryTask, BYOL):
         
         self.projector_t = LinearHead(self.options.repr_dim,  self.options.repr_dim*2, self.options.proj_dim)
 
-        #these targets are updated after each task
+        #long-term targets: these target networks are updated after each task (see on def on_task_switch)
         if self.options.lt_lambda>0:
             self.encoder_lt = copy.deepcopy(self.encoder)
             self.projector_lt = LinearHead(self.options.repr_dim,  self.options.repr_dim*2, self.options.proj_dim)
@@ -124,28 +118,21 @@ class BYOL_Task(AuxiliaryTask, BYOL):
                 self.projector_lt = nn.DataParallel(self.projector_lt)
                 self.predictor_lt = nn.DataParallel(self.predictor_lt)
 
-
         for param_t in self.encoder_t.parameters():
             param_t.requires_grad = False  # not update by gradient
         for param_t in self.projector_t.parameters():
             param_t.requires_grad = False  # not update by gradient
 
-        self.transform_train =  Compose([ToPILImage(), SimCLRTrainDataTransform_(input_height=self.options.image_size)]) # img1, img2
-        self.transform_eval = Compose([ToPILImage(), SimCLREvalDataTransform_(input_height=self.options.image_size)])
+        self.transform_train =  Compose([ToPILImage(), SimCLRTrainDataTransform(input_height=self.options.image_size)]) # img1, img2
+        self.transform_eval = Compose([ToPILImage(), SimCLREvalDataTransform(input_height=self.options.image_size)])
 
         if self.options.lt_loss == 'pkt':
             self.distil_loss_lt = PKT()
         elif self.options.lt_loss == 'crd':
+            raise NotImplementedError
             self.distil_loss_lt = self.options.lt_loss(nce_k=16384, nce_t = 0.07, nce_m = 0.5, s_dim = self.options.repr_dim, t_dim = self.options.repr_dim, feat_dim = self.options.proj_dim, n_data = self.current_task.n_data_points)
         else:
             self.distil_loss_lt = BYOL_loss()
-    #@property
-    #def m_lt(self):
-    #    return self.options.byol_lt_momentum
-
-    @staticmethod
-    def u_loss_fn(x, y):
-        return -2 * F.cosine_similarity(x,y).mean() #(x * y).sum(dim=-1)
 
     @property
     def encoder(self) -> nn.Module:
@@ -170,6 +157,7 @@ class BYOL_Task(AuxiliaryTask, BYOL):
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Tuple[LossInfo, Tensor, Tensor]:
         rg = x.requires_grad
+
         if len(x.shape)==4:
             x = self.preprocess(x)
         elif len(x.shape)==5:
@@ -178,15 +166,12 @@ class BYOL_Task(AuxiliaryTask, BYOL):
             raise Exception(f'wrong X shape {x.shape}')
         
         im_q, im_k = x.transpose(0,1)
-        
         im_q.requires_grad_(rg)
         im_k.requires_grad_(rg)
         loss, q_e = self.forward(im_q, im_k, None)
-        #loss = self.u_loss_fn(u_logits, u_target[0])
-        # for u_t in u_target[1:]:
-        #     if self.current_task.index>0:
-        #         loss +=  self.options.lt_lambda * self.u_loss_fn(u_logits, u_t)
         loss_info = LossInfo(name=self.name, total_loss=loss)
+
+        #we return concateneted augmentations of images, loss, and concateneted hidden representations
         return torch.cat([im_q,im_k], dim=0), loss_info, torch.cat(q_e, dim=0)
 
     def preprocess(self, data:Tensor) -> Tensor:
@@ -251,40 +236,22 @@ class BYOL_Task(AuxiliaryTask, BYOL):
             if self.options.l_distil == 'repr':
                 cl_k1 = k_e_1_lt
                 cl_k2 = k_e_2_lt
-
                 cl_q1 = q_e_1
                 cl_q2 = q_e_2
 
             elif self.options.l_distil == 'proj':
                 cl_k1 = k_1_lt_proj
                 cl_k2 = k_2_lt_proj
-
                 cl_q1 = q_1_proj
                 cl_q2 = q_2_proj
             
             if not isinstance(self.distil_loss_lt, CRDLoss) and not isinstance(self.distil_loss_lt, PKT):
+                # CRD and PKT normalize internaly
                 cl_k1 = F.normalize(cl_k1, p=2, dim=1)
                 cl_k2 = F.normalize(cl_k2, p=2, dim=1)
 
                 cl_q1 = F.normalize(cl_q1, p=2, dim=1)
                 cl_q2 = F.normalize(cl_q2, p=2, dim=1)
-
-            # if self.options.byol_use_predictor_cl:
-            #     q_1_proj_n = F.normalize(q_1_proj, p=2, dim=1)
-            #     q_2_proj_n = F.normalize(q_2_proj, p=2, dim=1) 
-            #     loss_lt_1 = self.u_loss_fn(q_1_proj_n, k_2_lt.detach())
-            #     loss_lt_2 = self.u_loss_fn(q_2_proj_n, k_1_lt.detach())
-            # elif self.options.use_cosine_distil:
-
-            #     loss_lt_1 = self.cosine_similarity_distil_loss(q_e_1, k_e_1_lt.detach())
-            #     loss_lt_2 = self.cosine_similarity_distil_loss(q_e_2, k_e_2_lt.detach())
-            
-            # else:
-            #     q_1_proj_n = F.normalize(q_1_proj, p=2, dim=1)
-            #     q_2_proj_n = F.normalize(q_2_proj, p=2, dim=1) 
-
-            #     k_1_lt_proj = F.normalize(k_1_lt_proj, p=2, dim=1)
-            #     k_2_lt_proj = F.normalize(k_2_lt_proj, p=2, dim=1) 
 
             loss_lt_1 = self.distil_loss_lt(cl_q2, cl_k1.detach())
             loss_lt_2 = self.distil_loss_lt(cl_q1, cl_k2.detach())
@@ -296,15 +263,11 @@ class BYOL_Task(AuxiliaryTask, BYOL):
         loss_2 = self.u_loss_fn(q_2, k_1.detach())
         loss = (loss_1 + loss_2)/2
         loss = loss + self.options.lt_lambda * loss_lt
-
+        #return loss and tuple of representations
         return loss, (q_e_1, q_e_2)
     
     def on_task_switch(self, new_task: Task, **kwargs) -> None:
         if new_task.index > self.current_task.index:
-            #if self.options.lt_lambda>0:
-            #self._update_lt_target_network()
-            #self.previous_task = new_task
-            #current encoder becomes long-term techer for the encoder model
             self.current_task = new_task
             if self.enabled:
                 self.encoder_lt = copy.deepcopy(self.encoder)
@@ -315,7 +278,3 @@ class BYOL_Task(AuxiliaryTask, BYOL):
                     print("Let's use", torch.cuda.device_count(), "GPUs!")
                     self.projector_lt = nn.DataParallel(self.projector_lt)
                     self.predictor_lt = nn.DataParallel(self.predictor_lt)
-
-                #if isinstance(self.distil_loss_lt, CRDLoss):
-                #    self.distil_loss_lt.criterion_t.n_data = new_task.n_data_points
-                #    self.distil_loss_lt.criterion_s.n_data = new_task.n_data_points

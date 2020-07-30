@@ -10,7 +10,6 @@ from torch.autograd import Variable
 from common.losses import LossInfo
 from simple_parsing import mutable_field
 from utils.logging_utils import get_logger 
-from tasks.simclr.simclr_task import SimCLRTask
 
 from .addon import ExperimentAddon
 

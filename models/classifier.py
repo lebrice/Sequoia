@@ -237,6 +237,9 @@ class Classifier(nn.Module):
             hidden_size=self.hidden_size
         )
 
+        # Dictionary of enabled auxiliary tasks.
+        self.active_tasks: Dict[str, AuxiliaryTask] = {name: task for name, task in self.tasks.items() if task.enabled}
+
         if self.config.debug and self.config.verbose:
             logger.debug(self)
             logger.debug("Auxiliary tasks:")
@@ -314,7 +317,6 @@ class Classifier(nn.Module):
             raise RuntimeError("Whole batch can either be fully labeled or "
                                "fully unlabeled, but not a mix of both (for now)")
         y = self.rescale_target(y)
-
         if self.hparams.l_gradient_penalty > 0:
             x.requires_grad_(True)
 
@@ -323,7 +325,7 @@ class Classifier(nn.Module):
         h_x = None
         x_aug = x
         if not self.hparams.entangle_sup:
-            #we do an extra forward pass for supervised part
+            #we do an extra forward pass to calculate supervised loss (othervise it is calculated on the augmented representations)
             h_x = self.encode(x)
             y_pred = self.logits(h_x)
             if isinstance(y_pred, tuple):
@@ -332,10 +334,10 @@ class Classifier(nn.Module):
         total_loss = LossInfo(name)
         total_loss.total_loss = torch.zeros(1, device=self.out_device)       
 
-        for task_name, aux_task in self.tasks.items():
-            if aux_task.enabled:
-                x, aux_task_loss, h_x = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=None, y=y) #), device=self.config.device)
-                total_loss += aux_task_loss
+        for task_name, aux_task in self.active_tasks.items():
+            #if aux_task.enabled:
+            x, aux_task_loss, h_x = aux_task.get_scaled_loss(x, h_x=h_x, y_pred=None, y=y) #), device=self.config.device)
+            total_loss += aux_task_loss
         if self.training:
             #h_x [2, bs, 515], x [bs, 2, c, h, w]
             x, y, h_x = self.preprocess_inputs(x, y, h_x)
@@ -516,9 +518,8 @@ class Classifier(nn.Module):
         # Setting the current_task attribute also creates the output head if needed.
         self.current_task = task
         # also inform the auxiliary tasks that the task switched.
-        for name, aux_task in self.tasks.items():
-            if aux_task.enabled:
-                aux_task.on_task_switch(task, **kwargs)
+        for name, aux_task in self.active_tasks.items():
+            aux_task.on_task_switch(task, **kwargs)
         self.current_task = task
 
     def get_output_head(self, task: Task) -> OutputHead:
@@ -555,9 +556,8 @@ class Classifier(nn.Module):
     def copy_tasks(self):
         import copy 
         copy_tasks = {}
-        for name, task in self.tasks.items():
-            if task.enabled:
-                copy_tasks.setdefault(name, copy.deepcopy(task))
+        for name, task in self.active_tasks.items():
+            copy_tasks.setdefault(name, copy.deepcopy(task))
         return copy_tasks
 
     @current_task.setter
@@ -597,10 +597,13 @@ class Classifier(nn.Module):
         # Update the classifier used by auxiliary tasks:
         AuxiliaryTask.classifier = task_head
 
-    def logits(self, h_x: Tensor) -> Tensor:
+    def logits(self, h_x: Tensor, task:Task = None) -> Tensor:
         if self.hparams.detach_classifier:
             h_x = h_x.detach()
-        return self.classifier.to(h_x.device)(h_x)
+        if task==None:
+            return self.classifier.to(h_x.device)(h_x)
+        else:
+            return self.get_output_head(task).to(h_x.device)(h_x)
     
     def load_state_dict(self, state_dict: Dict[str, Tensor], strict: bool=False) -> Tuple[List[str], List[str]]:
         starting_task = self.current_task
