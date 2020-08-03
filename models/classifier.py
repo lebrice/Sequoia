@@ -1,6 +1,7 @@
 import copy
 import os
 import hashlib
+from timeit import default_timer as timer
 from functools import partial
 from abc import ABC, abstractmethod
 from collections import OrderedDict
@@ -18,9 +19,9 @@ from pl_bolts.optimizers.layer_adaptive_scaling import LARS
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision import models
-from .CNN13 import CNN13
-from model_parallel import PipelineParallelResNet50
-from resnet_small import ResNet18
+from models.model_parallel import PipelineParallelResNet50
+from models.resnet_small import ResNet18
+from models.CNN13 import CNN13
 from torchvision.utils import save_image
 
 from common.layers import ConvBlock, Flatten
@@ -259,11 +260,22 @@ class Classifier(nn.Module):
             self.encoder = self.encoder.to(self.in_device)    
             self.default_output_head = self.default_output_head.to(self.out_device)
         else:
-            if torch.cuda.device_count() > 1:
-                print("Let's use", torch.cuda.device_count(), "GPUs!")
-                self.encoder = nn.DataParallel(self)
-                self.default_output_head = nn.DataParallel(self.default_output_head)
-                return
+            # if torch.cuda.device_count() > 1:
+            #     print("Let's use", torch.cuda.device_count(), "GPUs!")
+            #     #from utils.utils import convert_model
+            #     #self.encoder = convert_model(self.encoder)       
+            #     self.encoder = nn.DataParallel(self.encoder)
+            #     self.default_output_head = nn.DataParallel(self.default_output_head)
+                #return
+            
+            for name, task in self.active_tasks.items():
+                if torch.cuda.device_count() > 1:
+                    print("Let's use", torch.cuda.device_count(), "GPUs!")
+                    #from utils.utils import convert_model
+                    #self.encoder = convert_model(self.encoder)       
+                    taskr = nn.DataParallel(task)
+                    #self.default_output_head = nn.DataParallel(self.default_output_head)
+
             super().to(device, *args, **kwargs)
 
     def configure_optimizers(self):
@@ -289,9 +301,18 @@ class Classifier(nn.Module):
                               y: Tensor,
                               h_x: Tensor=None, 
                               y_pred: Tensor=None) -> LossInfo:
+                              
+        
+        if y_pred is None:
+            y = self.rescale_target(y)
+            x, y, _ = self.preprocess_inputs(x, y)
+
+        #start = timer()  
         h_x = self.encode(x) if h_x is None else h_x
         y_pred = self.logits(h_x) if y_pred is None else y_pred
         y = y.view(-1)
+        #end = timer()
+        #print("metrics ", end - start)
 
         loss_f = self.classification_loss
         #input mixup on labeled samples
@@ -300,8 +321,8 @@ class Classifier(nn.Module):
         loss = loss_f(y_pred, y)
         #assert x.shape[0]==h_x.shape[0]==y_pred.shape[0]==y.shape[0]
         metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
+        
         loss_info = LossInfo(
-
             name=Tasks.SUPERVISED,
             total_loss=loss,
             tensors=(dict(x=x, h_x=h_x, y_pred=y_pred, y=y)),
@@ -309,7 +330,8 @@ class Classifier(nn.Module):
         loss_info.metrics[Tasks.SUPERVISED] = metrics
         return loss_info
 
-    def get_loss(self, x: Union[Tensor, Dict[str, Tensor]], y: Tensor=None, name: str="") -> LossInfo:
+        
+    def get_loss(self, x: Union[Tensor, Dict[str, Tensor]], y: Tensor=None, name: str=""):
         if isinstance(x, dict):
             # TODO: Select which 'augmented' input to use.
             pass
@@ -601,7 +623,7 @@ class Classifier(nn.Module):
         if self.hparams.detach_classifier:
             h_x = h_x.detach()
         if task==None:
-            return self.classifier.to(h_x.device)(h_x)
+            return self.classifier(h_x)#.to(h_x.device)(h_x)
         else:
             return self.get_output_head(task).to(h_x.device)(h_x)
     
@@ -643,8 +665,8 @@ class Classifier(nn.Module):
                 if was_training:
                     self.train()
     
-    def reset_encoder_parameters(self):  
-        logger.into('Reinitializing the encoder')
+    def reset_encoder_parameters(self):
+        logger.info('Reinitializing the encoder')
         def weight_reset(m):
             if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
                 m.reset_parameters()

@@ -1,8 +1,9 @@
 import logging
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, TypeVar, Union
-
+import utils
 import tqdm
+import wandb
 
 logging.basicConfig(
     format='%(asctime)s,%(msecs)d %(levelname)-8s [%(name)s:%(lineno)d] %(message)s',
@@ -12,6 +13,18 @@ logging.basicConfig(
 # logging.getLogger('simple_parsing').addHandler(logging.NullHandler())
 root_logger = logging.getLogger()
 T = TypeVar("T")
+
+def log_wandb(message, step, prefix=None, print_message=False):
+    for k, v in message.items():
+            if hasattr(v, 'to_log_dict'):
+                message[k] = v.to_log_dict()
+    message = cleanup(message, sep="/")
+    if prefix:
+        message = utils.add_prefix(message, prefix)
+    wandb.log(message, step=step)
+    if print_message:
+        print(message)
+
 
 def pbar(dataloader: Iterable[T], description: str="", *args, **kwargs) -> Iterable[T]:
     kwargs.setdefault("dynamic_ncols", True)

@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 import copy
 from typing import List
+
+from timeit import default_timer as timer
 from functools import partial
 from typing import Tuple, Union, Optional
 import torch
@@ -108,15 +110,16 @@ class BYOL_Task(AuxiliaryTask, BYOL):
             self.projector_lt = LinearHead(self.options.repr_dim,  self.options.repr_dim*2, self.options.proj_dim)
             self.predictor_lt = LinearHead(self.options.proj_dim, self.options.repr_dim*2, self.options.proj_dim)
 
-        if torch.cuda.device_count() > 1:
-                print("Let's use", torch.cuda.device_count(), "GPUs!")
-                self.encoder_t = nn.DataParallel(self.encoder_t)
-                self.projector_t = nn.DataParallel(self.projector_t)
-                self.projector = nn.DataParallel(self.projector)
-                self.predictor = nn.DataParallel(self.predictor)
-                self.encoder_lt = nn.DataParallel(self.encoder_lt)
-                self.projector_lt = nn.DataParallel(self.projector_lt)
-                self.predictor_lt = nn.DataParallel(self.predictor_lt)
+        # if torch.cuda.device_count() > 1:
+        #         print("Let's use", torch.cuda.device_count(), "GPUs!")
+        #         self.encoder_t = nn.DataParallel(self.encoder_t)
+        #         self.projector_t = nn.DataParallel(self.projector_t)
+        #         self.projector = nn.DataParallel(self.projector)
+        #         self.predictor = nn.DataParallel(self.predictor)
+        #         if self.options.lt_lambda>0:
+        #             self.encoder_lt = nn.DataParallel(self.encoder_lt)
+        #             self.projector_lt = nn.DataParallel(self.projector_lt)
+        #             self.predictor_lt = nn.DataParallel(self.predictor_lt)
 
         for param_t in self.encoder_t.parameters():
             param_t.requires_grad = False  # not update by gradient
@@ -168,7 +171,12 @@ class BYOL_Task(AuxiliaryTask, BYOL):
         im_q, im_k = x.transpose(0,1)
         im_q.requires_grad_(rg)
         im_k.requires_grad_(rg)
+        #start = timer()  
+
         loss, q_e = self.forward(im_q, im_k, None)
+        #end = timer()
+        #print("byol forward", end - start)
+
         loss_info = LossInfo(name=self.name, total_loss=loss)
 
         #we return concateneted augmentations of images, loss, and concateneted hidden representations
@@ -274,7 +282,7 @@ class BYOL_Task(AuxiliaryTask, BYOL):
                 
                 self.projector_lt = copy.deepcopy(self.projector)#LinearHead(self.options.repr_dim,  self.options.repr_dim*2, self.options.proj_dim)
                 self.predictor_lt = copy.deepcopy(self.predictor)
-                if torch.cuda.device_count() > 1:
-                    print("Let's use", torch.cuda.device_count(), "GPUs!")
-                    self.projector_lt = nn.DataParallel(self.projector_lt)
-                    self.predictor_lt = nn.DataParallel(self.predictor_lt)
+                # if torch.cuda.device_count() > 1:
+                #     print("Let's use", torch.cuda.device_count(), "GPUs!")
+                #     self.projector_lt = nn.DataParallel(self.projector_lt)
+                #     self.predictor_lt = nn.DataParallel(self.predictor_lt)

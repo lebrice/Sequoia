@@ -25,7 +25,7 @@ from config import Config as ConfigBase
 
 from datasets import Datasets, DatasetConfig
 
-from datasets.data_utils import train_valid_split
+from datasets.data_utils import train_valid_split, unlabeled
 from datasets.subset import ClassSubset, Subset
 from models.classifier import Classifier
 from simple_parsing import choice, field, mutable_field, subparsers
@@ -34,7 +34,7 @@ from utils.json_utils import Serializable
 from tasks import AuxiliaryTask, Tasks
 from utils import utils
 from utils.early_stopping import EarlyStoppingOptions, early_stopping
-from utils.logging_utils import cleanup, get_logger, pbar
+from utils.logging_utils import cleanup, get_logger, pbar, log_wandb
 from utils.save_job import SaverWorker, SaveTuple, save
 from utils.utils import add_prefix, common_fields, is_nonempty_dir
 
@@ -77,7 +77,7 @@ class ExperimentBase(Serializable):
         # Which dataset to use.
         dataset: DatasetConfig = choice({
             d.name: d.value for d in Datasets
-        }, default=Datasets.cifar100.name)
+        }, default=Datasets.cifar100_simclrtrnsform.name)
 
         # Path to restore the state from at the start of training.
         # NOTE: Currently, should point to a json file, with the same format as the one created by the `save()` method.
@@ -135,7 +135,6 @@ class ExperimentBase(Serializable):
             logger.setLevel(logging.DEBUG)
         
         # Background queue and worker for saving stuff to disk asynchronously.
-
         ctx = mp.get_context("spawn") 
         self.background_queue: ctx.Queue = ctx.Queue()
         self.saver_worker: Optional[SaverWorker] = None
@@ -155,16 +154,16 @@ class ExperimentBase(Serializable):
         """
         if self.config.verbose:
             logger.info(f"Experiment: {self.dumps_yaml(indent=4)}")
-            print("=" * 40)
+            print("=" * 40)     
+
+        logger.info(f"Launching experiment at log dir {self.config.log_dir}")
+
         
         if self.config.use_wandb:
             config_dict = self.to_dict()
             # Take out the `state` key from the config dict:
             config_dict.pop("state", None)
-            run = self.config.wandb_init(config_dict=config_dict)
-        
-
-        logger.info(f"Launching experiment at log dir {self.config.log_dir}")
+            self.config.wandb_init(config_dict=config_dict)
 
         if self.done:
             logger.info(f"Experiment is already done! Exiting.")
@@ -267,10 +266,12 @@ class ExperimentBase(Serializable):
               test_dataloader:Union[Dataset, DataLoader, Iterator],
               epochs: int,                
               description: str=None,
+              mode: str = None,
               early_stopping_options: EarlyStoppingOptions=None,
               use_accuracy_as_metric: bool=None,                
               temp_save_dir: Path=None,
-              steps_per_epoch: int = None) -> TrainValidLosses:
+              steps_per_epoch: int = None,
+              eval_function: Callable = None) -> TrainValidLosses:
         """Trains on the `train_dataloader` and evaluates on `valid_dataloader`.
 
         Periodically evaluates on validation batches during each epoch, as well
@@ -307,16 +308,20 @@ class ExperimentBase(Serializable):
                 validation loss is used. Defaults to False.
             - temp_save_file (Path, optional): Path where the intermediate state
                 should be saved/restored from. Defaults to None.
+            - eval_cunction (Callable): function for evaluation the perfomance fo the model,
+                wil be called every 10th epoch if not None.
 
         Returns:
             TrainValidLosses: An object containing the training and validation
             losses during training (every `log_interval` steps) to be logged.
         """                   
-        
+        description = ' '.join([description,'(',mode,')'])
         if isinstance(train_dataloader, Dataset):
             train_dataloader = self.get_dataloader(train_dataloader)
         if isinstance(valid_dataloader, Dataset):
             valid_dataloader = self.get_dataloader(valid_dataloader)
+        if isinstance(test_dataloader, Dataset):
+            valid_dataloader = self.get_dataloader(test_dataloader)
         
         early_stopping_options = early_stopping_options or self.config.early_stopping
 
@@ -369,7 +374,7 @@ class ExperimentBase(Serializable):
         # Hook to keep track of the best model.
         best_model_watcher = self.keep_best_model(
             use_acc=use_accuracy_as_metric,
-            save_path=self.checkpoints_dir / f"best_model{description.replace(' ', '_').lower()}.pth",
+            save_path= self.checkpoints_dir.joinpath(self.get_model_name(mode = mode, task = self.state.i, epoch=None))
         )        
         best_step = starting_step
         best_epoch = starting_epoch
@@ -391,15 +396,8 @@ class ExperimentBase(Serializable):
         # List to hold the length of each epoch (should all be the same length)
         epoch_lengths: List[int] = []
         for epoch in range(starting_epoch, epochs + 1):
-
-            #prevent iterator exhaustion
-            if isinstance(train_dataloader, Iterator):
-                train_dataloader, train_dataloader_ = tee(train_dataloader)
-            else: 
-                train_dataloader_ = train_dataloader
-
             epoch_start_step = self.state.global_step     
-            pbar = tqdm.tqdm(train_dataloader_, total=steps_per_epoch)
+            pbar = tqdm.tqdm(train_dataloader, total=steps_per_epoch)
             desc = description or "" 
             desc += " " if desc and not desc.endswith(" ") else ""
             desc += f"Epoch {epoch}"
@@ -408,22 +406,27 @@ class ExperimentBase(Serializable):
             
             epoch_length = self.global_step - epoch_start_step
             epoch_lengths.append(epoch_length)
-
             if epoch % self.config.log_interval_test_epochs == 0:
-                if test_dataloader is not None and self.config.log_interval_test_epochs>0:
+                if test_dataloader is not None and not isinstance(train_dataloader, unlabeled) and self.config.log_interval_test_epochs>0:
                     # perform a test epoch every n iterations.
                     test_desc = desc + " Test"
                     test_loss_info = self.test(test_dataloader, description=test_desc, name="Test_full")
                     self.log({'Test_full':test_loss_info.to_dict()})
+                
+                #run eval function
+                if eval_function is not None:
+                    eval_function(self.state.i, train_dataloader, test_dataloader, step=self.global_step, description=f'Linear_eval')
+            
+            if self.config.save_encoder_every_epochs>0 and epoch % self.config.save_encoder_every_epochs == 0:
+                    #checkpoint model
+                    self.save_weights(self.checkpoints_dir.joinpath(self.get_model_name(mode = mode, task = self.state.i, epoch=epoch)))
 
             # perform a validation epoch.
             if valid_dataloader is not None:
                 val_desc = desc + " Valid"
                 val_loss_info = self.test(valid_dataloader, description=val_desc, name="Valid_full")
                 validation_losses.append(val_loss_info)
-
-            
-
+                
                 if temp_save_dir:
                     # Save these files in the background using the saver process.
                     self.save_job(val_loss_info, temp_save_dir / f"val_loss_{i}.json")
@@ -494,6 +497,13 @@ class ExperimentBase(Serializable):
         except FileNotFoundError:
             logger.info(f"Tried to load the self-sup. pretrained model from {load_path}, but it doesnt exist yet.")
             return False
+    
+    def get_model_name(self, mode: str, task:int, epoch: int = None) -> str:
+        if epoch is None:
+            #return path for best model
+            return f"best_model_task_{task}_{mode}.pth"
+        else:
+            return f"model_task_{task}_{mode}_epoch_{epoch}.pth"
 
             
     def save_weights(self, save_path:Path):
@@ -625,7 +635,7 @@ class ExperimentBase(Serializable):
         return self.model.optimizer_step(global_step=self.global_step, **kwargs)
 
 
-    def get_dataloader(self, dataset: Dataset, sampler: Sampler=None, shuffle: bool=True, batch_size:int = None) -> DataLoader:
+    def get_dataloader(self, dataset: Dataset, sampler: Sampler = None, shuffle: bool=True, batch_size:int = None) -> DataLoader:
         if sampler is None:
             return DataLoader(
                 dataset,
@@ -635,13 +645,22 @@ class ExperimentBase(Serializable):
                 pin_memory=self.config.use_cuda,
             )
         else:
-            return DataLoader(
-                dataset,
-                batch_size = batch_size if batch_size is not None else self.hparams.batch_size,
-                sampler=sampler,
-                num_workers=self.config.num_workers,
-                pin_memory=self.config.use_cuda,
-            )
+            if hasattr(sampler, 'batch_size'):
+                return DataLoader(
+                    dataset,
+                    batch_sampler=sampler,
+                    num_workers=self.config.num_workers,
+                    pin_memory=self.config.use_cuda,
+                )
+            else:
+                return DataLoader(
+                    dataset,
+                    batch_size = batch_size if batch_size is not None else self.hparams.batch_size,
+                    sampler=sampler,
+                    num_workers=self.config.num_workers,
+                    pin_memory=self.config.use_cuda,
+                )
+
 
     def save_experiment(self, save_path: Path, blocking: bool=False):
         save_dir = save_path if save_path.is_dir() else save_path
@@ -702,24 +721,13 @@ class ExperimentBase(Serializable):
 
 
     def log(self, message: Dict[str, Any], step: int=None, once: bool=False, prefix: str=""):
-        for k, v in message.items():
-            if isinstance(v, (LossInfo, Metrics)):
-                message[k] = v.to_log_dict()
-
-        message = cleanup(message, sep="/")
-
-        if prefix:
-            message = utils.add_prefix(message, prefix)
-        
         # if we want to long once (like a final result, step should be None)
         # else, if not given, we use the global step.
         step = None if once else (step or self.global_step)
-        
         if self.config.use_wandb:
-            wandb.log(message, step=step)
+            log_wandb(message, step=step, prefix=prefix, print_message=self.config.debug)
 
-        if self.config.debug and self.config.verbose:
-            print(message)
+        
 
     def _folder(self, folder: Union[str, Path], create: bool=True) -> Path:
         path = self.config.log_dir / folder

@@ -1,6 +1,9 @@
 import os
 import hashlib
 import tqdm
+
+from timeit import default_timer as timer
+from functools import partial
 import itertools
 import copy
 from utils.logging_utils import get_logger
@@ -10,7 +13,7 @@ from itertools import accumulate, cycle
 from pathlib import Path
 from random import shuffle
 from sys import getsizeof
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union, Iterator
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union, Iterator, Callable
 from torchvision.transforms import Compose
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,7 +32,7 @@ from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from common.task import Task
 from datasets import DatasetConfig, Datasets
 
-from datasets.data_utils import unbatch, unlabeled, get_semi_sampler, get_lab_unlab_idxs, train_valid_split
+from datasets.data_utils import unbatch, unlabeled, get_semi_sampler, get_lab_unlab_idxs, train_valid_split, zip_dataloaders, SemiSupervisedDataset, BatchSampler_SemiUpservised
 from datasets.subset import ClassSubset, Subset
 from models.output_head import OutputHead
 from simple_parsing import choice, field, list_field, mutable_field, subparsers
@@ -40,6 +43,7 @@ from tasks import Tasks
 from datasets.datasets import DatasetsHParams
 from utils import utils
 from experiments import TaskIncremental
+from experiments.task_incremental import Modes
 from utils.utils import n_consecutive, roundrobin
 
 from .experiment import Experiment
@@ -53,7 +57,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     @dataclass  
     class Config(TaskIncremental.Config):
         #wether to apply simclr augment
-        ratio_labelled: float = 0.05
+        ratio_labelled: float = 1.
         #label incremental continual semi-supervised setting (scenario 2)
         label_incremental: bool = 0 
 
@@ -87,6 +91,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         """ NOTE: fields that are created in __post_init__ aren't serialized to/from json! """
         super().__post_init__(*args, **kwargs)
 
+        self.fintuning_mlp = False #set to True when finetuning MLP on top of fixed encoder
         self.train_datasets_unlabeled: List[ClassSubset] = []
         self.epoch_length: Optional[int] = None
         self.batch_idx: Optional[int] = 0
@@ -130,32 +135,32 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 np.save(str(path)+'data.npy', X, allow_pickle=True)
                 np.save(str(path)+'label.npy', Y, allow_pickle=True)
 
-    def load_task_datasets(self, tasks: List[Task]) -> None:
-        self.pretrain_train_dataset = None
-        self.pretrain_valid_dataset = None
+    # def load_task_datasets(self, tasks: List[Task]) -> None:
+    #     self.pretrain_train_dataset = None
+    #     self.pretrain_valid_dataset = None
 
-        self.train_datasets.clear()
-        self.valid_datasets.clear()
-        self.test_datasets.clear()
+    #     self.train_datasets.clear()
+    #     self.valid_datasets.clear()
+    #     self.test_datasets.clear()
 
-        datasets = self._load_task_datasets(tasks)
+    #     datasets = self._load_task_datasets(tasks)
 
-        (self.full_train_dataset, 
-        self.full_valid_dataset, 
-        self.full_test_dataset, 
-        self.train_datasets, 
-        self.train_datasets_unlabeled,
-        self.valid_datasets, 
-        self.test_datasets,  
-        self.valid_cumul_datasets,
-        self.test_cumul_datasets,
-        self.full_train_dataset_unlabelled) = datasets
+    #     (self.full_train_dataset, 
+    #     self.full_valid_dataset, 
+    #     self.full_test_dataset, 
+    #     self.train_datasets, 
+    #     self.train_datasets_unlabeled,
+    #     self.valid_datasets, 
+    #     self.test_datasets,  
+    #     self.valid_cumul_datasets,
+    #     self.test_cumul_datasets,
+    #     self.full_train_dataset_unlabelled) = datasets
 
-    def _load_task_datasets(self, tasks: List[Task], datasets: Tuple[Dataset, Dataset, Dataset ]=None, ratio_labelled:float=None):
+    def load_task_datasets(self, tasks: List[Task]): #, datasets: Tuple[Dataset, Dataset, Dataset ]=None, ratio_labelled:float=None):
             """Create the train, valid, test, as well as corresponding semi-samplers and cumulative valid & test datasets
             for each task.
             """
-            ratio_labelled = ratio_labelled if ratio_labelled is not None else self.config.ratio_labelled
+            #ratio_labelled = ratio_labelled if ratio_labelled is not None else self.config.ratio_labelled
             transform_train = None
             transform_test = None
             transform_valid = None    
@@ -173,10 +178,10 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                     transform_test = SimCLREvalDataTransform_(dobble=self.config.simclr_augment_train_dobble, input_height=self.config.dataset.x_shape[-1])
                     #in order not to effect validation dataset subset, which refers tot he same underlying dataset
             
-            if datasets is None:
-                train_dataset, valid_dataset, test_dataset = self.load_datasets(train_transform =transform_train,valid_transform =transform_valid,test_transform = transform_test)
-            else:
-                train_dataset, valid_dataset, test_dataset = datasets
+            # if datasets is None:
+            train_dataset, valid_dataset, test_dataset = self.load_datasets(train_transform =transform_train,valid_transform =transform_valid,test_transform = transform_test)
+            # else:
+            #     train_dataset, valid_dataset, test_dataset = datasets
 
             full_train_dataset_unlabelled = None
             if self.config.use_full_unlabeled:
@@ -194,19 +199,19 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                         path_to_save = self.get_preprocessed_dataset_path(self.config.dataset_unlabeled.name, [self.config.dataset_unlabeled.num_classes, self.config.dataset_unlabeled.x_shape, self.config.reduce_full_unlabeled], rootpath=self.config.datasets_dir)
                         self.save_preprocessed_dataset(full_train_dataset_unlabelled, path_to_save)
 
-                    #self.full_train_dataset_unlabelled = full_train_dataset_unlabelled
+                    self.full_train_dataset_unlabelled = full_train_dataset_unlabelled
             
             assert valid_dataset # We have a validation dataset.
 
-            full_train_dataset = train_dataset
-            full_valid_dataset = valid_dataset
-            full_test_dataset  = test_dataset
+            self.full_train_dataset = train_dataset
+            self.full_valid_dataset = valid_dataset
+            self.full_test_dataset  = test_dataset
 
             # Clear the datasets for each task.
-            train_datasets = []
-            valid_datasets = []
-            test_datasets = []
-            train_datasets_unlabeled = []
+            self.train_datasets.clear()
+            self.valid_datasets.clear()
+            self.test_datasets.clear()
+            self.train_datasets_unlabeled.clear()
 
             for i, task in enumerate(tasks):
                 train = ClassSubset(train_dataset, task)
@@ -214,27 +219,42 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 test  = ClassSubset(test_dataset, task)
 
                 #get labeled and unlabeled indicies 
-                idx_lab_new, idx_unlab_new = get_lab_unlab_idxs(train.targets, p=ratio_labelled)
+                idx_lab_new, idx_unlab_new = get_lab_unlab_idxs(train.targets, p=self.config.ratio_labelled)
                 indices_train_lab, indices_train_unlab = self.state.idx_lab_unlab.setdefault(str(task.classes), (idx_lab_new, idx_unlab_new))
 
-                train_datasets.append(Subset(train, indices_train_lab))
+                self.train_datasets.append(Subset(train, indices_train_lab))
+                # indices_train_lab, indices_train_unlab = indices_train_lab.tolist(), indices_train_unlab.tolist() 
+                # if len(indices_train_unlab)>0:  
+                #     self.train_datasets.append(SemiSupervisedDataset(train, frozenset(indices_train_lab), frozenset(indices_train_unlab)))
+                #     #partial, we decide in 'run', wether to sample only labeled or mixture or only unlabeled
+                #     self.train_samplers.append(partial(BatchSampler_SemiUpservised(indices_train_lab,indices_train_unlab, self.hparams.batch_size)))
+                # else:
+                #     #in order to have same amount of update steps per epoch (same epoch length) and sam ebatch size we use semi-dataset and sampler even if all data is labeled
+                #     self.train_datasets.append(SemiSupervisedDataset(train, frozenset(indices_train_lab), frozenset(indices_train_lab)))
+                #     self.train_samplers.append(partial(BatchSampler_SemiUpservised(indices_train_lab,indices_train_lab, self.hparams.batch_size)))
+                    
+                #     #self.train_datasets.append(train)
                 
-                if self.config.baseline_cl and i>0:
-                    train_datasets_unlabeled.append(torch.utils.data.ConcatDataset([Subset(train, indices_train_unlab),self.train_datasets_unlabeled[i-1]]))
-                else:
-                    train_datasets_unlabeled.append(Subset(train, indices_train_unlab))
+                self.train_samplers.append(None)
 
-                valid_datasets.append(valid)
-                test_datasets.append(test)
+                if self.config.baseline_cl and i>0:
+                    self.train_datasets_unlabeled.append(torch.utils.data.ConcatDataset([Subset(train, indices_train_unlab),self.train_datasets_unlabeled[i-1]]))
+                else:
+                    self.train_datasets_unlabeled.append(Subset(train, indices_train_unlab))
+
+                self.valid_datasets.append(valid)
+                self.test_datasets.append(test)
+                self.test_samplers.append(None)
+                self.valid_samplers.append(None)
 
                 #set n_datapoints for a task (used in CRD distialtion loss)
                 if task.n_data_points <0:
                     task.n_data_points = len(indices_train_unlab) + len(indices_train_lab)
 
             # Use itertools.accumulate to do the summation of the datasets.
-            valid_cumul_datasets = list(accumulate(valid_datasets))
-            test_cumul_dataset = list(accumulate(test_datasets))
-            return (full_train_dataset, full_valid_dataset, full_test_dataset, train_datasets, train_datasets_unlabeled, valid_datasets, test_datasets, valid_cumul_datasets, test_cumul_dataset, full_train_dataset_unlabelled)
+            # self.valid_cumul_datasets = list(accumulate(self.valid_datasets))
+            # self.test_cumul_dataset = list(accumulate(self.test_datasets))
+            #return (full_train_dataset, full_valid_dataset, full_test_dataset, train_datasets, train_datasets_unlabeled, valid_datasets, test_datasets, valid_cumul_datasets, test_cumul_dataset, full_train_dataset_unlabelled)
 
     def log_cumulative_loss(self, i):
         cumul_loss = self.state.cumul_losses[i]
@@ -242,7 +262,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         logger.info(f"Cumul Accuracy [{i}]: {cumul_valid_accuracy}")
         self.log({f"Cumulative": cumul_loss})
 
-        cumul_loss_lin_full = self.state.cumul_losses_linear_full[i]          
+        cumul_loss_lin_full = self.state.cumul_losses_linear_full[i]             
         cumul_valid_accuracy_lin = get_supervised_accuracy(cumul_loss_lin_full, mode='Linear')
         logger.info(f"Cumul Accuracy linear [{i}]: {cumul_valid_accuracy_lin}")
         self.log({f"Cumulative_linear_full": cumul_loss_lin_full})
@@ -262,11 +282,14 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
             if isinstance(train_j, Subset):
                 train_j_full = train_j.dataset
+            else:
+                train_j_full = train_j
             test_j_full = test_j
 
             linear_j_train_loss, linear_j_test_loss = self.evaluate_MLP(
                 train_j_full,
                 test_j_full,
+                self.get_hidden_codes_array,
                 description=f"Linear full [{i}][{j}]"
             )
 
@@ -287,6 +310,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             linear_j_train_loss, linear_j_test_loss = self.evaluate_MLP(
                 train_j,
                 test_j,
+                self.get_hidden_codes_array,
                 description=f"Linear semi [{i}][{j}]"
             )
             linear_j_train_acc = get_supervised_accuracy(linear_j_train_loss)
@@ -306,55 +330,51 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
               test_dataloader:Union[Dataset, DataLoader, Iterator],
               epochs: int,                
               description: str=None,
+              mode: str = None,
               early_stopping_options: EarlyStoppingOptions=None,
               use_accuracy_as_metric: bool=None,                
               temp_save_dir: Path=None,
-              steps_per_epoch: int = None) -> TrainValidLosses:
-
-        steps_per_epoch = len(train_dataloader)
-        if not 'pretrain' in description and not isinstance(train_dataloader, unlabeled):
-            #half of the batch comes from labeled and half from unlabeled data
-            #batch_size = int(self.hparams.batch_size / 2)
-            #labeled loader with a new batch size
+              steps_per_epoch: int = None,
+              eval_function: Callable = None) -> TrainValidLosses:
+        
+        self.fintuning_mlp = False
+        #steps_per_epoch = len(train_dataloader)  
+        if mode == Modes.FINETUNE_CLS.value and not isinstance(train_dataloader, unlabeled):
+            self.fintuning_mlp = True
+        
+        elif mode == Modes.PRETRAIN.value not in mode and not isinstance(train_dataloader, unlabeled):
+            #mixture of labeled and unlabeled training
+            
             if isinstance(train_dataloader, Dataset):
                train_dataloader = self.get_dataloader(train_dataloader)
-            
+
             unlabeled_dataset = self.get_unlabeled_dataset()
-            #unlabeled_dataset = torch.utils.data.ConcatDataset([unlabeled_dataset, train_dataloader.dataset])
             if len(unlabeled_dataset)>0:
+                #labeled and unlabeled data is use for semoi-sup training 
+                unlabeled_dataset = torch.utils.data.ConcatDataset([unlabeled_dataset, train_dataloader.dataset])
                 train_dataloader_unlabeled = self.get_dataloader(unlabeled_dataset) #, batch_size=batch_size)
-                if len(train_dataloader_unlabeled.dataset)>len(train_dataloader.dataset):
-                    train_dataloader = zip(cycle(train_dataloader), train_dataloader_unlabeled)
-                    self.epoch_length = len(train_dataloader_unlabeled)
-                    steps_per_epoch = self.epoch_length
-                elif len(train_dataloader_unlabeled.dataset)<len(train_dataloader.dataset):
-                    self.epoch_length = len(train_dataloader)
-                    train_dataloader = zip(train_dataloader, cycle(train_dataloader_unlabeled))
-                    steps_per_epoch = self.epoch_length
-                else:
-                    self.epoch_length = len(train_dataloader)
-                    train_dataloader = zip(train_dataloader, train_dataloader_unlabeled)
-                    steps_per_epoch = self.epoch_length
+                train_dataloader = zip_dataloaders(train_dataloader_unlabeled,train_dataloader)
             else:
                 #no unlabeled data, all data is labeled
-                train_dataloader = train_dataloader
-                self.epoch_length = len(train_dataloader)
-                steps_per_epoch = self.epoch_length
+                self.epoch_length = len(train_dataloader) 
+                train_dataloader = zip_dataloaders(train_dataloader,train_dataloader)
 
-
+        
         elif isinstance(train_dataloader, unlabeled):
+            #only semi-supervised training (no supervision)
+
             #concat given unlabeled dataset (train) with unlabeled data (train_dataset_unlabeled)
             unlabeled_dataset = self.get_unlabeled_dataset()
-            full_dataset_task = torch.util.data.ConcatDataset(train_dataloader.loader.dataset, unlabeled_dataset)
+            full_dataset_task = torch.utils.data.ConcatDataset([train_dataloader.loader.dataset, unlabeled_dataset])
             train_dataloader = unlabeled(self.get_dataloader(full_dataset_task))
-            self.epoch_length = len(train_dataloader)
-            steps_per_epoch = self.epoch_length
+            #self.epoch_length = len(train_dataloader)
+            #steps_per_epoch = self.epoch_length
 
-
+        self.epoch_length = len(train_dataloader)
         return super().train(train_dataloader, valid_dataloader, test_dataloader, 
-                            epochs, description, early_stopping_options, use_accuracy_as_metric,
-                            temp_save_dir, steps_per_epoch)
-
+                            epochs, description, mode, early_stopping_options, use_accuracy_as_metric,
+                            temp_save_dir, steps_per_epoch, eval_function)
+    
     def get_unlabeled_dataset(self) -> Dataset:
         if self.config.label_incremental:
             #LI scenario
@@ -379,9 +399,11 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
     
     def train_iter(self, dataloader: DataLoader) -> Iterable[LossInfo]:
         self.batch_idx +=1 
-        self.model.train()                    
+        self.model.train()   
         for batch in dataloader: 
-            if len(batch[0])==2 and self.config.ratio_labelled>0: 
+            if len(batch)!=2: #unsupervised batch
+                data, target = self.preprocess(batch)
+            elif len(batch[0])==2 and len(batch[0])==len(batch[1]): # semi-supervised batch
                 batch_sup, batch_unsup = batch
                 data, target = self.preprocess(batch_sup)
                 u, _ = self.preprocess(batch_unsup)
@@ -390,13 +412,39 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 data = torch.cat([data, u], dim=0)
                 if target is not None:
                     target = torch.stack(list(target)+([torch.tensor(-1).to(self.model.out_device)]*len(u)))
-            else:
+            else: #fully supervised
                 data, target = self.preprocess(batch)
+
             yield self.train_batch(data, target)
-        
+
     def train_batch(self, *args, **kwargs) -> LossInfo:
-        loss = super().train_batch(*args, **kwargs)
+        if not self.fintuning_mlp:
+            loss = super().train_batch(*args, **kwargs)
+        else:
+            loss = self.train_batch_MLP(*args, **kwargs)
         loss = self.state.perf_meter.update(loss)
+        return loss
+
+        
+    def train_batch_MLP(self, data: Tensor, target: Tensor, name: str="Train_MLP") -> LossInfo:
+        self.model.train()
+        self.model.optimizer.zero_grad()
+        
+        loss = LossInfo(name)   
+        #start = timer()     
+        batch_loss_info_supervised = self.model.supervised_loss(data, target)
+        #end = timer()
+        #print("supervised loss ",end - start) 
+
+        loss.total_loss = torch.zeros(1, device=batch_loss_info_supervised.total_loss.device)    
+        loss += batch_loss_info_supervised
+
+        total_loss = batch_loss_info_supervised.total_loss
+        total_loss.backward()
+
+        self.step(global_step=self.global_step)
+        self.global_step += data.shape[0]
+
         return loss
 
     def test_batch(self, *args, **kwargs):
@@ -430,6 +478,6 @@ if __name__ == "__main__":
     #from datasets.datasets import DatasetsHParams
     #parser.add_arguments(DatasetsHParams, "options")
 
-    args = parser.parse_args()
+    args = parser.parse_args()    
     experiment: TaskIncremental_Semi_Supervised = args.experiment
     experiment.launch()

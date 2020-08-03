@@ -5,6 +5,7 @@ import itertools
 import operator
 import random
 import re
+import torch
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import MutableMapping
 from dataclasses import Field, fields
@@ -221,6 +222,54 @@ def camel_case(name):
     while "__" in s2:
         s2 = s2.replace("__", "_")
     return s2
+
+def convert_model(module):
+    try:
+        from jactorch.parallel.comm import SyncMaster
+        from jactorch.parallel.data_parallel import JacDataParallel as DataParallelWithCallback
+    except ImportError:
+        from .comm import SyncMaster
+        from .replicate import DataParallelWithCallback
+
+    """Traverse the input module and its child recursively
+       and replace all instance of torch.nn.modules.batchnorm.BatchNorm*N*d
+       to SynchronizedBatchNorm*N*d
+    Args:
+        module: the input module needs to be convert to SyncBN model
+    Examples:
+        >>> import torch.nn as nn
+        >>> import torchvision
+        >>> # m is a standard pytorch model
+        >>> m = torchvision.models.resnet18(True)
+        >>> m = nn.DataParallel(m)
+        >>> # after convert, m is using SyncBN
+        >>> m = convert_model(m)
+    """
+    if isinstance(module, torch.nn.DataParallel):
+        mod = module.module
+        mod = convert_model(mod)
+        mod = DataParallelWithCallback(mod, device_ids=module.device_ids)
+        return mod
+
+    mod = module
+    for pth_module, sync_module in zip([torch.nn.modules.batchnorm.BatchNorm1d,
+                                        torch.nn.modules.batchnorm.BatchNorm2d,
+                                        torch.nn.modules.batchnorm.BatchNorm3d],
+                                       [SynchronizedBatchNorm1d,
+                                        SynchronizedBatchNorm2d,
+                                        SynchronizedBatchNorm3d]):
+        if isinstance(module, pth_module):
+            mod = sync_module(module.num_features, module.eps, module.momentum, module.affine)
+            mod.running_mean = module.running_mean
+            mod.running_var = module.running_var
+            if module.affine:
+                mod.weight.data = module.weight.data.clone().detach()
+                mod.bias.data = module.bias.data.clone().detach()
+
+    for name, child in module.named_children():
+        mod.add_module(name, convert_model(child))
+
+    return mod
 
 
 if __name__ == "__main__":

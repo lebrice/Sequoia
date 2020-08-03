@@ -3,7 +3,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import *
-
+import random
+import string
 import wandb
 
 from simple_parsing import field, list_field
@@ -21,7 +22,7 @@ class WandbConfig(Serializable):
     # Used to create a parent folder that will contain the `run_name` directory. 
     run_group: Optional[str] = None
     # Wandb run name. If None, will use wandb's automatic name generation
-    run_name: Optional[str] = None
+    run_name: Optional[str] = ''.join([random.choice(string.ascii_letters + string.digits) for n in range(5)])
 
     # Identifier unique to each individual wandb run. When given, will try to
     # resume the corresponding run, generates a new ID each time. 
@@ -79,9 +80,9 @@ class WandbConfig(Serializable):
             config=config_dict,
             dir=str(self.wandb_path),
             notes=self.notes,
-            reinit=True,
             tags=self.tags,
-            resume="allow",
+            #resume="allow",
+            job_type = 'main'
         )
         logger.info(f"Run: {run}")
         run.save()

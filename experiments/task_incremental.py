@@ -1,6 +1,10 @@
 import itertools
 import hashlib
 import copy
+from enum import Enum
+
+import torch.multiprocessing as mp
+from multiprocessing import Value
 from utils.logging_utils import get_logger  
 from collections import OrderedDict, defaultdict, Sized
 from dataclasses import InitVar, asdict, dataclass, fields
@@ -37,11 +41,17 @@ from utils import utils
 from utils.utils import n_consecutive, roundrobin
 from tasks.simclr.simclr_task_ptl import SimCLRTrainDataTransform_
 from torchvision.transforms import Compose, ToPILImage, ToTensor
+from utils.eval_utils import background_eval
 
 from .experiment import Experiment
 
 logger = get_logger(__file__)
 
+class Modes(Enum):
+    UNSUP: str = 'unsupervised'
+    SUP: str = 'supervised'
+    PRETRAIN: str = 'pretrain'
+    FINETUNE_CLS: str = 'fintuning_classifier'
 
 @dataclass
 class TaskIncremental(Experiment):
@@ -54,17 +64,20 @@ class TaskIncremental(Experiment):
         n_classes_per_task: int = 2
 
         #number of tasks
-        n_tasks: int = 5
-
+        n_tasks: int = 5             
         # Wether to sort out the classes in the class_incremental setting.
         random_class_ordering: bool = False
         # Maximum number of epochs of self-supervised training to perform on the
         # task data before switching to supervised training.
-        unsupervised_epochs_per_task: int = 0
+        unsupervised_epochs_per_task: int = 1
         # Maximum number of epochs of supervised training to perform on each task's
         # dataset.
-        supervised_epochs_per_task: int = 1 
-        
+        supervised_epochs_per_task: int = 0
+
+        # Maximum number of epochs of supervised finetuning (classifier only!!!) to perform on each task's
+        # dataset.
+        finetune_epochs_per_task: int = 1
+
         #If `True`, accuracy will be used as a measure of performance. Otherwise, the total validation loss is used. Defaults to False.
         use_accuracy_as_metric: bool = False
 
@@ -89,8 +102,11 @@ class TaskIncremental(Experiment):
         #wether to apply simclr augmentation to test set
         simclr_augment_test: bool = 0
 
-        #active_remembering  
-        active_remembering_epochs: int = 0
+        #MLP finetuning LR
+        finetuning_lr: float =0.001 
+
+        #path to a folder to try to load best model from (if None no mdoel is loaded)
+        model_path: Optional[str] = "/Users/oleksostapenko/Projects/SSCL/results/SSCL/TaskIncremental_Semi_Supervised/EkYwW/checkpoints"
 
 
     @dataclass
@@ -164,7 +180,12 @@ class TaskIncremental(Experiment):
         # Keeps track of which tasks have some data stored in the replay buffer
         # (if using replay)
         self.tasks_in_buffer: List[Task] = []
-        
+
+        #Queues for linear evaluations
+        self.background_mlp_queue = mp.Queue()
+        self.background_process = mp.Process(target=background_eval, args=(self.background_mlp_queue, self.config))
+        self.background_process.start()
+    
     def setup(self):
         """Prepare everything before training begins: Saves/restores state,
         loads the datasets, model weights, etc.
@@ -252,13 +273,20 @@ class TaskIncremental(Experiment):
         for i in range(self.state.i, self.n_tasks):
             self.state.i = i
             logger.info(f"Starting task {i} with classes {self.tasks[i]}")
+            if self.config.model_path is not None:
+                self.try_loading_best_model_unsupervised(task=i)
+
             self.log({"task/currently_learned_task": self.state.i})
 
             self.on_task_switch(self.tasks[i])
             # Training and validation datasets for task i.
             train_i_dataset = self.train_datasets[i]
             valid_i_dataset = self.valid_datasets[i]
-            test_i_dataset = self.test_datasets[i]            
+            test_i_dataset = self.test_datasets[i]
+
+            train_i_sampler = self.train_samplers[i]
+            valid_i_sampler = self.valid_samplers[i]
+            test_i_sampler = self.test_samplers[i]            
 
 
             if self.replay_buffer:
@@ -267,9 +295,9 @@ class TaskIncremental(Experiment):
                 # TODO: Should we also add some data from previous tasks in the validation dataset?
                 train_i_dataset += self.replay_buffer.as_dataset()
 
-            train_i_loader = self.get_dataloader(train_i_dataset)
-            valid_i_loader = self.get_dataloader(valid_i_dataset)
-            test_i_loader = self.get_dataloader(test_i_dataset)
+            train_i_loader = self.get_dataloader(train_i_dataset, sampler = train_i_sampler)
+            valid_i_loader = self.get_dataloader(valid_i_dataset, sampler = valid_i_sampler)
+            test_i_loader = self.get_dataloader(test_i_dataset, sampler = test_i_sampler)
 
             if self.state.j == 0:
                 with self.plot_region_name(f"Learn Task {i}"):
@@ -285,11 +313,13 @@ class TaskIncremental(Experiment):
                         self.state.all_losses += self.train(
                             unlabeled(train_i_loader),
                             unlabeled(valid_i_loader),
-                            None,
+                            test_i_loader,
                             epochs=self.config.unsupervised_epochs_per_task,
-                            description=f"Task {i} (Unsupervised)",
+                            description=f"Task {i}",
+                            mode = Modes.UNSUP.value,
                             use_accuracy_as_metric=False, # Can't use accuracy as metric during unsupervised training.
                             temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
+                            eval_function=self.evaluate_mlp_baground,
                         )
 
                     # Train (supervised) on task i.
@@ -299,10 +329,27 @@ class TaskIncremental(Experiment):
                         valid_i_loader,
                         test_i_loader,
                         epochs=self.config.supervised_epochs_per_task,
-                        description=f"Task {i} (Supervised)",
+                        description=f"Task {i}",
+                        mode = Modes.SUP.value,
                         use_accuracy_as_metric=self.config.use_accuracy_as_metric,
                         temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
                     )
+
+                    # Finetune classifier (supervised) on task i.
+                    # TODO: save the state during training?.
+                    
+                    self.set_optimizer_lr(self.config.finetuning_lr)
+                    self.state.all_losses += self.train(
+                        train_i_loader,
+                        valid_i_loader,
+                        test_i_loader,  
+                        epochs=self.config.finetune_epochs_per_task,
+                        description=f"Task {i}",
+                        mode = Modes.FINETUNE_CLS.value,
+                        use_accuracy_as_metric=self.config.use_accuracy_as_metric,
+                        temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
+                    )
+                    self.set_optimizer_lr(self.hparams.learning_rate)
             
             # Save to the 'checkpoints' dir
             self.save_state()
@@ -321,17 +368,21 @@ class TaskIncremental(Experiment):
 
                 self.state.j = j
                 # -- Evaluate Representations after having learned tasks [0:i] on data from task J. --
+                # If we have previously trained on this task:
                 if j<=i:
                     try:
                         train_j = self.train_datasets[j]
-                        test_j  = self.test_datasets[j]   
-
-                        # If we have previously trained on this task:
+                        test_j  = self.test_datasets[j]     
+                        train_j_sampler = self.train_samplers[j]   
+                        test_j_sampler = self.test_samplers[j]   
+                        train_loadder_j = self.get_dataloader(train_j, sampler=train_j_sampler)
+                        test_loadder_j = self.get_dataloader(test_j, sampler=test_j_sampler)
+                        
                         #self.on_task_switch(self.tasks[j])
                         self.model.current_task = self.tasks[j]
 
                         # Test on the test dataset for task j.
-                        loss_j = self.test(test_j, description=f"Task{i}: Test on Task{j}", name=f"Task{j}")
+                        loss_j = self.test(test_loadder_j, description=f"Task{i}: Test on Task{j}", name=f"Task{j}")
                         self.log({f"Task_losses/Task{j}": loss_j})
                         
                         if j==i:
@@ -419,6 +470,21 @@ class TaskIncremental(Experiment):
         # if self.config.debug:
         #     fig.show()
         #     fig.waitforbuttonpress(10
+        
+        self.background_mlp_queue.put(None)
+        self.background_process.join()
+    
+    def try_loading_best_model_unsupervised(self, task:int):
+        path = Path(self.config.model_path).joinpath(self.get_model_name(mode=Modes.UNSUP.value, task=task))
+        logger.info(f'Trying to load best model for task {task} from {path}')
+        self.try_loading_model(path)
+    
+    def try_loading_model(self, path:Path):
+        try:
+            self.model.load_state_dict(torch.load(path))
+        except Exception as e:
+            print(e)
+        
 
     def log_cumulative_loss(self, i):
         cumul_loss = self.state.cumul_losses[i]            
@@ -430,16 +496,47 @@ class TaskIncremental(Experiment):
         cumul_valid_accuracy_lin = get_supervised_accuracy(cumul_loss_lin)
         logger.info(f"Cumul Accuracy linear [{i}]: {cumul_valid_accuracy_lin}")
         self.log({f"Cumulative_linear_full": cumul_loss_lin})
+    
+    def evaluate_mlp_baground(self, i, train_loader, test_loader, step, description) -> None:
+        if isinstance(train_loader, unlabeled):
+            train_loader = train_loader.loader
+        if isinstance(test_loader, unlabeled):
+            test_loader = test_loader.loader
+        X, y = self.get_hidden_codes_array(train_loader)
+        Xt, yt = self.get_hidden_codes_array(test_loader)
 
-    def measure_mlp_performance(self,i, j, train_j, test_j):
+        self.background_mlp_queue.put((i, X, y, Xt, yt, step, description))
+        
+    @torch.no_grad()
+    def get_hidden_codes_array(self, dataloader: DataLoader) -> Tuple[np.ndarray, np.ndarray]:
+            """ Gets the hidden vectors and corresponding labels. """
+            was_training = self.model.training
+            self.model.eval()
+            h_x_list: List[np.ndarray] = []
+            y_list: List[np.ndarray] = []
+            for batch in dataloader:
+                x, y = self.preprocess(batch)
+                y = self.model.rescale_target(y)
+                # We only do KNN with examples that have a label.
+                if y is not None:                    
+                    x, y, _ = self.model.preprocess_inputs(x,y, None)
+                    h_x = self.model.encode(x)
+                    h_x_list.append(h_x.detach().cpu().numpy())
+                    y_list.append(y.detach().cpu().numpy())
+            if was_training:
+                self.model.train()
+            return np.concatenate(h_x_list), np.concatenate(y_list)
+    
+    def measure_mlp_performance(self, i, j, train_loader_j, test_loader_j):
         if j==0:
             self.state.cumul_losses_linear_full[i]= LossInfo("Cumulative_lin_full")
 
         # Measure the "quality" of the representations, by training and
         # evaluating a classifier on train and test data from task J.        
         linear_j_train_loss, linear_j_test_loss = self.evaluate_MLP(
-            train_j,
-            test_j,
+            train_loader_j,
+            test_loader_j,
+            self.get_hidden_codes_array,
             description=f"Linear [{i}][{j}]"
         )
         linear_j_train_acc = get_supervised_accuracy(linear_j_train_loss)
@@ -454,8 +551,6 @@ class TaskIncremental(Experiment):
         #to calculate average acc. over tasks
         self.state.cumul_losses_linear_full[i].absorb(linear_j_test_loss)
 
-
-    
     def pretrain_unsup(self):
         if self.config.unsupervised_epochs_pretraining > 0:
             logger.info(f'\n ----Start pretraining on {self.config.pretraining_dataset.name} -----')
@@ -512,7 +607,7 @@ class TaskIncremental(Experiment):
         i = self.state.i
         ewc_task = self.model.tasks.get(Tasks.EWC)
 
-        train_loader = self.get_dataloader(self.train_datasets[i])
+        train_loader = self.get_dataloader(self.train_datasets[i], sampler = self.train_samplers[i])
 
         if task and self.replay_buffer is not None:
             self.update_replay_buffer(task, new_task_loader=train_loader)
@@ -584,7 +679,7 @@ class TaskIncremental(Experiment):
     def preprocess(self, batch: Union[Tuple[Tensor], Tuple[Tensor, Tensor], Tuple[Tuple[Tensor,Tensor], Tensor]]) -> Tuple[Tensor, Optional[Tensor]]:
         if len(batch)==1:
             if isinstance(batch[0], tuple) or isinstance(batch[0], list):
-                batch = (torch.stack(batch[0], dim=1))#.transpose(1,0),)
+                batch = (torch.stack(batch[0], dim=1),)#.transpose(1,0),)
         elif isinstance(batch[0], tuple) or isinstance(batch[0], list):
             batch[0] = torch.stack(batch[0], dim=1)#.transpose(1,0)
         data, target = super().preprocess(batch)
@@ -684,6 +779,10 @@ class TaskIncremental(Experiment):
             self.log({'Valid_full':loss_info.to_dict()})
         return loss_info 
     
+    def set_optimizer_lr(self, lr=0.001):
+        for param_group in self.model.optimizer.param_groups:
+                param_group['lr'] = lr
+
     def load_task_datasets(self, tasks: List[Task]) -> None:
         self.pretrain_train_dataset = None
         self.pretrain_valid_dataset = None
@@ -772,7 +871,7 @@ class TaskIncremental(Experiment):
         return model
 
     def train_epoch(self, epoch, *args, **kwargs):
-        self.log({'task/epoch':epoch+( (self.config.supervised_epochs_per_task+self.config.unsupervised_epochs_per_task) * self.state.i)})
+        self.log({'task/epoch':epoch+( (self.config.supervised_epochs_per_task+self.config.unsupervised_epochs_per_task+self.config.finetune_epochs_per_task) * self.state.i)})
         return super().train_epoch(epoch, *args, **kwargs)
 
     def init_model(self) -> Classifier:

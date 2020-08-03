@@ -114,7 +114,7 @@ class AuxiliaryTask(nn.Module):
                         h_x: Tensor,
                         y_pred: Tensor,
                         y: Tensor=None, 
-                        device: Union[int,torch.device, Tuple[torch.device]]=None) -> LossInfo:
+                        device: Union[int,torch.device, Tuple[torch.device]]=None, **kwargs) -> LossInfo:
         """Returns the scaled LossInfo, with relevant prefixes added to the dicts.
         
         Parameters

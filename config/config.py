@@ -67,6 +67,9 @@ class Config(WandbConfig):
     # always want to keep some intermediate checkpoints around. 
     delete_existing_log_dir: bool = False
 
+    #save encoder model every x epochs
+    save_encoder_every_epochs: int = 2
+
     def __post_init__(self):
         # set the manual seed (for reproducibility)
         set_seed(self.random_seed + (self.run_number or 0))

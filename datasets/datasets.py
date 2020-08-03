@@ -68,7 +68,7 @@ class Datasets(Enum):
         x_shape=(3,32,32),
         num_classes=100,
         transforms = SimCLRTrainDataTransform(32),
-        transforms_test = ToTensor(), #SimCLRTrainDataTransform(32), #Compose([ToTensor(), ToPILImage(), SimCLREvalDataTransform(32)])
+        transforms_test = SimCLREvalDataTransform(32)
     )
 
 
