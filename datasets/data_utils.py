@@ -218,3 +218,41 @@ class SemiSupervisedDataset(Dataset):
 
     def __len__(self):
         return len(self.dataset)
+
+class FlexiTransformDataset(Dataset):
+    '''
+    Dataset for which transformations can be changed dynamically.
+    '''
+    def __init__(self, dataset:Dataset, transfrom):
+        self.dataset = dataset #labeled dataset
+        self.transform = transfrom
+    
+    def __getitem__(self, idx):
+        x, y = self.dataset[idx]
+        return self.transform(x), y
+    
+    def set_transformation_mode(self, transform):
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.dataset)
+
+class TransformedDataset(Dataset):
+    '''
+    Adds transfromations to existing labeled dataset
+    '''
+    def __init__(self, dataset:Dataset, transform=None, target_transform=None):
+        self.dataset = dataset #labeled dataset
+        self.transform = transform
+        self.target_transform = target_transform
+    
+    def __getitem__(self, idx):
+        x, y = self.dataset[idx]
+        if self.transform is not None:
+            x = self.transform(x)
+        if self.target_transform is not None:
+            y = self.target_transform(y)
+        return x, y
+    
+    def __len__(self):
+        return len(self.dataset)

@@ -52,8 +52,8 @@ class Datasets(Enum):
         CIFAR100,
         x_shape=(3,32,32),
         num_classes=100,
-        transforms = ToTensor(),
-        transforms_test = ToTensor(), 
+        # transforms = ToTensor(),
+        # transforms_test = ToTensor(), 
     )
     cifar100_normalized = DatasetConfig(
         CIFAR100,
@@ -68,7 +68,7 @@ class Datasets(Enum):
         x_shape=(3,32,32),
         num_classes=100,
         transforms = SimCLRTrainDataTransform(32),
-        transforms_test = SimCLREvalDataTransform(32)
+        transforms_test = ToTensor(), #SimCLREvalDataTransform(32)
     )
 
 

@@ -32,7 +32,7 @@ from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from common.task import Task
 from datasets import DatasetConfig, Datasets
 
-from datasets.data_utils import unbatch, unlabeled, get_semi_sampler, get_lab_unlab_idxs, train_valid_split, zip_dataloaders, SemiSupervisedDataset, BatchSampler_SemiUpservised
+from datasets.data_utils import unbatch, unlabeled, get_semi_sampler, get_lab_unlab_idxs, train_valid_split, zip_dataloaders, SemiSupervisedDataset, BatchSampler_SemiUpservised, TransformedDataset
 from datasets.subset import ClassSubset, Subset
 from models.output_head import OutputHead
 from simple_parsing import choice, field, list_field, mutable_field, subparsers
@@ -45,6 +45,7 @@ from utils import utils
 from experiments import TaskIncremental
 from experiments.task_incremental import Modes
 from utils.utils import n_consecutive, roundrobin
+from tasks.simclr.simclr_task_ptl import SimCLRTrainDataTransform_, SimCLREvalDataTransform_
 
 from .experiment import Experiment
 from torchvision.transforms import Compose, Lambda, ToPILImage, ToTensor
@@ -76,6 +77,9 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
 
         #baseline: at each time step train (semi-supervised) on data from all tasks sofar
         baseline_cl: bool = 0
+
+        #whether to use simclr augmentaiton (NOT doble) in the fintuning phase
+        use_simclr_augmentation_in_finetuning: bool = True
 
     @dataclass
     class State(TaskIncremental.State):
@@ -135,53 +139,22 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 np.save(str(path)+'data.npy', X, allow_pickle=True)
                 np.save(str(path)+'label.npy', Y, allow_pickle=True)
 
-    # def load_task_datasets(self, tasks: List[Task]) -> None:
-    #     self.pretrain_train_dataset = None
-    #     self.pretrain_valid_dataset = None
-
-    #     self.train_datasets.clear()
-    #     self.valid_datasets.clear()
-    #     self.test_datasets.clear()
-
-    #     datasets = self._load_task_datasets(tasks)
-
-    #     (self.full_train_dataset, 
-    #     self.full_valid_dataset, 
-    #     self.full_test_dataset, 
-    #     self.train_datasets, 
-    #     self.train_datasets_unlabeled,
-    #     self.valid_datasets, 
-    #     self.test_datasets,  
-    #     self.valid_cumul_datasets,
-    #     self.test_cumul_datasets,
-    #     self.full_train_dataset_unlabelled) = datasets
-
     def load_task_datasets(self, tasks: List[Task]): #, datasets: Tuple[Dataset, Dataset, Dataset ]=None, ratio_labelled:float=None):
             """Create the train, valid, test, as well as corresponding semi-samplers and cumulative valid & test datasets
             for each task.
             """
-            #ratio_labelled = ratio_labelled if ratio_labelled is not None else self.config.ratio_labelled
-            transform_train = None
-            transform_test = None
-            transform_valid = None    
-            if self.config.simclr_augment_train and not self.config.simclr_augment_test :
-                    from tasks.simclr.simclr_task_ptl import SimCLRTrainDataTransform_
-                    transform_train = Compose([ToTensor(), ToPILImage(), SimCLRTrainDataTransform_(dobble=self.config.simclr_augment_train_dobble, input_height=self.config.dataset.x_shape[-1])])
-                    transform_test = ToTensor()
-                    transform_valid = ToTensor()
-                    #in order not to effect validation dataset subset, which refers tot he same underlying dataset
+          
+            train_dataset, valid_dataset, test_dataset = self.load_datasets(train_transform =None,valid_transform =None,test_transform = None)
 
-            elif self.config.simclr_augment_train and self.config.simclr_augment_test:
-                    from tasks.simclr.simclr_task_ptl import SimCLRTrainDataTransform_, SimCLREvalDataTransform_
-                    transform_train = SimCLRTrainDataTransform_(dobble=self.config.simclr_augment_train_dobble, input_height=self.config.dataset.x_shape[-1])
-                    transform_valid = SimCLREvalDataTransform_(dobble=self.config.simclr_augment_train_dobble, input_height=self.config.dataset.x_shape[-1])
-                    transform_test = SimCLREvalDataTransform_(dobble=self.config.simclr_augment_train_dobble, input_height=self.config.dataset.x_shape[-1])
-                    #in order not to effect validation dataset subset, which refers tot he same underlying dataset
-            
-            # if datasets is None:
-            train_dataset, valid_dataset, test_dataset = self.load_datasets(train_transform =transform_train,valid_transform =transform_valid,test_transform = transform_test)
-            # else:
-            #     train_dataset, valid_dataset, test_dataset = datasets
+            #these will be applied on the level of each task's dataset
+            train_transform = ToTensor()
+            test_transform = ToTensor()
+            valid_transform = ToTensor()
+            if self.config.simclr_augment_train:
+                train_transform = SimCLRTrainDataTransform_(dobble=self.config.simclr_augment_dobble, input_height=self.config.dataset.x_shape[-1])
+            if self.config.simclr_augment_test:
+                test_transform = SimCLREvalDataTransform_(dobble=self.config.simclr_augment_dobble, input_height=self.config.dataset.x_shape[-1])
+                valid_transform = SimCLREvalDataTransform_(dobble=self.config.simclr_augment_dobble, input_height=self.config.dataset.x_shape[-1])
 
             full_train_dataset_unlabelled = None
             if self.config.use_full_unlabeled:
@@ -203,9 +176,9 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             
             assert valid_dataset # We have a validation dataset.
 
-            self.full_train_dataset = train_dataset
-            self.full_valid_dataset = valid_dataset
-            self.full_test_dataset  = test_dataset
+            self.full_train_dataset = TransformedDataset(train_dataset, ToTensor())
+            self.full_valid_dataset = TransformedDataset(valid_dataset, ToTensor())
+            self.full_test_dataset  = TransformedDataset(test_dataset, ToTensor())
 
             # Clear the datasets for each task.
             self.train_datasets.clear()
@@ -222,7 +195,7 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 idx_lab_new, idx_unlab_new = get_lab_unlab_idxs(train.targets, p=self.config.ratio_labelled)
                 indices_train_lab, indices_train_unlab = self.state.idx_lab_unlab.setdefault(str(task.classes), (idx_lab_new, idx_unlab_new))
 
-                self.train_datasets.append(Subset(train, indices_train_lab))
+                self.train_datasets.append(TransformedDataset(Subset(train, indices_train_lab), train_transform))
                 # indices_train_lab, indices_train_unlab = indices_train_lab.tolist(), indices_train_unlab.tolist() 
                 # if len(indices_train_unlab)>0:  
                 #     self.train_datasets.append(SemiSupervisedDataset(train, frozenset(indices_train_lab), frozenset(indices_train_unlab)))
@@ -234,16 +207,19 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
                 #     self.train_samplers.append(partial(BatchSampler_SemiUpservised(indices_train_lab,indices_train_lab, self.hparams.batch_size)))
                     
                 #     #self.train_datasets.append(train)
+               
+               
+                
+                if self.config.baseline_cl and i>0:
+                    train_ds_unlabeled = torch.utils.data.ConcatDataset([Subset(train, indices_train_unlab),self.train_datasets_unlabeled[i-1]])
+                    self.train_datasets_unlabeled.append(TransformedDataset(train_ds_unlabeled, transform=train_transform))
+                else:
+                    self.train_datasets_unlabeled.append(TransformedDataset(Subset(train, indices_train_unlab), transform=train_transform))
+
+                self.valid_datasets.append(TransformedDataset(valid, transform=valid_transform))
+                self.test_datasets.append(TransformedDataset(test, transform=test_transform))
                 
                 self.train_samplers.append(None)
-
-                if self.config.baseline_cl and i>0:
-                    self.train_datasets_unlabeled.append(torch.utils.data.ConcatDataset([Subset(train, indices_train_unlab),self.train_datasets_unlabeled[i-1]]))
-                else:
-                    self.train_datasets_unlabeled.append(Subset(train, indices_train_unlab))
-
-                self.valid_datasets.append(valid)
-                self.test_datasets.append(test)
                 self.test_samplers.append(None)
                 self.valid_samplers.append(None)
 
@@ -272,24 +248,34 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
         logger.info(f"Cumul Accuracy linear [{i}]: {cumul_valid_accuracy_lin}")
         self.log({f"Cumulative_linear_semi": cumul_loss_lin_semi})
     
-    def measure_mlp_performance(self, i, j, train_j, test_j):    
+    def measure_mlp_performance(self, i, j, train_j: Dataset, test_j: Dataset):    
             # Measure the "quality" of the representations, by training and
             # evaluating a classifier on train and test data from task J.       
             #We will use fully labeled data to train this classifier to stay comperable to fully supervised setting.
             if j==0:
                 self.state.cumul_losses_linear_full[i]= LossInfo("Cumulative_lin_full")
                 self.state.cumul_losses_linear_semi[i]= LossInfo("Cumulative_lin_semi")
+            
+            def get_full_dataset(dataset):
+                if isinstance(dataset, Subset):
+                    dataset = dataset.dataset
+                    return dataset
+                elif isinstance(dataset, TransformedDataset):
+                    dataset = dataset.dataset
+                    dataset = get_full_dataset(dataset)
+                    return get_full_dataset(dataset)
+                return dataset
 
-            if isinstance(train_j, Subset):
-                train_j_full = train_j.dataset
-            else:
-                train_j_full = train_j
-            test_j_full = test_j
+            train_j_full = get_full_dataset(train_j)
+            test_j_full = get_full_dataset(test_j)    
+
+            train_j_full = TransformedDataset(train_j_full, SimCLRTrainDataTransform_(dobble=0, input_height=self.config.dataset.x_shape[-1]))
+            test_j_full = TransformedDataset(test_j_full, ToTensor())
 
             linear_j_train_loss, linear_j_test_loss = self.evaluate_MLP(
                 train_j_full,
-                test_j_full,
-                self.get_hidden_codes_array,
+                test_j_full,  
+                partial(self.get_hidden_codes_array, rescale_y = False),
                 description=f"Linear full [{i}][{j}]"
             )
 
@@ -307,6 +293,14 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
             self.state.cumul_losses_linear_full[i].absorb(linear_j_test_loss)
 
             #Semi
+            if isinstance(train_j, TransformedDataset):
+                train_j = train_j.dataset
+            if isinstance(test_j, TransformedDataset):
+                test_j = test_j.dataset
+            
+            train_j = TransformedDataset(train_j, SimCLRTrainDataTransform_(dobble=0, input_height=self.config.dataset.x_shape[-1]))
+            test_j = TransformedDataset(test_j, ToTensor())   
+
             linear_j_train_loss, linear_j_test_loss = self.evaluate_MLP(
                 train_j,
                 test_j,
@@ -337,14 +331,37 @@ class TaskIncremental_Semi_Supervised(TaskIncremental):
               steps_per_epoch: int = None,
               eval_function: Callable = None) -> TrainValidLosses:
         
+        def get_dataset(dataloader):
+            if isinstance(dataloader, DataLoader):
+                dataset = dataloader.dataset
+            elif isinstance(dataloader, Dataset):
+                dataset = dataloader
+            else:
+                raise Exception('Unrecognized object as dataloader')
+            if isinstance(dataset, TransformedDataset):
+                dataset = dataset.dataset
+            return dataset
+                                
         self.fintuning_mlp = False
-        #steps_per_epoch = len(train_dataloader)  
+        #Here we set transformations for different phases
         if mode == Modes.FINETUNE_CLS.value and not isinstance(train_dataloader, unlabeled):
             self.fintuning_mlp = True
-        
+            train_dataset = get_dataset(train_dataloader)
+            test_dataset = get_dataset(test_dataloader)
+            valid_dataset = get_dataset(valid_dataloader)    
+            #using simclr transformation witho NO double augmentation
+            if self.config.use_simclr_augmentation_in_finetuning:
+                train_dataset = TransformedDataset(train_dataset, transform=SimCLRTrainDataTransform_(dobble=0,input_height=self.config.dataset.x_shape[-1]))
+                test_dataset = TransformedDataset(test_dataset, transform=SimCLREvalDataTransform_(dobble=0,input_height=self.config.dataset.x_shape[-1]))
+                valid_dataset = TransformedDataset(valid_dataset, transform=SimCLREvalDataTransform_(dobble=0,input_height=self.config.dataset.x_shape[-1]))
+                
+            #NOTE: potential sampler is ignored here (sampler is currentlhy not used)
+            train_dataloader = self.get_dataloader(train_dataset)
+            test_dataloader = self.get_dataloader(test_dataset)
+            valid_dataloader = self.get_dataloader(valid_dataset)
+
         elif mode == Modes.PRETRAIN.value not in mode and not isinstance(train_dataloader, unlabeled):
             #mixture of labeled and unlabeled training
-            
             if isinstance(train_dataloader, Dataset):
                train_dataloader = self.get_dataloader(train_dataloader)
 

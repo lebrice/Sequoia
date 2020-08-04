@@ -42,9 +42,9 @@ class DatasetConfig(Serializable):
         """ Downloads the corresponding train & test datasets and returns them.
         """
         # Use the data_dir argument if given, otherwise use "./data"
-        train_transform = train_transform if train_transform is not None else self.transforms
-        test_transform = test_transform if test_transform is not None else self.transforms_test
-        valid_transform = valid_transform if valid_transform is not None else self.transforms_test
+        # train_transform = train_transform if train_transform is not None else self.transforms
+        # test_transform = test_transform if test_transform is not None else self.transforms_test
+        # valid_transform = valid_transform if valid_transform is not None else self.transforms_test
         
         train = self.dataset_class(data_dir, train=True, download=download, transform=train_transform)
         valid = self.dataset_class(data_dir, train=True, download=download, transform=valid_transform)

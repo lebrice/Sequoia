@@ -415,7 +415,7 @@ class ExperimentBase(Serializable):
                 
                 #run eval function
                 if eval_function is not None:
-                    eval_function(self.state.i, train_dataloader, test_dataloader, step=self.global_step, description=f'Linear_eval')
+                    eval_function(self.state.i, train_dataloader, test_dataloader, step=epoch, description=f'Linear_eval')
             
             if self.config.save_encoder_every_epochs>0 and epoch % self.config.save_encoder_every_epochs == 0:
                     #checkpoint model
@@ -636,30 +636,33 @@ class ExperimentBase(Serializable):
 
 
     def get_dataloader(self, dataset: Dataset, sampler: Sampler = None, shuffle: bool=True, batch_size:int = None) -> DataLoader:
-        if sampler is None:
-            return DataLoader(
-                dataset,
-                batch_size = batch_size if batch_size is not None else self.hparams.batch_size,
-                shuffle=shuffle,
-                num_workers=self.config.num_workers,
-                pin_memory=self.config.use_cuda,
-            )
-        else:
-            if hasattr(sampler, 'batch_size'):
+        if dataset is not None:
+            if sampler is None:
                 return DataLoader(
                     dataset,
-                    batch_sampler=sampler,
+                    batch_size = batch_size if batch_size is not None else self.hparams.batch_size,
+                    shuffle=shuffle,
                     num_workers=self.config.num_workers,
                     pin_memory=self.config.use_cuda,
                 )
             else:
-                return DataLoader(
-                    dataset,
-                    batch_size = batch_size if batch_size is not None else self.hparams.batch_size,
-                    sampler=sampler,
-                    num_workers=self.config.num_workers,
-                    pin_memory=self.config.use_cuda,
-                )
+                if hasattr(sampler, 'batch_size'):
+                    return DataLoader(
+                        dataset,
+                        batch_sampler=sampler,
+                        num_workers=self.config.num_workers,
+                        pin_memory=self.config.use_cuda,
+                    )
+                else:
+                    return DataLoader(
+                        dataset,
+                        batch_size = batch_size if batch_size is not None else self.hparams.batch_size,
+                        sampler=sampler,
+                        num_workers=self.config.num_workers,
+                        pin_memory=self.config.use_cuda,
+                    )
+        else:
+            return None
 
 
     def save_experiment(self, save_path: Path, blocking: bool=False):

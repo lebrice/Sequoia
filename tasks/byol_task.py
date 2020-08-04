@@ -58,7 +58,7 @@ class BYOL_Task(AuxiliaryTask, BYOL):
     class Options(AuxiliaryTask.Options):
         """ Options for the SimCLR aux task. """
         # Hyperparameters from the falr submodule.
-        #coefficient: int = 1 #this one is set in 'aux_task', can b e hardcoded here for debuging
+        coefficient: int = 1 #this one is set in 'aux_task', can b e hardcoded here for debuging
 
         byol_options: FalrHParams = mutable_field(FalrHParams)
 

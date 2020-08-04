@@ -1,6 +1,7 @@
 import itertools
 import hashlib
 import copy
+import traceback
 from enum import Enum
 
 import torch.multiprocessing as mp
@@ -20,7 +21,7 @@ import numpy as np
 import torch
 import wandb
 from torch import Tensor
-from datasets.data_utils import train_valid_split
+from datasets.data_utils import train_valid_split, TransformedDataset
 from models.classifier import Classifier
 from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets import VisionDataset
@@ -39,7 +40,7 @@ from utils.json_utils import Serializable
 from tasks import Tasks
 from utils import utils
 from utils.utils import n_consecutive, roundrobin
-from tasks.simclr.simclr_task_ptl import SimCLRTrainDataTransform_
+from tasks.simclr.simclr_task_ptl import SimCLRTrainDataTransform_, SimCLREvalDataTransform_
 from torchvision.transforms import Compose, ToPILImage, ToTensor
 from utils.eval_utils import background_eval
 
@@ -52,6 +53,8 @@ class Modes(Enum):
     SUP: str = 'supervised'
     PRETRAIN: str = 'pretrain'
     FINETUNE_CLS: str = 'fintuning_classifier'
+
+
 
 @dataclass
 class TaskIncremental(Experiment):
@@ -95,18 +98,18 @@ class TaskIncremental(Experiment):
         #reinitialize after each task
         reinit_each_step: bool = 0
         #wether to apply simclr augmentation to training set
-        simclr_augment_train: bool = 0
-        #wether to apply simclr dobble  augmentation to training set
-        simclr_augment_train_dobble: bool = 0
+        simclr_augment_train: bool = 1
+        #wether to apply simclr dobble  augmentation to training set (for supervised baseline with augmentation better to set this to 0)
+        simclr_augment_dobble: bool = 1
 
         #wether to apply simclr augmentation to test set
-        simclr_augment_test: bool = 0
+        simclr_augment_test: bool = 1
 
         #MLP finetuning LR
-        finetuning_lr: float =0.001 
+        finetuning_lr: float =0.0001 
 
         #path to a folder to try to load best model from (if None no mdoel is loaded)
-        model_path: Optional[str] = "/Users/oleksostapenko/Projects/SSCL/results/SSCL/TaskIncremental_Semi_Supervised/EkYwW/checkpoints"
+        model_path: Optional[str] = None #"/Users/oleksostapenko/Projects/SSCL/results/SSCL/TaskIncremental_Semi_Supervised/EkYwW/checkpoints"
 
 
     @dataclass
@@ -269,210 +272,217 @@ class TaskIncremental(Experiment):
         self.load_pretrain_dataset()
         self.pretrain_unsup()
         self.load_task_datasets(self.tasks)
-                
-        for i in range(self.state.i, self.n_tasks):
-            self.state.i = i
-            logger.info(f"Starting task {i} with classes {self.tasks[i]}")
-            if self.config.model_path is not None:
-                self.try_loading_best_model_unsupervised(task=i)
+        try:        
+            for i in range(self.state.i, self.n_tasks):
+                self.state.i = i
+                logger.info(f"Starting task {i} with classes {self.tasks[i]}")
+                if self.config.model_path is not None:
+                    self.try_loading_best_model_unsupervised(task=i)
 
-            self.log({"task/currently_learned_task": self.state.i})
+                self.log({"task/currently_learned_task": self.state.i})
 
-            self.on_task_switch(self.tasks[i])
-            # Training and validation datasets for task i.
-            train_i_dataset = self.train_datasets[i]
-            valid_i_dataset = self.valid_datasets[i]
-            test_i_dataset = self.test_datasets[i]
+                self.on_task_switch(self.tasks[i])
+                # Training and validation datasets for task i.
+                train_i_dataset = self.train_datasets[i]
+                valid_i_dataset = self.valid_datasets[i]
+                test_i_dataset = self.test_datasets[i]
 
-            train_i_sampler = self.train_samplers[i]
-            valid_i_sampler = self.valid_samplers[i]
-            test_i_sampler = self.test_samplers[i]            
+                train_i_sampler = self.train_samplers[i]
+                valid_i_sampler = self.valid_samplers[i]
+                test_i_sampler = self.test_samplers[i]            
 
 
-            if self.replay_buffer:
-                # Append the replay buffer to the end of the training dataset.
-                # TODO: Should we shuffle them together?
-                # TODO: Should we also add some data from previous tasks in the validation dataset?
-                train_i_dataset += self.replay_buffer.as_dataset()
+                if self.replay_buffer:
+                    # Append the replay buffer to the end of the training dataset.
+                    # TODO: Should we shuffle them together?
+                    # TODO: Should we also add some data from previous tasks in the validation dataset?
+                    train_i_dataset += self.replay_buffer.as_dataset()
 
-            train_i_loader = self.get_dataloader(train_i_dataset, sampler = train_i_sampler)
-            valid_i_loader = self.get_dataloader(valid_i_dataset, sampler = valid_i_sampler)
-            test_i_loader = self.get_dataloader(test_i_dataset, sampler = test_i_sampler)
+                train_i_loader = self.get_dataloader(train_i_dataset, sampler = train_i_sampler)
+                valid_i_loader = self.get_dataloader(valid_i_dataset, sampler = valid_i_sampler)
+                test_i_loader = self.get_dataloader(test_i_dataset, sampler = test_i_sampler)
 
-            if self.state.j == 0:
-                with self.plot_region_name(f"Learn Task {i}"):
-                    # We only train (unsupervised) if there is at least one enabled
-                    # auxiliary task and if the maximum number of unsupervised
-                    # epochs per task is greater than zero.
-                    self_supervision_on = any(task.enabled for task in self.model.tasks.values())
+                if self.state.j == 0:
+                    with self.plot_region_name(f"Learn Task {i}"):
+                        # We only train (unsupervised) if there is at least one enabled
+                        # auxiliary task and if the maximum number of unsupervised
+                        # epochs per task is greater than zero.
+                        self_supervision_on = any(task.enabled for task in self.model.tasks.values())
 
-                    if self_supervision_on and self.config.unsupervised_epochs_per_task:
-                        # Un/self-supervised training on task i.
-                        # NOTE: Here we use the same dataloaders, but drop the
-                        # labels and treat them as unlabeled datasets. 
-                        self.state.all_losses += self.train(
-                            unlabeled(train_i_loader),
-                            unlabeled(valid_i_loader),
+                        if self_supervision_on and self.config.unsupervised_epochs_per_task:
+                            # Un/self-supervised training on task i.
+                            # NOTE: Here we use the same dataloaders, but drop the
+                            # labels and treat them as unlabeled datasets. 
+                            self.state.all_losses += self.train(
+                                unlabeled(train_i_loader),
+                                unlabeled(valid_i_loader),
                             test_i_loader,
-                            epochs=self.config.unsupervised_epochs_per_task,
+                                epochs=self.config.unsupervised_epochs_per_task,
+                                description=f"Task {i}",
+                                mode = Modes.UNSUP.value,
+                                use_accuracy_as_metric=False, # Can't use accuracy as metric during unsupervised training.
+                                temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
+                                eval_function=self.evaluate_mlp_baground,
+                            )
+
+                        # Train (supervised) on task i.
+                        # TODO: save the state during training?.
+                        self.state.all_losses += self.train(
+                            train_i_loader,
+                            valid_i_loader,
+                            test_i_loader,
+                            epochs=self.config.supervised_epochs_per_task,
                             description=f"Task {i}",
-                            mode = Modes.UNSUP.value,
-                            use_accuracy_as_metric=False, # Can't use accuracy as metric during unsupervised training.
-                            temp_save_dir=self.checkpoints_dir / f"task_{i}_unsupervised",
-                            eval_function=self.evaluate_mlp_baground,
+                            mode = Modes.SUP.value,
+                            use_accuracy_as_metric=self.config.use_accuracy_as_metric,
+                            temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
                         )
 
-                    # Train (supervised) on task i.
-                    # TODO: save the state during training?.
-                    self.state.all_losses += self.train(
-                        train_i_loader,
-                        valid_i_loader,
-                        test_i_loader,
-                        epochs=self.config.supervised_epochs_per_task,
-                        description=f"Task {i}",
-                        mode = Modes.SUP.value,
-                        use_accuracy_as_metric=self.config.use_accuracy_as_metric,
-                        temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
-                    )
-
-                    # Finetune classifier (supervised) on task i.
-                    # TODO: save the state during training?.
-                    
-                    self.set_optimizer_lr(self.config.finetuning_lr)
-                    self.state.all_losses += self.train(
-                        train_i_loader,
-                        valid_i_loader,
-                        test_i_loader,  
-                        epochs=self.config.finetune_epochs_per_task,
-                        description=f"Task {i}",
-                        mode = Modes.FINETUNE_CLS.value,
-                        use_accuracy_as_metric=self.config.use_accuracy_as_metric,
-                        temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
-                    )
-                    self.set_optimizer_lr(self.hparams.learning_rate)
-            
-            # Save to the 'checkpoints' dir
-            self.save_state()
-            
-            # Evaluation loop:
-            for j in range(self.state.j, self.n_tasks):
-                if j == 0:
-                    #  Evaluate on all tasks (as described above).
-                    if self.state.cumul_losses[i] is not None:
-                        logger.warning(
-                            f"Cumul loss at index {i} should have been None "
-                            f"but is {self.state.cumul_losses[i]}.\n"
-                            f"This value will be overwritten."
+                        # Finetune classifier (supervised) on task i.
+                        # TODO: save the state during training?.
+                        
+                        self.set_optimizer_lr(self.config.finetuning_lr)
+                        self.state.all_losses += self.train(
+                            train_i_loader,
+                            valid_i_loader,
+                            test_i_loader,  
+                            epochs=self.config.finetune_epochs_per_task,
+                            description=f"Task {i}",
+                            mode = Modes.FINETUNE_CLS.value,
+                            use_accuracy_as_metric=self.config.use_accuracy_as_metric,
+                            temp_save_dir=self.checkpoints_dir / f"task_{i}_supervised",
                         )
-                    self.state.cumul_losses[i] = LossInfo("Cumulative")
-
-                self.state.j = j
-                # -- Evaluate Representations after having learned tasks [0:i] on data from task J. --
-                # If we have previously trained on this task:
-                if j<=i:
-                    try:
-                        train_j = self.train_datasets[j]
-                        test_j  = self.test_datasets[j]     
-                        train_j_sampler = self.train_samplers[j]   
-                        test_j_sampler = self.test_samplers[j]   
-                        train_loadder_j = self.get_dataloader(train_j, sampler=train_j_sampler)
-                        test_loadder_j = self.get_dataloader(test_j, sampler=test_j_sampler)
-                        
-                        #self.on_task_switch(self.tasks[j])
-                        self.model.current_task = self.tasks[j]
-
-                        # Test on the test dataset for task j.
-                        loss_j = self.test(test_loadder_j, description=f"Task{i}: Test on Task{j}", name=f"Task{j}")
-                        self.log({f"Task_losses/Task{j}": loss_j})
-                        
-                        if j==i:
-                            self.log({f"Test_full_Final": loss_j})
-                        
-                        self.state.task_losses[i][j] = loss_j
-                        
-                        # Merge the metrics from this task and the other tasks.
-                        # NOTE: using += above would add a "Task<j>" item in the
-                        # `losses` attribute of the cumulative loss, without merging
-                        # the metrics.
-                        self.state.cumul_losses[i].absorb(loss_j)
-
-                        supervised_acc_j = get_supervised_accuracy(loss_j)
-                        logger.info(f"Task {i} Supervised Test accuracy on task {j}: {supervised_acc_j:.2%}")
-
-                        self.measure_mlp_performance(i, j, train_j, test_j)
-
-
-                    except Exception as e:
-                        print(e)
+                        self.set_optimizer_lr(self.hparams.learning_rate)
                 
-            # -- Evaluate representations after task i on the whole train/test datasets. --
+                # Save to the 'checkpoints' dir
+                self.save_state()
+                
+                # Evaluation loop:
+                for j in range(self.state.j, self.n_tasks):
+                    if j == 0:
+                        #  Evaluate on all tasks (as described above).
+                        if self.state.cumul_losses[i] is not None:
+                            logger.warning(
+                                f"Cumul loss at index {i} should have been None "
+                                f"but is {self.state.cumul_losses[i]}.\n"
+                                f"This value will be overwritten."
+                            )
+                        self.state.cumul_losses[i] = LossInfo("Cumulative")
 
-            # Measure the "quality" of the representations of the data using the
-            # whole test dataset.
-            # TODO: Do this in another process (as it might take very long)
-            knn_train_loss, knn_test_loss = self.test_knn(
-                self.full_train_dataset,
-                self.full_test_dataset,
-                description=f"Task{i}: KNN (Full Test Dataset)"
-            )
+                    self.state.j = j
+                    # -- Evaluate Representations after having learned tasks [0:i] on data from task J. --
+                    # If we have previously trained on this task:
+                    if j<=i:
+                        try:
+                            train_j = self.train_datasets[j]
+                            test_j  = self.test_datasets[j]     
+                            train_j_sampler = self.train_samplers[j]   
+                            test_j_sampler = self.test_samplers[j]   
+                            train_loadder_j = self.get_dataloader(train_j, sampler=train_j_sampler)
+                            test_loadder_j = self.get_dataloader(test_j, sampler=test_j_sampler)
+                            
+                            #self.on_task_switch(self.tasks[j])
+                            self.model.current_task = self.tasks[j]
 
-            knn_train_acc = knn_train_loss.accuracy
-            knn_test_acc  = knn_test_loss.accuracy
-            logger.info(f"Task{i}: KNN Train Accuracy (Full): {knn_train_acc:.2%}")
-            logger.info(f"Task{i}: KNN Test  Accuracy (Full): {knn_test_acc :.2%}")
-            # Log the accuracies to wandb.
-            self.log({
-                f"KNN/train/full": knn_train_acc,
-                f"KNN/test/full" : knn_test_acc,
-            })
-            # Save the loss object in the state.
-            self.state.knn_full_losses[i] = knn_test_loss
+                            # Test on the test dataset for task j.
+                            loss_j = self.test(test_loadder_j, description=f"Task{i}: Test on Task{j}", name=f"Task{j}")
+                            self.log({f"Task_losses/Task{j}": loss_j})
+                            
+                            if j==i:
+                                self.log({f"Test_full_Final": loss_j})
+                            
+                            self.state.task_losses[i][j] = loss_j
+                            
+                            # Merge the metrics from this task and the other tasks.
+                            # NOTE: using += above would add a "Task<j>" item in the
+                            # `losses` attribute of the cumulative loss, without merging
+                            # the metrics.
+                            self.state.cumul_losses[i].absorb(loss_j)
 
-            # Save the state with the new metrics, but no need to save the
-            # model weights, as they didn't change.
-            self.save_state(save_model_weights=False)
-            # NOTE: this has to be after, so we don't reloop through the j's if
-            # something in the next few lines fails.
-            self.state.j = 0       
-            self.log_cumulative_loss(i)
+                            supervised_acc_j = get_supervised_accuracy(loss_j)
+                            logger.info(f"Task {i} Supervised Test accuracy on task {j}: {supervised_acc_j:.2%}")
 
-        # mark that we're done so we get right back here if we resume a
-        # finished experiment
-        self.state.i = self.n_tasks
-        self.state.j = self.n_tasks
+                            self.measure_mlp_performance(i, j, train_j, test_j)
 
-        self.save_state(self.checkpoints_dir) # Save to the 'checkpoints' dir.
-        self.save_state(self.results_dir) # Save to the 'results' dir.
+
+                        except Exception as e:
+                            print(e)
+                    
+                # -- Evaluate representations after task i on the whole train/test datasets. --
+
+                # Measure the "quality" of the representations of the data using the
+                # whole test dataset.
+                # TODO: Do this in another process (as it might take very long)
+                knn_train_loss, knn_test_loss = self.test_knn(
+                    self.full_train_dataset,
+                    self.full_test_dataset,
+                    description=f"Task{i}: KNN (Full Test Dataset)"
+                )
+
+                knn_train_acc = knn_train_loss.accuracy
+                knn_test_acc  = knn_test_loss.accuracy
+                logger.info(f"Task{i}: KNN Train Accuracy (Full): {knn_train_acc:.2%}")
+                logger.info(f"Task{i}: KNN Test  Accuracy (Full): {knn_test_acc :.2%}")
+                # Log the accuracies to wandb.
+                self.log({
+                    f"KNN/train/full": knn_train_acc,
+                    f"KNN/test/full" : knn_test_acc,
+                })
+                # Save the loss object in the state.
+                self.state.knn_full_losses[i] = knn_test_loss
+
+                # Save the state with the new metrics, but no need to save the
+                # model weights, as they didn't change.
+                self.save_state(save_model_weights=False)
+                # NOTE: this has to be after, so we don't reloop through the j's if
+                # something in the next few lines fails.
+                self.state.j = 0       
+                self.log_cumulative_loss(i)
+
+            # mark that we're done so we get right back here if we resume a
+            # finished experiment
+            self.state.i = self.n_tasks
+            self.state.j = self.n_tasks
+
+            self.save_state(self.checkpoints_dir) # Save to the 'checkpoints' dir.
+            self.save_state(self.results_dir) # Save to the 'results' dir.
+            
+            for i, cumul_loss in enumerate(self.state.cumul_losses):
+                assert cumul_loss is not None, f"cumul loss at {i} should not be None!"
+                cumul_valid_accuracy = get_supervised_accuracy(cumul_loss)
+                logger.info(f"Cumul Accuracy [{i}]: {cumul_valid_accuracy}")
+                if self.config.use_wandb:
+                    wandb.run.summary[f"Cumul Accuracy [{i}]"] = cumul_valid_accuracy
+
+            from utils.plotting import maximize_figure
+            # Make the forward-backward transfer grid figure.
+            #grid = self.make_transfer_grid_figure(
+            #    knn_losses=self.state.knn_losses,
+            #    task_losses=self.state.task_losses,
+            #    cumul_losses=self.state.cumul_losses
+            #)
+            #grid.savefig(self.plots_dir / "transfer_grid.png")
+            
+            # if self.config.debug:
+            #     grid.waitforbuttonpress(10)
+
+            # make the plot of the losses (might not be useful, since we could also just do it in wandb).
+            # fig = self.make_loss_figure(self.all_losses, self.plot_sections)
+            # fig.savefig(self.plots_dir / "losses.png")
+            
+            # if self.config.debug:
+            #     fig.show()
+            #     fig.waitforbuttonpress(10
         
-        for i, cumul_loss in enumerate(self.state.cumul_losses):
-            assert cumul_loss is not None, f"cumul loss at {i} should not be None!"
-            cumul_valid_accuracy = get_supervised_accuracy(cumul_loss)
-            logger.info(f"Cumul Accuracy [{i}]: {cumul_valid_accuracy}")
-            if self.config.use_wandb:
-                wandb.run.summary[f"Cumul Accuracy [{i}]"] = cumul_valid_accuracy
-
-        from utils.plotting import maximize_figure
-        # Make the forward-backward transfer grid figure.
-        #grid = self.make_transfer_grid_figure(
-        #    knn_losses=self.state.knn_losses,
-        #    task_losses=self.state.task_losses,
-        #    cumul_losses=self.state.cumul_losses
-        #)
-        #grid.savefig(self.plots_dir / "transfer_grid.png")
-        
-        # if self.config.debug:
-        #     grid.waitforbuttonpress(10)
-
-        # make the plot of the losses (might not be useful, since we could also just do it in wandb).
-        # fig = self.make_loss_figure(self.all_losses, self.plot_sections)
-        # fig.savefig(self.plots_dir / "losses.png")
-        
-        # if self.config.debug:
-        #     fig.show()
-        #     fig.waitforbuttonpress(10
-        
-        self.background_mlp_queue.put(None)
-        self.background_process.join()
+            self.background_mlp_queue.put(None)
+            self.background_process.join()
+        except Exception as e:
+            print(e)
+            traceback.print_exc()
+            print("waiting for queue to finish...")
+            self.background_queue.put(None)
+            self.background_process.join()
+            raise e
     
     def try_loading_best_model_unsupervised(self, task:int):
         path = Path(self.config.model_path).joinpath(self.get_model_name(mode=Modes.UNSUP.value, task=task))
@@ -485,7 +495,6 @@ class TaskIncremental(Experiment):
         except Exception as e:
             print(e)
         
-
     def log_cumulative_loss(self, i):
         cumul_loss = self.state.cumul_losses[i]            
         cumul_valid_accuracy = get_supervised_accuracy(cumul_loss)
@@ -498,17 +507,35 @@ class TaskIncremental(Experiment):
         self.log({f"Cumulative_linear_full": cumul_loss_lin})
     
     def evaluate_mlp_baground(self, i, train_loader, test_loader, step, description) -> None:
-        if isinstance(train_loader, unlabeled):
-            train_loader = train_loader.loader
-        if isinstance(test_loader, unlabeled):
-            test_loader = test_loader.loader
+        #get labeled dataloader 
+               
+        def get_dataset(dataloader):
+            if isinstance(dataloader, unlabeled):
+                dataloader = dataloader.loader
+            if isinstance(dataloader, DataLoader):
+                dataset = dataloader.dataset
+            elif isinstance(dataloader, Dataset):
+                dataset = dataloader
+            else:
+                raise Exception('Unrecognized object as dataloader')
+            if isinstance(dataset, TransformedDataset):
+                dataset = dataset.dataset
+            return dataset
+
+        #NOTE: potential sampler is ignored here (sampler is currentlhy not used)
+        train_dataset = get_dataset(train_loader)
+        test_dataset = get_dataset(test_loader)
+
+        train_dataset = TransformedDataset(train_dataset, transform=SimCLRTrainDataTransform_(dobble=0,input_height=self.config.dataset.x_shape[-1]))
+        test_dataset = TransformedDataset(test_dataset, transform=ToTensor())
+
         X, y = self.get_hidden_codes_array(train_loader)
         Xt, yt = self.get_hidden_codes_array(test_loader)
 
         self.background_mlp_queue.put((i, X, y, Xt, yt, step, description))
         
     @torch.no_grad()
-    def get_hidden_codes_array(self, dataloader: DataLoader) -> Tuple[np.ndarray, np.ndarray]:
+    def get_hidden_codes_array(self, dataloader: DataLoader, rescale_y = True) -> Tuple[np.ndarray, np.ndarray]:
             """ Gets the hidden vectors and corresponding labels. """
             was_training = self.model.training
             self.model.eval()
@@ -516,7 +543,8 @@ class TaskIncremental(Experiment):
             y_list: List[np.ndarray] = []
             for batch in dataloader:
                 x, y = self.preprocess(batch)
-                y = self.model.rescale_target(y)
+                if rescale_y:
+                    y = self.model.rescale_target(y)
                 # We only do KNN with examples that have a label.
                 if y is not None:                    
                     x, y, _ = self.model.preprocess_inputs(x,y, None)
@@ -783,24 +811,7 @@ class TaskIncremental(Experiment):
         for param_group in self.model.optimizer.param_groups:
                 param_group['lr'] = lr
 
-    def load_task_datasets(self, tasks: List[Task]) -> None:
-        self.pretrain_train_dataset = None
-        self.pretrain_valid_dataset = None
-
-        self.train_datasets.clear()
-        self.valid_datasets.clear()
-        self.test_datasets.clear()
-
-        (self.full_train_dataset,
-        self.full_valid_dataset,
-        self.full_test_dataset, 
-        self.train_datasets, 
-        self.valid_datasets, 
-        self.test_datasets,
-        self.valid_cumul_datasets,
-        self.test_cumul_datasets) = self._load_task_datasets(tasks)
-
-    def _load_task_datasets(self, tasks: List[Task], datasets: Tuple[Dataset, Dataset, Dataset]=None):
+    def load_task_datasets(self, tasks: List[Task]):
         """Create the train, valid, test, and cumulative valid & test datasets
         for each task.
         """
@@ -808,37 +819,28 @@ class TaskIncremental(Experiment):
         #self.pretrain_valid_dataset = None
         # download the dataset.
         
-        transform_train = None
-        transform_test = None
-        transform_valid = None    
-        if self.config.simclr_augment_train and not self.config.simclr_augment_test :
-                from tasks.simclr.simclr_task_ptl import SimCLRTrainDataTransform_
-                transform_train = Compose([ToTensor(), ToPILImage(), SimCLRTrainDataTransform_(dobble=self.config.simclr_augment_train_dobble, input_height=self.config.dataset.x_shape[-1])])
-                transform_test = ToTensor()
-                transform_valid = ToTensor()
-                #in order not to effect validation dataset subset, which refers tot he same underlying dataset
+        train_dataset, valid_dataset, test_dataset = self.load_datasets(train_transform =None,valid_transform =None,test_transform = n_consecutive)
 
-        elif self.config.simclr_augment_train and self.config.simclr_augment_test:
-                from tasks.simclr.simclr_task_ptl import SimCLRTrainDataTransform_, SimCLREvalDataTransform_
-                transform_train = SimCLRTrainDataTransform_(dobble=self.config.simclr_augment_train_dobble, input_height=self.config.dataset.x_shape[-1])
-                transform_valid = SimCLREvalDataTransform_(dobble=self.config.simclr_augment_train_dobble, input_height=self.config.dataset.x_shape[-1])
-                transform_test = SimCLREvalDataTransform_(dobble=self.config.simclr_augment_train_dobble, input_height=self.config.dataset.x_shape[-1])
-                #in order not to effect validation dataset subset, which refers tot he same underlying dataset
-
-        if datasets is None:
-            train_dataset, valid_dataset, test_dataset = self.load_datasets(train_transform =transform_train,valid_transform =transform_valid,test_transform = transform_test)
-        else:
-            train_dataset, valid_dataset, test_dataset = datasets
-            
+        #these will be applied on the level of each task's dataset
+        train_transform = ToTensor()
+        test_transform = ToTensor()
+        valid_transform = ToTensor()
+        if self.config.simclr_augment_train: 
+            train_transform = SimCLRTrainDataTransform_(dobble=1, input_height=self.config.dataset.x_shape[-1])
+        if self.config.simclr_augment_test:
+            test_transform = SimCLREvalDataTransform_(dobble=1, input_height=self.config.dataset.x_shape[-1])
+            valid_transform = SimCLREvalDataTransform_(dobble=1, input_height=self.config.dataset.x_shape[-1])
+    
+                
         assert valid_dataset # We have a validation dataset.
-        full_train_dataset = train_dataset
-        full_valid_dataset = valid_dataset
-        full_test_dataset  = test_dataset
+        self.full_train_dataset = train_dataset
+        self.full_valid_dataset = valid_dataset
+        self.full_test_dataset  = test_dataset
 
         # Clear the datasets for each task.
-        train_datasets = []
-        valid_datasets = []
-        test_datasets = []
+        self.train_datasets.clear()
+        self.valid_datasets.clear()
+        self.test_datasets.clear()
         
 
         for i, task in enumerate(tasks):
@@ -846,16 +848,14 @@ class TaskIncremental(Experiment):
             valid = ClassSubset(valid_dataset, task)
             test  = ClassSubset(test_dataset, task) 
 
-            train_datasets.append(train)
-            valid_datasets.append(valid)
-            test_datasets.append(test)
+            self.train_datasets.append(TransformedDataset(train, train_transform))
+            self.valid_datasets.append(TransformedDataset(valid, valid_transform))
+            self.test_datasets.append(TransformedDataset(test, test_transform))
 
         # Use itertools.accumulate to do the summation of the datasets.
-        valid_cumul_datasets = list(accumulate(valid_datasets))
-        test_cumul_dataset = list(accumulate(test_datasets))
-        
-        return (full_train_dataset, full_valid_dataset, full_test_dataset, train_datasets, valid_datasets, test_datasets, valid_cumul_datasets, test_cumul_dataset)
-    
+        self.valid_cumul_datasets = list(accumulate(self.valid_datasets))
+        self.test_cumul_dataset = list(accumulate(self.test_datasets))
+       
     def get_pretrained_model_path(self, model:Classifier)->Path:
         #model is identifies by number of epochs for pretraining, encoder type and aux_tasks coefficients
         name = hashlib.md5(str(model.model_pretrained_unique_attributes() + [self.config.unsupervised_epochs_pretraining,self.config.pretraining_dataset.name]).encode('utf-8')).hexdigest()
@@ -897,6 +897,13 @@ class TaskIncremental(Experiment):
     def started(self) -> bool:
         checkpoint_exists = (self.checkpoints_dir / "state.json").exists()
         return super().started and checkpoint_exists
+
+
+
+
+
+
+
 
     #functions for making figures (nort really used now) 
     def make_transfer_grid_figure(self,

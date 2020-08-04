@@ -68,7 +68,7 @@ class Config(WandbConfig):
     delete_existing_log_dir: bool = False
 
     #save encoder model every x epochs
-    save_encoder_every_epochs: int = 2
+    save_encoder_every_epochs: int = 50
 
     def __post_init__(self):
         # set the manual seed (for reproducibility)

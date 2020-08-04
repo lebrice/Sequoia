@@ -35,6 +35,7 @@ def get_mlp_lossinfo(i, X, y, Xt, yt, step, description=''):
         f"{description}/train/task{i}": linear_i_train_acc,
         f"{description}/test/task{i}" : linear_i_test_acc,
         f"{description}/test": linear_i_test_acc,
+        'epoch': step,
     })
 
 def get_MLP_losses(X, y, Xt, yt, random_state=100, description='') -> Tuple[LossInfo, LossInfo]:

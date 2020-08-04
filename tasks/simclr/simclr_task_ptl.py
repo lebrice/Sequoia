@@ -72,12 +72,12 @@ class SimCLRTask(AuxiliaryTask, SimCLR):
         #coefficient: int = 1   
 
         #weight given to the long term loss (it 0 its not used)
-        lt_lambda: float = 1.
+        lt_lambda: float = 0.
 
         #temp of contrastive loss
         loss_temperature: float = 0.5
 
-        # the projection size
+        # the projection size  
         proj_dim: int = 128 # the projection size
 
         #whether to use predictor for cl
@@ -197,10 +197,10 @@ class SimCLRTask(AuxiliaryTask, SimCLR):
             loss_lt = 0.5 * (self.factor_loss_lt * loss_lt)
             loss_ntx = 0.5 * loss_ntx
             loss_into_lt = LossInfo(name=f'{name}_{self.options.lt_loss}', total_loss=loss_lt)
-            loss_info_ntx = LossInfo(name='{name}_ntx_loss', total_loss=loss_ntx)
+            loss_info_ntx = LossInfo(name=f'{name}_ntx_loss', total_loss=loss_ntx)
             loss = loss_info_ntx + loss_into_lt
         else:
-            loss_info_ntx = LossInfo(name='{name}_ntx_loss', total_loss=loss_ntx)
+            loss_info_ntx = LossInfo(name=f'{name}_ntx_loss', total_loss=loss_ntx)
             loss = loss_info_ntx 
 
         return loss, (h1, h2)
@@ -224,7 +224,7 @@ class SimCLRTask(AuxiliaryTask, SimCLR):
         if self.encoder.training:
             loss, h = self.training_step(im_q, im_k, y, batch_idx=0, name='train')
         else:
-            loss, h = self.training_step(im_q, im_k, im_lt, y, batch_idx=0, name='valid')
+            loss, h = self.training_step(im_q, im_k, y, batch_idx=0, name='valid')
         #we return concateneted augmentations of images, loss, and concateneted hidden representations
         return torch.cat([im_q,im_k], dim=0), loss, torch.cat(h, dim=0)
 
@@ -246,4 +246,4 @@ class SimCLRTask(AuxiliaryTask, SimCLR):
                 self.projector_lt = copy.deepcopy(self.projection).to(self.device)#
                 if torch.cuda.device_count() > 1:
                     print("Let's use", torch.cuda.device_count(), "GPUs!")
-                    self.projector_lt = nn.DataParallel(self.projector_lt)
+                    self.projector_lt = torch.nn.DataParallel(self.projector_lt)
