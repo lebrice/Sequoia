@@ -49,6 +49,9 @@ class Config(Serializable, Parseable):
     wandb: WandbLoggerConfig = mutable_field(WandbLoggerConfig)
 
     def __post_init__(self):
+        self.seed_everything()
+
+    def seed_everything(self) -> None:
         if self.seed is not None:
             seed_everything(self.seed)
 

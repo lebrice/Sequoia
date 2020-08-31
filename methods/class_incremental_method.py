@@ -55,7 +55,10 @@ class ClassIncrementalMethod(Method, target_setting=ClassIncrementalSetting):
 
         for i in range(n_tasks):
             logger.info(f"Starting task #{i}")
-            self.model.on_task_switch(i)
+            if setting.task_labels_at_train_time:
+                # This is always true in the ClassIncremental & TaskIncremental
+                # settings for now.
+                self.model.on_task_switch(i)
             # TODO: Make sure the Trainer really does max_epochs per task, and
             # not max_epochs on the first task and 0 on the others.
             assert self.model.setting.current_task_id == setting.current_task_id == i
@@ -80,18 +83,6 @@ class ClassIncrementalMethod(Method, target_setting=ClassIncrementalSetting):
         Returns:
             ClassIncrementalModel: The Model that is to be applied to that setting.
         """
-        # model_class = self.model_class(setting) 
-        
-        # if self.hparams is None:
-        #     # NOTE: Here we actually disregard any 'hparam' attribute (there are
-        #     # none for this baseline) and instead parse the hparams for the
-        #     # given model_class.
-        #     self.hparams, argv = model_class.HParams.from_args()
-        #     # BUG: Should we also set the 'hparams' on the method then?
-        #     logger.info(f"Hparams for that type of model (from command-line): {hparams}")
-
-        # assert isinstance(hparams, model_class.HParams)
-        # return model_class(setting=setting, hparams=self.hparams, config=self.config)
         return self.model_class(setting)(
             setting=setting,
             hparams=self.hparams,

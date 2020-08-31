@@ -14,11 +14,11 @@ from settings import (ClassIncrementalResults, ClassIncrementalSetting,
                       IIDResults, IIDSetting, Results, Setting,
                       TaskIncrementalResults, TaskIncrementalSetting)
 
-from .self_supervision import SelfSupervisedMethod
+from .self_supervision import SelfSupervision
 
 # Use 'Method' as an alias for the actual Method subclass under test. (since at
 # the moment quite a few tests share some code.
-Method = SelfSupervisedMethod
+Method = SelfSupervision
 # List of datasets that are currently supported for this method.
 supported_datasets: List[str] = [
     "mnist", "fashion_mnist", "cifar10", "cifar100", "kmnist",
@@ -64,10 +64,10 @@ def method_and_coefficients(request, tmp_path_factory: Callable[[str], Path]):
     return Method.from_args(args), aux_task_coefficients
 
 
-@parametrize("dataset", get_dataset_params(Method, supported_datasets, skip_unsuported=False))
+@parametrize("dataset", get_dataset_params(Method, supported_datasets))
 @parametrize("setting_type", Method.get_all_applicable_settings())
 def test_fast_dev_run(
-        method_and_coefficients: Tuple[SelfSupervisedMethod, Dict[str, float]],
+        method_and_coefficients: Tuple[SelfSupervision, Dict[str, float]],
         setting_type: Type[Setting],
         dataset: str
         ):
@@ -121,7 +121,7 @@ def test_simclr_iid_accuracy_one_epoch():
     """
     setting: IIDSetting = IIDSetting()
     aux_task_coefficients: Dict[str, float] = {SIMCLR: 1}
-    method = SelfSupervisedMethod.from_args("""
+    method = SelfSupervision.from_args("""
         --dataset mnist --debug --max_epochs 1 --simclr.coef 1
     """)
     results: IIDResults = method.apply_to(setting)

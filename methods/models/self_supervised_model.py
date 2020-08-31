@@ -76,10 +76,10 @@ class SelfSupervisedModel(Model[SettingType]):
                     logger.debug(f"aux task {task_name}: Loss = {aux_loss}")
                 total_loss += aux_loss
 
-        if self.config.debug and self.config.verbose:
-            for name, loss in total_loss.losses.items():
-                logger.debug(
-                    f"{name}, {loss.total_loss}, {loss.total_loss.requires_grad}, {loss.metrics}")
+        if not self.config.debug:
+            # Drop all the tensors, since we aren't debugging.
+            total_loss.clear_tensors()
+
         return total_loss
 
     def create_auxiliary_tasks(self) -> Dict[str, AuxiliaryTask]:

@@ -37,5 +37,7 @@ class ClassIncrementalResults(Results):
         elif isinstance(metrics, RegressionMetrics):
             return metrics.mse
         else:
-            logger.error("Not sure what the objective is, returning the loss.")
+            logger.error(
+                f"Not sure what the objective is, returning the loss. "
+                f"(self.hparams={self.hparams}, self.test_loss={self.test_loss})")
             return float(self.test_loss.loss)

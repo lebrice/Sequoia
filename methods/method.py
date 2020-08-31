@@ -84,6 +84,8 @@ class Method(Serializable, Generic[SettingType], Parseable):
                 f"that inherit from {type(self)._setting}. "
                 f"(Given setting is of type {type(setting)})."
             )
+        # Seed everything first:
+        self.config.seed_everything()
         # Create a model and a Trainer for the given setting:
         self.trainer = self.create_trainer(setting)
         self.model = self.create_model(setting)
@@ -239,11 +241,10 @@ class Method(Serializable, Generic[SettingType], Parseable):
     @classmethod
     def get_name(cls) -> str:
         """ Gets the name of this method class. """
-        if getattr(cls, "name", None):
-            return cls.name
-        else:
-            name = camel_case(cls.__qualname__)
-            return remove_suffix(name, "_method")
+        if hasattr(cls, "name"):
+            return cls.name  # type: ignore
+        name = camel_case(cls.__qualname__)
+        return remove_suffix(name, "_method")
 
     def create_model(self, setting: SettingType) -> Model[SettingType]:
         """ Create the baseline model. """
@@ -277,6 +278,8 @@ class Method(Serializable, Generic[SettingType], Parseable):
                 f"from the command-line."
             ))
             self.hparams = self.upgrade_hparams(hparams_class, argv=None)
+            logger.info(f"'Upgraded' hparams: {self.hparams}")
+
 
         assert isinstance(self.hparams, model_class.HParams)
         return model_class(setting=setting, hparams=self.hparams, config=self.config)
@@ -298,19 +301,16 @@ class Method(Serializable, Generic[SettingType], Parseable):
         """
         new_hparams: HParams
         new_hparams = new_type.from_args(argv)
-        logger.info(f"Hparams for that type of model (from the method): {self.hparams}")
-        logger.info(f"Hparams for that type of model (from command-line): {new_hparams}")
+        logger.debug(f"Hparams for that type of model (from the method): {self.hparams}")
+        logger.debug(f"Hparams for that type of model (from command-line): {new_hparams}")
         if self.hparams:
             hparams_dict = self.hparams.to_dict()
             new_hparams = new_type.from_dict(hparams_dict, drop_extra_fields=True)
-        logger.info(f"'Upgraded' hparams: {new_hparams}")
         return new_hparams
 
-    
     def task_switch(self, task_id: int) -> None:
         """
         TODO: Not sure if it makes sense to put this here. Might have to move
         it to Class/Task incremental or something like that.
         """
         self.model.on_task_switch(task_id)
-    

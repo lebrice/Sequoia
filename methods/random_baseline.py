@@ -2,26 +2,21 @@
 
 Should be applicable to any Setting.
 """
-import shlex
 from abc import ABC
-from dataclasses import dataclass, replace
-from typing import ClassVar, Dict, List, Optional, Type, TypeVar, Union
+from dataclasses import dataclass
+from typing import Type, Union
 
 import torch
-from simple_parsing import ArgumentParser, mutable_field
 from singledispatchmethod import singledispatchmethod
 from torch import Tensor
-from torch.utils.data import DataLoader
 
-from common.config import Config
 from methods.method import Method
-from methods.models import HParams, Model, OutputHead
-from methods.models.iid_model import IIDModel
+from methods.models import Model, OutputHead
 from methods.models.class_incremental_model import ClassIncrementalModel
+from methods.models.iid_model import IIDModel
 from methods.models.task_incremental_model import TaskIncrementalModel
-from methods.task_incremental_method import TaskIncrementalMethod
-from settings import IIDSetting, SettingType, TaskIncrementalSetting, ClassIncrementalSetting
-from settings.base import EnvironmentBase, Results, Setting
+from settings import (ClassIncrementalSetting, IIDSetting, SettingType,
+                      TaskIncrementalSetting, Setting)
 from utils import get_logger
 
 logger = get_logger(__file__)
@@ -33,6 +28,9 @@ class RandomOutputHead(OutputHead):
         return torch.rand([batch_size, self.output_size], requires_grad=True).type_as(h_x)
 
 class RandomPredictionsMixin(ABC):
+    """ A mixin class that when applied to a Model class makes it give random
+    predictions.
+    """
     def encode(self, x: Tensor):
         """ Gives back a random encoding instead of doing a forward pass through
         the encoder.
@@ -52,14 +50,23 @@ class RandomPredictionsMixin(ABC):
         """
         return RandomOutputHead
 
+
 class RandomClassIncrementalModel(RandomPredictionsMixin, ClassIncrementalModel):
     pass
+
 
 class RandomTaskIncrementalModel(RandomPredictionsMixin, TaskIncrementalModel):
     pass
 
+
 class RandomIIDModel(RandomPredictionsMixin, IIDModel):
     pass
+
+
+def get_random_model_class(base_model_class: Type[Model]) -> Type[Union[RandomPredictionsMixin, Model]]:
+    class RandomModel(RandomPredictionsMixin, base_model_class):
+        pass
+    return RandomModel
 
 @dataclass
 class RandomBaselineMethod(Method, target_setting=Setting):
@@ -73,24 +80,24 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     with respect to the `Model` class, as it is moreso aimed at being a `passive`
     Model than an active one at the moment.
     """
-    # Configuration options.
-    config: Config = mutable_field(Config)
-
     @singledispatchmethod
     def model_class(self, setting: SettingType) -> Type[Model]:
-        raise NotImplementedError(f"No model for setting {setting}!")
-    
-    @model_class.register
-    def _(self, setting: IIDSetting) -> Type[IIDModel]:
-        return RandomIIDModel
-    
+        raise NotImplementedError(f"No known model for setting {setting}!")
+
     @model_class.register
     def _(self, setting: ClassIncrementalSetting) -> Type[ClassIncrementalModel]:
+        # IDEA: Generate the model dynamically instead of creating one of each.
+        # (This doesn't work atm because super() gives back a Model)
+        # return get_random_model_class(super().model_class(setting))
         return RandomClassIncrementalModel
-
+    
     @model_class.register
     def _(self, setting: TaskIncrementalSetting) -> Type[TaskIncrementalModel]:
         return RandomTaskIncrementalModel
+
+    @model_class.register
+    def _(self, setting: IIDSetting) -> Type[IIDModel]:
+        return RandomIIDModel
 
 
 if __name__ == "__main__":

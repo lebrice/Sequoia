@@ -282,7 +282,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
                      train: bool = True,
                      transform: Callable = None,
                      **kwargs) -> _ContinuumDataset:
-        # TODO: Use this method here to fix the errors that happen when trying
+        # TODO: #7 Use this method here to fix the errors that happen when trying
         # to create every single dataset from continuum. 
         return self.dataset_class(
             data_path=data_dir,

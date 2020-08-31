@@ -25,7 +25,7 @@ from common.tasks.simclr import SimCLRTask
 
 
 @dataclass
-class SelfSupervisedMethod(ClassIncrementalMethod):
+class SelfSupervision(ClassIncrementalMethod):
     """ Method where self-supervised learning is used to learn representations.
 
     The representations of the model are learned either jointly with the
@@ -50,4 +50,4 @@ class SelfSupervisedMethod(ClassIncrementalMethod):
 
 
 if __name__ == "__main__":
-    SelfSupervisedMethod.main()
+    SelfSupervision.main()

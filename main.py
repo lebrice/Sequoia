@@ -79,8 +79,8 @@ class Experiment(Parseable):
         try:
             if not (self.setting_type or self.setting or self.method_type or self.method):
                 raise RuntimeError(
-                    f"Must specify at least either a setting or a method to be "
-                    f"used!"
+                    "Must specify at least either a setting or a method to be "
+                    "used!"
                 )
             # Construct the Setting and Method from the args if they aren't set,
             # consuming the command-line arguments if necessary.
@@ -91,7 +91,7 @@ class Experiment(Parseable):
 
             if self.method and self.setting:
                 if argv:
-                    logger.warning(f"Extra arguments:  {argv}")
+                    logger.warning(RuntimeWarning(f"Extra arguments:  {argv}"))
                 return self.setting.apply(self.method)
             elif self.setting:
                 # When the method isn't set, evaluate on all applicable methods.

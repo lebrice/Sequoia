@@ -3,29 +3,24 @@
 TODO: Refactor / Validate / test the EWC Auxiliary Task with the new setup.
 
 """
-from copy import copy, deepcopy
-from dataclasses import dataclass, field
-from typing import (Any, Dict, List, NamedTuple, Optional, Tuple, Type,
-                    TypeVar, Union)
+from copy import deepcopy
+from dataclasses import dataclass
+from typing import List, Optional
 
 import torch
-from torch import Tensor
-from torch import nn as nn
-from torch import optim
-from torch.autograd import Variable
+from torch import Tensor, nn
 from torch.utils.data import DataLoader
 
 from common.loss import Loss
 from common.task import Task
-from methods.models.output_heads import OutputHead
 from common.tasks.auxiliary_task import AuxiliaryTask
-from utils import cuda_available
+from methods.models.output_heads import OutputHead
+from utils.logging_utils import get_logger
 from utils.nngeometry.nngeometry.layercollection import LayerCollection
 from utils.nngeometry.nngeometry.metrics import FIM
 from utils.nngeometry.nngeometry.object.pspace import (PSpaceBlockDiag,
-                                                       PSpaceDiag, PSpaceKFAC)
+                                                       PSpaceKFAC)
 from utils.nngeometry.nngeometry.object.vector import PVector
-from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
@@ -188,6 +183,3 @@ class EWC(AuxiliaryTask):
         if self.training:
             AuxiliaryTask.encoder.train()
             AuxiliaryTask.classifier.train()
-
-
-

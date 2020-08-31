@@ -45,6 +45,13 @@ class Metrics(Serializable):
         # the subclasses should implement the method. We just return the other.
         return other
 
+    def __radd__(self, other):
+        # Instances of the Metrics base class shouldn't be added together, as
+        # the subclasses should implement the method. We just return the other.
+        if isinstance(other, (int, float)) and other == 0.:
+            return self
+        return NotImplemented
+
     def to_log_dict(self, verbose: bool = False) -> Dict:
         """Creates a dictionary to be logged (e.g. by `wandb.log`).
 

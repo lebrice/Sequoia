@@ -189,7 +189,7 @@ class Loss(Serializable):
         loss = Loss("Test")
         for x, y in dataloader:
             loss += model.get_loss(x=x, y=y)
-        ```      
+        ```
         
         Returns
         -------
@@ -224,7 +224,7 @@ class Loss(Serializable):
             pass
         return NotImplemented
 
-    def __mul__(self, factor: Union[float,Tensor]) -> "Loss":
+    def __mul__(self, factor: Union[float, Tensor]) -> "Loss":
         """ Scale each loss tensor by `coefficient`.
 
         Returns
@@ -259,6 +259,10 @@ class Loss(Serializable):
 
     @property
     def unscaled_losses(self):
+        """ Recovers the 'unscaled' version of this loss.
+
+        TODO: This isn't used anywhere. We could probably remove it.
+        """
         return OrderedDict([
             (k, value / self._coefficient) for k, value in self.losses.items()
         ])
@@ -319,32 +323,6 @@ class Loss(Serializable):
         for _, loss in self.losses.items():
             loss.clear_tensors()
         return self
-
-    def detach(self) -> "Loss":
-        """ Returns a Loss with all the tensors, sublosses and metrics from `self` detached. """ 
-        result = Loss(
-            name=self.name,
-            loss=detach(self.loss),
-            losses=detach(self.losses),
-            metrics=detach(self.metrics),
-            tensors=detach(self.tensors),
-            _coefficient=detach(self._coefficient),
-        )
-        return result
-
-    def to(self, device: Union[str, torch.device]) -> "Loss":
-        """Moves all the tensors, sublosses, and metrics over to `device`.""" 
-        # We use the `move` utils function when we're not sure if it's a Tensor
-        # or a ndarray or a float or something like that. 
-        result = Loss(
-            name=self.name,
-            loss=move(self.loss, device),
-            losses=move(self.losses, device),
-            metrics=move(self.metrics, device),
-            tensors=move(self.tensors, device),
-            _coefficient=move(self._coefficient, device),
-        )
-        return result
 
     def absorb(self, other: "Loss") -> None:
         """Absorbs `other` into `self`, merging the losses and metrics.

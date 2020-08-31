@@ -3,14 +3,14 @@ from typing import List, Type
 from .baseline import BaselineMethod
 from .method import Method, MethodType
 from .random_baseline import RandomBaselineMethod
-from .self_supervision import SelfSupervisedMethod
+from .self_supervision import SelfSupervision
 
 # TODO: We could also 'register' the methods as they are declared!
 
 all_methods: List[Type[Method]] = [
     BaselineMethod,
     RandomBaselineMethod,
-    SelfSupervisedMethod,
+    SelfSupervision,
 ]
 
 

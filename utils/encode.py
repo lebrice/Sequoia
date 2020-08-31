@@ -18,7 +18,7 @@ register_decoding_fn(Tensor, torch.as_tensor)
 register_decoding_fn(np.ndarray, np.asarray)
 
 
-# @encode.register(Tensor)
+@encode.register(Tensor)
 @encode.register(np.ndarray)
 def encode_tensor(obj: Union[Tensor, np.ndarray]) -> List:
     return obj.tolist()

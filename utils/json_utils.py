@@ -60,13 +60,16 @@ class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  
         super().save(save_path_tmp, **kwargs)
         # Rename the temp file to the right path, overwriting it if it exists.
         save_path_tmp.replace(path)
-    
+
     def detach(self: S) -> S:
         return type(self).from_dict(detach(self.to_dict()))
 
     def to(self, device: Union[str, torch.device]):
         """Returns a new object with all the attributes 'moved' to `device`."""
         return type(self).from_dict(move(self.to_dict(), device))
-    
+
     def cpu(self):
         return self.to("cpu")
+
+    def cuda(self, device: Union[str, torch.device]=None):
+        return self.to(device or "cuda")
