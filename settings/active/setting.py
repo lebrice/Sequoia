@@ -1,7 +1,9 @@
-from ..base import Setting
-from ..base.environment import ObservationType, ActionType, RewardType
-from .environment import ActiveEnvironment as ActiveDataLoader
 from dataclasses import dataclass
+
+from ..base import Setting
+from ..base.environment import ActionType, ObservationType, RewardType
+from .active_dataloader import ActiveDataLoader
+
 
 @dataclass
 class ActiveSetting(Setting[ActiveDataLoader[ObservationType, ActionType, RewardType]]):

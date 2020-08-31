@@ -8,7 +8,10 @@ from typing import Tuple, Union
 import torch
 from pl_bolts.losses.rl import dqn_loss
 from pl_bolts.models.rl.common.agents import ValueAgent
-from pl_bolts.models.rl.common.experience import ExperienceSource, RLDataset, PrioRLDataset
+from pl_bolts.datamodules.experience_source import (
+    ExperienceSourceDataset,
+    DiscountedExperienceSource,
+)
 from pl_bolts.models.rl.dqn_model import DQN
 from pytorch_lightning import Trainer
 from torch import Tensor
@@ -17,18 +20,19 @@ from settings.active.rl.gym_dataloader import (GymDataLoader, GymDataset)
 from torch.utils.data import DataLoader
 
 class DQNAgent(DQN):
-    def __init__(self, env: Union[str, GymDataLoader],
-                       gpus=0,
-                       eps_start=1.0,
-                       eps_end=0.02,
-                       eps_last_frame=150000,
-                       sync_rate=1000,
-                       gamma=0.99,
-                       learning_rate=0.0001,
-                       batch_size=32,
-                       replay_size=100000,
-                       warm_start_size=10000,
-                       num_samples=500, **kwargs):
+    def __init__(self,
+                 env: Union[str, GymDataLoader],
+                 gpus=0,
+                 eps_start=1.0,
+                 eps_end=0.02,
+                 eps_last_frame=150000,
+                 sync_rate=1000,
+                 gamma=0.99,
+                 learning_rate=0.0001,
+                 batch_size=32,
+                 replay_size=100000,
+                 warm_start_size=10000,
+                 num_samples=500, **kwargs):
         # Environment
         if isinstance(env, str):
             env = GymDataLoader(env, batch_size=batch_size, **kwargs)

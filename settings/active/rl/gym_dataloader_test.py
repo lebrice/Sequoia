@@ -15,10 +15,14 @@ from .gym_dataloader import GymDataset, GymDataLoader
 logger = get_logger(__file__)
 from utils import take
 
-@xfail(reason="TODO: fix the weird batching behaviour..")
+# @xfail(reason="TODO: fix the weird batching behaviour..")
 def test_batched_cartpole_state():
     batch_size = 10
-    env: GymDataset[Tensor, int, float] = GymDataLoader("CartPole-v0", batch_size=batch_size, observe_pixels=False)
+    env: GymDataset[Tensor, int, float] = GymDataLoader(
+        "CartPole-v0",
+        batch_size=batch_size,
+        observe_pixels=False,
+    )
     obs_shape = (batch_size, 4)
     action = [1 for _ in range(batch_size)]
     for element in take(env.environments[0], 5):
@@ -30,6 +34,5 @@ def test_batched_cartpole_state():
     check_interaction_with_env(env, obs_shape=obs_shape, action=action)
 
 
-@xfail(reason="TODO")
 def test_cartpole_multiple_workers():
     assert False
