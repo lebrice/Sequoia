@@ -15,3 +15,6 @@ scripts/*.png
 wandb
 .idea
 .ipynb_checkpoints
+checkpoints
+lightning_logs
+.pylintrc

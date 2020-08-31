@@ -1,6 +1,7 @@
 """ Set of Utilities. """
 import collections
 import functools
+import inspect
 import itertools
 import operator
 import random
@@ -8,13 +9,17 @@ import re
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import MutableMapping
 from dataclasses import Field, fields
-from itertools import groupby
+from inspect import isabstract, isclass
+from itertools import filterfalse, groupby
 from pathlib import Path
 from typing import (Any, Callable, Deque, Dict, Iterable, List, MutableMapping,
-                    Optional, Set, Tuple, TypeVar, Union)
+                    Optional, Set, Tuple, Type, TypeVar, Union)
 
 import numpy as np
+import torch
 from torch import Tensor, cuda, nn
+
+from simple_parsing import field
 
 cuda_available = cuda.is_available()
 gpus_available = cuda.device_count()
@@ -34,6 +39,7 @@ def n_consecutive(items: Iterable[T], n: int=2, yield_last_batch=True) -> Iterab
 
 
 def fix_channels(x_batch: Tensor) -> Tensor:
+    # TODO: Move this to data_utils.py
     if x_batch.dim() == 3:
         return x_batch.unsqueeze(1)
     else:
@@ -62,7 +68,7 @@ def to_dict_of_lists(list_of_dicts: Iterable[Dict[str, Any]]) -> Dict[str, List[
     return result
 
 
-def add_prefix(some_dict: Dict[str, T], prefix: str="") -> Dict[str, T]:
+def add_prefix(some_dict: Dict[str, T], prefix: str="", sep=" ") -> Dict[str, T]:
     """Adds the given prefix to all the keys in the dictionary that don't already start with it. 
     
     Parameters
@@ -74,16 +80,40 @@ def add_prefix(some_dict: Dict[str, T], prefix: str="") -> Dict[str, T]:
     
         A string prefix to append.
     
+    - sep : str, optional, by default " "
+
+        A string separator to add between the `prefix` and the existing keys
+        (which do no start by `prefix`). 
+
+    
     Returns
     -------
     Dict[str, T]
         A new dictionary where all keys start with the prefix.
+
+
+    Examples:
+    -------
+    >>> add_prefix({"a": 1}, prefix="bob", sep="")
+    {'boba': 1}
+    >>> add_prefix({"a": 1}, prefix="bob")
+    {'bob a': 1}
+    >>> add_prefix({"a": 1}, prefix="a")
+    {'a': 1}
+    >>> add_prefix({"a": 1}, prefix="a ")
+    {'a': 1}
+    >>> add_prefix({"a": 1}, prefix="a", sep="/")
+    {'a': 1}
     """
     if not prefix:
-        return OrderedDict(some_dict.items())
-    result: Dict[str, T] = OrderedDict()
+        return some_dict
+    result: Dict[str, T] = type(some_dict)()
+    
+    if sep and prefix.endswith(sep):
+        prefix = prefix.rstrip(sep)
+
     for key, value in some_dict.items():
-        new_key = key if key.startswith(prefix) else (prefix + key)
+        new_key = key if key.startswith(prefix) else (prefix + sep + key)
         result[new_key] = value
     return result
 
@@ -106,6 +136,11 @@ def set_seed(seed: int):
     random.seed(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
+
+
+def to_optional_tensor(x: Optional[Union[Tensor, np.ndarray, List]]) -> Optional[Tensor]:
+    """ Converts `x` into a Tensor if `x` is not None, else None. """
+    return x if x is None else torch.as_tensor(x)
 
 
 def common_fields(a, b) -> Iterable[Tuple[str, Tuple[Field, Field]]]:
@@ -209,12 +244,81 @@ def roundrobin(*iterables: Iterable[T]) -> Iterable[T]:
             nexts = itertools.cycle(itertools.islice(nexts, num_active))
 
 
+def take(iterable: Iterable[T], n: Optional[int]) -> Iterable[T]:
+    """ Takes only the first `n` elements from `iterable`.
+    
+    if `n` is None, returns the entire iterable.
+    """
+    return itertools.islice(iterable, n) if n is not None else iterable
+
+
 def camel_case(name):
     s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
     s2 = re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
     while "__" in s2:
         s2 = s2.replace("__", "_")
     return s2
+
+def constant(v: T, **kwargs) -> T:
+    return field(default=v, init=False, **kwargs)
+
+def dict_union(*dicts: Dict, dict_factory=OrderedDict) -> Dict:
+    """ Simple dict union until we use python 3.9
+    
+    >>> from collections import OrderedDict
+    >>> a = OrderedDict(a=1, b=2, c=3)
+    >>> b = OrderedDict(c=5, d=6, e=7)
+    >>> dict_union(a, b)
+    OrderedDict([('a', 1), ('b', 2), ('c', 5), ('d', 6), ('e', 7)])
+    """
+    result: Dict = None  # type: ignore
+    for d in dicts:
+        if result is None:
+            result = type(d)()
+        result.update(d)
+    assert result is not None
+    return result
+
+
+def remove_suffix(s: str, suffix: str) -> str:
+    """ Remove the suffix from string s if present.
+    Doing this manually until we start using python 3.9.
+    
+    >>> remove_suffix("bob.com", ".com")
+    'bob'
+    >>> remove_suffix("Henrietta", "match")
+    'Henrietta'
+    """
+    i = s.rfind(suffix)
+    if i == -1:
+        # return s if not found.
+        return s
+    return s[:i]
+
+
+def remove_prefix(s: str, prefix: str) -> str:
+    """ Remove the prefix from string s if present.
+    Doing this manually until we start using python 3.9.
+    
+    >>> remove_prefix("bob.com", "bo")
+    'b.com'
+    >>> remove_prefix("Henrietta", "match")
+    'Henrietta'
+    """
+    if not s.startswith(prefix):
+        return s
+    return s[len(prefix):]
+    
+
+def get_all_subclasses_of(cls: Type[T]) -> Iterable[Type[T]]:
+    scope_dict: Dict = globals()
+    for name, var in scope_dict.items():
+        if isclass(var) and issubclass(var, cls):
+            yield var
+
+def get_all_concrete_subclasses_of(cls: Type[T]) -> Iterable[Type[T]]:
+    yield from filterfalse(inspect.isabstract, get_all_subclasses_of(cls))
+
 
 
 if __name__ == "__main__":

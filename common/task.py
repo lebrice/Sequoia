@@ -1,12 +1,17 @@
 from dataclasses import dataclass, field
+from typing import List
+
 from simple_parsing import list_field
 from utils.json_utils import Serializable
-from typing import List
+
 
 @dataclass
 class Task(Serializable):
     """ Dataclass that represents a task.
 
+    TODO (@lebrice): This isn't being used anymore, but we could probably
+    use it / add it to the Continuum package, if it doesn't already have something
+    like it.
     TODO: Maybe the this could also specify from which dataset(s) it is sampled.
     """
     # The index of this task (the order in which it was encountered)

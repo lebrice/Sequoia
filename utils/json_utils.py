@@ -1,3 +1,4 @@
+import inspect
 import json
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, fields, is_dataclass
@@ -6,8 +7,8 @@ from functools import singledispatch
 from io import StringIO
 from pathlib import Path
 from pprint import pprint
-from typing import (Any, Callable, Dict, Iterable, List, Optional, Tuple, Type,
-                    TypeVar, Union)
+from typing import (Any, Callable, Dict, Iterable, List, Optional, Sequence,
+                    Tuple, Type, TypeVar, Union)
 
 import numpy as np
 import torch
@@ -16,34 +17,17 @@ from torch import Tensor, nn
 from simple_parsing.helpers import Serializable as SerializableBase
 from simple_parsing.helpers import SimpleJsonEncoder, encode
 from simple_parsing.helpers.serialization import encode, register_decoding_fn
-from utils.logging_utils import get_logger
+
+from .detach import detach
+from .encode import encode
+from .logging_utils import get_logger
+from .move import move
 
 T = TypeVar("T")
 logger = get_logger(__file__)
 
-register_decoding_fn(Tensor, torch.as_tensor)
-register_decoding_fn(np.ndarray, np.asarray)
-
-
-@dataclass
-class ModelStateDict(Dict[str, Tensor]):
-    """ TODO: @lebrice Unused for now, was thinking of using this to make it easier to
-    save/load model dict, but it's already pretty simple.
-
-    # TODO: A bit of a stretch, but we could detect when a field that is
-    # supposed to be, say a state dict is instead a Path, and just load it
-    # from there!
-    """ 
-    def __init__(self, path: Optional[Union[Path]]):
-        if isinstance(path, Path):
-            state_dict: Dict[str, Tensor] = torch.load(str(path))
-        super().__init__(state_dict)
-    
-    def save(self, path: Path):
-        model_state_dict: Dict[str, Tensor] = {
-            k: v.detach().cpu() for k, v in self.items()
-        }
-
+def cpu(x: Any) -> Any:
+    return move(x, "cpu")
 
 class Pickleable():
     """ Helps make a class pickleable. """
@@ -51,60 +35,16 @@ class Pickleable():
         """ We implement this to just make sure to detach the tensors if any
         before pickling.
         """
-        logger.debug(f"__getstate__ was called.")
-        # Use `vars(self)`` to get all the attributes, not just the fields.
-        d = vars(self)
-        return cpu(detach(d))
-        # Overwrite with `self.to_dict()` so we get fields in nice format.
-        # d.update(self.to_dict())
-        return d
-
+        # We use `vars(self)` to get all the attributes, not just the fields.
+        state_dict = vars(self)
+        return cpu(detach(state_dict))
+    
     def __setstate__(self, state: Dict):
-        logger.debug(f"setstate was called")
-        logger.debug(f"type(self): {type(self)}, keys in the state object: {state.keys()}")
+        # logger.debug(f"__setstate__ was called")
         self.__dict__.update(state)
 
-    def detach(self):
-        """Move all tensor attributes to the CPU and then detach them in-place.
-        Returns `self`, for convenience.
-        NOTE: also recursively moves and detaches `JsonSerializable` attributes.
-        """
-        self.cpu()
-        self.detach_()
-        return self
 
-    def detach_(self) -> None:
-        """ Detaches all the Tensor attributes in-place, then returns `self`.
-        
-        NOTE: also recursively detaches `JsonSerializable` attributes.
-        """
-        self.__dict__ = detach(self.__dict__)
-
-    def cpu(self) -> None:
-        self.__dict__ = detach(self.__dict__)
-
-def detach(d: Dict[str, Any]) -> Dict[str, Any]:
-    """ Detaches all the Tensors in a dict, as well as all nested dicts.
-    """
-    result: Dict[str, Any] = {}
-    for key, value in d.items():
-        if isinstance(value, Tensor):
-            value = value.detach()
-        if isinstance(value, Dict):
-            value = detach(value)
-        result[key] = value
-    return result
-
-def cpu(d: Dict[str, Any]) -> Dict[str, Any]:
-    result: Dict[str, Any] = {}
-    for key, value in d.items():
-        if isinstance(value, Tensor):
-            value = value.cpu()
-        if isinstance(value, Dict):
-            value = cpu(value)
-        result[key] = value
-    return result
-
+S = TypeVar("S", bound="Serializable")
 
 @dataclass
 class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  # type: ignore
@@ -121,42 +61,12 @@ class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  
         # Rename the temp file to the right path, overwriting it if it exists.
         save_path_tmp.replace(path)
     
+    def detach(self: S) -> S:
+        return type(self).from_dict(detach(self.to_dict()))
 
-@encode.register
-def encode_tensor(obj: Tensor) -> List:
-    return obj.tolist()
-
-
-@encode.register
-def encode_ndarray(obj: np.ndarray) -> List:
-    return obj.tolist()
-
-
-@encode.register
-def encode_array(v: np.ndarray) -> List:
-    return v.tolist()
-
-
-@encode.register
-def encode_path(obj: Path) -> str:
-    return str(obj)
-
-
-@encode.register
-def encode_device(obj: torch.device) -> str:
-    return str(obj)
-
-
-@encode.register
-def encode_enum(value: Enum):
-    return value.value
-
+    def to(self, device: Union[str, torch.device]):
+        """Returns a new object with all the attributes 'moved' to `device`."""
+        return type(self).from_dict(move(self.to_dict(), device))
     
-# a = {
-#     "bob.txt": Path("bob.txt")
-# }
-# s = dumps(a)
-# print(s)
-# b = loads(s)
-# print(b)
-# exit()
+    def cpu(self):
+        return self.to("cpu")
