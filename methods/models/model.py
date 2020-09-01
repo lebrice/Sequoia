@@ -53,9 +53,9 @@ class Model(LightningModule, Generic[SettingType]):
 
         self.save_hyperparameters()
 
-        self.input_shape  = self.setting.obs_dims
-        self.output_shape = self.setting.action_dims
-        self.reward_shape = self.setting.reward_dims
+        self.input_shape  = self.setting.dims
+        self.output_shape = self.setting.action_shape
+        self.reward_shape = self.setting.reward_shape
 
         logger.debug(f"setting: {self.setting}")
         logger.debug(f"Input shape: {self.input_shape}")

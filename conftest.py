@@ -95,7 +95,7 @@ test_datasets_option_name: str = "datasets"
 
 def pytest_addoption(parser):
     parser.addoption("--slow", action="store_true", default=False)
-    parser.addoption(f"--{test_datasets_option_name}", action="append", default=[])
+    parser.addoption(f"--{test_datasets_option_name}", action="append", nargs="*", default=[])
 
 
 slow = pytest.mark.skipif(
@@ -110,6 +110,7 @@ def find_class_under_test(module,
     cls: Optional[Type] = None
     module_name: str = module.__name__
     function_name: str = function.__name__
+    type_hints = get_type_hints(function)
     global_var_name = global_var_name or name.capitalize()
     for k in [name, f"{name}_class", f"{name}_type"]:
         cls = type_hints.get(k)
@@ -120,7 +121,7 @@ def find_class_under_test(module,
     if cls is None:
         # Try to get the class to test from a global variable on the module.
         cls = getattr(module, global_var_name, None)
-        logger.debug(f"Test module has a '{global_var_name}' gloval variable of type {cls}")
+        logger.debug(f"Test module {module_name} has a '{global_var_name}' gloval variable of type {cls}")
     return cls
 
 
@@ -130,7 +131,7 @@ def parametrize_test_datasets(metafunc):
     test_datasets: List[str] = []
     default_test_datasets = ["mnist", "cifar10"]
     func_param_name = "test_dataset"
-    global_var_name = "test_datasets"
+    global_var_names = ["test_datasets", "supported_datasets"]
     
     if func_param_name not in metafunc.fixturenames:
         return
@@ -151,14 +152,22 @@ def parametrize_test_datasets(metafunc):
             name="method",
         )
         test_datasets = get_all_dataset_names(method_class)
+    elif "NONE" in datasets_from_command_line:
+        test_datasets = [
+            skip_param("?", reason="Set to skip, with command line arg.")
+        ]
     elif datasets_from_command_line:
+        assert isinstance(datasets_from_command_line, list) and all(isinstance(v, str) for v in datasets_from_command_line)
         # If any datasets were set, use them.
         test_datasets = datasets_from_command_line
     else:
         # The default datasets to try are the ones specified at the global
         # variable with name {module_test_datasets_name} in the module.
-        test_datasets = getattr(module, global_var_name, [])
-        if not test_datasets:
+        for global_var_name in global_var_names:   
+            test_datasets = getattr(module, global_var_name, None)
+            if test_datasets is not None:
+                break
+        else:
             logger.warning(RuntimeWarning(
                 f"Test module {module_name} didn't specify a test_datasets "
                 f"global variable, defaulting to {default_test_datasets}"

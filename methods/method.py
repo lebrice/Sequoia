@@ -125,7 +125,10 @@ class Method(Serializable, Generic[SettingType], Parseable):
         Returns:
             Model[SettingType]: The Model that is to be applied to that setting.
         """
-        return self.model_class(setting=setting, hparams=self.hparams, config=self.config)
+        model_class = self.model_class(setting)
+        # TODO: Will it become a problem that pytorch-lightning uses 'datamodule'
+        # and we use 'setting' as a key?
+        return model_class(setting=setting, hparams=self.hparams, config=self.config)
 
     def create_trainer(self, setting: SettingType) -> Trainer:
         """Creates a Trainer object from pytorch-lightning for the given setting.
@@ -229,7 +232,7 @@ class Method(Serializable, Generic[SettingType], Parseable):
             cls._target_setting = target_setting
             cls._target_setting._methods.add(cls)
         else:
-            logger.debug(f"Method {cls} didn't set a `setting` argument in the "
+            logger.debug(f"Method {cls} didn't set a `target_setting` argument in the "
                          f"class constructor, using the target setting of the parent")
             target_setting = cls._target_setting
 

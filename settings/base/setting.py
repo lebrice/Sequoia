@@ -87,7 +87,6 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
     # action_shape: InitVar[Tuple[int, ...]] = ()
     # reward_shape: InitVar[Tuple[int, ...]] = ()
     
-
     def __post_init__(self,
                       obs_shape: Tuple[int, ...] = (),
                       action_shape: Tuple[int, ...] = (),
@@ -95,6 +94,7 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
         """ Initializes the fields of the setting that weren't set from the
         command-line.
         """
+        logger.debug(f"__post_init__ of Setting")
         train_transforms: Callable = Compose(self.train_transforms or self.transforms)
         val_transforms: Callable = Compose(self.val_transforms or self.transforms)
         test_transforms: Callable = Compose(self.test_transforms or self.transforms)
@@ -106,10 +106,14 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
             test_transforms=test_transforms,
         )
         # TODO: Should we ask every setting to set these three properties ?
-        self.obs_dims: Tuple[int, ...] = obs_shape
-        self.action_dims: Tuple[int, ...] = action_shape
-        self.reward_dims: Tuple[int, ...] = reward_shape
+        self.obs_shape: Tuple[int, ...] = obs_shape
+        self.action_shape: Tuple[int, ...] = action_shape
+        self.reward_shape: Tuple[int, ...] = reward_shape
         self.dataloader_kwargs: Dict[str, Any] = {}
+
+        if self.obs_shape and not self._dims:
+            self._dims = self.obs_shape
+
         # Wether the setup methods have been called yet or not.
         self._setup: bool = False
         self._prepared: bool = False
@@ -218,19 +222,19 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
             self.setup(*args, **kwargs)
             self._setup = True
 
-    @property
-    @abstractmethod
-    def dims(self) -> Tuple[int, ...]:
-        """The input shape for this setting.
+    # @property
+    # @abstractmethod
+    # def dims(self) -> Tuple[int, ...]:
+    #     """The input shape for this setting.
 
-        Returns:
-            Tuple[int, ...]: The input shape for this setting.
-        """
-        return self._dims
+    #     Returns:
+    #         Tuple[int, ...]: The input shape for this setting.
+    #     """
+    #     return self._dims
 
-    @dims.setter
-    def dims(self, value) -> None:
-        self._dims = value
+    # @dims.setter
+    # def dims(self, value) -> None:
+    #     self._dims = value
     
 
     @classmethod

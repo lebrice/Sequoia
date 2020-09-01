@@ -15,11 +15,12 @@ from methods.models import Model, OutputHead
 from methods.models.class_incremental_model import ClassIncrementalModel
 from methods.models.iid_model import IIDModel
 from methods.models.task_incremental_model import TaskIncrementalModel
-from settings import (ClassIncrementalSetting, IIDSetting, Setting,
+from settings import (ClassIncrementalSetting, IIDSetting, RLSetting, Setting,
                       SettingType, TaskIncrementalSetting)
 from utils import get_logger
 
 from .models import HParams, Model
+from .models.agent import Agent
 
 logger = get_logger(__file__)
 
@@ -65,6 +66,10 @@ class RandomIIDModel(RandomPredictionsMixin, IIDModel):
     pass
 
 
+class RandomRLAgent(RandomPredictionsMixin, Agent):
+    pass
+
+
 def get_random_model_class(base_model_class: Type[Model]) -> Type[Union[RandomPredictionsMixin, Model]]:
     class RandomModel(RandomPredictionsMixin, base_model_class):
         pass
@@ -84,7 +89,12 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     """
     @singledispatchmethod
     def model_class(self, setting: SettingType) -> Type[Model]:
-        raise NotImplementedError(f"No known model for setting {setting}!")
+        raise NotImplementedError(f"No known model for setting of type {type(setting)} (registry: {RandomBaselineMethod.model_class.registry})")
+    
+    @model_class.register(RLSetting)
+    def _(self, setting: RLSetting) -> Type[Model]:
+        # TODO: Make a 'random' RL method.
+        return RandomRLAgent
 
     @model_class.register
     def _(self, setting: ClassIncrementalSetting) -> Type[ClassIncrementalModel]:

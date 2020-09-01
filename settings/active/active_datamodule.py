@@ -11,5 +11,3 @@ class ActiveLightningDataModule(LightningDataModule, ABC):
     of regular `DataLoader`s. 
     """
     
-    def train_dataloader(self, *args, **kwargs) -> ActiveDataLoader:
-        return super().train_dataloader(*args, **kwargs)

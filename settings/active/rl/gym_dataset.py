@@ -2,7 +2,7 @@ from typing import (Any, Callable, Generator, Iterable, List, Optional,
                     Sequence, Tuple, TypeVar, Union)
 
 import gym
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.multiprocessing as mp
@@ -22,7 +22,9 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
     """ Wrapper around a GymDataLoaderironment that exposes the EnvironmentBase "API"
         and which can be iterated on using DataLoaders.
     """
-    def __init__(self, env: Union[gym.Env, str], observe_pixels: bool=True):
+    metadata = {'render.modes': ['human', 'rgb_array']}
+
+    def __init__(self, env: Union[str, gym.Env], observe_pixels: bool=True):
         env = gym.make(env) if isinstance(env, str) else env
         super().__init__(env=env)
         self.observe_pixels = observe_pixels
@@ -32,13 +34,13 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
         self.reward: RewardType
         self.done: bool = False
 
+        self.env.render_mode = "rgb_array"
 
         self.manager = mp.Manager()
         # Number of steps performed in the environment.
         self._i: mp.Value[int] = self.manager.Value(int, 0)
         self._n_sends: mp.Value[int] = self.manager.Value(int, 0)
         self.action = self.env.action_space.sample()
-        self.env.render_mode = "rgb_array"
         self.reset()
 
     # @log_calls
@@ -53,28 +55,33 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
 
         state, self.reward, self.done, self.info = self.env.step(action)
         if self.observe_pixels:
-            self.state = self.env.render(mode="rgb_array")
+            self.state = np.asarray(super().render(mode="rgb_array"))
             print(f"state shape: {self.state.shape}")
         else:
             self.state = state
         return self.state, self.reward, self.done, self.info 
 
-    @log_calls
+    # @log_calls
     @property
     def observation_space(self) -> gym.Space:
         if self.observe_pixels:
             print(f"State shape: {self.state.shape}")
             return gym.Space(shape=self.state.shape, dtype=np.float)
         else:
-            return super().observation_space
+            return self.env.observation_space
     
-    @log_calls
+    @observation_space.setter
+    def observation_space(self, space) -> None:
+        self.env.observation_space = space
+
+    # @log_calls
     def __iter__(self) -> Generator[ObservationType, ActionType, None]:
         worker_info = torch.utils.data.get_worker_info()
         if worker_info:
             logger.debug(f"Worker info: {worker_info}")
         else:
-            logger.debug(f"Single process data loading!")
+            pass
+            # logger.debug(f"Single process data loading!")
             # single-process data loading:
 
         while not self.done:
@@ -84,9 +91,9 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
                 self.action = action
             self._i.value += self.action or 0
 
-    @log_calls
-    def reset(self):
-        start_state = self.env.reset()
+    # @log_calls
+    def reset(self, **kwargs):
+        start_state = super().reset(**kwargs)
         if not self.observe_pixels:
             self.state = start_state
         else:
@@ -94,22 +101,26 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
         self.action = self.env.action_space.sample()
         self.reward = None
 
-    @log_calls
+    # @log_calls
     def send(self, action: ActionType=None) -> RewardType:
-        logger.debug(f"Action received at step {self._i}, n_sends = {self._n_sends}: {action}")
+        # logger.debug(f"Action received at step {self._i}, n_sends = {self._n_sends}: {action}")
         worker_info = torch.utils.data.get_worker_info()
         if worker_info:
             logger.debug(f"Worker info: {worker_info}")
         else:
+            pass
             # single-process data loading
-            logger.debug("Single process data loading.")
+            # logger.debug("Single process data loading.")
         
         self._n_sends.value += 1
         
         if action is not None:
             self.action = action
+        else:
+            # TODO: Take a random action instead?
+            self.action = self.action_space.sample()
         return self.reward
     
     def close(self) -> None:
-        plt.close()
+        # plt.close()
         super().close()

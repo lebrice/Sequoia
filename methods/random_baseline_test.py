@@ -57,7 +57,6 @@ def method(tmp_path_factory: Callable[[str], Path]):
 @parametrize("setting_type", Method.get_all_applicable_settings())
 def test_fast_dev_run(method: RandomBaselineMethod, setting_type: Type[Setting], test_dataset: str):
     dataset = test_dataset
-
     if dataset not in setting_type.available_datasets:
         pytest.skip(msg=f"dataset {dataset} isn't available for this setting.")
     # Instantiate the setting

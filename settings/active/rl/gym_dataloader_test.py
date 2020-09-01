@@ -1,38 +1,64 @@
 from functools import wraps
-from typing import Any, Callable, List, Tuple, Union
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 import gym
 import numpy as np
+import pytest
 import torch
 from torch import Tensor
 
 from conftest import xfail
+from utils import take
 from utils.logging_utils import get_logger
 
+from .gym_dataloader import GymDataLoader, GymDataset
 from .gym_dataset_test import check_interaction_with_env
-from .gym_dataloader import GymDataset, GymDataLoader
 
 logger = get_logger(__file__)
-from utils import take
 
-# @xfail(reason="TODO: fix the weird batching behaviour..")
-def test_batched_cartpole_state():
-    batch_size = 10
+@pytest.mark.parametrize("batch_size", [1, 2, 5, 10])
+def test_batched_cartpole_state(batch_size: int):
     env: GymDataset[Tensor, int, float] = GymDataLoader(
         "CartPole-v0",
         batch_size=batch_size,
         observe_pixels=False,
     )
     obs_shape = (batch_size, 4)
-    action = [1 for _ in range(batch_size)]
-    for element in take(env.environments[0], 5):
-        assert element.shape == obs_shape[1:]
-    
-    for batch in take(env, 5):
-        assert batch.shape == obs_shape
+    reward_shape = (batch_size,)
 
-    check_interaction_with_env(env, obs_shape=obs_shape, action=action)
+    env.reset()
+    for obs_batch in take(env, 5):
+        assert obs_batch.shape == obs_shape
+
+        random_actions = env.random_actions()
+        reward = env.send(random_actions)
+        assert reward.shape == reward_shape
+
+    check_interaction_with_env(
+        env,
+        obs_shape=obs_shape,
+        action=random_actions,
+        reward_shape=reward_shape,
+    )
 
 
-def test_cartpole_multiple_workers():
-    assert False
+@pytest.mark.parametrize("num_workers", [None, 1, 2, 5, 10, 24])
+def test_cartpole_multiple_workers(num_workers: Optional[int]):
+    batch_size = num_workers or 32
+    env: GymDataset[Tensor, int, float] = GymDataLoader(
+        "CartPole-v0",
+        batch_size=batch_size,
+        observe_pixels=False,
+        num_workers=num_workers,
+    )
+    obs_shape = (batch_size, 4)
+    reward_shape = (batch_size,)
+    reward_shape = (batch_size,)
+
+    env.reset()
+    for obs_batch in take(env, 5):
+        assert obs_batch.shape == obs_shape
+
+        random_actions = env.random_actions()
+        reward = env.send(random_actions)
+        assert reward.shape == reward_shape

@@ -102,7 +102,7 @@ class ClassIncrementalModel(SelfSupervisedModel[SettingType], SemiSupervisedMode
     def create_output_head(self) -> OutputHead:
         """Creates a new output head for the current task.
         """
-        output_size = self.setting.action_dims
+        output_size = self.setting.action_shape
         if self.hp.multihead:
             output_size = self.setting.num_classes_in_current_task 
         return self.output_head_class(
@@ -206,10 +206,10 @@ class ClassIncrementalModel(SelfSupervisedModel[SettingType], SemiSupervisedMode
             # (This might be similar to the "labels trick" from
             # https://arxiv.org/abs/1803.10123)
             elif not (set(y_unique.tolist()) <= set(self.current_task_classes)):
-                import matplotlib.pyplot as plt
-                plt.imshow(x[0].cpu().numpy().transpose([1, 2, 0]))
-                plt.title(str(y[0]))
-                plt.show()
+                # import matplotlib.pyplot as plt
+                # plt.imshow(x[0].cpu().numpy().transpose([1, 2, 0]))
+                # plt.title(str(y[0]))
+                # plt.show()
 
                 raise RuntimeError(
                     f"There are labels in the batch that aren't part of the "
