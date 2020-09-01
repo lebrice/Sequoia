@@ -114,7 +114,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
     }
     # A continual dataset to use. (Should be taken from the continuum package).
     dataset: str = choice(available_datasets.keys(), default="mnist")
-    
+
     # Wether the current task id can be read from outside this class.
     # NOTE: Loosely enforced, could be bypassed if people want to 'cheat'.
     # TODO: Adding a mechanism for making task label only available at train time?
@@ -168,14 +168,14 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             action_shape=self._num_classes,
             reward_shape=self._num_classes,
         )
-        
+
         self._current_task_id: int = 0
 
         self.train_dataset: _ContinuumDataset = None
         self.test_dataset: _ContinuumDataset = None
         self.train_datasets: List[_ContinuumDataset] = []
-        self.val_datasets:   List[_ContinuumDataset] = []
-        self.test_datasets:  List[_ContinuumDataset] = []
+        self.val_datasets: List[_ContinuumDataset] = []
+        self.test_datasets: List[_ContinuumDataset] = []
         self._setup = False
         self._configured = False
         self._prepared = False
@@ -244,7 +244,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
                 )
             task_loss: Loss = test_outputs["loss_info"]
             task_losses.append(task_loss)
-        
+
         model = method.model
         from methods.models import Model
         if isinstance(model, Model):
@@ -256,7 +256,6 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             test_loss=sum(task_losses),
             task_losses=task_losses,
         )
-
 
     def make_train_cl_loader(self, dataset: _ContinuumDataset) -> _BaseCLLoader:
         """ Creates a train ClassIncremental object from continuum. """

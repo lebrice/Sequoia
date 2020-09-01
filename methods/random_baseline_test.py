@@ -120,15 +120,16 @@ def validate_results(results: Results, setting: Setting):
 
 
 def test_fast_dev_run_multihead(tmp_path: Path):
-    setting = TaskIncrementalSetting(dataset="mnist")
+    setting = TaskIncrementalSetting(
+        dataset="mnist",
+        increment=2,
+    )
     method: RandomBaselineMethod = RandomBaselineMethod.from_args(f"""
         --debug
         --fast_dev_run
         --default_root_dir {tmp_path}
         --log_dir_root {tmp_path}
-        --dataset mnist
-        --increment 2
-        --multihead
+        --multihead True
         --batch_size 100
     """)
     results: TaskIncrementalResults = method.apply_to(setting)

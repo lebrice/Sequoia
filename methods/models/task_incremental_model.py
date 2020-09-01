@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 
 from common.config import Config
 from settings import TaskIncrementalSetting
+from simple_parsing import field
 
 from .class_incremental_model import ClassIncrementalModel
 
@@ -26,9 +27,23 @@ class TaskIncrementalModel(ClassIncrementalModel[SettingType]):
         """
         # Wether to create one output head per task.
         # TODO: Will this ever be False? I'm pretty sure we're saying that task
-        # labels always given in Task Incremental, so does it ever make sense
-        # to use a single-head Model when the task labels are always given?
-        multihead: bool = True
+        # labels are always given in Task Incremental, so does it ever make
+        # sense to use a single-head Model when the task labels are always
+        # given?
+        # TODO: In other models, this has a default value of False, which works
+        # fine with no argument passed, i.e. '--multihead' -> multihead=True.
+        # However, in this particular model, the default value is set to `True`,
+        # so if you used the argument without without a value, you'd get the
+        # opposite of the default, in this case, False:
+        # '--multihead' --> multihead=False.
+        # This is slightly confusing, hence we're requiring a value here.
+        multihead: bool = field(default=True, nargs=1)
+
+        def __post_init__(self):
+            super().__post_init__()
+            if isinstance(self.multihead, list):
+                assert len(self.multihead) == 1
+                self.multihead = self.multihead[0]
 
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)

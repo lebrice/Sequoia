@@ -66,6 +66,11 @@ class HParams(Serializable, Parseable):
     # allowed to affect the representations.
     detach_output_head: bool = False
 
+    def __post_init__(self):
+        """Use this to initialize (or fix) any fields parsed from the
+        command-line.
+        """
+
     def make_optimizer(self, *args, **kwargs) -> Optimizer:
         """ Creates the Optimizer object from the options. """
         optimizer_class = available_optimizers[self.optimizer]

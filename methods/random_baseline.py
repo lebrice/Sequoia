@@ -92,7 +92,7 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         # (This doesn't work atm because super() gives back a Model)
         # return get_random_model_class(super().model_class(setting))
         return RandomClassIncrementalModel
-    
+
     @model_class.register
     def _(self, setting: TaskIncrementalSetting) -> Type[TaskIncrementalModel]:
         return RandomTaskIncrementalModel
@@ -101,17 +101,14 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     def _(self, setting: IIDSetting) -> Type[IIDModel]:
         return RandomIIDModel
 
-    def hparams_class(self, setting: SettingType) -> Type[Model.HParams]:
-        return self.model_class(setting).HParams
-
     def create_model(self, setting: SettingType) -> Model[SettingType]:
         """ Create the baseline model. """
         # Get the type of model to use for that setting.
         model_class: Type[Model] = self.model_class(setting)
-        hparams_class = self.hparams_class(setting)
+        hparams_class = model_class.HParams
         logger.debug(f"model class for this setting: {model_class}")
         logger.debug(f"hparam class for this setting: {hparams_class}")
-        logger.debug(f"Hyperparameters on the method: {self.hparams}")
+        logger.debug(f"Hyperparameters class on the method: {type(self.hparams)}")
 
         if not isinstance(self.hparams, hparams_class):
             # TODO: @lebrice This is ugly, and should be cleaned up somehow. Let
