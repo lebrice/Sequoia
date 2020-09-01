@@ -1,7 +1,8 @@
 import shlex
+import sys
 from argparse import Namespace
-from dataclasses import dataclass, is_dataclass
-from typing import List, Tuple, Type, TypeVar, Union
+from dataclasses import dataclass, field, is_dataclass
+from typing import List, Optional, Tuple, Type, TypeVar, Union
 
 from simple_parsing import ArgumentParser
 
@@ -28,12 +29,19 @@ def from_args(cls: Type[T], argv: Union[str, List[str]]=None, reorder: bool=True
 
 @dataclass
 class Parseable:
+    _argv: Optional[List[str]] = field(default=None, init=False, repr=False)
+
     @classmethod
     def from_args(cls: Type[T],
                   argv: Union[str, List[str]] = None,
                   reorder=True) -> T:
         assert is_dataclass(cls), f"Can't get class {cls} from args, as it isn't a dataclass."
+        if isinstance(argv, str):
+            argv = shlex.split(argv)
         instance, _ = from_args(cls, argv=argv, reorder=reorder)
+        # Save the argv that were used to create the instance on its `_argv`
+        # attribute.
+        instance._argv = argv or sys.argv
         return instance
 
     @classmethod
@@ -41,4 +49,6 @@ class Parseable:
                         argv: Union[str, List[str]] = None,
                         reorder=True) -> Tuple[T, Namespace]:
         assert is_dataclass(cls), f"Can't get class {cls} from args, as it isn't a dataclass."
-        return from_args(cls, argv=argv, reorder=reorder)
+        instance, unused_args = from_args(cls, argv=argv, reorder=reorder)
+        instance._argv = argv or sys.argv
+        return instance, unused_args

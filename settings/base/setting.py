@@ -153,6 +153,7 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
         if isinstance(model, Model):
             hparams = model.hp
         else:
+            assert False, f"TODO: Remove this ({model})."
             hparams = model.hparams
         return self.results_class(
             hparams=hparams,

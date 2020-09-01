@@ -8,8 +8,7 @@ import pytest
 from common import ClassificationMetrics, Loss
 from common.tasks import (AE, SIMCLR, VAE, AEReconstructionTask, SimCLRTask,
                           VAEReconstructionTask)
-from conftest import (get_dataset_params, make_method_fixture, parametrize,
-                      slow, xfail_param)
+from conftest import get_dataset_params, parametrize, slow, xfail_param
 from settings import (ClassIncrementalResults, ClassIncrementalSetting,
                       IIDResults, IIDSetting, Results, Setting,
                       TaskIncrementalResults, TaskIncrementalSetting)
@@ -35,10 +34,10 @@ def test_get_applicable_settings():
 @pytest.fixture(
     scope="module",
     params=[
-        {},
-        {SIMCLR: 1},
-        xfail_param({VAE: 1}, reason="TODO: Debug the VAE Aux task."),
-        xfail_param({AE: 1}, reason="TODO: Debug the AE Aux task."),
+        {}, # no aux task.
+        {SIMCLR: 1}, # SimCLR only.
+        {VAE: 1},
+        {AE: 1},
     ],
 )
 def method_and_coefficients(request, tmp_path_factory: Callable[[str], Path]):

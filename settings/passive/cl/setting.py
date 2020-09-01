@@ -132,7 +132,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
 
     # Either number of classes per task, or a list specifying for
     # every task the amount of new classes.
-    increment: Union[List[int], int] = list_field(2, type=int, nargs="*", alias="num_classes_per_task")
+    increment: Union[List[int], int] = list_field(2, type=int, nargs="*", alias="n_classes_per_task")
     # The scenario number of tasks.
     # If zero, defaults to the number of classes divied by the increment.
     nb_tasks: int = 0
@@ -217,8 +217,11 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         # LightningModule.
         task_losses: List[Loss] = []
         for i, task_loader in enumerate(test_dataloaders):
+            logger.info(f"Starting evaluation on task {i}.")
+            self.current_task_id = i
+
             if self.task_labels_at_test_time:
-                method.task_switch(i)
+                method.on_task_switch(i)
 
             test_outputs = method.trainer.test(
                 test_dataloaders=task_loader,
@@ -229,12 +232,25 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             if isinstance(test_outputs, list):
                 assert len(test_outputs) == 1
                 test_outputs = test_outputs[0]
-
+            
+            if "loss_info" not in test_outputs:
+                # TODO: Design a better API for the evaluation setup.
+                raise RuntimeError(
+                    "At the moment, a Method's test step needs to return "
+                    "a dict with a `Loss` object at key 'loss_info'. The "
+                    "metrics that the setting cares about are taken from that "
+                    "object in order to create the Results and determine the "
+                    "value of the Setting's 'objective'."
+                )
             task_loss: Loss = test_outputs["loss_info"]
             task_losses.append(task_loss)
         
         model = method.model
-        hparams = model.hparams
+        from methods.models import Model
+        if isinstance(model, Model):
+            hparams = model.hp
+        else:
+            hparams = model.hparams
         return self.results_class(
             hparams=hparams,
             test_loss=sum(task_losses),
@@ -453,7 +469,9 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         return self.num_classes_in_task(self._current_task_id)
 
     def current_task_classes(self, train: bool=True) -> List[int]:
-        start_index = sum(self.num_classes_in_task(i) for i in range(self._current_task_id))
+        start_index = sum(
+            self.num_classes_in_task(i) for i in range(self._current_task_id)
+        )
         end_index = start_index + self.num_classes_in_task(self._current_task_id)
         if train:
             return self.class_order[start_index:end_index]

@@ -40,7 +40,6 @@ def get_logger(name: str, level: int=None) -> logging.Logger:
     except:
         pass
     from sys import argv
-        
     logger = root_logger.getChild(name)
     if level is None and "-d" in argv or "--debug" in argv:
         level = logging.DEBUG

@@ -56,7 +56,7 @@ class BaselineMethod(Method, target_setting=Setting):
     def _(self, setting: TaskIncrementalSetting) -> Type[TaskIncrementalModel]:
         return TaskIncrementalModel
     
-    def task_switch(self, task_id: int) -> None:
+    def on_task_switch(self, task_id: int) -> None:
         self.model.on_task_switch(task_id)
     
 if __name__ == "__main__":

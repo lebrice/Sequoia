@@ -29,10 +29,7 @@ class TaskIncrementalSetting(ClassIncrementalSetting[Tensor, Tensor]):
     # Wether task labels are available at train time. (Forced to True.)
     task_labels_at_train_time: bool = constant(True)
     # Wether task labels are available at test time.
-    task_labels_at_test_time: bool = True
-
-    def __post_init__(self):
-        """Creates a Task Incremental CL LightningDataModule. """
-        super().__post_init__()
+    # TODO: Is this really always True for all Task-Incremental Settings?
+    task_labels_at_test_time: bool = constant(True)
 
 SettingType = TypeVar("SettingType", bound=TaskIncrementalSetting)

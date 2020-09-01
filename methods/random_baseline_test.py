@@ -9,8 +9,10 @@ import pytest
 from common import ClassificationMetrics
 from conftest import get_dataset_params, parametrize
 from settings import (ClassIncrementalResults, ClassIncrementalSetting,
-                      IIDSetting, Results, Setting, TaskIncrementalSetting)
+                      IIDSetting, Results, Setting, TaskIncrementalResults,
+                      TaskIncrementalSetting)
 
+from methods.models.class_incremental_model import ClassIncrementalModel
 from .random_baseline import RandomBaselineMethod
 
 # Use 'Method' as an alias for the actual Method cusblass under test. (since at
@@ -56,15 +58,6 @@ def method(tmp_path_factory: Callable[[str], Path]):
 def test_fast_dev_run(method: RandomBaselineMethod, setting_type: Type[Setting], dataset: str):
     if dataset not in setting_type.available_datasets:
         pytest.skip(msg=f"dataset {dataset} isn't available for this setting.")
-    # Instantiate the method
-    # method: RandomBaselineMethod = RandomBaselineMethod.from_args(f"""
-    #     --debug
-    #     --fast_dev_run
-    #     --log_dir_root {tmp_path}
-    #     --knn_samples 0
-    #     --batch_size 1000
-    #     """
-    # )
     # Instantiate the setting
     setting: Setting = setting_type(dataset=dataset, nb_tasks=5)
     if isinstance(setting, IIDSetting):
@@ -89,25 +82,59 @@ def validate_results(results: Results, setting: Setting):
 
     if isinstance(results, ClassIncrementalResults):
         assert isinstance(setting, ClassIncrementalSetting)
+        assert isinstance(results.hparams, ClassIncrementalModel.HParams)
 
         average_accuracy = results.objective
-        num_classes = setting.num_classes
+        # Check the total average accuracy.
+        if getattr(results.hparams, "multihead", False):
+            # NOTE: This assumes that there is an equal number of classes in
+            # each task.
+            assert isinstance(setting.increment, int)
+            num_classes = setting.increment
+        else:
+            num_classes = setting.num_classes
         chance_accuracy = 1 / num_classes
-        assert 0.5 * chance_accuracy <= average_accuracy <= 2.0 * chance_accuracy
+        assert 0.5 * chance_accuracy <= average_accuracy <= 1.5 * chance_accuracy
 
         print(f"Objective: {results.objective}")
 
         for i, task_loss in enumerate(results.task_losses):
             metric = task_loss.metric
             assert isinstance(metric, ClassificationMetrics)
-            # TODO: Fix this!
-            if isinstance(setting, TaskIncrementalSetting) and setting.task_labels_at_test_time:
-                num_classes = setting.num_classes_in_task(i)
-            num_classes = len(metric.confusion_matrix)
+            # TODO: Check that this makes sense:
+
+            if getattr(results.hparams, "multihead", False):
+                # NOTE: This assumes that there is an equal number of classes in
+                # each task.
+                assert isinstance(setting.increment, int)
+                num_classes = setting.increment
+            else:
+                num_classes = setting.num_classes
+            chance_accuracy = 1 / num_classes
 
             task_accuracy = task_loss.metric.accuracy
-            chance_accuracy = 1 / num_classes
             # FIXME: Look into this, we're often getting results substantially
             # worse than chance, and to 'make the tests pass' (which is bad)
             # we're setting the lower bound super low, which makes no sense.
             assert 0.25 * chance_accuracy <= task_accuracy <= 2.1 * chance_accuracy
+
+
+def test_fast_dev_run_multihead(tmp_path: Path):
+    setting = TaskIncrementalSetting(dataset="mnist")
+    method: RandomBaselineMethod = RandomBaselineMethod.from_args(f"""
+        --debug
+        --fast_dev_run
+        --default_root_dir {tmp_path}
+        --log_dir_root {tmp_path}
+        --dataset mnist
+        --increment 2
+        --multihead
+        --batch_size 100
+    """)
+    results: TaskIncrementalResults = method.apply_to(setting)
+    metrics = results.task_metrics
+    assert metrics
+    for metric in metrics:
+        if isinstance(metric, ClassificationMetrics):
+            assert metric.confusion_matrix.shape == (2, 2)
+    validate_results(results, setting)

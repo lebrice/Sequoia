@@ -89,7 +89,7 @@ class ClassIncrementalMethod(Method, target_setting=ClassIncrementalSetting):
             config=self.config,
         )
 
-    def task_switch(self, task_id: int) -> None:
+    def on_task_switch(self, task_id: int) -> None:
         self.model.on_task_switch(task_id)
 
 

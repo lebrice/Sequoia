@@ -51,7 +51,7 @@ def get_all_dataset_names(method_class: Type[Method]) -> List[str]:
 
 def get_dataset_params(method_type: Type[Method],
                        supported_datasets: List[str],
-                       skip_unsuported: bool=True) -> List[str]:
+                       skip_unsuported: bool = True) -> List[str]:
     all_datasets = get_all_dataset_names(method_type)
     dataset_params = []
     for dataset in all_datasets:
@@ -62,58 +62,6 @@ def get_dataset_params(method_type: Type[Method],
         else:
             dataset_params.append(xfail_param(dataset, reason="Not supported yet"))
     return dataset_params
-
-
-def make_fixtures(method_class: Type[Method], argv: Union[str, List[str]] = None) -> Tuple[pytest.fixture, pytest.fixture]:
-    method = make_method_fixture(method_class, argv=argv)
-    setting = make_setting_fixtures(method_class, argv=argv)
-    return method, setting
-
-
-def make_method_fixture(method_class: Type[Method],
-                        argv: Union[str, List[str]] = None,
-                        fixture_name: str = "method") -> pytest.fixture:
-    if not argv:
-        # create the default args if not given.
-        argv = f"""
-            --knn_samples 0
-        """
-    @pytest.fixture(name=fixture_name)
-    def method_fixture(trainer_config: TrainerConfig, config: Config):
-        method: Method
-        if argv:
-            method = method_class.from_args(argv)
-        else:
-            method = method_class()
-        method.trainer_options = trainer_config
-        method.config = config
-        return method
-    return method_fixture
-
-
-
-def make_method_factory_fixture(method_class: Type[Method]) -> pytest.fixture:
-    """Creates a fixture that will give a 'constructor' for the given method type.
-    
-    This constructor can be passed some HParams and will return an instance of
-    the given method class.
-    """
-    @pytest.fixture()
-    def method_factory(trainer_options: TrainerConfig, config: Config):
-        def _method(hparams: Union[str, List[str], Serializable] = None) -> Method:
-            if isinstance(hparams, (str, list)):
-                # should we parse the hparams if given a string?
-                hparams_type = type(method_class.hparams)
-                hparams = hparams_type.from_args(hparams)
-                assert False, hparams_type
-
-            return method_class(
-                hparams=hparams,
-                trainer_options=trainer_options,
-                config=config,
-            )
-        return _method
-    return method_factory
 
 
 def pytest_addoption(parser):
