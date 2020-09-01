@@ -75,8 +75,10 @@ class ClassIncrementalModel(SelfSupervisedModel[SettingType], SemiSupervisedMode
             elif self.task_inference_module is not None:
                 # current_task_id = self.task_inference_module(...)
                 raise NotImplementedError("TODO")
+            elif self._output_head is not None:
+                return self._output_head
             else:
-                raise RuntimeError("No way of determining the task id..")
+                raise RuntimeError("No way of determining the task id and output head is None!")
 
             key = str(current_task_id)
             if key not in self.output_heads:
@@ -178,9 +180,9 @@ class ClassIncrementalModel(SelfSupervisedModel[SettingType], SemiSupervisedMode
         # TODO: detect wether we are training or testing.
         return self.setting.current_task_classes(self.training)
 
+
     def preprocess_batch(self, *batch) -> Tuple[Tensor, Optional[Tensor]]:
         x, y = super().preprocess_batch(*batch)
-        
 
         if y is not None and self.hp.multihead:
             logger.debug(f"Classes in current task: {self.current_task_classes}")

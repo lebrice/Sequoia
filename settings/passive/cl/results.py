@@ -1,6 +1,5 @@
-import itertools
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import List
 
 from common.loss import Loss
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
@@ -10,9 +9,12 @@ from .. import Results
 
 logger = get_logger(__file__)
 
+
 @dataclass
 class ClassIncrementalResults(Results):
+    # The resulting 'Loss' object for each task.
     task_losses: List[Loss] = list_field()
+    
     @property
     def task_metrics(self) -> List[Metrics]:
         """ Gets the Metrics for each task. """

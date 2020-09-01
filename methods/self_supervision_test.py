@@ -8,7 +8,7 @@ import pytest
 from common import ClassificationMetrics, Loss
 from common.tasks import (AE, SIMCLR, VAE, AEReconstructionTask, SimCLRTask,
                           VAEReconstructionTask)
-from conftest import get_dataset_params, parametrize, slow, xfail_param
+from conftest import get_dataset_params, id_fn, parametrize, slow, xfail_param
 from settings import (ClassIncrementalResults, ClassIncrementalSetting,
                       IIDResults, IIDSetting, Results, Setting,
                       TaskIncrementalResults, TaskIncrementalSetting)
@@ -29,16 +29,15 @@ def test_get_applicable_settings():
     assert ClassIncrementalSetting in settings
     assert TaskIncrementalSetting in settings
     assert IIDSetting in settings
-
-
 @pytest.fixture(
     scope="module",
     params=[
         {}, # no aux task.
-        {SIMCLR: 1}, # SimCLR only.
+        {SIMCLR: 1},
         {VAE: 1},
         {AE: 1},
     ],
+    ids=id_fn,
 )
 def method_and_coefficients(request, tmp_path_factory: Callable[[str], Path]):
     """ Fixture that creates a method to be reused for the tests below as well
@@ -63,22 +62,22 @@ def method_and_coefficients(request, tmp_path_factory: Callable[[str], Path]):
     return Method.from_args(args), aux_task_coefficients
 
 
-@parametrize("dataset", get_dataset_params(Method, supported_datasets))
+# @parametrize("dataset", get_dataset_params(Method, supported_datasets))
 @parametrize("setting_type", Method.get_all_applicable_settings())
 def test_fast_dev_run(
         method_and_coefficients: Tuple[SelfSupervision, Dict[str, float]],
         setting_type: Type[Setting],
-        dataset: str
+        test_dataset: str
         ):
     """ Performs a quick run with only one batch of train / val / test data and
     check that the 'Results' objects are ok.
     """
     method, aux_task_coefficients = method_and_coefficients
-    if dataset not in setting_type.available_datasets:
-        pytest.skip(msg=f"dataset {dataset} isn't available for this setting.")
+    if test_dataset not in setting_type.available_datasets:
+        pytest.skip(msg=f"dataset {test_dataset} isn't available for this setting.")
     # Instantiate the setting
     setting: Setting = setting_type.from_args(f"""
-        --dataset {dataset} --nb_tasks 5
+        --dataset {test_dataset} --nb_tasks 5
     """)
     results: Results = method.apply_to(setting)
     validate_results(results, aux_task_coefficients)

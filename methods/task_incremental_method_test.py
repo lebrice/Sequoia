@@ -1,7 +1,13 @@
-from .task_incremental_method import TaskIncrementalMethod
-from .models.task_incremental_model import TaskIncrementalModel
+from pathlib import Path
+
 import pytest
+
+from common.metrics import ClassificationMetrics
+from settings import TaskIncrementalResults, TaskIncrementalSetting
 from simple_parsing import ParsingError
+
+from .models.task_incremental_model import TaskIncrementalModel
+from .task_incremental_method import TaskIncrementalMethod
 
 
 def test_parsing_hparams_multihead():
@@ -33,7 +39,6 @@ def test_fast_dev_run_multihead(tmp_path: Path):
         --fast_dev_run
         --default_root_dir {tmp_path}
         --log_dir_root {tmp_path}
-        --multihead True
         --batch_size 100
     """)
     results: TaskIncrementalResults = method.apply_to(setting)
@@ -42,4 +47,5 @@ def test_fast_dev_run_multihead(tmp_path: Path):
     for metric in metrics:
         if isinstance(metric, ClassificationMetrics):
             assert metric.confusion_matrix.shape == (2, 2)
-    validate_results(results, setting)
+    
+    assert 0.45 <= results

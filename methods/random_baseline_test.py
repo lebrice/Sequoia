@@ -53,9 +53,11 @@ def method(tmp_path_factory: Callable[[str], Path]):
     )
 
 
-@parametrize("dataset", get_dataset_params(Method, supported_datasets))
+# @parametrize("dataset", get_dataset_params(Method, supported_datasets))
 @parametrize("setting_type", Method.get_all_applicable_settings())
-def test_fast_dev_run(method: RandomBaselineMethod, setting_type: Type[Setting], dataset: str):
+def test_fast_dev_run(method: RandomBaselineMethod, setting_type: Type[Setting], test_dataset: str):
+    dataset = test_dataset
+
     if dataset not in setting_type.available_datasets:
         pytest.skip(msg=f"dataset {dataset} isn't available for this setting.")
     # Instantiate the setting
@@ -79,24 +81,25 @@ def validate_results(results: Results, setting: Setting):
     assert results.hparams is not None
     assert results.test_loss is not None
     assert results.objective > 0
+    print(f"Objective: {results.objective}")
 
     if isinstance(results, ClassIncrementalResults):
         assert isinstance(setting, ClassIncrementalSetting)
         assert isinstance(results.hparams, ClassIncrementalModel.HParams)
 
         average_accuracy = results.objective
-        # Check the total average accuracy.
-        if getattr(results.hparams, "multihead", False):
-            # NOTE: This assumes that there is an equal number of classes in
-            # each task.
+
+        # Calculate the expected 'average' chance accuracy.
+        if results.hparams.multihead:
+            # We assume that there is an equal number of classes in each task.
             assert isinstance(setting.increment, int)
             num_classes = setting.increment
         else:
             num_classes = setting.num_classes
         chance_accuracy = 1 / num_classes
+
         assert 0.5 * chance_accuracy <= average_accuracy <= 1.5 * chance_accuracy
 
-        print(f"Objective: {results.objective}")
 
         for i, task_loss in enumerate(results.task_losses):
             metric = task_loss.metric

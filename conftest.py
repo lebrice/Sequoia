@@ -1,17 +1,23 @@
 import argparse
+import json
+import logging
 import os
 from argparse import ArgumentParser
 from dataclasses import replace
 from pathlib import Path
-from typing import Iterable, List, Tuple, Type, Union
+from typing import (Any, Dict, Iterable, List, Optional, Tuple, Type, Union,
+                    get_type_hints)
 
 import pytest
 
 import sys; sys.path += [os.path.abspath('..'), os.path.abspath('.')]
+
 from common.config import Config, TrainerConfig
 from methods.method import Method
 from settings import Setting
 from simple_parsing import Serializable
+
+logger = logging.getLogger(__file__)
 
 parametrize = pytest.mark.parametrize
 
@@ -41,12 +47,32 @@ def config(tmp_path: Path):
     return Config(debug=True, data_dir="data", log_dir_root=tmp_path)
 
 
-def get_all_dataset_names(method_class: Type[Method]) -> List[str]:
+def id_fn(params: Any) -> str:
+    """Creates a 'name' for an execution of a parametrized test.
+
+    Args:
+        params (Dict): [description]
+
+    Returns:
+        str: [description]
+    """
+    # if not params:
+    #     return "default"
+    if isinstance(params, dict):
+        return json.dumps(params, sort_keys=True, separators=(',', ':'))
+
+    return str(params)
+
+def get_all_dataset_names(method_class: Type[Method] = None) -> List[str]:
+    # When not given a method class, use the Method class (gives ALL the
+    # possible datasets).
+    method_class = method_class or Method
+
     dataset_names: Iterable[List[str]] = map(
         lambda s: list(s.available_datasets),
         method_class.get_all_applicable_settings()
     )
-    return list(set(sum(dataset_names, []))) 
+    return list(set(sum(dataset_names, [])))
 
 
 def get_dataset_params(method_type: Type[Method],
@@ -64,8 +90,12 @@ def get_dataset_params(method_type: Type[Method],
     return dataset_params
 
 
+test_datasets_option_name: str = "datasets"
+
+
 def pytest_addoption(parser):
     parser.addoption("--slow", action="store_true", default=False)
+    parser.addoption(f"--{test_datasets_option_name}", action="append", default=[])
 
 
 slow = pytest.mark.skipif(
@@ -73,25 +103,79 @@ slow = pytest.mark.skipif(
     reason="This test is slow so we only run it when necessary."
 )
 
+def find_class_under_test(module,
+                            function,
+                            name: str = "method",
+                            global_var_name: str = None) -> Optional[Type]:
+    cls: Optional[Type] = None
+    module_name: str = module.__name__
+    function_name: str = function.__name__
+    global_var_name = global_var_name or name.capitalize()
+    for k in [name, f"{name}_class", f"{name}_type"]:
+        cls = type_hints.get(k)
+        if cls:
+            logger.debug(f"function {function_name} has annotation of type "
+                            f"{cls} for argument {k}.")
+            break
+    if cls is None:
+        # Try to get the class to test from a global variable on the module.
+        cls = getattr(module, global_var_name, None)
+        logger.debug(f"Test module has a '{global_var_name}' gloval variable of type {cls}")
+    return cls
 
-## TODO: Figure out how to use this properly!
-# def pytest_generate_tests(metafunc):
-#     # This is called for every test. Only get/set command line arguments
-#     # if the argument is specified in the list of test "fixturenames".
-#     option_value = metafunc.config.option.name
-#     if 'name' in metafunc.fixturenames and option_value is not None:
-#         metafunc.parametrize("name", [option_value])
-# def pytest_generate_tests(metafunc):
-#     if "dataset" in metafunc.fixturenames:
-#         datasets: List[str] = metafunc.config.getoption("datasets")
-#         # metafunc.
-#         metafunc.parametrize("dataset", datasets, indirect=True)
+
+def parametrize_test_datasets(metafunc):
+    # We want to get these from inspecting the test function:
+    # The datasets to test on.
+    test_datasets: List[str] = []
+    default_test_datasets = ["mnist", "cifar10"]
+    func_param_name = "test_dataset"
+    global_var_name = "test_datasets"
+    
+    if func_param_name not in metafunc.fixturenames:
+        return
+
+    module = metafunc.module
+    function = metafunc.function
+
+    module_name: str = module.__name__
+    function_name: str = function.__name__
+    
+    # Get the test datasets from the command-line option.
+    datasets_from_command_line = metafunc.config.getoption(test_datasets_option_name)
+
+    if "ALL" in datasets_from_command_line:
+        method_class: Optional[Type[Method]] = find_class_under_test(
+            module,
+            function,
+            name="method",
+        )
+        test_datasets = get_all_dataset_names(method_class)
+    elif datasets_from_command_line:
+        # If any datasets were set, use them.
+        test_datasets = datasets_from_command_line
+    else:
+        # The default datasets to try are the ones specified at the global
+        # variable with name {module_test_datasets_name} in the module.
+        test_datasets = getattr(module, global_var_name, [])
+        if not test_datasets:
+            logger.warning(RuntimeWarning(
+                f"Test module {module_name} didn't specify a test_datasets "
+                f"global variable, defaulting to {default_test_datasets}"
+            ))
+            test_datasets = default_test_datasets
+
+    logger.info(
+        f"Parametrizing the '{func_param_name}' param of test "
+        f"{module_name} :: {function_name} with {test_datasets}."
+    )
+    metafunc.parametrize(func_param_name, test_datasets)
 
 
-## TODO: Was trying to include the dataset name into the name of each individual
-## run in the 'test runs view' instead of the index of the fixture parameter.
-# from pytest import Item
-# def pytest_itemcollected(item: Item):
-#     """ change test name, using fixture names """
-#     if item._fixtureinfo.argnames:
-#         item._nodeid = ', '.join(item._fixtureinfo.argnames)
+def pytest_generate_tests(metafunc):
+    """ Automatically Parametrize the tests.
+    TODO: Having some fun parametrizing tests automatically, but should check
+    that it's worth it, because otherwise it might make things too confusing. 
+    """
+    parametrize_test_datasets(metafunc)
+
