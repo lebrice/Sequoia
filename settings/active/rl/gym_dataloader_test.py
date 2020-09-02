@@ -42,7 +42,7 @@ def test_batched_cartpole_state(batch_size: int):
     )
 
 
-@pytest.mark.parametrize("num_workers", [None, 1, 2, 5, 10, 24])
+@pytest.mark.parametrize("num_workers", [0, 1, 2, 5, 10, 24])
 def test_cartpole_multiple_workers(num_workers: Optional[int]):
     batch_size = num_workers or 32
     env: GymDataset[Tensor, int, float] = GymDataLoader(

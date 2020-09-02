@@ -100,11 +100,43 @@ class Loss(Serializable):
             # Create a Metrics object if given the necessary tensors.
             metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
             if metrics:
-                self.metrics[self.name] = metrics 
+                self.metrics[self.name] = metrics
 
-        for name, tensor in self.tensors.items():
+        for name in list(self.tensors.keys()):
+            tensor = self.tensors[name]
             if not isinstance(tensor, Tensor):
-                tensor = torch.as_tensor(tensor)
+                self.tensors[name] = torch.as_tensor(tensor)
+
+    def to_pl_dict(self, verbose: bool = False) -> Dict:
+        """Creates a pytorch-lightning-style dict from this Loss object.
+
+        Can be used as a return value to the `[training/validation/test]_step'
+        methods of a `LightningModule`, like so:
+        ```python
+        # (inside some LightningModule)
+        def training_step(self, batch, ...) -> Dict:
+            x, y = batch
+            y_pred = self.forward(x)
+            nce = self.loss_fn(y_pred, y)
+            loss: Loss = Loss("train", loss=nce, y_pred=y_pred, y=y)
+            return loss.to_pl_dict()
+        ```
+
+        Args:
+            verbose (bool, optional): Wether to keep things short or to include
+                everything into the log dictionary. Defaults to False.
+
+        Returns:
+            Dict: A dictionary with the usual 'loss', 'log' and 'progress_bar'
+                keys, and additionally with a copy of 'self' at the key
+                'loss_object'
+        """
+        return {
+            "loss": self.loss,
+            "log": self.to_log_dict(verbose=verbose),
+            "progress_bar": self.to_pbar_message(),
+            "loss_object": self,
+        }
 
     @property
     def total_loss(self) -> Tensor:
@@ -296,8 +328,7 @@ class Loss(Serializable):
         return cleanup(log_dict, keys_to_remove=keys_to_remove)
 
     def to_pbar_message(self):
-        """ Smaller, less-detailed version of `self.to_log_dict()` (doesn't recurse into sublosses)
-        meant to be used in progressbars.
+        """ Smaller, less-detailed version of `to_log_dict()` for progress bars.
         """
         message: Dict[str, Union[str, float]] = OrderedDict()
         message["Loss"] = float(self.loss)
@@ -311,6 +342,8 @@ class Loss(Serializable):
         message = add_prefix(message, prefix=self.name, sep=" ")
 
         return cleanup(message, sep=" ")
+
+
 
     def clear_tensors(self) -> None:
         """ Clears the `tensors` attribute of `self` and of sublosses.

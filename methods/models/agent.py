@@ -4,15 +4,20 @@
 This is meant to be 'more general' than the 'Model' class, which is made for passive environments (regular dataloaders)
 """
 from dataclasses import dataclass
-from typing import Generic, Optional, TypeVar
+from typing import Callable, Dict, Generic, Optional, Tuple, TypeVar
 
+import torch
 from pytorch_lightning import (EvalResult, LightningDataModule,
                                LightningModule, TrainResult)
-from torch import Tensor
+from torch import Tensor, nn
 
 from common.config import Config
+from common.layers import Lambda
+from common.loss import Loss
 from settings import RLSetting
 from settings.active import ActiveDataLoader
+from settings.active.rl import GymDataLoader
+from utils import prod
 from utils.logging_utils import get_logger
 
 from .hparams import HParams as BaseHParams
@@ -20,6 +25,7 @@ from .model import Model
 
 logger = get_logger(__file__)
 SettingType = TypeVar("SettingType", bound=RLSetting)
+
 
 class Agent(LightningModule, Generic[SettingType]):
     """ LightningModule that interacts with `ActiveDataLoader` dataloaders.
@@ -51,6 +57,21 @@ class Agent(LightningModule, Generic[SettingType]):
         logger.debug(f"Output shape: {self.output_shape}")
         logger.debug(f"Reward shape: {self.reward_shape}")
 
+        self.loss_fn: Callable[[Tensor, Tensor], Tensor] = torch.dist
+
+        critic_input_dims = prod(self.input_shape) + prod(self.setting.action_shape)
+        critic_output_dims = prod(self.reward_shape)
+
+        # assert False, critic_input_dims
+        self.critic = nn.Sequential(
+            Lambda(concat_obs_and_action),
+            nn.Linear(critic_input_dims, critic_output_dims),
+        )
+        self.actor = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(prod(self.input_shape), prod(self.output_shape)),
+        )
+
         # Here we assume that all methods have a form of 'encoder' and 'output head'.
         # self.encoder, self.hidden_size = self.hp.make_encoder()
         # self.output_head = self.create_output_head()
@@ -68,42 +89,106 @@ class Agent(LightningModule, Generic[SettingType]):
         self.setting.prepare_data(*args, **kwargs)
 
     def train_dataloader(self):
-        self._train_loader = self.setting.train_dataloader()
-        return self._train_loader
+        return self.setting.train_dataloader()
     
     def val_dataloader(self):
-        self._val_loader = self.setting.val_dataloader()
-        return self._val_loader
+        return self.setting.val_dataloader()
 
     def test_dataloader(self):
-        self._test_loader = self.setting.test_dataloader()
-        return self._test_loader
+        return self.setting.test_dataloader()
 
-    def training_step(self, x: Tensor, *args,  **kwargs):
-        logger.debug(f"Batch of observations of shape {x.shape}")
-        actions = self.setting.train_env.random_actions()
-        predictions = torch.as_tensor(actions, requires_grad=True)
-        # predicted_reward = self.value(h_x, a_t)
-        logger.debug(f"actions: {actions.shape}")
-        rewards = self.setting.train_send(actions)
-        logger.debug(f"Rewards: {rewards.shape}")
-        loss = rewards.mean(dim=0)
-        return TrainResult(loss)
+    def get_value(self, observation: Tensor, action: Tensor) -> Tensor:
+        # assert False, (observation.shape, observation.dtype)
+        observation = torch.as_tensor(observation, dtype=self.dtype, device=self.device)
+        action = torch.as_tensor(action, dtype=self.dtype, device=self.device)
+        assert observation.shape[0] == action.shape[0], (observation.shape, action.shape)
+        return self.critic([observation, action])
 
-    def validation_step(self, x: Tensor, *args, **kwargs):
-        logger.debug(f"Batch of observations of shape {x.shape}")
+        return torch.rand(self.reward_shape, requires_grad=True)
+    
+    def get_action(self, observation: Tensor) -> Tensor:
+        # assert False, (observation.shape, observation.dtype)
         actions = self.setting.val_env.random_actions()
-        logger.debug(f"actions: {actions.shape}")
-        rewards = self.setting.val_send(actions)
-        logger.debug(f"Rewards: {rewards.shape}")
-        loss = rewards.mean(dim=0)
-        return EvalResult(loss)
+        actions = torch.as_tensor(actions, dtype=self.dtype, device=self.device)
+        return actions
 
-    def test_step(self, x: Tensor, *args, **kwargs):
-        logger.debug(f"Batch of observations of shape {x.shape}")
-        actions = self.setting.test_env.random_actions()
+        observation = torch.as_tensor(observation, dtype=self.dtype, device=self.device)
+        return self.actor(observation)
+
+    def shared_step(self, observation: Tensor, environment: GymDataLoader, loss_name: str) -> Dict:
+        logger.debug(f"Batch of observations of shape {observation.shape}")
+
+        # Get the action to perform
+        actions = self.get_action(observation)
         logger.debug(f"actions: {actions.shape}")
-        rewards = self.setting.test_send(actions)
-        logger.debug(f"Rewards: {rewards.shape}")
-        loss = rewards.mean(dim=0)
-        return EvalResult(loss)
+
+        # Get the predicted reward for that action.
+        predicted_rewards = self.get_value(observation, actions)
+        logger.debug(f"predicted rewards shape: {predicted_rewards.shape}")
+
+        # Get the actual reward for that action.
+        rewards = environment.send(actions)
+        logger.debug(f"Rewards shape: {rewards.shape}, dtype: {rewards.dtype}, device: {rewards.device}")
+        rewards = rewards.to(self.device)
+        
+        # TODO: Calculate an actual loss that makes sense. Just playing around
+        # for now.
+        nce = self.loss_fn(predicted_rewards, rewards)
+        loss = Loss(loss_name, loss=nce) #y_pred=predicted_rewards, y=rewards)
+        # return loss.to_pl_dict()
+        # Trying to figure out what to return:
+
+        result = TrainResult(minimize=loss.loss)
+        result.log("mean_reward", loss.loss)
+        # result["loss_object"] = loss
+        return result
+
+    def training_step(self,
+                      batch: Tensor,
+                      batch_idx: int,
+                      optimizer_idx: int = None,
+                      *args,
+                      **kwargs):
+        """
+        Args:
+            observation (Tensor): The observation from the environment.
+            batch_idx (int): Integer displaying index of this batch
+            optimizer_idx (int, optional): When using multiple optimizers, this
+                argument will also be present.
+        """
+        return self.shared_step(
+            batch,
+            environment=self.setting.train_env,
+            loss_name="train",
+        )
+
+    def validation_step(self,
+                        batch: Tensor,
+                        batch_idx: int,
+                        optimizer_idx: int = None,
+                        *args,
+                        **kwargs):
+        return self.shared_step(
+            batch,
+            environment=self.setting.val_env,
+            loss_name="val",
+        )
+
+    def test_step(self,
+                  batch: Tensor,
+                  batch_idx: int,
+                  optimizer_idx: int = None,
+                  *args,
+                  **kwargs):
+        return self.shared_step(
+            batch,
+            environment=self.setting.test_env,
+            loss_name="test",
+        )
+
+def concat_obs_and_action(observation_action: Tuple[Tensor, Tensor]) -> Tensor:
+    observation, action = observation_action
+    batch_size = observation.shape[0]
+    observation = observation.reshape([batch_size, -1])
+    action = action.reshape([batch_size, -1])
+    return torch.cat([observation, action], dim=-1)

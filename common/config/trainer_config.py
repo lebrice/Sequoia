@@ -30,7 +30,7 @@ class TrainerConfig(Serializable):
     num_nodes: int = 1
     distributed_backend: str = "dp"
     log_gpu_memory: bool = False
-    
+    val_check_interval: Union[int, float] = 1.0
     auto_scale_batch_size: Optional[str] = None
     auto_lr_find: bool = False
     precision: int = choice(16, 32, default=32)

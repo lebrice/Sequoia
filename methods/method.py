@@ -109,8 +109,10 @@ class Method(Serializable, Generic[SettingType], Parseable):
             self.trainer.fit(model=self.model, datamodule=setting)
     
     def model_class(self, setting: SettingType) -> Type[Model]:
-        """ Which class of model to fetch, depending on the setting.
-        Overwrite this in your method if you want
+        """ Which class of model to use, depending on the setting.
+        
+        Overwrite this in your method if you want to choose a different model
+        class depending on the setting.
         """
         return Model
 

@@ -56,7 +56,7 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
         state, self.reward, self.done, self.info = self.env.step(action)
         if self.observe_pixels:
             self.state = np.asarray(super().render(mode="rgb_array"))
-            print(f"state shape: {self.state.shape}")
+            logger.debug(f"state shape: {self.state.shape}, dtype: {self.state.dtype}")
         else:
             self.state = state
         return self.state, self.reward, self.done, self.info 
@@ -78,18 +78,20 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
     def __iter__(self) -> Generator[ObservationType, ActionType, None]:
         worker_info = torch.utils.data.get_worker_info()
         if worker_info:
-            logger.debug(f"Worker info: {worker_info}")
+            logger.debug(f"Worker info: {worker_info}, current reward: {self.reward}")
         else:
             pass
             # logger.debug(f"Single process data loading!")
             # single-process data loading:
 
         while not self.done:
+            if worker_info:
+                logger.debug(f"Step {self._i.value} in worker: {worker_info}, current reward: {self.reward}")
             action = yield next(self)
+            assert self.reward is not None
             if action is not None:
-                logger.debug("Received non-None action when yielding?")
+                logger.error("Received non-None action when yielding?")
                 self.action = action
-            self._i.value += self.action or 0
 
     # @log_calls
     def reset(self, **kwargs):
@@ -106,15 +108,20 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
         # logger.debug(f"Action received at step {self._i}, n_sends = {self._n_sends}: {action}")
         worker_info = torch.utils.data.get_worker_info()
         if worker_info:
-            logger.debug(f"Worker info: {worker_info}")
+            logger.debug(f"Worker info: {worker_info}, reward: ")
         else:
             pass
             # single-process data loading
             # logger.debug("Single process data loading.")
         
         self._n_sends.value += 1
-        
+
         if action is not None:
+            # TODO: Need to check that 'action' (which might be a Tensor) into
+            # the kind of thing the underlying gym environment expects!
+            # if not isinstance(action, float):
+            # if self.action_space
+            action = int(action)
             self.action = action
         else:
             # TODO: Take a random action instead?
