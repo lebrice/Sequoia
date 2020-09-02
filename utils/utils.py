@@ -9,6 +9,7 @@ import re
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import MutableMapping
 from dataclasses import Field, fields
+from functools import reduce
 from inspect import isabstract, isclass
 from itertools import filterfalse, groupby
 from pathlib import Path
@@ -25,7 +26,8 @@ cuda_available = cuda.is_available()
 gpus_available = cuda.device_count()
 
 T = TypeVar("T")
-
+K = TypeVar("K")
+V = TypeVar("V")
 
 def n_consecutive(items: Iterable[T], n: int=2, yield_last_batch=True) -> Iterable[Tuple[T, ...]]:
     values: List[T] = []
@@ -137,6 +139,14 @@ def set_seed(seed: int):
     torch.manual_seed(seed)
     np.random.seed(seed)
 
+
+def prod(iterable: Iterable[T]) -> T:
+    """ Like sum() but returns the product of all numbers in the iterable.
+
+    >>> prod(range(1, 5))
+    24
+    """
+    return reduce(operator.mul, iterable, 1)
 
 def to_optional_tensor(x: Optional[Union[Tensor, np.ndarray, List]]) -> Optional[Tensor]:
     """ Converts `x` into a Tensor if `x` is not None, else None. """
@@ -262,7 +272,8 @@ def camel_case(name):
 def constant(v: T, **kwargs) -> T:
     return field(default=v, init=False, **kwargs)
 
-def dict_union(*dicts: Dict, dict_factory=OrderedDict) -> Dict:
+
+def dict_union(*dicts: Dict[K, V], dict_factory=OrderedDict) -> Dict[K, V]:
     """ Simple dict union until we use python 3.9
     
     >>> from collections import OrderedDict
@@ -270,13 +281,36 @@ def dict_union(*dicts: Dict, dict_factory=OrderedDict) -> Dict:
     >>> b = OrderedDict(c=5, d=6, e=7)
     >>> dict_union(a, b)
     OrderedDict([('a', 1), ('b', 2), ('c', 5), ('d', 6), ('e', 7)])
+    >>> a = OrderedDict(a=1, b=OrderedDict(c=2, d=3))
+    >>> b = OrderedDict(a=2, b=OrderedDict(c=3, e=6))
+    >>> dict_union(a, b)
+    OrderedDict([('a', 2), ('b', OrderedDict([('c', 3), ('d', 3), ('e', 6)]))])
+
     """
-    result: Dict = None  # type: ignore
-    for d in dicts:
-        if result is None:
-            result = type(d)()
-        result.update(d)
-    assert result is not None
+    result: Dict = dict_factory()
+    if not dicts:
+        return result
+    assert len(dicts) >= 1
+    all_keys: Set[str] = set()
+    all_keys.update(*dicts)
+    all_keys = sorted(all_keys)
+
+    # Create a neat generator of generators.
+    all_values: Iterable[Tuple[V, Iterable[K]]] = (
+        (k, [d[k] for d in dicts if k in d]) for k in all_keys
+    )
+    for k, values in all_values:
+        sub_dicts: List[Dict] = []
+        for i, v in enumerate(values):
+            if isinstance(v, dict):
+                sub_dicts.append(v)
+            else:
+                new_value = v
+        if len(sub_dicts) == (i + 1):
+            # We only this here if all values for key `k` were dictionaries.
+            new_value = dict_union(*sub_dicts, dict_factory=dict_factory)
+        
+        result[k] = new_value
     return result
 
 
