@@ -18,6 +18,7 @@ from pytorch_lightning import Callback
 
 logger = get_logger(__file__)
 
+
 @dataclass
 class ClassIncrementalMethod(Method, target_setting=ClassIncrementalSetting):
     """ Base class for methods that want to target a Task Incremental setting.
@@ -58,11 +59,29 @@ class ClassIncrementalMethod(Method, target_setting=ClassIncrementalSetting):
             if setting.task_labels_at_train_time:
                 # This is always true in the ClassIncremental & TaskIncremental
                 # settings for now.
-                self.model.on_task_switch(i)
+                self.on_task_switch(i)
+                setting.current_task_id = i
+
             # TODO: Make sure the Trainer really does max_epochs per task, and
             # not max_epochs on the first task and 0 on the others.
-            assert self.model.setting.current_task_id == setting.current_task_id == i
-            self.trainer.fit(self.model, datamodule=setting)
+            assert self.model.setting.current_task_id == setting.current_task_id == i, (self.model.setting.current_task_id, setting.current_task_id, i)
+            self.trainer.fit(
+                self.model,
+                datamodule=setting,
+            )
+            
+            # for i, dataloader in enumerate(setting.val_dataloaders()):
+            #     if setting.task_labels_at_test_time:
+            #         self.on_task_switch(i)
+
+            #     test_outputs = self.trainer.test(
+            #         test_dataloaders=dataloader,
+            #         verbose=True,    
+            #     )
+            #     task_val_loss = test_outputs["loss_object"]
+            #     assert False, test_outputs
+
+
 
     @singledispatchmethod
     def model_class(self, setting: SettingType) -> Type[Model]:

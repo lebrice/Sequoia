@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
 from dataclasses import InitVar, dataclass, field
-from typing import Tuple, ClassVar, Callable, TypeVar, Optional
+from typing import Callable, ClassVar, Optional, Tuple, TypeVar
 
 import torch
+from pytorch_lightning import LightningModule
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
+
 from common.loss import Loss
 from common.task import Task
 from utils import cuda_available
@@ -24,7 +26,8 @@ class AuxiliaryTask(nn.Module):
     name: ClassVar[str] = ""
     input_shape: ClassVar[Tuple[int, ...]] = ()
     hidden_size: ClassVar[int] = -1
-    
+
+    model: ClassVar[LightningModule]    
     # Class variables for holding the Modules shared with with the classifier. 
     encoder: ClassVar[nn.Module]
     classifier: ClassVar[nn.Module]  # type: ignore
@@ -139,12 +142,5 @@ class AuxiliaryTask(nn.Module):
     def disabled(self) -> bool:
         return not self.enabled
 
-    def on_model_changed(self, global_step: int, **kwargs)-> None:
-        """ Executed when the model was updated.
-        TODO: This isn't currently used. We would need to figure out a way to
-        call this after each backward pass with Pytorch Lightning for some of
-        the auxiliary tasks that need it, (e.g. EWC)
-        """
-
-    def on_task_switch(self, task_id: int, training: bool = False) -> None:
+    def on_task_switch(self, task_id: int) -> None:
         """ Executed when the task switches (to either a new or known task). """

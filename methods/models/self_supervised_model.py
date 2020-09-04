@@ -11,7 +11,7 @@ from torch import Tensor
 
 from common.config import Config
 from common.loss import Loss
-from common.tasks import AEReconstructionTask, VAEReconstructionTask
+from common.tasks import AEReconstructionTask, VAEReconstructionTask, EWCTask
 from common.tasks.auxiliary_task import AuxiliaryTask
 from common.tasks.simclr import SimCLRTask
 from settings import Setting, SettingType
@@ -35,6 +35,7 @@ class SelfSupervisedModel(Model[SettingType]):
         simclr: Optional[SimCLRTask.Options] = None
         vae: Optional[VAEReconstructionTask.Options] = None
         ae: Optional[AEReconstructionTask.Options] = None
+        ewc: Optional[EWCTask.Options] = None
 
     def __init__(self, setting: Setting, hparams: HParams, config: Config):
         super().__init__(setting, hparams, config)
@@ -42,10 +43,13 @@ class SelfSupervisedModel(Model[SettingType]):
         # Dictionary of auxiliary tasks.
         self.tasks: Dict[str, AuxiliaryTask] = self.create_auxiliary_tasks()
 
-        if self.config.debug and self.config.verbose:
+        for task_name, task in self.tasks.items():
             logger.debug("Auxiliary tasks:")
-            for task_name, task in self.tasks.items():
+            assert isinstance(task, AuxiliaryTask), f"Task {task} should be a subclass of {AuxiliaryTask}."
+            if task.coefficient != 0:
                 logger.debug(f"\t {task_name}: {task.coefficient}")
+                logger.info(f"enabling the '{task_name}' auxiliary task (coefficient of {task.coefficient})")
+                task.enable()
 
     def get_loss(self, x: Tensor, y: Tensor = None, loss_name: str = "") -> Loss:
         # TODO: Need to split up the get_loss function so it also kinda works
@@ -85,6 +89,9 @@ class SelfSupervisedModel(Model[SettingType]):
     def create_auxiliary_tasks(self) -> Dict[str, AuxiliaryTask]:
         # Share the relevant parameters with all the auxiliary tasks.
         # We do this by setting class attributes.
+        # TODO: Make sure that we aren't duplicating all of the model's weights
+        # by setting a class attribute.
+        AuxiliaryTask.model = self
         AuxiliaryTask.hidden_size = self.hidden_size
         AuxiliaryTask.input_shape = self.input_shape
         AuxiliaryTask.encoder = self.encoder
@@ -103,22 +110,18 @@ class SelfSupervisedModel(Model[SettingType]):
             tasks[VAEReconstructionTask.name] = VAEReconstructionTask(options=self.hp.vae)
         if self.hp.ae and self.hp.ae.coefficient:
             tasks[AEReconstructionTask.name] = AEReconstructionTask(options=self.hp.ae)
+        if self.hp.ewc and self.hp.ewc.coefficient:
+            tasks[EWCTask.name] = EWCTask(options=self.hp.ewc)
 
-        for name, task in tasks.items():
-            assert isinstance(task, AuxiliaryTask), f"Task {task} should be a subclass of {AuxiliaryTask}."
-            if task.coefficient != 0:
-                logger.info(f"enabling the '{name}' auxiliary task (coefficient of {task.coefficient})")
-                task.enable()
         return tasks
     
-    def on_task_switch(self, task_id: int, training: bool = False) -> None:
+    def on_task_switch(self, task_id: int) -> None:
         """Called when switching between tasks.
-        
+
         Args:
             task_id (int): the Id of the task.
-            training (bool): Wether we are currently training or valid/testing.
         """
         for task_name, task in self.tasks.items():
             if task.enabled:
-                task.on_task_switch(task_id=task_id, training=training)
-        super().on_task_switch(task_id=task_id, training=training)
+                task.on_task_switch(task_id=task_id)
+        super().on_task_switch(task_id=task_id)

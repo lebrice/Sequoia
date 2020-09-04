@@ -5,181 +5,138 @@ TODO: Refactor / Validate / test the EWC Auxiliary Task with the new setup.
 """
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import (Dict, Iterable, Iterator, List, Mapping, MutableMapping,
+                    Optional, Tuple)
 
 import torch
+from pytorch_lightning import LightningModule
 from torch import Tensor, nn
+from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader
 
+# from common.dict_buffer import DictBuffer
 from common.loss import Loss
 from common.task import Task
 from common.tasks.auxiliary_task import AuxiliaryTask
 from methods.models.output_heads import OutputHead
+from utils import dict_intersection, dict_union
 from utils.logging_utils import get_logger
-from utils.nngeometry.nngeometry.layercollection import LayerCollection
-from utils.nngeometry.nngeometry.metrics import FIM
-from utils.nngeometry.nngeometry.object.pspace import (PSpaceBlockDiag,
-                                                       PSpaceKFAC)
-from utils.nngeometry.nngeometry.object.vector import PVector
 
 logger = get_logger(__file__)
 
 
-class GaussianPrior(object):
-    def __init__(self, model: torch.nn.Module, n_output:int, loader: DataLoader,
-                 reg_matrix: str ="kfac", variant: str ='classif_logits', device: str='cuda'):
-
-        assert reg_matrix=="kfac", 'Only kfac EWC is implement'
-        assert variant == "classif_logits", 'Only classif_logits is iplemented as a metric variant'
-
-        self.reg_matrix = reg_matrix
-        self.model = model
-        layer_collection_bn = LayerCollection()
-        layer_collection = LayerCollection()
-        for l, mod in model[0].named_modules():
-            mod_class = mod.__class__.__name__
-            if mod_class in ['Linear', 'Conv2d']:
-                layer_collection.add_layer_from_model(model, mod)
-            elif mod_class in ['BatchNorm1d', 'BatchNorm2d']:
-                layer_collection_bn.add_layer_from_model(model, mod)
-
-        self.F_linear_kfac = FIM(layer_collection=layer_collection,
-                                 model=model,
-                                 loader=loader,
-                                 representation=PSpaceKFAC,
-                                 n_output=n_output,
-                                 variant=variant,
-                                 device=device)
-
-        self.F_bn_blockdiag = FIM(layer_collection=layer_collection_bn,
-                                  model=model,
-                                  loader=loader,
-                                  representation=PSpaceBlockDiag,
-                                  n_output=n_output,
-                                  variant=variant,
-                                  device=device)
-        self.prev_params = PVector.from_model(model).clone().detach()
-
-        n_parameters = layer_collection_bn.numel() + layer_collection.numel()
-        logger.debug(f'\n{str(n_parameters)} parameters')
-        logger.debug("Done calculating curvature matrix")
-
-    def consolidate(self, new_prior, task):
-        # TODO: fix this ugly-ass code! 
-        self.prev_params = PVector.from_model(new_prior.model).clone().detach()
-        if isinstance(self.F_linear_kfac.data, dict):
-            for (n, p), (n_, p_) in zip(self.F_linear_kfac.data.items(),new_prior.F_linear_kfac.data.items()):
-                for item, item_ in zip(p, p_):
-                    item.data = ((item.data*(task))+deepcopy(item_.data))/(task+1) #+ self.F_.data[n]
-        else:
-            self.F_linear_kfac.data = ((deepcopy(new_prior.F_bn_blockdiag.data)) + self.F_bn_blockdiag.data * (task)) / (task + 1)
-
-        if isinstance(self.F_bn_blockdiag.data, dict):
-            for (n, p), (n_, p_) in zip(self.F_bn_blockdiag.data.items(), new_prior.F_bn_blockdiag.data.items()):
-                for item, item_ in zip(p, p_):
-                    item.data = ((item.data * (task)) + deepcopy(item_.data)) / (task + 1)  # + self.F_.data[n]
-        else:
-            self.F_bn_blockdiag.data = ((deepcopy(new_prior.F_bn_blockdiag.data)) + self.F_bn_blockdiag.data * (task)) / (task + 1)
-
-    def regularizer(self, model, use_abs: bool=False):
-        params0_vec = PVector.from_model(model)
-        v = params0_vec - self.prev_params
-        if use_abs:
-            v = torch.abs(v)
-        reg_1 = self.F_linear_kfac.vTMv(v)
-        reg_2 = self.F_bn_blockdiag.vTMv(v)
-        # print(reg)
-        return reg_1 + reg_2
-
-
-class EWC(AuxiliaryTask):
+class EWCTask(AuxiliaryTask):
     """ Elastic Weight Consolidation, implemented as a 'self-supervision-style' 
     Auxiliary Task.
     """
+    name: str = "ewc"
+
     @dataclass
     class Options(AuxiliaryTask.Options):
         """ Options of the EWC auxiliary task. """
         # Wether to use the absolute difference of the weights or the difference
         # in the `regularize` method below.
         use_abs_diff: bool = False
+        # The norm term for the 'distance' between the current and old weights.
+        distance_norm: int = 2
 
     def __init__(self,
-                 name: str="ewc",
-                 options: "EWC.Options"=None):
-        super().__init__(name=name, options=options)
-        self.options: EWC.Options
-        self.current_task_loader: Optional[DataLoader] = None
-        self.n_ways: Optional[int] = None
-        self.prior: Optional[GaussianPrior] = None
-        self.tasks_seen: List[int] = []
-        self.training: bool = False
+                 *args,
+                 name: str = "ewc",
+                 options: "EWC.Options" = None,
+                 **kwargs):
+        super().__init__(*args, name=name, options=options, **kwargs)
+        self.name = name or type(self.name)
+        self.options: EWCTask.Options
+        self.previous_task: int = None
+        # TODO: Figure out a way to get a buffer 'dict' so we can 
+        self.previous_model_weights: Dict[str, Tensor] = {}
+        # self.previous_model_weights: Dict[str, Tensor] = DictBuffer()
+        # self.old_weights: Tensor
+        self._i: int = 0
 
-    def on_task_switch(self,
-                       task_id: int,
-                       training: bool = False,
-                       prev_task: Task = None,
-                       train_loader: DataLoader = None,
-                       classifier_head: OutputHead = None, **kwargs)-> None:
+    def state_dict(self, destination=None, prefix='', keep_vars=False) -> Dict:
+        state = super().state_dict(destination=destination, prefix=prefix, keep_vars=keep_vars)
+        for k, v in self.previous_model_weights.items():
+            state[k] = v
+        return state
+
+    def load_state_dict(self, state_dict: Dict[str, Tensor], strict: bool = True):
+        missing, unexpected = super().load_state_dict(state_dict=state_dict, strict=False)
+        # TODO: Should we create the 'previous model' ?
+        for k, v in self.previous_model_weights.items():
+            if k in unexpected:
+                self.previous_model_weights[k] = v
+
+    def disable(self):
+        # save a little bit of memory by clearing the weights.
+        self.previous_model_weights.clear()
+        # TODO: Should we also reset the 'previous_task' ?
+        return super().disable()
+
+    def enable(self):
+        # old_weights = parameters_to_vector(self.model.parameters())
+        # self.register_buffer("old_weights", old_weights, persistent = True)
+        return super().enable()
+
+    def on_task_switch(self, task_id: int)-> None:
         """ Executed when the task switches (to either a new or known task).
         TODO: Need to fix this method so it works with the SelfSupervisedModel.
         """
-        self.training = training
-        #set n_ways of the next task
-        if classifier_head is not None and self.n_ways is None:
-            self.n_ways = classifier_head.output_size
-        if (task_id is not None and prev_task is not None and train_loader
-            and classifier_head and self.current_task_loader):
-            self.calculate_ewc_prior(prev_task, task_id, classifier_head)
-        #set data loader of the next task
-        current_task_loader = train_loader
-        if current_task_loader is not None:
-            self.current_task_loader = current_task_loader
-
-    def regularizer_ewc(self):
-        if self.prior is None:
-            return torch.zeros(1, requires_grad=True, device=self.device)
+        if not self.enabled:
+            return
+        if task_id != self.previous_task:
+            logger.debug(f"Switch to task {task_id} from task {self.previous_task}: setting 'previous' weights to the current weights.")
+            self.previous_task = task_id
+            self.previous_model_weights.clear()
+            self.previous_model_weights.update(deepcopy({
+                k: v.detach() for k, v in self.model.named_parameters()
+            }))
+            # self.previous_model_weights.requires_grad_(False)
+            # self.old_weights = parameters_to_vector(self.model.parameters())
         else:
-            return self.prior.regularizer(nn.Sequential(AuxiliaryTask.encoder), use_abs=self.options.use_abs_diff)#, self.model.classifier))
-
+            assert task_id == self.previous_task
+            logger.debug(f"Switching to the same task? ({task_id})")
+            # assert len(self.previous_model_weights) > 0
+    
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor = None) -> Loss:
+        """Gets the 'EWC' loss. 
+
+        NOTE: This is a simplified version of EWC where the loss is the L2-norm
+        between the current weights and the weights as they were on the begining
+        of the task.
+        
+        This doesn't actually use any of the provided arguments.
+        """
+        assert self.previous_task is not None
+
+        # old_weights = self.old_weights
+        # new_weights = parameters_to_vector(self.model.parameters())
+
+        # assert new_weights.shape == old_weights.shape
+
+        # loss = torch.dist(old_weights.type_as(new_weights), new_weights)
+        # if self._i > 3:
+        #     assert False, loss
+        # self._i += 1
+        # ewc_loss = Loss(
+        #     name=self.name,
+        #     loss=loss,
+        # )
+        # return ewc_loss
+
+        old_weights: Dict[str, Tensor] = self.previous_model_weights
+        new_weights: Dict[str, Tensor] = dict(self.model.named_parameters())
+        
+        loss = torch.zeros(1, requires_grad=True).type_as(h_x)
+        for k, (new_w, old_w) in dict_intersection(new_weights, old_weights):
+            # assert new_w.requires_grad
+            # TODO: Does the ordering matter, for L1, for example?
+            loss += torch.dist(new_w, old_w.type_as(new_w))
+
+        self._i += 1
         ewc_loss = Loss(
-            name='EWC',
-            total_loss=self.regularizer_ewc()
+            name=self.name,
+            loss=loss,
         )
         return ewc_loss
-
-    def calculate_ewc_prior(self, prev_task: int, new_task: int, classifier_head: nn.Module):
-        task_number: int = new_task
-        assert isinstance(task_number, int), f"Task number should be an int, got {task_number}"
-        if task_number == 0:
-            print('No EWC on task 0')
-            return
-
-        if task_number in self.tasks_seen:
-            print(f'Task {task_number} was learned before, fisher is not updated')
-            return
-        
-        # TODO: should set this back to the previous mode (either Train or Val) no?
-        if self.training:
-            AuxiliaryTask.encoder.eval()
-            AuxiliaryTask.classifier.eval()
-        assert self.current_task_loader is not None, (
-            'Task loader should be set to the loader of the current task before switching the tasks'
-        )
-        print(f"Calculating Fisher on task {prev_task}")
-        #single_head OR multi_head
-        prior = GaussianPrior(
-            nn.Sequential(AuxiliaryTask.encoder, classifier_head),
-            self.n_ways,
-            self.current_task_loader,
-            device=self.device
-        )
-        if self.prior is not None:
-            self.prior.consolidate(prior, task_number)
-        else:
-            self.prior = prior
-        self.tasks_seen.append(task_number)
-        
-        if self.training:
-            AuxiliaryTask.encoder.train()
-            AuxiliaryTask.classifier.train()

@@ -6,8 +6,8 @@ from typing import Any, Callable, Dict, List, Tuple, Type
 import pytest
 
 from common import ClassificationMetrics, Loss
-from common.tasks import (AE, SIMCLR, VAE, AEReconstructionTask, SimCLRTask,
-                          VAEReconstructionTask)
+from common.tasks import (AE, EWC, SIMCLR, VAE, AEReconstructionTask, EWCTask,
+                          SimCLRTask, VAEReconstructionTask)
 from conftest import get_dataset_params, id_fn, parametrize, slow, xfail_param
 from settings import (ClassIncrementalResults, ClassIncrementalSetting,
                       IIDResults, IIDSetting, Results, Setting,
@@ -36,6 +36,7 @@ def test_get_applicable_settings():
         {SIMCLR: 1},
         {VAE: 1},
         {AE: 1},
+        {EWC: 1},
     ],
     ids=id_fn,
 )
@@ -99,7 +100,7 @@ def validate_results(results: Results, aux_task_coefficients: Dict[str, float]):
         for aux_task_name, coef in aux_task_coefficients.items():
             assert aux_task_name in loss.losses
             aux_task_loss = loss.losses[aux_task_name]
-            assert aux_task_loss.total_loss >= 0.
+            assert aux_task_loss.loss >= 0.
             assert aux_task_loss._coefficient == coef
 
 

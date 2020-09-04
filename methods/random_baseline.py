@@ -89,7 +89,7 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     """
     @singledispatchmethod
     def model_class(self, setting: SettingType) -> Type[Model]:
-        raise NotImplementedError(f"No known model for setting of type {type(setting)} (registry: {RandomBaselineMethod.model_class.registry})")
+        raise NotImplementedError(f"No known model for setting of type {type(setting)} (registry: {self.model_class.registry})")
     
     @model_class.register(RLSetting)
     def _(self, setting: RLSetting) -> Type[Model]:
@@ -110,70 +110,6 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     @model_class.register
     def _(self, setting: IIDSetting) -> Type[IIDModel]:
         return RandomIIDModel
-
-    def create_model(self, setting: SettingType) -> Model[SettingType]:
-        """ Create the baseline model. """
-        # Get the type of model to use for that setting.
-        model_class: Type[Model] = self.model_class(setting)
-        hparams_class = model_class.HParams
-        logger.debug(f"model class for this setting: {model_class}")
-        logger.debug(f"hparam class for this setting: {hparams_class}")
-        logger.debug(f"Hyperparameters class on the method: {type(self.hparams)}")
-
-        if not isinstance(self.hparams, hparams_class):
-            # TODO: @lebrice This is ugly, and should be cleaned up somehow. Let
-            # me know what you think:
-            #
-            # The problem is that in order to have the --help option display all
-            # the options for the Method (including the model hparams), the
-            # hparams should be one or more fields on the Method object.
-            #
-            # However, if in our method we use a different Model class depending
-            # on the type of Setting, then we would need the hyperparameters to
-            # be of the type required by the model!
-            #
-            # Therefore, here we upgrade `self.hparams` (if present) to the
-            # right type (`model_class.HParams`)
-            logger.warning(UserWarning(
-                f"The hparams attribute on the {self.get_name()} Method are of "
-                f"type {type(self.hparams)}, while the HParams on the model "
-                f"class are of type {hparams_class}!\n"
-                f"This will try to 'upgrade' the hparams, using values "
-                f"from the command-line."
-            ))
-            self.hparams = self.upgrade_hparams(hparams_class)
-            logger.info(f"'Upgraded' hparams: {self.hparams}")
-
-        assert isinstance(self.hparams, model_class.HParams)
-        return model_class(setting=setting, hparams=self.hparams, config=self.config)
-
-    def upgrade_hparams(self, new_type: Type[HParams]) -> HParams:
-        """Upgrades the current hparams to the new type, filling in the new
-        values from the command-line.
-
-        Args:
-            new_type (Type[HParams]): Type of HParams to upgrade to.
-            argv (Union[str, List[str]], optional): Command-line arguments to
-            use to set the missing values. Defaults to None, in which case the
-            values in `sys.argv` are used.
-
-        Returns:
-            HParams: [description]
-        """
-        argv = self._argv
-        logger.info(f"Current method was originally created from args {argv}")
-        new_hparams: HParams = new_type.from_args(argv)
-        logger.info(f"Hparams for that type of model (from the method): {self.hparams}")
-        logger.info(f"Hparams for that type of model (from command-line): {new_hparams}")
-        
-        # if self.hparams:
-        #     # IDEA: use some fancy dict comparisons to keep things that aren't the same
-        #     # Not needed, because we saved the args that were used to create the instance.
-        #     default_values = self.hparams.from_dict({})
-        #     current_values = self.hparams.to_dict()
-        #     different_values = utils.
-        #     new_hparams = new_type.from_dict(hparams_dict, drop_extra_fields=True)
-        return new_hparams
 
 
 if __name__ == "__main__":

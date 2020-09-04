@@ -45,6 +45,10 @@ class ClassIncrementalModel(SelfSupervisedModel[SettingType], SemiSupervisedMode
         # TODO: Add an optional task inference mechanism for ClassIncremental
         # methods!
         self.task_inference_module: nn.Module = None
+        
+        self.previous_task: Optional[int] = None
+        self.current_task: Optional[int] = None
+
 
         self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()
         if self.hp.multihead:
@@ -154,8 +158,28 @@ class ClassIncrementalModel(SelfSupervisedModel[SettingType], SemiSupervisedMode
                            training: bool = True,
                     ) -> Dict:
         assert loss_name
+        # TODO: There seems to be something quite wrong about how we do this.
+        # For example, what if the batch isn't from only oen task?
         if dataloader_idx is not None:
-            self.on_task_switch(dataloader_idx, training=training)
+            # TODO: Fix this, we shouldn't have to be the one to tell the
+            # setting that the task changed, but because we often simply pass
+            # the datamodule to Trainer.fit(), it loops over the dataloaders
+            # without letting the setting know. We could fix this by
+            # implementing a subclass of Trainer, something like that.
+            if self.setting.current_task_id != dataloader_idx:
+                self.setting.current_task_id = dataloader_idx
+            assert self.setting.current_task_id == dataloader_idx
+            self.on_task_switch(dataloader_idx)
+
+        elif ((training and self.setting.task_labels_at_train_time) or
+                (not training and self.setting.task_labels_at_test_time)):
+            current_task = self.setting.current_task_id
+            if self.current_task != current_task:
+                self.previous_task = self.current_task
+                self.current_task = current_task
+
+                self.on_task_switch(self.current_task)
+        
         return super()._shared_step(
             batch=batch,
             batch_idx=batch_idx,
@@ -163,15 +187,15 @@ class ClassIncrementalModel(SelfSupervisedModel[SettingType], SemiSupervisedMode
             loss_name=loss_name,
         )
 
-    def on_task_switch(self, task_id: int, training: bool=False) -> None:
+    def on_task_switch(self, task_id: int) -> None:
         """Called when switching between tasks.
         
         Args:
             task_id (int): the Id of the task.
-            training (bool): Wether we are currently training or valid/testing.
         """
-        super().on_task_switch(task_id=task_id, training=training)
-        self.setting.current_task_id = task_id
+        super().on_task_switch(task_id=task_id)
+        if self.setting.current_task_id != self.current_task:
+            self.setting.current_task_id = task_id
         if self.hp.multihead and str(task_id) not in self.output_heads:
             self.output_heads[str(task_id)] = self.create_output_head()
 
@@ -185,8 +209,8 @@ class ClassIncrementalModel(SelfSupervisedModel[SettingType], SemiSupervisedMode
         x, y = super().preprocess_batch(*batch)
 
         if y is not None and self.hp.multihead:
-            logger.debug(f"Classes in current task: {self.current_task_classes}")
-            logger.debug(f"Current task: {self.current_task_classes}")
+            # logger.debug(f"Classes in current task: {self.current_task_classes}")
+            # logger.debug(f"Current task: {self.current_task_classes}")
 
             # y_unique are the (sorted) unique values found within the batch.
             # idx[i] holds the index of the value at y[i] in y_unique, s.t. for
