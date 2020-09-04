@@ -4,6 +4,7 @@
 """
 import inspect
 import shlex
+import traceback
 from argparse import Namespace
 from collections import OrderedDict
 from dataclasses import InitVar, dataclass
@@ -83,11 +84,10 @@ class Experiment(Parseable):
                     "used!"
                 )
             # Construct the Setting and Method from the args if they aren't set,
-            # consuming the command-line arguments if necessary.
             if self.setting_type and not self.setting:
-                self.setting, argv = self.setting_type.from_known_args(argv)
+                self.setting = self.setting_type.from_args(argv)
             if self.method_type and not self.method:
-                self.method, argv = self.method_type.from_known_args(argv)
+                self.method = self.method_type.from_args(argv)
 
             if self.method and self.setting:
                 if argv:
@@ -102,7 +102,6 @@ class Experiment(Parseable):
 
         except Exception as e:
             logger.error(f"Experiment crashed: {e}")
-            import traceback
             traceback.print_exc()
             return None
 

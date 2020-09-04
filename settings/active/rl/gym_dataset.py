@@ -1,4 +1,4 @@
-from typing import (Any, Callable, Generator, Iterable, List, Optional,
+from typing import (Any, Callable, Dict, Generator, Iterable, List, Optional,
                     Sequence, Tuple, TypeVar, Union)
 
 import gym
@@ -7,6 +7,8 @@ import numpy as np
 import torch
 import torch.multiprocessing as mp
 from gym.envs.classic_control import CartPoleEnv
+from gym.spaces import Box, Discrete
+from gym.wrappers.pixel_observation import PixelObservationWrapper
 from torch.utils.data import Dataset, IterableDataset
 
 from settings.base.environment import (ActionType, EnvironmentBase,
@@ -22,112 +24,139 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
     """ Wrapper around a GymDataLoaderironment that exposes the EnvironmentBase "API"
         and which can be iterated on using DataLoaders.
     """
-    metadata = {'render.modes': ['human', 'rgb_array']}
+    # metadata = {'render.modes': ['human', 'rgb_array']}
 
-    def __init__(self, env: Union[str, gym.Env], observe_pixels: bool=True):
+    def __init__(self,
+                 env: Union[str, gym.Env],
+                 observe_pixels: bool = True,
+                 max_episodes: Optional[int] = None,
+                 max_steps: Optional[int] = None,
+                 ):
         env = gym.make(env) if isinstance(env, str) else env
+        # TODO: Somehow we need to do this before wrapping the env.
+        env.reset()
+        if observe_pixels:
+            env = PixelObservationWrapper(env)
         super().__init__(env=env)
-        self.observe_pixels = observe_pixels
 
-        self.action: ActionType
+        self.env: gym.Env
+        self.observe_pixels = observe_pixels
+        self.action: ActionType = self.env.action_space.sample()
         self.state: ObservationType
         self.reward: RewardType
         self.done: bool = False
+        self.info: Dict = {}
 
-        self.env.render_mode = "rgb_array"
-
-        self.manager = mp.Manager()
         # Number of steps performed in the environment.
-        self._i: mp.Value[int] = self.manager.Value(int, 0)
-        self._n_sends: mp.Value[int] = self.manager.Value(int, 0)
-        self.action = self.env.action_space.sample()
+        self.step_count: int = 0
+        # Number of times the `send` method was called, i.e. number of actions
+        # taken in the environment.
+        self.send_count: int = 1
+        # Maximum number of steps to perform in the environment.
+        self.max_steps: Optional[int] = max_steps
+        # Number of episodes performed in the environment.
+        self.episode_count: int = 0
+        # Maximum number of episodes to perform in the environment.
+        self.max_episodes: Optional[int] = max_episodes
+       
         self.reset()
 
-    # @log_calls
     def __next__(self) -> ObservationType:
         """ Generate the next observation. """
         self.step(self.action)
         return self.state
 
-    # @log_calls
     def step(self, action: ActionType):
-        self._i.value += 1
+        if not self.action_space.contains(action):
+            if isinstance(self.action_space, Discrete):
+                action = round(float(action))
+            elif isinstance(self.action_space, Box):
+                action = np.clip(action, self.action_space.low, self.action_space.high)
+            else:
+                # logger.warning(RuntimeWarning(f"The action space {self.action_space} doesn't contain action {action}!"))
+                pass
+        self.state, self.reward, self.done, self.info = super().step(action)
+        if isinstance(self.state, dict):
+            if self.observe_pixels:
+                self.state = self.state["pixels"]
+        self.step_count += 1
+        return self.state, self.reward, self.done, self.info
 
-        state, self.reward, self.done, self.info = self.env.step(action)
-        if self.observe_pixels:
-            self.state = np.asarray(super().render(mode="rgb_array"))
-            logger.debug(f"state shape: {self.state.shape}, dtype: {self.state.dtype}")
-        else:
-            self.state = state
-        return self.state, self.reward, self.done, self.info 
-
-    # @log_calls
     @property
-    def observation_space(self) -> gym.Space:
-        if self.observe_pixels:
-            print(f"State shape: {self.state.shape}")
-            return gym.Space(shape=self.state.shape, dtype=np.float)
-        else:
-            return self.env.observation_space
+    def reached_step_limit(self) -> bool:
+        if self.max_steps:
+            return self.step_count >= self.max_steps
+        return False
     
-    @observation_space.setter
-    def observation_space(self, space) -> None:
-        self.env.observation_space = space
+    @property
+    def reached_episode_limit(self) -> bool:
+        if self.max_episodes:
+            return self.episodes_count >= self.max_episodes
+        return False
 
-    # @log_calls
     def __iter__(self) -> Generator[ObservationType, ActionType, None]:
-        worker_info = torch.utils.data.get_worker_info()
-        if worker_info:
-            logger.debug(f"Worker info: {worker_info}, current reward: {self.reward}")
-        else:
-            pass
-            # logger.debug(f"Single process data loading!")
-            # single-process data loading:
+        action: ActionType = self.action_space.sample()
 
-        while not self.done:
-            if worker_info:
-                logger.debug(f"Step {self._i.value} in worker: {worker_info}, current reward: {self.reward}")
-            action = yield next(self)
-            assert self.reward is not None
-            if action is not None:
-                logger.error("Received non-None action when yielding?")
-                self.action = action
+        while not self.reached_episode_limit or self.reached_step_limit:
+            # logger.debug(f"n steps: {self.step_count}, n sends: {self.send_count}")
+            # Perform an episode.
+            while not (self.done or self.reached_step_limit):
+                # Isn't there something fishy going on here? I'm not sure. Are
+                # we giving back the right reward for the right action and observation?
+                action = yield self.__next__()
 
-    # @log_calls
+                assert self.reward is not None
+                if action is not None:
+                    assert False, "Received non-None action (from send on the iterator, rather than on `self`!"
+                    self.action = action
+
+            self.episode_count += 1
+            # NOTE: It's important that we call `self.env.reset` rather than
+            # `self.reset` because that would reset the number of episodes and
+            # steps performed and mess up the checks above.
+            self.env.reset()
+
     def reset(self, **kwargs):
         start_state = super().reset(**kwargs)
-        if not self.observe_pixels:
-            self.state = start_state
-        else:
-            self.state = self.env.render(mode="rgb_array")
+        # logger.debug(f"start_state: {start_state}")
+        if isinstance(start_state, dict):
+            if self.observe_pixels:
+                start_state = start_state["pixels"]
+        self.state = start_state
         self.action = self.env.action_space.sample()
+        self.step_count = 0
+        self.episode_count = 0
+        self.send_count = 0
         self.reward = None
 
-    # @log_calls
-    def send(self, action: ActionType=None) -> RewardType:
-        # logger.debug(f"Action received at step {self._i}, n_sends = {self._n_sends}: {action}")
-        worker_info = torch.utils.data.get_worker_info()
-        if worker_info:
-            logger.debug(f"Worker info: {worker_info}, reward: ")
-        else:
-            pass
-            # single-process data loading
-            # logger.debug("Single process data loading.")
-        
-        self._n_sends.value += 1
-
-        if action is not None:
-            # TODO: Need to check that 'action' (which might be a Tensor) into
-            # the kind of thing the underlying gym environment expects!
-            # if not isinstance(action, float):
-            # if self.action_space
-            action = int(action)
-            self.action = action
-        else:
+    def send(self, action: ActionType) -> RewardType:
+        # TODO: There might be somethign wrong here. What we're basically doing
+        # is giving the 'user' back the reward for the 'previous' action, not
+        # for the current one being sent!
+        if action is None:
+            assert False, f"Don't send a None action!"
             # TODO: Take a random action instead?
-            self.action = self.action_space.sample()
+            action = self.action_space.sample()
+        
+        # TODO: Need to check that 'action' (which might be a Tensor) into
+        # the kind of thing the underlying gym environment expects!
+        # Could probably use one of the gym wrappers for this, actually!
+        if not self.action_space.contains(action):
+            if isinstance(self.action_space, Discrete):
+                action = round(float(action))
+            elif isinstance(self.action_space, Box):
+                action = np.clip(action, self.action_space.low, self.action_space.high)
+            else:
+                # logger.warning(RuntimeWarning(f"The action space {self.action_space} doesn't contain action {action}!"))
+                pass
+        self.action = action
+        # TODO: Determine if we shoud call 'self.step' here or in __next__ ??
+        # Could do something where we compare n_sends and n_steps?
+        # self.state, self.reward, self.done, self.info = self.step(self.action)
+        self.send_count += 1
+        self.action = action
         return self.reward
-    
+
     def close(self) -> None:
         # plt.close()
         super().close()

@@ -45,7 +45,7 @@ class ActiveDataLoader(DataLoader, EnvironmentBase[ObservationType, ActionType, 
     # @log_calls
     def __next__(self) -> ObservationType:
         # self.observation, self.reward = super().__next__()
-        self.n_pulled.value += 1
+        # self.n_pulled.value += 1
         return self.observation
 
     # def __iter__(self) -> Iterable[ObservationType]:
@@ -59,7 +59,7 @@ class ActiveDataLoader(DataLoader, EnvironmentBase[ObservationType, ActionType, 
     #             print(f"y_pred: {y_pred}")
     #             y_true = self.send(y_pred)
     
-    @log_calls
+    # @log_calls
     def send(self, action: ActionType) -> RewardType:
         """ Sends an action to the 'dataset'/'Environment'.
         

@@ -6,7 +6,6 @@ from typing import List, Optional, Type, Union, Iterable
 
 from pytorch_lightning import Callback, Trainer
 from pytorch_lightning.loggers import LightningLoggerBase
-from pytorch_lightning.trainer.data_connector import DataConnector
 
 from common.config import TrainerConfig
 from settings import RLSetting
@@ -18,6 +17,11 @@ from .models.agent import Agent
 
 @dataclass
 class RLTrainerConfig(TrainerConfig):
+    """ Config for the Trainer object used by pytorch lightning. 
+    """
+    # NOTE: The default value for the validation interval is changed compared to
+    # the default value of the parent, because the 'GymDatasets' are
+    # IterableDatasets, and as such are infinite.
     val_check_interval: Union[int, float] = 100
 
 
@@ -28,15 +32,17 @@ class RLMethod(Method, target_setting=RLSetting):
     # Options for the Trainer object.
     trainer_options: RLTrainerConfig = mutable_field(RLTrainerConfig)
 
-
     def model_class(self, setting: RLSetting) -> Type[Agent]:
-        """Retuns the type of
+        """Retuns the type of LightningModule to use for a given setting.
+
+        In this case, we return the 'Agent', but you can overwrite this in your
+        subclass if you want to use a different module.
 
         Args:
-            setting (RLSetting): [description]
+            setting (RLSetting): A setting to be evaluated on.
 
         Returns:
-            Type[Agent]: [description]
+            Type[Agent]: The type of LightningModule to use for that setting.
         """
         return Agent
 

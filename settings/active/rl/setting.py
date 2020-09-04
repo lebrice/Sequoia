@@ -25,6 +25,10 @@ logger = get_logger(__file__)
 
 @dataclass
 class SettingOptions(Serializable, Parseable, Pickleable):
+    # Idea, we could move stuff to 'configuration options' objects instead of
+    # having them directly on the Setting.. (This is annoying, but might be
+    # necessary because the LightningDataModule class has an __init__ and we
+    # use dataclasses.)
     pass
 
 
@@ -100,19 +104,15 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         method: Method
         trainer: Trainer = method.trainer
         test_outputs = trainer.test(
-            # TODO: Choose either.
+            # TODO: Choose either (or None?)
             datamodule=self,
             # test_dataloaders=self.test_dataloader(),
-            verbose=True,
+            verbose=False,
         )
+        # TODO: There are no outputs here, for some reason.
         assert test_outputs, f"Test outputs should be produced: {test_outputs}"
-        
-        model = method.model
-        from methods.models import Model
-        if isinstance(model, Model):
-            hparams = model.hp
-        else:
-            hparams = model.hparams
+        # TODO: Once the bug above is fixed, create a Results object for that
+        # setting.
         return self.results_class(
             hparams=hparams,
             # test_loss=sum(task_losses),
@@ -147,6 +147,7 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         self._train_loader = GymDataLoader(
             dataset,
             observe_pixels=not self.observe_state_directly,
+            name="train",
             **kwargs
         )
         return self._train_loader
@@ -163,6 +164,7 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         self._val_loader = GymDataLoader(
             dataset,
             observe_pixels=not self.observe_state_directly,
+            name="val",
             **kwargs
         )
         return self._val_loader
@@ -179,13 +181,16 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         self._test_loader = GymDataLoader(
             dataset,
             observe_pixels=not self.observe_state_directly,
-            **kwargs
+            name="test",
+            **kwargs,
+            
         )
         return self._test_loader
 
     @property
     def train_env(self) -> GymDataLoader:
         if self._train_loader is None:
+            # TODO: This feels like it's got a code smell, but idk exactly how/why.
             raise RuntimeError("Can't call train_env before having called `train_dataloader`")
         return self._train_loader
 

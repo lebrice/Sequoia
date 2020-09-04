@@ -1,4 +1,4 @@
-from typing import (Any, Callable, Generator, Iterable, List, Optional,
+from typing import (Any, Callable, Dict, Generator, Iterable, List, Optional,
                     Sequence, Tuple, TypeVar, Union)
 
 import gym
@@ -10,6 +10,7 @@ from gym.envs.classic_control import CartPoleEnv
 from pytorch_lightning import seed_everything
 from torch import Tensor
 from torch.utils.data import Dataset, IterableDataset
+from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter
 
 from settings.active.active_dataloader import ActiveDataLoader
 from settings.base.environment import (ActionType, EnvironmentBase,
@@ -22,7 +23,6 @@ from .utils import ZipDataset
 logger = get_logger(__file__)
 
 T = TypeVar("T")
-from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter
 
 class GymMultiprocessingDataLoaderIter(_MultiProcessingDataLoaderIter):
     pass
@@ -58,11 +58,7 @@ def collate_fn(batch: List[Tensor]) -> Tensor:
         batch = torch.stack(batch)
     return batch
 
-class GymDataLoader(ActiveDataLoader[
-        Tensor,
-        Tensor,
-        Tensor
-    ]):
+class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
     """ActiveDataLoader made specifically for (possibly batched) Gym envs.
     """
     def __init__(self, env: Union[str, gym.Env],
@@ -71,6 +67,7 @@ class GymDataLoader(ActiveDataLoader[
                        num_workers: int = 0,
                        worker_init_fn: Optional[Callable[[int], None]] = worker_env_init,
                        collate_fn: Optional[Callable[[List[Tensor]], Tensor]] = collate_fn,
+                       name: str = "",
                         **kwargs):
         self.kwargs = kwargs
         # NOTE: This assumes that the 'env' isn't already batched, i.e. that it
@@ -80,7 +77,10 @@ class GymDataLoader(ActiveDataLoader[
         ]
         self._observe_pixels = observe_pixels
         self.dataset = ZipDataset(self.environments)
-        
+        self.name = name
+        self.n_sends: int = 0
+        self.n_steps: int = 0
+
         if num_workers not in {0, batch_size}:
             raise RuntimeError(
                 "Number of workers should be 0 or batch_size when using a "
@@ -96,37 +96,82 @@ class GymDataLoader(ActiveDataLoader[
             # ourselves.
             batch_size=None,
             worker_init_fn=worker_init_fn,
-            # collate_fn=collate_fn,
+            collate_fn=collate_fn,
             **kwargs,
         )
 
-    # def __iter__(self):
-    #     if self.num_workers == 0:
-    #         return super().__iter__()
-    #     else:
-    #         return GymMultiprocessingDataLoaderIter(self)
+    def step(self, actions: Tensor) -> Tuple[Tensor, Tensor, bool, Dict]:
+        observations, rewards, dones, infos = zip(*[
+            env.step(action)
+            for env, action in zip(self.environments, actions)
+        ])
+        for env, done in zip(self.environments, dones):
+            if done:
+                env.reset()
+        self.observation = torch.as_tensor(observations)
+        self.reward = torch.as_tensor(rewards)
+        done = False # TODO: When is this dataloader considered 'done'?
+        infos = {}
+        self.n_steps += 1
+        return self.observation, self.reward, done, infos
 
     def __iter__(self):
-        for batch in super().__iter__():
-            batch = collate_fn(batch)
-            # logger.debug(f"batch shape: {batch.shape}")
-            yield batch
+        if self.num_workers == 0:
+            # return super().__iter__()
+            self.step(self.random_actions())
+            i = 0
+            while True:
+                logger.debug(f"Dataloader {self.name}: step {i}")
+                assert self.observation is not None
+                # Just yield observations, since we assume people are going to
+                # call .send(actions) to get rewards.
+                self.reward = None
+                self.action = None
+                action = yield self.observation
+                if action is not None:
+                    assert False, f'received an action here! {action}'
+                
+                if self.reward is None:
+                    missing_sends = self.n_sends - self.n_steps
+                    if missing_sends > 1:
+                        raise RuntimeError(
+                            f"Dataloader {self.name}: you should have called "
+                            f".send() after having received an observation "
+                            f"(yielded {i} times, n_steps={self.n_steps}, n_sends={self.n_sends})"
+                        )
+                    else:
+                        logger.warning(RuntimeWarning(
+                            f"Dataloader {self.name}: you should have called "
+                            f".send() after having received an observation "
+                            f"(yielded {i} times, n_steps={self.n_steps}, n_sends={self.n_sends})"
+                        ))
+                        # we use a random action (just for debugging purposes)
+                        # self.send(self.random_actions())
+                i += 1
+
+        else:
+            raise NotImplementedError("TODO: Implement a cool mp iterator for gym environments.")
+            return GymMultiprocessingDataLoaderIter(self)
 
     def send(self, actions: Tensor) -> Tensor:
-        if actions is None or len(actions) == 0:
-            # TODO: Should we send random actions to the underlying environments then?
-            logger.debug("send method received no action, sending random "
-                         "actions to the environments.")
-            actions = self.random_actions()
-        actions = torch.as_tensor(actions)
-        assert len(actions) == len(self.environments), f"# of actions ({len(actions)}) should match # of environments ({len(self.environments)}"
-        rewards: List[float] = [
-            env.send(action)
-            for env, action in zip(self.environments, actions)
-        ]
-        # logger.debug(f"shapes: {[r.shape for r in rewards]}, dtypes: {[r.dtype for r in rewards]}")
-        return torch.as_tensor(rewards)
+        """ Returns the reward associated with the given action, given the current state. """
+        logger.debug(f"Dataloader {self.name}: Received actions {actions}, n_sends={self.n_sends}")
+        self.action = torch.as_tensor(actions)
+        if len(actions) != len(self.environments):
+            raise RuntimeError(
+                f"# of actions ({len(actions)}) should match # of environments "
+                f"({len(self.environments)}"
+            )
+        self.n_sends += 1
+        self.observation, self.reward, _, _ = self.step(actions)
+        return self.reward
 
+    def __len__(self) -> Union[int, type(NotImplemented)]:
+        # TODO: What should we do in the case where there is no limit?
+        return min(
+            filter(None, [env.max_steps for env in self.environments]),
+            NotImplemented,
+        )
 
     @property
     def action_space(self) -> gym.Space:
@@ -145,18 +190,15 @@ class GymDataLoader(ActiveDataLoader[
 
     @property
     def observation_space(self) -> gym.Space:
-        spaces = [env.observation_space for env in self.environments]
-        first_space = spaces[0]
-        if not hasattr(first_space, "shape"):
-            assert False, first_space
-        first_space_shape = first_space.shape
-        if not all(getattr(space, "shape", None) == first_space.shape for space in spaces):
-            raise RuntimeError(f"Different observation spaces: {spaces}")
-        if self.observe_pixels:
-            state = self.environments[0].state
-            assert state is not None
-            return gym.Space(shape=state.shape, dtype=state.dtype)        
-        return first_space
+        # Assumes that all the spaces are the same.
+        assert self.environments
+        return self.environments[0].observation_space
+
+    @property
+    def action_space(self) -> gym.Space:
+        # Assumes that all the spaces are the same.
+        assert self.environments
+        return self.environments[0].action_space
 
     @property
     def batch_size(self) -> Optional[int]:
