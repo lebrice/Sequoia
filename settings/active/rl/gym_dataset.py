@@ -116,7 +116,7 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
             # steps performed and mess up the checks above.
             self.env.reset()
 
-    def reset(self, **kwargs):
+    def reset(self, **kwargs) -> ObservationType:
         start_state = super().reset(**kwargs)
         # logger.debug(f"start_state: {start_state}")
         if isinstance(start_state, dict):
@@ -128,6 +128,7 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
         self.episode_count = 0
         self.send_count = 0
         self.reward = None
+        return self.state
 
     def send(self, action: ActionType) -> RewardType:
         # TODO: There might be somethign wrong here. What we're basically doing

@@ -62,3 +62,42 @@ def test_cartpole_multiple_workers(num_workers: Optional[int]):
         random_actions = env.random_actions()
         reward = env.send(random_actions)
         assert reward.shape == reward_shape
+
+
+def test_raise_error_when_missing_action():
+    env = GymDataLoader(
+        "CartPole-v0",
+        batch_size=10,
+        observe_pixels=False,
+        random_actions_when_missing=True,
+    )
+    env.reset()
+    for obs_batch in take(env, 5):
+        # doesn't complain when you give back no action, it uses a random one.
+        pass
+        # env.send(env.random_actions())
+
+    env = GymDataLoader(
+        "CartPole-v0",
+        batch_size=10,
+        observe_pixels=False,
+        random_actions_when_missing=False,
+    )
+    env.reset()
+    for obs_batch in take(env, 5):
+        # doesn't complain when you give back and action.
+        env.send(env.random_actions())
+
+    env = GymDataLoader(
+        "CartPole-v0",
+        batch_size=10,
+        observe_pixels=False,
+        random_actions_when_missing=False,
+    )
+    env.reset()
+    with pytest.raises(RuntimeError):
+        for obs_batch in take(env, 5):
+            # raises an error after the first iteration, as it didn't receive an action. 
+            pass
+
+    
