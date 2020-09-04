@@ -63,10 +63,10 @@ class VAEReconstructionTask(AEReconstructionTask):
 
         recon_loss = self.reconstruction_loss(x_hat, x)
         kl_loss = self.options.beta * self.kl_divergence_loss(mu, logvar)
-        loss_info = Loss(self.name, tensors=dict(mu=mu, logvar=logvar, z=z, x_hat=x_hat))
-        loss_info += Loss("recon", loss=recon_loss)
-        loss_info += Loss("kl", loss=kl_loss)
-        return loss_info
+        loss = Loss(self.name, tensors=dict(mu=mu, logvar=logvar, z=z, x_hat=x_hat))
+        loss += Loss("recon", loss=recon_loss)
+        loss += Loss("kl", loss=kl_loss)
+        return loss
 
     def generate(self, z: Tensor) -> Tensor:
         z = z.to(self.device)

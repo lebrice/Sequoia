@@ -212,7 +212,7 @@ class MixupTask(AuxiliaryTask):
             y_pred = y_pred[:-1]
 
         from .tasks import Tasks
-        loss_info = Loss(name=Tasks.MIXUP)
+        loss = Loss(name=Tasks.MIXUP)
 
         if self.epoch_in_task < self.options.consistency_rampup_starts:
             mixup_consistency_weight = 0.0
@@ -236,7 +236,7 @@ class MixupTask(AuxiliaryTask):
             y_pred_ema = self.mean_logits(h_x)
             mix_x, y_pred_mix, lam = mixup_data(x, Variable(y_pred_ema.detach().data, requires_grad=False), self.options.mixup_usup_alpha)
 
-            loss_info.tensors["mix_x"] = mix_x.detach()
+            loss.tensors["mix_x"] = mix_x.detach()
             mix_h_x = self.encode(mix_x)
             mix_y_pred = self.classifier(mix_h_x)
 
@@ -246,13 +246,13 @@ class MixupTask(AuxiliaryTask):
             #y_pred_mix = mixup(y_pred_1, y_pred_2, mix_coeff)
 
 
-            loss_info.tensors["y_pred_mix"] = y_pred_mix.detach()
+            loss.tensors["y_pred_mix"] = y_pred_mix.detach()
             loss = self.consistency_criterion(mix_y_pred, y_pred_mix) / batch_size  #
             #loss = torch.dist(y_pred_mix, mix_y_pred)
-            loss_info.total_loss = mixup_consistency_weight * loss
+            loss.total_loss = mixup_consistency_weight * loss
         else:
-            loss_info.total_loss = torch.zeros(1, device=self.device, requires_grad=True)
-        return loss_info
+            loss.total_loss = torch.zeros(1, device=self.device, requires_grad=True)
+        return loss
 
 
 class ManifoldMixupTask(AuxiliaryTask):

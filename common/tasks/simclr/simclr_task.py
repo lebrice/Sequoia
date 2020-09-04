@@ -66,5 +66,5 @@ class SimCLRTask(AuxiliaryTask):
         h_t = self.encode(x_t.to(self.device)).flatten(start_dim=1)  # [2*B, repr_dim]
         z = self.projector(h_t)  # [2*B, proj_dim]
         loss = self.loss(z, self.hparams.xent_temp)
-        loss_info = Loss(name=self.name, loss=loss)
-        return loss_info
+        loss_object = Loss(name=self.name, loss=loss)
+        return loss_object

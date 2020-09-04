@@ -96,16 +96,16 @@ class KnnCallback(Callback):
             valid_knn_loss, test_knn_loss = self.evaluate_knn(pl_module)
 
             # assert False, trainer.callback_metrics.keys()
-            loss: Optional[Loss] = trainer.callback_metrics.get("loss_info")
+            loss: Optional[Loss] = trainer.callback_metrics.get("loss_object")
             if loss:
                 assert "knn/valid" not in loss.losses
                 assert "knn/test" not in loss.losses
                 loss.losses["knn/valid"] = valid_knn_loss
                 loss.losses["knn/test"] = test_knn_loss
     
-    def log(self, loss_info: Loss):
+    def log(self, loss_object: Loss):
         if self.trainer.logger:
-            self.trainer.logger.log_metrics(loss_info.to_log_dict())
+            self.trainer.logger.log_metrics(loss_object.to_log_dict())
 
     def get_dataloaders(self, model: LightningModule, mode: str) -> List[DataLoader]:
         """ Retrieve the train/val/test dataloaders for all 'tasks'. """

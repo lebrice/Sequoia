@@ -133,7 +133,7 @@ class Model(LightningModule, Generic[SettingType]):
             "loss": loss.loss,
             "log": loss.to_log_dict(),
             "progress_bar": loss.to_pbar_message(),
-            "loss_info": loss,
+            "loss_object": loss,
         }
 
     def get_loss(self, x: Tensor, y: Tensor=None, loss_name: str="") -> Loss:
@@ -245,12 +245,12 @@ class Model(LightningModule, Generic[SettingType]):
                 # we had multiple test/val dataloaders (i.e. multiple tasks)
                 # We get the loss for each task at each step. The outputs are for each of the dataloaders.
                 for i, task_output in enumerate(output):
-                    task_loss = task_output["loss_info"] 
+                    task_loss = task_output["loss_object"] 
                     total_loss += task_loss
             elif isinstance(output, dict):
                 # There was a single dataloader: `output` is the dict returned
                 # by (val/test)_step.
-                loss_info = output["loss_info"]
+                loss_info = output["loss_object"]
                 total_loss += loss_info
             else:
                 raise RuntimeError(f"Unexpected output: {output}")
@@ -258,7 +258,7 @@ class Model(LightningModule, Generic[SettingType]):
         return {
             "log": total_loss.to_log_dict(),
             "progress_bar": total_loss.to_pbar_message(),
-            "loss_info": total_loss,
+            "loss_object": total_loss,
         }
 
     def configure_optimizers(self):

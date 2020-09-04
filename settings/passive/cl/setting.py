@@ -233,16 +233,17 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
                 assert len(test_outputs) == 1
                 test_outputs = test_outputs[0]
             
-            if "loss_info" not in test_outputs:
+            if "loss_object" not in test_outputs:
                 # TODO: Design a better API for the evaluation setup.
                 raise RuntimeError(
                     "At the moment, a Method's test step needs to return "
-                    "a dict with a `Loss` object at key 'loss_info'. The "
+                    "a dict with a `Loss` object at key 'loss_object'. The "
                     "metrics that the setting cares about are taken from that "
                     "object in order to create the Results and determine the "
                     "value of the Setting's 'objective'."
                 )
-            task_loss: Loss = test_outputs["loss_info"]
+            task_loss: Loss = test_outputs["loss_object"]
+            logger.info(f"Results: {task_loss.metric}")
             task_losses.append(task_loss)
 
         model = method.model

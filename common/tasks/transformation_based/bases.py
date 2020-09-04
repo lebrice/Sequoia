@@ -136,15 +136,15 @@ class TransformationBasedTask(AuxiliaryTask):
             name = f"{fn_arg}"
         else:
             name = f"{fn_arg:.3f}"
-        loss_info = Loss(name)
-        loss_info.total_loss = self.loss(alpha_t, alpha)
-        loss_info.metrics[name] = get_metrics(x=x_t, h_x=h_x_t, y_pred=alpha_t, y=alpha)
+        loss = Loss(name)
+        loss.loss = self.loss(alpha_t, alpha)
+        loss.metrics[name] = get_metrics(x=x_t, h_x=h_x_t, y_pred=alpha_t, y=alpha)
         
         # Save some tensors for debugging purposes:
-        loss_info.tensors["x_t"] = x_t
-        loss_info.tensors["h_x_t"] = h_x_t
-        loss_info.tensors["alpha_t"] = alpha_t
-        return loss_info
+        loss.tensors["x_t"] = x_t
+        loss.tensors["h_x_t"] = h_x_t
+        loss.tensors["alpha_t"] = alpha_t
+        return loss
 
 
 class ClassifyTransformationTask(TransformationBasedTask):
@@ -238,12 +238,6 @@ class RegressTransformationTask(TransformationBasedTask):
         loss = super().get_loss(x=x, h_x=h_x, y_pred=y_pred, y=y)
         return loss
 
-        # # Alpha is the label, and fn_arg is the parameter passed to the function.
-        # for alpha in alphas:
-        #     fn_arg = alpha
-        #     loss_i = self.get_loss_for_arg(x=x, h_x=h_x, fn_arg=fn_arg, alpha=alpha)
-        #     loss_info += loss_i
-        # return loss_info
 
 class ScaleToRange(nn.Module):
     def __init__(self, arg_min: float, arg_amp: float):

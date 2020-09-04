@@ -150,7 +150,7 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
             datamodule=self,
             verbose=False,
         )
-        test_loss: Loss = test_outputs[0]["loss_info"]
+        test_loss: Loss = test_outputs[0]["loss_object"]
 
         model = method.model
         from methods.models import Model
