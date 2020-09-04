@@ -314,6 +314,32 @@ def dict_union(*dicts: Dict[K, V], dict_factory=OrderedDict) -> Dict[K, V]:
     return result
 
 
+K = TypeVar("K")
+V = TypeVar("V")
+M = TypeVar("M")
+
+def zip_dicts(*dicts: Dict[K, V],
+               missing: M = None) -> Iterable[Tuple[K, Tuple[Union[M, V], ...]]]:
+    """Iterator over the union of all keys, giving the value from each dict if
+    present, else `missing`.
+    """
+    # If any attributes are common to both the Experiment and the State,
+    # copy them over to the Experiment.
+    keys = set(itertools.chain(*dicts))
+    for key in keys:
+        yield (key, tuple(d.get(key, missing) for d in dicts))
+
+
+def dict_intersection(*dicts: Dict[K, V]) -> Iterable[Tuple[K, Tuple[V, ...]]]:
+    """Gives back an iterator over the keys and values common to all dicts. """
+    dicts = [dict(d) for d in dicts]
+    common_keys = set(dicts[0])
+    for d in dicts:
+        common_keys.intersection_update(d)
+    for key in common_keys:
+        yield (key, tuple(d[key] for d in dicts))
+
+
 def remove_suffix(s: str, suffix: str) -> str:
     """ Remove the suffix from string s if present.
     Doing this manually until we start using python 3.9.
