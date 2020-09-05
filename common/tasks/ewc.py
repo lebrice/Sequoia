@@ -86,7 +86,8 @@ class EWCTask(AuxiliaryTask):
         if not self.enabled:
             return
         if task_id != self.previous_task:
-            logger.debug(f"Switch to task {task_id} from task {self.previous_task}: setting 'previous' weights to the current weights.")
+            logger.debug(f"Switching tasks: {self.previous_task} -> {task_id}: "
+                         f"Updating the EWC 'anchor' weights.")
             self.previous_task = task_id
             self.previous_model_weights.clear()
             self.previous_model_weights.update(deepcopy({
@@ -94,12 +95,8 @@ class EWCTask(AuxiliaryTask):
             }))
             # self.previous_model_weights.requires_grad_(False)
             # self.old_weights = parameters_to_vector(self.model.parameters())
-        else:
-            assert task_id == self.previous_task
-            logger.debug(f"Switching to the same task? ({task_id})")
-            # assert len(self.previous_model_weights) > 0
-    
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor = None) -> Loss:
+        
+    def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor = None) -> Loss:
         """Gets the 'EWC' loss. 
 
         NOTE: This is a simplified version of EWC where the loss is the L2-norm
@@ -110,25 +107,10 @@ class EWCTask(AuxiliaryTask):
         """
         assert self.previous_task is not None
 
-        # old_weights = self.old_weights
-        # new_weights = parameters_to_vector(self.model.parameters())
-
-        # assert new_weights.shape == old_weights.shape
-
-        # loss = torch.dist(old_weights.type_as(new_weights), new_weights)
-        # if self._i > 3:
-        #     assert False, loss
-        # self._i += 1
-        # ewc_loss = Loss(
-        #     name=self.name,
-        #     loss=loss,
-        # )
-        # return ewc_loss
-
         old_weights: Dict[str, Tensor] = self.previous_model_weights
         new_weights: Dict[str, Tensor] = dict(self.model.named_parameters())
-        
-        loss = torch.zeros(1, requires_grad=True).type_as(h_x)
+
+        loss = 0.
         for k, (new_w, old_w) in dict_intersection(new_weights, old_weights):
             # assert new_w.requires_grad
             # TODO: Does the ordering matter, for L1, for example?

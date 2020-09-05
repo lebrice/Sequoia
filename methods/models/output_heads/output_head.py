@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import ClassVar, List
+from typing import ClassVar, Dict, List
 
 from torch import Tensor, nn
 from torch.nn import Flatten  # type: ignore
@@ -68,19 +68,29 @@ class OutputHead(nn.Module):
             hidden_layers.append(nn.Linear(in_features, out_features))
             in_features = out_features # next input size is output size of prev.
         
-        self.flatten = Flatten()
-        self.dense = nn.Sequential(*hidden_layers)
-        self.output = nn.Linear(in_features, output_size)
+        # self.flatten = Flatten()
+        self.dense = nn.Sequential(
+            Flatten(),
+            *hidden_layers,
+            nn.Linear(in_features, output_size)
+        )
+        # self.output = nn.Linear(in_features, output_size)
 
-        # For example, but you could change this in your derived class.
+        # For example, but you could change this in your subclass.
         self.loss_fn = nn.CrossEntropyLoss()
 
     def forward(self, h_x: Tensor) -> Tensor:  # type: ignore
-        h_x = self.flatten(h_x)
-        x = self.dense(h_x)
-        return self.output(x)
+        # TODO: We should maybe convert this to also return a dict instead
+        # of a Tensor, just to be consistent with everything else. This could
+        # also maybe help with having multiple different output heads, each
+        # having a different name and giving back a dictionary of their own
+        # forward pass tensors (if needed) and predictions?
+        return self.dense(h_x)
 
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor) -> Loss:
+    def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor) -> Loss:
+        x = forward_pass["x"]
+        h_x = forward_pass["h_x"]
+        y_pred = forward_pass["y_pred"]
         loss = self.loss_fn(y_pred, y)
         assert self.name, "Output Heads should have a name!"
         loss_info = Loss(

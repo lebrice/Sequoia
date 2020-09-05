@@ -27,7 +27,7 @@ class ClassIncrementalMethod(Method, target_setting=ClassIncrementalSetting):
 
     Method which is to be applied to a class incremental CL problem setting.
     """
-    name: ClassVar[str] = ""
+    name: ClassVar[str] = "baseline"
     # HyperParameters of the LightningModule. Overwrite this in your class.
     hparams: ClassIncrementalModel.HParams = mutable_field(ClassIncrementalModel.HParams)
 
@@ -42,8 +42,10 @@ class ClassIncrementalMethod(Method, target_setting=ClassIncrementalSetting):
         self.model: ClassIncrementalModel
 
     def create_callbacks(self, setting: SettingType) -> List[Callback]:
+        from common.callbacks.vae_callback import SaveVaeSamplesCallback
         return super().create_callbacks(setting) + [
             self.knn_callback,
+            SaveVaeSamplesCallback(),
         ]
 
     def train(self, setting: ClassIncrementalSetting) -> None:
@@ -62,26 +64,11 @@ class ClassIncrementalMethod(Method, target_setting=ClassIncrementalSetting):
                 self.on_task_switch(i)
                 setting.current_task_id = i
 
-            # TODO: Make sure the Trainer really does max_epochs per task, and
-            # not max_epochs on the first task and 0 on the others.
-            assert self.model.setting.current_task_id == setting.current_task_id == i, (self.model.setting.current_task_id, setting.current_task_id, i)
+            assert self.model.setting.current_task_id == setting.current_task_id == i
             self.trainer.fit(
                 self.model,
                 datamodule=setting,
             )
-            
-            # for i, dataloader in enumerate(setting.val_dataloaders()):
-            #     if setting.task_labels_at_test_time:
-            #         self.on_task_switch(i)
-
-            #     test_outputs = self.trainer.test(
-            #         test_dataloaders=dataloader,
-            #         verbose=True,    
-            #     )
-            #     task_val_loss = test_outputs["loss_object"]
-            #     assert False, test_outputs
-
-
 
     @singledispatchmethod
     def model_class(self, setting: SettingType) -> Type[Model]:
@@ -107,9 +94,6 @@ class ClassIncrementalMethod(Method, target_setting=ClassIncrementalSetting):
             hparams=self.hparams,
             config=self.config,
         )
-
-    def on_task_switch(self, task_id: int) -> None:
-        self.model.on_task_switch(task_id)
 
 
 if __name__ == "__main__":

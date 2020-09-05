@@ -9,6 +9,7 @@ from typing import *
 
 import pytorch_lightning as pl
 from pytorch_lightning import LightningDataModule, LightningModule
+from pytorch_lightning.core.lightning import ModelSummary, log
 from torch import Tensor, nn, optim
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
@@ -16,8 +17,8 @@ from torchvision import models as tv_models
 
 from common.config import Config
 from common.loss import Loss
-from methods.models.output_heads import OutputHead
 from common.tasks.auxiliary_task import AuxiliaryTask
+from methods.models.output_heads import OutputHead
 from simple_parsing import Serializable, choice, mutable_field
 from utils.logging_utils import get_logger
 
@@ -72,10 +73,11 @@ class Model(LightningModule, Generic[SettingType]):
             logger.debug("Hparams:")
             logger.debug(self.hp.dumps(indent="\t"))
 
-    def forward(self, x: Tensor) -> Tensor:
-        h_x = self.encode(x)
-        return self.output_task(h_x)
+    # def forward(self, x: Tensor) -> Tensor:
+    #     h_x = self.encode(x)
+    #     return self.output_task(h_x)
     
+
     def encode(self, x: Tensor) -> Tensor:
         """Encodes a batch of samples `x` into a hidden vector.
 
@@ -110,6 +112,7 @@ class Model(LightningModule, Generic[SettingType]):
     def test_step(self, batch, batch_idx: int, dataloader_idx: int = None):
         loss_name = "test"
         return self._shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
+    
 
     def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]],
                            batch_idx: int,
@@ -125,9 +128,9 @@ class Model(LightningModule, Generic[SettingType]):
             
         if not training:
             self.eval()
-
         x, y = self.preprocess_batch(batch)
-        loss: Loss = self.get_loss(x, y, loss_name=loss_name)
+        forward_pass = self.forward(x)
+        loss: Loss = self.get_loss(forward_pass, y=y, loss_name=loss_name)
         # NOTE: loss is supposed to be a tensor, but I'm testing out giving a Loss object instead.
         return {
             "loss": loss.loss,
@@ -136,7 +139,7 @@ class Model(LightningModule, Generic[SettingType]):
             "loss_object": loss,
         }
 
-    def get_loss(self, x: Tensor, y: Tensor=None, loss_name: str="") -> Loss:
+    def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor = None, loss_name: str="") -> Loss:
         """Returns a Loss object containing the total loss and metrics. 
 
         Args:
@@ -148,20 +151,27 @@ class Model(LightningModule, Generic[SettingType]):
             Loss: An object containing everything needed for logging/progressbar/metrics/etc.
         """
         assert loss_name
-        # TODO: Add a clean input preprocessing setup.
-        x, y = self.preprocess_batch(x, y)
-        h_x = self.encode(x)
-        y_pred = self.output_task(h_x)
+        x = forward_pass["x"]
+        h_x = forward_pass["h_x"]
+        y_pred = forward_pass["y_pred"]
 
-        # Create an 'empty' Loss object.
-        # TODO: Shouldn't the output head loss be at the top level?
+        # Create an 'empty' Loss object with the given name, so that we always
+        # return a Loss object, even when `y` is None and we can't the loss from
+        # the output_head.
         total_loss = Loss(name=loss_name)
         if y is not None:
-            supervised_loss = self.output_head.get_loss(x=x, h_x=h_x, y_pred=y_pred, y=y)
+            supervised_loss = self.output_head.get_loss(forward_pass, y=y)
             total_loss += supervised_loss
         return total_loss
-        
-
+    
+    def forward(self, x: Tensor) -> Dict[str, Tensor]:
+        h_x = self.encode(x)
+        y_pred = self.output_task(h_x)
+        return dict(
+            x=x,
+            h_x=h_x,
+            y_pred=y_pred,
+        )
 
     def backward(self, trainer, loss: Tensor, optimizer: Optimizer, optimizer_idx: int) -> None:
         """ Customize the backward pass.
@@ -187,8 +197,9 @@ class Model(LightningModule, Generic[SettingType]):
 
         NOTE: This also discards the task labels for each example, which are
         normally given by the dataloaders from Continuum.
-        
-        TODO: Re-add the multi-task stuff if needed.
+
+        TODO: Re-add the task labels for each sample so we use the right output
+        head at the 'example' level.
 
         Parameters
         ----------
@@ -287,7 +298,8 @@ class Model(LightningModule, Generic[SettingType]):
             task_id (int): the Id of the task.
             training (bool): Wether we are currently training or valid/testing.
         """
-        # TODO: Not sure if this belongs here at all, but since
-        # `SelfSupervisedModel` might be used as a mixin over another model
-        # (including this one), then we want to be able to call
-        # `super().on_task_switch` inside the SelfSupervisedModel mixin.
+
+    def summarize(self, mode: str = ModelSummary.MODE_DEFAULT) -> ModelSummary:
+        model_summary = ModelSummary(self, mode=mode)
+        log.debug('\n' + str(model_summary))
+        return model_summary

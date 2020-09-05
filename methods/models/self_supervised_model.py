@@ -51,47 +51,27 @@ class SelfSupervisedModel(Model[SettingType]):
                 logger.info(f"enabling the '{task_name}' auxiliary task (coefficient of {task.coefficient})")
                 task.enable()
 
-    def get_loss(self, x: Tensor, y: Tensor = None, loss_name: str = "") -> Loss:
-        # TODO: Need to split up the get_loss function so it also kinda works
-        # for active settings, (i.e. first part does the prediction, second part
-        # for getting the loss).
-        assert loss_name
-        x, y = self.preprocess_batch(x, y)
-        h_x = self.encode(x)
-        y_pred = self.output_task(h_x)
-        # Get the loss of the base model, to which we will add the
-        # self-supervised loss signals.
-        # NOTE: We pass the tensors into the Loss object so the metrics are
-        total_loss = Loss(name=loss_name, x=x, h_x=h_x, y_pred=y_pred, y=y)
-        if y is not None:
-            supervised_loss = self.output_head.get_loss(x=x, h_x=h_x, y_pred=y_pred, y=y)
-            total_loss += supervised_loss
-
+    def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor = None, loss_name: str = "") -> Loss:
+        loss: Loss = super().get_loss(forward_pass, y=y, loss_name=loss_name)
+        
         # Add the self-supervised losses from all the enabled auxiliary tasks.
         for task_name, aux_task in self.tasks.items():
             assert task_name, "Auxiliary tasks should have a name!"
             
             if aux_task.enabled:
-                aux_loss: Loss = aux_task.get_loss(x=x, h_x=h_x, y_pred=y_pred, y=y)
-                # Scale the loss by the corresponding coefficient.
-                aux_loss *= aux_task.coefficient
+                aux_loss: Loss = aux_task.get_loss(forward_pass, y=y)
+                # Scale the loss by the corresponding coefficient before adding
+                # it to the total loss.
+                loss += aux_task.coefficient * aux_loss
 
-                if self.config.verbose:
-                    logger.debug(f"aux task {task_name}: Loss = {aux_loss}")
-                total_loss += aux_loss
-
-        if not self.config.debug:
-            # Drop all the tensors, since we aren't debugging.
-            total_loss.clear_tensors()
-
-        return total_loss
+        return loss
 
     def create_auxiliary_tasks(self) -> Dict[str, AuxiliaryTask]:
         # Share the relevant parameters with all the auxiliary tasks.
         # We do this by setting class attributes.
         # TODO: Make sure that we aren't duplicating all of the model's weights
         # by setting a class attribute.
-        AuxiliaryTask.model = self
+        AuxiliaryTask._model = self
         AuxiliaryTask.hidden_size = self.hidden_size
         AuxiliaryTask.input_shape = self.input_shape
         AuxiliaryTask.encoder = self.encoder

@@ -32,8 +32,8 @@ class SelfSupervision(ClassIncrementalMethod):
     downstream task (e.g. classification) loss, or only through self-supervision
     when `detach_output_head` is set to True.
 
-    IDEA: maybe we could instead make the 'method' an optional mixin, and create
-    the "real" method class dynamically?
+    TODO: This doesn't really belong here anymore, because the base model is
+    self-supervised by default!
     """
     # Hyperparameters of the model.
     # TODO: If we were to support more models, we might have a problem trying to
@@ -41,12 +41,6 @@ class SelfSupervision(ClassIncrementalMethod):
     # parse them just fine by calling .from_args() on them, but still, would be
     # better if the help text were visible from the command-line.
     hparams: ClassIncrementalModel.HParams = mutable_field(ClassIncrementalModel.HParams)
-
-    def create_callbacks(self, setting: SettingType) -> List[Callback]:
-        from common.callbacks.vae_callback import SaveVaeSamplesCallback
-        return super().create_callbacks(setting) + [
-            SaveVaeSamplesCallback(),
-        ]
 
 
 if __name__ == "__main__":

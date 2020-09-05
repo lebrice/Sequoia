@@ -24,7 +24,7 @@ class ClassIncrementalResults(Results):
         #     print(loss.losses.keys())
         #     for name, metric in loss.all_metrics().items():
         #         print(name, metric)
-        return [loss.metric for loss in self.task_losses]
+        return [loss.losses["classification"].metric for loss in self.task_losses]
 
     @property
     def metric(self) -> Metrics:

@@ -283,9 +283,9 @@ class Method(Serializable, Generic[SettingType], Parseable):
     @classmethod
     def get_name(cls) -> str:
         """ Gets the name of this method class. """
-        # if hasattr(cls, "name"):
-        #     assert False, (cls, cls.name)
-        #     return cls.name  # type: ignore
+        if hasattr(cls, "name"):
+            # assert False, (cls, cls.name)
+            return cls.name  # type: ignore
         name = camel_case(cls.__qualname__)
         return remove_suffix(name, "_method")
 

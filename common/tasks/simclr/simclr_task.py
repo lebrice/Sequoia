@@ -5,7 +5,7 @@ submodule.
 TODO: #5 Refactor the SimCLR Auxiliary Task to use pl_bolts's implementation
 """
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import ClassVar, Dict
 
 import torch
 from torch import Tensor
@@ -58,7 +58,8 @@ class SimCLRTask(AuxiliaryTask):
         self.i = 0
         self.loss = SimCLRLoss(self.hparams.proj_dim)
 
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Loss:
+    def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor = None) -> Loss:
+        x = forward_pass["x"]
         # TODO: is there a more efficient way to do this than with a list
         # comprehension? (torch multiprocessing-ish?)
         # concat all the x's into a single list.

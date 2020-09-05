@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import InitVar, dataclass, field
-from typing import Callable, ClassVar, Optional, Tuple, TypeVar
+from typing import Callable, ClassVar, Dict, Optional, Tuple, TypeVar
 
 import torch
 from pytorch_lightning import LightningModule
@@ -27,7 +27,7 @@ class AuxiliaryTask(nn.Module):
     input_shape: ClassVar[Tuple[int, ...]] = ()
     hidden_size: ClassVar[int] = -1
 
-    model: ClassVar[LightningModule]    
+    _model: ClassVar[LightningModule]
     # Class variables for holding the Modules shared with with the classifier. 
     encoder: ClassVar[nn.Module]
     classifier: ClassVar[nn.Module]  # type: ignore
@@ -77,7 +77,7 @@ class AuxiliaryTask(nn.Module):
         return AuxiliaryTask.classifier(h_x)
 
     @abstractmethod
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Loss:
+    def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor=None) -> Loss:
         """Calculates the Auxiliary loss for the input `x`.
         
         The parameters `h_x`, `y_pred` are given for convenience, so we don't
@@ -85,23 +85,23 @@ class AuxiliaryTask(nn.Module):
         
         Parameters
         ----------
-        - x : Tensor
-        
-            The input samples.
-        - h_x : Tensor
+        - forward_pass: Dict[str, Tensor] containing:
+            - 'x' : Tensor
+            
+                The input samples.
+            - 'h_x' : Tensor
 
-            The hidden vector, or hidden features, which corresponds to the
-            output of the feature extractor (should be equivalent to 
-            `self.encoder(x)`). Given for convenience, when available.
+                The hidden vector, or hidden features, which corresponds to the
+                output of the feature extractor (should be equivalent to 
+                `self.encoder(x)`). Given for convenience, when available.
 
-        - y_pred : Tensor
+            - 'y_pred' : Tensor
         
-            The predicted labels. 
+                The predicted labels. 
         - y : Tensor, optional, by default None
         
-            The true labels for each sample. Will generally be None, as we don't
-            generally use the label for Auxiliary Tasks.
-            TODO: Is there any case where we might use the labels here?
+            The true labels for each sample. Note that this is the label of the
+            output head's task, not of an auxiliary task.
         
         Returns
         -------
@@ -144,3 +144,7 @@ class AuxiliaryTask(nn.Module):
 
     def on_task_switch(self, task_id: int) -> None:
         """ Executed when the task switches (to either a new or known task). """
+
+    @property
+    def model(self) -> LightningModule:
+        return type(self)._model

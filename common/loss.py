@@ -264,7 +264,6 @@ class Loss(Serializable):
         Loss
             returns a scaled Loss instance.
         """
-        # logger.debug(f" mul ({self.name}): before: {self.loss.requires_grad}")
         result = Loss(
             name=self.name,
             loss=self.loss * factor,
@@ -275,19 +274,14 @@ class Loss(Serializable):
             tensors=self.tensors,
             _coefficient=self._coefficient * factor,
         )
-        # logger.debug(f" mul ({self.name}): after: {result.loss.requires_grad}")
         return result
 
+    def __rmul__(self, factor: Union[float, Tensor]) -> "Loss":
+        # assert False, f"rmul: {factor}"
+        return self.__mul__(factor)
+
     def __truediv__(self, coefficient: Union[float, Tensor]) -> "Loss":
-        # logger.debug(f" div ({self.name}): before: {self.loss.requires_grad}")
-        
-        # if coefficient != 0:
-        result = self * (1 / coefficient)
-        # logger.debug(f" div ({self.name}): after: {result.loss.requires_grad}")
-        return result
-        # else:
-        #     raise RuntimeError("Can't divide stuff")
-        # return NotImplemented
+        return self * (1 / coefficient)
 
     @property
     def unscaled_losses(self):

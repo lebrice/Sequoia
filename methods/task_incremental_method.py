@@ -46,10 +46,5 @@ class TaskIncrementalMethod(ClassIncrementalMethod, target_setting=TaskIncrement
     def _(self, setting: TaskIncrementalSetting) -> Type[TaskIncrementalModel]:
         return TaskIncrementalModel
 
-    def on_task_switch(self, task_id: int) -> None:
-        logger.info(f"task_switch called on the TaskIncrementalMethod (task_id={task_id})")
-        self.model.on_task_switch(task_id, training=False)
-
-
 if __name__ == "__main__":
     TaskIncrementalMethod.main()

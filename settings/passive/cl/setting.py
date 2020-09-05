@@ -9,9 +9,11 @@ from pytorch_lightning import LightningDataModule
 from torch import Tensor
 from torch.utils.data import DataLoader
 
+from common import ClassificationMetrics, Metrics
 from common.config import Config
 from common.dims import Dims
 from common.loss import Loss
+from common.metrics import ClassificationMetrics
 from common.transforms import Compose, Transforms
 from continuum import ClassIncremental, split_train_val
 from continuum.datasets import *
@@ -70,6 +72,7 @@ dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
     "core50-v2-196": (224, 224, 3),
     "core50-v2-391": (224, 224, 3),
 }
+
 
 @dataclass
 class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
@@ -225,25 +228,15 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
 
             test_outputs = method.trainer.test(
                 test_dataloaders=task_loader,
+                # BUG: we don't want to use the best model checkpoint because
+                # that model might be s
+                ckpt_path=None,
                 verbose=False,
             )
-            # TODO: Refactor this, we need to have a clearer way of getting the
-            # loss for each task.
-            if isinstance(test_outputs, list):
-                assert len(test_outputs) == 1
-                test_outputs = test_outputs[0]
-            
-            if "loss_object" not in test_outputs:
-                # TODO: Design a better API for the evaluation setup.
-                raise RuntimeError(
-                    "At the moment, a Method's test step needs to return "
-                    "a dict with a `Loss` object at key 'loss_object'. The "
-                    "metrics that the setting cares about are taken from that "
-                    "object in order to create the Results and determine the "
-                    "value of the Setting's 'objective'."
-                )
-            task_loss: Loss = test_outputs["loss_object"]
-            logger.info(f"Results: {task_loss.metric}")
+            task_loss: Loss = self.extract_task_loss(test_outputs)
+            task_metrics = task_loss.losses["classification"].metric
+            assert task_metrics, task_loss
+            logger.info(f"Results: {task_metrics}")
             task_losses.append(task_loss)
 
         model = method.model
@@ -257,6 +250,33 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             test_loss=sum(task_losses),
             task_losses=task_losses,
         )
+    
+    def extract_accuracy(self, test_outputs: Union[Dict, List[Dict]]) -> float:
+        task_loss = self.extract_task_loss(test_outputs)
+        task_metrics: ClassificationMetrics = self.extract_metric(task_loss)
+        return task_metrics.accuracy
+
+    def extract_metric(self, task_loss: Loss) -> Metrics:
+        return task_loss.all_metrics()["classification"]
+
+    def extract_task_loss(self, test_outputs: Union[Dict, List[Dict]]) -> Loss:
+        # TODO: Refactor this, we need to have a clearer way of getting the
+        # loss for each task.
+        if isinstance(test_outputs, list):
+            assert len(test_outputs) == 1
+            test_outputs = test_outputs[0]
+        
+        if "loss_object" not in test_outputs:
+            # TODO: Design a cleaner API for the evaluation setup.
+            raise RuntimeError(
+                "At the moment, a Method's test step needs to return "
+                "a dict with a `Loss` object at key 'loss_object'. The "
+                "metrics that the setting cares about are taken from that "
+                "object in order to create the Results and determine the "
+                "value of the Setting's 'objective'."
+            )
+        task_loss: Loss = test_outputs["loss_object"]
+        return task_loss
 
     def make_train_cl_loader(self, dataset: _ContinuumDataset) -> _BaseCLLoader:
         """ Creates a train ClassIncremental object from continuum. """
@@ -386,7 +406,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         
         NOTE: The dataloader is passive for now (just a regular DataLoader).
         """
-        self.setup_if_needed()
+        # self.setup_if_needed()
         dataset = self.train_datasets[self._current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         env: DataLoader = PassiveEnvironment(dataset, **kwargs)

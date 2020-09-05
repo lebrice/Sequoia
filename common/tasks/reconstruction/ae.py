@@ -1,6 +1,6 @@
 """ Defines an Auto-Encoder-based Auxiliary task.
 """
-from typing import ClassVar, Optional, Tuple, Union
+from typing import ClassVar, Dict, Optional, Tuple, Union
 
 import torch
 from torch import Tensor, nn
@@ -48,7 +48,10 @@ class AEReconstructionTask(AuxiliaryTask):
         decoder = decoder.to(self.device)
         return decoder
 
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> Loss:
+    def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor = None) -> Loss:
+        x = forward_pass["x"]
+        h_x = forward_pass["h_x"]
+        # y_pred = forward_pass["y_pred"]
         z = h_x.view([h_x.shape[0], -1])
         if self.decoder is None or self.decoder.output_shape != x.shape:
             self.decoder = self.create_decoder(x.shape)

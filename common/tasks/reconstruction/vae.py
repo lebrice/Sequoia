@@ -55,7 +55,9 @@ class VAEReconstructionTask(AEReconstructionTask):
         z = mu + eps*std
         return z
 
-    def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor=None, y: Tensor=None) -> Loss:
+    def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor=None) -> Loss:
+        x = forward_pass["x"]
+        h_x = forward_pass["h_x"]
         h_x = h_x.view([h_x.shape[0], -1])
         mu, logvar = self.mu(h_x), self.logvar(h_x)
         z = self.reparameterize(mu, logvar)

@@ -95,7 +95,7 @@ test_datasets_option_name: str = "datasets"
 
 def pytest_addoption(parser):
     parser.addoption("--slow", action="store_true", default=False)
-    parser.addoption(f"--{test_datasets_option_name}", action="append", nargs="*", default=[])
+    parser.addoption(f"--{test_datasets_option_name}", action="store", nargs="*", default=[])
 
 
 slow = pytest.mark.skipif(
@@ -157,7 +157,8 @@ def parametrize_test_datasets(metafunc):
             skip_param("?", reason="Set to skip, with command line arg.")
         ]
     elif datasets_from_command_line:
-        assert isinstance(datasets_from_command_line, list) and all(isinstance(v, str) for v in datasets_from_command_line)
+        assert (isinstance(datasets_from_command_line, list) and
+                all(isinstance(v, str) for v in datasets_from_command_line))
         # If any datasets were set, use them.
         test_datasets = datasets_from_command_line
     else:
