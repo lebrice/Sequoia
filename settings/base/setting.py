@@ -28,17 +28,18 @@ SettingType = TypeVar("SettingType", bound="Setting")
 from pytorch_lightning.core.datamodule import _DataModuleWrapper
 
 
-class SettingWrapper(_DataModuleWrapper):
+class SettingMeta(_DataModuleWrapper, Type["Setting"]):
     """ TODO: We might want to move the command-line arguments from the Setting
     to a 'Config' class instead? There are issues with using a dataclass over a
-    LightningDataModule atm (because LightningDataModule has __init__)
+    LightningDataModule atm (because LightningDataModule has __init__ and a
+    weird '_DataModuleWrapper' metaclass..)
     """
-    def __call__(cls, *args, **kwargs):
-        """A wrapper for LightningDataModule that:
+    _sub_settings: ClassVar[List[Type["Setting"]]] = []
 
-            1. Runs user defined subclass's __init__
-            2. Assures prepare_data() runs on rank 0
-            3. Lets you check prepare_data and setup to see if they've been called
+    _applicable_methods: ClassVar[Set[Type]] = set()
+
+    def __call__(cls, *args, **kwargs):
+        """
         """
         init_fields: List[str] = [f.name for f in fields(cls) if f.init]
         extra_args: Dict[str, Any] = {}
@@ -51,9 +52,20 @@ class SettingWrapper(_DataModuleWrapper):
             ))
         return super().__call__(*args, **kwargs)
 
+    @property
+    def sub_settings(cls):
+        return cls._sub_settings
+    
+    @property
+    def all_sub_settings(cls) -> Iterable[Type["Setting"]]:
+        # Yield the immediate children
+        for sub_setting in cls._sub_settings:
+            yield sub_setting
+            yield from sub_setting.all_sub_settings
+    
 
 @dataclass(init=True)
-class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], metaclass=SettingWrapper):
+class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], metaclass=SettingMeta):
     """Extends LightningDataModule to allow setting the transforms and options
     from the command-line.
 
@@ -64,9 +76,6 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
     # Overwrite this in a subclass to customize which type of Results to create.
     results_class: ClassVar[Type[Results]] = Results
 
-    _subclasses: ClassVar[List[Type["Setting"]]] = []
-
-    _methods: ClassVar[Set[Type]] = set()
     # Transforms to be used.
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels)
 
@@ -235,40 +244,29 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
     # @dims.setter
     # def dims(self, value) -> None:
     #     self._dims = value
-    
-
-    @classmethod
-    def is_applicable(cls: Type["Setting"], method: Union["Method", Type["Method"]]) -> bool:
-        """Returns wether a Method is applicable to this setting type.
-
-        A method is applicable to any setting which is an instance (or subclass)
-        of the setting the method was defined to support initially.
-
-        Args:
-            method (Union[Method, Type[Method]]): a Method or method type.
-
-        Returns:
-            bool: Wether or not the given method is applicable to this setting.
-        """
-        from methods import Method
-        if isinstance(method, Method):
-            method_type = type(method)
-        else:
-            method_type = method
-        return method_type.is_applicable(cls)
 
     @classmethod
     def get_all_applicable_methods(cls) -> List[Type["Method"]]:
         from methods import all_methods, Method
-        return list(filter(cls.is_applicable, all_methods))
+        return list(filter(lambda m: m.is_applicable(cls), all_methods))
 
     def __init_subclass__(cls, **kwargs):
         assert is_dataclass(cls), f"Setting type {cls} isn't a dataclass!"
         logger.debug(f"Registering a new setting! {cls.get_name()}")
-        # cls._subclasses.append(cls)
-        # for t in cls.mro()[1:]:
+
+        # Exceptionally, create this new empty list that will hold all the
+        # forthcoming subclasses of this particular new setting.
+        cls._sub_settings = []
+        # Inform all the nodes higher in the tree that they have a new subclass.
+        parent = cls.__base__
+        if issubclass(parent, Setting):
+            parent: Type[Setting]
+            assert cls not in parent.sub_settings
+            parent.sub_settings.append(cls)
+        # for t in cls.__bases__:
         #     if inspect.isclass(t) and issubclass(t, Setting):
-        #         t._subclasses.append(cls)
+        #         if cls not in t.sub_settings:
+        #             t.sub_settings.append(cls)
         super().__init_subclass__(**kwargs)
 
     @classmethod

@@ -81,14 +81,14 @@ class KnnCallback(Callback):
         self.model = pl_module
         self.setting = self.model.setting
         config = self.model.config
-        if self.knn_samples is not None:
+
+        if self.knn_samples > 0:
             batch_size = pl_module.batch_size
             # We round this up so we always take at least one batch_size of
             # samples from each dataloader.
             self.max_num_batches = math.ceil(self.knn_samples / batch_size)
             logger.debug(f"Taking a maximum of {self.max_num_batches} batches from each dataloader.")
-
-        if self.knn_samples > 0:
+            
             if config.debug:
                 self.knn_samples = min(self.knn_samples, 100)
 

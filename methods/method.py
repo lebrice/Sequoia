@@ -1,34 +1,48 @@
 import inspect
-import shlex
-from argparse import Namespace
 from collections import OrderedDict
 from dataclasses import dataclass, is_dataclass
-from typing import *
+from typing import (ClassVar, Dict, Generic, List, Optional, Set, Tuple, Type,
+                    TypeVar, Union)
 
 from pytorch_lightning import Callback, LightningModule, Trainer
-from simple_parsing import (ArgumentParser, Serializable, mutable_field,
-                            subparsers)
 
 from common.config import Config, TrainerConfig
 from common.loss import Loss
 from settings.base import Results, Setting, SettingType
-from utils import camel_case, dict_union, get_logger, remove_suffix, Parseable
+from simple_parsing import (ArgumentParser, Serializable, mutable_field,
+                            subparsers)
+from utils import Parseable, camel_case, dict_union, get_logger, remove_suffix
 
 from .models import HParams, Model
 
 logger = get_logger(__file__)
-MethodType = TypeVar("MethodType", bound="Method")
+M = TypeVar("M", bound="Method")
+
+class MethodType(type):
+    """ Metaclass for the Methods.
+
+    @lebrice Testing this as a way to simplify some of the mechanics of setting
+    up the attributes, etc.
+    """
+    # Class attribute that holds the setting this method was designed to target.
+    _target_setting: ClassVar[Optional[Type[Setting]]] = None
+    # class attribute that lists all the settings this method is applicable for.
+    _settings: ClassVar[Set[Type[Setting]]] = set()
+
+    @property
+    def target_setting(cls) -> Type[Setting]:
+        return cls._target_setting
 
 
 @dataclass
-class Method(Serializable, Generic[SettingType], Parseable):
+class Method(Serializable, Generic[SettingType], Parseable, metaclass=MethodType):
     """ A Method gets applied to a Setting to produce Results.
-    
+
     A "Method", concretely, should consist of a LightningModule and a Trainer.
     - The model should accept a setting into its constructor.
     - Settings are LightningDataModules, and are used to create the
         train/val/test dataloaders.
-    
+
     The attributes here are all the configurable options / hyperparameters
     of the method.
     TODO: Not sure if the arguments to the Trainer object should be considered
@@ -45,10 +59,10 @@ class Method(Serializable, Generic[SettingType], Parseable):
     # Configuration options for the experimental setup (log_dir, cuda, etc).
     config: Config = mutable_field(Config)
 
-    # Class attribute that holds the setting this method was designed to target.
-    _target_setting: ClassVar[Optional[Type[Setting]]] = None
-    # class attribute that lists all the settings this method is applicable for.
-    _settings: ClassVar[Set[Type[Setting]]] = set()
+    # # Class attribute that holds the setting this method was designed to target.
+    # _target_setting: ClassVar[Optional[Type[Setting]]] = None
+    # # class attribute that lists all the settings this method is applicable for.
+    # _settings: ClassVar[Set[Type[Setting]]] = set()
 
     def __post_init__(self):
         # The model and Trainer objects will be created in `self.configure`. 
@@ -211,7 +225,7 @@ class Method(Serializable, Generic[SettingType], Parseable):
         else:
             assert inspect.isclass(setting)
             setting_type = setting
-        
+
         result = issubclass(setting_type, cls._target_setting)
         return result
     
@@ -269,7 +283,7 @@ class Method(Serializable, Generic[SettingType], Parseable):
         if target_setting:
             logger.debug(f"Method {cls} is designed for setting {target_setting}")
             cls._target_setting = target_setting
-            cls._target_setting._methods.add(cls)
+            cls._target_setting._applicable_methods.add(cls)
         else:
             logger.debug(f"Method {cls} didn't set a `target_setting` argument in the "
                          f"class constructor, using the target setting of the parent")
@@ -324,3 +338,9 @@ class Method(Serializable, Generic[SettingType], Parseable):
         #     different_values = utils.
         #     new_hparams = new_type.from_dict(hparams_dict, drop_extra_fields=True)
         return new_hparams
+
+    @property
+    def target_setting(self) -> Type[SettingType]:
+        """ Gets the target setting of a given method.
+        """
+        return type(self)._target_setting

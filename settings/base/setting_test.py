@@ -36,3 +36,25 @@ def test_settings_override_with_constant_take_init():
 def test_init_still_works():
     setting = Setting(val_fraction=0.01)
     assert setting.val_fraction == 0.01
+
+@dataclass
+class SettingA(Setting): pass
+
+@dataclass
+class SettingA1(SettingA): pass
+
+@dataclass
+class SettingA2(SettingA): pass
+
+@dataclass
+class SettingB(Setting): pass
+
+
+class MethodA(Method, target_setting=SettingA): pass
+
+
+class MethodB(Method, target_setting=SettingB): pass
+
+
+class CoolGeneralMethod(Method, target_setting=Setting): pass
+

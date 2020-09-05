@@ -3,6 +3,7 @@
 
 """
 import inspect
+import json
 import shlex
 import traceback
 from argparse import Namespace
@@ -16,75 +17,114 @@ from settings import (ClassIncrementalResults, Results, Setting, SettingType,
                       all_settings)
 from simple_parsing import (ArgumentParser, choice, field, mutable_field,
                             subparsers)
-from utils import Parseable, get_logger
+from utils import Parseable, Serializable, get_logger
 
 logger = get_logger(__file__)
 
-# Dict of all methods indexed by their names.
-methods_dict: Dict[str, Type[Method]] = OrderedDict(
-    (m.get_name(), m) for m in all_methods
-)
-# Dict of all settings indexed by their names.
-settings_dict: Dict[str, Type[Setting]] = OrderedDict(
-    (s.get_name(), s) for s in all_settings
-)
+logger.debug(f"Registered Settings: \n" + "\n".join(
+    f"- {setting.get_name()}: {setting}" for setting in all_settings
+))
 
+logger.debug(f"Registered Methods: \n" + "\n".join(
+    f"- {method.get_name()}: {method.target_setting} {method}" for method in all_methods
+))
 
 @dataclass
-class Experiment(Parseable):
+class Experiment(Parseable, Serializable):
     """ Applies a Method to an experimental Setting to obtain Results.
 
-    When parsed through the command line, one of `setting_type` or `method_type`
-    must be set. Alternatively, when creating an `Experiment` directly with the
-    constructor, the `setting` or `method` arguments can be passed directly..
-
-    When the `setting` or `setting_type` is not set, calling `launch` on the
-    `Experiment` will evaluate the chosen method on all "applicable" settings 
+    When the `setting` is not set, calling `launch` on the
+    `Experiment` will evaluate the chosen method on all "applicable" settings. 
     (i.e. lower in the Settings inheritance tree).
 
-    When the `method` or `method_type` is not set, this will evaluate the
-    chosen setting using all the methods (e.g. baselines) which are "applicable"
-    to the chosen setting.
+    When the `method` is not set, this will apply all applicable methods on the
+    chosen setting.
     """
     # Which experimental setting to use. When left unset, will evaluate the
     # provided method on all applicable settings.
-    setting_type: Optional[Type[Setting]] = choice(
-        settings_dict,
+    setting: Optional[Union[str, Type[Setting]]] = choice(
+        {setting.get_name(): setting for setting in all_settings},
         default=None,
-        alias="setting",
     )
+
     # Which experimental method to use. When left unset, will evaluate all
-    # compatible methods with the provided setting.
-    method_type:  Optional[Type[Method]] = choice(
-        methods_dict,
+    # compatible methods on the provided setting.
+    # NOTE: Some methods can share the same name, for instance, 'baseline' may
+    # refer to the ClassIncrementalMethod or TaskIncrementalMethod.
+    # Therefore, the given `method` is a string (for example when creating this
+    # class from the command-line) and there are multiple methods with the given
+    # name, then the most specific method applicable for the given setting will
+    # be used.
+    method: Optional[Union[str, Type[Method]]] = choice(
+        set(method.get_name() for method in all_methods),
         default=None,
-        alias="method",
     )
 
-    # We don't parse these directly from the command-line, we instead make it
-    # possible to pass a Setting to the constructor.
-    setting: InitVar[Optional[Setting]] = None
-    method: InitVar[Optional[Method]] = None
+    def __post_init__(self):
+        # The Setting subclass to be used.
+        # When creating this object from the command-line, self.setting will
+        # already be a Setting subclass (because of the 'choice' above), however
+        # when created using the constructor directly, 
+        self.setting_type: Optional[Type[Setting]] = None
+        self.method_type:  Optional[Type[Method]] = None
 
-    def __post_init__(self, setting: Optional[Setting] = None, method: Optional[Method] = None):
-        self.setting: Optional[Setting] = setting
-        self.method:  Optional[Method] = method
-        # set the corresponding types when creating the Experiment manually
-        # through the constructor.
-        if self.setting and not self.setting_type:
-            self.settings_type = type(self, setting)
-        if self.method and not self.method_type:
-            self.method_type = type(self.method)
+        if not (self.setting or self.method):
+            raise RuntimeError(
+                "At least one of `setting` or `method` must be set!"
+            )
+
+        if self.setting is None:
+            self.setting_type = None
+        elif issubclass(self.setting, Setting):
+            self.setting_type = self.setting
+        elif isinstance(self.setting, str):
+            # All settings must have a unique name.
+            settings_with_that_name: List[Type[Setting]] = [
+                setting for setting in all_settings
+                if setting.get_name() == self.setting
+            ]
+            if not settings_with_that_name:
+                raise RuntimeError(
+                    f"No settings found with name '{self.setting}'!"
+                    f"Settings available: \n" +
+                    (
+                        f"- {setting.get_name()}: {setting}\n" for setting in all_settings
+                    ) 
+                )
+            elif len(settings_with_that_name) == 1:
+                self.setting_type = settings_with_that_name[0]
+            else:
+                raise RuntimeError(
+                    f"Error: There are multiple settings with the same name, "
+                    f"which isn't allowed! (name: {self.setting}, culprits: "
+                    f"{settings_with_that_name})"
+                )
+
+        if self.method is None:
+            self.method_type = None
+        if issubclass(self.method, Method):
+            self.method_type = self.method_type
+        elif isinstance(self.method, str):
+            # Collisions in method names are allowed, and if it happens
+            methods_with_that_name: List[Type[Method]] = [
+                method for method in all_methods
+                if method.get_name() == self.method
+            ]
+            if len(methods_with_that_name) == 1:
+                self.method_type = methods_with_that_name[0]
+            else:
+                logger.warning(RuntimeWarning(
+                    f"As there are multiple methods with the name {self.method}, "
+                    f"this will try to use the most 'specialised' method with that "
+                    f"name for the given setting. (potential methods: "
+                    f"{methods_with_that_name}"
+                ))
+                # if self.setting_type:
+
 
     def launch(self, argv: Union[str, List[str]] = None) -> Optional[Results]:
         try:
-            if not (self.setting_type or self.setting or self.method_type or self.method):
-                raise RuntimeError(
-                    "Must specify at least either a setting or a method to be "
-                    "used!"
-                )
-            # Construct the Setting and Method from the args if they aren't set,
-            if self.setting_type and not self.setting:
+            if issubclass(self.setting, Setting):
                 self.setting = self.setting_type.from_args(argv)
             if self.method_type and not self.method:
                 self.method = self.method_type.from_args(argv)
