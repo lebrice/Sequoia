@@ -5,18 +5,20 @@
 import inspect
 import json
 import shlex
+import sys
 import traceback
 from argparse import Namespace
 from collections import OrderedDict
 from dataclasses import InitVar, dataclass
-from inspect import isabstract
+from inspect import isabstract, isclass
 from typing import Dict, List, Optional, Tuple, Type, TypeVar, Union
+
+from simple_parsing import (ArgumentParser, choice, field, mutable_field,
+                            subparsers)
 
 from methods import Method, MethodType, all_methods
 from settings import (ClassIncrementalResults, Results, Setting, SettingType,
                       all_settings)
-from simple_parsing import (ArgumentParser, choice, field, mutable_field,
-                            subparsers)
 from utils import Parseable, Serializable, get_logger
 
 logger = get_logger(__file__)
@@ -42,7 +44,7 @@ class Experiment(Parseable, Serializable):
     """
     # Which experimental setting to use. When left unset, will evaluate the
     # provided method on all applicable settings.
-    setting: Optional[Union[str, Type[Setting]]] = choice(
+    setting: Optional[Union[str, Setting, Type[Setting]]] = choice(
         {setting.get_name(): setting for setting in all_settings},
         default=None,
     )
@@ -55,29 +57,17 @@ class Experiment(Parseable, Serializable):
     # class from the command-line) and there are multiple methods with the given
     # name, then the most specific method applicable for the given setting will
     # be used.
-    method: Optional[Union[str, Type[Method]]] = choice(
+    method: Optional[Union[str, Method, Type[Method]]] = choice(
         set(method.get_name() for method in all_methods),
         default=None,
     )
 
     def __post_init__(self):
-        # The Setting subclass to be used.
-        # When creating this object from the command-line, self.setting will
-        # already be a Setting subclass (because of the 'choice' above), however
-        # when created using the constructor directly, 
-        self.setting_type: Optional[Type[Setting]] = None
-        self.method_type:  Optional[Type[Method]] = None
-
         if not (self.setting or self.method):
             raise RuntimeError(
                 "At least one of `setting` or `method` must be set!"
             )
-
-        if self.setting is None:
-            self.setting_type = None
-        elif issubclass(self.setting, Setting):
-            self.setting_type = self.setting
-        elif isinstance(self.setting, str):
+        if isinstance(self.setting, str):
             # All settings must have a unique name.
             settings_with_that_name: List[Type[Setting]] = [
                 setting for setting in all_settings
@@ -86,67 +76,107 @@ class Experiment(Parseable, Serializable):
             if not settings_with_that_name:
                 raise RuntimeError(
                     f"No settings found with name '{self.setting}'!"
-                    f"Settings available: \n" +
-                    (
-                        f"- {setting.get_name()}: {setting}\n" for setting in all_settings
-                    ) 
+                    f"Available settings : \n" + "\n".join(
+                        f"- {setting.get_name()}: {setting}"
+                        for setting in all_settings
+                    )
                 )
             elif len(settings_with_that_name) == 1:
-                self.setting_type = settings_with_that_name[0]
+                self.setting = settings_with_that_name[0]
             else:
                 raise RuntimeError(
                     f"Error: There are multiple settings with the same name, "
                     f"which isn't allowed! (name: {self.setting}, culprits: "
                     f"{settings_with_that_name})"
                 )
+        
 
-        if self.method is None:
-            self.method_type = None
-        if issubclass(self.method, Method):
-            self.method_type = self.method_type
-        elif isinstance(self.method, str):
-            # Collisions in method names are allowed, and if it happens
-            methods_with_that_name: List[Type[Method]] = [
+    def launch(self, argv: Union[str, List[str]] = None) -> Results:
+        if isclass(self.setting) and issubclass(self.setting, Setting):
+            self.setting = self.setting.from_args(argv)
+
+        if isclass(self.method) and issubclass(self.method, Method):
+            self.method = self.method.from_args(argv)
+
+        potential_methods: List[Type[Method]] = []
+        method_name: Optional[str] = self.method if isinstance(self.method, str) else self.method.get_name() 
+        
+        if isinstance(self.method, str):
+            # Collisions in method names should be allowed. If it happens, we shoud
+            # use the right method for the given setting, if any.
+            # There's also the special case where only a method string was given!
+            # What should we do in that case?
+            potential_methods: List[Type[Method]] = [
                 method for method in all_methods
                 if method.get_name() == self.method
             ]
-            if len(methods_with_that_name) == 1:
-                self.method_type = methods_with_that_name[0]
+            if self.setting:
+                potential_methods = [m for m in potential_methods if m.is_applicable(self.setting)]
+
+            if not potential_methods:
+                raise RuntimeError(
+                    f"Couldn't find any methods with name {self.method} "
+                    f"applicable on the chosen setting ({self.setting})!"
+                )
+            if len(potential_methods) == 1:
+                self.method = potential_methods[0]
+                return self.setting.apply(self.method)
             else:
+                # TODO: figure out which of the methods to use depending on the setting?
+                raise NotImplementedError("TODO")
                 logger.warning(RuntimeWarning(
                     f"As there are multiple methods with the name {self.method}, "
                     f"this will try to use the most 'specialised' method with that "
                     f"name for the given setting. (potential methods: "
-                    f"{methods_with_that_name}"
+                    f"{potential_methods}"
                 ))
-                # if self.setting_type:
+                    
 
 
-    def launch(self, argv: Union[str, List[str]] = None) -> Optional[Results]:
-        try:
-            if issubclass(self.setting, Setting):
-                self.setting = self.setting_type.from_args(argv)
-            if self.method_type and not self.method:
-                self.method = self.method_type.from_args(argv)
 
-            if self.method and self.setting:
-                if argv:
-                    logger.warning(RuntimeWarning(f"Extra arguments:  {argv}"))
+        assert self.setting is None or isinstance(self.setting, Setting)
+
+        if self.setting:
+            if isinstance(self.method, Method):
                 return self.setting.apply(self.method)
-            elif self.setting:
+            else:
                 # When the method isn't set, evaluate on all applicable methods.
-                return self.setting.apply_all(argv)
-            elif self.method:
-                # When the setting isn't set, evaluate on all applicable settings.
-                return self.method.apply_all(argv)
+                all_results: Dict[Type[Method], Results] = OrderedDict()
 
-        except Exception as e:
-            logger.error(f"Experiment crashed: {e}")
-            traceback.print_exc()
-            return None
+                for setting_type in self.setting.get_all_applicable_methods():
+                    setting = setting_type.from_args(argv)
+                    results = setting.apply(self)
+                    all_results[setting_type] = results
+
+                logger.info(f"All results for setting of type {type(self)}:")
+                logger.info({
+                    setting.get_name(): (results if results else "crashed")
+                    for setting, results in all_results.items()
+                })
+                return all_results
+
+        assert self.method
+        if isinstance(self.method, Method):
+            return self.method.apply_to(self.setting)
+        elif isinstance(self.method, str):
+            raise NotImplementedError("TODO")
+        else:
+            # When the method isn't set, evaluate on all applicable methods.
+            all_results: Dict[Type[Method], Results] = OrderedDict()
+
+            for setting_type in self.method.get_all_applicable_settings():
+                setting = setting_type.from_args(argv)
+                results = self.method.apply_to(setting)
+                all_results[setting_type] = results
+            logger.info(f"All results for method of type {type(self.method)}:")
+            logger.info({
+                setting.get_name(): (results.get_metric() if results else "crashed")
+                for setting, results in all_results.items()
+            })
+
 
     @classmethod
-    def main(cls, argv: Union[str, List[str]] = None) -> Results:
+    def main(cls, argv: Union[str, List[str]] = None) -> Union[Results, Dict[Type[Setting], Results], Dict[Type[Method], Results]]:
         """Launches an experiment using the given command-line arguments.
 
         First, we get the choice of method and setting using a first parser.
@@ -165,7 +195,9 @@ class Experiment(Parseable, Serializable):
             Results of the experiment.
         """
         experiment, unused_args = cls.from_known_args(argv)
+        experiment: Experiment
         return experiment.launch(unused_args)
+
 
 if __name__ == "__main__":
     results = Experiment.main()
