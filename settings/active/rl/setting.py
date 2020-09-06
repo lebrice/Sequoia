@@ -42,7 +42,7 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         "cartpole": "CartPole-v0",
     }
     observe_state_directly: bool = False
-    dataset: str = choice(available_datasets, default="CartPole-v0")
+    dataset: str = choice(available_datasets, default="cartpole")
 
     # Transformations to use. See the Transforms enum for the available values.
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels)
@@ -121,10 +121,18 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
 
     @property
     def gym_env_name(self) -> str:
+        """ Get the 'formatted' gym environment for `self.dataset`, if needed.
+        """
+        if self.dataset in self.available_datasets:
+            return self.available_datasets[self.dataset]
         for formatted_env_name in self.available_datasets.values():
             if self.dataset == formatted_env_name:
-                return self.dataset
-        return self.available_datasets[self.dataset]
+                return formatted_env_name
+        logger.error(
+            f"Dataset {self.dataset} isn't one of the supported datasets! "
+            "(returning it anyway, but you do this at your own peril)"
+        )
+        return self.dataset
 
     def setup(self, stage=None):
         # TODO: What should we be doing here for Gym environments?
