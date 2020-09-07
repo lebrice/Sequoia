@@ -125,9 +125,9 @@ class Model(LightningModule, Generic[SettingType]):
         if dataloader_idx is not None:
             assert isinstance(dataloader_idx, int)
             loss_name += f"/{dataloader_idx}"
-            
-        if not training:
-            self.eval()
+        
+        assert training is (not self.eval)
+
         x, y = self.preprocess_batch(batch)
         forward_pass = self.forward(x)
         loss: Loss = self.get_loss(forward_pass, y=y, loss_name=loss_name)

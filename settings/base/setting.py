@@ -302,6 +302,6 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
 
     @classmethod
     def get_path_to_source_file(cls: Type) -> Path:
-        cwd = Path(os.path.abspath(os.path.dirname(__file__)))
+        cwd = Path(os.path.abspath(os.path.curdir))        
         source_file = Path(getsourcefile(cls)).relative_to(cwd)
         return source_file

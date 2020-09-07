@@ -3,10 +3,13 @@
 
 This is meant to be 'more general' than the 'Model' class, which is made for passive environments (regular dataloaders)
 """
+from abc import abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Callable, Dict, Generic, Optional, Tuple, TypeVar
+from typing import (Callable, Dict, Generic, List, Optional, Tuple, TypeVar,
+                    Union)
 
+import numpy as np
 import torch
 from pytorch_lightning import (EvalResult, LightningDataModule,
                                LightningModule, TrainResult)
@@ -18,7 +21,7 @@ from common.loss import Loss
 from settings import RLSetting
 from settings.active import ActiveDataLoader
 from settings.active.rl import GymDataLoader
-from utils import prod
+from utils import prod, try_get
 from utils.logging_utils import get_logger
 
 from .hparams import HParams as BaseHParams
@@ -43,6 +46,7 @@ class Agent(LightningModule, Generic[SettingType]):
         self.hp = hparams
         self.config = config
         
+        # TODO: @lebrice fix any bugs that may occur when saving the hparams to file.
         # self.save_hyperparameters()
 
         self._train_loader: Optional[ActiveDataLoader] = None
@@ -53,12 +57,11 @@ class Agent(LightningModule, Generic[SettingType]):
         self.output_shape = self.setting.action_shape
         self.reward_shape = self.setting.reward_shape
 
+        assert self.input_shape
         logger.debug(f"setting: {self.setting}")
         logger.debug(f"Input shape: {self.input_shape}")
         logger.debug(f"Output shape: {self.output_shape}")
         logger.debug(f"Reward shape: {self.reward_shape}")
-
-        self.loss_fn: Callable[[Tensor, Tensor], Tensor] = torch.dist
 
         self.total_reward: Tensor = 0.  # type: ignore
         
@@ -71,42 +74,63 @@ class Agent(LightningModule, Generic[SettingType]):
             logger.debug("Hparams:")
             logger.debug(self.hp.dumps(indent="\t"))
 
-
-        critic_input_dims = prod(self.input_shape) + prod(self.setting.action_shape)
-        critic_output_dims = prod(self.reward_shape)
-
-        # assert False, critic_input_dims
-        self.critic = nn.Sequential(
-            Lambda(concat_obs_and_action),
-            nn.Linear(critic_input_dims, critic_output_dims),
-        )
-        self.actor = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(prod(self.input_shape), prod(self.output_shape)),
-        )
-
     def configure_optimizers(self):
         return self.hp.make_optimizer(self.parameters())
 
-    def get_value(self, observation: Tensor, action: Tensor) -> Tensor:
-        # FIXME: This is here just for debugging purposes.  
-        # assert False, (observation.shape, observation.dtype)
-        observation = torch.as_tensor(observation, dtype=self.dtype, device=self.device)
-        action = torch.as_tensor(action, dtype=self.dtype, device=self.device)
-        assert observation.shape[0] == action.shape[0], (observation.shape, action.shape)
-        return self.critic([observation, action])
+    @abstractmethod
+    def forward(self, batch) -> Dict[str, Tensor]:
+        """ Forward pass of your model.
+        
+        Preprocess inputs and create all the tensors required for the backward
+        pass here.
 
-        return torch.rand(self.reward_shape, requires_grad=True)
-    
-    def get_action(self, observation: Tensor) -> Tensor:
-        # FIXME: This is here just for debugging purposes.
-        # assert False, (observation.shape, observation.dtype)
-        actions = self.setting.val_env.random_actions()
-        actions = torch.as_tensor(actions, dtype=self.dtype, device=self.device)
-        return actions
+        In the case of RL, this must return a dict with the next action to take,
+        at one of the 'action', 'actions' or 'y_pred' keys.
+        
+        This could look like this, for example:
+        ```
+        x = self.preprocess_x(observation)
+        h_x = self.encode(x)
+        y_pred = self.output_head(h_x)
+        return {
+            "x": x,
+            "h_x": h_x,
+            "y_pred": y_pred,
+        }
+        ```
+        """
 
-        observation = torch.as_tensor(observation, dtype=self.dtype, device=self.device)
-        return self.actor(observation)
+    @abstractmethod
+    def get_loss(self, forward_pass: Dict[str, Tensor], reward: Tensor = None, loss_name: str = "") -> Loss:
+        """Gets a Loss given the results of the forward pass and the reward.00
+
+        Args:
+            forward_pass (Dict[str, Tensor]): Results of the forward pass.
+            reward (Tensor, optional): The reward that resulted from the action
+                chosen in the forward pass. Defaults to None.
+            loss_name (str, optional): The name for the resulting Loss.
+                Defaults to "".
+
+        Returns:
+            Loss: a Loss object containing the loss tensor, associated metrics
+            and sublosses.
+        
+        This could look a bit like this, for example:
+        ```
+        action = forward_pass["action"]
+        predicted_reward = forward_pass["predicted_reward"]
+        nce = self.loss_fn(predicted_reward, reward)
+        loss = Loss(loss_name, loss=nce)
+        return loss
+        ```
+        """
+
+    def select_action(self, forward_pass: Dict[str, Tensor]) -> np.ndarray:
+        action = try_get(forward_pass, "action", "actions", "y_pred")
+        if action is None:
+            raise RuntimeError("The dict returned by `forward()` must include "
+                               "either a 'action' or 'y_pred' entry.")
+        return action.cpu().numpy()
 
     def shared_step(self,
                     batch: Tuple[Tensor, Tensor],
@@ -116,64 +140,48 @@ class Agent(LightningModule, Generic[SettingType]):
                     dataloader_idx: int = None,
                     optimizer_idx: int = None,
                     ) -> Dict:
-        logger.debug(f"batch len: {len(batch)}")
-        if len(batch) == 2:
-            # TODO: How should we handle this 'previous reward' ?
-            observations, previous_rewards = batch
-        else:
-            observations = batch
 
-        logger.debug(f"Batch of observations of shape {observations.shape}")
-        # Get the action to perform
-        actions = self.get_action(observations)
-        logger.debug(f"actions: {actions.shape}")
+        # Process the observation, encode it, create whatever tensors you want.
+        forward_pass = self.forward(batch)
         
-        # Get the actual reward for that action.
+        # Extract the action to take from the forward pass dict.
+        actions = self.select_action(forward_pass)
+               
+        # Send the action to the environment, get back the associated reward.
         rewards = environment.send(actions)
+        rewards = rewards.to(self.device, dtype=self.dtype)
 
-        if self.config.debug:
-            import matplotlib.pyplot as plt
-            plt.ion()
-            environment.environments[0].render(mode="human")
-            # plt.draw()
-        # breakpoint()
-
-        logger.debug(f"Rewards shape: {rewards.shape}, dtype: {rewards.dtype}, device: {rewards.device}")
-        rewards = rewards.to(self.device)
-
-        # Get the predicted reward for that action.
-        predicted_rewards = self.get_value(observations, actions)
-        logger.debug(f"predicted rewards shape: {predicted_rewards.shape}")
-
-        # TODO: Calculate an actual loss that makes sense. Just debugging atm.
-        nce = self.loss_fn(predicted_rewards, rewards)
+        # Get a loss to backpropagate. This should ideally be a Loss object.
+        loss: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)
+        assert isinstance(loss, Loss), f"get_loss should return a Loss object for now. (received {loss})"
         
-        loss = Loss(loss_name, loss=nce) #y_pred=predicted_rewards, y=rewards)
-        # breakpoint()
-        # Trying to figure out what to return:
-        if loss.name == "train":
-            result = TrainResult(minimize=loss.loss)
-        else:
-            result = EvalResult()
-
+        if batch_idx == 0:
+            self.total_reward = 0.
         self.total_reward += rewards.mean().detach()
-        
         mean_reward = self.total_reward / (batch_idx or 1)
-    
-        # result.log("loss", loss.loss, prog_bar=True)
-        result.log("n_steps", torch.as_tensor(float(batch_idx)), prog_bar=True)
-        result.log("mean_reward", mean_reward, prog_bar=True)
-        result.log("rewards", rewards.mean().detach(), prog_bar=True)
-        result.log("predicted rewards", predicted_rewards.mean().detach(), prog_bar=True)
-        # result["loss_object"] = loss
-        return result
+
+        result_dict = loss.to_pl_dict()
+        result_dict["log"]["mean_reward"] = mean_reward
+        return result_dict
+        # TODO: I don't really understand how the TrainResult and EvalResult
+        # objects are supposed to be used.
+        # if self.train:
+        #     result = TrainResult(loss)
+        # else:
+        #     result = EvalResult()
+        # result.log("n_steps", torch.as_tensor(float(batch_idx)), prog_bar=True)
+        # result.log("mean_reward", mean_reward, prog_bar=True)
+        # result.log("rewards", rewards.mean().detach(), prog_bar=True)
+        # # result.log("predicted rewards", predicted_rewards.mean().detach(), prog_bar=True)
+        # # result["loss_object"] = loss
+        # return result
         # return loss.to_pl_dict()
 
     def training_step(self,
                       batch: Tensor,
                       batch_idx: int,
-                      optimizer_idx: int = None,
                       *args,
+                      optimizer_idx: int = None,
                       **kwargs):
         """
         Args:
@@ -193,9 +201,9 @@ class Agent(LightningModule, Generic[SettingType]):
     def validation_step(self,
                         batch: Tensor,
                         batch_idx: int,
+                        *args,
                         optimizer_idx: int = None,
                         dataloader_idx: int = None,
-                        *args,
                         **kwargs):
         super().validation_step()
         return self.shared_step(
@@ -210,9 +218,9 @@ class Agent(LightningModule, Generic[SettingType]):
     def test_step(self,
                   batch: Tensor,
                   batch_idx: int,
+                  *args,
                   optimizer_idx: int = None,
                   dataloader_idx: int = None,
-                  *args,
                   **kwargs):
         return self.shared_step(
             batch,
@@ -228,38 +236,8 @@ class Agent(LightningModule, Generic[SettingType]):
         # Idea: we could maybe use such a context manager to avoid having to
         # switch between environments (or having to pass the environment to the
         # `shared_step`).
+        # TODO: Not used atm.
         starting_env: GymDataLoader = self.current_env
         self.current_env = environment
         yield self.current_env
         self.current_env = starting_env
-
-    
-    def forward(self, observation: Tensor) -> Dict[str, Tensor]:
-        # TODO: something like this:
-        x = self.preprocess_x(observation)
-        h_x = self.encode(x)
-        y_pred = self.output_head(h_x)
-        return {
-            "x": x,
-            "h_x": h_x,
-            "y_pred": y_pred,
-        }
-
-    def get_loss(self, observation: Tensor, reward: Tensor = None, **forward_pass: Dict[str, Tensor]) -> Loss:
-        # TODO: Figure out a way to merge / refactor the 'get_loss' function,
-        # in such a way that works for RL and also for supervised learning.
-        x = forward_pass["x"]
-        h_x = forward_pass["h_x"]
-        y_pred = forward_pass["y_pred"]
-        # (...)
-        loss = Loss(loss_name, loss=nce)
-        return loss
-    
-        
-
-def concat_obs_and_action(observation_action: Tuple[Tensor, Tensor]) -> Tensor:
-    observation, action = observation_action
-    batch_size = observation.shape[0]
-    observation = observation.reshape([batch_size, -1])
-    action = action.reshape([batch_size, -1])
-    return torch.cat([observation, action], dim=-1)

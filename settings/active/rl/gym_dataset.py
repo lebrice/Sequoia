@@ -9,6 +9,7 @@ import torch.multiprocessing as mp
 from gym.envs.classic_control import CartPoleEnv
 from gym.spaces import Box, Discrete
 from gym.wrappers.pixel_observation import PixelObservationWrapper
+from torch import Tensor
 from torch.utils.data import Dataset, IterableDataset
 
 from settings.base.environment import (ActionType, EnvironmentBase,
@@ -33,10 +34,20 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
                  max_steps: Optional[int] = None,
                  ):
         env = gym.make(env) if isinstance(env, str) else env
-        # TODO: Somehow we need to do this before wrapping the env.
         env.reset()
+        # TODO: Somehow we need to do this before wrapping the env.
         if observe_pixels:
-            env = PixelObservationWrapper(env)
+            logger.debug(f"Observing pixels")
+            # breakpoint()
+            # import matplotlib.pyplot as plt
+            # plt.ion()
+            # from gym.envs.classic_control.
+            from gym.envs.classic_control.cartpole import CartPoleEnv
+            from gym.envs.classic_control.rendering import Viewer
+            # TODO: Figure out why the window is getting renderd here!
+            env = PixelObservationWrapper(env, render_kwargs={"mode": "rgb_array"})
+            # breakpoint()
+            # exit()
         super().__init__(env=env)
 
         self.env: gym.Env
@@ -58,8 +69,15 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
         self.episode_count: int = 0
         # Maximum number of episodes to perform in the environment.
         self.max_episodes: Optional[int] = max_episodes
-       
+
         self.reset()
+        from gym.spaces import Dict as DictSpace
+        if isinstance(self.observation_space, DictSpace):
+            self.observation_space = self.observation_space["pixels"]
+
+    # def __del__(self):
+    #     self.env.close()
+    #     super().__del__()
 
     def __next__(self) -> ObservationType:
         """ Generate the next observation. """
@@ -67,6 +85,8 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
         return self.state
 
     def step(self, action: ActionType):
+        if isinstance(action, Tensor):
+            action = action.cpu().numpy()
         if not self.action_space.contains(action):
             if isinstance(self.action_space, Discrete):
                 action = round(float(action))

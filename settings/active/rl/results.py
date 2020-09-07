@@ -3,4 +3,8 @@ from dataclasses import dataclass
 
 @dataclass
 class RLResults(Results):
-    pass
+    mean_reward: float
+
+    @property
+    def objective(self) -> float:
+        return self.mean_reward

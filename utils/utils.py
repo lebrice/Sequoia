@@ -340,6 +340,13 @@ def dict_intersection(*dicts: Dict[K, V]) -> Iterable[Tuple[K, Tuple[V, ...]]]:
         yield (key, tuple(d[key] for d in dicts))
 
 
+def try_get(d: Dict[K, V], *keys: K, default: V = None) -> Optional[V]:
+    for k in keys:
+        if k in d:
+            return d[k]
+    return default
+
+
 def remove_suffix(s: str, suffix: str) -> str:
     """ Remove the suffix from string s if present.
     Doing this manually until we start using python 3.9.

@@ -3,6 +3,7 @@
 @author Fabrice Normandin (@lebrice)
 """
 import os
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -12,9 +13,9 @@ import torch
 import wandb
 from pytorch_lightning import Callback, Trainer, seed_everything
 from pytorch_lightning.loggers import LightningLoggerBase, WandbLogger
+
 from simple_parsing import (Serializable, choice, field, flag, list_field,
                             mutable_field)
-
 from utils.parseable import Parseable
 
 from .trainer_config import TrainerConfig
@@ -57,10 +58,11 @@ class Config(Serializable, Parseable):
 
     def create_loggers(self) -> Optional[Union[LightningLoggerBase, List[LightningLoggerBase]]]:
         if self.debug:
-            logger = None
-        else:
-            logger = self.wandb.make_logger(wandb_parent_dir=self.log_dir_root)
-        return logger
+            return None
+        elif "pytest" in sys.modules:
+            # Running inside a pytest session, not logging to wandb.
+            return None
+        return self.wandb.make_logger(wandb_parent_dir=self.log_dir_root)
 
     @property
     def log_dir(self):

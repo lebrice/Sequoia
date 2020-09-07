@@ -3,7 +3,7 @@
 
 import shlex
 import sys
-from typing import Type
+from typing import Optional, Type
 
 import pytest
 
@@ -68,47 +68,44 @@ def setting_type(request, monkeypatch, set_argv_for_debug):
     return setting_class
 
 
-def test_method_and_setting_types(method_type: Type[Method], setting_type: Type[Setting], set_argv_for_debug):
-    # using both: simplest.
-    experiment = Experiment(method=method_type, setting=setting_type)
-    all_results = experiment.launch()
+@pytest.mark.parametrize("use_method_name", [False, True])
+@pytest.mark.parametrize("use_setting_name", [False, True])
+def test_combination_of_string_or_type(method_type: Optional[Type[Method]],
+                                       use_method_name: bool,
+                                       setting_type: Optional[Type[Setting]],
+                                       use_setting_name: bool):
+    
+    method = method_type.get_name() if use_method_name else method_type
+    setting = setting_type.get_name() if use_setting_name else setting_type
+    
+    experiment = Experiment(method=method, setting=setting)
+    all_results = experiment.launch("--debug --fast_dev_run --batch-size 1")
     assert all_results == (method_type, setting_type)
 
-    # Running all settings
-    experiment = Experiment(method=method_type, setting=None)
-    all_results = experiment.launch()
-    assert all_results == {
-        setting: (method_type, setting) for setting in method_type.get_all_applicable_settings()
-    }
-    # Running all methods
-    experiment = Experiment(method=None, setting=setting_type)
-    all_results = experiment.launch()
-    assert all_results == {
-        method_type: (method_type, setting_type) for method_type in setting_type.get_all_applicable_methods()
-    }
 
-    # Setting both to strings.
-    experiment = Experiment(method=method_type.get_name(), setting=setting_type.get_name())
-    all_results = experiment.launch()
-    assert all_results == (method_type, setting_type)
-    # Setting either to a string
-    experiment = Experiment(method=method_type.get_name(), setting=setting_type)
-    all_results = experiment.launch()
-    assert all_results == (method_type, setting_type)
-    experiment = Experiment(method=method_type, setting=setting_type.get_name())
-    all_results = experiment.launch()
-    assert all_results == (method_type, setting_type)
 
-    # Running all settings (passing a string)
-    experiment = Experiment(method=method_type.get_name(), setting=None)
-    all_results = experiment.launch()
-    assert all_results == {
-        setting: (method_type, setting) for setting in method_type.get_all_applicable_settings()
-    }
+@pytest.mark.parametrize("use_method_name", [False, True])
+def test_none_setting(method_type: Optional[Type[Method]],
+                      use_method_name: bool):
+    method = method_type.get_name() if use_method_name else method_type
+    experiment = Experiment(method=method, setting=None)
+    all_results = experiment.launch("--debug --fast_dev_run --batch-size 1")
+    for setting_type in method_type.get_all_applicable_settings():
+        result = all_results[setting_type]
+        assert result == (method_type, setting_type)
 
-    # Running all methods
-    experiment = Experiment(method=None, setting=setting_type.get_name())
-    all_results = experiment.launch()
-    assert all_results == {
-        method_type: (method_type, setting_type) for method_type in setting_type.get_all_applicable_methods()
-    }
+
+@pytest.mark.parametrize("use_setting_name", [False, True])
+def test_none_method(setting_type: Optional[Type[Setting]],
+                     use_setting_name: bool):
+    setting = setting_type.get_name() if use_setting_name else setting_type
+    experiment = Experiment(method=None, setting=setting)
+    all_results = experiment.launch("--debug --fast_dev_run --batch-size 1")
+    for method_type in setting_type.get_all_applicable_methods():
+        result = all_results[method_type]
+        assert result == (method_type, setting_type)
+
+    # assert all_results == {
+    #     method_type: (method_type, setting_type)
+    #     for method_type in setting_type.get_all_applicable_methods()
+    # }

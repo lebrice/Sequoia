@@ -15,6 +15,8 @@ def from_args(cls: Type[T],
               argv: Union[str, List[str]] = None,
               reorder: bool = True,
               strict: bool = False) -> Tuple[T, Namespace]:
+    if argv is None:
+        argv = sys.argv[1:]
     logger.debug(f"parsing an instance of class {cls} from argv {argv}")
     if isinstance(argv, str):
         argv = shlex.split(argv)

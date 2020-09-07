@@ -24,6 +24,14 @@ logger = get_logger(__file__)
 from common.tasks.simclr import SimCLRTask
 
 
+# TODO:
+# class SelfSupervisedClassifier(SelfSupervisedModel, Classifier):
+#     pass
+
+# class SelfSupervisedAgent(SelfSupervisedModel, Agent):
+#     pass
+
+
 @dataclass
 class SelfSupervision(ClassIncrementalMethod):
     """ Method where self-supervised learning is used to learn representations.

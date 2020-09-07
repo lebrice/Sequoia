@@ -66,8 +66,10 @@ class RandomIIDModel(RandomPredictionsMixin, IIDModel):
     pass
 
 
-class RandomRLAgent(RandomPredictionsMixin, Agent):
-    pass
+from .models.random_agent import RandomAgent
+
+# class RandomAgent(RandomPredictionsMixin, Agent):
+#     pass
 
 
 def get_random_model_class(base_model_class: Type[Model]) -> Type[Union[RandomPredictionsMixin, Model]]:
@@ -87,14 +89,16 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     with respect to the `Model` class, as it is moreso aimed at being a `passive`
     Model than an active one at the moment.
     """
+
     @singledispatchmethod
     def model_class(self, setting: SettingType) -> Type[Model]:
+        assert False, isinstance(setting, RLSetting)
         raise NotImplementedError(f"No known model for setting of type {type(setting)} (registry: {self.model_class.registry})")
     
-    @model_class.register(RLSetting)
+    @model_class.register
     def _(self, setting: RLSetting) -> Type[Model]:
         # TODO: Make a 'random' RL method.
-        return RandomRLAgent
+        return RandomAgent
 
     @model_class.register
     def _(self, setting: ClassIncrementalSetting) -> Type[ClassIncrementalModel]:

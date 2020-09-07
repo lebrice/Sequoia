@@ -7,6 +7,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 
 from common.config import Config
+from common.loss import Loss
 from common.transforms import Compose, Transforms
 from settings.active.setting import ActiveSetting
 from settings.base import Results
@@ -40,9 +41,10 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
     # Class variable holding all the available datasets.
     available_datasets: ClassVar[Dict[str, str]] = {
         "cartpole": "CartPole-v0",
+        "pendulum": "Pendulum-v0",
     }
     observe_state_directly: bool = False
-    dataset: str = choice(available_datasets, default="cartpole")
+    dataset: str = choice(available_datasets, default="pendulum")
 
     # Transformations to use. See the Transforms enum for the available values.
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels)
@@ -61,6 +63,8 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
             env=self.gym_env_name,
             observe_pixels=not self.observe_state_directly,
         )
+        logger.debug(f"train_env observation space: {train_env.observation_space}")
+        assert train_env.observation_space
         obs_shape: Tuple[int, ...] = train_env.observation_space.shape
         action_shape: Tuple[int, ...] = train_env.action_space.shape or (1,)
         # NOTE: We assume scalar rewards for now.
@@ -107,16 +111,23 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
             # TODO: Choose either (or None?)
             datamodule=self,
             # test_dataloaders=self.test_dataloader(),
-            verbose=False,
+            verbose=True,
         )
-        # TODO: There are no outputs here, for some reason.
-        assert test_outputs, f"Test outputs should be produced: {test_outputs}"
-        # TODO: Once the bug above is fixed, create a Results object for that
-        # setting.
+        if not test_outputs:
+            raise RuntimeError(f"Test outputs should have been produced!")
+        
+        if isinstance(test_outputs, list):
+            assert len(test_outputs) == 1
+            test_outputs = test_outputs[0]
+
+        test_loss: Loss = test_outputs["loss_object"]
+        mean_reward = test_outputs["mean_reward"]
+        hparams = method.hparams
+
         return self.results_class(
             hparams=hparams,
-            # test_loss=sum(task_losses),
-            # task_losses=task_losses,
+            test_loss=test_loss,
+            mean_reward=mean_reward,
         )
 
     @property
