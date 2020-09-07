@@ -1,6 +1,9 @@
 import inspect
+import os
 from collections import OrderedDict
 from dataclasses import dataclass, is_dataclass
+from inspect import getsourcefile
+from pathlib import Path
 from typing import (ClassVar, Dict, Generic, List, Optional, Set, Tuple, Type,
                     TypeVar, Union)
 
@@ -344,3 +347,9 @@ class Method(Serializable, Generic[SettingType], Parseable, metaclass=MethodType
         """ Gets the target setting of a given method.
         """
         return type(self)._target_setting
+
+    @classmethod
+    def get_path_to_source_file(cls: Type) -> Path:
+        cwd = Path(os.path.abspath(os.path.dirname(__file__)))
+        source_file = Path(getsourcefile(cls)).relative_to(cwd)
+        return source_file

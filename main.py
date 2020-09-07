@@ -24,11 +24,11 @@ from utils import Parseable, Serializable, get_logger
 logger = get_logger(__file__)
 
 logger.debug(f"Registered Settings: \n" + "\n".join(
-    f"- {setting.get_name()}: {setting}" for setting in all_settings
+    f"- {setting.get_name()}: {setting} ({setting.get_path_to_source_file()})" for setting in all_settings
 ))
 
 logger.debug(f"Registered Methods: \n" + "\n".join(
-    f"- {method.get_name()}: {method.target_setting} {method}" for method in all_methods
+    f"- {method.get_name()}: {method} ({method.get_path_to_source_file()})" for method in all_methods
 ))
 
 @dataclass
@@ -98,81 +98,75 @@ class Experiment(Parseable, Serializable):
         if isclass(self.method) and issubclass(self.method, Method):
             self.method = self.method.from_args(argv)
 
-        potential_methods: List[Type[Method]] = []
-        method_name: Optional[str] = self.method if isinstance(self.method, str) else self.method.get_name() 
-        
-        if isinstance(self.method, str):
-            # Collisions in method names should be allowed. If it happens, we shoud
-            # use the right method for the given setting, if any.
-            # There's also the special case where only a method string was given!
-            # What should we do in that case?
-            potential_methods: List[Type[Method]] = [
-                method for method in all_methods
-                if method.get_name() == self.method
-            ]
-            if self.setting:
-                potential_methods = [m for m in potential_methods if m.is_applicable(self.setting)]
-
-            if not potential_methods:
-                raise RuntimeError(
-                    f"Couldn't find any methods with name {self.method} "
-                    f"applicable on the chosen setting ({self.setting})!"
-                )
-            if len(potential_methods) == 1:
-                self.method = potential_methods[0]
-                return self.setting.apply(self.method)
-            else:
-                # TODO: figure out which of the methods to use depending on the setting?
-                raise NotImplementedError("TODO")
-                logger.warning(RuntimeWarning(
-                    f"As there are multiple methods with the name {self.method}, "
-                    f"this will try to use the most 'specialised' method with that "
-                    f"name for the given setting. (potential methods: "
-                    f"{potential_methods}"
-                ))
-                    
-
-
-
         assert self.setting is None or isinstance(self.setting, Setting)
+        assert self.method is None or isinstance(self.method, (Method, str))
 
-        if self.setting:
-            if isinstance(self.method, Method):
-                return self.setting.apply(self.method)
-            else:
-                # When the method isn't set, evaluate on all applicable methods.
-                all_results: Dict[Type[Method], Results] = OrderedDict()
-
-                for setting_type in self.setting.get_all_applicable_methods():
-                    setting = setting_type.from_args(argv)
-                    results = setting.apply(self)
-                    all_results[setting_type] = results
-
-                logger.info(f"All results for setting of type {type(self)}:")
-                logger.info({
-                    setting.get_name(): (results if results else "crashed")
-                    for setting, results in all_results.items()
-                })
-                return all_results
-
-        assert self.method
-        if isinstance(self.method, Method):
-            return self.method.apply_to(self.setting)
-        elif isinstance(self.method, str):
-            raise NotImplementedError("TODO")
+        method_name: str
+        if isinstance(self.method, str):
+            # Collisions in method names should be allowed. If it happens,
+            # we shoud use the right method for the given setting, if any.
+            # There's also the special case where only a method string is given!
+            # In that case, we'd have to loop over all the settings and get the
+            # method applicable with the name 'method_name', as well as sort out
+            # any conflicts..
+            method_name = self.method
         else:
+            method_name = self.method.get_name()
+
+        if self.method and self.setting:
+            if isinstance(self.method, str):
+                method_class = self.get_method_class_with_name(method_name, self.setting)
+                self.method = method_class.from_args(argv)
+            return self.method.apply_to(self.setting)
+
+        elif self.method is None:
             # When the method isn't set, evaluate on all applicable methods.
             all_results: Dict[Type[Method], Results] = OrderedDict()
 
-            for setting_type in self.method.get_all_applicable_settings():
+            for first_method in self.setting.get_all_applicable_methods():
+                method = first_method.from_args(argv)
+                all_results[first_method] = method.apply_to(self.setting)
+
+            logger.info(f"All results for setting of type {type(self)}:")
+            logger.info({
+                first_method.get_name(): (results if results else "crashed")
+                for first_method, results in all_results.items()
+            })
+            return all_results
+        
+        else:
+            assert self.setting is None
+            # When the method isn't set, evaluate on all applicable methods.
+            all_results: Dict[Type[Method], Results] = OrderedDict()
+
+            applicable_settings = []
+
+            if isinstance(self.method, str):
+                # The method is given as a string, so we have to find all
+                # settings that have an applicable method with that name.
+                for setting in all_settings:
+                    methods = setting.get_all_applicable_methods()
+                    if any(m.get_name() == self.method for m in methods):
+                        applicable_settings.append(setting)
+            else:
+                applicable_settings = self.method.get_all_applicable_settings()
+
+            for setting_type in applicable_settings:
+                if isinstance(self.method, str):
+                    method_type = self.get_method_class_with_name(self.method, setting_type)
+                    method = method_type.from_args(argv)
+                else:
+                    method = self.method
+
                 setting = setting_type.from_args(argv)
-                results = self.method.apply_to(setting)
-                all_results[setting_type] = results
+                all_results[method_type] = method.apply_to(setting)
+
             logger.info(f"All results for method of type {type(self.method)}:")
             logger.info({
-                setting.get_name(): (results.get_metric() if results else "crashed")
+                setting.get_name(): (results if results else "crashed")
                 for setting, results in all_results.items()
             })
+            return all_results
 
 
     @classmethod
@@ -197,6 +191,75 @@ class Experiment(Parseable, Serializable):
         experiment, unused_args = cls.from_known_args(argv)
         experiment: Experiment
         return experiment.launch(unused_args)
+
+
+    def get_method_class_with_name(self,
+                             method_name: str,
+                             setting: Type[Setting]=None) -> Type[Method]:
+        potential_methods: List[Type[Method]] = [
+            method for method in all_methods
+            if method.get_name() == method_name
+        ]
+        if setting:
+            potential_methods = [
+                m for m in potential_methods
+                if m.is_applicable(setting)
+            ]
+
+        if not potential_methods:
+            raise RuntimeError(
+                f"Couldn't find any methods with name {method_name} "
+                + (f"applicable on setting ({setting})!" if setting else "")
+            )
+        
+        if len(potential_methods) == 1:
+            return potential_methods[0]
+
+        # Remove any method in the list who has descendants within the list.
+        logger.warning(RuntimeWarning(
+            f"As there are multiple methods with the name {self.method}, "
+            f"this will try to use the most 'specialised' method with that "
+            f"name for the given setting. (potential methods: "
+            f"{potential_methods}"
+        ))
+
+        has_descendants: List[bool] = check_has_descendants(potential_methods)
+        logger.debug(f"Method has descendants: {dict(zip(potential_methods, has_descendants))}")
+        while any(has_descendants):
+            indices_to_remove: List[int] = [
+                i for i, has_descendant in enumerate(has_descendants) if has_descendant
+            ]
+            # pop the items in reverse index order so we don't mess up the list.
+            for index_to_remove in reversed(indices_to_remove):
+                potential_methods.pop(index_to_remove)
+            has_descendants = check_has_descendants(potential_methods)
+
+        assert len(potential_methods) > 0, "There should be at least one potential method left!"
+        if len(potential_methods) == 1:
+            return potential_methods[0]
+        else:
+            raise RuntimeError(
+                f"There are more than one potential methods with name "
+                f"{method_name} for setting {setting}, and they aren't related "
+                f"through inheritance! (potential methods: {potential_methods}"
+            )
+
+        return method
+
+def check_has_descendants(potential_methods: List[Type[Method]]) -> List[bool]:
+    """Returns a list where for each method in the list, check if it has
+    any descendants (subclasses of itself) also within the list.
+    """
+    def _has_descendant(method: Type[Method]) -> bool:
+        """ For a given method, check if it has any descendants within
+        the list of potential methods.
+        """
+        return any(
+            (issubclass(other_method, method) and
+            other_method is not method)
+            for other_method in potential_methods 
+        )
+    return [_has_descendant(method) for method in potential_methods]
 
 
 if __name__ == "__main__":

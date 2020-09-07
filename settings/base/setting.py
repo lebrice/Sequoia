@@ -1,13 +1,17 @@
 import inspect
+import os
 import shlex
 from abc import abstractmethod
 from argparse import Namespace
 from collections import OrderedDict
 from dataclasses import InitVar, dataclass, fields, is_dataclass
+from inspect import getsourcefile
+from pathlib import Path
 from typing import *
 
 import torch
 from pytorch_lightning import LightningDataModule
+from pytorch_lightning.core.datamodule import _DataModuleWrapper
 from torch.utils.data import DataLoader
 
 from common.config import Config
@@ -25,7 +29,6 @@ Loader = TypeVar("Loader", bound=DataLoader)
 ResultsType = TypeVar("ResultsType", bound=Results)
 SettingType = TypeVar("SettingType", bound="Setting")
 
-from pytorch_lightning.core.datamodule import _DataModuleWrapper
 
 
 class SettingMeta(_DataModuleWrapper, Type["Setting"]):
@@ -252,7 +255,7 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
 
     def __init_subclass__(cls, **kwargs):
         assert is_dataclass(cls), f"Setting type {cls} isn't a dataclass!"
-        logger.debug(f"Registering a new setting! {cls.get_name()}")
+        logger.debug(f"Registering a new setting: {cls.get_name()}")
 
         # Exceptionally, create this new empty list that will hold all the
         # forthcoming subclasses of this particular new setting.
@@ -296,3 +299,9 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
             assert not kwargs, f"kwargs: {kwargs}"
             return instance
         return super().from_argparse_args(args=args, **kwargs)
+
+    @classmethod
+    def get_path_to_source_file(cls: Type) -> Path:
+        cwd = Path(os.path.abspath(os.path.dirname(__file__)))
+        source_file = Path(getsourcefile(cls)).relative_to(cwd)
+        return source_file
