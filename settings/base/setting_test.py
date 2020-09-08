@@ -1,7 +1,13 @@
 
 from dataclasses import dataclass
-from .setting import Setting
+
+import pytest
+
+from methods import Method
 from utils import constant
+
+from .setting import Setting
+
 
 @dataclass
 class Setting1(Setting):
@@ -22,7 +28,6 @@ class Setting2(Setting1):
         super().__post_init__()
 
 
-import pytest
 
 
 def test_settings_override_with_constant_take_init():
@@ -49,7 +54,6 @@ class SettingA2(SettingA): pass
 @dataclass
 class SettingB(Setting): pass
 
-
 class MethodA(Method, target_setting=SettingA): pass
 
 
@@ -57,4 +61,3 @@ class MethodB(Method, target_setting=SettingB): pass
 
 
 class CoolGeneralMethod(Method, target_setting=Setting): pass
-

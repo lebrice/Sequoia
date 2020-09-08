@@ -7,12 +7,12 @@ from typing import Any, Callable, List, Type
 import pytest
 
 from common import ClassificationMetrics
-from conftest import get_dataset_params, parametrize
+from conftest import get_dataset_params, parametrize, slow
+from methods.models.class_incremental_model import ClassIncrementalModel
 from settings import (ClassIncrementalResults, ClassIncrementalSetting,
                       IIDSetting, Results, Setting, TaskIncrementalResults,
                       TaskIncrementalSetting)
 
-from methods.models.class_incremental_model import ClassIncrementalModel
 from .random_baseline import RandomBaselineMethod
 
 # Use 'Method' as an alias for the actual Method cusblass under test. (since at
@@ -54,6 +54,7 @@ def method(tmp_path_factory: Callable[[str], Path]):
 
 
 # @parametrize("dataset", get_dataset_params(Method, supported_datasets))
+@slow
 @parametrize("setting_type", Method.get_all_applicable_settings())
 def test_fast_dev_run(method: RandomBaselineMethod, setting_type: Type[Setting], test_dataset: str):
     dataset = test_dataset
@@ -100,8 +101,7 @@ def validate_results(results: Results, setting: Setting):
         assert 0.5 * chance_accuracy <= average_accuracy <= 1.5 * chance_accuracy
 
 
-        for i, task_loss in enumerate(results.task_losses):
-            metric = task_loss.metric
+        for i, metric in enumerate(results.task_metrics):
             assert isinstance(metric, ClassificationMetrics)
             # TODO: Check that this makes sense:
 
@@ -114,7 +114,7 @@ def validate_results(results: Results, setting: Setting):
                 num_classes = setting.num_classes
             chance_accuracy = 1 / num_classes
 
-            task_accuracy = task_loss.metric.accuracy
+            task_accuracy = metric.accuracy
             # FIXME: Look into this, we're often getting results substantially
             # worse than chance, and to 'make the tests pass' (which is bad)
             # we're setting the lower bound super low, which makes no sense.

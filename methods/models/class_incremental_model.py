@@ -9,10 +9,8 @@ from torch.utils.data import DataLoader
 from common.config import Config
 from methods.models.model import Model, OutputHead
 from settings import ClassIncrementalSetting
-from simple_parsing import mutable_field
 from utils.logging_utils import get_logger
 
-from .self_supervised_model import SelfSupervisedModel
 from .semi_supervised_model import SemiSupervisedModel
 
 logger = get_logger(__file__)
@@ -20,13 +18,13 @@ logger = get_logger(__file__)
 
 SettingType = TypeVar("SettingType", bound=ClassIncrementalSetting)
 
-class ClassIncrementalModel(SelfSupervisedModel[SettingType], SemiSupervisedModel):
-    """ Extension of the Classifier LightningModule aimed at CL settings.
+class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
+    """ Extension of the Model LightningModule aimed at CL settings.
     TODO: Add the stuff related to multihead/continual learning here?
     """
 
     @dataclass
-    class HParams(SelfSupervisedModel.HParams):
+    class HParams(Model.HParams):
         """ Hyperparameters specific to a Continual Learning classifier.
         TODO: Add any hyperparameters specific to CL here.
         """
@@ -62,7 +60,6 @@ class ClassIncrementalModel(SelfSupervisedModel[SettingType], SemiSupervisedMode
             output_head = self.create_output_head()
             self.output_head = output_head
             self.output_heads[str(self.setting.current_task_id)] = output_head
-
 
     @property
     def output_head(self) -> OutputHead:
@@ -112,7 +109,7 @@ class ClassIncrementalModel(SelfSupervisedModel[SettingType], SemiSupervisedMode
         return self.output_head_class(
             input_size=self.hidden_size,
             output_size=output_size,
-        )
+        ).to(self.device)
 
     @property
     def output_head_class(self) -> Type[OutputHead]:
@@ -267,19 +264,16 @@ class ClassIncrementalModel(SelfSupervisedModel[SettingType], SemiSupervisedMode
 
         missing_keys, unexpected_keys = super().load_state_dict(state_dict=state_dict, strict=False)
         
+        # TODO: Double-check that this makes sense and works properly.
         if self.hp.multihead and unexpected_keys:
             for i in range(self.setting.nb_tasks):
-                output_head_i_keys = filter(
-                    lambda s: s.startswith(f"output_heads.{i}"),
-                    unexpected_keys,
-                )
                 new_output_head = self.create_output_head()
                 new_output_head.load_state_dict(
                     {k: state_dict[k] for k in unexpected_keys},
-                    strict=True,
+                    strict=False,
                 )
                 key = str(i)
-                self.output_heads[key] = new_output_head
+                self.output_heads[key] = new_output_head.to(self.device)
 
         if missing_keys or unexpected_keys:
             logger.debug(f"Missing keys: {missing_keys}, unexpected keys: {unexpected_keys}")

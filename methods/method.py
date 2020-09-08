@@ -9,6 +9,7 @@ from typing import (ClassVar, Dict, Generic, List, Optional, Set, Tuple, Type,
 
 from pytorch_lightning import Callback, LightningModule, Trainer
 
+from cl_trainer import CLTrainer, CLTrainerOptions
 from common.config import Config, TrainerConfig
 from common.loss import Loss
 from settings.base import Results, Setting, SettingType
@@ -25,7 +26,7 @@ class MethodType(type):
     """ Metaclass for the Methods.
 
     @lebrice Testing this as a way to simplify some of the mechanics of setting
-    up the attributes, etc.
+    up the attributes or detecting if a Method is applicable, etc.
     """
     # Class attribute that holds the setting this method was designed to target.
     _target_setting: ClassVar[Optional[Type[Setting]]] = None
@@ -58,7 +59,7 @@ class Method(Serializable, Generic[SettingType], Parseable, metaclass=MethodType
     # HyperParameters of the method.
     hparams: HParams = mutable_field(HParams)
     # Options for the Trainer object.
-    trainer_options: TrainerConfig = mutable_field(TrainerConfig)
+    trainer_options: CLTrainerOptions = mutable_field(CLTrainerOptions)
     # Configuration options for the experimental setup (log_dir, cuda, etc).
     config: Config = mutable_field(Config)
 

@@ -2,6 +2,7 @@ from typing import (Any, Callable, Dict, Generator, Iterable, List, Optional,
                     Sequence, Tuple, TypeVar, Union)
 
 import gym
+import matplotlib.pyplot as plt
 # import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -34,20 +35,24 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
                  max_steps: Optional[int] = None,
                  ):
         env = gym.make(env) if isinstance(env, str) else env
+        # plt.ion()
         env.reset()
+
         # TODO: Somehow we need to do this before wrapping the env.
-        if observe_pixels:
-            logger.debug(f"Observing pixels")
-            # breakpoint()
-            # import matplotlib.pyplot as plt
-            # plt.ion()
-            # from gym.envs.classic_control.
+        if observe_pixels and not isinstance(env, PixelObservationWrapper):
             from gym.envs.classic_control.cartpole import CartPoleEnv
             from gym.envs.classic_control.rendering import Viewer
-            # TODO: Figure out why the window is getting renderd here!
-            env = PixelObservationWrapper(env, render_kwargs={"mode": "rgb_array"})
+
+            logger.debug(f"Adding a Wrapper to {env} to observe pixels rather than internal state.")
+            env = PixelObservationWrapper(env, pixels_only=True)
+            # BUG: There is this really annoying bug where the environments
+            # keep making a window, even if we render with 'mode'=rgb_array !!!
+            if env.viewer is None:
+                env.render(mode="rgb_array")
+            if env.viewer is not None:
+                self.viewer: Viewer = env.viewer
+                self.viewer.window.set_visible(False)
             # breakpoint()
-            # exit()
         super().__init__(env=env)
 
         self.env: gym.Env
@@ -70,14 +75,18 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
         # Maximum number of episodes to perform in the environment.
         self.max_episodes: Optional[int] = max_episodes
 
+        self.total_reward: float = 0.
+
         self.reset()
         from gym.spaces import Dict as DictSpace
         if isinstance(self.observation_space, DictSpace):
             self.observation_space = self.observation_space["pixels"]
 
-    # def __del__(self):
-    #     self.env.close()
-    #     super().__del__()
+    def __del__(self):
+        try:
+            self.env.close()
+        except:
+            pass
 
     def __next__(self) -> ObservationType:
         """ Generate the next observation. """
@@ -100,6 +109,7 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
             if self.observe_pixels:
                 self.state = self.state["pixels"]
         self.step_count += 1
+        self.total_reward += self.reward
         return self.state, self.reward, self.done, self.info
 
     @property

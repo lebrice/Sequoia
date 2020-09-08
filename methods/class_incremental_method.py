@@ -30,7 +30,6 @@ class ClassIncrementalMethod(Method, target_setting=ClassIncrementalSetting):
     name: ClassVar[str] = "baseline"
     # HyperParameters of the LightningModule. Overwrite this in your class.
     hparams: ClassIncrementalModel.HParams = mutable_field(ClassIncrementalModel.HParams)
-
     # Options for the KNN classifier callback, which is used to evaluate the
     # quality of the representations on each test and val task after each
     # training epoch.
@@ -50,25 +49,7 @@ class ClassIncrementalMethod(Method, target_setting=ClassIncrementalSetting):
 
     def train(self, setting: ClassIncrementalSetting) -> None:
         """ Trains the model. Overwrite this to customize training. """
-        # Just a sanity check:
-        assert self.model.setting is setting
-        n_tasks = setting.nb_tasks
-        logger.info(f"Number of tasks: {n_tasks}")
-        logger.info(f"Number of classes in task: {setting.num_classes}")
-
-        for i in range(n_tasks):
-            logger.info(f"Starting task #{i}")
-            if setting.task_labels_at_train_time:
-                # This is always true in the ClassIncremental & TaskIncremental
-                # settings for now.
-                self.on_task_switch(i)
-                setting.current_task_id = i
-
-            assert self.model.setting.current_task_id == setting.current_task_id == i
-            self.trainer.fit(
-                self.model,
-                datamodule=setting,
-            )
+        self.trainer.fit_setting(setting=setting, model=self.model)
 
     @singledispatchmethod
     def model_class(self, setting: SettingType) -> Type[Model]:

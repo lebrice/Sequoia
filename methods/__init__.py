@@ -6,12 +6,11 @@ from .random_baseline import RandomBaselineMethod
 from .self_supervision import SelfSupervision
 
 # TODO: We could also 'register' the methods as they are declared!
-# from .class_incremental_method import ClassIncrementalMethod
-# from .task_incremental_method import TaskIncrementalMethod
 
 all_methods: List[Type[Method]] = [
     BaselineMethod,
     RandomBaselineMethod,
+    SelfSupervision
     # ClassIncrementalMethod,
     # TaskIncrementalMethod,
     # SelfSupervision,

@@ -1,39 +1,75 @@
-from simple_parsing.helpers import FlattenedAccess
 from dataclasses import dataclass
-from typing import Dict, List, Type
+from functools import lru_cache
+# class SelfSupervisedAgent(SelfSupervisedModel, Agent):
+#     pass
+from typing import ClassVar, Dict, List, Optional, Type, Union
 
 from pytorch_lightning import Callback
-from simple_parsing import mutable_field
 from singledispatchmethod import singledispatchmethod
 from torch import Tensor
 
 from common.config import Config
 from common.loss import Loss
-from common.tasks import AuxiliaryTask
-from settings import ClassIncrementalSetting
+from common.tasks import (AEReconstructionTask, AuxiliaryTask, EWCTask,
+                          SimCLRTask, VAEReconstructionTask)
+from common.tasks.simclr import SimCLRTask
+from settings import (ClassIncrementalSetting, IIDSetting, RLSetting,
+                      TaskIncrementalSetting)
 from settings.base.setting import Setting, SettingType
+from simple_parsing import mutable_field
+from simple_parsing.helpers import FlattenedAccess
 from utils import get_logger
+# TODO: Where should the coefficients for the different auxiliary tasks be?
+# I think they should be in this file here, but then how will it make sense
+from utils.json_utils import Serializable
 
-from .method import Method
-from .models import HParams, Model
-from .models.self_supervised_model import SelfSupervisedModel
 from .class_incremental_method import (ClassIncrementalMethod,
                                        ClassIncrementalModel)
+from .method import Method
+from .models import HParams, Model
+from .models.agent import Agent
+from .models.iid_model import IIDModel
+from .models.self_supervised_model import SelfSupervisedModel
 
 logger = get_logger(__file__)
-from common.tasks.simclr import SimCLRTask
-
-
-# TODO:
-# class SelfSupervisedClassifier(SelfSupervisedModel, Classifier):
-#     pass
-
-# class SelfSupervisedAgent(SelfSupervisedModel, Agent):
-#     pass
 
 
 @dataclass
-class SelfSupervision(ClassIncrementalMethod):
+class SelfSupervisionHParams(Serializable):
+    """Hyper-parameters of the self-supervised method, including all the tasks.
+
+    TODO: I guess users would add new auxiliary tasks to this list here?
+    """
+    simclr: Optional[SimCLRTask.Options] = None
+    vae: Optional[VAEReconstructionTask.Options] = None
+    ae: Optional[AEReconstructionTask.Options] = None
+    ewc: Optional[EWCTask.Options] = None
+
+class SelfSupervisedClassIncrementalModel(SelfSupervisedModel, ClassIncrementalModel):
+    @dataclass
+    class HParams(SelfSupervisedModel.HParams, ClassIncrementalModel.HParams):
+        pass
+
+class SelfSupervisedAgent(SelfSupervisedModel, Agent):
+    @dataclass
+    class HParams(SelfSupervisedModel.HParams, Agent.HParams):
+        pass
+
+
+
+# TODO: Not sure if this is better than defining all the models above.
+@lru_cache(maxsize=None, typed=True)
+def make_self_supervised_model_class(model_class: Type[Model]) -> Type[Union[SelfSupervisedModel, Model]]:
+    class SelfSupervisedVariant(SelfSupervisedModel, model_class):
+        @dataclass
+        class HParams(SelfSupervisedModel, model_class.HParams):
+            pass
+    SelfSupervisedVariant.__name__ = "SelfSupervised" + model_class.__name__
+    return SelfSupervisedVariant
+
+
+@dataclass
+class SelfSupervision(Method, target_setting=Setting):
     """ Method where self-supervised learning is used to learn representations.
 
     The representations of the model are learned either jointly with the
@@ -43,13 +79,34 @@ class SelfSupervision(ClassIncrementalMethod):
     TODO: This doesn't really belong here anymore, because the base model is
     self-supervised by default!
     """
+    name: ClassVar[str] = "self_supervision"
+
     # Hyperparameters of the model.
     # TODO: If we were to support more models, we might have a problem trying to
     # get the help text of each type of hyperparameter to show up. We can still
     # parse them just fine by calling .from_args() on them, but still, would be
     # better if the help text were visible from the command-line.
-    hparams: ClassIncrementalModel.HParams = mutable_field(ClassIncrementalModel.HParams)
+    hparams: SelfSupervisedModel.HParams = mutable_field(SelfSupervisedModel.HParams)
 
+    @singledispatchmethod
+    def model_class(self, setting: Setting):
+        return NotImplementedError(f"No model registered for setting {setting}")
+    
+    @model_class.register
+    def _(self, setting: ClassIncrementalSetting):
+        return SelfSupervisedClassIncrementalModel
+
+    @model_class.register
+    def _(self, setting: TaskIncrementalSetting):
+        return SelfSupervisedTaskIncrementalModel
+    
+    @model_class.register
+    def _(self, setting: IIDSetting):
+        return IIDModel
+
+    @model_class.register
+    def _(self, setting: RLSetting):
+        return SelfSupervisedAgent
 
 if __name__ == "__main__":
     SelfSupervision.main()

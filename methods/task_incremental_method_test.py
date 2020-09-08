@@ -6,8 +6,8 @@ from common.metrics import ClassificationMetrics
 from settings import TaskIncrementalResults, TaskIncrementalSetting
 from simple_parsing import ParsingError
 
+from .class_incremental_method import ClassIncrementalMethod
 from .models.task_incremental_model import TaskIncrementalModel
-from .task_incremental_method import TaskIncrementalMethod
 
 
 def test_parsing_hparams_multihead():
@@ -34,7 +34,7 @@ def test_fast_dev_run_multihead(tmp_path: Path):
         dataset="mnist",
         increment=2,
     )
-    method: TaskIncrementalMethod = TaskIncrementalMethod.from_args(f"""
+    method: ClassIncrementalMethod = ClassIncrementalMethod.from_args(f"""
         --debug
         --fast_dev_run
         --default_root_dir {tmp_path}

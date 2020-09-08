@@ -1,7 +1,10 @@
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List, Tuple, Type
+from typing import Any, ClassVar, Dict, List, Tuple, Type, Union
 
 import gym
+import numpy as np
+from gym.spaces import Dict as DictSpace
+from gym.wrappers.pixel_observation import PixelObservationWrapper
 from pytorch_lightning import Trainer
 from torch import Tensor
 from torch.utils.data import DataLoader
@@ -56,19 +59,32 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         """Creates a new RL environment / setup. """
         # FIXME: (@lebrice) This is a bit annoying to have to do, but whatever.
         # The idea is that we want to set some 'dims' attributes so that methods
-        # can know what the observations / actions / rewards will look like.
+        # can know what the observations / actions / rewards will look like,
+        # even before the dataloaders are created. However in order to do that,
+        # we need to actually create an environment to get those shapes from.
         # Btw this also assumes that the shapes don't change between train, val
         # and test (which seems very reasonable for now).
-        train_env = GymDataset(
-            env=self.gym_env_name,
-            observe_pixels=not self.observe_state_directly,
-        )
-        logger.debug(f"train_env observation space: {train_env.observation_space}")
-        assert train_env.observation_space
-        obs_shape: Tuple[int, ...] = train_env.observation_space.shape
-        action_shape: Tuple[int, ...] = train_env.action_space.shape or (1,)
+        temp_env: gym.Env = self.create_gym_env(self.gym_env_name)
+        temp_env.reset()
+        logger.debug(f"train_env observation space: {temp_env.observation_space}")
+        assert temp_env.observation_space
+
+        self.action_space = temp_env.action_space
+        # Extract the observation space from the env.
+        if isinstance(temp_env.observation_space, DictSpace):
+            self.observation_space = temp_env.observation_space["pixels"]
+        else:
+            self.observation_space = temp_env.observation_space
+
+        assert self.observation_space.shape
+        obs_shape: Tuple[int, ...] = self.observation_space.shape
+        action_shape: Tuple[int, ...] = self.action_space.shape or (1,)
         # NOTE: We assume scalar rewards for now.
         reward_shape: Tuple[int, ...] = (1,)
+        self.reward_range: Tuple[float, float] = temp_env.reward_range
+
+        temp_env.close()
+        del temp_env
 
         super().__post_init__(
             obs_shape=obs_shape,
@@ -91,8 +107,6 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         self._val_loader: GymDataLoader
         self._test_loader: GymDataLoader
 
-        self.action_space = train_env.action_space
-        self.observation_space = train_env.observation_space
         logger.debug(f"observation_space: {self.observation_space}")
         logger.debug(f"action_space: {self.action_space}")
 
@@ -129,21 +143,40 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
             test_loss=test_loss,
             mean_reward=mean_reward,
         )
-
+    
     @property
     def gym_env_name(self) -> str:
+        if not isinstance(self.dataset, str):
+            logger.warning(UserWarning(
+                f"Expected self.dataset to be a str, but its {self.dataset}! "
+                f"Will try to use it anyway for now."
+            ))
+            return self.dataset
+
+        env_name: Union[str, Any]
+        if self.dataset in self.available_datasets:
+            env_name = self.available_datasets[self.dataset]
+        elif self.dataset in self.available_datasets.values():
+            env_name = self.dataset
+        else:
+            env_name = self.dataset
+            logger.error(
+                f"Env {self.dataset} isn't in the list of supported "
+                f"environments! (Will try to use it anyway for now)."
+            )
+        return env_name
+
+    def create_gym_env(self, env_name: str) -> str:
         """ Get the 'formatted' gym environment for `self.dataset`, if needed.
         """
-        if self.dataset in self.available_datasets:
-            return self.available_datasets[self.dataset]
-        for formatted_env_name in self.available_datasets.values():
-            if self.dataset == formatted_env_name:
-                return formatted_env_name
-        logger.error(
-            f"Dataset {self.dataset} isn't one of the supported datasets! "
-            "(returning it anyway, but you do this at your own peril)"
-        )
-        return self.dataset
+        env = gym.make(env_name)
+        env.reset()
+        logger.debug(f"spec: {env.spec}, Observation space: {env.observation_space}, action space: {env.action_space}")
+        if not self.observe_state_directly:
+            # BUG: There is a bug here, the env keeps rendering a screen!
+            env = PixelObservationWrapper(env, pixels_only=True)
+            logger.debug(f"spec: {env.spec}, Observation space: {env.observation_space}, action space: {env.action_space}")
+        return env
 
     def setup(self, stage=None):
         # TODO: What should we be doing here for Gym environments?

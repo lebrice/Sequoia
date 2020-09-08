@@ -235,7 +235,7 @@ def get_method_class_with_name(method_name: str,
         return potential_methods[0]
     raise RuntimeError(
         f"There are more than one potential methods with name "
-        f"{method_name} for setting {setting}, and they aren't related "
+        f"{method_name} for setting of type {type(setting)}, and they aren't related "
         f"through inheritance! (potential methods: {potential_methods}"
     )
 

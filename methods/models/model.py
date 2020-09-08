@@ -7,8 +7,11 @@ TODO: There is a bunch of work to be done here.
 from dataclasses import dataclass
 from typing import *
 
+import numpy as np
 import pytorch_lightning as pl
+import torch
 from pytorch_lightning import LightningDataModule, LightningModule
+from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
 from torch import Tensor, nn, optim
 from torch.optim.optimizer import Optimizer
@@ -113,12 +116,11 @@ class Model(LightningModule, Generic[SettingType]):
         loss_name = "test"
         return self._shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
     
-
     def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]],
                            batch_idx: int,
-                           dataloader_idx: int=None,
-                           loss_name: str="",
-                           training: bool=True,
+                           dataloader_idx: int = None,
+                           loss_name: str = "",
+                           training: bool = True,
                     ) -> Dict:
         assert loss_name
         
@@ -126,18 +128,21 @@ class Model(LightningModule, Generic[SettingType]):
             assert isinstance(dataloader_idx, int)
             loss_name += f"/{dataloader_idx}"
         
-        assert training is (not self.eval)
-
         x, y = self.preprocess_batch(batch)
-        forward_pass = self.forward(x)
+        forward_pass = self(x)
         loss: Loss = self.get_loss(forward_pass, y=y, loss_name=loss_name)
         # NOTE: loss is supposed to be a tensor, but I'm testing out giving a Loss object instead.
-        return {
-            "loss": loss.loss,
-            "log": loss.to_log_dict(),
-            "progress_bar": loss.to_pbar_message(),
-            "loss_object": loss,
-        }
+        result = loss.to_pl_dict()
+        result["objective"] = loss.losses[self.output_head.name].metric
+        return result
+
+        # return {
+        #     "loss": loss.loss,
+        #     "log": loss.to_log_dict(),
+        #     "progress_bar": loss.to_pbar_message(),
+        #     "loss_object": loss,
+        #     "objective": loss.losses[self.output_head.name].metric,
+        # }
 
     def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor = None, loss_name: str="") -> Loss:
         """Returns a Loss object containing the total loss and metrics. 
@@ -163,7 +168,8 @@ class Model(LightningModule, Generic[SettingType]):
             supervised_loss = self.output_head.get_loss(forward_pass, y=y)
             total_loss += supervised_loss
         return total_loss
-    
+
+    @auto_move_data
     def forward(self, x: Tensor) -> Dict[str, Tensor]:
         h_x = self.encode(x)
         y_pred = self.output_task(h_x)
@@ -175,7 +181,7 @@ class Model(LightningModule, Generic[SettingType]):
 
     def backward(self, trainer, loss: Tensor, optimizer: Optimizer, optimizer_idx: int) -> None:
         """ Customize the backward pass.
-        Was thinking of using the Loss object as the loss, which is a bit hacky.
+        Was thinking of using the Loss object as the loss, but it feels a bit hacky.
         """
         if isinstance(loss, Loss):
             loss.total_loss.backward()
@@ -225,52 +231,50 @@ class Model(LightningModule, Generic[SettingType]):
         elif len(batch) == 3:
             return batch[0], batch[1]
     
-    def validation_epoch_end(
-            self,
-            outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
-        ) -> Dict[str, Dict[str, Tensor]]:
-        return self._shared_epoch_end(outputs, loss_name="val")
+    # def validation_epoch_end(
+    #         self,
+    #         outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
+    #     ) -> Dict[str, Dict[str, Tensor]]:
+    #     return self._shared_epoch_end(outputs, loss_name="val")
 
-    def test_epoch_end(
-            self,
-            outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
-        ) -> Dict[str, Dict[str, Tensor]]:
-        return self._shared_epoch_end(outputs, loss_name="test")
+    # def test_epoch_end(
+    #         self,
+    #         outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
+    #     ) -> Dict[str, Dict[str, Tensor]]:
+    #     # assert False, outputs
+    #     return self._shared_epoch_end(outputs, loss_name="test")
 
-    def _shared_epoch_end(
-        self,
-        outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]],
-        loss_name: str="",
-    ) -> Dict[str, Dict[str, Tensor]]:
+    # def _shared_epoch_end(
+    #     self,
+    #     outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]],
+    #     loss_name: str="",
+    # ) -> Dict[str, Dict[str, Tensor]]:
         
-        # Sum of the metrics acquired during the epoch.
-        # NOTE: This is the 'online' metrics in the case of a training/val epoch
-        # and the 'average' & 'online' in the case of a test epoch (as they are
-        # the same in that case).
+    #     # Sum of the metrics acquired during the epoch.
+    #     # NOTE: This is the 'online' metrics in the case of a training/val epoch
+    #     # and the 'average' & 'online' in the case of a test epoch (as they are
+    #     # the same in that case).
 
-        total_loss: Loss = Loss(name=loss_name)
-        output = outputs[0]
-        # TODO: Log this somehow?
-        for output in outputs:
-            if isinstance(output, list):
-                # we had multiple test/val dataloaders (i.e. multiple tasks)
-                # We get the loss for each task at each step. The outputs are for each of the dataloaders.
-                for i, task_output in enumerate(output):
-                    task_loss = task_output["loss_object"] 
-                    total_loss += task_loss
-            elif isinstance(output, dict):
-                # There was a single dataloader: `output` is the dict returned
-                # by (val/test)_step.
-                loss_info = output["loss_object"]
-                total_loss += loss_info
-            else:
-                raise RuntimeError(f"Unexpected output: {output}")
+    #     total_loss: Loss = Loss(name=loss_name)
+    #     assert len(outputs) == 1
+    #     output = outputs[0]
 
-        return {
-            "log": total_loss.to_log_dict(),
-            "progress_bar": total_loss.to_pbar_message(),
-            "loss_object": total_loss,
-        }
+    #     for output in outputs:
+    #         if isinstance(output, list):
+    #             # we had multiple test/val dataloaders (i.e. multiple tasks)
+    #             # We get the loss for each task at each step. The outputs are for each of the dataloaders.
+    #             for i, task_output in enumerate(output):
+    #                 task_loss = task_output["loss_object"] 
+    #                 total_loss += task_loss
+    #         elif isinstance(output, dict):
+    #             # There was a single dataloader: `output` is the dict returned
+    #             # by (val/test)_step.
+    #             loss_info = output["loss_object"]
+    #             total_loss += loss_info
+    #         else:
+    #             raise RuntimeError(f"Unexpected output: {output}")
+
+    #     return total_loss.to_pl_dict()
 
     def configure_optimizers(self):
         return self.hp.make_optimizer(self.parameters())

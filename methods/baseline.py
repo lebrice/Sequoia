@@ -27,7 +27,6 @@ from .models.actor_critic_agent import ActorCritic
 from .models.class_incremental_model import ClassIncrementalModel
 from .models.iid_model import IIDModel
 from .models.task_incremental_model import TaskIncrementalModel
-from .task_incremental_method import TaskIncrementalMethod
 
 logger = get_logger(__file__)
 

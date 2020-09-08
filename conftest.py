@@ -10,7 +10,7 @@ from typing import (Any, Dict, Iterable, List, Optional, Tuple, Type, Union,
 
 import pytest
 
-import sys; sys.path += [os.path.abspath('..'), os.path.abspath('.')]
+import sys; sys.path += [os.path.abspath('.')]
 
 from common.config import Config, TrainerConfig
 from methods.method import Method

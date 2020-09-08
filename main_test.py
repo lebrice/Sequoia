@@ -65,6 +65,8 @@ def method_type(request, monkeypatch, set_argv_for_debug):
 def setting_type(request, monkeypatch, set_argv_for_debug):
     setting_class: Type[Setting] = request.param
     monkeypatch.setattr(setting_class, "apply", mock_apply)
+    for method_type in setting_class.get_all_applicable_methods():
+        monkeypatch.setattr(method_type, "apply_to", mock_apply_to)
     return setting_class
 
 

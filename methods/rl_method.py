@@ -2,7 +2,7 @@
 
 """
 from dataclasses import dataclass
-from typing import List, Optional, Type, Union, Iterable
+from typing import Iterable, List, Optional, Type, Union
 
 from pytorch_lightning import Callback, Trainer
 from pytorch_lightning.loggers import LightningLoggerBase
@@ -12,6 +12,7 @@ from settings import RLSetting
 from simple_parsing import mutable_field
 
 from .method import Method
+from .models.actor_critic_agent import ActorCritic
 from .models.agent import Agent
 
 
@@ -44,7 +45,7 @@ class RLMethod(Method, target_setting=RLSetting):
         Returns:
             Type[Agent]: The type of LightningModule to use for that setting.
         """
-        return Agent
+        return ActorCritic
 
 
 if __name__ == "__main__":

@@ -206,9 +206,20 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             Results: A Results object for this particular setting.
         """
         from methods import Method
+        from cl_trainer import CLTrainer
+        
         method: Method
-        trainer = method.trainer
+        trainer: CLTrainer = method.trainer
 
+        assert isinstance(trainer, CLTrainer), (
+            "Please use a CLTrainer rather than a Trainer."
+        )
+        task_losses: List[Loss] = trainer.test(method.model, datamodule=self, verbose=True)
+        return ClassIncrementalResults(
+            hparams=method.hparams,
+            test_loss=sum(task_losses),
+            task_losses=task_losses,
+        )
         # Run the actual evaluation.
         test_dataloaders = self.test_dataloaders()
         # TODO: Here we are 'manually' evaluating on one test dataset at a time.

@@ -21,7 +21,7 @@ class DummyRLSetting(RLSetting):
     observe_state_directly: bool = True
 
 def test_basic():
-    setting = RLSetting(observe_state_directly=True)
+    setting = RLSetting(observe_state_directly=True, dataset="cartpole")
     batch_size: int = 10
     setting.configure(config=Config(), batch_size=batch_size)
     setting.prepare_data()

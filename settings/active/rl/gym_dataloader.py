@@ -196,7 +196,7 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
 
     def send(self, actions: Optional[Tensor]) -> Tensor:
         """ Returns the reward associated with the given action, given the current state. """
-        logger.debug(f"Dataloader {self.name}: Received actions {actions}, n_sends={self.n_sends}")
+        # logger.debug(f"Dataloader {self.name}: Received actions {actions}, n_sends={self.n_sends}")
         if actions is None:
             actions = self.random_actions()
             self.n_random += 1

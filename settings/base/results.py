@@ -21,7 +21,7 @@ Setting.
 from dataclasses import dataclass
 from functools import total_ordering
 from pathlib import Path
-from typing import Any, ClassVar, TypeVar, Union
+from typing import Any, ClassVar, Dict, List, Type, TypeVar, Union
 
 from common.loss import Loss
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
@@ -30,6 +30,9 @@ from simple_parsing import Serializable
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
+
+R = TypeVar("R", bound="Results")
+
 
 @dataclass
 @total_ordering
