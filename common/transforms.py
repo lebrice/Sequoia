@@ -43,6 +43,14 @@ class FixChannels(Callable[[Tensor], Tensor]):
             x = x.repeat(1, 3, 1, 1)
         return x
 
+class nhwc_to_nchw(Callable[[Tensor], Tensor]):
+    def __call__(self, x: Tensor) -> Tensor:
+        return x.transpose(1, 3)
+
+class nchw_to_nhwc(Callable[[Tensor], Tensor]):
+    def __call__(self, x: Tensor) -> Tensor:
+        return x.transpose(3, 1)
+
 from torchvision.transforms import RandomGrayscale
 
 
@@ -60,6 +68,8 @@ class Transforms(Enum):
     fix_channels = FixChannels()
     to_tensor = ToTensorIfNeeded()
     random_grayscale = RandomGrayscale()
+    channels_first = nhwc_to_nchw()
+    channels_last = nhwc_to_nchw()
 
     def __call__(self, x):
         return self.value(x)
@@ -102,8 +112,6 @@ def encode_transforms(v: Transforms) -> str:
 def decode_transforms(v: str) -> Transforms:
     print(f"Decoding a Transforms object: {v}, {Transforms[v]}")
     return Transforms[v]
-register_decoding_fn
-
 
 
 if __name__ == "__main__":

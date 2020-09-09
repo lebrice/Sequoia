@@ -27,9 +27,11 @@ from .class_incremental_method import (ClassIncrementalMethod,
                                        ClassIncrementalModel)
 from .method import Method
 from .models import HParams, Model
+from .models.actor_critic_agent import ActorCritic
 from .models.agent import Agent
 from .models.iid_model import IIDModel
 from .models.self_supervised_model import SelfSupervisedModel
+from .models.task_incremental_model import TaskIncrementalModel
 
 logger = get_logger(__file__)
 
@@ -50,11 +52,10 @@ class SelfSupervisedClassIncrementalModel(SelfSupervisedModel, ClassIncrementalM
     class HParams(SelfSupervisedModel.HParams, ClassIncrementalModel.HParams):
         pass
 
-class SelfSupervisedAgent(SelfSupervisedModel, Agent):
+class SelfSupervisedActorCritic(SelfSupervisedModel, ActorCritic):
     @dataclass
-    class HParams(SelfSupervisedModel.HParams, Agent.HParams):
+    class HParams(SelfSupervisedModel.HParams, ActorCritic.HParams):
         pass
-
 
 
 # TODO: Not sure if this is better than defining all the models above.
@@ -106,7 +107,7 @@ class SelfSupervision(Method, target_setting=Setting):
 
     @model_class.register
     def _(self, setting: RLSetting):
-        return SelfSupervisedAgent
+        return SelfSupervisedActorCritic
 
 if __name__ == "__main__":
     SelfSupervision.main()

@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from common.metrics import ClassificationMetrics
 from settings import TaskIncrementalResults, TaskIncrementalSetting
 from simple_parsing import ParsingError
@@ -29,6 +28,7 @@ def test_parsing_hparams_multihead():
     assert not hp.multihead
 
 
+@pytest.mark.skip(reason="This doesn't really belong here anymore")
 def test_fast_dev_run_multihead(tmp_path: Path):
     setting = TaskIncrementalSetting(
         dataset="mnist",

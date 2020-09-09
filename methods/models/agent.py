@@ -22,16 +22,17 @@ from settings import RLSetting
 from settings.active import ActiveDataLoader
 from settings.active.rl import GymDataLoader
 from utils import prod, try_get
+from utils.json_utils import Pickleable
 from utils.logging_utils import get_logger
 
 from .hparams import HParams as BaseHParams
 from .model import Model
+from .output_heads import OutputHead
 
 logger = get_logger(__file__)
 SettingType = TypeVar("SettingType", bound=RLSetting)
 
-
-class Agent(LightningModule, Generic[SettingType]):
+class Agent(Model[SettingType], Pickleable):
     """ LightningModule that interacts with `ActiveDataLoader` dataloaders.
     """
     @dataclass
@@ -39,40 +40,16 @@ class Agent(LightningModule, Generic[SettingType]):
         """ HParams of the Agent. """
 
     def __init__(self, setting: RLSetting, hparams: HParams, config: Config):
-        super().__init__()
-        # super().__init__(setting=setting, hparams=hparams, config=config)
-        self.setting: RLSetting = setting
-        self.datamodule: LightningDataModule = setting
-        self.hp = hparams
-        self.config = config
-        
-        # TODO: @lebrice fix any bugs that may occur when saving the hparams to file.
-        # self.save_hyperparameters()
-
-        self._train_loader: Optional[ActiveDataLoader] = None
-        self._val_loader: Optional[ActiveDataLoader] = None
-        self._test_loader: Optional[ActiveDataLoader] = None
-
+        # super().__init__()
+        super().__init__(setting=setting, hparams=hparams, config=config)
+        self.setting: RLSetting
+        assert self.setting.dims == self.setting.obs_shape
         self.input_shape  = self.setting.obs_shape
         self.output_shape = self.setting.action_shape
+        self.action_shape = self.setting.action_shape
         self.reward_shape = self.setting.reward_shape
-
-        assert self.input_shape
-        logger.debug(f"setting: {self.setting}")
-        logger.debug(f"Input shape: {self.input_shape}")
-        logger.debug(f"Output shape: {self.output_shape}")
-        logger.debug(f"Reward shape: {self.reward_shape}")
-
-        self.total_reward: Tensor = 0.  # type: ignore
         
-        # Here we assume that all methods have a form of 'encoder' and 'output head'.
-        # self.encoder, self.hidden_size = self.hp.make_encoder()
-        # self.output_head = self.create_output_head()
-        if self.config.debug and self.config.verbose:
-            logger.debug("Config:")
-            logger.debug(self.config.dumps(indent="\t"))
-            logger.debug("Hparams:")
-            logger.debug(self.hp.dumps(indent="\t"))
+        self.total_reward: Tensor = 0.  # type: ignore
 
     def configure_optimizers(self):
         return self.hp.make_optimizer(self.parameters())
@@ -130,7 +107,7 @@ class Agent(LightningModule, Generic[SettingType]):
         if action is None:
             raise RuntimeError("The dict returned by `forward()` must include "
                                "either a 'action' or 'y_pred' entry.")
-        return action.cpu().numpy()
+        return action.detach().cpu().numpy()
 
     def shared_step(self,
                     batch: Tuple[Tensor, Tensor],
@@ -205,7 +182,6 @@ class Agent(LightningModule, Generic[SettingType]):
                         optimizer_idx: int = None,
                         dataloader_idx: int = None,
                         **kwargs):
-        super().validation_step()
         return self.shared_step(
             batch,
             batch_idx=batch_idx,
@@ -224,8 +200,8 @@ class Agent(LightningModule, Generic[SettingType]):
                   **kwargs):
         return self.shared_step(
             batch,
-            environment=self.setting.test_env,
             batch_idx=batch_idx,
+            environment=self.setting.test_env,
             optimizer_idx=optimizer_idx,
             dataloader_idx=dataloader_idx,
             loss_name="test",

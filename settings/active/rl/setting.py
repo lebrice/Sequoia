@@ -50,7 +50,7 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
     dataset: str = choice(available_datasets, default="pendulum")
 
     # Transformations to use. See the Transforms enum for the available values.
-    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels)
+    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels, Transforms.channels_first)
     
     # Starting with batch size fixed to 2 for now.
     # batch_size: int = 2
@@ -78,9 +78,9 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
 
         assert self.observation_space.shape
         obs_shape: Tuple[int, ...] = self.observation_space.shape
-        action_shape: Tuple[int, ...] = self.action_space.shape or (1,)
+        action_shape: Tuple[int, ...] = self.action_space.shape
         # NOTE: We assume scalar rewards for now.
-        reward_shape: Tuple[int, ...] = (1,)
+        reward_shape: int = 1
         self.reward_range: Tuple[float, float] = temp_env.reward_range
 
         temp_env.close()
@@ -127,6 +127,8 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
             # test_dataloaders=self.test_dataloader(),
             verbose=True,
         )
+        # TODO: Add this 'evaluate' routine to the CL Trainer?
+        # assert False, test_outputs 
         if not test_outputs:
             raise RuntimeError(f"Test outputs should have been produced!")
         
@@ -199,6 +201,7 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         self._train_loader = GymDataLoader(
             dataset,
             observe_pixels=not self.observe_state_directly,
+            transforms=self.train_transforms,
             name="train",
             **kwargs
         )
@@ -216,6 +219,7 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         self._val_loader = GymDataLoader(
             dataset,
             observe_pixels=not self.observe_state_directly,
+            transforms=self.val_transforms,
             name="val",
             **kwargs
         )
@@ -233,6 +237,7 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         self._test_loader = GymDataLoader(
             dataset,
             observe_pixels=not self.observe_state_directly,
+            transforms=self.test_transforms,
             name="test",
             **kwargs,
             

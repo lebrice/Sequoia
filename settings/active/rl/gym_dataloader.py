@@ -65,6 +65,7 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
     def __init__(self,
                  env: Union[str, gym.Env],
                  observe_pixels: bool = True,
+                 transforms: Optional[Callable] = None, 
                  batch_size: int = 1,
                  num_workers: int = 0,
                  max_steps: int = 10_000,
@@ -73,6 +74,7 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
                  collate_fn: Optional[Callable[[List[Tensor]], Tensor]] = collate_fn,
                  name: str = "",
                   **kwargs):
+        self.transforms = transforms
         self.kwargs = kwargs
         # NOTE: This assumes that the 'env' isn't already batched, i.e. that it
         # only returns one observation and one reward per action.
@@ -134,6 +136,10 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
             if done:
                 env.reset()
         self.observation = torch.as_tensor(observations)
+        if self.transforms:
+            # Apply the transforms to the observations.
+            self.observation = self.transforms(self.observation)
+
         self.reward = torch.as_tensor(rewards)
         infos = {}
         self.n_steps += 1
@@ -145,6 +151,8 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
             # This would basically just return the entries from `self.dataset`.
             # return super().__iter__()
             self.observation = self.reset()
+            if self.transforms:
+                self.observation = self.transforms(self.observation)
             for i in range(self.max_steps):
                 logger.debug(
                     f"Dataloader {self.name}: step {i}, "

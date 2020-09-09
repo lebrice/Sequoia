@@ -29,7 +29,7 @@ class RLTrainerConfig(TrainerConfig):
 @dataclass
 class RLMethod(Method, target_setting=RLSetting):
     """ Method aimed at solving an RL setting. """
-
+    
     # Options for the Trainer object.
     trainer_options: RLTrainerConfig = mutable_field(RLTrainerConfig)
 

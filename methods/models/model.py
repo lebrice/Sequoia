@@ -50,12 +50,13 @@ class Model(LightningModule, Generic[SettingType]):
 
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__()
+        # super().__init__(setting=setting, hparams=hparams, config=config)
         self.setting: SettingType = setting
         self.datamodule: LightningDataModule = setting
         self.hp = hparams
         self.config: Config = config
 
-        self.save_hyperparameters()
+        # self.save_hyperparameters()
 
         self.input_shape  = self.setting.dims
         self.output_shape = self.setting.action_shape
@@ -98,6 +99,8 @@ class Model(LightningModule, Generic[SettingType]):
         return h_x
 
     def output_task(self, h_x: Tensor) -> Tensor:
+        if self.hp.detach_output_head:
+            h_x = h_x.detach()
         return self.output_head(h_x)
 
     def create_output_head(self) -> OutputHead:

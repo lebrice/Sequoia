@@ -159,12 +159,11 @@ class CLTrainer(Trainer):
         logger.info(f"No registered custom testing procedure for setting of type {type(setting)}.")
         logger.info(f"Defaulting back to super().test(model, datamodule=setting)")
         # setup data, etc...
-        assert False, "todo: remove this"
         super().test(datamodule=setting, ckpt_path=ckpt_path, verbose=verbose)
 
     @test_setting.register
     def test_class_incremental(self,
-                               setting: Setting,
+                               setting: ClassIncrementalSetting,
                                model: LightningModule,
                                ckpt_path: Optional[str] = 'best',
                                verbose: bool = True,):
