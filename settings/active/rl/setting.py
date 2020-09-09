@@ -174,7 +174,7 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         env = gym.make(env_name)
         env.reset()
         logger.debug(f"spec: {env.spec}, Observation space: {env.observation_space}, action space: {env.action_space}")
-        if not self.observe_state_directly:
+        if not self.observe_state_directly and not isinstance(env, PixelObservationWrapper):
             # BUG: There is a bug here, the env keeps rendering a screen!
             env = PixelObservationWrapper(env, pixels_only=True)
             logger.debug(f"spec: {env.spec}, Observation space: {env.observation_space}, action space: {env.action_space}")

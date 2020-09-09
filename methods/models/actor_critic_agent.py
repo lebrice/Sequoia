@@ -57,16 +57,6 @@ class ActorCritic(Agent):
     def __init__(self, setting: RLSetting, hparams: "ActorCritic.HParams", config: Config):
         super().__init__(setting, hparams, config)
         self.loss_fn: Callable[[Tensor, Tensor], Tensor] = torch.dist
-    
-    def forward(self, x: Tensor) -> Dict[str, Tensor]:
-        x, _ = self.preprocess_batch(x, None)
-        h_x = self.encode(x)
-        y_pred = self.output_task(h_x)
-        return dict(
-            x=x,
-            h_x=h_x,
-            y_pred=y_pred,
-        )
 
     @auto_move_data
     def forward(self, batch: Union[Tensor, Tuple[Tensor, Tensor, List[bool], Dict]]) -> Dict[str, Tensor]:
@@ -93,7 +83,6 @@ class ActorCritic(Agent):
         """ Create the output head for the task. """
         # TODO: Should the value and policy be different output heads?
         return ActorCriticHead(self.hidden_size, self.output_shape)
-        # return OutputHead(self.hidden_size, self.output_shape, name="classification")
 
     def get_value(self, observation: Tensor, action: Tensor) -> Tensor:
         # FIXME: This is here just for debugging purposes.  
@@ -120,8 +109,8 @@ class ActorCritic(Agent):
         action = forward_pass["action"]
         predicted_reward = forward_pass["predicted_reward"]
         total_loss: Loss = Loss(loss_name)  
-               
-        nce = self.loss_fn(predicted_reward, reward)
+        
+        nce = self.loss_fn(predicted_reward, reward.type_as(predicted_reward))
         critic_loss = Loss("critic", loss=nce)
         total_loss += critic_loss
         # TODO: doing this from memory, actor-critic is definitely not that simple.
