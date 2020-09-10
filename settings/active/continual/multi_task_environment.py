@@ -1,10 +1,11 @@
 from collections import OrderedDict
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Union
 
 import gym
 import matplotlib.pyplot as plt
 import numpy as np
 from gym.envs.classic_control import CartPoleEnv
+from gym.envs.registration import register
 
 from utils.logging_utils import get_logger
 
@@ -17,9 +18,11 @@ task_param_names: Dict[str, List[str]] = {
         "force_mag",
         "tau",
     ]
+    # TODO: Add more of the classic control envs here.
 }
 
 logger = get_logger(__file__)
+
 
 class MultiTaskEnvironment(gym.Wrapper):
     """ Wrapper for an environment that adds the ability to randomly switch the
@@ -62,7 +65,7 @@ class MultiTaskEnvironment(gym.Wrapper):
                 ))
         self.task_schedule = task_schedule or {}
         self.task_params: List[str] = task_params
-        self.default_task = self.get_current_task().copy()
+        self.default_task: np.ndarray = self.current_task.copy()
         self.default_task_dict: Dict[str, float] = self.current_task_dict()
         self._step: int = 0
 
@@ -71,12 +74,13 @@ class MultiTaskEnvironment(gym.Wrapper):
         # that given step.
         if self._step in self.task_schedule:
             self.update_task(self.task_schedule[self._step])
-        super().step(*args, **kwargs)
+        results = super().step(*args, **kwargs)
         self._step += 1
+        return results
 
-    # @property
-    # def current_task(self) -> Optional[np.ndarray]:
-    def get_current_task(self) -> Optional[np.ndarray]:
+    @property
+    def current_task(self) -> Optional[np.ndarray]:
+    # def get_current_task(self) -> Optional[np.ndarray]:
         if not self.task_params:
             # No defined parameters to change, so returning None.
             return None
@@ -87,9 +91,12 @@ class MultiTaskEnvironment(gym.Wrapper):
             getattr(self.env.unwrapped, name) for name in self.task_params
         ])
 
-    # @current_task.setter
-    def set_current_task(self, value: Sequence[float]):
+    @current_task.setter
+    def current_task(self, value: Union[Dict[str, float], Sequence[float]]):
+        logger.debug(f"(_step: {self._step}): Setting the current task to {value}.")
+
         assert len(value) == len(self.task_params), "lengths should match!"
+        
         for name, param_value in zip(self.task_params, value):
             assert hasattr(self.env.unwrapped, name), (
                 f"the unwrapped environment doesn't have a {name} attribute!"
@@ -99,9 +106,6 @@ class MultiTaskEnvironment(gym.Wrapper):
     def current_task_dict(self) -> Dict[str, float]:
         return OrderedDict(zip(self.task_params, self.current_task))
 
-    #FIXME: Seems like we can't use a @property decorator on a Wrapper? 
-    current_task = property(get_current_task, set_current_task)
-    
     def random_task(self) -> np.ndarray:
         mult = np.random.normal(
             loc=1,
@@ -113,32 +117,48 @@ class MultiTaskEnvironment(gym.Wrapper):
         task = mult * self.default_task
         return task
 
-    def update_task(self, values: Sequence[float] = None, **kwargs):
-        """Updates the current ask with the values.
-        """
-        if values:
-            new_task = values
-        elif kwargs:    
-            d = self.current_task_dict()
-            d.update(kwargs)
-            new_task = [d[k] for k in self.task_params]
-        else:
-            new_task = self.random_task()
-        self.current_task = np.asarray(new_task)
-        self.set_current_task(self.current_task)
+    def update_task(self, values: Union[Sequence[float], Dict[str, float]] = None, **kwargs):
+        """Updates the current ask with the params from values or kwargs.
 
-    def reset(self, new_task: bool = False, **kwargs):
-        if new_task:
+        NOTE: When passing a dictionary, any missing param is set back to its
+        default value, not the value from the last task.
+        """
+        new_task_dict = self.default_task_dict.copy()
+        assert values is not None or kwargs, "use one of 'values' or 'kwargs', not both."
+        if values is not None:
+            if isinstance(values, dict):
+                new_task_dict.update(values)
+            else:
+                new_task_dict.update(zip(self.task_params, values))   
+        elif kwargs:
+            new_task_dict.update(kwargs)
+        else:
+            raise RuntimeError(f"Unrecognized values: {values}")
+
+        self.current_task = np.array([new_task_dict[k] for k in self.task_params])
+        assert self.current_task_dict() == new_task_dict, (self.current_task_dict(), new_task_dict)
+
+    def reset(self, new_random_task: bool = False, **kwargs):
+        if new_random_task:
             self.current_task = self.random_task()
-            # idk why this is needed, but whatever.
-            self.set_current_task(self.current_task)
-        super().reset(**kwargs)
+        return super().reset(**kwargs)
 
     def seed(self, seed: Optional[int] = None) -> None:
         if seed is not None:
             np.random.seed(seed)
-        super().seed(seed)
+        return super().seed(seed)
+
 
 def MultiTaskCartPole():
     env = gym.make("CartPole-v0")
-    return MultiTaskEnvironment(env, noise_std=0.5)
+    return MultiTaskEnvironment(env, noise_std=0.1)
+
+MULTI_TASK_CARTPOLE: str = 'MultiTaskCartPole-v1'
+
+try:
+    register(
+        id=MULTI_TASK_CARTPOLE,
+        entry_point='settings.active.continual.multi_task_environment:MultiTaskCartPole',
+    )
+except gym.error.Error:
+    pass

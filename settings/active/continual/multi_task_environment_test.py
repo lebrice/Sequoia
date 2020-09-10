@@ -4,10 +4,42 @@ import gym
 import matplotlib.pyplot as plt
 import pytest
 
+from gym.envs.classic_control import CartPoleEnv
 from .multi_task_environment import MultiTaskEnvironment
+supported_environments: List[str] = ["CartPole-v0"]
+
+def test_task_schedule():
+    original: CartPoleEnv = gym.make("CartPole-v0")
+    starting_length = original.length
+    starting_gravity = original.gravity
+
+    task_schedule = {
+        10: dict(length=0.1),
+        20: dict(length=0.2, gravity=-12.0),
+        30: dict(gravity=0.9),
+    }
+    env = MultiTaskEnvironment(original, task_schedule=task_schedule)
+    env.seed(123)
+    env.reset()
+    for step in range(100):
+        _, _, done, _ = env.step(env.action_space.sample())
+        env.render()
+        if done:
+            env.reset()
+
+        if 0 <= step < 10:
+            assert env.length == starting_length and env.gravity == starting_gravity
+        elif 10 <= step < 20:
+            assert env.length == 0.1
+        elif 20 <= step < 30:
+            assert env.length == 0.2 and env.gravity == -12.0
+        elif step >= 30:
+            assert env.length == starting_length and env.gravity == 0.9
+
+    env.close()
 
 
-@pytest.mark.parametrize("environment_name", ["CartPole-v0"])
+@pytest.mark.parametrize("environment_name", supported_environments)
 def test_multi_task(environment_name: str):   
     original = gym.make(environment_name)  
     env = MultiTaskEnvironment(original)
@@ -19,16 +51,16 @@ def test_multi_task(environment_name: str):
         for i in range(20):
             observation, reward, done, info = env.step(env.action_space.sample())
             env.render()
-        env.reset(new_task=True)
+        env.reset(new_random_task=True)
         print(f"New task: {env.current_task_dict}")
     env.close()
     plt.ioff()
     plt.close()
 
-from gym.envs.classic_control import CartPoleEnv
 
-@pytest.mark.parametrize("environment_name", ["CartPole-v0"])
 
+@pytest.mark.skip(reason="This generates some output, uncomment this to run it.")
+@pytest.mark.parametrize("environment_name", supported_environments)
 def test_monitor_env(environment_name):
     original = gym.make(environment_name)
     # original = CartPoleEnv()
@@ -61,4 +93,5 @@ def test_monitor_env(environment_name):
     env.close()
     plt.ioff()
     plt.close()
+
 

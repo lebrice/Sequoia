@@ -13,7 +13,9 @@ import gym
 import numpy as np
 
 from .multi_task_environment import MultiTaskEnvironment
+from utils.logging_utils import get_logger
 
+logger = get_logger(__file__)
 
 class SmoothTransitions(MultiTaskEnvironment):
     def __init__(self,
@@ -34,7 +36,7 @@ class SmoothTransitions(MultiTaskEnvironment):
         self.next_task_step: int = 0
 
         self.prev_task_array: np.ndarray = self.default_task
-        self.prev_task_dict: Dict[str, float] = self.default_task_dict
+        self.prev_task_dict: Dict[str, float] = self.default_task_dict.copy()
         
         self.next_task_array: Optional[np.ndarray] = None
         self.next_task_dict: Dict[str, float] = {}
@@ -44,6 +46,9 @@ class SmoothTransitions(MultiTaskEnvironment):
         # List of sorted task steps.
         self.task_steps: List[int] = sorted(self.task_schedule.keys())
 
+        if self.task_schedule and 0 not in self.task_schedule:
+            self.task_schedule[0] = self.default_task_dict.copy()
+          
         for step in self.task_steps:
             task = self.task_schedule[step]
             if isinstance(task, dict):
@@ -65,10 +70,10 @@ class SmoothTransitions(MultiTaskEnvironment):
             self.task_dicts[step] = task_dict
             self.task_arrays[step] = task_array
 
+
     def smooth_update(self) -> None:
         if not self.task_schedule:
             return
-
         # We update the task at every step, based on a smooth mix of the
         # previous and the next task. Every time we reach a _step that is in the
         # task schedule, we update the 'prev_task_step' and 'next_task_step'
@@ -76,27 +81,39 @@ class SmoothTransitions(MultiTaskEnvironment):
         if self._step in self.task_steps:
             # We are on a task boundary!
             index = self.task_steps.index(self._step)
-            if index == len(self.task_steps) - 1:
-                # TODO: We're at the last task in the schedule, so we keep
-                # that last task as it is forever.
-                return
-            self.prev_task_step = self.task_steps[index]
-            self.next_task_step = self.task_steps[index + 1]
-            self.prev_task_array = self.task_arrays[self.prev_task_step]
-            self.next_task_array = self.task_arrays[self.next_task_step]
-            self.prev_task_dict = self.task_dicts[self.prev_task_step]
-            self.next_task_dict = self.task_dicts[self.next_task_step]
+        else:
+            index = bisect.bisect_left(self.task_steps, self._step)
+            logger.debug(f"(step: {self._step}, task steps: {self.task_steps}, index: {index}")
+        
+        if index == len(self.task_steps) - 1:
+            # TODO: We're at the last task in the schedule, so we keep
+            # that the current task as-is, forever.
+            return
+
+        self.prev_task_step = self.task_steps[index]
+        self.next_task_step = self.task_steps[index + 1]
+        self.prev_task_array = self.task_arrays[self.prev_task_step]
+        self.next_task_array = self.task_arrays[self.next_task_step]
+        self.prev_task_dict = self.task_dicts[self.prev_task_step]
+        self.next_task_dict = self.task_dicts[self.next_task_step]
 
         dist_prev = self._step - self.prev_task_step
         dist_next = self.next_task_step - self._step
-
-        assert dist_prev >= 0 and dist_next >= 0
+        logger.debug(f"dist prev: {dist_prev}, dist next: {dist_next}")
         # TODO: Could be interesting to try some fancier interpolation here!
         total_dist = dist_next + dist_prev
-        current_task_array = (
-            (dist_prev / total_dist) * self.prev_task_array +
-            (dist_next / total_dist) * self.next_task_array
+
+        assert dist_prev >= 0 and dist_next >= 0
+        assert total_dist > 0
+        current_task_array = self.prev_task_array + (dist_next / total_dist) * (
+            self.next_task_array - self.prev_task_array
         )
+        #     (dist_next / total_dist) * self.prev_task_array
+        #     (dist_prev / total_dist) * self.next_task_array
+        # )
+        logger.debug(f"prev: {self.prev_task_array}")
+        logger.debug(f"next: {self.next_task_array}")
+        logger.debug(f"Weighted Average: {current_task_array}")
         # Set the current task to weighted average.
         self.update_task(current_task_array)
 
@@ -104,8 +121,11 @@ class SmoothTransitions(MultiTaskEnvironment):
         self.smooth_update()
         return super().step(*args, **kwargs)
 
-    def reset(self, new_task=True, **kwargs):
-        if new_task:
-            self.current_task = self.p * self.current_task + (1-self.p) * self.random_task()
-            self.set_current_task(self.current_task)
-        return super().reset(new_task=False, **kwargs)
+    def reset(self, **kwargs):
+        return super().reset(**kwargs)
+        self.smooth_update()
+
+    # @property
+    # def task_schedule(self) -> Dict[int, Dict[str, float]]:
+    #     return self._task_schedule
+    
