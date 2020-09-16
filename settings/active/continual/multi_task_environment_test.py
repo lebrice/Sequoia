@@ -52,7 +52,7 @@ def test_multi_task(environment_name: str):
             observation, reward, done, info = env.step(env.action_space.sample())
             env.render()
         env.reset(new_random_task=True)
-        print(f"New task: {env.current_task_dict}")
+        print(f"New task: {env.current_task}")
     env.close()
     plt.ioff()
     plt.close()
@@ -86,10 +86,10 @@ def test_monitor_env(environment_name):
             if done:
                 env.reset(new_task=False)
 
-            task_param_values.append(env.current_task_dict())
+            task_param_values.append(env.current_task.copy())
             # env.update_task(length=(i + 1) / 100 * 2 * default_length)
         env.update_task()
-        print(f"New task: {env.current_task_dict()}")
+        print(f"New task: {env.current_task.copy()}")
     env.close()
     plt.ioff()
     plt.close()

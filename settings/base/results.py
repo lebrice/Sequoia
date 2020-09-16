@@ -25,7 +25,6 @@ from typing import Any, ClassVar, Dict, List, Type, TypeVar, Union
 
 from common.loss import Loss
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
-from methods.models import Model
 from simple_parsing import Serializable
 from utils.logging_utils import get_logger
 
@@ -47,9 +46,8 @@ class Results(Serializable):
     For instance, in a Task-Incremental experiment, the objective is different
     than in an RL experiment.
     """
-    hparams: Model.HParams
+    hparams: Any
     test_loss: Loss
-    
     lower_is_better: ClassVar[bool] = False
 
     @property

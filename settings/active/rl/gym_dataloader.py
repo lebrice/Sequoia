@@ -59,13 +59,15 @@ def collate_fn(batch: List[Tensor]) -> Tensor:
         batch = torch.stack(batch)
     return batch
 
+
 class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
     """ActiveDataLoader made specifically for (possibly batched) Gym envs.
     """
     def __init__(self,
-                 env: Union[str, gym.Env],
+                 env: str = None,
+                 env_factory: Callable[[], gym.Env] = None,
                  observe_pixels: bool = True,
-                 transforms: Optional[Callable] = None, 
+                 transforms: Optional[Callable] = None,
                  batch_size: int = 1,
                  num_workers: int = 0,
                  max_steps: int = 10_000,
@@ -74,15 +76,18 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
                  collate_fn: Optional[Callable[[List[Tensor]], Tensor]] = collate_fn,
                  name: str = "",
                   **kwargs):
+        assert env or env_factory, "One of `env` or `env_factory` must be set."
         self.transforms = transforms
         self.kwargs = kwargs
         # NOTE: This assumes that the 'env' isn't already batched, i.e. that it
         # only returns one observation and one reward per action.
         self.environments: List[GymDataset] = [
-            GymDataset(env, observe_pixels=observe_pixels) for _ in range(batch_size)
+            GymDataset(
+                env if env else env_factory(),
+                observe_pixels=observe_pixels
+            ) for _ in range(batch_size)
         ]
         self._observe_pixels = observe_pixels
-        self.dataset = ZipDataset(self.environments)
         self.name = name
         # Counts when an action is sent back to the dataloader using send()
         self.n_sends: int = 0
@@ -108,6 +113,8 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
                 "Number of workers should be 0 or batch_size when using a "
                 "GymDataLoader."
             )
+        # This 'dataset' attribute isn't really used atm.
+        self.dataset = ZipDataset(self.environments)
         # init the dataloader.
         super().__init__(
             self.dataset,
@@ -153,11 +160,12 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
             self.observation = self.reset()
             if self.transforms:
                 self.observation = self.transforms(self.observation)
+
             for i in range(self.max_steps):
                 logger.debug(
                     f"Dataloader {self.name}: step {i}, "
                     f"n_steps={self.n_steps}, n_sends={self.n_sends} "
-                    f"n_random={self.n_random}"
+                    f"n_random={self.n_random}, self.observation.shape: {self.observation.shape}"
                 )
                 if i != self.n_steps:
                     if self.random_actions_when_missing:
@@ -216,6 +224,7 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
                 f"({len(self.environments)}"
             )
         self.n_sends += 1
+        logger.debug(f"actions: {actions}")
         self.observation, self.reward, _, _ = self.step(actions)
         return self.reward
 

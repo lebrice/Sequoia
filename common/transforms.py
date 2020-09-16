@@ -45,10 +45,14 @@ class FixChannels(Callable[[Tensor], Tensor]):
 
 class nhwc_to_nchw(Callable[[Tensor], Tensor]):
     def __call__(self, x: Tensor) -> Tensor:
+        if x.ndimension() != 4:
+            return x
         return x.transpose(1, 3)
 
 class nchw_to_nhwc(Callable[[Tensor], Tensor]):
     def __call__(self, x: Tensor) -> Tensor:
+        if x.ndimension() != 4:
+            return x
         return x.transpose(3, 1)
 
 from torchvision.transforms import RandomGrayscale

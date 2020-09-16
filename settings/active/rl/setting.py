@@ -23,6 +23,7 @@ from utils.logging_utils import get_logger
 from ..active_dataloader import ActiveDataLoader
 from .gym_dataloader import GymDataLoader
 from .gym_dataset import GymDataset
+from .mtcartpole import MultiTaskCartPole
 from .results import RLResults
 
 logger = get_logger(__file__)
@@ -35,7 +36,7 @@ class SettingOptions(Serializable, Parseable, Pickleable):
     # use dataclasses.)
     pass
 
-
+from ..continual.multi_task_environment import MULTI_TASK_CARTPOLE
 @dataclass
 class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
     """
@@ -45,12 +46,14 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
     available_datasets: ClassVar[Dict[str, str]] = {
         "cartpole": "CartPole-v0",
         "pendulum": "Pendulum-v0",
+        # "mtcartpole": "MultiTaskCartPole-v0",
+        "mtcartpole": MULTI_TASK_CARTPOLE,
     }
     observe_state_directly: bool = False
     dataset: str = choice(available_datasets, default="pendulum")
 
     # Transformations to use. See the Transforms enum for the available values.
-    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels, Transforms.channels_first)
+    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.channels_first)
     
     # Starting with batch size fixed to 2 for now.
     # batch_size: int = 2
@@ -98,7 +101,7 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
 
         self.dataloader_kwargs = dict(
             # default batch size?
-            # batch_size=32,
+            batch_size=None,
         )
         self.dims = self.obs_shape
 
@@ -188,7 +191,6 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         # TODO: What should we be doing here for Gym environments?
         super().prepare_data(*args, **kwargs)
 
-
     def train_dataloader(self, **kwargs) -> GymDataLoader:
         """Returns an ActiveDataLoader (GymDataLoader) for the training env.
 
@@ -200,7 +202,7 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         kwargs["num_workers"] = kwargs["batch_size"]
         self._train_loader = GymDataLoader(
             dataset,
-            observe_pixels=not self.observe_state_directly,
+            observe_pixels=(not self.observe_state_directly),
             transforms=self.train_transforms,
             name="train",
             **kwargs

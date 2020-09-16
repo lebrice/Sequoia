@@ -3,6 +3,7 @@ from typing import Dict, List
 
 import gym
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 
 from .smooth_environment import SmoothTransitions
@@ -17,12 +18,12 @@ def test_task_schedule():
     
     end_length = 5 * starting_length
     end_gravity = 5 * starting_gravity
-    total_steps = 1000
+    total_steps = 100
     # Increase the length linearly up to 3 times the starting value.
     # Increase the gravity linearly up to 5 times the starting value.
     task_schedule: Dict[int, Dict[str, float]] = {
-        0: dict(length=starting_length, gravity=starting_gravity),
-        total_steps: dict(length=starting_length, gravity=end_gravity),
+        # 0: dict(length=starting_length, gravity=starting_gravity),
+        total_steps: dict(length=end_length, gravity=end_gravity),
     }
     env = SmoothTransitions(
         original,
@@ -41,20 +42,22 @@ def test_task_schedule():
     params: Dict[int, Dict[str, float]] = OrderedDict()
 
     for step in range(total_steps):
-        assert env.length == starting_length + (step / total_steps) * (end_length - starting_length)
-        assert env.gravity == starting_gravity + (step / total_steps) * (end_gravity - starting_gravity)
-        
-        _, reward, done, _ = env.step(env.action_space.sample())
-        env.render()
+        expected_steps = starting_length + (step / total_steps) * (end_length - starting_length)
+        expected_gravity = starting_gravity + (step / total_steps) * (end_gravity - starting_gravity)
 
+        _, reward, done, _ = env.step(env.action_space.sample())
+        assert np.isclose(env.length, expected_steps)
+        assert np.isclose(env.gravity, expected_gravity)
+
+        env.render()
         if done:
             env.reset()
-        current_task_state = env.current_task_dict()
-        params[step] = current_task_state
+
+        params[step] = env.current_task.copy()
 
         # print(f"New task: {env.current_task_dict()}")
 
-    assert False, params[step]
+    # assert False, params[step]
     env.close()
     plt.ioff()
     plt.close()
