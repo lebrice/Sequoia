@@ -36,7 +36,9 @@ class SettingOptions(Serializable, Parseable, Pickleable):
     # use dataclasses.)
     pass
 
-from ..continual.multi_task_environment import MULTI_TASK_CARTPOLE
+from common.gym_wrappers.multi_task_environment import MULTI_TASK_CARTPOLE
+
+
 @dataclass
 class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
     """

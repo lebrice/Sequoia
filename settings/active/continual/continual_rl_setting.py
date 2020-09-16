@@ -13,9 +13,7 @@ from utils import dict_union
 from utils.logging_utils import get_logger
 
 from .. import ActiveSetting
-from .multi_task_environment import MultiTaskEnvironment
-from .smooth_environment import SmoothTransitions
-from common.gym_wrappers import PixelStateWrapper
+from common.gym_wrappers import MultiTaskEnvironment, SmoothTransitions, PixelStateWrapper
 logger = get_logger(__file__)
 
 @dataclass
