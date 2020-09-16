@@ -63,6 +63,32 @@ def test_task_schedule():
     plt.close()
 
 
+def test_update_only_on_reset():
+    """Test that when using the 'only_update_on_episode_end' argument with a
+    value of True, the smooth updates don't occur during the episodes, but only
+    once after an episode has ended (when `reset()` is called).
+    """
+    total_steps = 100
+    original = gym.make("CartPole-v0")
+    start_length = original.length
+    end_length = 10.0
+    task_schedule = {
+        total_steps: dict(length=end_length)
+    }
+    env = SmoothTransitions(
+        original,
+        task_schedule=task_schedule,
+        only_update_on_episode_end=True,
 
-if __name__ == "__main__":
-    test_monitor_env("CartPole-v0")
+    )
+    env.reset()
+    env.seed(123)
+    expected_length = start_length
+    for i in range(total_steps):
+        assert env.steps == i
+        _, _, done, _ = env.step(env.action_space.sample())
+        assert env.steps == i + 1
+        if done:
+            _ = env.reset()
+            expected_length = start_length + ((i+1) / total_steps) * (end_length - start_length)
+        assert np.isclose(env.length, expected_length)

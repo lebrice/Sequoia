@@ -1,5 +1,5 @@
 from typing import (Any, Callable, Dict, Generator, Iterable, List, Optional,
-                    Sequence, Tuple, TypeVar, Union)
+                    Sequence, Tuple, Type, TypeVar, Union)
 
 import gym
 import matplotlib.pyplot as plt
@@ -13,6 +13,7 @@ from gym.wrappers.pixel_observation import PixelObservationWrapper
 from torch import Tensor
 from torch.utils.data import Dataset, IterableDataset
 
+from common.gym_wrappers import PixelStateWrapper, wrapper_is_present
 from settings.base.environment import (ActionType, EnvironmentBase,
                                        ObservationType, RewardType)
 from utils.logging_utils import get_logger, log_calls
@@ -20,6 +21,7 @@ from utils.logging_utils import get_logger, log_calls
 logger = get_logger(__file__)
 
 T = TypeVar("T")
+
 
 
 class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, ActionType, RewardType]):
@@ -30,29 +32,16 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
 
     def __init__(self,
                  env: Union[str, gym.Env],
-                 observe_pixels: bool = True,
+                 observe_pixels: bool = False,
                  max_episodes: Optional[int] = None,
                  max_steps: Optional[int] = None,
                  ):
         env = gym.make(env) if isinstance(env, str) else env
-        # plt.ion()
         env.reset()
 
-        # TODO: Somehow we need to do this before wrapping the env.
-        if observe_pixels and not isinstance(env, PixelObservationWrapper):
-            from gym.envs.classic_control.cartpole import CartPoleEnv
-            from gym.envs.classic_control.rendering import Viewer
-
+        if observe_pixels and not wrapper_is_present(env, PixelStateWrapper):
             logger.debug(f"Adding a Wrapper to {env} to observe pixels rather than internal state.")
-            env = PixelObservationWrapper(env, pixels_only=True)
-            # BUG: There is this really annoying bug where the environments
-            # keep making a window, even if we render with 'mode'=rgb_array !!!
-            if env.viewer is None:
-                env.render(mode="rgb_array")
-            if env.viewer is not None:
-                self.viewer: Viewer = env.viewer
-                self.viewer.window.set_visible(False)
-            # breakpoint()
+            env = PixelStateWrapper(env)
         super().__init__(env=env)
 
         self.env: gym.Env
@@ -67,7 +56,7 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
         self.step_count: int = 0
         # Number of times the `send` method was called, i.e. number of actions
         # taken in the environment.
-        self.send_count: int = 1
+        self.send_count: int = 0
         # Maximum number of steps to perform in the environment.
         self.max_steps: Optional[int] = max_steps
         # Number of episodes performed in the environment.
@@ -76,17 +65,7 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
         self.max_episodes: Optional[int] = max_episodes
 
         self.total_reward: float = 0.
-
         self.reset()
-        from gym.spaces import Dict as DictSpace
-        if isinstance(self.observation_space, DictSpace):
-            self.observation_space = self.observation_space["pixels"]
-
-    def __del__(self):
-        try:
-            self.env.close()
-        except:
-            pass
 
     def __next__(self) -> ObservationType:
         """ Generate the next observation. """
@@ -105,9 +84,6 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
                 # logger.warning(RuntimeWarning(f"The action space {self.action_space} doesn't contain action {action}!"))
                 pass
         self.state, self.reward, self.done, self.info = super().step(action)
-        if isinstance(self.state, dict):
-            if self.observe_pixels:
-                self.state = self.state["pixels"]
         self.step_count += 1
         self.total_reward += self.reward
         return self.state, self.reward, self.done, self.info
@@ -148,15 +124,12 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
 
     def reset(self, **kwargs) -> ObservationType:
         start_state = super().reset(**kwargs)
-        # logger.debug(f"start_state: {start_state}")
-        if isinstance(start_state, dict):
-            if self.observe_pixels:
-                start_state = start_state["pixels"]
         self.state = start_state
         self.action = self.env.action_space.sample()
-        self.step_count = 0
-        self.episode_count = 0
-        self.send_count = 0
+        # TODO: Should we reset the number of steps? This doesn't sound right.
+        # self.step_count = 0
+        # self.episode_count = 0
+        # self.send_count = 0
         self.reward = None
         return self.state
 

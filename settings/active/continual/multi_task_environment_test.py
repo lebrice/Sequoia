@@ -95,3 +95,21 @@ def test_monitor_env(environment_name):
     plt.close()
 
 
+def test_update_task():
+    """Test that using update_task changes the given values in the environment
+    and in the current_task dict, and that when a value isn't passed to
+    update_task, it isn't reset to its default but instead keeps its previous
+    value. 
+    """
+    original = gym.make("CartPole-v0")
+    env = MultiTaskEnvironment(original)
+    env.reset()
+    env.seed(123)
+
+    assert env.length == original.length
+    env.update_task(length=1.0)
+    assert env.current_task["length"] == env.length == 1.0
+    env.update_task(gravity=20.0)
+    assert env.length == 1.0
+    assert env.current_task["gravity"] == env.gravity == 20.0
+    env.close()

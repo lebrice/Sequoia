@@ -268,11 +268,11 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
         NOTE: This doesn't reset the state of the dataloader itself (n_steps,
         n_sends, etc).
         """
-        start_state = torch.as_tensor([
+        start_states = torch.as_tensor([
             env.reset(**kwargs)
             for env in self.environments
         ])
-        return start_state
+        return start_states
 
     def close(self) -> None:
         for env in self.environments:

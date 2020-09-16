@@ -1,6 +1,6 @@
 import random
 from collections import OrderedDict
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Dict, List, Optional, Sequence, Union, Any
 
 import gym
 import matplotlib.pyplot as plt
@@ -36,7 +36,7 @@ class MultiTaskEnvironment(gym.Wrapper):
     attributes:
     ```
     env = gym.make("CartPole-v0")
-    env = MultiTaskEnvironment(original, task_schedule={
+    env = MultiTaskEnvironment(env, task_schedule={
         # step -> attributes to set on the environment when step is reached.
         10: dict(length=2.0),
         20: dict(length=1.0, gravity=20.0),
@@ -74,31 +74,40 @@ class MultiTaskEnvironment(gym.Wrapper):
         super().__init__(env=env)
         self.env: gym.Env
         self._current_task: Dict = OrderedDict()
+        self._task_schedule: Dict[int, Dict[str, Any]] = OrderedDict()
         self.noise_std = noise_std
         if not task_params:
-            # TODO: Remove this.
             unwrapped_type = type(env.unwrapped)
             if unwrapped_type in task_param_names:
                 task_params = task_param_names[unwrapped_type]
             else:
                 logger.warning(UserWarning(
                     f"You didn't pass any 'task params', and the task "
-                    f"parameters aren't known for this env ({env}), so we can't "
-                    f"make it multi-task with this wrapper."
+                    f"parameters aren't known for this type of environment "
+                    f"({unwrapped_type}), so we can't make it multi-task with "
+                    f"this wrapper."
                 ))
-        self.task_params: List[str] = task_params
-        self.task_schedule = task_schedule or {}
+        self.task_params: List[str] = task_params or []
         self.default_task: np.ndarray = self.current_task.copy()
-        self._step: int = 0
+        self.task_schedule = task_schedule or {}
+        self._steps: int = 0
 
     def step(self, *args, **kwargs):
         # If we reach a step in the task schedule, then we change the task to
         # that given step.
-        if self._step in self.task_schedule:
-            self.current_task = self.task_schedule[self._step]
+        if self.steps in self.task_schedule:
+            self.current_task = self.task_schedule[self.steps]
         results = super().step(*args, **kwargs)
-        self._step += 1
+        self.steps += 1
         return results
+
+    @property
+    def steps(self) -> int:
+        return self._steps
+
+    @steps.setter
+    def steps(self, value: int) -> None:
+        self._steps = value
 
     @property
     def current_task(self) -> Dict:
@@ -130,7 +139,7 @@ class MultiTaskEnvironment(gym.Wrapper):
 
     @current_task.setter
     def current_task(self, task: Union[Dict[str, float], Sequence[float]]):
-        logger.debug(f"(_step: {self._step}): Setting the current task to {task}.")
+        logger.debug(f"(_step: {self.steps}): Setting the current task to {task}.")
         self._current_task.clear()
         self._current_task.update(self.default_task)
 
@@ -193,10 +202,15 @@ class MultiTaskEnvironment(gym.Wrapper):
         return task
 
     def update_task(self, values: Dict = None, **kwargs):
-        """Updates the current ask with the params from values or kwargs.
+        """Updates the current task with the params from values or kwargs.
 
-        NOTE: When passing a dictionary, any missing param is set back to its
-        default value, not the value from the last task.
+        Important: Use this method to update properties of the current task,
+        instead of trying modifying the `current_task` dictionary. For example,
+        `env.current_task["length"] = 2.0` will NOT update the length of
+        the pole in CartPole, whereas using `env.update_task(length=2.0)` will!
+
+        NOTE: When passing a dictionary, any missing param is kept at its
+        current value (not reset to the default value).
         """
         current_task = self.current_task.copy()
         if isinstance(values, dict):
@@ -217,6 +231,33 @@ class MultiTaskEnvironment(gym.Wrapper):
             np.random.seed(seed)
         return super().seed(seed)
 
+    def task_dict(self, task_array: np.ndarray) -> Dict[str, float]:
+        assert len(task_array) == len(self.task_params), (
+            "Lengths should match the number of task parameters."
+        )
+        return OrderedDict(zip(self.task_params, task_array))
+
+    @property
+    def task_schedule(self):
+        return self._task_schedule
+
+    @task_schedule.setter
+    def task_schedule(self, value: Dict[str, Any]):
+        self._task_schedule = OrderedDict()
+        if 0 not in value:
+            self._task_schedule[0] = self.default_task.copy()
+
+        for step, task in sorted(value.items()):
+            # Convert any numpy arrays or lists in the task schedule to dicts
+            # mapping from attribute name to value to be set.
+            if isinstance(task, (list, np.ndarray)):
+                task = self.task_dict(task)
+            if not isinstance(task, dict):
+                raise RuntimeError(
+                    f"Task schedule can only contain dicts, lists or numpy "
+                    f"arrays, but got {task}!"
+                )
+            self._task_schedule[step] = task
 
 def MultiTaskCartPole():
     env = gym.make("CartPole-v0")

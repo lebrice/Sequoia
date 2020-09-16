@@ -27,7 +27,7 @@ class SmoothTransitions(MultiTaskEnvironment):
     attributes from the two neighbouring tasks.
     ```
     env = gym.make("CartPole-v0")
-    env = MultiTaskEnvironment(original, task_schedule={
+    env = SmoothTransitions(env, task_schedule={
         10: dict(length=1.0),
         20: dict(length=2.0),
     })
@@ -46,7 +46,7 @@ class SmoothTransitions(MultiTaskEnvironment):
     def __init__(self,
                  env: gym.Env,
                  *args,
-                 only_update_on_resets: bool = False,
+                 only_update_on_episode_end: bool = False,
                  **kwargs):
         """ Wraps the environment, allowing for smooth task transitions.
 
@@ -69,39 +69,18 @@ class SmoothTransitions(MultiTaskEnvironment):
                 number to the attributes to be set at that time. Interpolations
                 between the two neighbouring tasks will be used between task
                 transitions.
-            only_update_on_resets (bool, optional): When `False` (default),
+            only_update_on_episode_end (bool, optional): When `False` (default),
                 update the attributes of the environment smoothly after each
-                step. When `False`, only update at the end of episodes (when
+                step. When `True`, only update at the end of episodes (when
                 `reset()` is called).
         """
         super().__init__(env, *args, **kwargs)
-        self.only_update_on_resets: bool = only_update_on_resets
-
-        if 0 not in self.task_schedule:
-            self.task_schedule[0] = self.default_task.copy()
-        
-        for step in sorted(self.task_schedule.keys()):
-            task = self.task_schedule[step]
-            if isinstance(task, np.ndarray):
-                assert len(task) == len(self.task_params), (
-                    f"There has to be a value for each of {self.task_params} "
-                    f"when passing a numpy array in the task schedule."
-                )
-                self.task_schedule[step] = dict(zip(self.task_params, task))
-        # Reorder the dict based on the keys:
-        # TODO: Would this be necessary if we were using a regular dict?
-        self.task_schedule = OrderedDict(sorted(self.task_schedule.items()))
+        self.only_update_on_episode_end: bool = only_update_on_episode_end
 
     def task_array(self, task: Dict[str, float]) -> np.ndarray:
         return np.array([
             task.get(k, self.default_task[k]) for k in self.task_params
         ])
-
-    def task_dict(self, task_array: np.ndarray) -> Dict[str, float]:
-        assert len(task_array) == len(self.task_params), (
-            "Lengths should match the number of task parameters."
-        )
-        return OrderedDict(zip(self.task_params, task_array))
 
     def smooth_update(self) -> None:
         """ Update the curren_task at every step, based on a smooth mix of the
@@ -118,23 +97,23 @@ class SmoothTransitions(MultiTaskEnvironment):
                 steps.append(step)
                 fixed_points.append(task.get(attr, self.default_task[attr]))
             # logger.debug(f"{attr}: steps={steps}, fp={fixed_points}")
-            interpolated_value: float = np.interp(x=self._step, xp=steps, fp=fixed_points)
+            interpolated_value: float = np.interp(
+                x=self.steps,
+                xp=steps,
+                fp=fixed_points,
+            )
             current_task[attr] = interpolated_value
-            # logger.debug(f"interpolated value of {attr} at step {self._step}: {interpolated_value}")
-        
-        # logger.debug(f"Updating task at step {self._step}: {current_task}")
+            # logger.debug(f"interpolated value of {attr} at step {self.step}: {interpolated_value}")
+        # logger.debug(f"Updating task at step {self.step}: {current_task}")
         self.current_task = current_task
 
     def step(self, *args, **kwargs):
-        self.smooth_update()
-        results = super().step(*args, **kwargs)
-        # self.smooth_update()
-        return results
+        if not self.only_update_on_episode_end:
+            self.smooth_update()
+        return super().step(*args, **kwargs)
 
     def reset(self, **kwargs):
+        # TODO: test this out.
+        if self.only_update_on_episode_end:
+            self.smooth_update()
         return super().reset(**kwargs)
-        self.smooth_update()
-
-    # @property
-    # def task_schedule(self) -> Dict[int, Dict[str, float]]:
-    #     return self._task_schedule
