@@ -107,18 +107,23 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
         command-line.
         """
         logger.debug(f"__post_init__ of Setting")
-        train_transforms: Callable = Compose(self.train_transforms or self.transforms)
-        val_transforms: Callable = Compose(self.val_transforms or self.transforms)
-        test_transforms: Callable = Compose(self.test_transforms or self.transforms)
+        self.transforms: Compose = Compose(self.transforms)
+        self.train_transforms: Compose = Compose(self.train_transforms or self.transforms)
+        self.val_transforms: Compose = Compose(self.val_transforms or self.transforms)
+        self.test_transforms: Compose = Compose(self.test_transforms or self.transforms)
 
         self._dims: Tuple[int, ...] = ()
         super().__init__(
-            train_transforms=train_transforms,
-            val_transforms=val_transforms,
-            test_transforms=test_transforms,
+            train_transforms=self.train_transforms,
+            val_transforms=self.val_transforms,
+            test_transforms=self.test_transforms,
         )
+
         # TODO: Should we ask every setting to set these three properties ?
-        self.obs_shape: Tuple[int, ...] = obs_shape
+        logger.debug(f"Transforms: {self.transforms}")
+        logger.debug(f"Obs shape before transforms: {obs_shape}")
+        self.obs_shape: Tuple[int, ...] = self.transforms.shape_change(obs_shape)
+        logger.debug(f"Obs shape after transforms: {self.obs_shape}")
         self.action_shape: Tuple[int, ...] = action_shape
         self.reward_shape: Tuple[int, ...] = reward_shape
         self.dataloader_kwargs: Dict[str, Any] = {}
@@ -192,7 +197,7 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
 
     def apply_all(self, argv: Union[str, List[str]]=None) -> Dict[Type["Method"], Results]:
         applicable_methods = self.get_all_applicable_methods()
-
+        from methods import Method
         all_results: Dict[Type[Method], Results] = OrderedDict()
         for method_type in applicable_methods:
             method = method_type.from_args(argv)
