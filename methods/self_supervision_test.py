@@ -29,6 +29,8 @@ def test_get_applicable_settings():
     assert ClassIncrementalSetting in settings
     assert TaskIncrementalSetting in settings
     assert IIDSetting in settings
+
+
 @pytest.fixture(
     scope="module",
     params=[

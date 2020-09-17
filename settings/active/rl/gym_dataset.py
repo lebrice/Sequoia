@@ -73,10 +73,14 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
         return self.state
 
     def step(self, action: ActionType):
+        # TODO: Should we maybe move some of this to a Wrapper? (Maybe something
+        # like this already exists somewhere else also)
         if isinstance(action, Tensor):
             action = action.cpu().numpy()
         if not self.action_space.contains(action):
             if isinstance(self.action_space, Discrete):
+                # TODO: If the action is the scores of a classifier, pick the 
+                # argmax as the action?
                 action = round(float(action))
             elif isinstance(self.action_space, Box):
                 action = np.clip(action, self.action_space.low, self.action_space.high)
@@ -100,9 +104,10 @@ class GymDataset(gym.Wrapper, IterableDataset, EnvironmentBase[ObservationType, 
             return self.episodes_count >= self.max_episodes
         return False
 
+
     def __iter__(self) -> Generator[ObservationType, ActionType, None]:
         action: ActionType = self.action_space.sample()
-
+        
         while not self.reached_episode_limit or self.reached_step_limit:
             # logger.debug(f"n steps: {self.step_count}, n sends: {self.send_count}")
             # Perform an episode.

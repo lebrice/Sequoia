@@ -1,10 +1,13 @@
-from torch.utils.data import DataLoader, Dataset, IterableDataset
-from settings.base.environment import EnvironmentBase, ObservationType, ActionType, RewardType
-from typing import *
-from torch import multiprocessing as mp
-from utils.logging_utils import log_calls, get_logger
 from abc import abstractmethod
+from typing import *
 
+import torch
+from torch import multiprocessing as mp
+from torch.utils.data import DataLoader, Dataset, IterableDataset
+
+from settings.base.environment import (ActionType, EnvironmentBase,
+                                       ObservationType, RewardType)
+from utils.logging_utils import get_logger, log_calls
 
 logger = get_logger(__file__)
 
@@ -70,13 +73,12 @@ class ActiveDataLoader(DataLoader, EnvironmentBase[ObservationType, ActionType, 
         """
         self.action = action
 
-        if self.n_pulled.value != (self.n_pushed.value + 1):
-            raise RuntimeError(
-                "Number of pulled values should be equal to number of pushed values + 1! "
-                f"n_pulled: {self.n_pulled.value} n_pushed: {self.n_pushed.value}"
-            )
-        self.n_pushed.value += 1
-
+        # if self.n_pulled.value != (self.n_pushed.value):
+        #     raise RuntimeError(
+        #         "Number of pulled values should be equal to number of pushed values! "
+        #         f"n_pulled: {self.n_pulled.value} n_pushed: {self.n_pushed.value}"
+        #     )
+        # self.n_pushed.value += 1
         worker_info = torch.utils.data.get_worker_info()
         if worker_info:
             logger.debug(f"Worker info: {worker_info}")
@@ -86,7 +88,10 @@ class ActiveDataLoader(DataLoader, EnvironmentBase[ObservationType, ActionType, 
 
         if isinstance(self.dataset, EnvironmentBase):
             self.reward = self.dataset.send(self.action)
-        assert False, "TODO: self.dataset should always be an instance of EnvironmentBase for now."
+        elif hasattr(self.dataset, "send"):
+            self.reward = self.dataset.send(self.action)
+        else:
+            assert False, "TODO: self.dataset should always be an instance of EnvironmentBase for now."
         return self.reward
 
 ActiveEnvironment = ActiveDataLoader

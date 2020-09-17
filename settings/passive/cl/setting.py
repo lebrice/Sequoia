@@ -174,8 +174,6 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
 
         self._current_task_id: int = 0
 
-        self.train_dataset: _ContinuumDataset = None
-        self.test_dataset: _ContinuumDataset = None
         self.train_datasets: List[_ContinuumDataset] = []
         self.val_datasets: List[_ContinuumDataset] = []
         self.test_datasets: List[_ContinuumDataset] = []

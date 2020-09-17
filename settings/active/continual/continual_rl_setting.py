@@ -4,16 +4,17 @@ from dataclasses import dataclass
 from typing import ClassVar, Dict, List, Tuple
 
 import gym
-from gym.wrappers.pixel_observation import PixelObservationWrapper
 
-from common.transforms import ChannelsFirst, Transforms
+from common.gym_wrappers import (MultiTaskEnvironment, PixelStateWrapper,
+                                 SmoothTransitions)
+from common.transforms import Transforms
 from settings.active.rl import GymDataLoader
 from simple_parsing import choice, list_field
 from utils import dict_union
 from utils.logging_utils import get_logger
 
 from .. import ActiveSetting
-from common.gym_wrappers import MultiTaskEnvironment, SmoothTransitions, PixelStateWrapper
+
 logger = get_logger(__file__)
 
 @dataclass
@@ -112,7 +113,6 @@ class ContinualRLSetting(ActiveSetting):
     def create_gym_env(self) -> gym.Env:
         env = gym.make(self.env_name)
         if not self.observe_state_directly:
-            env.reset()
             env = PixelStateWrapper(env)
         return SmoothTransitions(env)
 
@@ -124,7 +124,7 @@ class ContinualRLSetting(ActiveSetting):
         env.task_schedule = self.train_task_schedule
         return env
 
-    def valid_env_factory(self) -> gym.Env:
+    def val_env_factory(self) -> gym.Env:
         env = self.create_gym_env()
         env.task_schedule = self.val_task_schedule
         return env
@@ -144,3 +144,25 @@ class ContinualRLSetting(ActiveSetting):
             **kwargs
         )
         return self._train_loader
+    
+    def val_dataloader(self, *args, **kwargs) -> GymDataLoader:
+        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        kwargs["num_workers"] = kwargs["batch_size"]
+        self._val_loader = GymDataLoader(
+            env_factory=self.val_env_factory,
+            max_steps=self.max_steps,
+            transforms=self.train_transforms,
+            **kwargs
+        )
+        return self._val_loader
+
+    def test_dataloader(self, *args, **kwargs) -> GymDataLoader:
+        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        kwargs["num_workers"] = kwargs["batch_size"]
+        self._test_loader = GymDataLoader(
+            env_factory=self.val_env_factory,
+            max_steps=self.max_steps,
+            transforms=self.train_transforms,
+            **kwargs
+        )
+        return self._test_loader

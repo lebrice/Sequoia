@@ -23,7 +23,7 @@ def test_setting_train_dataloader_shapes():
     dataloader = setting.train_dataloader(batch_size=5)
     for i, batch in enumerate(dataloader):
         assert batch.shape == (5, 3, 400, 600)
+        dataloader.send(dataloader.random_actions())
         if i > 10:
             break
-        dataloader.send(dataloader.random_actions())
     dataloader.close()
