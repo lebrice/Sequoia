@@ -1,8 +1,9 @@
 from dataclasses import dataclass
-from typing import Tuple, List, Dict, Callable
+from typing import Callable, Dict, Iterable, List, Tuple
+
 import gym
 
-from common.gym_wrappers import MultiTaskEnvironment, PixelStateWrapper, Ca
+from common.gym_wrappers import Ca, MultiTaskEnvironment, PixelStateWrapper
 from settings.active.rl import GymDataLoader
 from utils import dict_union
 
@@ -87,7 +88,7 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
         # Return a single GymDataLoader that will go over all the tasks incrementally.    
         self._train_loader = GymDataLoader(
             env_factory=self.train_env_factories[self._current_task_id],
-            max_steps=self.max_steps,
+            max_steps=self.steps_per_task,
             transforms=self.train_transforms,
             **kwargs
         )
@@ -103,7 +104,7 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
         # Return a single GymDataLoader that will go over all the tasks incrementally.    
         self._val_loader = GymDataLoader(
             env_factory=self.val_env_factories[self._current_task_id],
-            max_steps=self.max_steps,
+            max_steps=self.steps_per_task,
             transforms=self.val_transforms,
             **kwargs
         )
@@ -123,3 +124,51 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
             **kwargs
         )
         return self._test_loader
+
+    def train_dataloaders(self, *args, **kwargs) -> Iterable[GymDataLoader]:
+        if self.task_labels_at_train_time:
+            # TODO: Let the model know when a task switched.
+            pass
+        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        kwargs["num_workers"] = kwargs["batch_size"]
+        for task_id in range(self.nb_tasks):
+            # Return a single GymDataLoader that will go over all the tasks incrementally.    
+            task_loader = GymDataLoader(
+                env_factory=self.train_env_factories[task_id],
+                max_steps=self.steps_per_task,
+                transforms=self.train_transforms,
+                **kwargs
+            )
+            yield task_loader
+
+    def val_dataloaders(self, *args, **kwargs) -> Iterable[GymDataLoader]:
+        if self.task_labels_at_train_time:
+            # TODO: Let the model know when a task switched.
+            pass
+        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        kwargs["num_workers"] = kwargs["batch_size"]
+        for task_id in range(self.nb_tasks):
+            # Return a single GymDataLoader that will go over all the tasks incrementally.    
+            task_loader = GymDataLoader(
+                env_factory=self.val_env_factories[task_id],
+                max_steps=self.steps_per_task,
+                transforms=self.val_transforms,
+                **kwargs
+            )
+            yield task_loader
+
+    def test_dataloaders(self, *args, **kwargs) -> Iterable[GymDataLoader]:
+        if self.task_labels_at_test_time:
+            # TODO: Let the model know when a task switched.
+            pass
+        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        kwargs["num_workers"] = kwargs["batch_size"]
+        for task_id in range(self.nb_tasks):
+            # Return a single GymDataLoader that will go over all the tasks incrementally.    
+            task_loader = GymDataLoader(
+                env_factory=self.test_env_factories[task_id],
+                max_steps=self.steps_per_task,
+                transforms=self.test_transforms,
+                **kwargs,
+            )
+            yield task_loader
