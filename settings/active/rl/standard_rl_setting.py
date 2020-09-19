@@ -48,8 +48,6 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
     available_datasets: ClassVar[Dict[str, str]] = {
         "cartpole": "CartPole-v0",
         "pendulum": "Pendulum-v0",
-        # "mtcartpole": "MultiTaskCartPole-v0",
-        "mtcartpole": MULTI_TASK_CARTPOLE,
     }
     observe_state_directly: bool = False
     dataset: str = choice(available_datasets, default="pendulum")
@@ -57,9 +55,6 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
     # Transformations to use. See the Transforms enum for the available values.
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.channels_first)
     
-    # Starting with batch size fixed to 2 for now.
-    # batch_size: int = 2
-
     def __post_init__(self):
         """Creates a new RL environment / setup. """
         # FIXME: (@lebrice) This is a bit annoying to have to do, but whatever.
@@ -126,11 +121,12 @@ class RLSetting(ActiveSetting[Tensor, Tensor, Tensor], Pickleable):
         from methods import Method
         method: Method
         trainer: Trainer = method.trainer
+        assert trainer.datamodule is self
         test_outputs = trainer.test(
             # TODO: Choose either (or None?)
-            datamodule=self,
+            # datamodule=self,
             # test_dataloaders=self.test_dataloader(),
-            verbose=True,
+            # verbose=True,
         )
         # TODO: Add this 'evaluate' routine to the CL Trainer?
         # assert False, test_outputs 

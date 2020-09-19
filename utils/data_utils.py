@@ -34,8 +34,10 @@ def unbatch(dataloader: Iterable[Tuple[Tensor, Tensor]]) -> Iterable[Tuple[Tenso
     NOTE: this is a generator for a single pass through the dataloader, not multiple.
     """
     for batch in dataloader:
-        tensors = batch
-        yield from (zip(*tensors) if isinstance(tensors, tuple) else tensors)
+        if isinstance(batch, tuple):
+            yield from zip(*batch)
+        else:
+            yield from batch
 
 
 class unlabeled(Iterable[Tuple[Tensor]], Sized):

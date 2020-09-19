@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import (Any, Callable, ClassVar, Dict, List, Optional, Tuple, Type,
                     TypeVar, Union)
 
-from pytorch_lightning import LightningDataModule
+from pytorch_lightning import LightningDataModule, LightningModule
+from simple_parsing import (Serializable, choice, field, list_field,
+                            mutable_field)
 from torch import Tensor
 from torch.utils.data import DataLoader
 
@@ -22,8 +24,6 @@ from continuum.scenarios.base import _BaseCLLoader
 from settings.base import Results
 from settings.base.environment import ObservationType, RewardType
 from settings.passive.environment import PassiveEnvironment
-from simple_parsing import (Serializable, choice, field, list_field,
-                            mutable_field)
 from utils import dict_union, get_logger
 from utils.utils import constant
 
@@ -128,7 +128,8 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
     # Transformations to use. See the Transforms enum for the available values.
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels, to_dict=False)
     
-    # Wether task labels are available at train time. (Forced to True.)
+    # Wether task labels are available at train time.
+    # NOTE: Forced to True at the moment.
     task_labels_at_train_time: bool = constant(True)
     # Wether task labels are available at test time.
     task_labels_at_test_time: bool = False
@@ -163,13 +164,13 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             options (Options): Dataclass used for configuration.
         """
         assert self.dataset in dims_for_dataset, f"{self.dataset}, {dims_for_dataset.keys()}"
-        self._dims: Tuple[int, int, int] = dims_for_dataset[self.dataset]
-        self._num_classes: int = num_classes_in_dataset[self.dataset]
+        self.num_classes: int = num_classes_in_dataset[self.dataset]
+        image_shape: Tuple[int, int, int] = dims_for_dataset[self.dataset]
 
         super().__post_init__(
-            obs_shape=self._dims,
-            action_shape=self._num_classes,
-            reward_shape=self._num_classes,
+            obs_shape=image_shape,
+            action_shape=self.num_classes,
+            reward_shape=self.num_classes,
         )
 
         self._current_task_id: int = 0
@@ -210,9 +211,16 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         trainer: CLTrainer = method.trainer
 
         assert isinstance(trainer, CLTrainer), (
-            "Please use a CLTrainer rather than a Trainer."
+            "WIP: Experimenting with defining the evaluation procedure in the CLTrainer. "
+            "Please use a CLTrainer rather than a Trainer for now."
         )
-        task_losses: List[Loss] = trainer.test(method.model, datamodule=self, verbose=True)
+        assert trainer.get_model() is method.model and method.model is not None
+        assert trainer.datamodule is self
+        task_losses: List[Loss] = trainer.test(
+            # method.model,
+            # datamodule=self,
+            # verbose=True,
+        )
         return ClassIncrementalResults(
             hparams=method.hparams,
             test_loss=sum(task_losses),
@@ -334,33 +342,6 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             download=download,
             **kwargs
         )
-
-    @property
-    def dims(self) -> Dims:
-        """Gets the dimensions of the input, taking into account the transforms.
-        
-        TODO: Could transforms just specify their impact on the shape directly
-        instead, à-la Tensorflow? (with some kind of class method)?
-        """
-        dims = Dims(*self._dims)
-        assert dims.c < dims.h and dims.c < dims.w and dims.h == dims.w, dims
-
-        if Transforms.fix_channels in self.transforms:
-            dims = dims._replace(c=3)
-            return dims
-        return self._dims
-
-    @dims.setter
-    def dims(self, value: Any):
-        self._dims = value
-
-    @property
-    def num_classes(self) -> int:
-        return self._num_classes
-
-    @num_classes.setter
-    def num_classes(self, value: int) -> None:
-        self._num_classes = value
 
     def prepare_data(self, data_dir: Path=None, **kwargs):
         data_dir = data_dir or self.data_dir
@@ -506,3 +487,4 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             return self.class_order[start_index:end_index]
         else:
             return self.test_class_order[start_index:end_index]
+

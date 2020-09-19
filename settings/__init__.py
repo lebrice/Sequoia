@@ -8,10 +8,13 @@ from .base import *
 from .passive import *
 from .active import *
 
-all_settings: Set[Type[Setting]] = set([
+all_settings: List[Type[Setting]] = [
     IIDSetting,
     TaskIncrementalSetting,
     ClassIncrementalSetting,
-    RLSetting
+    ContinualRLSetting,
+    ClassIncrementalRLSetting,
+    TaskIncrementalRLSetting,
+    RLSetting,
     # setting for name, setting in vars().items() if inspect.isclass(setting) and issubclass(setting, Setting)
-])
+]

@@ -71,32 +71,7 @@ class CLTrainer(Trainer):
     def fit_setting(self, setting: Setting, model: LightningModule):
         logger.info(f"No known custom training procedure for setting of type {type(setting)}.")
         logger.info(f"Defaulting back to super().fit(model, datamodule=setting)")
-        # setup data, etc...
-        self.setup_fit(model, None, None, datamodule=setting)
         super().fit(model=model, datamodule=setting)
-
-    @fit_setting.register
-    def fit_class_incremental(self, setting: ClassIncrementalSetting, model: LightningModule):
-        n_tasks = setting.nb_tasks
-        logger.info(f"Number of tasks: {n_tasks}")
-        logger.info(f"Number of classes in task: {setting.num_classes}")
-
-        self.setup_fit(model, None, None, datamodule=setting)
-        for i in range(n_tasks):
-            logger.info(f"Starting training on task #{i}")
-            setting.current_task_id = i
-
-            if setting.task_labels_at_train_time:
-                # This is always true in the ClassIncremental & TaskIncremental
-                # settings for now.
-                # TODO: @lebrice What should we call 'on_task_switch' on? the Method? the Model?
-                if hasattr(model, "on_task_switch") and callable(model.on_task_switch):
-                    model.on_task_switch(i)
-
-            super().fit(
-                model,
-                datamodule=setting,
-            )
 
     def test(self,
              model: Optional[LightningModule] = None,
@@ -104,7 +79,8 @@ class CLTrainer(Trainer):
              ckpt_path: Optional[str] = "best",
              verbose: bool = True,
              datamodule: Optional[LightningDataModule] = None):
-        """ Variation on 'test'.
+        """ BUG: Writing this because Trainer.test doesn't return anything, for
+        some reason!
 
         TODO: Not sure we really need this. This sort-of blurs the line between
         what is the Trainer vs the Setting's responsability w.r.t. the
@@ -158,15 +134,40 @@ class CLTrainer(Trainer):
         """
         logger.info(f"No registered custom testing procedure for setting of type {type(setting)}.")
         logger.info(f"Defaulting back to super().test(model, datamodule=setting)")
-        # setup data, etc...
-        super().test(datamodule=setting, ckpt_path=ckpt_path, verbose=verbose)
+        assert self.datamodule is setting
+        super().test(
+            datamodule=setting,
+            ckpt_path=ckpt_path,
+            verbose=verbose
+        )
+
+    @fit_setting.register
+    def fit_class_incremental(self, setting: ClassIncrementalSetting, model: LightningModule):
+        n_tasks = setting.nb_tasks
+        logger.info(f"Number of tasks: {n_tasks}")
+        logger.info(f"Number of classes in task: {setting.num_classes}")
+
+        for i in range(n_tasks):
+            logger.info(f"Starting training on task #{i}")
+            setting.current_task_id = i
+
+            if setting.task_labels_at_train_time:
+                # This is always true in the ClassIncremental & TaskIncremental
+                # settings for now.
+                # TODO: @lebrice What should we call 'on_task_switch' on? the Method? the Model?
+                if hasattr(model, "on_task_switch") and callable(model.on_task_switch):
+                    model.on_task_switch(i)
+            super().fit(
+                model,
+                datamodule=setting,
+            )
 
     @test_setting.register
     def test_class_incremental(self,
-                               setting: ClassIncrementalSetting,
-                               model: LightningModule,
-                               ckpt_path: Optional[str] = 'best',
-                               verbose: bool = True,):
+                            setting: ClassIncrementalSetting,
+                            model: LightningModule,
+                            ckpt_path: Optional[str] = 'best',
+                            verbose: bool = True,):
         """Tests the method and returns the Results.
 
         Overwrite this to customize testing for your experimental setting.
@@ -174,6 +175,7 @@ class CLTrainer(Trainer):
         Returns:
             Results: A Results object for this particular setting.
         """
+
         if ckpt_path == "best":
             logger.warning(UserWarning(
                 "When evaluating on a Continual Learning Setting, it might not be "
@@ -186,11 +188,33 @@ class CLTrainer(Trainer):
             ))
             logger.warning(f"Setting ckpt_path to None for now.")
             ckpt_path = None
+        model = model or self.get_model()
+        assert self.datamodule is setting
+
+
+        results: List[Dict] = []
+        for task_id in range(setting.nb_tasks):
+            logger.info(f"Starting evaluation on task {task_id}.")
+            setting.current_task_id = task_id
+            if setting.task_labels_at_test_time:
+                model.on_task_switch(task_id)
+            task_results = super().test(
+                # model=model,
+                # datamodule=setting,
+                # verbose=False,
+            )
+            assert False, task_results
+            assert task_results is not None, "Trainer.test() returned None?!!"
+            results.append(task_results)
+        
+        return results
+
 
         test_dataloaders = setting.test_dataloaders()
+        model = model or self.get_model()
         # TODO: Here we are 'manually' evaluating on one test dataset at a time.
         # However, in pytorch_lightning, if a LightningModule's
-        # `test_dataloaders` method returns more than a single dataloader, then
+        # `test_dataloader` method returns more than a single dataloader, then
         # the Trainer takes care of evaluating on each dataset in sequence.
         # Here we basically do this manually, so that the trainer doesn't give
         # the `dataloader_idx` keyword argument to the eval_step() method on the
@@ -209,10 +233,13 @@ class CLTrainer(Trainer):
 
             # BUG: super().test never returns anything, so Idk why, but this
             # here seems to work as a replacement atm.
-            # super().test(
-                
-            # )
-            
+            results = super().test(
+                # model=model,
+                test_dataloaders=task_loader,
+            )
+            # # TODO: Remove this. Maybe even move this into the module of the
+            # # corresponding setting.
+            assert False, f"Results: {results}"
             eval_loop_results, eval_results = self.run_evaluation(test_mode=True)
             assert isinstance(eval_results, list)
             assert len(eval_results) == 1

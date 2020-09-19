@@ -232,6 +232,10 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
                 f"Can't change the batch size (yet). Current batch size: "
                 f"{len(self.environments)}, new: {value}"
             )
+        assert value is None, (
+            f"Can't change the batch size (yet). Current batch size: "
+            f"{len(self.environments)}, new: {value}"
+        )
 
     def reset(self, **kwargs) -> List[Any]:
         """ Resets the environments.
@@ -248,6 +252,10 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
     def close(self) -> None:
         for env in self.environments:
             env.close()
+
+    def seed(self, value: int) -> None:
+        for env in self.environments:
+            env.seed(value)
 
 
 class GymSingleProcessDataLoaderIter():

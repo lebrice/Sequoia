@@ -67,7 +67,7 @@ class SettingMeta(_DataModuleWrapper, Type["Setting"]):
             yield from sub_setting.all_sub_settings
     
 
-@dataclass(init=True)
+@dataclass
 class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], metaclass=SettingMeta):
     """Extends LightningDataModule to allow setting the transforms and options
     from the command-line.
@@ -112,7 +112,6 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
         self.val_transforms: Compose = Compose(self.val_transforms or self.transforms)
         self.test_transforms: Compose = Compose(self.test_transforms or self.transforms)
 
-        self._dims: Tuple[int, ...] = ()
         super().__init__(
             train_transforms=self.train_transforms,
             val_transforms=self.val_transforms,
@@ -128,8 +127,8 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
         self.reward_shape: Tuple[int, ...] = reward_shape
         self.dataloader_kwargs: Dict[str, Any] = {}
 
-        if self.obs_shape and not self._dims:
-            self._dims = self.obs_shape
+        if self.obs_shape and not self.dims:
+            self.dims = self.obs_shape
 
         # Wether the setup methods have been called yet or not.
         self._setup: bool = False
@@ -163,10 +162,12 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
         trainer = method.trainer
 
         # Run the actual evaluation.
-        test_outputs = method.trainer.test(
+        assert trainer.datamodule is self
+        test_outputs = trainer.test(
             datamodule=self,
-            verbose=False,
+            # verbose=False,
         )
+        assert test_outputs, f"BUG: Pytorch lightning bug, Trainer.test() returned None!"
         test_loss: Loss = test_outputs[0]["loss_object"]
 
         model = method.model
@@ -238,20 +239,6 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
         if not self._setup:
             self.setup(*args, **kwargs)
             self._setup = True
-
-    # @property
-    # @abstractmethod
-    # def dims(self) -> Tuple[int, ...]:
-    #     """The input shape for this setting.
-
-    #     Returns:
-    #         Tuple[int, ...]: The input shape for this setting.
-    #     """
-    #     return self._dims
-
-    # @dims.setter
-    # def dims(self, value) -> None:
-    #     self._dims = value
 
     @classmethod
     def get_all_applicable_methods(cls) -> List[Type["Method"]]:

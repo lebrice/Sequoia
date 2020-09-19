@@ -13,7 +13,7 @@ from simple_parsing import choice, list_field
 from utils import dict_union
 from utils.logging_utils import get_logger
 
-from .. import ActiveSetting
+from settings.active.setting import ActiveSetting
 
 logger = get_logger(__file__)
 
@@ -60,13 +60,13 @@ class ContinualRLSetting(ActiveSetting):
         # wanted to! However for now we will use the same tasks for training and
         # for testing:
         self.train_task_schedule = self.create_task_schedule(temp_env)
-        self.valid_task_schedule = deepcopy(self.train_task_schedule)
+        self.val_task_schedule = deepcopy(self.train_task_schedule)
         self.test_task_schedule = deepcopy(self.train_task_schedule)
         # self.test_task_schedule = self.create_task_schedule()
         
-        self._train_loader: GymDataLoader
-        self._val_loader: GymDataLoader
-        self._test_loader: GymDataLoader
+        self.train_env: GymDataLoader
+        self.val_env: GymDataLoader
+        self.test_env: GymDataLoader
         # close the temporary environment, we don't need it anymore.
         temp_env.close()
 
@@ -75,7 +75,7 @@ class ContinualRLSetting(ActiveSetting):
 
         When `env` is not given, creates a temporary environment. We basically
         just want to get access to the `random_task()` method of the
-        `MultiTaskEnvironment` object.
+        `MultiTaskEnvironment` wrapper for the chosen environment.
 
         Args:
             env (MultiTaskEnvironment, optional): The environment whose
@@ -137,32 +137,36 @@ class ContinualRLSetting(ActiveSetting):
     def train_dataloader(self, *args, **kwargs) -> GymDataLoader:
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         kwargs["num_workers"] = kwargs["batch_size"]
-        self._train_loader = GymDataLoader(
+        self.train_env = GymDataLoader(
             env_factory=self.train_env_factory,
             max_steps=self.max_steps,
             transforms=self.train_transforms,
             **kwargs
         )
-        return self._train_loader
+        return self.train_env
     
     def val_dataloader(self, *args, **kwargs) -> GymDataLoader:
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         kwargs["num_workers"] = kwargs["batch_size"]
-        self._val_loader = GymDataLoader(
+        self.val_env = GymDataLoader(
             env_factory=self.val_env_factory,
             max_steps=self.max_steps,
             transforms=self.train_transforms,
             **kwargs
         )
-        return self._val_loader
+        return self.val_env
 
     def test_dataloader(self, *args, **kwargs) -> GymDataLoader:
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         kwargs["num_workers"] = kwargs["batch_size"]
-        self._test_loader = GymDataLoader(
+        self.test_env = GymDataLoader(
             env_factory=self.val_env_factory,
             max_steps=self.max_steps,
             transforms=self.train_transforms,
             **kwargs
         )
-        return self._test_loader
+        return self.test_env
+
+
+if __name__ == "__main__":
+    ContinualRLSetting.main()

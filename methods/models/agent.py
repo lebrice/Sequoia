@@ -43,7 +43,7 @@ class Agent(Model[SettingType], Pickleable):
         # super().__init__()
         super().__init__(setting=setting, hparams=hparams, config=config)
         self.setting: RLSetting
-        assert self.setting.dims == self.setting.obs_shape
+        assert self.setting.dims == self.setting.obs_shape, (self.setting.dims, self.setting.obs_shape)
         self.input_shape  = self.setting.obs_shape
         self.output_shape = self.setting.action_shape
         self.action_shape = self.setting.action_shape

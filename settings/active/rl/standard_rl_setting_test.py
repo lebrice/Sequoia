@@ -7,7 +7,7 @@ from utils import take
 
 from ..active_dataloader_test import DummyEnvironment
 from .gym_dataloader_test import check_interaction_with_env
-from .setting import RLSetting
+from .standard_rl_setting import RLSetting
 
 # TODO: Write some tests to make sure that the actions actually get sent back
 # to the loaders for each of 'train' 'val' and 'test'. 

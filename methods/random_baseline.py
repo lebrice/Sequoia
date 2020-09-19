@@ -11,16 +11,17 @@ from singledispatchmethod import singledispatchmethod
 from torch import Tensor
 
 from methods.method import Method
-from methods.models import Model, OutputHead
+from methods.models import Agent, Model, OutputHead
 from methods.models.class_incremental_model import ClassIncrementalModel
 from methods.models.iid_model import IIDModel
 from methods.models.task_incremental_model import TaskIncrementalModel
-from settings import (ClassIncrementalSetting, IIDSetting, RLSetting, Setting,
-                      SettingType, TaskIncrementalSetting)
+from settings import (ActiveSetting, ClassIncrementalSetting, IIDSetting,
+                      RLSetting, Setting, SettingType, TaskIncrementalSetting)
 from utils import get_logger
 
 from .models import HParams, Model
 from .models.agent import Agent
+from .models.random_agent import RandomAgent
 
 logger = get_logger(__file__)
 
@@ -66,7 +67,6 @@ class RandomIIDModel(RandomPredictionsMixin, IIDModel):
     pass
 
 
-from .models.random_agent import RandomAgent
 
 # class RandomAgent(RandomPredictionsMixin, Agent):
 #     pass
@@ -92,11 +92,10 @@ class RandomBaselineMethod(Method, target_setting=Setting):
 
     @singledispatchmethod
     def model_class(self, setting: SettingType) -> Type[Model]:
-        assert False, isinstance(setting, RLSetting)
         raise NotImplementedError(f"No known model for setting of type {type(setting)} (registry: {self.model_class.registry})")
     
     @model_class.register
-    def _(self, setting: RLSetting) -> Type[Model]:
+    def _(self, setting: ActiveSetting) -> Type[Agent]:
         # TODO: Make a 'random' RL method.
         return RandomAgent
 
