@@ -17,12 +17,21 @@ logger = get_logger(__file__)
 
 @dataclass
 class ClassIncrementalRLSetting(ContinualRLSetting):
-    """TODO: Figure out how to setup the 'epochs' and the tasks for RL.
+    """ Continual RL setting with clear task boundaries.
+
+    By default, the task labels are given at train time, but not at test time.
+
+    TODO: Decide how to implement the train procedure, if we give a single
+    dataloader, we might need to call the agent's `on_task_switch` when we reach
+    the task boundary.. Or, we could produce one dataloader per task, and then
+    implement a custom `fit` procedure in the CLTrainer class, that loops over
+    the tasks and calls the `on_task_switch` when needed.
     """
-    # Max number of steps ("length" of the training and test "datasets").
+    # Total number of steps (including all tasks).
     max_steps: int = 1_000_000
-    # Number of steps per task.
-    steps_per_task: int = 1_000_000
+    # Number of steps per task. When left unset, takes the value of `max_steps`
+    # divided by `nb_tasks`.
+    steps_per_task: int = 0
     nb_tasks: int = 10
 
     task_labels_at_train_time: bool = True
@@ -32,11 +41,18 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
                       obs_shape: Tuple[int, ...] = (),
                       action_shape: Tuple[int, ...] = (),
                       reward_shape: Tuple[int, ...] = ()):
+
+        if not self.steps_per_task:
+            self.steps_per_task = self.max_steps // self.nb_tasks
+        else:
+            self.nb_tasks = self.max_steps // self.steps_per_task
+
         super().__post_init__(
             obs_shape=obs_shape,
             action_shape=action_shape,
             reward_shape=reward_shape,
         )
+
         self.train_tasks: List[Dict] = [task for step, task in sorted(self.train_task_schedule.items())]
         self.val_tasks: List[Dict] = [task for step, task in sorted(self.val_task_schedule.items())]
         self.test_tasks: List[Dict] = [task for step, task in sorted(self.test_task_schedule.items())]

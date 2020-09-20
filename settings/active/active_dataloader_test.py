@@ -10,38 +10,6 @@ import numpy as np
 from torchvision.datasets import MNIST
 from common.transforms import Transforms, Compose
 
-class DummyEnvironment(ActiveEnvironment[int, int, float]):
-    def __init__(self, start: int = 0):
-        self.manager = mp.Manager()
-        self.i: mp.Value[int] = self.manager.Value(int, start)
-
-    @log_calls
-    def __next__(self) -> int:
-        val = self.i.value
-        self.i.value += 1
-        return val
-
-    @log_calls
-    def __iter__(self) -> Generator[int, int, None]:
-        while True:
-            action = yield next(self)
-            if action is not None:
-                logger.debug(f"Received an action of {action} while iterating..")
-                self.reward = self.send(action)
-    @log_calls
-    def send(self, action: int) -> int:
-        self.i.value += action
-        return np.random.random()
-    
-    def peek(self):
-        return self.i.value
-
-    def add(self, value: int) -> int:
-        self.i.value += value
-        return self.i.value
-    
-    def reset(self):
-        self.i.value = 0
 
 class ActiveMnistEnvironment(ActiveEnvironment[Tensor, Tensor, Tensor]):
     """ An Mnist environment which will keep showing the same class until a

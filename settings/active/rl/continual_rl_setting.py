@@ -40,6 +40,7 @@ class ContinualRLSetting(ActiveSetting):
                       reward_shape: Tuple[int, ...] = ()):
         self.task_schedule: Dict[int, Dict[str, float]] = OrderedDict()
 
+
         # Create a temporary environment just to get the shapes and such.
         temp_env: SmoothTransitions = self.create_gym_env()
 

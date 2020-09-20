@@ -18,14 +18,15 @@ from settings.base.environment import (ActionType, EnvironmentBase,
                                        ObservationType, RewardType)
 from utils.logging_utils import get_logger, log_calls
 
-from .gym_dataset import GymDataset
-from .zip_dataset import ZipDataset
+from common.gym_wrappers import BatchEnv, EnvDataset
+# from .gym_dataset import GymDataset
+# from .zip_dataset import ZipDataset
 
 logger = get_logger(__file__)
 
 T = TypeVar("T")
 
-
+from common.gym_wrappers.batch_env import BatchEnv
 
 
 def worker_env_init(worker_id: int):
@@ -38,38 +39,6 @@ def worker_env_init(worker_id: int):
     # the dataset copy in this worker process
     dataset: GymDataset = worker_info.dataset
     logger.debug(f"dataset type: {type(dataset)}, id: {id(dataset)}")
-    seed = worker_info.seed
-    # Sometimes the numpy seed is too large.
-    if seed > 4294967295:
-        seed %= 4294967295
-    logger.debug(f"Seed for worker {worker_id}: {seed}")
-    seed_everything(seed)
-
-    # TODO: Use this maybe to add an Environemnt in the Batched version of the Environment above?
-    # assert len(dataset.datasets) == worker_id
-    # logger.debug(f"Creating environment copy for worker {worker_id}.")
-    # assert False
-    # dataset.datasets.append(dataset.env_factory())
-
-    # overall_start = dataset.start
-    # overall_end = dataset.end
-    # configure the dataset to only process the split workload
-    # dataset.env_name = ['SpaceInvaders-v0', 'Pong-v0'][worker_info.id]
-    # logger.debug(f" ENV: {dataset.env}")
-    # logger.debug('dataset: ', dataset)
-
-
-def collate_fn(batch: List[Tensor]) -> Tensor:
-    assert isinstance(batch, list)
-    assert isinstance(batch[0], (Tensor, np.ndarray))
-    logger.debug(f"Inside collate function!")
-    # logger.debug(f"observation shapes: {[v.shape for v in batch]}")
-    batch = [torch.as_tensor(obs, dtype=float) for obs in batch]
-    if batch[0].shape[0] == 1 and batch[0].ndim > 1:
-        batch = torch.cat(batch)
-    else:
-        batch = torch.stack(batch)
-    return batch
 
 
 class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
@@ -78,29 +47,17 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
     def __init__(self,
                  env: str = None,
                  env_factory: Callable[[], gym.Env] = None,
-                 observe_pixels: bool = False,
                  transforms: Optional[Callable] = None,
                  batch_size: int = 1,
                  num_workers: int = 0,
                  max_steps: int = 10_000,
                  random_actions_when_missing: bool = True,
                  policy: Callable[[Tensor], Tensor] = None,
-                 worker_init_fn: Optional[Callable[[int], None]] = worker_env_init,
-                 collate_fn: Optional[Callable[[List[Tensor]], Tensor]] = collate_fn,
                  name: str = "",
                   **kwargs):
         assert env or env_factory, "One of `env` or `env_factory` must be set."
         self.transforms = transforms
         self.kwargs = kwargs
-        # NOTE: This assumes that the 'env' isn't already batched, i.e. that it
-        # only returns one observation and one reward per action.
-        self.environments: List[GymDataset] = [
-            GymDataset(
-                env if env else env_factory(),
-                observe_pixels=observe_pixels
-            ) for _ in range(batch_size)
-        ]
-        self._observe_pixels = observe_pixels
         self.name = name
         # Counts when an action is sent back to the dataloader using send()
         self.n_sends: int = 0
@@ -133,10 +90,11 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
                 "GymDataLoader."
             )
         # This 'dataset' attribute isn't really used atm.
-        self.dataset = ZipDataset(self.environments)
+        # self.dataset = ZipDataset(self.environments)
         # init the dataloader.
         super().__init__(
-            self.dataset,
+            [],
+            # self.dataset,
             # TODO: Debug the multi-worker data-loading with Gym Dataloaders.
             # num_workers=num_workers,
             num_workers=0,
