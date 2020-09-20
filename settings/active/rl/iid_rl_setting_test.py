@@ -7,18 +7,11 @@ from utils import take
 
 from ..active_dataloader_test import DummyEnvironment
 from .gym_dataloader_test import check_interaction_with_env
-from .standard_rl_setting import RLSetting
+from .iid_rl_setting import RLSetting
 
 # TODO: Write some tests to make sure that the actions actually get sent back
 # to the loaders for each of 'train' 'val' and 'test'. 
-@dataclass
-class DummyRLSetting(RLSetting):
-    # Class variable holding all the available datasets.
-    available_datasets: ClassVar[Dict[str, str]] = {
-        "cartpole": "CartPole-v0",
-        "dummy": DummyEnvironment
-    }
-    observe_state_directly: bool = True
+
 
 def test_basic():
     setting = RLSetting(observe_state_directly=True, dataset="cartpole")

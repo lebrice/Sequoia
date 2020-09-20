@@ -78,7 +78,7 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
     def __init__(self,
                  env: str = None,
                  env_factory: Callable[[], gym.Env] = None,
-                 observe_pixels: bool = True,
+                 observe_pixels: bool = False,
                  transforms: Optional[Callable] = None,
                  batch_size: int = 1,
                  num_workers: int = 0,

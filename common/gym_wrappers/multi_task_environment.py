@@ -1,6 +1,6 @@
 import random
 from collections import OrderedDict
-from typing import Dict, List, Optional, Sequence, Union, Any
+from typing import Any, Dict, List, Optional, Sequence, Type, Union
 
 import gym
 import matplotlib.pyplot as plt
@@ -10,7 +10,7 @@ from gym.envs.registration import register
 
 from utils.logging_utils import get_logger
 
-task_param_names: Dict[str, List[str]] = {
+task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
     CartPoleEnv: [
         "gravity",
         "masscart",

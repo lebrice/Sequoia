@@ -42,37 +42,6 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
         self.test_tasks: List[Dict] = [task for step, task in sorted(self.test_task_schedule.items())]
         self._current_task_id: int = 0
 
-    def evaluate(self, method: "Method"):
-        """Tests the method and returns the Results.
-
-        Overwrite this to customize testing for your experimental setting.
-
-        Returns:
-            ResultsType: A Results object for this particular setting.
-        """
-        from methods import Method
-        method: Method
-        trainer = method.trainer
-
-        # Run the actual evaluation.
-        test_outputs = method.trainer.test(
-            datamodule=self,
-            verbose=False,
-        )
-        test_loss: Loss = test_outputs[0]["loss_object"]
-
-        model = method.model
-        from methods.models import Model
-        if isinstance(model, Model):
-            hparams = model.hp
-        else:
-            assert False, f"TODO: Remove this ({model})."
-            hparams = model.hparams
-        return self.results_class(
-            hparams=hparams,
-            test_loss=test_loss,
-        )
-
     @property
     def current_task_id(self) -> int:
         return self._current_task_id
