@@ -424,32 +424,32 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
         return env
 
-    def train_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
-        """Returns the DataLoaders for all the train datasets. """
-        loaders: List[DataLoader] = []
-        for i, dataset in enumerate(self.train_datasets):
-            kwargs = dict_union(self.dataloader_kwargs, kwargs)
-            env: DataLoader = PassiveEnvironment(dataset, **kwargs)
-            loaders.append(env)
-        return loaders
+    # def train_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
+    #     """Returns the DataLoaders for all the train datasets. """
+    #     loaders: List[DataLoader] = []
+    #     for i, dataset in enumerate(self.train_datasets):
+    #         kwargs = dict_union(self.dataloader_kwargs, kwargs)
+    #         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
+    #         loaders.append(env)
+    #     return loaders
 
-    def test_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
-        """Returns the DataLoaders for all the test datasets. """
-        loaders: List[DataLoader] = []
-        for i, dataset in enumerate(self.test_datasets):
-            kwargs = dict_union(self.dataloader_kwargs, kwargs)
-            env: DataLoader = PassiveEnvironment(dataset, **kwargs)
-            loaders.append(env)
-        return loaders
+    # def test_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
+    #     """Returns the DataLoaders for all the test datasets. """
+    #     loaders: List[DataLoader] = []
+    #     for i, dataset in enumerate(self.test_datasets):
+    #         kwargs = dict_union(self.dataloader_kwargs, kwargs)
+    #         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
+    #         loaders.append(env)
+    #     return loaders
 
-    def val_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
-        """Returns the DataLoaders for all the validation datasets. """
-        loaders: List[DataLoader] = []
-        for i, dataset in enumerate(self.val_datasets):
-            kwargs = dict_union(self.dataloader_kwargs, kwargs)
-            env: DataLoader = PassiveEnvironment(dataset, **kwargs)
-            loaders.append(env)
-        return loaders
+    # def val_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
+    #     """Returns the DataLoaders for all the validation datasets. """
+    #     loaders: List[DataLoader] = []
+    #     for i, dataset in enumerate(self.val_datasets):
+    #         kwargs = dict_union(self.dataloader_kwargs, kwargs)
+    #         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
+    #         loaders.append(env)
+    #     return loaders
 
     @property
     def current_task_id(self) -> Optional[int]:

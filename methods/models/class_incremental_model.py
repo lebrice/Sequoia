@@ -127,26 +127,26 @@ class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
             h_x = h_x.detach()
         return super().output_task(h_x)
 
-    def train_dataloaders(self, **kwargs) -> List[DataLoader]:
-        """ Returns the dataloaders for all train tasks.
-        See the `TaskIncrementalSetting` class for more info.
-        """
-        kwargs = self.dataloader_kwargs(**kwargs)
-        return self.setting.train_dataloaders(**kwargs)
+    # def train_dataloaders(self, **kwargs) -> List[DataLoader]:
+    #     """ Returns the dataloaders for all train tasks.
+    #     See the `TaskIncrementalSetting` class for more info.
+    #     """
+    #     kwargs = self.dataloader_kwargs(**kwargs)
+    #     return self.setting.train_dataloaders(**kwargs)
     
-    def val_dataloaders(self, **kwargs) -> List[DataLoader]:
-        """ Returns the dataloaders for all validation tasks.
-        See the `TaskIncrementalSetting` class for more info.
-        """
-        kwargs = self.dataloader_kwargs(**kwargs)
-        return self.setting.val_dataloaders(**kwargs)
+    # def val_dataloaders(self, **kwargs) -> List[DataLoader]:
+    #     """ Returns the dataloaders for all validation tasks.
+    #     See the `TaskIncrementalSetting` class for more info.
+    #     """
+    #     kwargs = self.dataloader_kwargs(**kwargs)
+    #     return self.setting.val_dataloaders(**kwargs)
     
-    def test_dataloaders(self, **kwargs) -> List[DataLoader]:
-        """ Returns the dataloaders for all test tasks.
-        See the `TaskIncrementalSetting` class for more info.
-        """
-        kwargs = self.dataloader_kwargs(**kwargs)
-        return self.setting.test_dataloaders(**kwargs)
+    # def test_dataloaders(self, **kwargs) -> List[DataLoader]:
+    #     """ Returns the dataloaders for all test tasks.
+    #     See the `TaskIncrementalSetting` class for more info.
+    #     """
+    #     kwargs = self.dataloader_kwargs(**kwargs)
+    #     return self.setting.test_dataloaders(**kwargs)
     
     def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]],
                            batch_idx: int,

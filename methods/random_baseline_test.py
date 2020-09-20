@@ -132,7 +132,7 @@ def test_fast_dev_run_multihead(tmp_path: Path):
         --default_root_dir {tmp_path}
         --log_dir_root {tmp_path}
         --multihead True
-        --batch_size 1
+        --batch_size 100
     """)
     results: TaskIncrementalResults = method.apply_to(setting)
     metrics = results.task_metrics

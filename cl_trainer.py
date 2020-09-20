@@ -55,7 +55,7 @@ class CLTrainer(Trainer):
         if isinstance(datamodule, Setting):
             setting: Setting = datamodule
             logger.debug(f"Training the model of type {type(model)} on a setting of type {type(datamodule)}!")
-            self.fit_setting(setting, model)
+            return self.fit_setting(setting, model)
         else:
             logger.info(
                 f"datamodule {datamodule} isn't an instance of `Setting`, "
@@ -71,7 +71,7 @@ class CLTrainer(Trainer):
     def fit_setting(self, setting: Setting, model: LightningModule):
         logger.info(f"No known custom training procedure for setting of type {type(setting)}.")
         logger.info(f"Defaulting back to super().fit(model, datamodule=setting)")
-        super().fit(model=model, datamodule=setting)
+        return super().fit(model=model, datamodule=setting)
 
     def test(self,
              model: Optional[LightningModule] = None,
@@ -135,7 +135,7 @@ class CLTrainer(Trainer):
         logger.info(f"No registered custom testing procedure for setting of type {type(setting)}.")
         logger.info(f"Defaulting back to super().test(model, datamodule=setting)")
         assert self.datamodule is setting
-        super().test(
+        return super().test(
             datamodule=setting,
             ckpt_path=ckpt_path,
             verbose=verbose
@@ -147,6 +147,7 @@ class CLTrainer(Trainer):
         logger.info(f"Number of tasks: {n_tasks}")
         logger.info(f"Number of classes in task: {setting.num_classes}")
 
+        task_results: List[Dict] = []
         for i in range(n_tasks):
             logger.info(f"Starting training on task #{i}")
             setting.current_task_id = i
@@ -157,10 +158,13 @@ class CLTrainer(Trainer):
                 # TODO: @lebrice What should we call 'on_task_switch' on? the Method? the Model?
                 if hasattr(model, "on_task_switch") and callable(model.on_task_switch):
                     model.on_task_switch(i)
-            super().fit(
+            result = super().fit(
                 model,
                 datamodule=setting,
             )
+            assert result
+            task_results.append(result)
+        return task_results
 
     @test_setting.register
     def test_class_incremental(self,
@@ -190,9 +194,10 @@ class CLTrainer(Trainer):
             ckpt_path = None
         model = model or self.get_model()
         assert self.datamodule is setting
+        
+        # TODO: Clean up this mess.
 
-
-        results: List[Dict] = []
+        results: List[List[List[Dict]]] = []
         for task_id in range(setting.nb_tasks):
             logger.info(f"Starting evaluation on task {task_id}.")
             setting.current_task_id = task_id
@@ -203,11 +208,26 @@ class CLTrainer(Trainer):
                 # datamodule=setting,
                 # verbose=False,
             )
-            assert False, task_results
             assert task_results is not None, "Trainer.test() returned None?!!"
+            assert isinstance(task_results, list)
+            # TODO: For some reason, there are `nb_tasks` results instead of 1.
+            assert len(task_results) == setting.nb_tasks
+            # assert "loss_object" in task_results[0]
+            # task_loss = task_results[0]["loss_object"]
             results.append(task_results)
+
+        results_after_learning_last_task = results[-1]
+        assert len(results_after_learning_last_task)         
         
-        return results
+        task_losses: List[Loss] = []
+        for task_id, task_results in enumerate(results_after_learning_last_task):
+            assert isinstance(task_results, list)
+            assert len(task_results) == 1
+            result_dict = task_results[0]
+            assert "loss_object" in result_dict, result_dict
+            task_loss: Loss = result_dict["loss_object"]
+            task_losses.append(task_loss)
+        return task_losses
 
 
         test_dataloaders = setting.test_dataloaders()
