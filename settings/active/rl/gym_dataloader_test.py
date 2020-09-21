@@ -11,9 +11,9 @@ from conftest import xfail
 from utils import take
 from utils.logging_utils import get_logger
 
-from .gym_dataloader import GymDataLoader, GymDataset
-from .gym_dataset_test import check_interaction_with_env
-from common.gym_wrappers.env_dataset_test import DummyEnvironment
+from .gym_dataloader import GymDataLoader
+from common.gym_wrappers import EnvDataset
+from conftest import DummyEnvironment
 
 
 logger = get_logger(__file__)

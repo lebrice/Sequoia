@@ -351,6 +351,7 @@ class Method(Serializable, Generic[SettingType], Parseable, metaclass=MethodType
 
     @classmethod
     def get_path_to_source_file(cls: Type) -> Path:
-        cwd = Path(os.path.abspath(os.path.dirname(__file__)))
-        source_file = Path(getsourcefile(cls)).relative_to(cwd)
+        cwd = Path(os.getcwd())
+        source_path = Path(getsourcefile(cls)).absolute()
+        source_file = source_path.relative_to(cwd)
         return source_file

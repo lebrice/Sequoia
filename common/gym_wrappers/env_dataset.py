@@ -81,9 +81,17 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
                 # the action is received, the corresponding reward be
                 # immediately returned, and the next yield statement in the
                 # iterator should give back the rest ? (Need to figure this out)
+                if self._observation is None or self._done is None:
+                    raise RuntimeError(
+                        "You need to send an action using the `send` method "
+                        "every time you get a value from the dataset! "
+                        "Otherwise, you can also pass in a policy to use when "
+                        "an action isn't given."
+                    )
                 assert self._observation is not None
                 assert self._done is not None
                 assert self._info is not None
+
                 action = yield (self._observation, self._done, self._info)
                 
                 assert action is None, (
@@ -124,9 +132,12 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
         return False
 
     def reset(self, **kwargs) -> ObservationType:
-        results = super().reset(**kwargs)
+        self._observation = super().reset(**kwargs)
+        self._reward = None
+        self._done = False
+        self._info = {}
         self.n_episodes += 1
-        return results
+        return self._observation
 
     def close(self) -> None:
         # This will stop the iterator on the next step.

@@ -72,7 +72,8 @@ class StepCallbackWrapper(gym.Wrapper):
                 if callback.step == self._steps:
                     callback(self._steps, self, step_results)
             elif isinstance(callback, PeriodicCallback):
-                if self._steps >= callback.offset and (self._steps - callback.offset) % callback.period == 0:
+                if (self._steps >= callback.offset and
+                       (self._steps - callback.offset) % callback.period == 0):
                     callback(self._steps, self, step_results)
             else:
                 # if it's a callable, just call it all the time, assuming that

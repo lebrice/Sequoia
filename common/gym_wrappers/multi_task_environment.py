@@ -259,16 +259,16 @@ class MultiTaskEnvironment(gym.Wrapper):
                 )
             self._task_schedule[step] = task
 
-def MultiTaskCartPole():
-    env = gym.make("CartPole-v0")
-    return MultiTaskEnvironment(env, noise_std=0.1)
+# def MultiTaskCartPole():
+#     env = gym.make("CartPole-v0")
+#     return MultiTaskEnvironment(env, noise_std=0.1)
 
-MULTI_TASK_CARTPOLE: str = 'MultiTaskCartPole-v1'
+# MULTI_TASK_CARTPOLE: str = 'MultiTaskCartPole-v1'
 
-try:
-    register(
-        id=MULTI_TASK_CARTPOLE,
-        entry_point='settings.active.continual.multi_task_environment:MultiTaskCartPole',
-    )
-except gym.error.Error:
-    pass
+# try:
+#     register(
+#         id=MULTI_TASK_CARTPOLE,
+#         entry_point='settings.active.continual.multi_task_environment:MultiTaskCartPole',
+#     )
+# except gym.error.Error:
+#     pass

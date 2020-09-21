@@ -246,8 +246,8 @@ def roundrobin(*iterables: Iterable[T]) -> Iterable[T]:
     nexts = itertools.cycle(iter(it).__next__ for it in iterables)
     while num_active:
         try:
-            for next in nexts:
-                yield next()
+            for next_ in nexts:
+                yield next_()
         except StopIteration:
             # Remove the iterator we just exhausted from the cycle.
             num_active -= 1

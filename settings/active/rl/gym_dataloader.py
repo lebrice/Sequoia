@@ -50,7 +50,7 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
                  transforms: Optional[Callable] = None,
                  batch_size: int = 1,
                  num_workers: int = 0,
-                 max_steps: int = 10_000,
+                 max_steps: int = 1_000_000,
                  random_actions_when_missing: bool = True,
                  policy: Callable[[Tensor], Tensor] = None,
                  name: str = "",

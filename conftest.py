@@ -8,14 +8,16 @@ from pathlib import Path
 from typing import (Any, Dict, Iterable, List, Optional, Tuple, Type, Union,
                     get_type_hints)
 
+import gym
 import pytest
 
-import sys; sys.path += [os.path.abspath('.')]
-
+import sys; sys.path.extend([".", ".."])
 from common.config import Config, TrainerConfig
 from methods.method import Method
 from settings import Setting
 from simple_parsing import Serializable
+
+
 
 logger = logging.getLogger(__file__)
 
@@ -189,3 +191,41 @@ def pytest_generate_tests(metafunc):
     """
     parametrize_test_datasets(metafunc)
 
+
+class DummyEnvironment(gym.Env):
+    """ Dummy environment for testing.
+    
+    The reward is how close to the target value the state (a counter) is. The
+    actions are:
+    0:  keep the counter the same.
+    1:  Increment the counter.
+    2:  Decrement the counter.
+    """
+    def __init__(self, start: int = 0, max_value: int = 10, target: int = 5):
+        self.max_value = max_value
+        self.i = start
+        self.reward_range = (0, max_value)
+        self.action_space = gym.spaces.Discrete(n=3)
+        self.observation_space = gym.spaces.Discrete(n=max_value)
+
+        self.target = target
+        self.reward_range = (0, max(target, max_value - target))
+
+        self.done: bool = False
+
+    def step(self, action: int):
+        # The action modifies the state, producing a new state, and you get the
+        # reward associated with that transition.
+        if action == 1:
+            self.i += 1
+        elif action == 2:
+            self.i -= 1
+        self.i %= self.max_value
+        done = (self.i == self.target)
+        reward = abs(self.i - self.target)
+        print(self.i, reward, done, action)
+        return self.i, reward, done, {}
+
+    def reset(self):
+        self.i = 0
+        return self.i
