@@ -1,15 +1,18 @@
 
+import multiprocessing as mp
 from multiprocessing import Pipe, Process
 from multiprocessing.connection import Connection, wait
 from typing import Any, List, Union
 
+import gym
 from baselines.common.vec_env import CloudpickleWrapper, VecEnv
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
-
+process_name = mp.current_process().name
+print(f"Current process name: {process_name}")
 
 class Commands:
     step = "step"
@@ -21,12 +24,14 @@ class Commands:
     set_attr = "setattr"
     set_attr_on_each = "setattr_on_each"
     partial_reset = "partial_reset"
+    seed = "seed"
 
 
 def custom_worker(remote: Connection,
                   parent_remote: Connection,
                   env_fn_wrappers: CloudpickleWrapper,
-                  worker_index: int = None):
+                  worker_index: int = None,
+                  auto_reset: bool = True):
     """Copied this from the baselines package, slightly modifying it to accept
     other commands.
     """
@@ -35,7 +40,7 @@ def custom_worker(remote: Connection,
     def step_env(env, action):
         observation, reward, done, info = env.step(action)
         # TODO: Is this really what we want to do?
-        if done:
+        if done and auto_reset:
             observation = env.reset()
         return observation, reward, done, info
 
@@ -60,9 +65,9 @@ def custom_worker(remote: Connection,
                     break
                 continue
             cmd, *data = remote.recv()
-            logger.debug(f"Worker {idx} received command {cmd}, data {data}")
             if isinstance(data, list) and len(data) == 1 and isinstance(data[0], CloudpickleWrapper):
                 data = data[0].x
+            logger.debug(f"Worker {idx} received command {cmd}, data {data}")
             
             if cmd == Commands.step:
                 remote.send([step_env(env, action) for env, action in zip(envs, data)])
@@ -126,14 +131,15 @@ def custom_worker(remote: Connection,
                 attr_name = data[0]
                 attr_value = data[1]
                 for env in envs:
-                    setattr(env, attr_name, attr_value)
+                    wrapper = set_attr_on_env(env, attr_name, attr_value)
+                    logger.debug(f"(Set the attribute on the {wrapper} wrapper.")
                 remote.send([None for env in envs])
             
             elif cmd == Commands.set_attr_on_each:
                 # IDEA: Instead of setting the same value for all envs, here
                 # `data` must have length `len(envs)`, so we can just split it
                 # and set a different value for each env.
-                if isinstance(data, list) and len(data) == 1:
+                if isinstance(data, (list, tuple)) and len(data) == 1:
                     data = data[0]
                 if isinstance(data, CloudpickleWrapper):
                     data = data.x
@@ -141,16 +147,29 @@ def custom_worker(remote: Connection,
                 attr_name = data[0]
                 attr_values = data[1]
                 assert len(attr_values) == len(envs)
-                for env, attr_value in zip(envs, attr_values):
-                    setattr(env, attr_name, attr_value)
+                for i, (env, attr_value) in enumerate(zip(envs, attr_values)):
+                    logger.debug(f"Worker {idx}: envs[{i}].{attr_name} = {attr_value}")
+                    wrapper = set_attr_on_env(env, attr_name, attr_value)
+                    logger.debug(f"(Set the attribute on the {wrapper} wrapper.")
                 remote.send([None for env in envs])
             
             elif cmd == Commands.partial_reset:
                 # TODO: Idea, if data[i] is True, reset envs[i].
                 assert len(data) == len(envs)
+                states = []
                 for env, reset in zip(envs, data):
                     if reset:
-                        env.reset()
+                        state = env.reset()
+                    else:
+                        state = None
+                    states.append(state)
+                remote.send(CloudpickleWrapper(states))
+
+            elif cmd == Commands.seed:
+                # TODO: Idea, if data[i] is True, reset envs[i].
+                assert len(data) == len(envs)
+                for env, seed in zip(envs, data):
+                    env.seed(seed)
                 remote.send([None for env in envs])
 
             else:
@@ -160,3 +179,15 @@ def custom_worker(remote: Connection,
     finally:
         for env in envs:
             env.close()
+
+def set_attr_on_env(env: Union[gym.Env, gym.Wrapper], attr: str, value: Any) -> Union[gym.Env, gym.Wrapper]:
+    """ Sets the attribute `attr` to a value of `value` on the first wrapper
+    that already has it.
+    If none have it, sets the attribute on the unwrapped env.
+
+    Returns the env or wrapper on which the attribute was set.
+    """
+    while hasattr(env, "env") and not hasattr(env, attr):
+        env = env.env
+    setattr(env, attr, value)
+    return env

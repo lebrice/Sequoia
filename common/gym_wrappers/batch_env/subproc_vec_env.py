@@ -5,15 +5,17 @@ Raises:
     RuntimeError: [description]
 """
 import multiprocessing as mp
+import platform
+from inspect import ismethod
 from multiprocessing import Process
-from typing import Any, Callable, List, Sequence, Tuple, TypeVar
+from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeVar
 
 import numpy as np
 
-from utils import n_consecutive
 from utils.logging_utils import get_logger
+from utils.utils import n_consecutive
 
-from .worker import custom_worker, Commands
+from .worker import Commands, custom_worker
 
 logger = get_logger(__file__)
 _missing = object()
@@ -36,6 +38,7 @@ except ImportError as e:
         "to just remove it after."
     ) from e
 
+
 class _SubprocVecEnv(SubprocVecEnv):
     """ NOTE: @lebrice I'm extending this just so we're able to use a different
     'worker' function in the future if needed.
@@ -43,7 +46,7 @@ class _SubprocVecEnv(SubprocVecEnv):
     def __init__(self,
                  env_fns,
                  spaces = None,
-                 context: str = "spawn",
+                 context: str = "fork" if platform.system() == "Linux" else "spawn",
                  in_series: int = 1,
                  worker: Callable = custom_worker):
         """
@@ -94,13 +97,22 @@ class _SubprocVecEnv(SubprocVecEnv):
     def __getattr__(self, attr: str, default: Any=_missing) -> List:
         logger.debug(f"Trying to get missing attribute '{attr}'.")
         # TODO: This is causing problems atm.
-        if default is not _missing:
+        attributes: List = []
+        if default is _missing:
+            attributes = self.get_attr_from_envs(attr)
+        else:
             try:
-                return self.get_attr_from_envs(attr)
+                attributes = self.get_attr_from_envs(attr)
             except AttributeError:
                 return default
-        else:
-            return self.get_attr_from_envs(attr)
+            
+        logger.debug(f"Attributes: {attributes}")
+        
+        if all(map(ismethod, attributes)):
+            logger.debug(f"TODO: Attributes are all methods! Could have some fun here!")    
+            from .batched_method import make_batched_method
+            return make_batched_method(attributes)
+        return attributes
 
     def get_attr_from_envs(self, attr: str) -> List:
         for remote in self.remotes:
@@ -155,3 +167,29 @@ class _SubprocVecEnv(SubprocVecEnv):
             for result in remote_results:
                 if result is not None:
                     raise RuntimeError(f"Something went wrong when trying to set attribute {attr}: {result}")
+
+    def partial_reset(self, reset_mask: Sequence[bool]) -> List[Optional[Any]]:
+        # Just in case we're given a generator or iterable.
+        values = list(reset_mask)
+        if len(values) != self.num_envs:
+            raise RuntimeError(
+                f"You need to pass a value for each of the {self.num_envs} "
+                f"environments. (received {values})"
+            )
+
+        # Make a list of the values for each remote.
+        values_per_remote: List[Tuple] = list(n_consecutive(values, self.in_series))
+
+        for remote, values_for_remote in zip(self.remotes, values_per_remote):
+            args = CloudpickleWrapper(values_for_remote)
+            remote.send((Commands.partial_reset, args))
+
+        results = []
+        for remote in self.remotes:
+            # We expect to receive None for the envs that weren't reset, and the
+            # reset state for those that were.
+            remote_results: List = remote.recv()
+            if isinstance(remote_results, CloudpickleWrapper):
+                remote_results = remote_results.x
+            results.extend(remote_results)
+        return results

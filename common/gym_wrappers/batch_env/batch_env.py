@@ -1,6 +1,7 @@
 import math
 import multiprocessing as mp
 from functools import partial
+from inspect import ismethod
 from multiprocessing import Pipe, Process
 from multiprocessing.connection import Connection, wait
 from typing import (Any, Callable, Iterable, List, Sequence, Tuple, TypeVar,
@@ -20,7 +21,6 @@ logger = get_logger(__file__)
 T = TypeVar("T")
 _missing = object()
 
-
 class BatchEnv(gym.Wrapper, IterableDataset):
     __slots__: List[str] = ["env", "batch_size"]
     def __init__(self,
@@ -28,6 +28,7 @@ class BatchEnv(gym.Wrapper, IterableDataset):
                  env_factory: Callable[[int], gym.Env] = None,
                  batch_size: int = 1,
                  num_envs_per_worker: int = 1,
+                 auto_reset: bool = False,
                  ):
         """Creates a batched environment using multiprocessing workers.
 
@@ -51,13 +52,13 @@ class BatchEnv(gym.Wrapper, IterableDataset):
         env_fns = [env_factory for i in range(batch_size)]
         env = _SubprocVecEnv(
             env_fns=env_fns,
-            worker=custom_worker,
-            in_series=num_envs_per_worker,
+            worker=partial(custom_worker, auto_reset=auto_reset),
+            in_series=num_envs_per_worker,            
         )
         super().__init__(env)
         self.env: _SubprocVecEnv
         self.batch_size = batch_size
-
+    
     def random_actions(self) -> Sequence:
         return np.stack([
             self.env.observation_space.sample() for _ in range(self.batch_size)

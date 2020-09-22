@@ -8,9 +8,15 @@ from typing import (Dict, Generator, Generic, Iterable, Optional, Sequence,
 import gym
 from torch.utils.data import IterableDataset
 
+from utils.logging_utils import get_logger
+
+from .batch_env import BatchEnv
+
 ObservationType = TypeVar("ObservationType")
 ActionType = TypeVar("ActionType")
 RewardType = TypeVar("RewardType")
+
+logger = get_logger(__file__)
 
 # TODO: @lebrice Create a wrapper that stores the last state in the `info` dict.
 # depending on the `done` value as well.
@@ -68,11 +74,14 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
                                          Union[Dict, Sequence[Dict]]]]:
         # Reset the env if it hasn't been called before iterating.
         if self.n_episodes == -1:
+            logger.debug(f"Resetting env because it hasn't been done before iterating.")
             self.reset()
 
-        while not self.reached_episode_limit or self.reached_step_limit:
+        while not (self.reached_episode_limit or self.reached_step_limit):
             # Perform an episode.
-            while not (self._done or self.reached_step_limit):
+            done = self._done if isinstance(self._done, bool) else False
+
+            while not done or self.reached_step_limit:
                 # TODO: @lebrice Isn't there something fishy going on here? I'm
                 # not sure that we're giving back the right reward for the right
                 # action and observation?
@@ -81,41 +90,35 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
                 # the action is received, the corresponding reward be
                 # immediately returned, and the next yield statement in the
                 # iterator should give back the rest ? (Need to figure this out)
-                if self._observation is None or self._done is None:
+                
+                if self.n_steps != self.n_actions:
                     raise RuntimeError(
                         "You need to send an action using the `send` method "
                         "every time you get a value from the dataset! "
                         "Otherwise, you can also pass in a policy to use when "
-                        "an action isn't given."
+                        "an action isn't given. \n"
+                        f"(step={self.n_steps}, n_actions={self.n_actions}, n_episodes={self.n_episodes})"
                     )
-                assert self._observation is not None
-                assert self._done is not None
-                assert self._info is not None
-
                 action = yield (self._observation, self._done, self._info)
                 
                 assert action is None, (
                     "Send actions to the env using the `send` method on the "
                     "env, not on the iterator itself!"
                 )
-                # IDEA: 'Delete' these attributes, to force users to send an
-                # action using either `send` or `step` between each iteration.
-                self._observation = None
-                self._done = None
-                self._info = None
+                if isinstance(self.env, BatchEnv) and any(self._done):
+                    # Only reset the envs that need to be reset, in this case.
+                    self.env.partial_reset(self._done)
 
-            self.episode_count += 1
-            # NOTE: It's important that we call `self.env.reset` rather than
-            # `self.reset` because that would reset the number of episodes and
-            # steps performed and mess up the checks above.
-            self.env.reset()
-
+            self.n_episodes += 1
+            self.reset()
         self.close()
 
     def send(self, action: ActionType) -> RewardType:
         assert action is not None, "Don't send a None action!"
         self.n_actions += 1
         self.step(action)
+        assert self._observation is not None
+        assert self._done is not None
         assert self._reward is not None
         return self._reward
 

@@ -34,19 +34,18 @@ def test_getattr(batch_size: int):
             1: +1,
             2: -1,
         }
-
-        start_state = state
-        print(f"Starting state: {state}")
-        print(f"Action: {actions}")
-        expected_state_change = np.array([impact_on_state[action] for action in actions])
-        print(f"Expected change on state: {expected_state_change}")
-        expected_state = start_state + expected_state_change
-        expected_state %= 10 # (since the values wrap around when negative.)
-        
-        state, reward, done, info = env.step(actions)
-        assert state.tolist() == expected_state.tolist()
-        # This should also be equivalent:
-        assert env.i == expected_state.tolist()
+        for i in range(5):
+            print(f"Starting state: {state}")
+            print(f"Action: {actions}")
+            expected_state_change = np.array([impact_on_state[action] for action in actions])
+            print(f"Expected change on state: {expected_state_change}")
+            expected_state = state + expected_state_change
+            expected_state %= 10 # (since the values wrap around when negative.)
+            
+            state, reward, done, info = env.step(actions)
+            assert state.tolist() == expected_state.tolist()
+            # This should also be equivalent:
+            assert env.i == expected_state.tolist()
 
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
 def test_get_missing_attr_raises_error(batch_size: int):
@@ -117,52 +116,57 @@ def test_setattr_foreach(batch_size: int):
         env.setattr_foreach("i", np.arange(batch_size))
         assert env.i == np.arange(batch_size).tolist()
 
-
-def test_batch_env_datasets():
-    batch_size = 2
+@pytest.mark.parametrize("batch_size", [1, 2, 10])
+def test_batch_env_datasets(batch_size: int):
     with BatchEnv(env_factory=DummyEnvironment, batch_size=batch_size) as env:
         env = EnvDataset(env)
-        x = env.reset().tolist()
-        assert x == [0] * batch_size
+        x = env.reset()
+        assert x.tolist() == [0] * batch_size
 
-        env.setattr_foreach("i", np.arange(batch_size))
+        state = np.arange(batch_size)
+        env.setattr_foreach("i", state)
+        assert env.i == state.tolist()
+        
+        # There is the issue that the _observation field is still at the
+        # previous value ([0,0]) when we start iterating, because we modified
+        # the env, bypassing the actual step and everything.
+        # Here I solve it quite simply by I solve it by doing one step in the
+        # env with a no-op action. We 
+        # state = np.arange(batch_size)
+        actions = [0] * batch_size
+        reward = env.send(actions)
+        assert reward.tolist() == np.abs(5 - state).tolist()
 
-        for i, (x, done, info) in zip(range(2), env):
-            assert x.tolist() == [i, i+1]
+        print("Before loop")
+        for i, (obs, dones, info) in zip(range(1), env):
+            print(f"Step {i}: {obs}, {dones}, {info}")
+            assert obs.tolist() == (state + i).tolist()
 
-            actions = [0] * batch_size
+            actions = [1] * batch_size # increment the state.
             reward = env.send(actions)
-            assert reward.tolist() == np.abs(5 - x).tolist()
-    
-
-@pytest.mark.xfail(reason="Don't yet have multi-worker active dataloader working.")
-@pytest.mark.parametrize("n_workers", [0, 1, 2, 4, 8, 24])
-def test_zip_dataset_multiple_workers(n_workers):
-    """
-    TODO: Test that the BatchEnv actually works with multiple workers.
-    """  
+            
+            # Just for this dummy env, we can easily keep track of what the state
+            # should become. 
+            state = (obs + 1) % 10
+            assert reward.tolist() == np.abs(5 - (obs+ 1)).tolist()
 
 
-def make_env(task: Dict = None):
-    def _make_env():
-        env = gym.make("CartPole-v0")
-        env = MultiTaskEnvironment(env)
-        if task:
-            env.current_task = task
-        return env
-    return _make_env
+@pytest.mark.parametrize("batch_size", [1, 2, 5, 10])
+def test_partial_reset(batch_size: int):
+    with BatchEnv(env_factory=DummyEnvironment, batch_size=batch_size) as env:
+        env.reset()
+        env.seed([[123, "bob"]] * batch_size)
 
+        for i in range(2):
+            obs, reward, done, info = env.step(np.arange(batch_size) + 1 % 3)
 
-def test_subproc_vec_env():
-    batch_size: int = 10
-    env_fns = [
-        make_env() for i in range(batch_size)   
-    ]
-    env = SubprocVecEnv(env_fns, spaces=None, context='spawn', in_series=1)
-    env.reset()
-    for i in range(1):
-        actions = [env.action_space.sample() for i in range(batch_size)]
-        obs, reward, done, info = env.step(actions)
-        assert obs.shape == (batch_size, 4)
-        env.render(mode="human")
-    env.close()
+        indices = np.arange(batch_size)
+        even_indices = indices[indices % 2 == 0]
+        odd_indices = indices[indices % 2 != 0]
+        reset_mask = np.zeros(batch_size, dtype=bool)
+        reset_mask[even_indices] = True
+
+        assert not all(obs[even_indices] == 0)
+        obs = env.partial_reset(reset_mask)
+        assert all(obs[i] == 0 for i in even_indices), obs
+        assert all(obs[i] == None for i in odd_indices), obs
