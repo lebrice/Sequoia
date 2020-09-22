@@ -40,20 +40,17 @@ def test_raise_error_when_missing_action():
     with EnvDataset(env) as env:
         env.reset()
         env.seed(123)
-        iterator = iter(env)
-        obs, done, info = next(iterator)
-        assert obs == 0
-        assert done is False
+        
         with pytest.raises(RuntimeError):
-            obs, done, info = next(iterator)
-    # env = GymDataLoader(
-    #     "CartPole-v0",
-    #     batch_size=10,
-    #     observe_pixels=False,
-    #     random_actions_when_missing=False,
-    # )
-    # env.reset()
-    # with pytest.raises(RuntimeError):
-    #     for obs_batch in take(env, 5):
-    #         # raises an error after the first iteration, as it didn't receive an action. 
-    #         pass
+            for i, (obs, done, info) in zip(range(5), env):
+                pass
+
+
+def test_doesn_raise_error_when_action_sent():
+    env = DummyEnvironment()
+    with EnvDataset(env) as env:
+        env.reset()
+        env.seed(123)
+    
+        for i, (obs, done, info) in zip(range(5), env):
+            env.send(env.action_space.sample())

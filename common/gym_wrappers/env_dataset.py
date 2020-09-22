@@ -46,6 +46,8 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
         # Number of episodes performed in the environment.
         # Starts at -1 so that an initial reset brings it to 0.
         self.n_episodes: int = -1
+        # Number of samples yielded by the iterator so far.
+        self.n_pulled: int = 0
 
         self._observation: Optional[ObservationType] = None 
         self._action: Optional[ActionType] = None
@@ -67,7 +69,10 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
         return self._observation, self._reward, self._done, self._info
 
     def __next__(self) -> Tuple:
-        return self.step(self.action)
+        # TODO: When iterating over the env as if it were a dataset, should
+        # 'next' give back the same things as 'step'?
+        return self._observation, self._reward, self._done
+        return self.step(self._action)
 
     def __iter__(self) -> Iterable[Tuple[ObservationType,
                                          Union[bool, Sequence[bool]],
@@ -90,21 +95,23 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
                 # the action is received, the corresponding reward be
                 # immediately returned, and the next yield statement in the
                 # iterator should give back the rest ? (Need to figure this out)
-                
-                if self.n_steps != self.n_actions:
+
+                logger.debug(f"(step={self.n_steps}, n_pulled={self.n_pulled}, n_actions={self.n_actions}, n_episodes={self.n_episodes})")
+                if self.n_pulled > self.n_actions:
                     raise RuntimeError(
                         "You need to send an action using the `send` method "
                         "every time you get a value from the dataset! "
                         "Otherwise, you can also pass in a policy to use when "
                         "an action isn't given. \n"
-                        f"(step={self.n_steps}, n_actions={self.n_actions}, n_episodes={self.n_episodes})"
                     )
-                action = yield (self._observation, self._done, self._info)
+                action = yield self.__next__()
+                self.n_pulled += 1
                 
-                assert action is None, (
-                    "Send actions to the env using the `send` method on the "
-                    "env, not on the iterator itself!"
-                )
+                if action is not None:
+                    raise NotImplementedError(
+                        "Send actions to the env using the `send` method on "
+                        "the env, not on the iterator itself!"
+                    )
                 if isinstance(self.env, BatchEnv) and any(self._done):
                     # Only reset the envs that need to be reset, in this case.
                     self.env.partial_reset(self._done)
