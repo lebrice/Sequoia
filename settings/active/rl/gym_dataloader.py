@@ -40,6 +40,7 @@ def worker_env_init(worker_id: int):
     dataset: GymDataset = worker_info.dataset
     logger.debug(f"dataset type: {type(dataset)}, id: {id(dataset)}")
 
+# TODO: Make a wrapper for applying transforms to observations?
 
 class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
     """ActiveDataLoader made specifically for (possibly batched) Gym envs.
@@ -49,9 +50,8 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
                  env_factory: Callable[[], gym.Env] = None,
                  transforms: Optional[Callable] = None,
                  batch_size: int = 1,
-                 num_workers: int = 0,
                  max_steps: int = 1_000_000,
-                 random_actions_when_missing: bool = True,
+                 use_policy_on_none_actions: bool = False,
                  policy: Callable[[Tensor], Tensor] = None,
                  name: str = "",
                   **kwargs):
@@ -59,6 +59,7 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor]):
         self.transforms = transforms
         self.kwargs = kwargs
         self.name = name
+        self.use_policy_on_none_actions: bool = use_policy_on_none_actions
         # Counts when an action is sent back to the dataloader using send()
         self.n_sends: int = 0
         # Counts when the underlying environments are updated using step()

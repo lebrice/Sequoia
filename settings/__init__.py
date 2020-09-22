@@ -16,5 +16,7 @@ all_settings: List[Type[Setting]] = [
     ClassIncrementalRLSetting,
     TaskIncrementalRLSetting,
     RLSetting,
-    # setting for name, setting in vars().items() if inspect.isclass(setting) and issubclass(setting, Setting)
+    ## Dynamic version:
+    # setting for name, setting in vars().items()
+    # if inspect.isclass(setting) and issubclass(setting, Setting)
 ]

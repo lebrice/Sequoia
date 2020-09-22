@@ -34,6 +34,11 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
                  max_steps: Optional[int] = None,
                  ):
         super().__init__(env=env)
+        if isinstance(env, BatchEnv):
+            assert not max_episodes, (
+                "TODO: No notion of 'episode' when using a batched environment!"
+            )
+
         # Maximum number of episodes to perform in the environment.
         self.max_episodes = max_episodes
         # Maximum number of steps to perform in the environment.
@@ -48,7 +53,6 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
         self.n_episodes: int = -1
         # Number of samples yielded by the iterator so far.
         self.n_pulled: int = 0
-
         self._observation: Optional[ObservationType] = None 
         self._action: Optional[ActionType] = None
         self._reward: Optional[RewardType] = None

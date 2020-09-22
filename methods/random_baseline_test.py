@@ -9,9 +9,11 @@ import pytest
 from common import ClassificationMetrics
 from conftest import get_dataset_params, parametrize, slow
 from methods.models.class_incremental_model import ClassIncrementalModel
-from settings import (ClassIncrementalResults, ClassIncrementalSetting,
-                      IIDSetting, Results, Setting, TaskIncrementalResults,
-                      TaskIncrementalSetting)
+from settings import (ClassIncrementalResults, ClassIncrementalRLSetting,
+                      ClassIncrementalSetting, ContinualRLSetting, IIDSetting,
+                      Results, RLSetting, Setting, TaskIncrementalResults,
+                      TaskIncrementalRLSetting, TaskIncrementalSetting,
+                      all_settings)
 
 from .random_baseline import RandomBaselineMethod
 
@@ -21,15 +23,13 @@ Method = RandomBaselineMethod
 
 # List of datasets that are currently supported.
 supported_datasets: List[str] = [
-    "mnist", "fashion_mnist", "cifar10", "cifar100", "kmnist"
+    "mnist", "fashion_mnist", "cifar10", "cifar100", "kmnist", "cartpole"
 ]
+
 
 def test_get_applicable_settings():
     settings = Method.get_all_applicable_settings()
-    assert ClassIncrementalSetting in settings
-    assert TaskIncrementalSetting in settings
-    assert IIDSetting in settings
-
+    assert set(settings) == set(all_settings)
 
 # Reuse the method accross all tests below
 @pytest.fixture(scope="module") 

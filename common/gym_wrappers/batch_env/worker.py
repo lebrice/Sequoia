@@ -5,6 +5,7 @@ from multiprocessing.connection import Connection, wait
 from typing import Any, List, Union
 
 import gym
+import numpy as np
 from baselines.common.vec_env import CloudpickleWrapper, VecEnv
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 
@@ -36,8 +37,10 @@ def custom_worker(remote: Connection,
     other commands.
     """
     idx = "" if worker_index is None else worker_index
-
-    def step_env(env, action):
+    def step_env(env: gym.Env, action):
+        if not env.action_space.contains(action):
+            if len(action) == 1:
+                action = action[0]
         observation, reward, done, info = env.step(action)
         # TODO: Is this really what we want to do?
         if done and auto_reset:
@@ -67,9 +70,10 @@ def custom_worker(remote: Connection,
             cmd, *data = remote.recv()
             if isinstance(data, list) and len(data) == 1 and isinstance(data[0], CloudpickleWrapper):
                 data = data[0].x
-            logger.debug(f"Worker {idx} received command {cmd}, data {data}")
-            
+            logger.debug(f"Worker {idx} received command {cmd}, data={data}")
             if cmd == Commands.step:
+                if isinstance(data, np.ndarray):
+                    assert False, data
                 remote.send([step_env(env, action) for env, action in zip(envs, data)])
             
             elif cmd == Commands.reset:

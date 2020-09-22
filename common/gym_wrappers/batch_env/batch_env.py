@@ -61,7 +61,7 @@ class BatchEnv(gym.Wrapper, IterableDataset):
     
     def random_actions(self) -> Sequence:
         return np.stack([
-            self.env.observation_space.sample() for _ in range(self.batch_size)
+            self.env.action_space.sample() for _ in range(self.batch_size)
         ])
 
     def getattr(self, attr: str) -> List:
