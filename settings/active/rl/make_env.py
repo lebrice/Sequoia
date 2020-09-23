@@ -18,6 +18,7 @@ logger = get_logger(__file__)
 W = TypeVar("W", bound=Union[gym.Env, gym.Wrapper])
 
 WrapperAndKwargs = Tuple[Type[gym.Wrapper], Dict]
+
 # TODO: @lebrice Not sure if this is a good idea, or that convenient, but
 # we could use a dict like this to save the 'default' wrappers to use before and
 # after batching for each env name or type of env.
@@ -26,14 +27,12 @@ default_wrappers_for_env: Dict[str, Iterable[WrapperAndKwargs]] = {
     "CartPole-v0": [ConvertToFromTensors],
 }
 
-def make_batched_env(
-        base_env: Union[str, Callable[[], gym.Env]],
-        batch_size: int = 10,
-        wrappers: Iterable[Union[Type[Wrapper], WrapperAndKwargs]] = None,
-        use_default_wrappers_for_env: bool = True,
-        asynchronous: bool = True,
-        **kwargs, # Used in gym.make(base_env, **kwargs) when `base_env` is a string.
-    ) -> VectorEnv:
+def make_batched_env(base_env: Union[str, Callable],
+                     batch_size: int = 10,
+                     wrappers: Iterable[Union[Type[Wrapper], WrapperAndKwargs]] = None,
+                     use_default_wrappers_for_env: bool = True,
+                     asynchronous: bool = True,
+                     **kwargs) -> VectorEnv:
     """Create a vectorized environment from multiple copies of an environment,
     from its id
 

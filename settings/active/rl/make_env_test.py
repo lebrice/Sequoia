@@ -8,10 +8,6 @@ import gym
 import pytest
 import torch
 
-from common.gym_wrappers import (BatchEnv, EnvDataset, MultiTaskEnvironment,
-                                 PixelStateWrapper)
-from conftest import xfail_param
-
 from .make_env import make_batched_env
 
 

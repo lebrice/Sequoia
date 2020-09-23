@@ -120,9 +120,14 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
 
         # TODO: Should we ask every setting to set these three properties ?
         logger.debug(f"Transforms: {self.transforms}")
-        logger.debug(f"Obs shape before transforms: {obs_shape}")
-        self.obs_shape: Tuple[int, ...] = self.transforms.shape_change(obs_shape)
-        logger.debug(f"Obs shape after transforms: {self.obs_shape}")
+        if obs_shape and self.transforms:
+            # TODO: Testing out an idea: letting the transforms tell us how
+            # they change the shape of the image.
+            logger.debug(f"Obs shape before transforms: {obs_shape}")
+            self.obs_shape: Tuple[int, ...] = self.transforms.shape_change(obs_shape)
+            logger.debug(f"Obs shape after transforms: {self.obs_shape}")
+        else:
+            self.obs_shape: Tuple[int, ...] = obs_shape
         self.action_shape: Tuple[int, ...] = action_shape
         self.reward_shape: Tuple[int, ...] = reward_shape
         self.dataloader_kwargs: Dict[str, Any] = {}

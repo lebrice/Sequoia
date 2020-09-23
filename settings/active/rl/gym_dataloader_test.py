@@ -9,7 +9,7 @@ import torch
 from gym.envs.classic_control import CartPoleEnv, PendulumEnv
 from torch import Tensor
 
-from common.gym_wrappers import BatchEnv, EnvDataset, PixelStateWrapper
+from common.gym_wrappers import AsyncVectorEnv, EnvDataset, PixelStateWrapper
 from conftest import DummyEnvironment, xfail
 from utils import take
 from utils.logging_utils import get_logger

@@ -8,6 +8,9 @@ def test_setting_shapes_match_env():
     setting = ContinualRLSetting(transforms=[])
     assert setting.obs_shape == (400, 600, 3)
     setting = ContinualRLSetting()
+    dataloader = setting.train_dataloader()
+    obs = dataloader.reset()
+    assert obs.shape == (3, 400, 600)
     assert setting.obs_shape == (3, 400, 600)
 
 

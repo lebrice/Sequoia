@@ -7,7 +7,7 @@ from pytorch_lightning import LightningModule
 from cl_trainer import CLTrainer
 from common.gym_wrappers import MultiTaskEnvironment, PixelStateWrapper
 from settings.active.rl import GymDataLoader
-from utils import dict_union
+from utils import constant, dict_union
 from utils.logging_utils import get_logger
 
 from .continual_rl_setting import ContinualRLSetting
@@ -34,6 +34,7 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
     steps_per_task: int = 0
     nb_tasks: int = 10
 
+    smooth_task_boundaries: bool = constant(False)
     task_labels_at_train_time: bool = True
     task_labels_at_test_time: bool = False
 
