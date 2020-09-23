@@ -89,6 +89,8 @@ def custom_worker(remote: Connection,
             elif cmd == Commands.get_spaces_spec:
                 remote.send(CloudpickleWrapper((envs[0].observation_space, envs[0].action_space, envs[0].spec)))
             
+            # NOTE: @lebrice I added the elif cases below.
+
             elif cmd == Commands.get_attr:
                 # Adding this: When asked to get an attribute, get the attr.
                 sentinel = object()
@@ -160,7 +162,7 @@ def custom_worker(remote: Connection,
             elif cmd == Commands.partial_reset:
                 # TODO: Idea, if data[i] is True, reset envs[i].
                 assert len(data) == len(envs)
-                states = []
+                states: List[Optional[Any]] = []
                 for env, reset in zip(envs, data):
                     if reset:
                         state = env.reset()
@@ -173,6 +175,10 @@ def custom_worker(remote: Connection,
                 # TODO: Idea, if data[i] is True, reset envs[i].
                 assert len(data) == len(envs)
                 for env, seed in zip(envs, data):
+                    # Weird, why is `seed` a tuple here?
+                    if isinstance(seed, tuple):
+                        assert len(seed) == 1
+                        seed = seed[0]
                     env.seed(seed)
                 remote.send([None for env in envs])
 

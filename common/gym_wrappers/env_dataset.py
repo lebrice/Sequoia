@@ -2,8 +2,8 @@
 optional arguments used to limit the number of steps until the env is done.
 """
 
-from typing import (Dict, Generator, Generic, Iterable, Optional, Sequence,
-                    Tuple, Type, TypeVar, Union)
+from typing import (Dict, Generator, Generic, Iterable, List, Optional,
+                    Sequence, Tuple, Type, TypeVar, Union)
 
 import gym
 from torch.utils.data import IterableDataset
@@ -72,10 +72,12 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
         assert self._info is not None
         return self._observation, self._reward, self._done, self._info
 
-    def __next__(self) -> Tuple:
-        # TODO: When iterating over the env as if it were a dataset, should
-        # 'next' give back the same things as 'step'?
-        return self._observation, self._reward, self._done
+    def __next__(self) -> Tuple[ObservationType,
+                                Union[bool, Sequence[bool]],
+                                Union[Dict, Sequence[Dict]]]:
+        # NOTE: See the docstring of `GymDataLoader` for an explanation of why
+        # this doesn't return the same thing as `step()`.
+        return self._observation, self._done, self._info
         return self.step(self._action)
 
     def __iter__(self) -> Iterable[Tuple[ObservationType,
@@ -147,7 +149,7 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
 
     def reset(self, **kwargs) -> ObservationType:
         self._observation = super().reset(**kwargs)
-        self._reward = None
+        self._reward = 0
         self._done = False
         self._info = {}
         self.n_episodes += 1

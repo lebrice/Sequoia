@@ -10,6 +10,7 @@ from typing import (Any, Callable, Iterable, List, Sequence, Tuple, TypeVar,
 import gym
 import numpy as np
 import torch
+from torch import Tensor
 from torch.utils.data import IterableDataset
 
 from utils.logging_utils import get_logger
@@ -22,7 +23,8 @@ T = TypeVar("T")
 _missing = object()
 
 class BatchEnv(gym.Wrapper, IterableDataset):
-    __slots__: List[str] = ["env", "batch_size"]
+    """Wrapper that creates batched environments with multiprocessing workers.
+    """
     def __init__(self,
                  env: str = None,
                  env_factory: Callable[[int], gym.Env] = None,
@@ -55,10 +57,34 @@ class BatchEnv(gym.Wrapper, IterableDataset):
             worker=partial(custom_worker, auto_reset=auto_reset),
             in_series=num_envs_per_worker,            
         )
+        self.env: _SubprocVecEnv = env
         super().__init__(env)
-        self.env: _SubprocVecEnv
         self.batch_size = batch_size
     
+    def step(self, actions, *args, **kwargs):
+        state, reward, done, info = self.env.step(actions, *args, **kwargs)
+        return (
+            self.add_batch_dim(state),
+            self.add_batch_dim(reward),
+            self.add_batch_dim(done),
+            info
+        )
+
+    def reset(self, mask: Sequence[bool] = None, **kwargs) -> List[Any]:
+        """ Resets the environments.
+        If mask is given, resets envs[i] if mask[i] is True.
+        """
+        if mask is not None:
+            states = self.env.partial_reset(mask, **kwargs)
+        else:
+            states = self.env.reset(**kwargs)
+        return self.add_batch_dim(states)
+
+    def add_batch_dim(self, values: Union[np.ndarray, Tensor]) -> Union[np.ndarray, Tensor]:
+        if values.shape[0] != self.batch_size or len(values.shape) < 1:
+            values = values.reshape([self.batch_size, *values.shape])
+        return values
+
     def random_actions(self) -> Sequence:
         return np.stack([
             self.env.action_space.sample() for _ in range(self.batch_size)
@@ -104,6 +130,6 @@ class BatchEnv(gym.Wrapper, IterableDataset):
             attr (str): Attribute to be set.
             values (Sequence): Values for each environment. Must have the same
                 length as the number of environments (`self.batch_size`), else
-                an error is raised. 
+                an error is raised.
         """
         self.env.set_attr_on_each_env(attr, values)

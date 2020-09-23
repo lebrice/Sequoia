@@ -155,7 +155,7 @@ def test_batch_env_datasets(batch_size: int):
 def test_partial_reset(batch_size: int):
     with BatchEnv(env_factory=DummyEnvironment, batch_size=batch_size) as env:
         env.reset()
-        env.seed([[123, "bob"]] * batch_size)
+        env.seed([123] * batch_size)
 
         for i in range(2):
             obs, reward, done, info = env.step(np.arange(batch_size) + 1 % 3)
@@ -170,3 +170,12 @@ def test_partial_reset(batch_size: int):
         obs = env.partial_reset(reset_mask)
         assert all(obs[i] == 0 for i in even_indices), obs
         assert all(obs[i] == None for i in odd_indices), obs
+
+
+
+def test_batch_size_one_doesnt_flatten():
+    batch_size = 1
+
+    with BatchEnv(env_factory=DummyEnvironment, batch_size=batch_size) as env:
+            env.reset()
+            env.seed([123] * batch_size)
