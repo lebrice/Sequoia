@@ -1,1 +1,1 @@
-from .batch_env import BatchEnv
+from .async_vector_env import AsyncVectorEnv

@@ -1,139 +1,86 @@
-from functools import wraps
-from typing import Any, Callable, List, Optional, Tuple, Union
+from functools import partial, reduce, wraps
+from typing import (Any, Callable, Dict, Iterable, List, Optional, Tuple, Type,
+                    TypeVar, Union)
 
 import gym
 import numpy as np
 import pytest
 import torch
+from gym.envs.classic_control import CartPoleEnv, PendulumEnv
 from torch import Tensor
 
-from conftest import xfail
+from common.gym_wrappers import BatchEnv, EnvDataset, PixelStateWrapper
+from conftest import DummyEnvironment, xfail
 from utils import take
 from utils.logging_utils import get_logger
 
 from .gym_dataloader import GymDataLoader
-from common.gym_wrappers import EnvDataset
-from conftest import DummyEnvironment
-
 
 logger = get_logger(__file__)
 
+@pytest.mark.parametrize("env_name", ["CartPole-v0"])
+@pytest.mark.parametrize("batch_size", [1, 2, 5, 10])
+def test_batched_cartpole_state(env_name: str, batch_size: int):
+    env: GymDataLoader = GymDataLoader(
+        env_name,
+        batch_size=batch_size,
+    )
+    with gym.make(env_name) as temp_env:
+        state_shape = temp_env.observation_space.shape
+        action_shape = temp_env.action_space.shape
 
-from common.gym_wrappers import BatchEnv, EnvDataset, MultiTaskEnvironment, PixelStateWrapper
+    state_shape = (batch_size, *state_shape)
+    action_shape = (batch_size, *action_shape)
+    reward_shape = (batch_size,)
 
-def make_env_factory(env_name: str = "CartPole-v0", batch_size: int = 10):
-    def env_factory():
-        # TODO: Figure out the right ordering to use for the wrappers.
-        # env = gym.make(env_name)
-        # env = PixelStateWrapper(env)
-        env = BatchEnv(env_name, batch_size=batch_size)
-        env = EnvDataset(env)
-        # env = MultiTaskEnvironment(env)
-        return env
-    return env_factory
+    state = env.reset()
+    assert state.shape == state_shape
+    env.seed(123)
 
+    for obs_batch, done, info in take(env, 5):
+        assert obs_batch.shape == state_shape
+
+        random_actions = env.action_space.sample()
+        assert torch.as_tensor(random_actions).shape == action_shape
+        assert temp_env.action_space.contains(random_actions[0])
+
+        reward = env.send(random_actions)
+        assert reward.shape == reward_shape
+
+from common.gym_wrappers import ConvertToFromTensors
+from .make_env import default_wrappers_for_env
 
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
-@pytest.mark.parametrize("batch_size", [1, 5, 10, 32])
-def test_all_wrappers_work(env_name: str, batch_size: int):
-    env_factory = make_env_factory(env_name=env_name, batch_size=batch_size)
-    env: Union[BatchEnv, EnvDataset] = env_factory()
-    start_state = env.reset()
-    assert start_state.shape == (batch_size, 4)
-
-    for i in range(10):
-        action = env.random_actions()
-        assert action.shape == (batch_size,)
-        obs, reward, done, info = env.step(action)
-        assert obs.shape == (batch_size, 4)
-        assert reward.shape == (1,)
-
-# TODO: Finish updating the rest!
-
-
 @pytest.mark.parametrize("batch_size", [1, 2, 5, 10])
-def test_batched_cartpole_state(batch_size: int):
-
-    env: GymDataset[Tensor, int, float] = GymDataLoader(
-        "CartPole-v0",
+def test_batched_cartpole_pixels(env_name: str, batch_size: int):
+    wrappers = default_wrappers_for_env[env_name] + [PixelStateWrapper]
+    env: GymDataLoader = GymDataLoader(
+        env_name,
+        pre_batch_wrappers=wrappers,
         batch_size=batch_size,
-        observe_pixels=False,
     )
-    obs_shape = (batch_size, 4)
+    with gym.make(env_name) as temp_env:
+        for wrapper in wrappers:
+            temp_env = wrapper(temp_env)
+        state_shape = temp_env.observation_space.shape
+        action_shape = temp_env.action_space.shape
+
+    state_shape = (batch_size, *state_shape)
+    action_shape = (batch_size, *action_shape)
     reward_shape = (batch_size,)
 
-    env.reset()
-    for obs_batch in take(env, 5):
-        assert obs_batch.shape == obs_shape
+    state = env.reset()
+    assert state.shape == state_shape
+    env.seed(123)
 
-        random_actions = env.random_actions()
-        reward = env.send(random_actions)
-        assert reward.shape == reward_shape
+    for obs_batch, done, info in take(env, 5):
+        assert obs_batch.shape == state_shape
 
-    check_interaction_with_env(
-        env,
-        obs_shape=obs_shape,
-        action=random_actions,
-        reward_shape=reward_shape,
-    )
+        random_actions = env.action_space.sample()
+        assert torch.as_tensor(random_actions).shape == action_shape
+        assert temp_env.action_space.contains(random_actions[0])
 
-
-@pytest.mark.parametrize("num_workers", [0, 1, 2, 5, 10, 24])
-def test_cartpole_multiple_workers(num_workers: Optional[int]):
-    batch_size = num_workers or 32
-    env: GymDataset[Tensor, int, float] = GymDataLoader(
-        "CartPole-v0",
-        batch_size=batch_size,
-        observe_pixels=False,
-        num_workers=num_workers,
-    )
-    obs_shape = (batch_size, 4)
-    reward_shape = (batch_size,)
-    reward_shape = (batch_size,)
-
-    env.reset()
-    for obs_batch in take(env, 5):
-        assert obs_batch.shape == obs_shape
-
-        random_actions = env.random_actions()
         reward = env.send(random_actions)
         assert reward.shape == reward_shape
 
 
-def test_raise_error_when_missing_action():
-    env = GymDataLoader(
-        "CartPole-v0",
-        batch_size=10,
-        observe_pixels=False,
-        random_actions_when_missing=True,
-    )
-    env.reset()
-    for obs_batch in take(env, 5):
-        # doesn't complain when you give back no action, it uses a random one.
-        pass
-        # env.send(env.random_actions())
-
-    env = GymDataLoader(
-        "CartPole-v0",
-        batch_size=10,
-        observe_pixels=False,
-        random_actions_when_missing=False,
-    )
-    env.reset()
-    for obs_batch in take(env, 5):
-        # doesn't complain when you give back and action.
-        env.send(env.random_actions())
-
-    env = GymDataLoader(
-        "CartPole-v0",
-        batch_size=10,
-        observe_pixels=False,
-        random_actions_when_missing=False,
-    )
-    env.reset()
-    with pytest.raises(RuntimeError):
-        for obs_batch in take(env, 5):
-            # raises an error after the first iteration, as it didn't receive an action. 
-            pass
-
-    

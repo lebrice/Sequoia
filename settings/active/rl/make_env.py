@@ -1,14 +1,16 @@
 """Creates an IterableDataset from a gym env by applying different wrappers.
 """
 import copy
-from functools import partial, reduce
+from functools import partial
 from typing import Callable, Dict, Iterable, List, Tuple, Type, TypeVar, Union
 
 import gym
 from gym import Wrapper
 from gym.envs.classic_control import CartPoleEnv
+from gym.vector import SyncVectorEnv, VectorEnv
 
 from common.gym_wrappers import *
+from common.gym_wrappers import AsyncVectorEnv
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
@@ -23,91 +25,108 @@ WrapperAndKwargs = Tuple[Type[gym.Wrapper], Dict]
 default_wrappers_for_env: Dict[str, Iterable[WrapperAndKwargs]] = {
     "CartPole-v0": [ConvertToFromTensors],
 }
-default_post_batch_wrappers_for_env: Dict[str, Iterable[WrapperAndKwargs]] = {
-    "CartPole-v0": [],
-}
-import gym
-from gym.vector import make, AsyncVectorEnv, SyncVectorEnv
-
 
 def make_batched_env(
-        base_env: Union[str, Callable[[], gym.Env]] = "CartPole-v0",
+        base_env: Union[str, Callable[[], gym.Env]],
         batch_size: int = 10,
-        pre_batch_wrappers: Iterable[Tuple[Type[gym.Wrapper], Dict]] = None,
-        post_batch_wrappers: Iterable[Tuple[Type[gym.Wrapper], Dict]] = None,
+        wrappers: Iterable[Union[Type[Wrapper], WrapperAndKwargs]] = None,
         use_default_wrappers_for_env: bool = True,
-    ) -> Union[BatchEnv, EnvDataset]:
-    """Creates a batched env, applying wrappers before and after the batching.
+        asynchronous: bool = True,
+        **kwargs, # Used in gym.make(base_env, **kwargs) when `base_env` is a string.
+    ) -> VectorEnv:
+    """Create a vectorized environment from multiple copies of an environment,
+    from its id
 
-    Args:
-        base_env (Union[str, Callable[[], gym.Env]], optional): [description]. Defaults to "CartPole-v0".
-        batch_size (int, optional): [description]. Defaults to 10.
-        pre_batch_wrappers (Iterable[Tuple[Type[gym.Wrapper], Dict]], optional): [description]. Defaults to None.
-        post_batch_wrappers (Iterable[Tuple[Type[gym.Wrapper], Dict]], optional): [description]. Defaults to None.
-        use_default_wrappers_for_env (bool, optional): [description]. Defaults to True.
+    NOTE: This function does pretty much the same as `gym.vector.make`, but with
+    a bit more flexibility:
+    - Allows passing an env factory to start with, rather than only taking ids.
+    - Allows passing wrappers to be added to the env on
+        each worker, as well as wrappers to add on top of the returned (batched) env.
+    - Allows passing tuples of (Type[Wrapper, ])
 
-    Raises:
-        RuntimeError: [description]
-        RuntimeError: [description]
+    Parameters
+    ----------
+    base_env : str
+        The environment ID (or an environment factory). This must be a valid ID
+        from the registry.
 
-    Returns:
-        Union[BatchEnv, EnvDataset]: [description]
-    """
-    if not pre_batch_wrappers and use_default_wrappers_for_env:
-        if hasattr(base_env, "spec"):
-            assert False, base_env.spec
-        pre_batch_wrappers = default_wrappers_for_env.get(base_env, [])
-    if not post_batch_wrappers and use_default_wrappers_for_env:
-        post_batch_wrappers = default_post_batch_wrappers_for_env.get(base_env, [])
+    batch_size : int
+        Number of copies of the environment (as well as batch size). 
+
+    asynchronous : bool (default: `True`)
+        If `True`, wraps the environments in an `AsyncVectorEnv` (which uses 
+        `multiprocessing` to run the environments in parallel). If `False`,
+        wraps the environments in a `SyncVectorEnv`.
+
+    wrappers : Callable or Iterable of Callables (default: `None`)
+        If not `None`, then apply the wrappers to each internal environment
+        during creation.
     
-    pre_batch_wrapper_fns = _make_wrapper_fns(pre_batch_wrappers)
-    post_batch_wrapper_fns = _make_wrapper_fns(post_batch_wrappers)
+    **kwargs : Dict
+        Keyword arguments to be passed to `gym.make` when `base_env` is an id.
 
+    Returns
+    -------
+    env : `gym.vector.VectorEnv` instance
+        The vectorized environment.
+
+    Example
+    -------
+    >>> import gym
+    >>> env = gym.vector.make('CartPole-v1', 3)
+    >>> env.reset()
+    array([[-0.04456399,  0.04653909,  0.01326909, -0.02099827],
+           [ 0.03073904,  0.00145001, -0.03088818, -0.03131252],
+           [ 0.03468829,  0.01500225,  0.01230312,  0.01825218]],
+          dtype=float32)
+    """
+    # Get the default wrappers, if needed.
+    if not wrappers and use_default_wrappers_for_env:
+        wrappers = default_wrappers_for_env.get(base_env, [])
+    
+    base_env_factory: Callable[[], gym.Env]
     if isinstance(base_env, str):
         base_env_factory = partial(gym.make, base_env)
-
     elif callable(base_env):
         base_env_factory = base_env
-
-    elif isinstance(base_env, gym.Env):
+    elif False and isinstance(base_env, gym.Env): # turning this off for now.
         # TODO: Check that there isn't a smarter way of doing this, maybe
         # by getting the env spec and creating a new one like it using
         # `gym.make`?
         logger.warning(RuntimeWarning(
-            f"Will try to use deepcopy as an env factory.. but this is really "
-            f"less than ideal!"))
-        logger.debug(f"Env spec: {env.spec}")
+            "Will try to use deepcopy as an env factory.. but this is really "
+            "less than ideal!"))
+        logger.debug(f"Env spec: {base_env.spec}")
         base_env_factory = partial(copy.deepcopy, base_env)
-    
     else:
         raise NotImplementedError(
             f"Unsupported base env: {base_env}. Must be "
-            f"either a string, a gym env, or a callable for now."
+            f"either a string or a callable for now."
         )
     
     def pre_batch_env_factory():
-        env = base_env_factory()
-        for wrapper_fn in pre_batch_wrapper_fns:
-            env = wrapper_fn(env)
-        return env
-    
-    batched_env = BatchEnv(
-        env_factory=pre_batch_env_factory,
-        batch_size=batch_size,
-    )
-    # apply all the post-batch wrappers to the batched env:
-    env = reduce(
-        lambda wrapper_fn, wrapped: wrapper_fn(wrapped),
-        post_batch_wrapper_fns,
-        batched_env,
-    )
+        env = base_env_factory(**kwargs)
+        return wrap(env, wrappers)
+
+    env_fns = [pre_batch_env_factory for _ in range(batch_size)]
+    if asynchronous:
+        return AsyncVectorEnv(env_fns)
+    else:
+        return SyncVectorEnv(env_fns)
+
+def wrap(env: gym.Env,
+         wrappers: Iterable[Union[Type[Wrapper], WrapperAndKwargs]]) -> Wrapper:
+    wrappers = list(wrappers)
+    # Convert the list of wrapper types or (wrapper_type, kwargs) tuples into
+    # a list of callables that we can apply successively to the env.
+    wrapper_fns = _make_wrapper_fns(wrappers)
+    for wrapper_fn in wrapper_fns:
+        env = wrapper_fn(env)
     return env
 
-
-def _make_wrapper_fns(
-    wrappers_and_args: Iterable[Union[Type[Wrapper],
-                                Tuple[Type[Wrapper], Dict]]]
-                                ) -> List[Callable[[Wrapper], Wrapper]]:
+def _make_wrapper_fns(wrappers_and_args: Iterable[Union[Type[Wrapper],
+                                                        Tuple[Type[Wrapper], Dict]]]
+                     ) -> List[Callable[[Wrapper], Wrapper]]:
     """ Given a list of either wrapper classes or (wrapper, kwargs) tuples,
     returns a list of callables, each of which just takes an env and wraps
     it using the wrapper and the kwargs, if present.

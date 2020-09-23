@@ -10,7 +10,7 @@ from torch.utils.data import IterableDataset
 
 from utils.logging_utils import get_logger
 
-from .batch_env import BatchEnv
+from .batch_env import AsyncVectorEnv
 
 ObservationType = TypeVar("ObservationType")
 ActionType = TypeVar("ActionType")
@@ -34,7 +34,7 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
                  max_steps: Optional[int] = None,
                  ):
         super().__init__(env=env)
-        if isinstance(env, BatchEnv):
+        if isinstance(env, AsyncVectorEnv):
             assert not max_episodes, (
                 "TODO: No notion of 'episode' when using a batched environment!"
             )
@@ -118,7 +118,7 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
                         "Send actions to the env using the `send` method on "
                         "the env, not on the iterator itself!"
                     )
-                if isinstance(self.env, BatchEnv) and any(self._done):
+                if isinstance(self.env, AsyncVectorEnv) and any(self._done):
                     # Only reset the envs that need to be reset, in this case.
                     self.env.partial_reset(self._done)
 

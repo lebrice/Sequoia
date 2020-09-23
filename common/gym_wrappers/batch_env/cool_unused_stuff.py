@@ -1,135 +1,77 @@
-"""Modification of subproc_vec_env.py from the openai baselines package used
-to customize the 'worker' function. 
 
-Raises:
-    RuntimeError: [description]
-"""
+import math
 import multiprocessing as mp
 import platform
+from functools import partial
 from inspect import ismethod
-from multiprocessing import Process
-from multiprocessing.connection import Connection
+from multiprocessing import Pipe, Process
+from multiprocessing.connection import Connection, wait
 from typing import (Any, Callable, Iterable, List, Optional, Sequence, Tuple,
                     TypeVar, Union)
 
+import gym
 import numpy as np
+import torch
+from gym.vector import AsyncVectorEnv as AsyncVectorEnv_
+from torch import Tensor
+from torch.utils.data import IterableDataset
 
+from utils import n_consecutive
 from utils.logging_utils import get_logger
-from utils.utils import n_consecutive
 
-from .worker import Commands, custom_worker
+from .async_vector_env import AsyncVectorEnv
+from .worker import CloudpickleWrapper, Commands, custom_worker
 
-logger = get_logger(__file__)
 _missing = object()
-
 T = TypeVar("T")
 
-try:
-    from baselines.common.vec_env import CloudpickleWrapper, VecEnv
-    from baselines.common.vec_env.vec_env import clear_mpi_env_vars
-    from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv, worker as _worker
-except ImportError as e:
-    raise RuntimeError(
-        "Need to have the `baselines` package from openai installed! "
-        "Since we're only using it for the SubprocVecEnv wrapper atm, it might "
-        "be simplest to install it by doing: \n"
-        "`pip install git+https://github.com/openai/baselines.git` \n"
-        "This way, you also won't need to have a Mujoco license, which would "
-        "be required when installing through pip. Also note, it requires "
-        "tensorflow to be installed, for some reason, but you should be able "
-        "to just remove it after."
-    ) from e
+class BatchEnv(AsyncVectorEnv):
+    # TODO: This is what I was using in the previous implementation of the BatchEnv.
+    def getattr(self, attr: str) -> List:
+        """Gets the value of the given attribute from all environments.  
 
-from gym.vector import AsyncVectorEnv
+        Args:
+            attr (str): The attribute to fetch.
 
-class _SubprocVecEnv(SubprocVecEnv):
-    """ NOTE: @lebrice I'm extending this just so we're able to use a different
-    'worker' function in the future if needed.
-
-    TODO: OMG I just found `gym.vector.
-    """
-    def __init__(self,
-                 env_fns,
-                 spaces = None,
-                 context: str = None,
-                 in_series: int = 1,
-                 worker: Callable = custom_worker):
+        Returns:
+            List: The list of values for each environment.
         """
-        envs: list of gym environments to run in subprocesses
+        return self.get_attr_from_envs(attr)
+
+    def setattr(self, attr: str, value: Any) -> None:
+        """Sets the given attribute to the given value on all the environments. 
+                
+        NOTE: It's important to use this method rather than just setting the
+        attribute as usual, as this would instead set the value on the `BatchEnv`
+        object rather than on the remotes! For example, writing `env.i = 123`
+        doesn't actually set the `i` attribute on all the envs, it just creates
+        a new `i` attribute on the `BatchEnv` object.
+        TODO: Maybe we could use something like the __slots__ magic to fix this?
+
+        Args:
+            attr (str): Name of the attribute to set.
+            value (Any): Value to be set on all environments.
         """
-        if context is None:
-            system: str = platform.system()
-            if system == "Linux":
-                # TODO: Debugging an error from the pyglet package when using 'fork'.
-                # python3.7/site-packages/pyglet/gl/xlib.py", line 218, in __init__
-                # raise gl.ContextException('Could not create GL context')
-                # context = "fork"
-                # context = "spawn"
-                # NOTE: Testing out `forkserver`, seems to have resolved the bug
-                # above for now:
-                context = "forkserver"
-            else:
-                logger.warning(RuntimeWarning(
-                    f"Using the 'spawn' multiprocessing context since we're on "
-                    f"a non-linux {system} system. This means creating new "
-                    f"worker processes will probably be quite a bit slower. "
-                ))
-                context = "spawn"
+        self.set_attr_on_envs(attr, value)
 
-        self.waiting = False
-        self.closed = False
-        self.in_series = in_series
-        nenvs = len(env_fns)
-        assert nenvs % in_series == 0, "Number of envs must be divisible by number of envs to run in series"
-        self.nremotes = nenvs // in_series
-        env_fns = np.array_split(env_fns, self.nremotes)
-        ctx = mp.get_context(context)
+    def setattr_foreach(self, attr: str, values: Sequence) -> None:
+        """ Sets `attr` on each env to the corresponding value from `values`. 
 
-        # remotes, work_remotes = zip(*[ctx.Pipe() for _ in range(self.nremotes)])
-        self.remotes: List[Connection] = []
-        self.work_remotes: List[Connection] = []
+        Roughly equivalent to the following pseudocode (minus the mp stuff):
+        ```
+        for env, value in zip(self.envs, values):
+            setattr(env, attr, value)
+        ```
 
-        self.ps: List[Process] = []
-        for worker_index, env_fn in enumerate(env_fns):
-            remote, worker_remote = ctx.Pipe()
+        Args:
+            attr (str): Attribute to be set.
+            values (Sequence): Values for each environment. Must have the same
+                length as the number of environments (`self.batch_size`), else
+                an error is raised.
+        """
+        self.set_attr_on_each_env(attr, values)
 
-            self.remotes.append(remote)
-            self.work_remotes.append(worker_remote)
-            worker_args = [
-                worker_remote, remote, CloudpickleWrapper(env_fn)
-            ]
-            if worker is not _worker:
-                # Pass the worker_index to the worker args, in case that might
-                # be useful. NOTE: The worker_index arg isn't in the normal
-                # `worker` function, so this is only done when using the
-                # custom_worker function.
-                worker_args.append(worker_index)
 
-            process = ctx.Process(
-                target=worker,
-                args=worker_args,
-                # Kill the worker if the main process crashes:
-                daemon=True,
-            )
-            self.ps.append(process)
-
-        for process in self.ps:
-            with clear_mpi_env_vars():
-                process.start()
-        
-        # TODO: Why do we close the work remotes here?
-        for remote in self.work_remotes:
-            remote.close()
-
-        self.remotes[0].send((Commands.get_spaces_spec, None))
-        observation_space, action_space, self.spec = self.remotes[0].recv().x
-        logger.debug(f"Env spec: {self.spec}")
-        
-        self.viewer = None
-        VecEnv.__init__(self, nenvs, observation_space, action_space)
-
-        self.remotes[0].send((Commands.get_attr, "reward_range", None))
-        self.reward_range: Tuple[float, float] = self.remotes[0].recv().x[0]
 
     def __getattr__(self, attr: str, default: Any=_missing) -> Union[Any, List[Any], Callable]:
         logger.debug(f"Trying to get missing attribute '{attr}'.")

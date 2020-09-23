@@ -1,4 +1,12 @@
+"""TODO: This is unused for now, since I switched from using openai baselines
+SubprocVecEnv to using the `AsyncVecEnv` from `gym.vector`.
 
+# TODO: @lebrice If we want to be able to add back the cool things we
+# had before, like remotely modifying the envs' attributes, only
+# resetting a portion of them, etc, we'll have to take a look at the
+# worker_ function, copy it into `worker.py`, modify it, and then change
+# the value of `worker` here.
+"""
 import multiprocessing as mp
 from multiprocessing import Pipe, Process
 from multiprocessing.connection import Connection, wait
