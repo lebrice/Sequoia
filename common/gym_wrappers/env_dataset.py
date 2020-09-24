@@ -118,9 +118,20 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
                         "Send actions to the env using the `send` method on "
                         "the env, not on the iterator itself!"
                     )
-                if isinstance(self.env, AsyncVectorEnv) and any(self._done):
-                    # Only reset the envs that need to be reset, in this case.
-                    self.env.partial_reset(self._done)
+
+                if isinstance(self.env, AsyncVectorEnv):
+                    if isinstance(self._done, bool):
+                        if self._done:
+                            # TODO: This resets all the envs, right? Is that what
+                            # we really want?
+                            self.env.reset()
+                    elif any(self._done):
+                        # TODO: Look into how the AsyncVectorEnv handles the resets.
+                        self.env: AsyncVectorEnv
+                        # TODO: Re-add the partial reset feature.
+                        # Only reset the envs that need to be reset, in this case.
+                        # self.env.partial_reset(self._done)
+                        self.reset()
 
             self.n_episodes += 1
             self.reset()

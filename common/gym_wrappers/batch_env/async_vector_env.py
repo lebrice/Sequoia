@@ -8,7 +8,8 @@ from gym.vector import AsyncVectorEnv as AsyncVectorEnv_
 
 from utils.logging_utils import get_logger
 
-from .worker import CloudpickleWrapper, Commands, custom_worker
+from .worker import (CloudpickleWrapper, Commands,
+                     _custom_worker_shared_memory, custom_worker)
 
 logger = get_logger(__file__)
 T = TypeVar("T")
@@ -45,7 +46,8 @@ class AsyncVectorEnv(AsyncVectorEnv_):
         # resetting a portion of them, etc, we'll have to take a look at the
         # worker_ function, copy it into `worker.py`, modify it, and then change
         # the value of `worker` here.
-
+        if worker is None:
+            worker = _custom_worker_shared_memory
         super().__init__(
             env_fns=env_fns,
             context=context,

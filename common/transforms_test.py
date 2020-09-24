@@ -24,6 +24,14 @@ import pytest
     # Does nothing when the channel dim isn't in {1, 3}:
     (Transforms.channels_first_if_needed, (7, 12, 13), (7, 12, 13)),
     (Transforms.channels_first_if_needed, (7, 12, 123), (7, 12, 123)),
+    # when the input is 4-dimensional with batch size of 1 or 3, still works:
+    (Transforms.channels_first_if_needed, (1, 28, 12, 3), (1, 3, 28, 12)),
+    (Transforms.channels_first_if_needed, (1, 400, 600, 3), (1, 3, 400, 600)),
+    (Transforms.channels_first_if_needed, (1, 3, 28, 27), (1, 3, 28, 27)),
+
+    (Transforms.channels_first_if_needed, (3, 28, 12, 3), (3, 3, 28, 12)),
+    (Transforms.channels_first_if_needed, (3, 400, 600, 3), (3, 3, 400, 600)),
+    (Transforms.channels_first_if_needed, (3, 3, 28, 27), (3, 3, 28, 27)),
     
     ## Channels Last:
     (Transforms.channels_last, (3, 9, 9), (9, 9, 3)),

@@ -34,7 +34,7 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
     steps_per_task: int = 0
     nb_tasks: int = 10
 
-    smooth_task_boundaries: bool = constant(False)
+    clear_task_boundaries: bool = constant(False)
     task_labels_at_train_time: bool = True
     task_labels_at_test_time: bool = False
 
@@ -116,49 +116,28 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
         dataloader that will go over all the tasks. We then perform enough
         steps to go through all the tasks.
         """
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        kwargs["num_workers"] = kwargs["batch_size"]
+        dataloader = super().train_dataloader(*args, **kwargs)
         if self.task_labels_at_train_time:
-            max_steps = self.steps_per_task
+            dataloader.max_steps = self.steps_per_task
         else:
-            max_steps = self.max_steps
-        self._train_loader = GymDataLoader(
-            env_factory=self.train_env_factory,
-            max_steps=max_steps,
-            transforms=self.train_transforms,
-            **kwargs
-        )
-        return self._train_loader
+            dataloader.max_steps = self.max_steps
+        return dataloader
 
     def val_dataloader(self, *args, **kwargs) -> GymDataLoader:
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        kwargs["num_workers"] = kwargs["batch_size"]
+        dataloader = super().val_dataloader(*args, **kwargs)
         if self.task_labels_at_train_time:
-            max_steps = self.steps_per_task
+            dataloader.max_steps = self.steps_per_task
         else:
-            max_steps = self.max_steps
-        self._val_loader = GymDataLoader(
-            env_factory=self.val_env_factory,
-            max_steps=max_steps,
-            transforms=self.val_transforms,
-            **kwargs
-        )
-        return self._val_loader
+            dataloader.max_steps = self.max_steps
+        return dataloader
 
     def test_dataloader(self, *args, **kwargs) -> GymDataLoader:
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        kwargs["num_workers"] = kwargs["batch_size"]
+        dataloader = super().test_dataloader(*args, **kwargs)
         if self.task_labels_at_test_time:
-            max_steps = self.steps_per_task
+            dataloader.max_steps = self.steps_per_task
         else:
-            max_steps = self.max_steps
-        self._test_loader = GymDataLoader(
-            env_factory=self.test_env_factory,
-            max_steps=max_steps,
-            transforms=self.test_transforms,
-            **kwargs
-        )
-        return self._test_loader
+            dataloader.max_steps = self.max_steps
+        return dataloader
 
 
 

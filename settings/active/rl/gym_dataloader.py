@@ -26,32 +26,22 @@ from typing import (Any, Callable, Dict, Generator, Iterable, List, Optional,
                     Sequence, Tuple, Type, TypeVar, Union)
 
 import gym
-# import matplotlib.pyplot as plt
-
-
-
 from gym import Env, Wrapper
-
-
+from gym.vector import VectorEnv
 from torch import Tensor
+
 from common.gym_wrappers import AsyncVectorEnv, EnvDataset
-from common.gym_wrappers.utils import wrapper_is_present
+from common.gym_wrappers.utils import has_wrapper
 from settings.active.active_dataloader import ActiveDataLoader
 from utils.logging_utils import get_logger
 
 from .make_env import make_batched_env
 
-# from .gym_dataset import GymDataset
-# from .zip_dataset import ZipDataset
 
 logger = get_logger(__file__)
-EnvFactory = Callable[[], Env]
 T = TypeVar("T")
 
-def collate_fn(batches):
-    assert False, batches
 
-_UNUSED = "UNUSED"
 class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor], gym.Wrapper):
     """[WIP] ActiveDataLoader for batched Gym envs.
     
@@ -87,11 +77,10 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor], gym.Wrapper):
    
     """
     def __init__(self,
-                 env: Union[str, Callable[[], Env]],
-                 batch_size: int = 1,
+                 env: Union[str, Callable[[], Env], VectorEnv],
+                 batch_size: int = None,
                  max_steps: int = 1_000_000,
                  pre_batch_wrappers: List[Union[Type[Wrapper], Tuple[Type[Wrapper], Dict]]] = None,
-                 num_workers: int = 0, # unused, forced to 0.
                  **kwargs):
         self.base_env = env
         self.max_steps = max_steps
@@ -99,23 +88,46 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor], gym.Wrapper):
         self._batch_size = batch_size
         # TODO: Move the Policy stuff into a wrapper?
         # self.policy: Callable[[Tensor], Tensor] = policy
-        self.env: AsyncVectorEnv = make_batched_env(
-            env,
-            batch_size=batch_size,
-            wrappers=pre_batch_wrappers,
-        )
+        
+        # env = gym.make(env)
+        # logger.debug(f"Starting observation space: {env.observation_space}")
+        # for wrapper in pre_batch_wrappers:
+        #     env = wrapper(env)
+        #     logger.debug(f"observation after wrapper {wrapper}: {env.observation_space}")
+        
+        if not has_wrapper(env, VectorEnv):
+            assert batch_size is not None, "Need to pass a batch_size when the env isn't already batched!"
+            self.env: AsyncVectorEnv = make_batched_env(
+                env,
+                batch_size=batch_size,
+                wrappers=pre_batch_wrappers,
+            )
+
         if not isinstance(self.env, EnvDataset):
             # Add a wrapper to create an IterableDataset from the env.
             self.env = EnvDataset(self.env, max_steps=max_steps)
 
+        logger.debug(f"wrappers: {pre_batch_wrappers}, state shape: {self.env.reset().shape}")
+        logger.debug(f"observation space: {self.env.observation_space}")
+        logger.debug(f"env reset shape: {self.env.reset().shape}")
+
+        # We set this to 0 because we are using workers internally in the
+        # VecEnv instead of the usual dataloadering workers. 
+        kwargs["num_workers"] = 0
+
         super().__init__(
             dataset=self.env,
-            # We set this to 0 because we are using workers internally in the
-            # VecEnv instead of the usual dataloadering workers. 
-            num_workers=0,
             # The batch size is None, because the VecEnv takes care of
             # doing the batching for us.
             batch_size=None,
             **kwargs,
         )
         Wrapper.__init__(self, env=self.env)
+
+    def __iter__(self):
+        self.env.reset()
+        assert self.num_workers == 0, "Shouldn't be using multiple workers!"
+        return super().__iter__()
+
+    def random_actions(self):
+        return self.env.random_actions()

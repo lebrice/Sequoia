@@ -224,12 +224,12 @@ class MultiTaskEnvironment(gym.Wrapper):
     def reset(self, new_random_task: bool = False, **kwargs):
         if new_random_task:
             self.current_task = self.random_task()
-        return super().reset(**kwargs)
+        return self.env.reset(**kwargs)
 
     def seed(self, seed: Optional[int] = None) -> None:
         if seed is not None:
             np.random.seed(seed)
-        return super().seed(seed)
+        return self.env.seed(seed)
 
     def task_dict(self, task_array: np.ndarray) -> Dict[str, float]:
         assert len(task_array) == len(self.task_params), (

@@ -5,7 +5,7 @@ import pytest
 
 from .pixel_state import PixelStateWrapper
 
-from .utils import wrapper_is_present
+from .utils import has_wrapper
 
 
 @pytest.mark.parametrize("env,wrapper_type,result",
@@ -15,5 +15,5 @@ from .utils import wrapper_is_present
     (lambda: PixelStateWrapper(gym.make("CartPole-v0")), PixelObservationWrapper, True),
     # (AtariPreprocessing(gym.make("Breakout-v0")), ClipAction, True),
 ])
-def test_wrapper_is_present(env, wrapper_type, result):
-    assert wrapper_is_present(env(), wrapper_type) == result
+def test_has_wrapper(env, wrapper_type, result):
+    assert has_wrapper(env(), wrapper_type) == result

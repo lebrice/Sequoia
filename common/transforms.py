@@ -8,21 +8,43 @@ in shape resulting from the transforms, à-la-Tensorflow.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, List, Tuple, Union
+from typing import Any, Callable, List, Tuple, TypeVar, Union
 
+import numpy as np
 import torch
+from pl_bolts.models.self_supervised.simclr import (SimCLREvalDataTransform,
+                                                    SimCLRTrainDataTransform)
 from torch import Tensor
 from torchvision.transforms import Compose as ComposeBase
-from torchvision.transforms import RandomGrayscale, ToTensor
+from torchvision.transforms import RandomGrayscale, ToTensor as ToTensor_
+
 from common.dims import Dims
 from utils.json_utils import encode, register_decoding_fn
 from utils.logging_utils import get_logger
-from pl_bolts.models.self_supervised.simclr import SimCLRTrainDataTransform, SimCLREvalDataTransform
+
 logger = get_logger(__file__)
 
 
+def copy_if_negative_strides(image: np.ndarray):
+    # It sometimes happens when taking images from a gym env that the strides
+    # are negative, for some reason. Therefore we need to copy the array
+    # before we can call torch.to_tensor(pic).
+    if any(s < 0 for s in image.strides):
+        return image.copy()
+    return image
+
+from torchvision.transforms import functional as F
+
+
+def to_tensor(pic) -> Tensor:
+    if isinstance(pic, Tensor):
+        return pic
+    pic = copy_if_negative_strides(pic)
+    return F.to_tensor(pic)
+
+
 @dataclass
-class ToTensorIfNeeded(ToTensor):
+class ToTensor(ToTensor_):
 
     def __call__(self, pic):
         """
@@ -34,6 +56,7 @@ class ToTensorIfNeeded(ToTensor):
         """
         if isinstance(pic, Tensor):
             return pic
+        pic = copy_if_negative_strides(pic)
         return super().__call__(pic)
 
     def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
@@ -71,15 +94,18 @@ class FixChannels(Callable[[Tensor], Tensor]):
         return input_shape
 
 @dataclass
-class ChannelsFirst(Callable[[Tensor], Tensor]):
+class ChannelsFirst(Callable[[Union[np.ndarray, Tensor]], Tensor]):
     def __call__(self, x: Tensor) -> Tensor:
-        if x.ndimension() == 3:
+        if not isinstance(x, Tensor):
+            x = to_tensor(x)
+        if x.ndim == 3:
             return x.permute(2, 0, 1)
-        if x.ndimension() == 4:
+        if x.ndim == 4:
             return x.permute(0, 3, 1, 2)
         return x
-
-    def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
+    
+    @staticmethod
+    def shape_change(input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
         ndim = len(input_shape)
         if ndim == 3:
             return tuple(input_shape[i] for i in (2, 0, 1))
@@ -147,7 +173,7 @@ class Transforms(Enum):
     TODO: Figure out a way to let people customize the arguments to the transforms?
     """
     fix_channels = FixChannels()
-    to_tensor = ToTensorIfNeeded()
+    to_tensor = ToTensor()
     random_grayscale = RandomGrayscale()
     channels_first = ChannelsFirst()
     channels_first_if_needed = ChannelsFirstIfNeeded()
@@ -186,7 +212,9 @@ class Transforms(Enum):
 # class SimCLRTrainTransform(SimCLRTrainDataTransform):
 #     def __call
 
-class Compose(List[Transforms], ComposeBase):
+T = TypeVar("T", bound=Callable)
+
+class Compose(List[T], ComposeBase):
     """ Extend the Compose class of torchvision with methods of `list`.
     
     This can also be passed in members of the `Transforms` enum, which makes it
@@ -197,7 +225,7 @@ class Compose(List[Transforms], ComposeBase):
     True
     >>> transforms += [Transforms.random_grayscale]
     >>> transforms
-    [<Transforms.to_tensor: ToTensorIfNeeded()>, <Transforms.fix_channels: FixChannels()>, <Transforms.random_grayscale: RandomGrayscale(p=0.1)>]
+    [<Transforms.to_tensor: ToTensor()>, <Transforms.fix_channels: FixChannels()>, <Transforms.random_grayscale: RandomGrayscale(p=0.1)>]
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -208,7 +236,14 @@ class Compose(List[Transforms], ComposeBase):
         # TODO: Give the impact of this transform on a given input shape.
         for transform in self:
             logger.debug(f"Shape before transform {transform}: {input_shape}")
-            input_shape = transform.shape_change(input_shape)
+            if hasattr(transform, "shape_change") and callable(transform.shape_change):
+                input_shape = transform.shape_change(input_shape)
+            else:
+                logger.debug(
+                    f"Unable to detect the change of shape caused by "
+                    f"transform {transform}, assuming its output has same "
+                    f"shape as its input."
+                )
         logger.debug(f"Final shape: {input_shape}")
         return input_shape
 

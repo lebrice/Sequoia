@@ -95,9 +95,13 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
     # fraction of training data to devote to validation. Defaults to 0.2.
     val_fraction: float = 0.2
 
-    # obs_shape: InitVar[Tuple[int, ...]] = ()
-    # action_shape: InitVar[Tuple[int, ...]] = ()
-    # reward_shape: InitVar[Tuple[int, ...]] = ()
+    # These should be set by all settings, not from the command-line. Hence we
+    # set them as InitVars, meaning they get set by the argument in
+    # __post_init__.
+
+    obs_shape: Tuple[int, ...] = ()
+    action_shape: Tuple[int, ...] = ()
+    reward_shape: Tuple[int, ...] = ()
     
     def __post_init__(self,
                       obs_shape: Tuple[int, ...] = (),
@@ -107,6 +111,7 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
         command-line.
         """
         logger.debug(f"__post_init__ of Setting")
+        # Actually compose the list of Transforms or callables into a single transform.
         self.transforms: Compose = Compose(self.transforms)
         self.train_transforms: Compose = Compose(self.train_transforms or self.transforms)
         self.val_transforms: Compose = Compose(self.val_transforms or self.transforms)
@@ -118,7 +123,10 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
             test_transforms=self.test_transforms,
         )
 
-        # TODO: Should we ask every setting to set these three properties ?
+        self.obs_shape = self.obs_shape or obs_shape
+        self.action_shape = self.action_shape or action_shape
+        self.reward_shape = self.reward_shape or reward_shape
+
         logger.debug(f"Transforms: {self.transforms}")
         if obs_shape and self.transforms:
             # TODO: Testing out an idea: letting the transforms tell us how
@@ -126,20 +134,20 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
             logger.debug(f"Obs shape before transforms: {obs_shape}")
             self.obs_shape: Tuple[int, ...] = self.transforms.shape_change(obs_shape)
             logger.debug(f"Obs shape after transforms: {self.obs_shape}")
-        else:
-            self.obs_shape: Tuple[int, ...] = obs_shape
-        self.action_shape: Tuple[int, ...] = action_shape
-        self.reward_shape: Tuple[int, ...] = reward_shape
+
         self.dataloader_kwargs: Dict[str, Any] = {}
 
         if self.obs_shape and not self.dims:
             self.dims = self.obs_shape
 
+        # This will be set when the setting gets configured
+        self.config: Config = None
+
         # Wether the setup methods have been called yet or not.
+        # TODO: Remove those, its just ugly and doesn't seem needed.
         self._setup: bool = False
         self._prepared: bool = False
         self._configured: bool = False
-        self.config: Config = None
 
     def apply(self, method: "Method") -> Results:
         """ Applies a method on this experimental setting.

@@ -8,14 +8,14 @@ SubprocVecEnv to using the `AsyncVecEnv` from `gym.vector`.
 # the value of `worker` here.
 """
 import multiprocessing as mp
-from multiprocessing import Pipe, Process
+import sys
 from multiprocessing.connection import Connection, wait
 from typing import Any, List, Union
 
 import gym
-import numpy as np
 from baselines.common.vec_env import CloudpickleWrapper, VecEnv
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+from gym.vector.async_vector_env import write_to_shared_memory
 
 from utils.logging_utils import get_logger
 
@@ -34,6 +34,66 @@ class Commands:
     set_attr_on_each = "setattr_on_each"
     partial_reset = "partial_reset"
     seed = "seed"
+from gym import Env
+from typing import Callable
+from multiprocessing.queues import Queue
+
+def _custom_worker_shared_memory(index: int,
+                                 env_fn: Callable[[], Env],
+                                 pipe: Connection,
+                                 parent_pipe: Connection,
+                                 shared_memory,
+                                 error_queue: Queue):
+    """Copied and modified from `gym.vector.async_vector_env`.
+
+    Args:
+        index ([type]): [description]
+        env_fn ([type]): [description]
+        pipe ([type]): [description]
+        parent_pipe ([type]): [description]
+        shared_memory ([type]): [description]
+        error_queue ([type]): [description]
+
+    Raises:
+        RuntimeError: [description]
+    """
+    assert shared_memory is not None
+    env = env_fn()
+    observation_space = env.observation_space
+    parent_pipe.close()
+    try:
+        while True:
+            command, data = pipe.recv()
+            if command == Commands.reset:
+                observation = env.reset()
+                write_to_shared_memory(index, observation, shared_memory,
+                                       observation_space)
+                pipe.send((None, True))
+            elif command == Commands.step:
+                observation, reward, done, info = env.step(data)
+                if done:
+                    observation = env.reset()
+                write_to_shared_memory(index, observation, shared_memory,
+                                       observation_space)
+                pipe.send(((None, reward, done, info), True))
+            elif command == Commands.seed:
+                env.seed(data)
+                pipe.send((None, True))
+            elif command == Commands.close:
+                pipe.send((None, True))
+                break
+            elif command == '_check_observation_space':
+                pipe.send((data == observation_space, True))
+            else:
+                raise RuntimeError('Received unknown command `{0}`. Must '
+                    'be one of {`reset`, `step`, `seed`, `close`, '
+                    '`_check_observation_space`}.'.format(command))
+    except (KeyboardInterrupt, Exception):
+        error_queue.put((index,) + sys.exc_info()[:2])
+        pipe.send((None, False))
+    finally:
+        env.close()
+
 
 
 def custom_worker(remote: Connection,
@@ -80,8 +140,6 @@ def custom_worker(remote: Connection,
                 data = data[0].x
             logger.debug(f"Worker {idx} received command {cmd}, data={data}")
             if cmd == Commands.step:
-                if isinstance(data, np.ndarray):
-                    assert False, data
                 remote.send([step_env(env, action) for env, action in zip(envs, data)])
             
             elif cmd == Commands.reset:

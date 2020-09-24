@@ -17,9 +17,9 @@ logger = get_logger(__file__)
 
 class EnvironmentBase(Generic[ObservationType, ActionType, RewardType], ABC):
     """ ABC for a learning 'environment', wether RL, Supervised or CL. """
-    @abstractmethod
-    def __next__(self) -> ObservationType:
-        """ Generate the next observation. """
+    # @abstractmethod
+    # def __next__(self) -> ObservationType:
+    #     """ Generate the next observation. """
 
     @abstractmethod
     def __iter__(self) -> Iterable[ObservationType]:

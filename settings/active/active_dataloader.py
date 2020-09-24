@@ -15,6 +15,9 @@ logger = get_logger(__file__)
 class ActiveDataLoader(DataLoader, EnvironmentBase[ObservationType, ActionType, RewardType]):
     """Extends DataLoader to support sending back actions to the 'dataset'.
     
+    TODO: Not really used at the moment besides as a base class for the
+    GymDataLoader. 
+    
     This could be useful for modeling RL or Active Learning, for instance, where
     the predictions (actions) have an impact on the data generation process.
 
@@ -31,38 +34,31 @@ class ActiveDataLoader(DataLoader, EnvironmentBase[ObservationType, ActionType, 
 
     """
     def __init__(self, dataset: Union[Dataset, IterableDataset],
-                       x_transform: Callable=None,
-                       y_transform: Callable=None,
+                    #    x_transform: Callable = None,
+                    #    y_transform: Callable = None,
                        **dataloader_kwargs):
         super().__init__(dataset, **dataloader_kwargs)
         self.observation: ObservationType = None
         self.action: ActionType = None
         self.reward: RewardType = None
 
-        self.x_transform = x_transform
-        self.y_transform = y_transform
-        self.manager = mp.Manager()
-        self.n_pulled: mp.ValueProxy[int] = self.manager.Value(int, 0)
-        self.n_pushed: mp.ValueProxy[int] = self.manager.Value(int, 0)
+        # self.x_transform = x_transform
+        # self.y_transform = y_transform
 
-    # @log_calls
-    def __next__(self) -> ObservationType:
-        # self.observation, self.reward = super().__next__()
-        # self.n_pulled.value += 1
-        return self.observation
+    # def __next__(self) -> ObservationType:
+    #     return self.observation
 
-    # def __iter__(self) -> Iterable[ObservationType]:
-    #     for batch in super().__iter__():
-    #         assert len(batch) == self.batch_size
-    #         # The parent dataloader yields both the x's and y's.
-    #         self.observation, self.reward = batch
-    #         next(self)
-    #         y_pred = yield self.observation
-    #         if y_pred is not None:
-    #             print(f"y_pred: {y_pred}")
-    #             y_true = self.send(y_pred)
-    
-    # @log_calls
+    def __iter__(self):
+        return super().__iter__()
+        # # TODO: This is also an idea:
+        # for batch in super().__iter__():
+        #     if isinstance(batch, tuple):
+        #         *inputs, label = batch
+        #         self.observation = inputs
+        #         self.reward = label
+        #         yield self.observation
+        #     yield batch
+
     def send(self, action: ActionType) -> RewardType:
         """ Sends an action to the 'dataset'/'Environment'.
         
@@ -72,26 +68,13 @@ class ActiveDataLoader(DataLoader, EnvironmentBase[ObservationType, ActionType, 
         TODO: Figure out the interactions with num_workers and send, if any.
         """
         self.action = action
-
-        # if self.n_pulled.value != (self.n_pushed.value):
-        #     raise RuntimeError(
-        #         "Number of pulled values should be equal to number of pushed values! "
-        #         f"n_pulled: {self.n_pulled.value} n_pushed: {self.n_pushed.value}"
-        #     )
-        # self.n_pushed.value += 1
-        worker_info = torch.utils.data.get_worker_info()
-        if worker_info:
-            logger.debug(f"Worker info: {worker_info}")
-        else:
-            # single-process data loading
-            logger.debug("Single process data loading.")
-
-        if isinstance(self.dataset, EnvironmentBase):
+        if hasattr(self.dataset, "send"):
             self.reward = self.dataset.send(self.action)
-        elif hasattr(self.dataset, "send"):
-            self.reward = self.dataset.send(self.action)
+        # TODO: Clean this up, this is taken care of in the GymDataLoader class.
+        # if hasattr(self.dataset, "step"):
+        #     self.observation, self.reward, self.done, self.info = self.dataset.step(self.action)
         else:
-            assert False, "TODO: self.dataset should always be an instance of EnvironmentBase for now."
+            assert False, "TODO: ActiveDataloader dataset should always have a `send` attribute for now."
         return self.reward
 
 ActiveEnvironment = ActiveDataLoader
