@@ -15,9 +15,34 @@ from inspect import ismethod
 from typing import Callable, List
 
 from utils.logging_utils import get_logger
-
+from operator import methodcaller
 logger = get_logger(__file__)
 
+
+class BatchedMethod(List[Callable]):
+    def __init__(self, *args, apply_methods_fn: Callable[[List[Callable]], List] = None):
+        super().__init__(*args)
+        # self.method_name: str = method_name
+        self.apply_methods_fn = apply_methods_fn
+    
+    @property
+    def method_name(self) -> str:
+        return self[0].__name__ if len(self) > 1 else None
+
+    def __call__(self, *args, split_args: bool = False, **kwargs):
+        print(f"args: {args}, kwargs: {kwargs}")
+        if not self.method_name:
+            return []
+        if self.apply_methods_fn:
+            results = self.apply_methods_fn(methodcaller(self.method_name, *args, **kwargs))
+        else:
+            results = [method(*args, **kwargs) for method in self]
+        logger.debug(f"Results: {results}")
+        if isinstance(results, list) and all(map(ismethod, results)):
+            logger.debug("Recurse?! :DD")
+            # TODO: Need to get the method name from `self`..
+            return BatchedMethod(results, apply_methods_fn=self.apply_methods_fn)
+        return results
 
 def make_batched_method(methods: List[Callable]) -> Callable:
     def batched_method(*args, **kwargs):

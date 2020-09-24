@@ -3,17 +3,18 @@ import operator
 import platform
 from enum import Enum
 from functools import lru_cache, partial, wraps
+from inspect import ismethod
 from multiprocessing.connection import Connection
 from operator import attrgetter, itemgetter, methodcaller
-from typing import (Any, Callable, Generic, Iterable, List, Optional, Sequence,
-                    Tuple, TypeVar, Union, overload)
+from typing import (Any, Callable, Dict, Generic, Iterable, List, Optional,
+                    Sequence, Tuple, Type, TypeVar, Union, overload)
 
 import gym
-from gym import Env
+import numpy as np
+from gym import Env, Wrapper
 from gym.vector import AsyncVectorEnv as AsyncVectorEnv_
 from gym.vector.async_vector_env import (AlreadyPendingCallError, AsyncState,
                                          NoAsyncCallError)
-
 from utils.logging_utils import get_logger
 
 from .worker import (CloudpickleWrapper, Commands,
@@ -83,12 +84,14 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
     @overload
     def apply(self, functions: Sequence[Callable[[Env], T]]) -> List[T]:
         ...
-    
+
     @overload
     def apply(self, functions: Sequence[Optional[Callable[[Env], T]]]) -> List[Optional[T]]:
         ...
 
-    def apply(self, functions: Union[Callable[[Env], T], Sequence[Optional[Callable[[Env], T]]]]) -> List[T]:
+    def apply(self,
+              functions: Union[Callable[[Env], T], Sequence[Optional[Callable[[Env], T]]]],
+              timeout: float = None) -> List[T]:
         """ Send a function down to the workers for them to apply to their
         environments, and returns the corresponding results.
 
@@ -98,7 +101,7 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         apply any function for that particular env.
         """
         self.apply_async(functions)
-        return self.apply_wait()
+        return self.apply_wait(timeout=timeout)
 
     def apply_async(self, functions: Union[Callable[[Env], Any], Sequence[Callable[[Env], Any]]]):
         self._assert_is_running()
@@ -118,7 +121,6 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
                 pipe.send((Commands.apply, function))
             else:
                 self.expects_result.append(False)
-        self.step_wait
         self._state = ExtendedAsyncState.WAITING_APPLY
         
     def apply_wait(self, timeout: float = None) -> List[Optional[Any]]:
@@ -136,6 +138,7 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         
         results: List[Any] = []
         successes: List[bool] = []
+        pipe: Connection
         for pipe, need_result in zip(self.parent_pipes, self.expects_result):
             if need_result:
                 result, success = pipe.recv()
@@ -148,20 +151,49 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         self._state = AsyncState.DEFAULT
         return list(results)
 
+    @overload
+    def apply_at(self, operation: Callable[[EnvType], T], index: int) -> T:
+        ...
+    
+    @overload
+    def apply_at(self, operation: Callable[[EnvType], T], index: Sequence[int]) -> List[T]:
+        ...
+
+    def apply_at(self,
+                 operation: Callable[[EnvType], T],
+                 index: Union[int, Sequence[int]]) -> Union[T, List[T]]:
+        """ Applies `operation` to the envs at `index`. """
+        indices = [index] if isinstance(index, int) else index
+        operations = [
+            operation if i in indices else None for i in range(self.num_envs)
+        ]
+        results: List[Optional[T]] = self.apply(operations)
+        assert len(results) == self.num_envs
+
+        if isinstance(index, int):
+            # If we wanted a proxy for a single item, then we return a
+            # single result, instead of a list with one item.
+            return results[index]
+        
+        return [result for i, result in enumerate(results) if i in indices]
+
     def __getattr__(self, name: str):
-        env_has_attribute = self.apply(partial(has_attribute, name=name))
+        logger.debug(f"Attempting to get missing attribute {name}.")
+        assert isinstance(name, str)
+        env_has_attribute = self.apply(partial(hasattr_, name=name))
         if all(env_has_attribute):
             return getattr(self[:], name)
 
-
     def __getitem__(self, index: Union[int, slice, Sequence[int]]) -> EnvType:
-        if isinstance(index, int):
-            pass
-        elif isinstance(index, slice):
+        if isinstance(index, slice):
             index = tuple(range(self.num_envs))[index]
         elif isinstance(index, list):
             index = tuple(index)
-        else:
+        elif isinstance(index, np.ndarray):
+            if index.dtype == np.bool:
+                index = np.arange(self.num_envs)[index]
+            index = tuple(index.tolist())
+        elif not isinstance(index, int):
             try:
                 index = tuple(index)
             except:
@@ -173,46 +205,29 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         """ Returns a Proxy object that will get/set attributes on the remote
         environments at the given indices.
         """
-        indices: List[int] = []
-        if isinstance(index, int):
-            indices = [index]
-        else:
-            try:
-                indices = list(index)
-            except:
-                raise RuntimeError(f"Bad index: {index}")
-
-        def apply_at_indices(operation: Callable) -> List:
-            """ Version of 'apply' but only for only the indices in `indices`.
-            """
-            operations = [
-                operation if i in indices else None for i in range(self.num_envs)
-            ]
-            results = self.apply(operations)
-            assert isinstance(results, list) and len(results) == self.num_envs
-            if isinstance(index, int):
-                # If we wanted a proxy for a single item, then we return a
-                # single result, not a list with one item.
-                return results[index]
-            return [result for i, result in enumerate(results) if i in indices] 
+        apply_at_indices = partial(self.apply_at, index=index)
+        from .batched_method import BatchedMethod
+        from operator import methodcaller
 
         class Proxy:
             """ Some Pretty sweet functional magic going on here.
 
             NOTE: @lebrice: Since I don't want (or need) a 'self' argument in
             the methods below, I marked all the methods as static.
-            TODO: Maybe I should read-up on the descriptor protocol, sounds
-            relevant.
+            TODO: Maybe be useful to read-up on the descriptor protocol.
             """
             @staticmethod
-            def __getattr__(name: str) -> List:
+            def __getattribute__(name: str) -> List:
                 """ Gets the attribute from the corresponding remote env, rather
                 than from this proxy object.
                 """
                 # If we wanted to be even weirer about this, we could try and
                 # detect whenever such an attribute would be a method, and then
                 # batch the methods!
-                return apply_at_indices(attrgetter(name))
+                results = apply_at_indices(attrgetter(name))
+                if isinstance(results, list) and all(map(ismethod, results)):
+                    return BatchedMethod(results, apply_methods_fn=apply_at_indices)
+                return results
 
             @staticmethod
             def __setattr__(name: str, value: Any):
@@ -222,7 +237,7 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
                 # TODO: IF the value is a list, and index is a tuple of more
                 # than one value, then maybe split the value up to set a
                 # different slice of it on each env ?
-                return apply_at_indices(partial(set_attribute, name=name, value=value))
+                return apply_at_indices(partial(set_wrapper_attribute, name=name, value=value))
 
             @staticmethod
             def getattributes(*name: str) -> List:
@@ -232,7 +247,7 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
             @staticmethod
             def setattributes(**names_and_values):
                 """ Bulk setattr to save some latency. """
-                return apply_at_indices(partial(set_attributes, **names_and_values))
+                return apply_at_indices(partial(setattrs, **names_and_values))
 
             @staticmethod
             def __getitem__(index: int):
@@ -254,23 +269,56 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
             " env, something like that."
         )
 
-def set_attribute(obj, name, value) -> None:
+def hasattr_(obj, name) -> None:
+    """ Version of 'hasattr' that accepts keyword arguments, for use with partial.
+    """
+    assert isinstance(name, str) 
+    return hasattr(obj, name)
+
+
+def setattr_(obj, name, value) -> None:
     """ Version of 'setattr' that accepts keyword arguments, for use with partial.
     """
     setattr(obj, name, value)
 
 
-def has_attribute(obj, name) -> None:
-    """ Version of 'hasattr' that accepts keyword arguments, for use with partial.
+def setattrs(obj, **name_and_value) -> None:
+    """ Version of 'setattr' that accepts keyword arguments, for use with partial.
     """
-    return hasattr(obj, name)
-
-
-def set_attributes(obj, **names_and_values) -> None:
-    for name, value in names_and_values.items():
+    for name, value in name_and_value.items():
         setattr(obj, name, value)
 
-def attrsetter(name, val):
-    # def setter(obj):
-    #     setattr(obj, name, val)
-    return lambda obj: setattr(obj, name, val)
+
+
+def setattr_on_unwrapped(env: gym.Env, attr: str, value: Any) -> None:
+    setattr(env.unwrapped, attr, value)
+
+
+def setattrs_on_unwrapped(env: gym.Env, **names_and_values) -> None:
+    for name, value in names_and_values.items():
+        setattr_on_unwrapped(env, name, value)
+
+def set_wrapper_attribute(env: Env, name: str, value: Any) -> Type[Env]:
+    """ Sets the attribute `name` to a value of `value` on the first wrapper
+    that already has it.
+    If none have it, sets the attribute on the unwrapped env.
+
+    Returns the type of the object on which the attribute was set.
+    TODO: not sure if this return value is really useful. I added it just to be
+    able to tell if it was set on the right wrapper, in case more than one
+    wrapper has an attribute with that name.
+    """
+    # Keep track of seen envs to avoids infinite loops because of cycles.
+    wrappers = []
+    while not hasattr(env, name) and hasattr(env, "env") and env not in wrappers:
+        wrappers.append(env)
+        env = env.env
+    setattr(env, name, value)
+    return type(env)
+
+
+def set_wrapper_attributes(env: Env, **names_and_values) -> Dict[str, Type[Env]]:
+    results: Dict[str, Type[Wrapper]] = {}
+    for name, value in names_and_values.items():
+        results[name] = set_wrapper_attribute(env, name, value)
+    return results

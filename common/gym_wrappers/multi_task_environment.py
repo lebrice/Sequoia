@@ -75,6 +75,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         self.env: gym.Env
         self._current_task: Dict = OrderedDict()
         self._task_schedule: Dict[int, Dict[str, Any]] = OrderedDict()
+        self._steps: int = 0
         self.noise_std = noise_std
         if not task_params:
             unwrapped_type = type(env.unwrapped)
@@ -90,7 +91,6 @@ class MultiTaskEnvironment(gym.Wrapper):
         self.task_params: List[str] = task_params or []
         self.default_task: np.ndarray = self.current_task.copy()
         self.task_schedule = task_schedule or {}
-        self._steps: int = 0
 
     def step(self, *args, **kwargs):
         # If we reach a step in the task schedule, then we change the task to
@@ -144,7 +144,8 @@ class MultiTaskEnvironment(gym.Wrapper):
         self._current_task.update(self.default_task)
 
         if isinstance(task, dict):
-            for k, value in task.items():             
+            for k, value in task.items():
+                assert isinstance(k, str), "The keys of the task dict should be strings."    
                 self._current_task[k] = value
         else:
             assert len(task) == len(self.task_params), "lengths should match!"
@@ -224,6 +225,10 @@ class MultiTaskEnvironment(gym.Wrapper):
     def reset(self, new_random_task: bool = False, **kwargs):
         if new_random_task:
             self.current_task = self.random_task()
+        
+        if self._steps in self.task_schedule:
+            self.current_task = self.task_schedule[self._steps]
+
         return self.env.reset(**kwargs)
 
     def seed(self, seed: Optional[int] = None) -> None:
@@ -258,6 +263,9 @@ class MultiTaskEnvironment(gym.Wrapper):
                     f"arrays, but got {task}!"
                 )
             self._task_schedule[step] = task
+
+        if self._steps in self._task_schedule:
+            self.current_task = self._task_schedule[self._steps]
 
 # def MultiTaskCartPole():
 #     env = gym.make("CartPole-v0")
