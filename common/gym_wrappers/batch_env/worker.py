@@ -28,12 +28,18 @@ class Commands:
     reset = "reset"
     render = "render"
     close = "close"
-    get_spaces_spec = "get_spaces_spec"
+
+    # WIP:
+    apply = "apply"
+
+    # Things to re-add:
     get_attr = "getattr"
     set_attr = "setattr"
     set_attr_on_each = "setattr_on_each"
     partial_reset = "partial_reset"
     seed = "seed"
+
+
 from gym import Env
 from typing import Callable
 from multiprocessing.queues import Queue
@@ -72,6 +78,8 @@ def _custom_worker_shared_memory(index: int,
             elif command == Commands.step:
                 observation, reward, done, info = env.step(data)
                 if done:
+                    if isinstance(info, dict):
+                        info["final_state"] = observation
                     observation = env.reset()
                 write_to_shared_memory(index, observation, shared_memory,
                                        observation_space)
@@ -84,6 +92,14 @@ def _custom_worker_shared_memory(index: int,
                 break
             elif command == '_check_observation_space':
                 pipe.send((data == observation_space, True))
+
+            # Below this: added commands.
+            elif command == Commands.apply:
+                assert callable(data)
+                function = data
+                results = function(env)
+                pipe.send((results, True))
+
             else:
                 raise RuntimeError('Received unknown command `{0}`. Must '
                     'be one of {`reset`, `step`, `seed`, `close`, '
