@@ -86,7 +86,7 @@ def print_methods():
         print(f"     Target setting: {method.target_setting}")
 
 def add_stuff_to_readme(readme_path=Path("README.md")):
-    token = "<!-- MAKETREE -->"
+    token = "<!-- MAKETREE -->\n"
 
     lines: List[str] = []
     from io import StringIO
@@ -101,13 +101,17 @@ def add_stuff_to_readme(readme_path=Path("README.md")):
     with open(readme_path, "w") as f:
         with redirect_stdout(f):
             # reversed insert?
-            print(*lines[:tree_index + 1])
+            print(*lines[:tree_index + 1], sep="")
             print("\n\n## Registered Settings:\n")
+            print("```")
             print(get_tree_string())
+            print("```")
             print("\n\n## Registered Methods:\n")
             print_methods()
             print("\n\n## Registered Settings (with applicable methods): \n")
+            print("```")
             print(get_tree_string(with_methods=True))
+            print("```")
 
 if __name__ == "__main__":
     add_stuff_to_readme()
