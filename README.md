@@ -12,13 +12,26 @@ git submodule update
 pip install -r requirements.txt
 ```
 
+## TODOS:
+- [ ] Add more documentation.
+- [ ] Make sure Wandb logging works well and doesn't produce garbage.
+- [ ] ImageNet Training on the Mila cluster.
+- [ ] Test/debug Multi-GPU training on Mila cluster.
+- [ ] Test/debug Multi-node-Multi-GPU training on Mila cluster.
+- [ ] Add support for more of the datasets from Continuum
+- [ ] Add support for using 'native' iid datasets in the IID setting, or normal gym environments in the 'classical RL' setting. 
+
+
 ## Getting Started:
 - Take a look at Pytorch Lightning
 - Take a quick look at [simple_parsing](https://github.com/lebrice/SimpleParsing) (A python package I've created) which we use to generate the command-line arguments for the experiments.
-- Write a test that demonstrates how your new setting or method should behave.
-- Implement your new method / setting
+- Take a look at the `Setting` class, which looks a 
+
+### Adding a new Setting or Method:
+- [ ] Write a test that demonstrates how your new setting or method should behave.
+- [ ] Implement your new method / setting
 - [ ] Write some tests for **every single module**. Have them be easy to read so people could ideally understand how things work by simply reading the tests.
-- Finally, graft your new method or setting onto the tree by adding them to `all_methods` or `all_settings`, respectively.
+- [ ] Finally, graft your new method or setting onto the tree by adding them to `all_methods` or `all_settings`, respectively.
 
 <!-- MAKETREE -->
    
