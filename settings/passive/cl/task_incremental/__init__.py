@@ -7,6 +7,6 @@ Invoke like so:
 
 
 # 2. Import what we overwrite/customize
-from .setting import TaskIncrementalSetting
+from .task_incremental_setting import TaskIncrementalSetting
 from .results import TaskIncrementalResults
 from .iid import *

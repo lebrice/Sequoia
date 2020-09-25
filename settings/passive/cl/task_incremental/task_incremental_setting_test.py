@@ -16,7 +16,7 @@ from continuum.datasets import MNIST
 from simple_parsing import ArgumentParser, mutable_field
 from utils.logging_utils import get_logger, log_calls
 
-from .setting import TaskIncrementalSetting
+from .task_incremental_setting import TaskIncrementalSetting
 
 logger = get_logger(__file__)
 

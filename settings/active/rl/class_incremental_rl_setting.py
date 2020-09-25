@@ -17,7 +17,7 @@ logger = get_logger(__file__)
 
 @dataclass
 class ClassIncrementalRLSetting(ContinualRLSetting):
-    """ Continual RL setting with clear task boundaries.
+    """ Continual RL setting the data is divided into 'tasks' with clear boundaries.
 
     By default, the task labels are given at train time, but not at test time.
 
@@ -34,8 +34,11 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
     steps_per_task: int = 0
     nb_tasks: int = 10
 
-    clear_task_boundaries: bool = constant(False)
+    # Wether the task boundaries are smooth or sudden.
+    smooth_task_boundaries: bool = constant(False)
+    # Wether you have access to task labels at train time.
     task_labels_at_train_time: bool = True
+    # Wether you have access to task labels at test time.
     task_labels_at_test_time: bool = False
 
     def __post_init__(self,

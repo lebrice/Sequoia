@@ -1,3 +1,6 @@
+""" Defines the IIDSetting, as a variant of the TaskIncremental setting with
+only one task.
+"""
 from dataclasses import dataclass
 from typing import ClassVar, List, Optional, Type, TypeVar, Union
 
@@ -10,13 +13,9 @@ from .results import IIDResults
 
 @dataclass
 class IIDSetting(TaskIncrementalSetting):
-    """ Normal IID Setting.
+    """Your 'usual' learning Setting, where the samples are i.i.d.
     
-    This is implemented quite simply as taking all the datasets from Continuum
-    and setting the number of tasks to 1 (which makes sense!).
-
-    TODO: Mark the relevant options as constant somehow, so they can't get set
-    from the command-line.
+    Implemented as a variant of Task-Incremental CL, but with only one task.
     """
     results_class: ClassVar[Type[Results]] = IIDResults
 

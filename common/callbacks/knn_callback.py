@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader, Dataset
 from common.loss import Loss
 from methods.models.model import Model
 from settings import Setting
-from settings.passive.cl.setting import ClassIncrementalSetting
+from settings.passive.cl.class_incremental_setting import ClassIncrementalSetting
 from simple_parsing import field, mutable_field
 from utils.logging_utils import get_logger, pbar
 from utils.utils import roundrobin, take

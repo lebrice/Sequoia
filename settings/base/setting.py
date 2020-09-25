@@ -1,3 +1,27 @@
+""" This module defines the `Setting` class, an ML "problem" to solve. 
+
+A few examples of
+
+
+This `Setting` class should in principle be the most general learning setting
+imaginable, i.e. with the fewest assumptions about the data, the environment,
+the agent, etc.
+
+What this
+
+
+The Setting class is based on the `LightningDataModule` from pl_bolts
+(pytorch-lightning-bolts).
+
+
+The hope is that by staying close to that
+API, we can reuse some of the models that people develop while target that API.
+- `train_dataloader`, `val_dataloader` and `test_dataloader` give
+    dataloaders of the current task.
+- `train_dataloaders`, `val_dataloaders` and `test_dataloaders` give the 
+    dataloaders of all the tasks. NOTE: this isn't part of the
+    LightningDataModule API.
+"""
 import inspect
 import os
 import shlex
@@ -6,6 +30,7 @@ from argparse import Namespace
 from collections import OrderedDict
 from dataclasses import InitVar, dataclass, fields, is_dataclass
 from inspect import getsourcefile
+from functools import partial
 from pathlib import Path
 from typing import *
 
@@ -30,20 +55,24 @@ ResultsType = TypeVar("ResultsType", bound=Results)
 SettingType = TypeVar("SettingType", bound="Setting")
 
 
-
 class SettingMeta(_DataModuleWrapper, Type["Setting"]):
-    """ TODO: We might want to move the command-line arguments from the Setting
-    to a 'Config' class instead? There are issues with using a dataclass over a
-    LightningDataModule atm (because LightningDataModule has __init__ and a
-    weird '_DataModuleWrapper' metaclass..)
+    """ Metaclass for the nodes in the Setting inheritance tree.
+    
+    Might remove this. Was experimenting with using this to create class
+    properties for each Setting.
+
+    TODO: A little while back I noticed some strange behaviour when trying
+    to create a Setting class (either manually or through the command-line), and
+    I attributed it to PL adding a `_DataModuleWrapper` metaclass to
+    `LightningDataModule`, which seemed to be causing problems related to
+    calling __init__ when using dataclasses. I don't quite recall exactly what
+    was happening and was causing an issue, so it would be a good idea to try
+    removing this metaclass and writing a test to make sure there was a problem
+    to begin with, and also to make sure that adding back this class fixes it.
     """
-    _sub_settings: ClassVar[List[Type["Setting"]]] = []
-
-    _applicable_methods: ClassVar[Set[Type]] = set()
-
     def __call__(cls, *args, **kwargs):
-        """
-        """
+        # This is used to filter the arguments passed to the constructor
+        # of the Setting and only keep the ones that are fields with init=True.
         init_fields: List[str] = [f.name for f in fields(cls) if f.init]
         extra_args: Dict[str, Any] = {}
         for k in list(kwargs.keys()):
@@ -55,26 +84,72 @@ class SettingMeta(_DataModuleWrapper, Type["Setting"]):
             ))
         return super().__call__(*args, **kwargs)
 
+    _parent: "SettingMeta" = None
+    _children: ClassVar[List[Type["Setting"]]] = []
+    _applicable_methods: ClassVar[Set[Type]] = set()
+
     @property
-    def sub_settings(cls):
-        return cls._sub_settings
-    
+    def children(cls):
+        return cls._children
+
+    @children.setter
+    def children(cls, value: List):
+        if value:
+            logger.warning(UserWarning(
+                f"Setting the children attribute of class {cls} to a non-empty "
+                f"list, are you sure of what you're doing?"
+            ))
+        cls._children = value
+
     @property
-    def all_sub_settings(cls) -> Iterable[Type["Setting"]]:
+    def all_children(cls) -> Iterable[Type["Setting"]]:
+        """Iterates over the inheritance tree, in-order.
+        """
         # Yield the immediate children
-        for sub_setting in cls._sub_settings:
-            yield sub_setting
-            yield from sub_setting.all_sub_settings
-    
+        for child in cls._children:
+            yield child
+            yield from child.all_children
+
+    @property
+    def parent(cls) -> Optional["SettingMeta"]:
+        """Returns the first base class that is an instance of SettingMeta, else
+        None
+        """
+        base_nodes = [
+            base for base in cls.__bases__ if isinstance(base, SettingMeta)
+        ]
+        return base_nodes[0] if base_nodes else None
+
+    @property
+    def parents(cls) -> Iterable[Type["Setting"]]:
+        """TODO: yields the lineage, from bottom to top. """
+        parent = cls.parent
+        if parent:
+            yield parent
+            yield from parent.parents
+
 
 @dataclass
 class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], metaclass=SettingMeta):
-    """Extends LightningDataModule to allow setting the transforms and options
-    from the command-line.
+    """ Base class for all research settings in ML: Root node of the tree. 
 
-    This class is Generic, which allows us to pass a different `Loader` type, 
-    which should be the type of dataloader returned by the `train_dataloader`,
-    `val_dataloader` and `test_dataloader` methods.
+    A 'setting' is loosely defined here as a learning problem with a specific
+    set of assumptions, restrictions, and an evaluation procedure.
+    
+    For example, Reinforcement Learning is a type of Setting in which we assume
+    that an Agent is able to observe an environment, take actions upon it, and 
+    receive rewards back from the environment. Some of the assumptions include
+    that the reward is dependant on the action taken, and that the actions have
+    an impact on the environment's state (and on the next observations the agent
+    will receive). The evaluation procedure consists in trying to maximize the
+    reward obtained from an environment over a given number of steps.
+        
+    This 'Setting' class should ideally represent the most general learning
+    problem imaginable, with almost no assumptions about the data or evaluation
+    procedure.
+
+    This is a dataclass. Its attributes are can also be used as command-line
+    arguments using `simple_parsing`.
     """
     # Overwrite this in a subclass to customize which type of Results to create.
     results_class: ClassVar[Type[Results]] = Results
@@ -264,13 +339,13 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
 
         # Exceptionally, create this new empty list that will hold all the
         # forthcoming subclasses of this particular new setting.
-        cls._sub_settings = []
+        cls.children = []
         # Inform all the nodes higher in the tree that they have a new subclass.
         parent = cls.__base__
         if issubclass(parent, Setting):
             parent: Type[Setting]
-            assert cls not in parent.sub_settings
-            parent.sub_settings.append(cls)
+            assert cls not in parent.children
+            parent.children.append(cls)
         # for t in cls.__bases__:
         #     if inspect.isclass(t) and issubclass(t, Setting):
         #         if cls not in t.sub_settings:

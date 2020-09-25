@@ -1,22 +1,42 @@
+""" Define a "Class-Incremental" Continual Learning Setting.
+
+TODO: I'm not sure this fits the "Class-Incremental" definition from
+[iCaRL](https://arxiv.org/abs/1611.07725) at the moment:
+
+    "Formally, we demand the following three properties of an algorithm to qualify
+    as class-incremental:
+    i)  it should be trainable from a stream of data in which examples of
+        different classes occur at different times
+    ii) it should at any time provide a competitive multi-class classifier for
+        the classes observed so far,
+    iii) its computational requirements and memory footprint should remain
+        bounded, or at least grow very slowly, with respect to the number of classes
+        seen so far."
+
+The Setting class is based on the `LightningDataModule` from
+pl_bolts (pytorch-lightning-bolts). The hope is that by staying close to that
+API, we can reuse some of the models that people develop while target that API.
+- `train_dataloader`, `val_dataloader` and `test_dataloader` give
+    dataloaders of the current task.
+- `train_dataloaders`, `val_dataloaders` and `test_dataloaders` give the 
+    dataloaders of all the tasks. NOTE: this isn't part of the
+    LightningDataModule API.
+
+"""
 import warnings
 from abc import abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import (Any, Callable, ClassVar, Dict, List, Optional, Tuple, Type,
-                    TypeVar, Union)
+from typing import (Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union)
 
-from pytorch_lightning import LightningDataModule, LightningModule
-from simple_parsing import (Serializable, choice, field, list_field,
-                            mutable_field)
+from simple_parsing import choice, list_field
 from torch import Tensor
 from torch.utils.data import DataLoader
 
 from common import ClassificationMetrics, Metrics
 from common.config import Config
-from common.dims import Dims
 from common.loss import Loss
-from common.metrics import ClassificationMetrics
-from common.transforms import Compose, Transforms
+from common.transforms import Transforms
 from continuum import ClassIncremental, split_train_val
 from continuum.datasets import *
 from continuum.datasets import _ContinuumDataset
@@ -28,7 +48,7 @@ from utils import dict_union, get_logger
 from utils.utils import constant
 
 from ..environment import PassiveEnvironment
-from ..setting import PassiveSetting
+from ..passive_setting import PassiveSetting
 from .results import ClassIncrementalResults
 
 logger = get_logger(__file__)
@@ -76,30 +96,9 @@ dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
 
 @dataclass
 class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
-    """Settings where the data is online non-stationary.
-
-    At the moment, this is basically just a base class for the Task-Incremental
-    Setting (TaskIncrementalSetting) where the data is split up into 'tasks'.
-
-    However in the future, as we add more CL setups, they should extend this
-    class, and we might need to move some of the stuff here into
-    TaskIncremental if needed.
-
-    For example, we might want to create something like a 'stream' learning of
-    some sort, where the transitions are smooth and there are no task labels.
-
-    This implements the LightningDataModule API from pytorch-lightning-bolts.
-    The hope is that this greatly simplifies the whole data generation process.
-    - `train_dataloader`, `val_dataloader` and `test_dataloader` give
-        dataloaders of the current task.
-    - `train_dataloaders`, `val_dataloaders` and `test_dataloaders` give the 
-        dataloaders of all the tasks. NOTE: this isn't part of the
-        LightningDataModule API.
+    """Settings where the data is non-stationary, and grouped into tasks.
 
     The current task can be set at the `current_task_id` attribute.
-
-    TODO: Change the base class from PassiveSetting to `ActiveSetting` for
-    continual active learning / continual RL.
     """
     results_class: ClassVar[Type[Results]] = ClassIncrementalResults
 
@@ -487,4 +486,3 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             return self.class_order[start_index:end_index]
         else:
             return self.test_class_order[start_index:end_index]
-

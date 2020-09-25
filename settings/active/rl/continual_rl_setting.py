@@ -24,6 +24,15 @@ from common.gym_wrappers import TransformObservation
 
 @dataclass
 class ContinualRLSetting(ActiveSetting):
+    """ Reinforcement Learning Setting where the environment changes over time.
+
+    This is an Active setting which uses gym environments as sources of data.
+    These environments' attributes could change over time following a task
+    schedule. An example of this could be that the gravity increases over time
+    in cartpole, making the task progressively harder as the agent interacts with
+    the environment.
+    """
+     
     available_datasets: ClassVar[Dict[str, str]] = {
         "cartpole": "CartPole-v0"
     }
@@ -45,7 +54,7 @@ class ContinualRLSetting(ActiveSetting):
     # Set of default transforms. Not parsed through the command-line, since it's
     # marked as a class variable.
     default_transforms: ClassVar[List[Transforms]] = [
-        # Transforms.to_tensor,
+        Transforms.to_tensor,
         Transforms.channels_first_if_needed,
     ]
 
