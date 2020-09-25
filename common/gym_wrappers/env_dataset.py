@@ -2,8 +2,8 @@
 optional arguments used to limit the number of steps until the env is done.
 """
 
-from typing import (Dict, Generator, Generic, Iterable, List, Optional,
-                    Sequence, Tuple, Type, TypeVar, Union)
+from typing import (Callable, Dict, Generator, Generic, Iterable, List,
+                    Optional, Sequence, Tuple, Type, TypeVar, Union)
 
 import gym
 from torch.utils.data import IterableDataset
@@ -22,6 +22,11 @@ logger = get_logger(__file__)
 # depending on the `done` value as well.
 
 
+# def on_missing_action(self,
+#                       observation: ObservationType,
+#                       done: Union[bool, Sequence[bool]],
+#                       info: Union[Dict, Sequence[Dict]]) -> ActionType:
+
 class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionType, RewardType]):
     """ Wrapper that exposes a Gym environment as an IterableDataset.
 
@@ -32,6 +37,7 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
                  env: gym.Env,
                  max_episodes: Optional[int] = None,
                  max_steps: Optional[int] = None,
+                 on_missing_action: Callable = None
                  ):
         super().__init__(env=env)
         if isinstance(env, AsyncVectorEnv):
@@ -58,6 +64,7 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
         self._reward: Optional[RewardType] = None
         self._done: Optional[Union[bool, Sequence[bool]]] = None
         self._info: Optional[Union[Dict, Sequence[Dict]]] = None
+        self.on_missing_action = on_missing_action
 
     def step(self, action) -> Tuple[ObservationType,
                                     RewardType,
@@ -71,6 +78,7 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
         assert self._done is not None
         assert self._info is not None
         return self._observation, self._reward, self._done, self._info
+
 
     def __next__(self) -> Tuple[ObservationType,
                                 Union[bool, Sequence[bool]],
@@ -104,12 +112,21 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
 
                 logger.debug(f"(step={self.n_steps}, n_pulled={self.n_pulled}, n_actions={self.n_actions}, n_episodes={self.n_episodes})")
                 if self.n_pulled > self.n_actions:
-                    raise RuntimeError(
-                        "You need to send an action using the `send` method "
-                        "every time you get a value from the dataset! "
-                        "Otherwise, you can also pass in a policy to use when "
-                        "an action isn't given. \n"
-                    )
+                    if self.on_missing_action:
+                        filler_action = self.on_missing_action(
+                            observation=self._observation,
+                            done=self._done,
+                            info=self._info,
+                        )
+                        self.send(filler_action)
+                    else:
+                        raise RuntimeError(
+                            "You need to send an action using the `send` "
+                            "method every time you get a value from the "
+                            "dataset! Otherwise, you can also pass a callable "
+                            "to the `on_missing_action` kwarg to return a "
+                            "'filler' action given the current context. "
+                        )
                 action = yield self.__next__()
                 self.n_pulled += 1
                 

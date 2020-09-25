@@ -58,12 +58,12 @@ class ActorCritic(Agent):
         super().__init__(setting, hparams, config)
         self.loss_fn: Callable[[Tensor, Tensor], Tensor] = torch.dist
 
-    @auto_move_data
+    # @auto_move_data
     def forward(self, batch: Union[Tensor, Tuple[Tensor, Tensor, List[bool], Dict]]) -> Dict[str, Tensor]:
         # TODO: What about methods that want to compare the current 'state' and
         # the next 'state'? How would we pass the 'previous state' to it?
-        if isinstance(batch, tuple):
-            assert False, "TODO: don't know how to handle batch"
+        if isinstance(batch, (tuple, list)) and len(batch) == 3:
+            state, done, info = batch
         else:
             state = batch
 

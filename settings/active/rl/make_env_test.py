@@ -27,39 +27,12 @@ def test_make_batched_env(env_name: str, batch_size: int):
 
 
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
-@pytest.mark.parametrize("batch_size", [
-    1,
-    5,
-    10,
-    32,
-])
+@pytest.mark.parametrize("batch_size", [1, 5, 10, 32])
 def test_make_env_with_wrapper(env_name: str, batch_size: int):
-    env = make_batched_env(base_env=env_name, batch_size=batch_size)
-    start_state = env.reset()
-    expected_state_shape = (batch_size, 400, 600, 3)
-    assert start_state.shape == expected_state_shape
-
-    for i in range(10):
-        action = env.random_actions()
-        assert torch.as_tensor(action).shape == (batch_size,)
-        obs, reward, done, info = env.step(action)
-        assert False, done
-        assert obs.shape == expected_state_shape
-        assert reward.shape == (batch_size,)
-
-
-
-@pytest.mark.parametrize("env_name", ["CartPole-v0"])
-@pytest.mark.parametrize("batch_size", [
-    1,
-    5,
-    10,
-    32,
-])
-def test_make_env_with_wrapper_and_kwargs(env_name: str, batch_size: int):
     env = make_batched_env(
         base_env=env_name,
         batch_size=batch_size,
+        wrappers=[PixelStateWrapper]
     )
     start_state = env.reset()
     expected_state_shape = (batch_size, 400, 600, 3)
@@ -69,7 +42,33 @@ def test_make_env_with_wrapper_and_kwargs(env_name: str, batch_size: int):
         action = env.random_actions()
         assert torch.as_tensor(action).shape == (batch_size,)
         obs, reward, done, info = env.step(action)
-        assert False, done
+        assert obs.shape == expected_state_shape
+        assert reward.shape == (batch_size,)
+
+from common.gym_wrappers import PixelStateWrapper, MultiTaskEnvironment
+
+@pytest.mark.parametrize("env_name", ["CartPole-v0"])
+@pytest.mark.parametrize("batch_size", [1, 5, 10, 32])
+def test_make_env_with_wrapper_and_kwargs(env_name: str, batch_size: int):
+    env = make_batched_env(
+        base_env=env_name,
+        batch_size=batch_size,
+        wrappers=[
+            PixelStateWrapper,
+            (MultiTaskEnvironment, dict(task_schedule={0: dict(length=2.0)})),
+        ]
+    )
+    start_state = env.reset()
+    expected_state_shape = (batch_size, 400, 600, 3)
+    assert start_state.shape == expected_state_shape
+
+    for i in range(10):
+        action = env.random_actions()
+        assert torch.as_tensor(action).shape == (batch_size,)
+
+        assert env.length == [2.0 for i in range(batch_size)]
+
+        obs, reward, done, info = env.step(action)
         assert obs.shape == expected_state_shape
         assert reward.shape == (batch_size,)
 

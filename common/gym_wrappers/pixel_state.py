@@ -2,9 +2,12 @@
 from typing import Union
 
 import gym
-from gym.envs.classic_control.rendering import Viewer
+import numpy as np
+from common.transforms import to_tensor
 from gym.envs.classic_control import CartPoleEnv
+from gym.envs.classic_control.rendering import Viewer
 from gym.wrappers.pixel_observation import PixelObservationWrapper
+from torch import Tensor
 
 
 class PixelStateWrapper(PixelObservationWrapper):
@@ -31,13 +34,20 @@ class PixelStateWrapper(PixelObservationWrapper):
     def step(self, *args, **kwargs):
         state, reward, done, info = super().step(*args, **kwargs)
         state = state["pixels"]
+        state = self.to_tensor(state)
         return state, reward, done, info
 
     def reset(self, *args, **kwargs):
         self.state = super().reset()["pixels"]
+        self.state = self.to_tensor(self.state)
         return self.state
     
     def render(self, *args, mode: str="human", **kwargs):
         if mode == "human" and self.viewer and not self.viewer.window.visible:
             self.viewer.window.set_visible(True)
         return super().render(*args, mode=mode, **kwargs)
+
+    def to_tensor(self, image: np.ndarray):
+        if not isinstance(image, Tensor):
+            return to_tensor(image)
+        return image

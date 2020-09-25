@@ -99,9 +99,9 @@ class ChannelsFirst(Callable[[Union[np.ndarray, Tensor]], Tensor]):
         if not isinstance(x, Tensor):
             x = to_tensor(x)
         if x.ndim == 3:
-            return x.permute(2, 0, 1)
+            return x.permute(2, 0, 1) #x.permute(2, 0, 1).to(memory_format=torch.contiguous_format)
         if x.ndim == 4:
-            return x.permute(0, 3, 1, 2)
+            return x.permute(0, 3, 1, 2).contiguous()
         return x
     
     @staticmethod
@@ -116,6 +116,8 @@ class ChannelsFirst(Callable[[Union[np.ndarray, Tensor]], Tensor]):
 @dataclass
 class ChannelsFirstIfNeeded(ChannelsFirst):
     def __call__(self, x: Tensor) -> Tensor:
+        if not isinstance(x, Tensor):
+            x = to_tensor(x)
         if x.shape[-1] in {1, 3}:
             return super().__call__(x)
         return x
@@ -130,6 +132,8 @@ class ChannelsFirstIfNeeded(ChannelsFirst):
 @dataclass
 class ChannelsLast(Callable[[Tensor], Tensor]):
     def __call__(self, x: Tensor) -> Tensor:
+        if not isinstance(x, Tensor):
+            x = to_tensor(x)
         if x.ndimension() == 3:
             return x.permute(1, 2, 0)
         if x.ndimension() == 4:
@@ -147,6 +151,8 @@ class ChannelsLast(Callable[[Tensor], Tensor]):
 @dataclass
 class ChannelsLastIfNeeded(ChannelsLast):
     def __call__(self, x: Tensor) -> Tensor:
+        if not isinstance(x, Tensor):
+            x = to_tensor(x)
         if x.ndimension() == 4 and x.shape[1] in {1, 3}:
             return super().__call__(x)
         if x.ndimension() == 3 and x.shape[0] in {1, 3}:

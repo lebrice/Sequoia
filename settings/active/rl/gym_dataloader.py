@@ -105,9 +105,9 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor], gym.Wrapper):
 
         if not isinstance(self.env, EnvDataset):
             # Add a wrapper to create an IterableDataset from the env.
-            self.env = EnvDataset(self.env, max_steps=max_steps)
+            self.env = EnvDataset(self.env, max_steps=max_steps, on_missing_action=self.on_missing_action)
 
-        logger.debug(f"wrappers: {pre_batch_wrappers}, state shape: {self.env.reset().shape}")
+        # logger.debug(f"wrappers: {pre_batch_wrappers}, state shape: {self.env.reset().shape}")
         logger.debug(f"observation space: {self.env.observation_space}")
         logger.debug(f"env reset shape: {self.env.reset().shape}")
 
@@ -123,6 +123,20 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor], gym.Wrapper):
             **kwargs,
         )
         Wrapper.__init__(self, env=self.env)
+
+    def on_missing_action(self,
+                          observation: Tensor,
+                          done: Sequence[bool],
+                          info: List[Dict]) -> Tensor:
+        return self.action_space.sample()
+        raise RuntimeError(
+            "You need to send an action using the `send` method "
+            "every time you get a value from the dataset! "
+            "Otherwise, you can also override the `on_missing_action` method "
+            "to return a 'filler' action given the current context. "
+        )
+        return None
+
 
     def __iter__(self):
         self.env.reset()

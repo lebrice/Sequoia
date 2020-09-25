@@ -179,10 +179,14 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
 
     def __getattr__(self, name: str):
         logger.debug(f"Attempting to get missing attribute {name}.")
+        if name in {"closed", "_state"}:
+            return
         assert isinstance(name, str)
         env_has_attribute = self.apply(partial(hasattr_, name=name))
         if all(env_has_attribute):
+            self._assert_is_running()
             return getattr(self[:], name)
+        raise AttributeError(name)
 
     def __getitem__(self, index: Union[int, slice, Sequence[int]]) -> EnvType:
         if isinstance(index, slice):

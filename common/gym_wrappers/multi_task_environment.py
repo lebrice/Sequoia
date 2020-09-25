@@ -225,10 +225,6 @@ class MultiTaskEnvironment(gym.Wrapper):
     def reset(self, new_random_task: bool = False, **kwargs):
         if new_random_task:
             self.current_task = self.random_task()
-        
-        if self._steps in self.task_schedule:
-            self.current_task = self.task_schedule[self._steps]
-
         return self.env.reset(**kwargs)
 
     def seed(self, seed: Optional[int] = None) -> None:

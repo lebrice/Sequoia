@@ -64,3 +64,19 @@ def test_compose_shape_change_same_as_result_shape():
     assert x.shape == (3, 9, 9)
     assert x.shape == transform.shape_change(start_shape)
     assert x.shape == transform.shape_change(start_shape) == (3, 9, 9)
+
+import gym
+from .transforms import ChannelsFirstIfNeeded
+from gym.wrappers import TransformObservation
+from common.gym_wrappers import PixelStateWrapper
+
+
+def test_channels_first_transform_gym_env():
+    env = gym.make("CartPole-v0")
+    env = PixelStateWrapper(env)
+    assert env.reset().shape == (400, 600, 3)
+    env = TransformObservation(env, ChannelsFirstIfNeeded())
+    assert env.reset().shape == (3, 400, 600)
+
+    obs, *_ = env.step(env.action_space.sample())
+    assert obs.shape == (3, 400, 600)
