@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import (Callable, Dict, Generic, List, Optional, Tuple, TypeVar,
                     Union)
-
+from gym.spaces import Discrete, Box
 import numpy as np
 import torch
 from pytorch_lightning import (EvalResult, LightningDataModule,
@@ -44,12 +44,21 @@ class Agent(Model[SettingType], Pickleable):
         super().__init__(setting=setting, hparams=hparams, config=config)
         self.setting: RLSetting
         assert self.setting.dims == self.setting.obs_shape, (self.setting.dims, self.setting.obs_shape)
-        self.input_shape  = self.setting.obs_shape
-        self.output_shape = self.setting.action_shape
-        self.action_shape = self.setting.action_shape
+        self.input_shape = self.setting.obs_shape
+        if isinstance(self.setting.action_space, Discrete):
+            self.action_shape = (self.setting.action_space.n,)
+        elif isinstance(self.setting.action_space, Box):
+            self.action_shape = self.setting.action_space.shape
+
+        self.output_shape = self.action_shape
         self.reward_shape = self.setting.reward_shape
-        
         self.total_reward: Tensor = 0.  # type: ignore
+
+        self.output_head: OutputHead = self.create_output_head()
+    
+    def create_output_head(self) -> OutputHead:
+        """ Create the output head for the task. """
+        return OutputHead(self.hidden_size, self.output_shape, name="policy")
 
     def configure_optimizers(self):
         return self.hp.make_optimizer(self.parameters())
@@ -107,7 +116,10 @@ class Agent(Model[SettingType], Pickleable):
         if action is None:
             raise RuntimeError("The dict returned by `forward()` must include "
                                "either a 'action' or 'y_pred' entry.")
-        return action.detach().cpu().numpy()
+        action_array = action.detach().cpu().numpy()
+        if isinstance(self.setting.action_space, Discrete):
+            return action_array.argmax(-1)
+        return action_array
 
     def shared_step(self,
                     batch: Tuple[Tensor, Tensor],
@@ -120,13 +132,16 @@ class Agent(Model[SettingType], Pickleable):
 
         # Process the observation, encode it, create whatever tensors you want.
         forward_pass = self.forward(batch)
-        
         # Extract the action to take from the forward pass dict.
         actions = self.select_action(forward_pass)
                
         # Send the action to the environment, get back the associated reward.
+        logger.debug(f"Sending actions to the environment: {actions}")
+        # TODO: Need to format the action (make it back into an int or
+        # something) so we select what to do.
         rewards = environment.send(actions)
-        rewards = rewards.to(self.device, dtype=self.dtype)
+        rewards = torch.as_tensor(rewards, device=self.device, dtype=self.dtype)
+        # rewards = rewards.to(self.device, dtype=self.dtype)
 
         # Get a loss to backpropagate. This should ideally be a Loss object.
         loss: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)

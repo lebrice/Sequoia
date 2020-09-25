@@ -6,24 +6,23 @@ from dataclasses import dataclass, replace
 from typing import ClassVar, Dict, List, Optional, Type, TypeVar, Union
 
 import torch
+from common.config import Config
+from common.loss import Loss
 from pytorch_lightning import LightningModule, Trainer
+from settings import (ClassIncrementalSetting, ContinualRLSetting, IIDSetting,
+                      RLSetting, SettingType, TaskIncrementalSetting)
+from settings.base import EnvironmentBase, Results, Setting
+from simple_parsing import ArgumentParser, mutable_field, subparsers
 from singledispatchmethod import singledispatchmethod
 from torch import Tensor
 from torch.utils.data import DataLoader
-
-from common.config import Config
-from common.loss import Loss
-from settings import (ClassIncrementalSetting, IIDSetting, RLSetting,
-                      SettingType, TaskIncrementalSetting)
-from settings.base import EnvironmentBase, Results, Setting
-from simple_parsing import ArgumentParser, mutable_field, subparsers
 from utils import get_logger
 
 from .class_incremental_method import ClassIncrementalMethod
 from .method import Method
 from .models import HParams, Model, OutputHead
-from .models.agent import Agent
 from .models.actor_critic_agent import ActorCritic
+from .models.agent import Agent
 from .models.class_incremental_model import ClassIncrementalModel
 from .models.iid_model import IIDModel
 from .models.task_incremental_model import TaskIncrementalModel
@@ -51,6 +50,10 @@ class BaselineMethod(Method, target_setting=Setting):
     @model_class.register
     def _(self, setting: IIDSetting) -> Type[IIDModel]:
         return IIDModel
+
+    @model_class.register
+    def _(self, setting: ContinualRLSetting) -> Type[Agent]:
+        return ActorCritic
 
     @model_class.register
     def _(self, setting: RLSetting) -> Type[Agent]:

@@ -81,21 +81,19 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor], gym.Wrapper):
                  batch_size: int = None,
                  max_steps: int = 1_000_000,
                  pre_batch_wrappers: List[Union[Type[Wrapper], Tuple[Type[Wrapper], Dict]]] = None,
+                 post_batch_wrappers: List[Callable] = None,
+                 on_missing_action: Callable = None,
                  **kwargs):
         self.base_env = env
         self.max_steps = max_steps
         self.kwargs = kwargs
         self._batch_size = batch_size
+        self.on_missing_action = on_missing_action
         # TODO: Move the Policy stuff into a wrapper?
         # self.policy: Callable[[Tensor], Tensor] = policy
-        
-        # env = gym.make(env)
-        # logger.debug(f"Starting observation space: {env.observation_space}")
-        # for wrapper in pre_batch_wrappers:
-        #     env = wrapper(env)
-        #     logger.debug(f"observation after wrapper {wrapper}: {env.observation_space}")
-        
-        if not has_wrapper(env, VectorEnv):
+        if has_wrapper(env, VectorEnv):
+            self.env: AsyncVectorEnv = env
+        else:
             assert batch_size is not None, "Need to pass a batch_size when the env isn't already batched!"
             self.env: AsyncVectorEnv = make_batched_env(
                 env,
@@ -103,9 +101,17 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor], gym.Wrapper):
                 wrappers=pre_batch_wrappers,
             )
 
+        self.post_batch_wrappers = post_batch_wrappers or []
+        for wrapper in self.post_batch_wrappers:
+            self.env = wrapper(self.env)
+        
         if not isinstance(self.env, EnvDataset):
             # Add a wrapper to create an IterableDataset from the env.
-            self.env = EnvDataset(self.env, max_steps=max_steps, on_missing_action=self.on_missing_action)
+            self.env = EnvDataset(
+                self.env,
+                max_steps=max_steps,
+                on_missing_action=self.on_missing_action
+            )
 
         # logger.debug(f"wrappers: {pre_batch_wrappers}, state shape: {self.env.reset().shape}")
         logger.debug(f"observation space: {self.env.observation_space}")
@@ -123,20 +129,6 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor], gym.Wrapper):
             **kwargs,
         )
         Wrapper.__init__(self, env=self.env)
-
-    def on_missing_action(self,
-                          observation: Tensor,
-                          done: Sequence[bool],
-                          info: List[Dict]) -> Tensor:
-        return self.action_space.sample()
-        raise RuntimeError(
-            "You need to send an action using the `send` method "
-            "every time you get a value from the dataset! "
-            "Otherwise, you can also override the `on_missing_action` method "
-            "to return a 'filler' action given the current context. "
-        )
-        return None
-
 
     def __iter__(self):
         self.env.reset()

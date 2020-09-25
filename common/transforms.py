@@ -40,6 +40,8 @@ def to_tensor(pic) -> Tensor:
     if isinstance(pic, Tensor):
         return pic
     pic = copy_if_negative_strides(pic)
+    if len(pic.shape) == 4:
+        return torch.stack([F.to_tensor(p) for p in pic])
     return F.to_tensor(pic)
 
 

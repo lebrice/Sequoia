@@ -2,24 +2,24 @@ from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable, ClassVar, Dict, List, Tuple, Union
+from typing import Callable, ClassVar, Dict, List, Sequence, Tuple, Union
 
 import gym
 import numpy as np
-from gym import Env, Wrapper
-from gym.wrappers import TransformObservation
-
 from common.gym_wrappers import (MultiTaskEnvironment, PixelStateWrapper,
                                  SmoothTransitions)
 from common.gym_wrappers.utils import has_wrapper
-from common.transforms import Compose, Transforms
+from common.transforms import ChannelsFirstIfNeeded, Compose, Transforms
+from gym import Env, Wrapper
 from settings.active.rl import GymDataLoader
 from settings.active.setting import ActiveSetting
 from simple_parsing import choice, list_field, mutable_field
+from torch import Tensor
 from utils import dict_union
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
+from common.gym_wrappers import TransformObservation
 
 
 @dataclass
@@ -45,7 +45,7 @@ class ContinualRLSetting(ActiveSetting):
     # Set of default transforms. Not parsed through the command-line, since it's
     # marked as a class variable.
     default_transforms: ClassVar[List[Transforms]] = [
-        Transforms.to_tensor,
+        # Transforms.to_tensor,
         Transforms.channels_first_if_needed,
     ]
 
@@ -53,7 +53,7 @@ class ContinualRLSetting(ActiveSetting):
     # We use the channels_first transform when viewing the state as pixels.
     # BUG: @lebrice Added this image copy because I'm getting some weird bugs
     # because of negative strides.
-    transforms: List[Transforms] = mutable_field(Compose, default_transforms)
+    transforms: List[Transforms] = list_field(ChannelsFirstIfNeeded())
 
     def __post_init__(self,
                       obs_shape: Tuple[int, ...] = (),
@@ -211,57 +211,83 @@ class ContinualRLSetting(ActiveSetting):
             ))
             return self.dataset
 
-
-
     def env_wrappers(self) -> List[Union[Callable, Tuple[Callable, Dict]]]:
         wrappers = []
         if not self.observe_state_directly:
             wrappers.append(PixelStateWrapper)
-            if self.transforms:
-                wrappers.append(partial(TransformObservation, f=self.transforms))
         if self.smooth_task_boundaries:
             wrappers.append(partial(SmoothTransitions, task_schedule=self.task_schedule))
         else:
             wrappers.append(partial(MultiTaskEnvironment, task_schedule=self.task_schedule))
         return wrappers
 
+    def on_missing_action(self,
+                          observation: Tensor,
+                          done: Sequence[bool],
+                          info: List[Dict],
+                          action_space: gym.Space) -> Tensor:
+        logger.debug("Yo, why exactly is this being called? I thought we "
+                     "were providing an action at every step already..")
+        return action_space.sample()
+        raise RuntimeError(
+            "You need to send an action using the `send` method "
+            "every time you get a value from the dataset! "
+            "Otherwise, you can also override the `on_missing_action` method "
+            "to return a 'filler' action given the current context. "
+        )
+        return None
+
     # TODO: Could overwrite those to use different wrappers for train/val/test.
-    def train_env_wrappers(self)-> List[Union[Callable, Tuple[Callable, Dict]]]:
-        return self.env_wrappers()
-    def val_env_wrappers(self) -> List[Union[Callable, Tuple[Callable, Dict]]]:
-        return self.env_wrappers()
-    def test_env_wrappers(self) -> List[Union[Callable, Tuple[Callable, Dict]]]:
-        return self.env_wrappers()
+    def train_wrappers(self)-> List[Union[Callable, Tuple[Callable, Dict]]]:
+        common_wrappers = self.env_wrappers()
+        return common_wrappers + [
+            partial(TransformObservation, f=self.train_transforms)
+        ]
+
+    def val_wrappers(self) -> List[Union[Callable, Tuple[Callable, Dict]]]:
+        common_wrappers = self.env_wrappers()
+        return common_wrappers + [
+            partial(TransformObservation, f=self.val_transforms)
+        ]
+
+    def test_wrappers(self) -> List[Union[Callable, Tuple[Callable, Dict]]]:
+        common_wrappers = self.env_wrappers()
+        return common_wrappers + [
+            partial(TransformObservation, f=self.test_transforms)
+        ]
 
     def train_dataloader(self, *args, **kwargs) -> GymDataLoader:
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        wrappers = self.train_env_wrappers()
+        pre_batch_wrappers = self.train_wrappers()
         self.train_env = GymDataLoader(
             env=self.env_name,
-            pre_batch_wrappers=wrappers,
+            pre_batch_wrappers=pre_batch_wrappers,
             max_steps=self.max_steps,
+            on_missing_action=self.on_missing_action,
             **kwargs
         )
         return self.train_env
     
     def val_dataloader(self, *args, **kwargs) -> GymDataLoader:
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        wrappers = self.val_env_wrappers()
+        wrappers = self.val_wrappers()
         self.val_env = GymDataLoader(
             env=self.env_name,
             pre_batch_wrappers=wrappers,
             max_steps=self.max_steps,
+            on_missing_action=self.on_missing_action,
             **kwargs
         )
         return self.val_env
 
     def test_dataloader(self, *args, **kwargs) -> GymDataLoader:
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        wrappers = self.test_env_wrappers()
+        wrappers = self.test_wrappers()
         self.test_env = GymDataLoader(
             env=self.env_name,
             pre_batch_wrappers=wrappers,
             max_steps=self.max_steps,
+            on_missing_action=self.on_missing_action,
             **kwargs
         )
         return self.test_env

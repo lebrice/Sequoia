@@ -117,6 +117,7 @@ class EnvDataset(gym.Wrapper, IterableDataset, Generic[ObservationType, ActionTy
                             observation=self._observation,
                             done=self._done,
                             info=self._info,
+                            action_space=self.action_space,
                         )
                         self.send(filler_action)
                     else:

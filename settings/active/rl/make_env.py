@@ -82,7 +82,6 @@ def make_batched_env(base_env: Union[str, Callable],
     # Get the default wrappers, if needed.
     if not wrappers and use_default_wrappers_for_env:
         wrappers = default_wrappers_for_env.get(base_env, [])
-    
     base_env_factory: Callable[[], gym.Env]
     if isinstance(base_env, str):
         base_env_factory = partial(gym.make, base_env)
@@ -102,10 +101,12 @@ def make_batched_env(base_env: Union[str, Callable],
             f"Unsupported base env: {base_env}. Must be "
             f"either a string or a callable for now."
         )
-    
+
     def pre_batch_env_factory():
         env = base_env_factory(**kwargs)
-        return wrap(env, wrappers)
+        for wrapper in wrappers:
+            env = wrapper(env)
+        return env
 
     env_fns = [pre_batch_env_factory for _ in range(batch_size)]
     if asynchronous:
