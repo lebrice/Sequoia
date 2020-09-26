@@ -1,4 +1,3 @@
-
 from gym.wrappers import TransformObservation as TransformObservation_
 import gym
 from common.transforms import Compose
@@ -9,11 +8,13 @@ logger = get_logger(__file__)
 
 class TransformObservation(TransformObservation_):
     def __init__(self, env: gym.Env, f: Union[Callable, List[Callable]]):
-        super().__init__(env, f=Compose(f))
+        if isinstance(f, list) and not callable(f):
+            f = Compose(f)
+        super().__init__(env, f=f)
         self.observation_space = self.env.observation_space
         self.f: Compose
         self.observation_space.shape = self.f.shape_change(self.observation_space.shape)
-        logger.debug(f"New observation shace: {self.observation_space}")
+        logger.debug(f"New observation shape after transforms: {self.observation_space}")
 
 
 

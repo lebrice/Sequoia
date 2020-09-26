@@ -6,20 +6,20 @@ from typing import Callable, ClassVar, Dict, List, Sequence, Tuple, Union
 
 import gym
 import numpy as np
-from common.gym_wrappers import (MultiTaskEnvironment, PixelStateWrapper,
-                                 SmoothTransitions)
-from common.gym_wrappers.utils import has_wrapper
-from common.transforms import ChannelsFirstIfNeeded, Compose, Transforms
 from gym import Env, Wrapper
-from settings.active.rl import GymDataLoader
-from settings.active.setting import ActiveSetting
 from simple_parsing import choice, list_field, mutable_field
 from torch import Tensor
-from utils import dict_union
-from utils.logging_utils import get_logger
+
+from common.gym_wrappers import (MultiTaskEnvironment, PixelStateWrapper,
+                                 SmoothTransitions, TransformObservation,
+                                 has_wrapper)
+from common.transforms import ChannelsFirstIfNeeded, Compose, Transforms
+from utils import dict_union, get_logger
+
+from ..active_setting import ActiveSetting
+from .gym_dataloader import GymDataLoader
 
 logger = get_logger(__file__)
-from common.gym_wrappers import TransformObservation
 
 
 @dataclass
@@ -47,7 +47,7 @@ class ContinualRLSetting(ActiveSetting):
     max_steps: int = 1_000_000
     # Number of steps per task.
     steps_per_task: int = 100_000
-    
+
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
 
@@ -248,22 +248,22 @@ class ContinualRLSetting(ActiveSetting):
 
     # TODO: Could overwrite those to use different wrappers for train/val/test.
     def train_wrappers(self)-> List[Union[Callable, Tuple[Callable, Dict]]]:
-        common_wrappers = self.env_wrappers()
-        return common_wrappers + [
-            partial(TransformObservation, f=self.train_transforms)
-        ]
+        wrappers = self.env_wrappers()
+        if not self.observe_state_directly:
+            wrappers.append(partial(TransformObservation, f=self.train_transforms))
+        return wrappers
 
     def val_wrappers(self) -> List[Union[Callable, Tuple[Callable, Dict]]]:
-        common_wrappers = self.env_wrappers()
-        return common_wrappers + [
-            partial(TransformObservation, f=self.val_transforms)
-        ]
+        wrappers = self.env_wrappers()
+        if not self.observe_state_directly:
+            wrappers.append(partial(TransformObservation, f=self.test_transforms))
+        return wrappers
 
     def test_wrappers(self) -> List[Union[Callable, Tuple[Callable, Dict]]]:
-        common_wrappers = self.env_wrappers()
-        return common_wrappers + [
-            partial(TransformObservation, f=self.test_transforms)
-        ]
+        wrappers = self.env_wrappers()
+        if not self.observe_state_directly:
+            wrappers.append(partial(TransformObservation, f=self.test_transforms))
+        return wrappers
 
     def train_dataloader(self, *args, **kwargs) -> GymDataLoader:
         kwargs = dict_union(self.dataloader_kwargs, kwargs)

@@ -11,7 +11,7 @@ from common.gym_wrappers import (AsyncVectorEnv, ConvertToFromTensors,
 from common.transforms import ChannelsFirstIfNeeded
 from conftest import DummyEnvironment, xfail
 from gym.envs.classic_control import CartPoleEnv, PendulumEnv
-from gym.wrappers import TransformObservation
+from common.gym_wrappers import TransformObservation
 from torch import Tensor
 from utils import take
 from utils.logging_utils import get_logger

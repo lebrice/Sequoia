@@ -164,6 +164,7 @@ def print_methods():
         setting_file = get_relative_path_to(target_setting)
         print(f"     Target setting: [{target_setting.__name__}]({setting_file})")
 
+
 def add_stuff_to_readme(readme_path=Path("README.md")):
     token = "<!-- MAKETREE -->\n"
 

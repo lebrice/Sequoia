@@ -49,6 +49,7 @@ def test_render_with_human_mode():
         for i in range(50):
             obs, _, done, _ = env.step(env.action_space.sample())
             env.render(mode="human")
+            assert obs.shape == (400, 600, 3)
             if done:
                 env.reset()
         assert env.viewer.window is window

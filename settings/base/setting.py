@@ -154,26 +154,26 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
     # Overwrite this in a subclass to customize which type of Results to create.
     results_class: ClassVar[Type[Results]] = Results
 
-    # Transforms to be used.
+    # Transforms to be used. When no value is given for 
+    # `[train/val/test]_transforms`, this value is used as a default.
+    # TODO: Currently trying to find a way to specify the transforms from the
+    # command-line, Therefore don't rely on that being done perfectly just yet.
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels)
-
-    # TODO: Currently trying to find a way to specify the transforms from the command-line.
-    # As a consequence, don't try to set these from the command-line for now.
+    # Transforms to be applied to the training datasets. When unset, the value
+    # of `transforms` is used.
     train_transforms: List[Transforms] = list_field()
-
-    # TODO: These two aren't being used atm (at least not in ClassIncremental), 
-    # since the CL Loader from Continuum only takes in common_transforms and
-    # train_transforms.
+    # Transforms to be applied to the validation datasets. When unset, the value
+    # of `transforms` is used.
     val_transforms: List[Transforms] = list_field()
+    # Transforms to be applied to the testing datasets. When unset, the value
+    # of `transforms` is used.
     test_transforms: List[Transforms] = list_field()
 
-    # fraction of training data to devote to validation. Defaults to 0.2.
+    # Fraction of training data to use to create the validation set.
     val_fraction: float = 0.2
 
     # These should be set by all settings, not from the command-line. Hence we
-    # set them as InitVars, meaning they get set by the argument in
-    # __post_init__.
-
+    # mark them as InitVars, which means they should be passed to __post_init__.
     obs_shape: Tuple[int, ...] = ()
     action_shape: Tuple[int, ...] = ()
     reward_shape: Tuple[int, ...] = ()

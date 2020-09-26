@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple, Type, TypeVar, Union
 from simple_parsing import (ArgumentParser, choice, field, mutable_field,
                             subparsers)
 
-from methods import Method, MethodType, all_methods
+from methods import Method, all_methods
 from settings import (ClassIncrementalResults, Results, Setting, SettingType,
                       all_settings)
 from utils import Parseable, Serializable, get_logger
@@ -56,10 +56,10 @@ class Experiment(Parseable, Serializable):
     )
 
     def __post_init__(self):
-        if not (self.setting or self.method):
-            raise RuntimeError(
-                "At least one of `setting` or `method` must be set!"
-            )
+        # if not (self.setting or self.method):
+        #     raise RuntimeError(
+        #         "At least one of `setting` or `method` must be set!"
+        #     )
         if isinstance(self.setting, str):
             # All settings must have a unique name.
             settings_with_that_name: List[Type[Setting]] = [

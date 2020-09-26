@@ -7,39 +7,23 @@ from pathlib import Path
 from typing import (ClassVar, Dict, Generic, List, Optional, Set, Tuple, Type,
                     TypeVar, Union)
 
-from pytorch_lightning import Callback, LightningModule, Trainer
+from pytorch_lightning import (Callback, LightningDataModule, LightningModule,
+                               Trainer)
+from simple_parsing import Serializable, mutable_field
 
 from cl_trainer import CLTrainer, CLTrainerOptions
 from common.config import Config, TrainerConfig
 from common.loss import Loss
 from settings.base import Results, Setting, SettingType
-from simple_parsing import (ArgumentParser, Serializable, mutable_field,
-                            subparsers)
-from utils import Parseable, camel_case, dict_union, get_logger, remove_suffix
+from utils import Parseable, camel_case, get_logger, remove_suffix
 
 from .models import HParams, Model
 
 logger = get_logger(__file__)
-M = TypeVar("M", bound="Method")
-
-class MethodType(type):
-    """ Metaclass for the Methods.
-
-    @lebrice Testing this as a way to simplify some of the mechanics of setting
-    up the attributes or detecting if a Method is applicable, etc.
-    """
-    # Class attribute that holds the setting this method was designed to target.
-    _target_setting: ClassVar[Optional[Type[Setting]]] = None
-    # class attribute that lists all the settings this method is applicable for.
-    _settings: ClassVar[Set[Type[Setting]]] = set()
-
-    @property
-    def target_setting(cls) -> Type[Setting]:
-        return cls._target_setting
 
 
 @dataclass
-class Method(Serializable, Generic[SettingType], Parseable, metaclass=MethodType):
+class Method(Serializable, Generic[SettingType], Parseable):
     """ A Method gets applied to a Setting to produce Results.
 
     A "Method", concretely, should consist of a LightningModule and a Trainer.
@@ -63,10 +47,10 @@ class Method(Serializable, Generic[SettingType], Parseable, metaclass=MethodType
     # Configuration options for the experimental setup (log_dir, cuda, etc).
     config: Config = mutable_field(Config)
 
-    # # Class attribute that holds the setting this method was designed to target.
-    # _target_setting: ClassVar[Optional[Type[Setting]]] = None
-    # # class attribute that lists all the settings this method is applicable for.
-    # _settings: ClassVar[Set[Type[Setting]]] = set()
+    # Class attribute that holds the setting this method was designed to target.
+    target_setting: ClassVar[Optional[Type[Setting]]] = None
+    # class attribute that lists all the settings this method is applicable for.
+    _settings: ClassVar[Set[Type[Setting]]] = set()
 
     def __post_init__(self):
         # The model and Trainer objects will be created in `self.configure`. 
@@ -75,10 +59,10 @@ class Method(Serializable, Generic[SettingType], Parseable, metaclass=MethodType
         self.trainer: Trainer
         self.model: LightningModule
 
-    def apply_to(self, setting: Setting) -> Results:
+    def apply_to(self, setting: SettingType) -> Results:
         """ Applies this method to the particular experimental setting.
         
-        Extend this class and overwrite this method to create a different method.        
+        Extend this class and overwrite this method to customize training.       
         """
         # 1. Configure the method to work on the setting.
         self.configure(setting)
@@ -214,28 +198,45 @@ class Method(Serializable, Generic[SettingType], Parseable, metaclass=MethodType
     def is_applicable(cls, setting: Union[Setting, Type[Setting]]) -> bool:
         """Returns wether this Method is applicable to the given setting.
 
-        A method is applicable to any setting which is an instance (or subclass)
-        of the setting the method was defined to support initially.
+        A method is applicable on a given setting if and only if the setting is
+        the method's target setting, or if it is a descendant of the method's
+        target setting (below the target setting in the tree).
+        
+        Concretely, since the tree is implemented as an inheritance hierarchy,
+        a method is applicable to any setting which is an instance (or subclass)
+        of its target setting.
 
         Args:
             setting (SettingType): a Setting.
 
         Returns:
-            bool: Wether or not this method is applicable to the given setting.
-        """
-        assert cls._target_setting is not None, cls
-        if isinstance(setting, Setting):
+            bool: Wether or not this method is applicable on the given setting.
+        """            
+        assert cls.target_setting, f"Method {cls} has no target setting!"
+        # NOTE: Setting is a subclass of LightningDataModule.
+        if isinstance(setting, LightningDataModule):
+            # if given a Setting or LightningDataModule object, get it's type.
             setting_type = type(setting)
-        else:
-            assert inspect.isclass(setting)
+        elif inspect.isclass(setting) and issubclass(setting, LightningDataModule):
             setting_type = setting
+        else:
+            raise RuntimeError(
+                f"Invalid setting {setting}. Must be either an instance or a "
+                f"subclass of Setting or LightningDataModule."
+            )
 
-        result = issubclass(setting_type, cls._target_setting)
-        return result
+        if not issubclass(setting_type, Setting):
+            # If the given setting type is a LightningDataModule that doesn't
+            # inherit from 'Setting' then we consider it the same way we would
+            # an IID setting.
+            from settings import IIDSetting
+            setting_type = IIDSetting
+
+        return issubclass(setting_type, cls.target_setting)
     
     @classmethod
     def get_all_applicable_settings(cls) -> List[Type[SettingType]]:
-        from settings import all_settings, Setting
+        from settings import Setting, all_settings
         return list(filter(cls.is_applicable, all_settings))
 
     @classmethod
@@ -286,12 +287,12 @@ class Method(Serializable, Generic[SettingType], Parseable, metaclass=MethodType
 
         if target_setting:
             logger.debug(f"Method {cls} is designed for setting {target_setting}")
-            cls._target_setting = target_setting
-            cls._target_setting._applicable_methods.add(cls)
+            cls.target_setting = target_setting
+            cls.target_setting._applicable_methods.add(cls)
         else:
             logger.debug(f"Method {cls} didn't set a `target_setting` argument in the "
                          f"class constructor, using the target setting of the parent")
-            target_setting = cls._target_setting
+            target_setting = cls.target_setting
 
         assert target_setting, "You must specify a `setting` argument when creating a new Method!"
         cls._settings.add(target_setting)
@@ -343,11 +344,6 @@ class Method(Serializable, Generic[SettingType], Parseable, metaclass=MethodType
         #     new_hparams = new_type.from_dict(hparams_dict, drop_extra_fields=True)
         return new_hparams
 
-    @property
-    def target_setting(self) -> Type[SettingType]:
-        """ Gets the target setting of a given method.
-        """
-        return type(self)._target_setting
 
     @classmethod
     def get_path_to_source_file(cls: Type) -> Path:

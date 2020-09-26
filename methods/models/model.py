@@ -57,7 +57,6 @@ class Model(LightningModule, Generic[SettingType]):
         self.config: Config = config
 
         # self.save_hyperparameters()
-
         self.input_shape  = self.setting.dims
         self.output_shape = self.setting.action_shape
         self.reward_shape = self.setting.reward_shape
