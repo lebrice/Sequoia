@@ -53,17 +53,18 @@ class SelfSupervisedModel(Model[SettingType]):
 
     def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor = None, loss_name: str = "") -> Loss:
         loss: Loss = super().get_loss(forward_pass, y=y, loss_name=loss_name)
-        
+
         # Add the self-supervised losses from all the enabled auxiliary tasks.
         for task_name, aux_task in self.tasks.items():
             assert task_name, "Auxiliary tasks should have a name!"
-            
             if aux_task.enabled:
                 aux_loss: Loss = aux_task.get_loss(forward_pass, y=y)
                 # Scale the loss by the corresponding coefficient before adding
                 # it to the total loss.
                 loss += aux_task.coefficient * aux_loss
-
+                if self.config.debug and self.config.verbose:
+                    logger.debug(f"{task_name} loss: {aux_loss.total_loss}")
+                    
         return loss
 
     def create_auxiliary_tasks(self) -> Dict[str, AuxiliaryTask]:

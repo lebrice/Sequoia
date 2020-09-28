@@ -97,7 +97,8 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
 
     The current task can be set at the `current_task_id` attribute.
     """
-    # Class variable holding all the available datasets.
+    # Class variable holding a dict of the names and types of all available
+    # datasets.
     available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = {
         c.__name__.lower(): c
         for c in [
@@ -123,7 +124,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         Transforms.fix_channels,
         Transforms.channels_first_if_needed,
     )
-
+    
     # Wether task labels are available at train time.
     # NOTE: Forced to True at the moment.
     task_labels_at_train_time: bool = constant(True)
@@ -326,7 +327,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
 
         # Training loop:
         for task_id in range(self.nb_tasks):
-            logger.debug(f"Starting (new) training routine on task {task_id}")
+            logger.info(f"Starting training on task {task_id}")
             # Update the task id internally.
             self.current_task_id = task_id
 
@@ -423,10 +424,9 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         # Test loop:
         for task_id in range(self.nb_tasks):
             self.current_task_id = task_id
-            
-            # Use a `Metrics` object to get more  
+
             task_metrics: Metrics = Metrics()
-                        
+
             assert not self.smooth_task_boundaries, "TODO: (#18) Make another 'Continual' setting that supports smooth task boundaries."
             if self.known_task_boundaries_at_test_time:
                 # Inform the model of a task boundary. If the task labels are
@@ -443,25 +443,17 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
 
             # Manual test loop:
             from tqdm import tqdm
-            pbar = tqdm(test_task_loader) 
+            pbar = tqdm(test_task_loader)
             for batch_index, (x, y, task_labels) in enumerate(pbar):
                 batch_size = len(x)
 
                 if not self.task_labels_at_test_time:
                     # If the task labels aren't given at test time, then we
-                    # give a list of Nones.
-                    # TODO: This might cause problems when trying to move things
-                    # between devices. We could instead not pass the argument,
-                    # or set -1 in a tensor if the task label isn't given?
-                    # If this works (passing a list of Nones), then this would
-                    # also enable only giving a portion of the task labels,
-                    # which could potentially be interesting.
+                    # give a list of Nones. We could also maybe give a portion
+                    # of the task labels, which could be interesting.
                     task_labels = [None] * len(x)
 
-                # TODO: This here might be an issue with keeping the parent
-                # methods compatible! Need to think about this a bit.
                 y_pred = method.predict(x=x, task_labels=task_labels)
-                
                 batch_metrics: Union[Metrics, float] = self.get_metrics(y_pred=y_pred, y=y)
                 
                 task_metrics += batch_metrics
@@ -485,26 +477,17 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
 
     def get_metrics(self,
                     y_pred: Tensor,
-                    y: Tensor):
-        """TODO: Calculate the "metric" used to evaluate the method, given the
-        results of the forward pass and the contents of the batch.
-
-        Args:
-            forward_pass (Dict[str, Tensor]): The results of the forward pass. A
-                dict containing Tensors.
-            x (Tensor): The batch of samples that generated this forward pass.
-            y (Tensor): The batch of labels associated with `x`.
-            t (List[Optional[float]]): Optional task labels for each sample in
-                `x`. None by default, as we don't assume to always have the task
-                labels available. Is passed whenever task labels are available
-                in the current context.
+                    y: Tensor) -> Union[float, Metrics]:
+        """ Calculate the "metric" from the model prediction and the true label.
+        
+        In this example, we return a 'Metrics' object:
+        - `ClassificationMetrics` for classification problems,
+        - `RegressionMetrics` for regression problems.
+        
+        We use these objects because they are awesome (they basically simplify
+        making plots, wandb logging, and serialization), but you can also just
+        return floats if you want, no problem.
         """
-        # Here we use the 'Metrics' object (`ClassificationMetrics` for
-        # Classification, `RegressionMetrics` for continual regression (which is
-        # supported but which we haven't tested that much yet.
-        # We use these objects because they also give us the class accuracy and
-        # confusion matrices for free, which we (will soon be) able use to
-        # produce some nice wandb plots!
         from common.metrics import get_metrics
         return get_metrics(y_pred=y_pred, y=y)
 
@@ -522,7 +505,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             logger.debug(f"Test Transforms: {self.test_transforms}")
             common_transforms = self.train_transforms
             raise NotImplementedError("Don't know yet how to use the common_transforms and test_transforms here.")
-     
+
         return ClassIncremental(
             dataset,
             nb_tasks=self.nb_tasks,
@@ -531,7 +514,6 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             class_order=self.class_order,
             common_transformations=common_transforms,
             train_transformations=train_transforms,
-            
             train=True,  # a different loader for test
         )
 
@@ -572,6 +554,8 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             **kwargs
         )
 
+    # LightningDataModule methods:
+    
     def prepare_data(self, data_dir: Path = None, **kwargs):
         data_dir = data_dir or self.data_dir
         self.make_dataset(data_dir, download=True)
@@ -662,12 +646,17 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         setup() method to set some property or something like that?
         """
         return self._current_task_id
-    
+
     @current_task_id.setter
     def current_task_id(self, value: int) -> None:
         """ Sets the current task id. """
         self._current_task_id = value
 
+    # These methods below are used by the ClassIncrementalModel, mostly when
+    # using a multihead model, to figure out how to relabel the batches, or how
+    # many classes there are in the current task (since we support a different
+    # number of classes per task).
+    
     def num_classes_in_task(self, task_id: int) -> Union[int, List[int]]:
         """ Returns the number of classes in the given task. """
         if isinstance(self.increment, list):
