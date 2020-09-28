@@ -5,17 +5,18 @@ from dataclasses import dataclass, is_dataclass
 from inspect import getsourcefile
 from pathlib import Path
 from typing import (ClassVar, Dict, Generic, List, Optional, Set, Tuple, Type,
-                    TypeVar, Union)
-from torch.utils.data import DataLoader
-from pytorch_lightning import (Callback, LightningDataModule, LightningModule,
-                               Trainer)
-from simple_parsing import Serializable, mutable_field
+                    TypeVar, Union, Sequence)
 
-from cl_trainer import CLTrainer, CLTrainerOptions
+import torch
 from common.config import Config, TrainerConfig
 from common.loss import Loss
+from pytorch_lightning import (Callback, LightningDataModule, LightningModule,
+                               Trainer)
 from settings.base import Results, Setting, SettingType
-from utils import Parseable, camel_case, get_logger, remove_suffix
+from simple_parsing import Serializable, mutable_field
+from torch import Tensor
+from torch.utils.data import DataLoader
+from utils import Parseable, camel_case, get_logger, remove_suffix, try_get
 
 from .models import HParams, Model
 
@@ -61,13 +62,13 @@ class Method(Serializable, Generic[SettingType], Parseable):
 
     def apply_to(self, setting: SettingType) -> Results:
         """ Applies this method to the particular experimental setting.
-        
+
         Extend this class and overwrite this method to customize training.       
         """
         if not self.is_applicable(setting):
             raise RuntimeError(
                 f"Can only apply methods of type {type(self)} on settings "
-                f"that inherit from {type(self)._target_setting}. "
+                f"that inherit from {type(self).target_setting}. "
                 f"(Given setting is of type {type(setting)})."
             )
         # Seed everything first:
@@ -76,7 +77,7 @@ class Method(Serializable, Generic[SettingType], Parseable):
         self.configure(setting)
         # TODO: get the config object to be somewhere else, I guess?
         # TODO: "Who's" responsability should it be to create a Trainer object?
-        return setting.evaluate(
+        return setting.apply(
             method=self,
             config=self.config,
         )
@@ -97,11 +98,11 @@ class Method(Serializable, Generic[SettingType], Parseable):
             train_dataloader: Optional[DataLoader] = None,
             val_dataloaders: Optional[Union[DataLoader, List[DataLoader]]] = None,
             datamodule: Optional[LightningDataModule] = None):
-        """Trains the model on the setting.
+        """Trains the method (and its model) on the setting.
 
         Overwrite this to customize training.
         """
-        self.trainer.fit(
+        return self.trainer.fit(
             model=self.model,
             train_dataloader=train_dataloader,
             val_dataloaders=val_dataloaders,
@@ -113,6 +114,12 @@ class Method(Serializable, Generic[SettingType], Parseable):
              ckpt_path: Optional[str] = 'best',
              verbose: bool = True,
              datamodule: Optional[LightningDataModule] = None):
+        """ Test the method on the given test dataloader/dataloaders.
+
+        TODO: It would be better if we had a more "closed" interface where we
+        would just give the unlabeled samples and ask for predictions, and
+        calculate the accuracy ourselves.
+        """
         return self.trainer.test(
             model=self.model,
             test_dataloaders=test_dataloaders,
@@ -120,7 +127,57 @@ class Method(Serializable, Generic[SettingType], Parseable):
             verbose=verbose,
             datamodule=datamodule,
         )
-    
+
+    def predict(self, **inputs) -> Tensor:
+        """ Get a batch of predictions for this batch of inputs.
+        
+        TODO: @lebrice How should we specify what the input batch should
+        contain, without restricting how future subclasses implement this method
+        too much? (I hate using **kwargs!)
+        Maybe some kind of 'Observation' dataclass or namedtuple? Sounds a bit
+        over-engineered, even for me..
+        """
+        self.model.eval()
+        with torch.no_grad():
+            forward_pass_result = self.model(**inputs)
+        
+        if isinstance(forward_pass_result, dict):
+            # NOTE (@lebrice): I think it's reasonable to assume that the
+            # 'prediction' can always be found at one of these keys. Worst comes
+            # to worst, we could always add more keys to this list if needed.
+            # TODO: We could also maybe get the right key to use from the
+            # current setting! This sounds cleaner, design-wise.
+            possible_keys: List[str] = ["y_pred", "action", "actions"]
+            y_pred = try_get(forward_pass_result, *possible_keys)
+            if y_pred is None:
+                raise RuntimeError(
+                    f"Unable to retrieve the 'prediction' from the results of "
+                    f"the forward pass! (tried keys {possible_keys})"
+                )
+            return y_pred
+        else:
+            # Forward pass wasn't a dict, so we assume it's the right tensor.
+            return forward_pass_result
+
+    def predict_image_labels(self,
+                             x: Tensor,
+                             task_labels: List[Optional[float]] = None) -> Tensor:
+        """ When in a classification setting, give back the predicted labels for
+        this batch of images.
+        
+        When `task_labels` is not None, then it is a list of optional floats.
+        If `task_labels[i]` is an integer, then it indicates that `images[i]` is
+        an image taken from the task with index `task_labels[i]`. If
+        `task_labels[i]` is None, then the task label for that image isn't
+        given.
+        Naturally, when `task_labels` is None, no task labels are given.
+
+        Your method should ideally leverage this information when available, as
+        it makes the problem a lot easier!
+        """
+        y_pred = self.predict(x=x, task_labels=task_labels)
+        return torch.argmax(y_pred, dim=-1)
+
     def on_task_switch(self, task_id: int) -> None:
         """
         TODO: Not sure if it makes sense to put this here. Might have to move
@@ -128,19 +185,11 @@ class Method(Serializable, Generic[SettingType], Parseable):
         """
         if hasattr(self.model, "on_task_switch"):
             self.model.on_task_switch(task_id)
-    
-    def model_class(self, setting: SettingType) -> Type[Model]:
-        """ Which class of model to use, depending on the setting.
-        
-        Overwrite this in your method if you want to choose a different model
-        class depending on the setting.
-        """
-        return Model
 
     def create_model(self, setting: SettingType) -> Model[SettingType]:
         """Creates the Model (a LightningModule) for the given Setting.
 
-        The model needs to accept a Setting in its constructor.
+        The model should ideally accept a Setting in its constructor.
 
         Args:
             setting (SettingType): An experimental setting.
@@ -184,7 +233,7 @@ class Method(Serializable, Generic[SettingType], Parseable):
             logger.info(f"'Upgraded' hparams: {self.hparams}")
 
         assert isinstance(self.hparams, model_class.HParams)
-        # TODO: Will it become a problem that pytorch-lightning uses 'datamodule'
+        # TODO: Could it become a problem that pytorch-lightning uses 'datamodule'
         # and we use 'setting' as a key?
         return model_class(setting=setting, hparams=self.hparams, config=self.config)
 
@@ -319,12 +368,11 @@ class Method(Serializable, Generic[SettingType], Parseable):
     @classmethod
     def get_name(cls) -> str:
         """ Gets the name of this method class. """
-        if hasattr(cls, "name"):
-            # assert False, (cls, cls.name)
-            return cls.name  # type: ignore
-        name = camel_case(cls.__qualname__)
-        return remove_suffix(name, "_method")
-
+        name = getattr(cls, "name", None)
+        if name is None:
+            name = camel_case(cls.__qualname__)
+            name = remove_suffix(name, "_method")
+        return name
 
     def upgrade_hparams(self, new_type: Type[HParams]) -> HParams:
         """Upgrades the current hparams to the new type, filling in the new

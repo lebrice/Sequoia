@@ -4,13 +4,14 @@ import functools
 import inspect
 import itertools
 import operator
+import os
 import random
 import re
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import MutableMapping
 from dataclasses import Field, fields
 from functools import reduce
-from inspect import isabstract, isclass
+from inspect import getsourcefile, isabstract, isclass
 from itertools import filterfalse, groupby
 from pathlib import Path
 from typing import (Any, Callable, Deque, Dict, Iterable, List, MutableMapping,
@@ -18,9 +19,8 @@ from typing import (Any, Callable, Deque, Dict, Iterable, List, MutableMapping,
 
 import numpy as np
 import torch
-from torch import Tensor, cuda, nn
-
 from simple_parsing import field
+from torch import Tensor, cuda, nn
 
 cuda_available = cuda.is_available()
 gpus_available = cuda.device_count()
@@ -133,8 +133,9 @@ def loss_str(loss_tensor: Tensor) -> str:
 def set_seed(seed: int):
     """ Set the pytorch/numpy random seed. """
     import random
-    import torch
+
     import numpy as np
+    import torch
     random.seed(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -386,6 +387,12 @@ def get_all_subclasses_of(cls: Type[T]) -> Iterable[Type[T]]:
 def get_all_concrete_subclasses_of(cls: Type[T]) -> Iterable[Type[T]]:
     yield from filterfalse(inspect.isabstract, get_all_subclasses_of(cls))
 
+
+def get_path_to_source_file(cls: Type) -> Path:
+    cwd = Path(os.getcwd())
+    source_path = Path(getsourcefile(cls)).absolute()
+    source_file = source_path.relative_to(cwd)
+    return source_file
 
 
 if __name__ == "__main__":

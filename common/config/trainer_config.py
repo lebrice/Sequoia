@@ -1,3 +1,5 @@
+""" Dataclass that holds the options (command-line args) for the Trainer
+"""
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Union
 

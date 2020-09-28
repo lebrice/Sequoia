@@ -1,4 +1,10 @@
-""" Define a "Class-Incremental" Continual Learning Setting.
+""" Defines a `Setting` subclass for "Class-Incremental" Continual Learning.
+
+Example command to run a method on this setting (in debug mode):
+```
+python main.py --setting class_incremental --method baseline --debug  \
+    --batch_size 10 --max_epochs 1
+```
 
 TODO: I'm not sure this fits the "Class-Incremental" definition from
 [iCaRL](https://arxiv.org/abs/1611.07725) at the moment:
@@ -12,22 +18,13 @@ TODO: I'm not sure this fits the "Class-Incremental" definition from
     iii) its computational requirements and memory footprint should remain
         bounded, or at least grow very slowly, with respect to the number of classes
         seen so far."
-
-The Setting class is based on the `LightningDataModule` from
-pl_bolts (pytorch-lightning-bolts). The hope is that by staying close to that
-API, we can reuse some of the models that people develop while target that API.
-- `train_dataloader`, `val_dataloader` and `test_dataloader` give
-    dataloaders of the current task.
-- `train_dataloaders`, `val_dataloaders` and `test_dataloaders` give the 
-    dataloaders of all the tasks. NOTE: this isn't part of the
-    LightningDataModule API.
-
 """
 import warnings
 from abc import abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union)
+import torch
 
 from continuum import ClassIncremental, split_train_val
 from continuum.datasets import *
@@ -38,7 +35,7 @@ from simple_parsing import choice, list_field
 from torch import Tensor
 from torch.utils.data import DataLoader
         
-from common import ClassificationMetrics, Metrics
+from common import ClassificationMetrics, Metrics, get_metrics
 from common.config import Config
 from common.loss import Loss
 from common.transforms import Transforms
@@ -127,13 +124,21 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         # after.
         Transforms.fix_channels,
         Transforms.channels_first_if_needed,
-        to_dict=False)
+    )
 
     # Wether task labels are available at train time.
     # NOTE: Forced to True at the moment.
     task_labels_at_train_time: bool = constant(True)
     # Wether task labels are available at test time.
     task_labels_at_test_time: bool = False
+    # Wether we get informed when reaching the boundary between two tasks during
+    # training. Only used when `smooth_task_boundaries` is False.
+    # TODO: Setting constant for now, but we could add task boundary detection
+    # later on!
+    known_task_boundaries_at_train_time: bool = constant(True)
+    # Wether we get informed when reaching the boundary between two tasks during
+    # training. Only used when `smooth_task_boundaries` is False.
+    known_task_boundaries_at_test_time: bool = constant(True)
 
     # TODO: Actually add the 'smooth' task boundary case.
     # Wether we have clear boundaries between tasks, or if the transition is
@@ -164,10 +169,8 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
     test_class_order: Optional[List[int]] = None
 
     def __post_init__(self):
-        """Creates a new CL environment / setup.
-
-        Args:
-            options (Options): Dataclass used for configuration.
+        """Initializes the fields of the Setting (and LightningDataModule),
+        including the transforms, shapes, etc.
         """
         if not hasattr(self, "num_classes"):
             # In some concrete LightningDataModule's like MnistDataModule,
@@ -214,43 +217,88 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         self.test_initial_increment = self.test_initial_increment or self.test_increment
         self.test_class_order = self.test_class_order or self.class_order
 
-    def evaluate(self, method: "Method", config: Config):
-        """ Defines the training/evaluation procedure for this Setting.
-                
-        TODO: Currently trying to stick closer to the LightningDataModule API, and
-        instead of giving back the loaders for all the tasks at once in
-        `val_dataloader` and in `test_dataloader` (which would give the task ids
-        to the model indirectly with the dataloader_idx argument to the `val_step`
-        and `test_step` methods)
-        do something more like:
+    def apply(self, method: "Method", config: Config):
+        """Apply the given method on this setting.
+
+        The pseudocode for this evaluation procedure looks like this:
+
+        ```python
+        # training loop:
+
+        for i in range(self.nb_tasks):
+            self.current_task_id = i
+            
+            # Inform the model of a task boundary. If the task labels are
+            # available, then also let the method know the index of the new
+            # task. 
+            if self.known_task_boundaries_at_train_time:
+                if not self.task_labels_at_train_time:
+                    method.on_task_switch(None)
+                else:
+                    method.on_task_switch(task_id=i)
+
+            # Train the method using train/val datasets of task i:
+            method.fit(
+                train_dataloader=self.train_dataloader(self.train_datasets[i]),
+                val_dataloader=self.val_dataloader(self.train_datasets[i]),
+            )
+
+        task_accuracies: List[float] = []
+        for i in range(self.nb_tasks):
+            self.current_task_id = i
+
+            # Same as above, but for testing:
+            if self.known_task_boundaries_at_test_time:
+                if not self.task_labels_at_test_time:
+                    method.on_task_switch(None)
+                else:
+                    method.on_task_switch(task_id=i)
         
-        ```
-        # Training loop:
-        for task_id in range(nb_tasks):
-            setting.current_task_id = task_id
+            test_i_dataloader = self.test_dataloader(self.test_datasets[i])
 
-            if setting.task_labels_at_train_time:
-                model.on_task_switch(task_id)
-            
-            success = trainer.fit(model, datamodule=setting)
-            
-            # Test loop:
-            for test_task_id in range(nb_tasks):
-                setting.current_task_id = test_task_id
-                if setting.task_labels_at_test_time:
-                    model.on_task_switch(test_task_id)
+            total: int = 0
+            correct: int = 0
 
-                results_after_learning_task_i = trainer.test(model, test_dataloaders=setting.test_dataloaders())
+            # Manually loop over the test dataloader of task i:
+            for (x, y, task_labels) in test_i_dataloader:
+                if not self.task_labels_at_test_time:
+                    task_labels = None
+
+                y_pred = method.predict(x=x, y=y, task_labels=task_labels)
+                total += len(x)
+                correct += sum(np.argmax(y_pred, -1) == y)
+            
+            task_accuracy = correct / total
+            task_accuracies.append(task_accuracy)
+        
+        return sum(task_accuracies) / len(task_accuracies)
         ```
+
+        :param method: [description]
+        :type method: Method
+        :param config: [description]
+        :type config: Config
+        :raises RuntimeError: [description]
+        :return: [description]
+        :rtype: [type]
         """
-        # Something like this:
-        # model: LightningModule = method.get_model(setting=self, config=config)
-        # trainer: Trainer = method.get_trainer(setting=self, config=config)
-        # model, trainer = method.configure_for(setting=self, config=config)
+        # NOTE: (@lebrice) The test loop is written by hand here because I don't
+        # want to have to give the labels to the method at test-time. See the
+        # docstring of `test_loop` for more info.
+
+        # TODO: (@lebrice) Currently redesigning this. There were a few problems
+        # with the previous approach: giving back the loaders for all the tasks at
+        # once in `val_dataloader` and in `test_dataloader`, as is natural with
+        # the `LightningDataModule` API, indirectly gives the task ids to the
+        # method through the `dataloader_idx` argument that gets passed to the
+        # `val_step` and `test_step` methods of the LightningModule. We instead do
+        # something a bit more flexible, which is to allow settings to specify
+        # the train/test loop themselves completely, while still mimicking the
+        # Trainer API on the Method, just so if users (methods) want to use a
+        # Trainer and a LightningModule, they are free to do so.
         
-        # TODO: IDEA: We could just interact with the 'Method', and let it handle
-        # the Model and the trainer internally!! This would actually 'remove'
-        # the need for people to necessarily use pytorch lightning!
+        from methods import Method
+        method: Method
         model = method.model
         # Get the batch size from the model, or the config, or 32.
         batch_size = getattr(model, "batch_size", getattr(config, "batch_size", 32))
@@ -262,12 +310,21 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             num_workers=config.num_workers,
             shuffle=False,
         )
+        # Save the dataloader kwargs in `self` so that calling `train_dataloader()`
+        # from outside with no arguments (i.e. when fitting the model with self
+        # as the datamodule) will use the same args as passing the dataloaders
+        # manually.
+        self.dataloader_kwargs = dataloader_kwargs
+        
+        logger.debug(f"Dataloader kwargs: {dataloader_kwargs}")
         # TODO: This might not necessarily make sense to do manually, if we were
         # in a DDP setup. But for now it should be fine.
         # Download the data, if needed.
-        self.prepare_data(data_dir=data_dir)
+        if not self.has_prepared_data:
+            self.prepare_data(data_dir=data_dir)
         # Call the 'setup' hook for fit, if needed.
-        self.setup("fit")
+        if not self.has_setup_fit:
+            self.setup("fit")
 
         # Training loop:
         for task_id in range(self.nb_tasks):
@@ -275,8 +332,18 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             # Update the task id internally.
             self.current_task_id = task_id
 
-            if self.task_labels_at_train_time and not self.smooth_task_boundaries:
-                method.on_task_switch(task_id)
+            assert not self.smooth_task_boundaries, "TODO: (#18) Make another 'Continual' setting that supports smooth task boundaries."
+            
+            if self.known_task_boundaries_at_train_time:
+                # Inform the model of a task boundary. If the task labels are
+                # available, then also give the id of the new task to the
+                # method.
+                # TODO: Should we also inform the method of wether or not the
+                # task switch is occuring during training or testing?
+                if not self.task_labels_at_train_time:
+                    method.on_task_switch(None)
+                else:
+                    method.on_task_switch(task_id)
             
             # Starting with something super simple, creating the dataloaders
             # ourselves (rather than passing 'self' as the datamodule):
@@ -284,41 +351,166 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             task_train_loader = self.train_dataloader(**dataloader_kwargs)
             task_val_loader = self.val_dataloader(**dataloader_kwargs)
             
-            # TODO: We would ideally like to avoid doing this here:
-            # BUG: This works fine, so WTF is going on below?
-            # for i, (x, y, t) in enumerate(task_train_loader):
-            #     print(i, x.shape, y.shape, t.shape)
-            #     model.training_step((x, y, t), i)
-
-            # BUG: When calling trainer.fit and passing dataloaders, they get
-            # unbatched, for some reason? Not sure I understand what's going on.
             success = method.fit(
                 train_dataloader=task_train_loader,
                 val_dataloaders=task_val_loader,
+                # datamodule=self,
             )
             logger.debug(f"Sucess: {success}")
             if not success:
                 raise RuntimeError(
                     f"Something didn't work during training: "
-                    f"Trainer.fit() returned {success}"
+                    f"method.fit() returned {success}"
                 )
 
-            # Test loop:
-            for test_task_id in range(self.nb_tasks):
-                self.current_task_id = test_task_id
+        test_accuracy = self.test_loop(method)
+        logger.info(f"Results of Test Loop: {test_accuracy}")
+        return test_accuracy
 
-                if self.task_labels_at_test_time and not self.smooth_task_boundaries:
-                    method.on_task_switch(test_task_id)
+    def test_loop(self, method: "Method") -> float:
+        """ Runs the "usual" continual learning 'Test loop'.
+
+        Args:
+            method (Method): The Method to evaluate.
+
+        Returns:
+            Metrics: the 'test loop' performance metrics. This is a `Metrics`
+            object at the moment, but it could also just be a float.
+            These are used here because they are pretty cool, and just make it
+            easier than having to move around some dicts for the metrics. For
+            example, when in a Classification task, they also give the confusion
+            matrix, the class accuracy, and could be used to make some neat
+            wandb plots!
+            
+        Important Notes:
+        - **Not all settings need to have a `test_loop` method!** The 'training'
+            and 'testing' logic could all be mixed together in the `apply`
+            method in whatever way you want! (e.g. test-time training, OSAKA,
+            etc.) This method is just here to make the `apply` method a bit more
+            tidy.
+        
+        -   The PL way of doing this here would be something like:
+            `test_results = method.test(datamodule=self)`, however, there are
+            some issues with doing it this way (as I have recently learned):
+            - This gives the method/model access to the labels at test time;
+            - The Method/LightningModule gets the responsibility of creating the
+              metrics we're interested in measuring in its `test_step` method.
+            - It might be difficult to customize the test loop. For example,
+              How would one go about adding some kind of 'test-time training'
+              or OSAKA-like evaluation setup using the usual
+              `[train/val/test]_step` methods?
+
+            However, I'd rather not do that, and write out the test loop
+            manually here, which also allows us more flexibility, but also has
+            some downsides:
+            - We don't currently support any of the Callbacks from
+              pytorch-lightning during testing.
+              
+            For some subclasses (e.g `IIDSetting`), it might be totally fine to
+            just use the usual Trainer.fit() and Trainer.test() methods, so feel
+            free to overwrite this method with your own implementation if that
+            makes your life easier.
+        """
+        from methods import Method
+        method: Method
+        
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_test:
+            self.setup("test")
+
+        # List of metrics for each task.
+        metrics_for_each_task: List[Metrics] = []
+        
+        # Test loop:
+        for task_id in range(self.nb_tasks):
+            self.current_task_id = task_id
+            
+            # Use a `Metrics` object to get more  
+            task_metrics: Metrics = Metrics()
+                        
+            assert not self.smooth_task_boundaries, "TODO: (#18) Make another 'Continual' setting that supports smooth task boundaries."
+            if self.known_task_boundaries_at_test_time:
+                # Inform the model of a task boundary. If the task labels are
+                # available, then also give the id of the new task to the
+                # method.
+                # TODO: Should we also inform the method of wether or not the
+                # task switch is occuring during training or testing?
+                if not self.task_labels_at_test_time:
+                    method.on_task_switch(None)
+                else:
+                    method.on_task_switch(task_id)
+
+            test_task_loader = self.test_dataloader(**self.dataloader_kwargs)
+
+            # Manual test loop:
+            from tqdm import tqdm
+            pbar = tqdm(test_task_loader) 
+            for batch_index, (x, y, task_labels) in enumerate(pbar):
+                batch_size = len(x)
+
+                if not self.task_labels_at_test_time:
+                    # If the task labels aren't given at test time, then we
+                    # give a list of Nones.
+                    # TODO: This might cause problems when trying to move things
+                    # between devices. We could instead not pass the argument,
+                    # or set -1 in a tensor if the task label isn't given?
+                    # If this works (passing a list of Nones), then this would
+                    # also enable only giving a portion of the task labels,
+                    # which could potentially be interesting.
+                    task_labels = [None] * len(x)
+
+                # TODO: This here might be an issue with keeping the parent
+                # methods compatible! Need to think about this a bit.
+                y_pred = method.predict(x=x, task_labels=task_labels)
                 
-                test_task_loader = self.test_dataloader(**dataloader_kwargs)
+                batch_metrics: Union[Metrics, float] = self.get_metrics(y_pred=y_pred, y=y)
+                
+                task_metrics += batch_metrics
+                pbar.set_postfix(task_metrics.to_pbar_message())
 
-                results_after_learning_task_i = method.test(
-                    test_dataloaders=test_task_loader
-                )
-                logger.debug(f"Results on task {test_task_id} after training on task {task_id}: {results_after_learning_task_i}")
-                # TODO: Remove this, just debugging atm.
-                assert False, results_after_learning_task_i
+            pbar.close()
+            logger.info(f"Results on task {task_id}: {task_metrics}")
+            metrics_for_each_task.append(task_metrics)
 
+        for i, task_metrics in enumerate(metrics_for_each_task):
+            logger.info(f"Test Results on task {i}: {task_metrics}")
+            # TODO: Add back Wandb logging somehow, even though we're doing the
+            # evaluation loop ourselves.
+            if isinstance(task_metrics, Metrics):
+                if method.trainer.logger:
+                    method.trainer.logger.log_metrics(task_metrics.to_log_dict())            
+        
+        average_metrics: Metrics = sum(metrics_for_each_task) / len(metrics_for_each_task)
+        logger.info(f"Average test metrics accross all the test tasks: {average_metrics}")
+        return average_metrics
+
+    def get_metrics(self,
+                    y_pred: Tensor,
+                    y: Tensor):
+        """TODO: Calculate the "metric" used to evaluate the method, given the
+        results of the forward pass and the contents of the batch.
+
+        Args:
+            forward_pass (Dict[str, Tensor]): The results of the forward pass. A
+                dict containing Tensors.
+            x (Tensor): The batch of samples that generated this forward pass.
+            y (Tensor): The batch of labels associated with `x`.
+            t (List[Optional[float]]): Optional task labels for each sample in
+                `x`. None by default, as we don't assume to always have the task
+                labels available. Is passed whenever task labels are available
+                in the current context.
+        """
+        # Here we use the 'Metrics' object (`ClassificationMetrics` for
+        # Classification, `RegressionMetrics` for continual regression (which is
+        # supported but which we haven't tested that much yet.
+        # We use these objects because they also give us the class accuracy and
+        # confusion matrices for free, which we (will soon be) able use to
+        # produce some nice wandb plots!
+        from common.metrics import get_metrics
+        return get_metrics(y_pred=y_pred, y=y)
+        
+        
     def evaluate_old(self, method: "Method") -> ClassIncrementalResults:
         """ NOTE: Refactoring this atm. See the 'newer' version above.
         
@@ -477,14 +669,13 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             **kwargs
         )
 
-    def prepare_data(self, data_dir: Path=None, **kwargs):
+    def prepare_data(self, data_dir: Path = None, **kwargs):
         data_dir = data_dir or self.data_dir
         self.make_dataset(data_dir, download=True)
         self.data_dir = data_dir
         super().prepare_data(**kwargs)
-        self._prepared = True
 
-    def setup(self, *args, **kwargs):
+    def setup(self, stage: Optional[str] = None, *args, **kwargs):
         """ Creates the datasets for each task.
         
         TODO: Figure out a way of setting data_dir elsewhere maybe?
@@ -510,8 +701,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         for task_id, test_dataset in enumerate(self.test_cl_loader):
             self.test_datasets.append(test_dataset)
 
-        super().setup(*args, **kwargs)
-        self._setup = True
+        super().setup(stage, *args, **kwargs)
 
     def train_dataloader(self, **kwargs) -> PassiveEnvironment:
         """Returns a DataLoader for the train dataset of the current task.
@@ -522,7 +712,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             self.prepare_data()
         if not self.has_setup_fit:
             self.setup("fit")
-        dataset = self.train_datasets[self._current_task_id]
+        dataset = self.train_datasets[self.current_task_id]
         # TODO: Add some kind of Wrapper around the dataset to make the dataset
         # semi-supervised.
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
@@ -540,7 +730,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             self.prepare_data()
         if not self.has_setup_fit:
             self.setup("fit")
-        dataset = self.val_datasets[self._current_task_id]
+        dataset = self.val_datasets[self.current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
         return env
@@ -554,7 +744,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             self.prepare_data()
         if not self.has_setup_test:
             self.setup("test")
-        dataset = self.test_datasets[self._current_task_id]
+        dataset = self.test_datasets[self.current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
         return env

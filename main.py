@@ -82,7 +82,6 @@ class Experiment(Parseable, Serializable):
                     f"which isn't allowed! (name: {self.setting}, culprits: "
                     f"{settings_with_that_name})"
                 )
-        
 
     def launch(self, argv: Union[str, List[str]] = None) -> Results:
         if isclass(self.setting) and issubclass(self.setting, Setting):
@@ -258,10 +257,6 @@ def check_has_descendants(potential_methods: List[Type[Method]]) -> List[bool]:
 if __name__ == "__main__":
     results = Experiment.main()
     if results:
+        print("\n\n EXPERIMENT IS DONE \n\n")
         # Experiment didn't crash, show results:
-        print(f"Objective: {results.objective}")
-        # print(f"Results: {results}")
-        if isinstance(results, ClassIncrementalResults):
-            print(f"task metrics:")
-            for m in results.task_metrics:
-                print(m)
+        print(f"Results: {results}")

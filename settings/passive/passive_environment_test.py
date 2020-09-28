@@ -1,15 +1,15 @@
-from typing import Tuple
+from typing import Tuple, Iterable
 
 from torch import Tensor
 from torchvision.datasets import MNIST
+import matplotlib.pyplot as plt
 
 from common.transforms import Compose, Transforms
 
-from .environment import PassiveEnvironment
+from .passive_environment import PassiveEnvironment
 
 
 def test_passive_mnist_environment():
-    
     dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.fix_channels]))
     env: Iterable[Tuple[Tensor, Tensor]] = PassiveEnvironment(dataset)
 

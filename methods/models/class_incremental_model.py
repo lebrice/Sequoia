@@ -185,16 +185,19 @@ class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
             loss_name=loss_name,
         )
 
-    def on_task_switch(self, task_id: int) -> None:
+    def on_task_switch(self, task_id: Optional[int]) -> None:
         """Called when switching between tasks.
         
         Args:
-            task_id (int): the Id of the task.
+            task_id (int, optional): the id of the new task. When None, we are
+            basically being informed that there is a task boundary, but without
+            knowing what task we're switching to.
         """
         super().on_task_switch(task_id=task_id)
-        if self.setting.current_task_id != self.current_task:
-            self.setting.current_task_id = task_id
-        if self.hp.multihead and str(task_id) not in self.output_heads:
+        if task_id is None:
+            # TODO: Try to do some kind of task inference here, if possible!
+            pass    
+        if task_id is not None and self.hp.multihead and str(task_id) not in self.output_heads:
             self.output_heads[str(task_id)] = self.create_output_head()
 
     @property

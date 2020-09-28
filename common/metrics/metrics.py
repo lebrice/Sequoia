@@ -1,10 +1,15 @@
+""" Cute little dataclass that is used to describe a given type of Metrics.
+
+This is a bit like the Metrics from pytorch-lightning, but seems easier to use,
+as far as I know. Also totally transferable between gpus etc. (Haven't used
+the metrics from PL much yet, to be honest).
+"""
 from collections import OrderedDict
 from dataclasses import InitVar, dataclass
 from typing import Dict, Optional, Union
 
 import torch
 from torch import Tensor
-
 from utils.json_utils import Serializable
 from utils.logging_utils import cleanup
 
@@ -51,6 +56,21 @@ class Metrics(Serializable):
         if isinstance(other, (int, float)) and other == 0.:
             return self
         return NotImplemented
+
+    def __mul__(self, factor: Union[float, Tensor]) -> "Loss":
+        # By default, multiplying or dividing a Metrics object doesn't change
+        # anything about it.
+        return self
+
+    def __rmul__(self, factor: Union[float, Tensor]) -> "Loss":
+        # Reverse-order multiply, used to do b * a when a * b returns
+        # NotImplemented.
+        return self.__mul__(factor)
+
+    def __truediv__(self, coefficient: Union[float, Tensor]) -> "Metrics":
+        # By default, multiplying or dividing a Metrics object doesn't change
+        # anything about it. 
+        return self
 
     def to_log_dict(self, verbose: bool = False) -> Dict:
         """Creates a dictionary to be logged (e.g. by `wandb.log`).

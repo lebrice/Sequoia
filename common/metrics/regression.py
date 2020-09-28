@@ -5,7 +5,8 @@ target tensor `y`.
 """
 
 from dataclasses import dataclass
-from typing import Dict, Union
+from typing import Dict, Union, Any
+from functools import total_ordering
 
 import torch
 import torch.nn.functional as functional
@@ -17,9 +18,11 @@ from .metrics import Metrics
 
 logger = get_logger(__file__)
 
+@total_ordering
 @dataclass
 class RegressionMetrics(Metrics):
     mse: Tensor = 0.  # type: ignore
+    l1_error: Tensor = 0.  # type: ignore
 
     def __post_init__(self,
                       x: Tensor=None,
@@ -35,23 +38,64 @@ class RegressionMetrics(Metrics):
                 ))
             else:
                 self.mse = functional.mse_loss(y_pred, y)
+                self.l1_loss = functional.l1_loss(y_pred, y)
 
     def __add__(self, other: "RegressionMetrics") -> "RegressionMetrics":
-        mse = torch.zeros_like(
-            self.mse if self.mse is not None else
-            other.mse if other.mse is not None else
-            torch.zeros(1)
-        )
+        # NOTE: Creates new tensors, and links them to the previous ones by
+        # addition so the grads are linked.
         if self.mse is not None:
-            mse = mse + self.mse
+            mse = self.mse.clone()
         if other.mse is not None:
-            mse = mse + other.mse
+            mse = other.mse.clone()
+        else:
+            mse = torch.zeros(1)
+
+        if self.l1_error is not None:
+            l1_error = self.l1_error.clone()
+        if other.l1_error is not None:
+            l1_error = other.l1_error.clone()
+        else:
+            l1_error = torch.zeros(1)
+
         return RegressionMetrics(
             n_samples=self.n_samples + other.n_samples,
             mse=mse,
+            l1_error=l1_error,
         )
 
     def to_pbar_message(self) -> Dict[str, Union[str, float]]:
         message = super().to_pbar_message()
         message["mse"] = float(self.mse.item())
+        message["l1_error"] = float(self.l1_error.item())
         return message
+    
+    def __mul__(self, factor: Union[float, Tensor]) -> "Loss":
+        # Multiplying a 'RegressionMetrics' object multiplies its 'mse'.
+        return RegressionMetrics(
+            n_samples=self.n_samples,
+            mse=self.mse * factor,
+            l1_error=self.l1_error * factor,
+        )
+
+    def __rmul__(self, factor: Union[float, Tensor]) -> "Loss":
+        # Reverse-order multiply, used to do b * a when a * b returns
+        # NotImplemented.
+        return self.__mul__(factor)
+
+    def __truediv__(self, coefficient: Union[float, Tensor]) -> "RegressionMetrics":
+        # Dividing a RegressionMetrics object divides its mean squared error.
+        return RegressionMetrics(
+            n_samples=self.n_samples,
+            mse=self.mse / coefficient,
+            l1_error=self.l1_error / coefficient,
+        )
+    
+    def __lt__(self, other: Union["RegressionMetrics", Any]) -> bool:
+        if isinstance(other, RegressionMetrics):
+            return self.mse < other.mse
+        return NotImplemented
+
+    def __ge__(self, other: Union["RegressionMetrics", Any]) -> bool:
+        if isinstance(other, RegressionMetrics):
+            return self.mse >= other.mse
+        return NotImplemented

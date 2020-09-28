@@ -52,7 +52,9 @@ class Model(LightningModule, Generic[SettingType]):
         super().__init__()
         # super().__init__(setting=setting, hparams=hparams, config=config)
         self.setting: SettingType = setting
-        self.datamodule: LightningDataModule = setting
+        # TODO: Not setting this property, so the trainer doesn't fallback to
+        # using it.
+        # self.datamodule: LightningDataModule = setting
         self.hp = hparams
         self.config: Config = config
 
@@ -173,7 +175,7 @@ class Model(LightningModule, Generic[SettingType]):
         return total_loss
 
     @auto_move_data
-    def forward(self, x: Tensor) -> Dict[str, Tensor]:
+    def forward(self, x: Tensor, **kwargs) -> Dict[str, Tensor]:
         h_x = self.encode(x)
         y_pred = self.output_task(h_x)
         return dict(

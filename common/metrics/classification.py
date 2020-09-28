@@ -4,7 +4,8 @@ Gives the accuracy, the class accuracy, and the confusion matrix for a given set
 of (raw/pre-activation) logits Tensor `y_pred` and the class labels `y`. 
 """
 from dataclasses import dataclass
-from typing import Dict, Optional, Union
+from functools import total_ordering
+from typing import Dict, Optional, Union, Any
 
 import numpy as np
 import torch
@@ -17,7 +18,7 @@ from .metrics import Metrics
 from .metrics_utils import (get_accuracy, get_class_accuracy,
                             get_confusion_matrix)
 
-
+@total_ordering
 @dataclass
 class ClassificationMetrics(Metrics):
     confusion_matrix: Optional[Tensor] = field(default=None, repr=False)
@@ -111,3 +112,13 @@ class ClassificationMetrics(Metrics):
             class_accuracy=move(self.class_accuracy, device),
             confusion_matrix=move(self.confusion_matrix, device),
         )
+
+    def __lt__(self, other: Union["ClassificationMetrics", Any]) -> bool:
+        if isinstance(other, ClassificationMetrics):
+            return self.accuracy < other.accuracy
+        return NotImplemented
+
+    def __ge__(self, other: Union["ClassificationMetrics", Any]) -> bool:
+        if isinstance(other, ClassificationMetrics):
+            return self.accuracy >= other.accuracy
+        return NotImplemented
