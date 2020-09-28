@@ -50,13 +50,6 @@ class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
 
         self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()
         if self.hp.multihead:
-            # TODO: Actually implement something that uses this setting property
-            # (task_label_is_readable), as it is not used anywhere atm really.
-            # Maybe when we implement something like task-free CL?
-            assert self.setting.task_label_is_readable, (
-                "Using a multihead model in a setting where the task label "
-                "can't be read?"
-            )
             output_head = self.create_output_head()
             self.output_head = output_head
             self.output_heads[str(self.setting.current_task_id)] = output_head

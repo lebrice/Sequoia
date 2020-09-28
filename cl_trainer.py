@@ -158,6 +158,8 @@ class CLTrainer(Trainer):
                 # TODO: @lebrice What should we call 'on_task_switch' on? the Method? the Model?
                 if hasattr(model, "on_task_switch") and callable(model.on_task_switch):
                     model.on_task_switch(i)
+
+            # Use the usual 'fit' method, once per train task.
             result = super().fit(
                 model,
                 datamodule=setting,

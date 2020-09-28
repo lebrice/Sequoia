@@ -25,14 +25,19 @@ from utils.logging_utils import get_logger
 logger = get_logger(__file__)
 from PIL.Image import Image
 
+
 def copy_if_negative_strides(image: Union[Image, np.ndarray, Tensor]):
     # It sometimes happens when taking images from a gym env that the strides
     # are negative, for some reason. Therefore we need to copy the array
     # before we can call torch.to_tensor(pic).
+
     if isinstance(image, Image):
-        # TODO: Image doesn't have a 'strides' attribute.
-        image = F.to_tensor(image)
-    if any(s < 0 for s in image.strides):
+        image = np.array(image)
+    if isinstance(image, np.ndarray):
+        strides = image.strides
+    elif isinstance(image, Tensor):
+        strides = image.stride()
+    if any(s < 0 for s in strides):
         return image.copy()
     return image
 

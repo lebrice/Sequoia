@@ -47,6 +47,7 @@ class SelfSupervisionHParams(Serializable):
     ae: Optional[AEReconstructionTask.Options] = None
     ewc: Optional[EWCTask.Options] = None
 
+
 class SelfSupervisedClassIncrementalModel(SelfSupervisedModel, ClassIncrementalModel):
     @dataclass
     class HParams(SelfSupervisedModel.HParams, ClassIncrementalModel.HParams):
@@ -96,10 +97,6 @@ class SelfSupervision(Method, target_setting=Setting):
     @model_class.register
     def _(self, setting: ClassIncrementalSetting):
         return SelfSupervisedClassIncrementalModel
-
-    @model_class.register
-    def _(self, setting: TaskIncrementalSetting):
-        return SelfSupervisedTaskIncrementalModel
     
     @model_class.register
     def _(self, setting: IIDSetting):
