@@ -4,6 +4,7 @@ only one task.
 from dataclasses import dataclass
 from typing import ClassVar, List, Optional, Type, TypeVar, Union
 
+from common.config import Config
 from settings.base import Results
 from utils.utils import constant
 
@@ -39,7 +40,15 @@ class IIDSetting(TaskIncrementalSetting):
     # Defaults to the value of `class_order`.
     test_class_order: Optional[List[int]] = constant(None)
 
-
+    def evaluate(self, method: "Method", config: Config):
+        # TODO: Trying to figure out a way to also allow plain/simple
+        # pytorch-lightning training in the case of IID settings/methods.
+        # if method.target_setting in {TaskIncrementalSetting, ClassIncrementalSetting}:
+        #     return super().evaluate(method)
+        # else:
+        #     # Plain old pytorch-lightning training.
+        #     pass
+        return super().evaluate(method, config)
 
 
 SettingType = TypeVar("SettingType", bound=IIDSetting)

@@ -148,8 +148,16 @@ class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
                            training: bool = True,
                     ) -> Dict:
         assert loss_name
+        if dataloader_idx is not None:
+            logger.debug(
+                "TODO: We were indirectly given a task id with the "
+                "dataloader_idx. Ignoring for now, as we're trying to avoid "
+                "this."
+            )
+            dataloader_idx = None
+
         # TODO: There seems to be something quite wrong about how we do this.
-        # For example, what if the batch isn't from only oen task?
+        # For example, what if the batch isn't from only one task?
         if dataloader_idx is not None:
             # TODO: Fix this, we shouldn't have to be the one to tell the
             # setting that the task changed, but because we often simply pass

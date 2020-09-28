@@ -29,18 +29,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import (Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union)
 
-from simple_parsing import choice, list_field
-from torch import Tensor
-from torch.utils.data import DataLoader
-
-from common import ClassificationMetrics, Metrics
-from common.config import Config
-from common.loss import Loss
-from common.transforms import Transforms
 from continuum import ClassIncremental, split_train_val
 from continuum.datasets import *
 from continuum.datasets import _ContinuumDataset
 from continuum.scenarios.base import _BaseCLLoader
+from pytorch_lightning import LightningModule, Trainer
+from simple_parsing import choice, list_field
+from torch import Tensor
+from torch.utils.data import DataLoader
+        
+from common import ClassificationMetrics, Metrics
+from common.config import Config
+from common.loss import Loss
+from common.transforms import Transforms
 from settings.base import Results
 from settings.base.environment import ObservationType, RewardType
 from settings.passive.environment import PassiveEnvironment
@@ -193,8 +194,119 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         self.test_initial_increment = self.test_initial_increment or self.test_increment
         self.test_class_order = self.test_class_order or self.class_order
 
-    def evaluate(self, method: "Method") -> ClassIncrementalResults:
-        """Tests the method and returns the Results.
+    def evaluate(self, method: "Method", config: Config):
+        """
+        NOTE: Currently trying to stick closer to the LightningDataModule API, and
+        instead of giving back the loaders for all the tasks at once in
+        `val_dataloader` and in `test_dataloader` (which would give the task ids
+        to the model indirectly with the dataloader_idx argument to the `val_step`
+        and `test_step` methods)
+        do something more like:
+        
+        ```
+        # Training loop:
+        for task_id in range(nb_tasks):
+            setting.current_task_id = task_id
+
+            if setting.task_labels_at_train_time:
+                model.on_task_switch(task_id)
+            
+            success = trainer.fit(model, datamodule=setting)
+            
+            # Test loop:
+            for test_task_id in range(nb_tasks):
+                setting.current_task_id = test_task_id
+                if setting.task_labels_at_test_time:
+                    model.on_task_switch(test_task_id)
+
+                results_after_learning_task_i = trainer.test(model, test_dataloaders=setting.test_dataloaders())
+        ```
+        """
+        # Something like this:
+        # model: LightningModule = method.get_model(setting=self, config=config)
+        # trainer: Trainer = method.get_trainer(setting=self, config=config)
+        # model, trainer = method.configure_for(setting=self, config=config)
+        
+        # TODO: IDEA: We could just interact with the 'Method', and let it handle
+        # the Model and the trainer internally!! This would actually 'remove'
+        # the need for people to necessarily use pytorch lightning!
+        model = method.model
+        trainer = method.trainer
+
+        # Get the batch size from the model, or the config, or 32.
+        batch_size = getattr(model, "batch_size", getattr(config, "batch_size", 32))
+        # Get the data dir from self, the config, or 'data'.
+        data_dir = getattr(self, "data_dir", getattr(config, "data_dir", "data"))
+
+        dataloader_kwargs = dict(
+            batch_size=batch_size,
+            num_workers=config.num_workers,
+            shuffle=False,
+        )
+        # TODO: This might not necessarily make sense to do manually, if we were
+        # in a DDP setup. But for now it should be fine.
+        # Download the data, if needed.
+        self.prepare_data(data_dir=data_dir)
+        # Call the 'setup' hook for fit, if needed.
+        self.setup("fit")
+        # Training loop:
+        for task_id in range(self.nb_tasks):
+            logger.debug(f"Starting (new) training routine on task {task_id}")
+            # Let the model know we're in train mode:
+            model.train()
+            self.current_task_id = task_id
+
+            if self.task_labels_at_train_time:
+                model.on_task_switch(task_id)
+            
+            # Starting with something super simple, creating the dataloaders
+            # ourselves (rather than passing the datamodule of 'self'):
+            # success = trainer.fit(model, datamodule=self)
+            task_train_loader = self.train_dataloader(**dataloader_kwargs)
+            task_val_loader = self.val_dataloader(**dataloader_kwargs)
+            
+            # TODO: We would ideally like to avoid doing this here:
+            # for i, (x, y, t) in enumerate(task_train_loader):
+            #     print(i, x.shape, y.shape, t.shape)
+            
+            # BUG: When calling trainer.fit and passing dataloaders, they get
+            # unbatched, for some reason? Not sure I understand what's going on.
+            success = trainer.fit(
+                model,
+                train_dataloader=task_train_loader,
+                val_dataloaders=task_val_loader,
+            )
+            logger.debug(f"Sucess: {success}")
+            if not success:
+                raise RuntimeError(
+                    f"Something didn't work during training: "
+                    f"Trainer.fit() returned {success}"
+                )
+
+            # Let the model know we're in test mode:
+            model.eval()
+            
+            # Test loop:
+            for test_task_id in range(self.nb_tasks):
+                self.current_task_id = test_task_id
+
+                if self.task_labels_at_test_time:
+                    model.on_task_switch(test_task_id)
+                
+                test_task_loader = self.test_dataloader(**dataloader_kwargs)
+
+                results_after_learning_task_i = trainer.test(
+                    model,
+                    test_dataloaders=test_task_loader
+                )
+                logger.debug(f"Results on task {test_task_id} after training on task {task_id}: {results_after_learning_task_i}")
+                # TODO: Remove this, just debugging atm.
+                assert False, results_after_learning_task_i
+
+    def evaluate_old(self, method: "Method") -> ClassIncrementalResults:
+        """ NOTE: Refactoring this atm. See the 'newer' version above.
+        
+        Tests the method and returns the Results.
 
         Overwrite this to customize testing for your experimental setting.
 
@@ -406,6 +518,10 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         dataset = self.train_datasets[self._current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
+        # TODO: Add some kind of wrapper that hides the task labels during
+        # Training.
+        # TODO: Add some kind of `sampler` to take out the labels at given
+        # indices?
         return env
 
     def val_dataloader(self, **kwargs) -> PassiveEnvironment:
@@ -413,7 +529,10 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         
         NOTE: The dataloader is passive for now (just a regular DataLoader).
         """
-        self.setup_if_needed()
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_fit():
+            self.setup("fit")
         dataset = self.val_datasets[self._current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
@@ -421,43 +540,17 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
 
     def test_dataloader(self, **kwargs) -> PassiveEnvironment:
         """Returns a DataLoader for the test dataset of the current task.
-        
+
         NOTE: The dataloader is passive for now (just a regular DataLoader).
         """
-        self.setup_if_needed()
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_test():
+            self.setup("test")
         dataset = self.test_datasets[self._current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
         return env
-
-    """
-    NOTE: Currently trying to stick closer to the LightningDataModule API, and
-    instead of giving back the loaders for all the tasks at once in
-    `val_dataloader` and in `test_dataloader` (which would give the task ids
-    to the model indirectly with the dataloader_idx argument to the `val_step`
-    and `test_step` methods)
-    do something more like:
-    
-    ```
-    # Training loop:
-    for task_id in range(nb_tasks):
-        setting.current_task_id = task_id
-
-        if setting.task_labels_at_train_time:
-            model.on_task_switch(task_id)
-        
-        success = trainer.fit(model, datamodule=setting)
-        
-        # Test loop:
-        for test_task_id in range(nb_tasks):
-            setting.current_task_id = test_task_id
-            if setting.task_labels_at_test_time:
-                model.on_task_switch(test_task_id)
-
-            results_after_learning_task_i = trainer.test(model, test_dataloaders=setting.test_dataloaders())
-    ```
-    """
-
 
     # def train_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
     #     """Returns the DataLoaders for all the train datasets. """

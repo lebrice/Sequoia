@@ -43,7 +43,7 @@ class Method(Serializable, Generic[SettingType], Parseable):
     # HyperParameters of the method.
     hparams: HParams = mutable_field(HParams)
     # Options for the Trainer object.
-    trainer_options: CLTrainerOptions = mutable_field(CLTrainerOptions)
+    trainer_options: TrainerConfig = mutable_field(TrainerConfig)
     # Configuration options for the experimental setup (log_dir, cuda, etc).
     config: Config = mutable_field(Config)
 
@@ -64,22 +64,6 @@ class Method(Serializable, Generic[SettingType], Parseable):
         
         Extend this class and overwrite this method to customize training.       
         """
-        # 1. Configure the method to work on the setting.
-        self.configure(setting)
-        # 2. Train the method on the setting.
-        self.train(setting)
-        # 3. Evaluate the model on the setting and return the results.
-        return setting.evaluate(self)
-
-    def configure(self, setting: SettingType) -> None:
-        """Configures the method for the given Setting.
-
-        Concretely, this creates the model and Trainer objects which will be
-        used to train and test a model for the given `setting`.
-
-        Args:
-            setting (SettingType): The setting the method will be evaluated on.
-        """
         if not self.is_applicable(setting):
             raise RuntimeError(
                 f"Can only apply methods of type {type(self)} on settings "
@@ -91,6 +75,31 @@ class Method(Serializable, Generic[SettingType], Parseable):
         # Create a model and a Trainer for the given setting:
         self.trainer = self.create_trainer(setting)
         self.model = self.create_model(setting)
+
+        # TODO: get the config object to be somewhere else, I guess?
+        # TODO: "Who's" responsability should it be to create a Trainer object?
+        return setting.evaluate(
+            method=self,
+            config=self.config,
+        )
+        # 1. Configure the method to work on the setting.
+        self.configure(setting)
+        # 2. Train the method on the setting.
+        self.train(setting)
+        # 3. Evaluate the model on the setting and return the results.
+        return setting.evaluate(self)
+
+    
+    def configure(self, setting: SettingType) -> None:
+        """Configures the method for the given Setting.
+
+        Concretely, this creates the model and Trainer objects which will be
+        used to train and test a model for the given `setting`.
+
+        Args:
+            setting (SettingType): The setting the method will be evaluated on.
+        """
+        
         # TODO: This might not always make sense, as there could maybe be some
         # cases where the Setting gets to decide the batch size, for instance.
         # TODO: @lebrice This is ugly: the Setting's apply(method) calls
@@ -168,8 +177,6 @@ class Method(Serializable, Generic[SettingType], Parseable):
         # TODO: Will it become a problem that pytorch-lightning uses 'datamodule'
         # and we use 'setting' as a key?
         return model_class(setting=setting, hparams=self.hparams, config=self.config)
-
-
 
     def create_trainer(self, setting: SettingType) -> Trainer:
         """Creates a Trainer object from pytorch-lightning for the given setting.
