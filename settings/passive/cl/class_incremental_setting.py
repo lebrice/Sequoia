@@ -44,12 +44,11 @@ from common.loss import Loss
 from common.transforms import Transforms
 from settings.base import Results
 from settings.base.environment import ObservationType, RewardType
-from settings.passive.environment import PassiveEnvironment
 from utils import dict_union, get_logger
 from utils.utils import constant
 
-from ..environment import PassiveEnvironment
 from ..passive_setting import PassiveSetting
+from ..passive_environment import PassiveEnvironment
 from .results import ClassIncrementalResults
 
 logger = get_logger(__file__)
@@ -117,15 +116,29 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
     }
     # A continual dataset to use. (Should be taken from the continuum package).
     dataset: str = choice(available_datasets.keys(), default="mnist")
+    # Default path to which the datasets will be downloaded.
+    data_dir: Path = Path("data")
 
     # Transformations to use. See the Transforms enum for the available values.
-    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels, to_dict=False)
-    
+    transforms: List[Transforms] = list_field(
+        Transforms.to_tensor,
+        # BUG: The input_shape given to the Model doesn't have the right number
+        # of channels, even if we 'fixed' them here. However the images are fine
+        # after.
+        Transforms.fix_channels,
+        Transforms.channels_first_if_needed,
+        to_dict=False)
+
     # Wether task labels are available at train time.
     # NOTE: Forced to True at the moment.
     task_labels_at_train_time: bool = constant(True)
     # Wether task labels are available at test time.
     task_labels_at_test_time: bool = False
+
+    # TODO: Actually add the 'smooth' task boundary case.
+    # Wether we have clear boundaries between tasks, or if the transition is
+    # smooth.
+    smooth_task_boundaries: bool = constant(False) # constant for now.
 
     # Either number of classes per task, or a list specifying for
     # every task the amount of new classes.
@@ -156,14 +169,19 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         Args:
             options (Options): Dataclass used for configuration.
         """
-        assert self.dataset in dims_for_dataset, f"{self.dataset}, {dims_for_dataset.keys()}"
         if not hasattr(self, "num_classes"):
             # In some concrete LightningDataModule's like MnistDataModule,
             # num_classes is a read-only property. Therefore we check if it
             # is already defined. This is just in case something tries to
             # inherit from both IIDSetting and MnistDataModule, for instance.
             self.num_classes: int = num_classes_in_dataset[self.dataset]
-        image_shape: Tuple[int, int, int] = dims_for_dataset[self.dataset]
+        if hasattr(self, "dims"):
+            # NOTE This sould only happen if we subclass both a concrete
+            # LightningDataModule like MnistDataModule and a Setting (e.g.
+            # IIDSetting) like above.
+            image_shape = self.dims
+        else:
+            image_shape: Tuple[int, int, int] = dims_for_dataset[self.dataset]
 
         super().__post_init__(
             obs_shape=image_shape,
@@ -176,27 +194,30 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         self.train_datasets: List[_ContinuumDataset] = []
         self.val_datasets: List[_ContinuumDataset] = []
         self.test_datasets: List[_ContinuumDataset] = []
-        self._setup = False
-        self._configured = False
-        self._prepared = False
-        self.data_dir: Optional[Path] = None
 
         if isinstance(self.increment, list) and len(self.increment) == 1:
+            # This can happen when parsing a list from the command-line.
             self.increment = self.increment[0]
+
+        # Set the number of tasks depending on the increment, and vice-versa.
+        # (as only one of the two should be used).
         if self.nb_tasks == 0:
-            self.nb_tasks = num_classes_in_dataset[self.dataset] // self.increment
+            self.nb_tasks = self.num_classes // self.increment
         else:
-            self.increment = num_classes_in_dataset[self.dataset] // self.nb_tasks
+            self.increment = self.num_classes // self.nb_tasks
+
         if not self.class_order:
             self.class_order = list(range(self.num_classes))
+
         # Test values default to the same as train.
         self.test_increment = self.test_increment or self.increment
         self.test_initial_increment = self.test_initial_increment or self.test_increment
         self.test_class_order = self.test_class_order or self.class_order
 
     def evaluate(self, method: "Method", config: Config):
-        """
-        NOTE: Currently trying to stick closer to the LightningDataModule API, and
+        """ Defines the training/evaluation procedure for this Setting.
+                
+        TODO: Currently trying to stick closer to the LightningDataModule API, and
         instead of giving back the loaders for all the tasks at once in
         `val_dataloader` and in `test_dataloader` (which would give the task ids
         to the model indirectly with the dataloader_idx argument to the `val_step`
@@ -231,13 +252,11 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         # the Model and the trainer internally!! This would actually 'remove'
         # the need for people to necessarily use pytorch lightning!
         model = method.model
-        trainer = method.trainer
-
         # Get the batch size from the model, or the config, or 32.
         batch_size = getattr(model, "batch_size", getattr(config, "batch_size", 32))
         # Get the data dir from self, the config, or 'data'.
         data_dir = getattr(self, "data_dir", getattr(config, "data_dir", "data"))
-
+        
         dataloader_kwargs = dict(
             batch_size=batch_size,
             num_workers=config.num_workers,
@@ -249,30 +268,31 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         self.prepare_data(data_dir=data_dir)
         # Call the 'setup' hook for fit, if needed.
         self.setup("fit")
+
         # Training loop:
         for task_id in range(self.nb_tasks):
             logger.debug(f"Starting (new) training routine on task {task_id}")
-            # Let the model know we're in train mode:
-            model.train()
+            # Update the task id internally.
             self.current_task_id = task_id
 
-            if self.task_labels_at_train_time:
-                model.on_task_switch(task_id)
+            if self.task_labels_at_train_time and not self.smooth_task_boundaries:
+                method.on_task_switch(task_id)
             
             # Starting with something super simple, creating the dataloaders
-            # ourselves (rather than passing the datamodule of 'self'):
+            # ourselves (rather than passing 'self' as the datamodule):
             # success = trainer.fit(model, datamodule=self)
             task_train_loader = self.train_dataloader(**dataloader_kwargs)
             task_val_loader = self.val_dataloader(**dataloader_kwargs)
             
             # TODO: We would ideally like to avoid doing this here:
+            # BUG: This works fine, so WTF is going on below?
             # for i, (x, y, t) in enumerate(task_train_loader):
             #     print(i, x.shape, y.shape, t.shape)
-            
+            #     model.training_step((x, y, t), i)
+
             # BUG: When calling trainer.fit and passing dataloaders, they get
             # unbatched, for some reason? Not sure I understand what's going on.
-            success = trainer.fit(
-                model,
+            success = method.fit(
                 train_dataloader=task_train_loader,
                 val_dataloaders=task_val_loader,
             )
@@ -283,20 +303,16 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
                     f"Trainer.fit() returned {success}"
                 )
 
-            # Let the model know we're in test mode:
-            model.eval()
-            
             # Test loop:
             for test_task_id in range(self.nb_tasks):
                 self.current_task_id = test_task_id
 
-                if self.task_labels_at_test_time:
-                    model.on_task_switch(test_task_id)
+                if self.task_labels_at_test_time and not self.smooth_task_boundaries:
+                    method.on_task_switch(test_task_id)
                 
                 test_task_loader = self.test_dataloader(**dataloader_kwargs)
 
-                results_after_learning_task_i = trainer.test(
-                    model,
+                results_after_learning_task_i = method.test(
                     test_dataloaders=test_task_loader
                 )
                 logger.debug(f"Results on task {test_task_id} after training on task {task_id}: {results_after_learning_task_i}")
@@ -463,10 +479,8 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
 
     def prepare_data(self, data_dir: Path=None, **kwargs):
         data_dir = data_dir or self.data_dir
-        assert data_dir, "One of self.data_dir or the data_dir keyword argument to setup() must be set!"
-        if self.data_dir is None:
-            self.data_dir = data_dir
         self.make_dataset(data_dir, download=True)
+        self.data_dir = data_dir
         super().prepare_data(**kwargs)
         self._prepared = True
 
@@ -475,16 +489,6 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         
         TODO: Figure out a way of setting data_dir elsewhere maybe?
         """
-        if not self._configured:
-            self.configure(config=self.config or Config())
-            self._configured = True
-        
-        # TODO: Data should be prepared..
-        if self.config.device.type == "cpu" and not self._prepared:
-            self.prepare_data()
-            self._prepared = True
-
-        assert self.data_dir, "One of self.data_dir or the data_dir keyword argument to setup() must be set!"
         logger.info(f"data_dir: {self.data_dir}, setup args: {args} kwargs: {kwargs}")
         
         self.cl_dataset = self.make_dataset(self.data_dir, download=False)
@@ -514,14 +518,17 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         
         NOTE: The dataloader is passive for now (just a regular DataLoader).
         """
-        # self.setup_if_needed()
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_fit:
+            self.setup("fit")
         dataset = self.train_datasets[self._current_task_id]
+        # TODO: Add some kind of Wrapper around the dataset to make the dataset
+        # semi-supervised.
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
-        # TODO: Add some kind of wrapper that hides the task labels during
-        # Training.
-        # TODO: Add some kind of `sampler` to take out the labels at given
-        # indices?
+        # TODO: Add some kind of wrapper that hides the task labels from
+        # continuum during Training.
         return env
 
     def val_dataloader(self, **kwargs) -> PassiveEnvironment:
@@ -531,7 +538,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         """
         if not self.has_prepared_data:
             self.prepare_data()
-        if not self.has_setup_fit():
+        if not self.has_setup_fit:
             self.setup("fit")
         dataset = self.val_datasets[self._current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
@@ -545,39 +552,12 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         """
         if not self.has_prepared_data:
             self.prepare_data()
-        if not self.has_setup_test():
+        if not self.has_setup_test:
             self.setup("test")
         dataset = self.test_datasets[self._current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
         return env
-
-    # def train_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
-    #     """Returns the DataLoaders for all the train datasets. """
-    #     loaders: List[DataLoader] = []
-    #     for i, dataset in enumerate(self.train_datasets):
-    #         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-    #         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
-    #         loaders.append(env)
-    #     return loaders
-
-    # def test_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
-    #     """Returns the DataLoaders for all the test datasets. """
-    #     loaders: List[DataLoader] = []
-    #     for i, dataset in enumerate(self.test_datasets):
-    #         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-    #         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
-    #         loaders.append(env)
-    #     return loaders
-
-    # def val_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
-    #     """Returns the DataLoaders for all the validation datasets. """
-    #     loaders: List[DataLoader] = []
-    #     for i, dataset in enumerate(self.val_datasets):
-    #         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-    #         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
-    #         loaders.append(env)
-    #     return loaders
 
     @property
     def current_task_id(self) -> Optional[int]:

@@ -129,8 +129,9 @@ class Model(LightningModule, Generic[SettingType]):
         if dataloader_idx is not None:
             assert isinstance(dataloader_idx, int)
             loss_name += f"/{dataloader_idx}"
+        x, y, t = batch
+        # x, y = self.preprocess_batch(batch)
         
-        x, y = self.preprocess_batch(batch)
         forward_pass = self(x)
         loss: Loss = self.get_loss(forward_pass, y=y, loss_name=loss_name)
         # NOTE: loss is supposed to be a tensor, but I'm testing out giving a Loss object instead.

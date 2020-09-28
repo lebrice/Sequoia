@@ -6,7 +6,7 @@ from inspect import getsourcefile
 from pathlib import Path
 from typing import (ClassVar, Dict, Generic, List, Optional, Set, Tuple, Type,
                     TypeVar, Union)
-
+from torch.utils.data import DataLoader
 from pytorch_lightning import (Callback, LightningDataModule, LightningModule,
                                Trainer)
 from simple_parsing import Serializable, mutable_field
@@ -67,29 +67,20 @@ class Method(Serializable, Generic[SettingType], Parseable):
         if not self.is_applicable(setting):
             raise RuntimeError(
                 f"Can only apply methods of type {type(self)} on settings "
-                f"that inherit from {type(self)._setting}. "
+                f"that inherit from {type(self)._target_setting}. "
                 f"(Given setting is of type {type(setting)})."
             )
         # Seed everything first:
         self.config.seed_everything()
         # Create a model and a Trainer for the given setting:
-        self.trainer = self.create_trainer(setting)
-        self.model = self.create_model(setting)
-
+        self.configure(setting)
         # TODO: get the config object to be somewhere else, I guess?
         # TODO: "Who's" responsability should it be to create a Trainer object?
         return setting.evaluate(
             method=self,
             config=self.config,
         )
-        # 1. Configure the method to work on the setting.
-        self.configure(setting)
-        # 2. Train the method on the setting.
-        self.train(setting)
-        # 3. Evaluate the model on the setting and return the results.
-        return setting.evaluate(self)
 
-    
     def configure(self, setting: SettingType) -> None:
         """Configures the method for the given Setting.
 
@@ -99,25 +90,44 @@ class Method(Serializable, Generic[SettingType], Parseable):
         Args:
             setting (SettingType): The setting the method will be evaluated on.
         """
-        
-        # TODO: This might not always make sense, as there could maybe be some
-        # cases where the Setting gets to decide the batch size, for instance.
-        # TODO: @lebrice This is ugly: the Setting's apply(method) calls
-        # method.configure(self) and then the method calls setting.configure?!
-        setting.configure(
-            config=self.config,
-            batch_size=self.hparams.batch_size,
-        )
+        self.trainer = self.create_trainer(setting)
+        self.model = self.create_model(setting)
 
-    def train(self, setting: SettingType) -> None:
+    def fit(self,
+            train_dataloader: Optional[DataLoader] = None,
+            val_dataloaders: Optional[Union[DataLoader, List[DataLoader]]] = None,
+            datamodule: Optional[LightningDataModule] = None):
         """Trains the model on the setting.
 
         Overwrite this to customize training.
         """
-        if self.model.datamodule is setting:
-            self.trainer.fit(model=self.model)
-        else:
-            self.trainer.fit(model=self.model, datamodule=setting)
+        self.trainer.fit(
+            model=self.model,
+            train_dataloader=train_dataloader,
+            val_dataloaders=val_dataloaders,
+            datamodule=datamodule,
+        )
+
+    def test(self,
+             test_dataloaders: Optional[Union[DataLoader, List[DataLoader]]] = None,
+             ckpt_path: Optional[str] = 'best',
+             verbose: bool = True,
+             datamodule: Optional[LightningDataModule] = None):
+        return self.trainer.test(
+            model=self.model,
+            test_dataloaders=test_dataloaders,
+            ckpt_path=ckpt_path,
+            verbose=verbose,
+            datamodule=datamodule,
+        )
+    
+    def on_task_switch(self, task_id: int) -> None:
+        """
+        TODO: Not sure if it makes sense to put this here. Might have to move
+        it to Class/Task incremental or something like that.
+        """
+        if hasattr(self.model, "on_task_switch"):
+            self.model.on_task_switch(task_id)
     
     def model_class(self, setting: SettingType) -> Type[Model]:
         """ Which class of model to use, depending on the setting.
@@ -314,13 +324,6 @@ class Method(Serializable, Generic[SettingType], Parseable):
             return cls.name  # type: ignore
         name = camel_case(cls.__qualname__)
         return remove_suffix(name, "_method")
-
-    def on_task_switch(self, task_id: int) -> None:
-        """
-        TODO: Not sure if it makes sense to put this here. Might have to move
-        it to Class/Task incremental or something like that.
-        """
-        self.model.on_task_switch(task_id)
 
 
     def upgrade_hparams(self, new_type: Type[HParams]) -> HParams:

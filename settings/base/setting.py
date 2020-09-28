@@ -172,6 +172,13 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
     # Fraction of training data to use to create the validation set.
     val_fraction: float = 0.2
 
+    # TODO: Add support for semi-supervised training.
+    # Fraction of the dataset that is labeled.
+    labeled_data_fraction: int = 1.0
+    # Number of labeled examples.
+    n_labeled_examples: Optional[int] = None
+
+
     # These should be set by all settings, not from the command-line. Hence we
     # mark them as InitVars, which means they should be passed to __post_init__.
     obs_shape: Tuple[int, ...] = ()
@@ -220,7 +227,6 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
 
         # Wether the setup methods have been called yet or not.
         # TODO: Remove those, its just ugly and doesn't seem needed.
-        self._setup: bool = False
         self._prepared: bool = False
         self._configured: bool = False
 
@@ -298,35 +304,6 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
             for method, results in all_results.items()
         })
         return all_results
-
-    def configure(self, config: Config, **dataloader_kwargs):
-        """ Set some of the misc options in the setting which might come from
-        the Method or the Experiment.
-        
-        TODO: This isn't super clean, but we basically want to be able to give
-        the batch_size, data_dir, num_workers etc to the Setting somehow,
-        without letting it "know" what kind of method is being applied to it.
-        """
-        self.config = config
-        self.data_dir = config.data_dir
-        self.dataloader_kwargs.update(num_workers=config.num_workers)
-        self.dataloader_kwargs.update(dataloader_kwargs)
-        self._configured = True
-
-    def setup_if_needed(self, *args, **kwargs) -> bool:
-        if not self._configured:
-            # set the data_dir and the dataloader kwargs
-            self.configure(config=self.config or Config())
-            self._configured = True
-        # TODO: Don't know how to properly check when this is the 'main worker'.
-        # (We should only download data on the main worker).
-        if not self._prepared and (self.config.device.type == "cpu" or
-                                   torch.cuda.device_count() == 1):
-            self.prepare_data()
-            self._prepared = True
-        if not self._setup:
-            self.setup(*args, **kwargs)
-            self._setup = True
 
     @classmethod
     def get_all_applicable_methods(cls) -> List[Type["Method"]]:

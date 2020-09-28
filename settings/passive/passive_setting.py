@@ -1,17 +1,16 @@
 from dataclasses import dataclass
+from typing import ClassVar, Dict, Type, TypeVar
 
-from settings.base.environment import (ActionType, ObservationType,
-                                          RewardType)
-from settings.base.setting import Setting
-from settings.base.results import ResultsType
 from pl_bolts.datamodules import (CIFAR10DataModule, FashionMNISTDataModule,
                                   ImagenetDataModule, MNISTDataModule)
 from pytorch_lightning import LightningDataModule
-from .environment import PassiveEnvironment
-from typing import ClassVar, Dict, Type, TypeVar
+from settings.base.environment import ActionType, ObservationType, RewardType
+from settings.base.results import ResultsType
+from settings.base.setting import Setting
 from simple_parsing import choice
-
 from torchvision.datasets import MNIST, FashionMNIST
+
+from .passive_environment import PassiveEnvironment
 
 
 @dataclass

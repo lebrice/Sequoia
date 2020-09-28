@@ -20,9 +20,9 @@ class PassiveEnvironment(DataLoader, EnvironmentBase, Generic[ObservationType, R
         self.labels: Optional[Any] = None
         super().__init__(dataset=dataset, **kwargs)
     
-    def __next__(self) -> Tuple[ObservationType, RewardType]:
-        """ Generate the next observation. """
-        return super().__next__()
+    # def __next__(self) -> Tuple[ObservationType, RewardType]:
+    #     """ Generate the next observation. """
+    #     return super().__next__()
 
     def __iter__(self) -> Iterable[Tuple[ObservationType, RewardType]]:
         """ Iterate over the environment, yielding batches of Observations (x) and rewards (y) """
