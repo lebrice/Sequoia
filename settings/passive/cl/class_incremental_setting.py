@@ -97,8 +97,6 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
 
     The current task can be set at the `current_task_id` attribute.
     """
-    results_class: ClassVar[Type[Results]] = ClassIncrementalResults
-
     # Class variable holding all the available datasets.
     available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = {
         c.__name__.lower(): c
@@ -509,101 +507,6 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         # produce some nice wandb plots!
         from common.metrics import get_metrics
         return get_metrics(y_pred=y_pred, y=y)
-        
-        
-    def evaluate_old(self, method: "Method") -> ClassIncrementalResults:
-        """ NOTE: Refactoring this atm. See the 'newer' version above.
-        
-        Tests the method and returns the Results.
-
-        Overwrite this to customize testing for your experimental setting.
-
-        Returns:
-            Results: A Results object for this particular setting.
-        """
-        from methods import Method
-        from cl_trainer import CLTrainer
-        
-        method: Method
-        trainer: CLTrainer = method.trainer
-
-        assert isinstance(trainer, CLTrainer), (
-            "WIP: Experimenting with defining the evaluation procedure in the CLTrainer. "
-            "Please use a CLTrainer rather than a Trainer for now."
-        )
-        assert trainer.get_model() is method.model and method.model is not None
-        assert trainer.datamodule is self
-        task_losses: List[Loss] = trainer.test(
-            # method.model,
-            # datamodule=self,
-            # verbose=True,
-        )
-        return ClassIncrementalResults(
-            hparams=method.hparams,
-            test_loss=sum(task_losses),
-            task_losses=task_losses,
-        )
-        # Run the actual evaluation.
-        test_dataloaders = self.test_dataloaders()
-        # TODO: Here we are 'manually' evaluating on one test dataset at a time.
-        # However, in pytorch_lightning, if a LightningModule's
-        # `test_dataloaders` method returns more than a single dataloader, then
-        # the Trainer takes care of evaluating on each dataset in sequence.
-        # Here we basically do this manually, so that the trainer doesn't give
-        # the `dataloader_idx` keyword argument to the eval_step() method on the
-        # LightningModule.
-        task_losses: List[Loss] = []
-        for i, task_loader in enumerate(test_dataloaders):
-            logger.info(f"Starting evaluation on task {i}.")
-            self.current_task_id = i
-
-            if self.task_labels_at_test_time:
-                method.on_task_switch(i)
-
-            test_outputs = method.trainer.test(
-                test_dataloaders=task_loader,
-                # BUG: we don't want to use the best model checkpoint because
-                # that model might be s
-                ckpt_path=None,
-                verbose=False,
-            )
-            task_loss: Loss = self.extract_task_loss(test_outputs)
-            task_metrics = task_loss.losses["classification"].metric
-            assert task_metrics, task_loss
-            logger.info(f"Results: {task_metrics}")
-            task_losses.append(task_loss)
-
-        model = method.model
-        from methods.models import Model
-        if isinstance(model, Model):
-            hparams = model.hp
-        else:
-            hparams = model.hparams
-        return self.results_class(
-            hparams=hparams,
-            test_loss=sum(task_losses),
-            task_losses=task_losses,
-        )
-    
-
-    def extract_task_loss(self, test_outputs: Union[Dict, List[Dict]]) -> Loss:
-        # TODO: Refactor this, we need to have a clearer way of getting the
-        # loss for each task.
-        if isinstance(test_outputs, list):
-            assert len(test_outputs) == 1
-            test_outputs = test_outputs[0]
-        
-        if "loss_object" not in test_outputs:
-            # TODO: Design a cleaner API for the evaluation setup.
-            raise RuntimeError(
-                "At the moment, a Method's test step needs to return "
-                "a dict with a `Loss` object at key 'loss_object'. The "
-                "metrics that the setting cares about are taken from that "
-                "object in order to create the Results and determine the "
-                "value of the Setting's 'objective'."
-            )
-        task_loss: Loss = test_outputs["loss_object"]
-        return task_loss
 
     def make_train_cl_loader(self, dataset: _ContinuumDataset) -> _BaseCLLoader:
         """ Creates a train ClassIncremental object from continuum. """
@@ -661,8 +564,8 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
                      train: bool = True,
                      transform: Callable = None,
                      **kwargs) -> _ContinuumDataset:
-        # TODO: #7 Use this method here to fix the errors that happen when trying
-        # to create every single dataset from continuum. 
+        # TODO: #7 Use this method here to fix the errors that happen when
+        # trying to create every single dataset from continuum. 
         return self.dataset_class(
             data_path=data_dir,
             download=download,
@@ -786,20 +689,3 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             return self.class_order[start_index:end_index]
         else:
             return self.test_class_order[start_index:end_index]
-
-    def extract_accuracy(self, test_outputs: Union[Dict, List[Dict]]) -> float:
-        """ Extracts the supervised classification accuracy from the outputs of
-        Trainer.test().
-
-        TODO: This could perhaps be moved (along with some of the training & 
-        evaluation routine) to a dedicated Trainer (e.g. the CLTrainer).
-        """
-        task_loss = self.extract_task_loss(test_outputs)
-        task_metrics: ClassificationMetrics = self.extract_metric(task_loss)
-        return task_metrics.accuracy
-
-    def extract_metric(self, task_loss: Loss) -> Metrics:
-        """Extracts a Metrics (ClassificationMetrics) object from the outputs of
-        Trainer.test().
-        """
-        return task_loss.all_metrics()["classification"]
