@@ -92,15 +92,20 @@ class OutputHead(nn.Module):
         h_x = forward_pass["h_x"]
         y_pred = forward_pass["y_pred"]
         loss = self.loss_fn(y_pred, y)
+        from common.metrics import get_metrics
+        y = y.reshape([x.shape[0], -1])
+        metrics = get_metrics(
+            x=x,
+            h_x=h_x,
+            y_pred=y_pred,
+            y=y
+        )
         assert self.name, "Output Heads should have a name!"
-        loss_info = Loss(
+        loss_object = Loss(
             name=self.name,
             loss=loss,
             # NOTE: we're passing the tensors to the Loss object because we let
             # it create the Metrics for us automatically.
-            x=x,
-            h_x=h_x,
-            y_pred=y_pred,
-            y=y,
+            metrics={self.name: metrics},
         )
-        return loss_info
+        return loss_object

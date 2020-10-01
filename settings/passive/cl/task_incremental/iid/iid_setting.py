@@ -9,7 +9,7 @@ from settings.base import Results
 from utils.utils import constant
 
 from .. import TaskIncrementalSetting
-from .results import IIDResults
+from .iid_results import IIDResults
 
 
 @dataclass

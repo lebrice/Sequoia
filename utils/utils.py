@@ -29,6 +29,12 @@ T = TypeVar("T")
 K = TypeVar("K")
 V = TypeVar("V")
 
+
+def mean(values: Iterable[T]) -> T:
+    values = list(values)
+    return sum(values) / len(values)
+
+
 def n_consecutive(items: Iterable[T], n: int=2, yield_last_batch=True) -> Iterable[Tuple[T, ...]]:
     values: List[T] = []
     for item in items:
@@ -148,6 +154,7 @@ def prod(iterable: Iterable[T]) -> T:
     24
     """
     return reduce(operator.mul, iterable, 1)
+
 
 def to_optional_tensor(x: Optional[Union[Tensor, np.ndarray, List]]) -> Optional[Tensor]:
     """ Converts `x` into a Tensor if `x` is not None, else None. """

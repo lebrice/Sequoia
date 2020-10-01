@@ -71,6 +71,11 @@ class Method(Serializable, Generic[SettingType], Parseable):
                 f"that inherit from {type(self).target_setting}. "
                 f"(Given setting is of type {type(setting)})."
             )
+        # TODO: Instead of calling method.apply_to(setting) in main.py, we
+        # should do the opposite! (The reason being, the models have access to
+        # every attribute of the setting via their `self.setting` attribute, so
+        # they could possibly "cheat"!
+
         # Seed everything first:
         self.config.seed_everything()
         # Create a model and a Trainer for the given setting:

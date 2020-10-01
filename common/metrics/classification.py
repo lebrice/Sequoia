@@ -122,3 +122,8 @@ class ClassificationMetrics(Metrics):
         if isinstance(other, ClassificationMetrics):
             return self.accuracy >= other.accuracy
         return NotImplemented
+
+    def __eq__(self, other: Union["ClassificationMetrics", Any]) -> bool:
+        if isinstance(other, ClassificationMetrics):
+            return self.accuracy == other.accuracy and self.n_samples == other.n_samples
+        return NotImplemented

@@ -97,8 +97,6 @@ class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
         """Creates a new output head for the current task.
         """
         output_size = self.setting.action_shape
-        if self.hp.multihead:
-            output_size = self.setting.num_classes_in_current_task 
         return self.output_head_class(
             input_size=self.hidden_size,
             output_size=output_size,
@@ -113,33 +111,14 @@ class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
         Returns:
             Type[OutputHead]: A subclass of OutputHead.
         """
+        # TODO: Add a ClassificationOutputHead (largely the same as OutputHead),
+        # then add a RegressionOutputHead, a SegmentationOutputHead, etc etc.
         return OutputHead
 
     def output_task(self, h_x: Tensor) -> Tensor:
         if self.hp.detach_output_head:
             h_x = h_x.detach()
         return super().output_task(h_x)
-
-    # def train_dataloaders(self, **kwargs) -> List[DataLoader]:
-    #     """ Returns the dataloaders for all train tasks.
-    #     See the `TaskIncrementalSetting` class for more info.
-    #     """
-    #     kwargs = self.dataloader_kwargs(**kwargs)
-    #     return self.setting.train_dataloaders(**kwargs)
-    
-    # def val_dataloaders(self, **kwargs) -> List[DataLoader]:
-    #     """ Returns the dataloaders for all validation tasks.
-    #     See the `TaskIncrementalSetting` class for more info.
-    #     """
-    #     kwargs = self.dataloader_kwargs(**kwargs)
-    #     return self.setting.val_dataloaders(**kwargs)
-    
-    # def test_dataloaders(self, **kwargs) -> List[DataLoader]:
-    #     """ Returns the dataloaders for all test tasks.
-    #     See the `TaskIncrementalSetting` class for more info.
-    #     """
-    #     kwargs = self.dataloader_kwargs(**kwargs)
-    #     return self.setting.test_dataloaders(**kwargs)
     
     def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]],
                            batch_idx: int,
@@ -152,25 +131,17 @@ class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
             logger.debug(
                 "TODO: We were indirectly given a task id with the "
                 "dataloader_idx. Ignoring for now, as we're trying to avoid "
-                "this."
+                "this (the task labels should be given for each example "
+                "anyway). "
             )
             dataloader_idx = None
-
-        # TODO: There seems to be something quite wrong about how we do this.
-        # For example, what if the batch isn't from only one task?
-        if dataloader_idx is not None:
-            # TODO: Fix this, we shouldn't have to be the one to tell the
-            # setting that the task changed, but because we often simply pass
-            # the datamodule to Trainer.fit(), it loops over the dataloaders
-            # without letting the setting know. We could fix this by
-            # implementing a subclass of Trainer, something like that.
-            if self.setting.current_task_id != dataloader_idx:
-                self.setting.current_task_id = dataloader_idx
-            assert self.setting.current_task_id == dataloader_idx
-            self.on_task_switch(dataloader_idx)
-
         elif ((training and self.setting.task_labels_at_train_time) or
-                (not training and self.setting.task_labels_at_test_time)):
+              (not training and self.setting.task_labels_at_test_time)):
+            # If we're not told the dataloader idx, but we have access to the
+            # task labels, then switch to the current task if it's not the same
+            # as the previous task.
+            # TODO: Remove this, and use the per-sample task labels from
+            # continuum instead.
             current_task = self.setting.current_task_id
             if self.current_task != current_task:
                 self.previous_task = self.current_task
@@ -205,23 +176,29 @@ class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
         # TODO: detect wether we are training or testing.
         return self.setting.current_task_classes(self.training)
 
-
     def preprocess_batch(self, *batch) -> Tuple[Tensor, Optional[Tensor]]:
-        x, y = super().preprocess_batch(*batch)
+        # TODO: Sort this out a bit.
+        x, y, *extra_inputs = super().preprocess_batch(*batch)
+        task_labels: Optional[Tensor] = None
+        if len(extra_inputs) >= 1:
+            task_labels = extra_inputs[0]
 
-        if y is not None and self.hp.multihead:
-            # logger.debug(f"Classes in current task: {self.current_task_classes}")
-            # logger.debug(f"Current task: {self.current_task_classes}")
-
+        if task_labels is None and y is not None:
+            # This basically checks if the labels in y have already been
+            # relabeled in the range [0-n_classes_per_task]. If they aren't,
+            # then raises an error.
+            current_task_id = self.setting.current_task_id
+            current_task_classes = self.setting.task_classes(current_task_id, self.training)
+            logger.debug(f"Current task id: {current_task_id}")
+            logger.debug(f"Classes in current task: {current_task_classes}")
+            n_classes_per_task = self.setting.n_classes_per_task
             # y_unique are the (sorted) unique values found within the batch.
             # idx[i] holds the index of the value at y[i] in y_unique, s.t. for
             # all i in range(0, len(y)) --> y[i] == y_unique[idx[i]]
             y_unique, idx = y.unique(sorted=True, return_inverse=True)
 
-
-            output_size = self.setting.num_classes_in_current_task
             
-            if set(y_unique.tolist()) <= set(range(output_size)):
+            if set(y_unique.tolist()) <= set(range(n_classes_per_task)):
                 # The images were already re-labeled by the continuum package.
                 return x, y
             # TODO: This might not make sense anymore, given that I think the
@@ -230,32 +207,27 @@ class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
             # 'classes' that were assigned to each output head during training.
             # (This might be similar to the "labels trick" from
             # https://arxiv.org/abs/1803.10123)
-            elif not (set(y_unique.tolist()) <= set(self.current_task_classes)):
-                # import matplotlib.pyplot as plt
-                # plt.imshow(x[0].cpu().numpy().transpose([1, 2, 0]))
-                # plt.title(str(y[0]))
-                # plt.show()
-
+            elif not (set(y_unique.tolist()) <= set(current_task_classes)):
                 raise RuntimeError(
                     f"There are labels in the batch that aren't part of the "
                     f"current task! (current task: "
-                    f"{self.setting.current_task_id}), Current task classes: "
-                    f"{self.current_task_classes}, batch labels: {y_unique})"
+                    f"{current_task_id}), Current task classes: "
+                    f"{current_task_classes}, batch labels: {y_unique})"
                 )
             else:
-                y = self.relabel(y)
+                # Relabel the images manually, which really sucks!
+                y = self.relabel(y, current_task_classes)
         return x, y
 
-    def relabel(self, y: Tensor):
+    def relabel(self, y: Tensor, current_task_classes: List[int]) -> Tensor:
         # Re-label the given batch so the losses/metrics work correctly.
         # Example: if the current task classes is [2, 3] then relabel that
         # those examples as [0, 1].
         # TODO: Double-check that that this is what is usually done in CL.
         new_y = torch.empty_like(y)
-        for i, label in enumerate(self.current_task_classes):
+        for i, label in enumerate(current_task_classes):
             new_y[y == label] = i
         return new_y
-
 
     def load_state_dict(self, state_dict: Union[Dict[str, Tensor], Dict[str, Tensor]],
                         strict: bool = True):

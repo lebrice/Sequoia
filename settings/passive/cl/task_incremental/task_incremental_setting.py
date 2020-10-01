@@ -11,7 +11,7 @@ from settings.base import Results
 from utils.utils import constant
 
 from ..class_incremental_setting import ClassIncrementalSetting
-from .results import TaskIncrementalResults
+from . import TaskIncrementalResults
 
 
 @dataclass

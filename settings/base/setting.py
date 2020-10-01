@@ -177,13 +177,10 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
         if self.obs_shape and not self.dims:
             self.dims = self.obs_shape
 
-        # This will be set when the setting gets configured
+        # This should probably be set on `self` inside of `apply` call.
+        # TODO: It's a bit confusing to also have a `config` attribute on the
+        # Setting. Might want to change this a bit.
         self.config: Config = None
-
-        # Wether the setup methods have been called yet or not.
-        # TODO: Remove those, its just ugly and doesn't seem needed.
-        self._prepared: bool = False
-        self._configured: bool = False
 
     @abstractmethod
     def apply(self, method: "Method", config: Config) -> float:
@@ -208,39 +205,6 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
             that get applied to your Setting can make use of pytorch-lightning's
             `Trainer` & `LightningDataModule` API to be neat and fast.
         """
-    
-    # def evaluate(self, method: "Method") -> ResultsType:
-    #     """Tests the method and returns the Results.
-
-    #     Overwrite this to customize testing for your experimental setting.
-
-    #     Returns:
-    #         ResultsType: A Results object for this particular setting.
-    #     """
-    #     from methods import Method
-    #     method: Method
-    #     trainer = method.trainer
-
-    #     # Run the actual evaluation.
-    #     assert trainer.datamodule is self
-    #     test_outputs = trainer.test(
-    #         datamodule=self,
-    #         # verbose=False,
-    #     )
-    #     assert test_outputs, f"BUG: Pytorch lightning bug, Trainer.test() returned None!"
-    #     test_loss: Loss = test_outputs[0]["loss_object"]
-
-    #     model = method.model
-    #     from methods.models import Model
-    #     if isinstance(model, Model):
-    #         hparams = model.hp
-    #     else:
-    #         assert False, f"TODO: Remove this ({model})."
-    #         hparams = model.hparams
-    #     return self.results_class(
-    #         hparams=hparams,
-    #         test_loss=test_loss,
-    #     )
 
     @classmethod
     def main(cls, argv: Optional[Union[str, List[str]]]=None) -> ResultsType:

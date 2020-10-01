@@ -78,11 +78,6 @@ class Model(LightningModule, Generic[SettingType]):
             logger.debug("Hparams:")
             logger.debug(self.hp.dumps(indent="\t"))
 
-    # def forward(self, x: Tensor) -> Tensor:
-    #     h_x = self.encode(x)
-    #     return self.output_task(h_x)
-    
-
     def encode(self, x: Tensor) -> Tensor:
         """Encodes a batch of samples `x` into a hidden vector.
 
@@ -132,9 +127,9 @@ class Model(LightningModule, Generic[SettingType]):
             assert isinstance(dataloader_idx, int)
             loss_name += f"/{dataloader_idx}"
         x, y, t = batch
-        # x, y = self.preprocess_batch(batch)
+        # x, y = self.preprocess_batch(x, y, t)
         
-        forward_pass = self(x)
+        forward_pass = self(x, task_labels=t)
         loss: Loss = self.get_loss(forward_pass, y=y, loss_name=loss_name)
         # NOTE: loss is supposed to be a tensor, but I'm testing out giving a Loss object instead.
         result = loss.to_pl_dict()
@@ -164,7 +159,6 @@ class Model(LightningModule, Generic[SettingType]):
         x = forward_pass["x"]
         h_x = forward_pass["h_x"]
         y_pred = forward_pass["y_pred"]
-
         # Create an 'empty' Loss object with the given name, so that we always
         # return a Loss object, even when `y` is None and we can't the loss from
         # the output_head.
@@ -176,6 +170,7 @@ class Model(LightningModule, Generic[SettingType]):
 
     @auto_move_data
     def forward(self, x: Tensor, **kwargs) -> Dict[str, Tensor]:
+        x, *_ = self.preprocess_batch(x)
         h_x = self.encode(x)
         y_pred = self.output_task(h_x)
         return dict(
@@ -193,11 +188,9 @@ class Model(LightningModule, Generic[SettingType]):
         else:
             super().backward(trainer, loss, optimizer, optimizer_idx)
 
-    def preprocess_batch(self, *batch: Union[Tensor,
-                                            Tuple[Tensor],
-                                            Tuple[Tensor, Tensor],
-                                            Tuple[Tensor, Tensor, Tensor]],
-                        ) -> Tuple[Tensor, Optional[Tensor]]:
+    def preprocess_batch(self,
+                         *batch: Union[Tensor, Tuple[Tensor, ...]]
+                         ) -> Tuple[Tensor, Optional[Tensor]]:
         """Preprocess the input batch before it is used for training.
                 
         By default this just splits a (potentially unsupervised) batch into x
@@ -226,6 +219,7 @@ class Model(LightningModule, Generic[SettingType]):
             The processed labels, if there are any.
         """
         assert isinstance(batch, tuple)
+        
         if len(batch) == 1:
             batch = batch[0]
         if isinstance(batch, Tensor):
@@ -233,8 +227,9 @@ class Model(LightningModule, Generic[SettingType]):
 
         if len(batch) == 2:
             return batch[0], batch[1]
-        elif len(batch) == 3:
-            return batch[0], batch[1]
+        else:
+            # Batch has more than 2 items, so we return it as-is..
+            return batch
     
     # def validation_epoch_end(
     #         self,

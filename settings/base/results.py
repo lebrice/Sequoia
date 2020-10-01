@@ -18,57 +18,58 @@ exhibits catastrophic forgetting when applied on a Class or Task Incremental
 Setting.
 """
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import total_ordering
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Type, TypeVar, Union
 
-from common.loss import Loss
-from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
+import matplotlib.pyplot as plt
 from simple_parsing import Serializable
+
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
-R = TypeVar("R", bound="Results")
-
 
 @dataclass
 @total_ordering
-class Results(Serializable):
+class Results(Serializable, ABC):
     """ Represents the results of an experiment.
     
-    Here you can define what the quantity to maximize/minize is.
-    This could be helpful when doing Hyper-Parameter Optimization.
-
-    TODO: @lebrice: Determine which component is "in charge" of determining what
-    the objective is: is it the Method? or the Setting?.
-    For instance, in a Task-Incremental experiment, the objective is different
-    than in an RL experiment.
+    Here you can define what the quantity to maximize/minize is. This class
+    should also be used to create the plots that will be helpful to understand
+    and compare different results.
     """
-    hparams: Any
-    test_loss: Loss
     lower_is_better: ClassVar[bool] = False
 
     @property
-    def metric(self) -> Metrics:
-        """ Gets the most 'important' Metrics object for this results. """
-        return self.test_loss.metric
-
-    @property
+    @abstractmethod
     def objective(self) -> float:
-        """ Returns a float value that measure how good this result is.
+        """ Returns a float value that indicating how "good" this result is.
         
+        If the `lower_is_better` class variable is set to `False` (default), 
+        then this
         """
-        metrics = self.metric
-        if isinstance(metrics, ClassificationMetrics):
-            return metrics.accuracy
-        if isinstance(metrics, RegressionMetrics):
-            return metrics.mse
-        logger.warning(RuntimeWarning(
-            "Not sure what the objective is, returning the loss."
-        ))
-        return float(self.test_loss.loss)
+        raise NotImplementedError("Each Result subclass should implement this.")
+    
+    @abstractmethod
+    def summary(self) -> str:
+        """Prints a summary of the results, in a way that is easy to understand.
+
+        :return: A summary of the results.
+        :rtype: str
+        """
+    
+    
+    @abstractmethod
+    def make_plots(self) -> Dict[str, plt.Figure]:
+        """Generates the plots that are useful for understanding/interpreting or
+        comparing this kind of results.
+
+        :return: A dictionary mapping from plot name to the matplotlib figure.
+        :rtype: Dict[str, plt.Figure]
+        """
 
     def save(self, path: Union[str, Path], dump_fn=None, **kwargs) -> None:
         path = Path(path)
