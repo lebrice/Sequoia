@@ -9,7 +9,7 @@ import wandb
 from pytorch_lightning.loggers import WandbLogger
 
 from simple_parsing import field, list_field
-from utils.json_utils import Serializable
+from utils.serialization import Serializable
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)

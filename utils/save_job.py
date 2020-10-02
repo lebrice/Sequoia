@@ -7,8 +7,8 @@ from torch import Tensor
 from config import Config
 import wandb
 from models.classifier import Classifier
-from utils.json_utils import Serializable
-from utils.json_utils import Serializable as CustomSerializable
+from utils.serialization import Serializable
+from utils.serialization import Serializable as CustomSerializable
 
 from functools import singledispatch
 

@@ -12,7 +12,7 @@ import torch
 from torch import Tensor
 
 from simple_parsing import field
-from utils.json_utils import detach, move
+from utils.serialization import detach, move
 
 from .metrics import Metrics
 from .metrics_utils import (get_accuracy, get_class_accuracy,

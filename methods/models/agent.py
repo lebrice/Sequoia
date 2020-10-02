@@ -22,7 +22,7 @@ from settings import RLSetting
 from settings.active import ActiveDataLoader
 from settings.active.rl import GymDataLoader
 from utils import prod, try_get
-from utils.json_utils import Pickleable
+from utils.serialization import Pickleable
 from utils.logging_utils import get_logger
 
 from .hparams import HParams as BaseHParams

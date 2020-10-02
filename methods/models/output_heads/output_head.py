@@ -7,7 +7,7 @@ from torch.nn import Flatten  # type: ignore
 from common.loss import Loss
 from common.metrics import ClassificationMetrics
 from simple_parsing import list_field
-from utils.json_utils import Serializable
+from utils.serialization import Serializable
 from utils.utils import camel_case, remove_suffix
 
 

@@ -10,7 +10,7 @@ from torch.nn import functional as F
 from common.loss import Loss
 from common.task import Task
 from utils import cuda_available
-from utils.json_utils import Serializable
+from utils.serialization import Serializable
 
 
 class AuxiliaryTask(nn.Module):

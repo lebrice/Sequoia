@@ -19,7 +19,7 @@ from torchvision.transforms import Compose as ComposeBase
 from torchvision.transforms import RandomGrayscale, ToTensor as ToTensor_
 
 from common.dims import Dims
-from utils.json_utils import encode, register_decoding_fn
+from utils.serialization import encode, register_decoding_fn
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)

@@ -21,7 +21,7 @@ from simple_parsing.helpers import FlattenedAccess
 from utils import get_logger
 # TODO: Where should the coefficients for the different auxiliary tasks be?
 # I think they should be in this file here, but then how will it make sense
-from utils.json_utils import Serializable
+from utils.serialization import Serializable
 
 from .class_incremental_method import (ClassIncrementalMethod,
                                        ClassIncrementalModel)

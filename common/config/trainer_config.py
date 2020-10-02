@@ -8,7 +8,7 @@ from pytorch_lightning import Trainer, Callback
 from pytorch_lightning.loggers import LightningLoggerBase
 
 from simple_parsing import choice, field
-from utils.json_utils import Serializable
+from utils.serialization import Serializable
 
 from .wandb_config import WandbLoggerConfig
 from pathlib import Path

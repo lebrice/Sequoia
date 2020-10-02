@@ -10,7 +10,7 @@ from typing import Dict, Optional, Union
 
 import torch
 from torch import Tensor
-from utils.json_utils import Serializable
+from utils.serialization import Serializable
 from utils.logging_utils import cleanup
 
 

@@ -50,7 +50,7 @@ from torch import Tensor
 
 from simple_parsing import field
 from simple_parsing.helpers import dict_field
-from utils.json_utils import Serializable, detach, move
+from utils.serialization import Serializable, detach, move
 from utils.logging_utils import cleanup, get_logger
 from utils.utils import add_dicts, add_prefix
 
