@@ -148,7 +148,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
 
     # Either number of classes per task, or a list specifying for
     # every task the amount of new classes.
-    increment: Union[List[int], int] = list_field(2, type=int, nargs="*", alias="n_classes_per_task")
+    increment: Union[int, List[int]] = list_field(2, type=int, nargs="*", alias="n_classes_per_task")
     # The scenario number of tasks.
     # If zero, defaults to the number of classes divied by the increment.
     nb_tasks: int = 0
@@ -221,11 +221,15 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         self.train_datasets: List[_ContinuumDataset] = []
         self.val_datasets: List[_ContinuumDataset] = []
         self.test_datasets: List[_ContinuumDataset] = []
+        
+        # This will be set by the Experiment, or passed to the `apply` method.
+        # TODO: This could be a bit cleaner.
+        self.config: Config = None
 
-    def apply(self, method: "Method", config: Config):
-        """Apply the given method on this setting.
+    def apply(self, method: "Method", config: Config) -> ClassIncrementalResults:
+        """Apply the given method on this setting, producing some results.
 
-        The pseudocode for this evaluation procedure looks like this:
+        The pseudocode for this evaluation procedure looks a bit like this:
 
         ```python
         # training loop:
@@ -304,14 +308,17 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         from methods import Method
         method: Method
         
+        # TODO: At the moment, we're nice enough to do this, but this would
+        # maybe allow the method to "cheat"!
+        method.configure(setting=self)
+
+
         self.config = config
-        
         # Get the arguments that will be used to create the dataloaders.
         # TODO: We create the dataloaders here and pass them to the method, but
-        # we could maybe do this differently. This isn't super clean.
-        model = method.model
+        # we could maybe do this differently. This isn't super clean atm.
         # Get the batch size from the model, or the config, or 32.
-        batch_size = getattr(model, "batch_size", getattr(config, "batch_size", 32))
+        batch_size = getattr(method, "batch_size", getattr(config, "batch_size", 32))
         # Get the data dir from self, the config, or 'data'.
         data_dir = getattr(self, "data_dir", getattr(config, "data_dir", "data"))
         dataloader_kwargs = dict(

@@ -28,8 +28,6 @@ class Setting2(Setting1):
         super().__post_init__()
 
 
-
-
 def test_settings_override_with_constant_take_init():
     bob1 = Setting1(foo=3, bar=7)
     assert bob1.foo == 3

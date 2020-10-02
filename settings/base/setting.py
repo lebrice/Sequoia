@@ -104,6 +104,13 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
     """
     # Overwrite this in a subclass to customize which type of Results to create.
     results_class: ClassVar[Type[Results]] = Results
+    # These are some "private" class attributes.
+    # For any new Setting subclass, it's parent setting.
+    _parent: ClassVar[Type["Setting"]] = None
+    # A list of all the direct children of this setting.
+    _children: ClassVar[List[Type["Setting"]]] = []
+    # List of all methods 'applicable' to this setting.
+    _applicable_methods: ClassVar[Set[Type]] = set()    
 
     # Transforms to be used. When no value is given for 
     # `[train/val/test]_transforms`, this value is used as a default.
@@ -135,11 +142,7 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
     obs_shape: Tuple[int, ...] = ()
     action_shape: Tuple[int, ...] = ()
     reward_shape: Tuple[int, ...] = ()
-        
-    _parent: ClassVar[Type["Setting"]] = None
-    _children: ClassVar[List[Type["Setting"]]] = []
-    _applicable_methods: ClassVar[Set[Type]] = set()
-    
+      
     def __post_init__(self,
                       obs_shape: Tuple[int, ...] = (),
                       action_shape: Tuple[int, ...] = (),

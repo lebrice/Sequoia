@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from ..base import Setting
+from .. import Setting
 from ..base.environment import ActionType, ObservationType, RewardType
 from .active_dataloader import ActiveDataLoader
 

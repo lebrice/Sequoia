@@ -7,6 +7,7 @@ from typing import Optional, Type
 
 import pytest
 
+from common.config import Config
 from methods import BaselineMethod, Method, RandomBaselineMethod, all_methods
 from settings import Results, Setting, all_settings
 
@@ -26,20 +27,7 @@ def test_no_collisions_in_setting_names():
     assert len(set(setting.get_name() for setting in all_settings)) == len(all_settings)
 
 
-def mock_apply_to(self: Method, setting: Setting) -> Results:
-    """ Applies this method to the particular experimental setting.
-    
-    Extend this class and overwrite this method to create a different method.        
-    """
-    # 1. Configure the method to work on the setting.
-    # self.configure(setting)
-    # 2. Train the method on the setting.
-    # self.train(setting)
-    # 3. Evaluate the model on the setting and return the results.
-    # return setting.evaluate(self)
-    return type(self), type(setting)
-
-def mock_apply(self: Setting, method: Method) -> Results:
+def mock_apply(self: Setting, method: Method, config: Config) -> Results:
     # 1. Configure the method to work on the setting.
     # method.configure(self)
     # 2. Train the method on the setting.
@@ -57,7 +45,7 @@ def set_argv_for_debug(monkeypatch):
 @pytest.fixture(params=all_methods)
 def method_type(request, monkeypatch, set_argv_for_debug):
     method_class: Type[Method] = request.param
-    monkeypatch.setattr(method_class, "apply_to", mock_apply_to)
+    # monkeypatch.setattr(method_class, "apply_to", mock_apply_to)
     return method_class
 
 
@@ -66,7 +54,8 @@ def setting_type(request, monkeypatch, set_argv_for_debug):
     setting_class: Type[Setting] = request.param
     monkeypatch.setattr(setting_class, "apply", mock_apply)
     for method_type in setting_class.get_all_applicable_methods():
-        monkeypatch.setattr(method_type, "apply_to", mock_apply_to)
+        pass
+        # monkeypatch.setattr(method_type, "apply_to", mock_apply_to)
     return setting_class
 
 

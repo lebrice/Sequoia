@@ -6,7 +6,7 @@ from pl_bolts.datamodules import (CIFAR10DataModule, FashionMNISTDataModule,
 from pytorch_lightning import LightningDataModule
 from settings.base.environment import ActionType, ObservationType, RewardType
 from settings.base.results import ResultsType
-from settings.base.setting import Setting
+from settings import Setting
 from simple_parsing import choice
 from torchvision.datasets import MNIST, FashionMNIST
 
