@@ -4,21 +4,18 @@ from functools import lru_cache
 #     pass
 from typing import ClassVar, Dict, List, Optional, Type, Union
 
-from pytorch_lightning import Callback
-from singledispatchmethod import singledispatchmethod
-from torch import Tensor
-
 from common.config import Config
 from common.loss import Loss
 from common.tasks import (AEReconstructionTask, AuxiliaryTask, EWCTask,
                           SimCLRTask, VAEReconstructionTask)
 from common.tasks.simclr import SimCLRTask
-from settings import (ClassIncrementalSetting, IIDSetting, RLSetting,
-                      TaskIncrementalSetting)
-from settings.base.setting import Setting, SettingType
+from pytorch_lightning import Callback
+from settings import (ClassIncrementalSetting, IIDSetting, RLSetting, Setting,
+                      SettingType, TaskIncrementalSetting)
 from simple_parsing import mutable_field
 from simple_parsing.helpers import FlattenedAccess
-from utils import get_logger
+from torch import Tensor
+from utils import get_logger, singledispatchmethod
 # TODO: Where should the coefficients for the different auxiliary tasks be?
 # I think they should be in this file here, but then how will it make sense
 from utils.serialization import Serializable

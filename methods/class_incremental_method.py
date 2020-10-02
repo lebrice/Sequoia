@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import ClassVar, Type, List
 
 from simple_parsing import mutable_field
-from singledispatchmethod import singledispatchmethod
 
 from common.loss import Loss
 from settings import (Results, SettingType, ClassIncrementalSetting)
@@ -12,6 +11,7 @@ from utils.logging_utils import get_logger
 from .method import Method
 from .models import Model
 from .models.class_incremental_model import ClassIncrementalModel
+from utils import singledispatchmethod
 from common.callbacks import KnnCallback
 from pytorch_lightning import Callback
 

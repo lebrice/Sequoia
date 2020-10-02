@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Type, Union
 
 import torch
-from singledispatchmethod import singledispatchmethod
 from torch import Tensor
 
 from methods.method import Method
@@ -17,7 +16,7 @@ from methods.models.iid_model import IIDModel
 from methods.models.task_incremental_model import TaskIncrementalModel
 from settings import (ActiveSetting, ClassIncrementalSetting, IIDSetting,
                       RLSetting, Setting, SettingType, TaskIncrementalSetting)
-from utils import get_logger
+from utils import get_logger, singledispatchmethod
 
 from .models import HParams, Model
 from .models.agent import Agent

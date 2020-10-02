@@ -13,10 +13,10 @@ from settings import (ClassIncrementalSetting, ContinualRLSetting,
                       EnvironmentBase, IIDSetting, Results, RLSetting, Setting,
                       SettingType, TaskIncrementalSetting)
 from simple_parsing import ArgumentParser, mutable_field, subparsers
-from singledispatchmethod import singledispatchmethod
+
 from torch import Tensor
 from torch.utils.data import DataLoader
-from utils import get_logger
+from utils import get_logger, singledispatchmethod
 
 from .class_incremental_method import ClassIncrementalMethod
 from .method import Method
