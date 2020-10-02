@@ -1,22 +1,31 @@
+""" Defines a Method, which is a "solution" for a given "problem" (a Setting).
+
+The Method could be whatever you want, really. For the 'baselines' we have here,
+we use pytorch-lightning, and a few little utility classes such as `Metrics` and
+`Loss`, which are basically just like dicts/objects, with some cool other
+methods.
+"""
 import inspect
 import os
+from abc import ABC
 from collections import OrderedDict
 from dataclasses import dataclass, is_dataclass
 from inspect import getsourcefile
 from pathlib import Path
-from typing import (ClassVar, Dict, Generic, List, Optional, Set, Tuple, Type,
-                    TypeVar, Union, Sequence)
+from typing import (ClassVar, Dict, Generic, List, Optional, Sequence, Set,
+                    Tuple, Type, TypeVar, Union)
 
 import torch
 from common.config import Config, TrainerConfig
 from common.loss import Loss
 from pytorch_lightning import (Callback, LightningDataModule, LightningModule,
                                Trainer)
-from settings.base import Results, Setting, SettingType
+from settings import Results, Setting, SettingType
 from simple_parsing import Serializable, mutable_field
 from torch import Tensor
 from torch.utils.data import DataLoader
 from utils import Parseable, camel_case, get_logger, remove_suffix, try_get
+from utils.utils import get_path_to_source_file
 
 from .models import HParams, Model
 
@@ -24,7 +33,7 @@ logger = get_logger(__file__)
 
 
 @dataclass
-class Method(Serializable, Generic[SettingType], Parseable):
+class Method(Serializable, Generic[SettingType], Parseable, ABC):
     """ A Method gets applied to a Setting to produce Results.
 
     A "Method", concretely, should consist of a LightningModule and a Trainer.
@@ -45,13 +54,12 @@ class Method(Serializable, Generic[SettingType], Parseable):
     hparams: HParams = mutable_field(HParams)
     # Options for the Trainer object.
     trainer_options: TrainerConfig = mutable_field(TrainerConfig)
-    # Configuration options for the experimental setup (log_dir, cuda, etc).
-    config: Config = mutable_field(Config)
+    
 
     # Class attribute that holds the setting this method was designed to target.
     target_setting: ClassVar[Optional[Type[Setting]]] = None
     # class attribute that lists all the settings this method is applicable for.
-    _settings: ClassVar[Set[Type[Setting]]] = set()
+    _applicable_settings: ClassVar[Set[Type[Setting]]] = set()
 
     def __post_init__(self):
         # The model and Trainer objects will be created in `self.configure`. 
@@ -60,32 +68,32 @@ class Method(Serializable, Generic[SettingType], Parseable):
         self.trainer: Trainer
         self.model: LightningModule
 
-    def apply_to(self, setting: SettingType) -> Results:
-        """ Applies this method to the particular experimental setting.
+    
+    #NOTE: (@lebrice) Removing this, as it is basically a duplicate of the
+    # `Setting.apply` method, and I'm also trying to avoid giving the Setting
+    # object directly to the method, whenever possible.
+    # def apply_to(self, setting: SettingType) -> Results:
+    #     """ Applies this method to the particular experimental setting.
 
-        Extend this class and overwrite this method to customize training.       
-        """
-        if not self.is_applicable(setting):
-            raise RuntimeError(
-                f"Can only apply methods of type {type(self)} on settings "
-                f"that inherit from {type(self).target_setting}. "
-                f"(Given setting is of type {type(setting)})."
-            )
-        # TODO: Instead of calling method.apply_to(setting) in main.py, we
-        # should do the opposite! (The reason being, the models have access to
-        # every attribute of the setting via their `self.setting` attribute, so
-        # they could possibly "cheat"!
+    #     Extend this class and overwrite this method to customize training.       
+    #     """
+    #     if not self.is_applicable(setting):
+    #         raise RuntimeError(
+    #             f"Can only apply methods of type {type(self)} on settings "
+    #             f"that inherit from {type(self).target_setting}. "
+    #             f"(Given setting is of type {type(setting)})."
+    #         )
 
-        # Seed everything first:
-        self.config.seed_everything()
-        # Create a model and a Trainer for the given setting:
-        self.configure(setting)
-        # TODO: get the config object to be somewhere else, I guess?
-        # TODO: "Who's" responsability should it be to create a Trainer object?
-        return setting.apply(
-            method=self,
-            config=self.config,
-        )
+    #     # Seed everything first:
+    #     self.config.seed_everything()
+    #     # Create a model and a Trainer for the given setting:
+    #     self.configure(setting)
+    #     # TODO: get the config object to be somewhere else, I guess?
+    #     # TODO: "Who's" responsability should it be to create a Trainer object?
+    #     return setting.apply(
+    #         method=self,
+    #         config=self.config,
+    #     )
 
     def configure(self, setting: SettingType) -> None:
         """Configures the method for the given Setting.
@@ -95,9 +103,18 @@ class Method(Serializable, Generic[SettingType], Parseable):
 
         Args:
             setting (SettingType): The setting the method will be evaluated on.
+        
+        TODO: This might be a problem if we're gonna avoid 'cheating'.. we're
+        essentially giving the 'Setting' object
+        directly to the method.. so I guess the object could maybe 
         """
+        # IDEA: Could also pass some kind of proxy object from the Setting to
+        # the method, and hide/delete some attributes whenever the method
+        # shouldn't have access to them? 
+        # print(setting.dumps_json(indent="\t"))
         self.trainer = self.create_trainer(setting)
         self.model = self.create_model(setting)
+        
 
     def fit(self,
             train_dataloader: Optional[DataLoader] = None,
@@ -107,6 +124,7 @@ class Method(Serializable, Generic[SettingType], Parseable):
 
         Overwrite this to customize training.
         """
+        assert self.model is not None, f"For now, Setting should have been nice enough to call method.configure(setting=self) before calling `fit`!"
         return self.trainer.fit(
             model=self.model,
             train_dataloader=train_dataloader,
@@ -366,7 +384,7 @@ class Method(Serializable, Generic[SettingType], Parseable):
             target_setting = cls.target_setting
 
         assert target_setting, "You must specify a `setting` argument when creating a new Method!"
-        cls._settings.add(target_setting)
+        cls._applicable_settings.add(target_setting)
         
         return super().__init_subclass__(**kwargs)
     
@@ -406,11 +424,7 @@ class Method(Serializable, Generic[SettingType], Parseable):
         #     different_values = utils.
         #     new_hparams = new_type.from_dict(hparams_dict, drop_extra_fields=True)
         return new_hparams
-
-
+    
     @classmethod
     def get_path_to_source_file(cls: Type) -> Path:
-        cwd = Path(os.getcwd())
-        source_path = Path(getsourcefile(cls)).absolute()
-        source_file = source_path.relative_to(cwd)
-        return source_file
+        return get_path_to_source_file(cls)

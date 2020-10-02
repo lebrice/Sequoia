@@ -10,7 +10,7 @@ import pytest
 from methods import BaselineMethod, Method, RandomBaselineMethod, all_methods
 from settings import Results, Setting, all_settings
 
-from .main import Experiment
+from .experiment import Experiment
 
 
 @pytest.mark.xfail(

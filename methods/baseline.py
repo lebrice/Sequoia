@@ -9,9 +9,9 @@ import torch
 from common.config import Config
 from common.loss import Loss
 from pytorch_lightning import LightningModule, Trainer
-from settings import (ClassIncrementalSetting, ContinualRLSetting, IIDSetting,
-                      RLSetting, SettingType, TaskIncrementalSetting)
-from settings.base import EnvironmentBase, Results, Setting
+from settings import (ClassIncrementalSetting, ContinualRLSetting,
+                      EnvironmentBase, IIDSetting, Results, RLSetting, Setting,
+                      SettingType, TaskIncrementalSetting)
 from simple_parsing import ArgumentParser, mutable_field, subparsers
 from singledispatchmethod import singledispatchmethod
 from torch import Tensor
