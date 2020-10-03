@@ -59,3 +59,24 @@ class MethodB(Method, target_setting=SettingB): pass
 
 
 class CoolGeneralMethod(Method, target_setting=Setting): pass
+
+
+def test_that_transforms_can_be_set_through_command_line():
+    from common.transforms import Transforms, Compose
+
+    setting = Setting(transforms=[], train_transforms=[])
+    assert setting.transforms == []
+    assert setting.train_transforms == []
+    
+    
+    setting = Setting.from_args("--train_transforms channels_first")
+    assert setting.train_transforms == [
+        Transforms.channels_first
+    ]
+    assert isinstance(setting.train_transforms, Compose)
+    
+    setting = Setting.from_args("--train_transforms channels_first")
+    assert setting.train_transforms == [
+        Transforms.channels_first
+    ]
+    assert isinstance(setting.train_transforms, Compose)
