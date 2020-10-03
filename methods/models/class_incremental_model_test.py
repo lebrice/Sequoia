@@ -34,13 +34,13 @@ class MockOutputHead(OutputHead):
         self.task_id = task_id
         super().__init__(*args, **kwargs)
 
-    def forward(self, h_x: Tensor) -> Tensor:  # type: ignore
+    def forward(self, x: Tensor, h_x: Tensor) -> Tensor:  # type: ignore
         # TODO: We should maybe convert this to also return a dict instead
         # of a Tensor, just to be consistent with everything else. This could
         # also maybe help with having multiple different output heads, each
         # having a different name and giving back a dictionary of their own
         # forward pass tensors (if needed) and predictions?
-        return h_x.new_ones((h_x.shape[0], self.output_size)) * self.task_id
+        return torch.stack([x_i.mean() * self.task_id for x_i in x])
 
 # def mock_output_task(self: ClassIncrementalModel, x: Tensor, h_x: Tensor) -> Tensor:
 #     return self.output_head(x)
@@ -49,7 +49,14 @@ class MockOutputHead(OutputHead):
 #     return x.new_ones(self.hp.hidden_size)
 
 
+@pytest.mark.parametrize("indices", [
+    slice(0, 10), # all the same task (0)
+    slice(0, 20), # 10 from task 0, 10 from task 1
+    slice(0, 30), # 10 from task 0, 10 from task 1, 10 from task 2
+    slice(0, 50), # 10 from each task.
+])
 def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor, Tensor, Tensor]],
+                                          indices: slice,
                                           monkeypatch, config: Config):
     """ TODO: Write out a test that checks that when given a batch with data
     from different tasks, and when the model is multiheaded, it will use the
@@ -57,7 +64,7 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
     """
     model = ClassIncrementalModel(
         setting=ClassIncrementalSetting(),
-        hparams=ClassIncrementalModel.HParams(batch_size=30),
+        hparams=ClassIncrementalModel.HParams(batch_size=30, multihead=True),
         config=config,
     )
     
@@ -69,16 +76,28 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
     # monkeypatch.setattr(model, "forward", mock_encoder_forward)
     model.encoder = mock_encoder
     # model.output_task = mock_output_task
-    
+    model.output_head = MockOutputHead(input_size=model.hidden_size, output_size=2, task_id=None)
     for i in range(5):
-        model.output_heads[str(i)] = MockOutputHead(input_size=100, output_size=2, task_id=i)
+        model.output_heads[str(i)] = MockOutputHead(input_size=model.hidden_size, output_size=2, task_id=i)
     
     xs, ys, ts = map(torch.cat, zip(*mixed_samples.values()))
-    obs = (xs[0:20], ts[0:20].int())
+    
+    
+    images = xs[indices]
+    labels = ys[indices]
+    task_ids = ts[indices].int()
+    
+    obs = (images, task_ids)
     # assert False, obs
-    forward_pass = model.forward(obs)
-    y_preds = forward_pass["y_pred"]
+    with torch.no_grad():
+        forward_pass = model(obs)
+        y_preds = forward_pass["y_pred"]
     
-    assert False, y_preds
+    for x, y_pred, task_id in zip(xs, y_preds, task_ids):
+        # print(y_pred)
+        # print(x.mean() * task_id)
+        assert y_pred == x.mean() * task_id 
     
-    assert False, {i: [vi.shape for vi in v] for i, v in mixed_samples.items()}
+    # assert False, y_preds[0]
+    
+    # assert False, {i: [vi.shape for vi in v] for i, v in mixed_samples.items()}

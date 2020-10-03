@@ -103,18 +103,18 @@ class Model(LightningModule, Generic[SettingType]):
             logger.debug(self.hp.dumps(indent="\t"))
 
     @auto_move_data
-    def forward(self, observation: Observation) -> Dict[str, Tensor]:
+    def forward(self, observation: Tuple[Tensor, ...]) -> Dict[str, Tensor]:
         """ Forward pass of the Model. Returns a dict.
         """
         # TODO: Playing with the idea that we could use something like an object
         # or NamedTuple for the 'observation'.
-        x, task_labels = observation
+        x, *_ = observation
         x, *_ = self.preprocess_batch(x)
         h_x = self.encode(x)
         y_pred = self.output_task(x=x, h_x=h_x)
+
         return dict(
             x=x,
-            task_labels=task_labels,
             h_x=h_x,
             y_pred=y_pred,
         )
@@ -144,7 +144,7 @@ class Model(LightningModule, Generic[SettingType]):
         """
         if self.hp.detach_output_head:
             h_x = h_x.detach()
-        return self.output_head.forward(x, h_x)
+        return self.output_head(x, h_x)
 
     def create_output_head(self) -> OutputHead:
         """ Create the output head for the task. """

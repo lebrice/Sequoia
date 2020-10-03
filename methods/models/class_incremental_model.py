@@ -164,8 +164,7 @@ class ClassIncrementalModel(SemiSupervisedModel[SettingType]):
             if not merged_results:
                 # Create the merged results, with empty tensors.
                 for name, result in task_results.items():
-                    assert False, (result.shape, result.ndims())
-                    placeholder = result.new_empty([batch_size, result.shape[1:]])
+                    placeholder = result.new_empty([batch_size, *result.shape[1:]])
                     merged_results[name] = placeholder
             
             # Write out the partial results in the 'merged' result dict.
@@ -182,16 +181,9 @@ class ClassIncrementalModel(SemiSupervisedModel[SettingType]):
         """
         start_task_id = self.current_task
         assert isinstance(task_id, int) or task_id is None, task_id
-        self.on_task_switch(task_id)
+        self.current_task = task_id
         yield
-        self.on_task_switch(start_task_id)
-                
-        # store back the output head in the module dict
-        self.output_heads[str(task_id)] = self.output_head
-
-        self.output_head = start_output_head
-        self.current_task
-    
+        self.current_task = start_task_id
     
     def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]],
                            batch_idx: int,
