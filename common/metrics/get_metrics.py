@@ -11,13 +11,17 @@ import torch
 from torch import Tensor
 
 from utils.logging_utils import get_logger
-from utils.utils import to_optional_tensor
 
 from .classification import ClassificationMetrics
 from .metrics import Metrics
 from .regression import RegressionMetrics
 
 logger = get_logger(__file__)
+
+
+def to_optional_tensor(x: Optional[Union[Tensor, np.ndarray, List]]) -> Optional[Tensor]:
+    """ Converts `x` into a Tensor if `x` is not None, else None. """
+    return x if x is None else torch.as_tensor(x)
 
 
 @torch.no_grad()

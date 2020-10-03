@@ -5,9 +5,10 @@ as far as I know. Also totally transferable between gpus etc. (Haven't used
 the metrics from PL much yet, to be honest).
 """
 from collections import OrderedDict
-from dataclasses import InitVar, dataclass
+from dataclasses import InitVar, dataclass, field
 from typing import Dict, Optional, Union
 
+import numpy as np
 import torch
 from torch import Tensor
 from utils.serialization import Serializable
@@ -16,7 +17,8 @@ from utils.logging_utils import cleanup
 
 @dataclass
 class Metrics(Serializable):
-    n_samples: int = 0
+    # This field isn't used in comparisons between Metrics.
+    n_samples: int = field(default=0, compare=False)
 
     x:      InitVar[Optional[Tensor]] = None
     h_x:    InitVar[Optional[Tensor]] = None
@@ -41,7 +43,7 @@ class Metrics(Serializable):
         """
         # get the batch size:
         for tensor in [x, h_x, y_pred, y]:
-            if tensor is not None:
+            if isinstance(tensor, (np.ndarray, Tensor)):
                 self.n_samples = tensor.shape[0]
                 break
 

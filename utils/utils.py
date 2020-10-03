@@ -156,11 +156,6 @@ def prod(iterable: Iterable[T]) -> T:
     return reduce(operator.mul, iterable, 1)
 
 
-def to_optional_tensor(x: Optional[Union[Tensor, np.ndarray, List]]) -> Optional[Tensor]:
-    """ Converts `x` into a Tensor if `x` is not None, else None. """
-    return x if x is None else torch.as_tensor(x)
-
-
 def common_fields(a, b) -> Iterable[Tuple[str, Tuple[Field, Field]]]:
     # If any attributes are common to both the Experiment and the State,
     # copy them over to the Experiment.

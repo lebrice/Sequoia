@@ -18,13 +18,15 @@ from .metrics import Metrics
 from .metrics_utils import (get_accuracy, get_class_accuracy,
                             get_confusion_matrix)
 
-@total_ordering
-@dataclass
+# Make sure that having actual Metrics objects won't cause issues with the 'order' option of dataclasses.
+
+
+@dataclass(order=True)
 class ClassificationMetrics(Metrics):
-    confusion_matrix: Optional[Tensor] = field(default=None, repr=False)
     # fields we generate from the confusion matrix (if provided)
     accuracy: float = 0.
-    class_accuracy: Tensor = field(default=None, repr=False)  # type: ignore
+    confusion_matrix: Optional[Tensor] = field(default=None, repr=False, compare=False)
+    class_accuracy: Tensor = field(default=None, repr=False, compare=False)
     
     def __post_init__(self,
                       x: Tensor=None,
@@ -113,17 +115,17 @@ class ClassificationMetrics(Metrics):
             confusion_matrix=move(self.confusion_matrix, device),
         )
 
-    def __lt__(self, other: Union["ClassificationMetrics", Any]) -> bool:
-        if isinstance(other, ClassificationMetrics):
-            return self.accuracy < other.accuracy
-        return NotImplemented
+    # def __lt__(self, other: Union["ClassificationMetrics", Any]) -> bool:
+    #     if isinstance(other, ClassificationMetrics):
+    #         return self.accuracy < other.accuracy
+    #     return NotImplemented
 
-    def __ge__(self, other: Union["ClassificationMetrics", Any]) -> bool:
-        if isinstance(other, ClassificationMetrics):
-            return self.accuracy >= other.accuracy
-        return NotImplemented
+    # def __ge__(self, other: Union["ClassificationMetrics", Any]) -> bool:
+    #     if isinstance(other, ClassificationMetrics):
+    #         return self.accuracy >= other.accuracy
+    #     return NotImplemented
 
-    def __eq__(self, other: Union["ClassificationMetrics", Any]) -> bool:
-        if isinstance(other, ClassificationMetrics):
-            return self.accuracy == other.accuracy and self.n_samples == other.n_samples
-        return NotImplemented
+    # def __eq__(self, other: Union["ClassificationMetrics", Any]) -> bool:
+    #     if isinstance(other, ClassificationMetrics):
+    #         return self.accuracy == other.accuracy and self.n_samples == other.n_samples
+    #     return NotImplemented

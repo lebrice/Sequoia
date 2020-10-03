@@ -57,4 +57,13 @@ def class_accuracy(y_pred: Tensor, y: Tensor) -> Tensor:
 
 
 def get_class_accuracy(confusion_matrix: Tensor) -> Tensor:
-    return confusion_matrix.diag() / confusion_matrix.sum(1).float().clamp_(1e-10, 1e10)
+    if isinstance(confusion_matrix, Tensor):
+        diagonal = confusion_matrix.diag()
+    else:
+        diagonal = np.diag(confusion_matrix)
+    sum_of_columns = confusion_matrix.sum(1)
+    if isinstance(confusion_matrix, Tensor):
+        sum_of_columns.clamp_(min=1e-10)
+    else:
+        sum_of_columns = sum_of_columns.clip(min=1e-10)
+    return diagonal / sum_of_columns
