@@ -1,3 +1,6 @@
+"""TODO: Remove this. Basically only used to set the 'multihead' value to a
+default of True rather than False, as it was set in its parent.
+"""
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar
 
@@ -10,18 +13,19 @@ from common.config import Config
 from settings import TaskIncrementalSetting
 from simple_parsing import field
 
-from .class_incremental_model import ClassIncrementalModel
+from .model import Model
 
 SettingType = TypeVar("SettingType", bound=TaskIncrementalSetting)
 
+# NOTE: The `Model` class uses a mixin to give it 'Class-Incremental' support.
 
-class TaskIncrementalModel(ClassIncrementalModel[SettingType]):
+class TaskIncrementalModel(Model[SettingType]):
     """ Extension of the Classifier LightningModule aimed at CL settings.
     TODO: Add the stuff related to multihead/continual learning here?
     """
 
     @dataclass
-    class HParams(ClassIncrementalModel.HParams):
+    class HParams(Model.HParams):
         """ Hyperparameters specific to a Continual Learning classifier.
         TODO: Add any hyperparameters specific to CL here.
         """

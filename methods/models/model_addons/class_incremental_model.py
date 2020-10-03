@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, Set
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, Set, Sequence
 from contextlib import contextmanager
 
 import numpy as np
@@ -9,24 +9,25 @@ from torch.utils.data import DataLoader
 from pytorch_lightning.core.decorators import auto_move_data
 
 from common.config import Config
-from methods.models.model import Model, OutputHead
+
 from settings import ClassIncrementalSetting
 from utils.logging_utils import get_logger
 
 from .semi_supervised_model import SemiSupervisedModel
-from .model import Observation, Reward, Batch
+from ..base_model import Batch, BaseModel, OutputHead
 logger = get_logger(__file__)
 
 
 SettingType = TypeVar("SettingType", bound=ClassIncrementalSetting)
 
-class ClassIncrementalModel(SemiSupervisedModel[SettingType]):
+
+class ClassIncrementalModel(BaseModel[SettingType]):
     """ Extension of the Model LightningModule aimed at CL settings.
     TODO: Add the stuff related to multihead/continual learning here?
     """
 
     @dataclass
-    class HParams(Model.HParams):
+    class HParams(BaseModel.HParams):
         """ Hyperparameters specific to a Continual Learning classifier.
         TODO: Add any hyperparameters specific to CL here.
         """
@@ -34,6 +35,11 @@ class ClassIncrementalModel(SemiSupervisedModel[SettingType]):
         # TODO: Does it make no sense to have multihead=True when the model doesn't
         # have access to task labels. Need to figure out how to manage this between TaskIncremental and Classifier.
         multihead: bool = False
+
+    @dataclass(frozen=True)
+    class Observation(BaseModel.Observation):
+        """ """
+        t: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
 
     def __init__(self, setting: ClassIncrementalSetting, hparams: HParams, config: Config):
         self._output_head: OutputHead = None

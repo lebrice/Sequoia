@@ -23,11 +23,10 @@ from utils.serialization import Serializable
 from .class_incremental_method import (ClassIncrementalMethod,
                                        ClassIncrementalModel)
 from .method import Method
-from .models import HParams, Model
+from .models import Model
 from .models.actor_critic_agent import ActorCritic
 from .models.agent import Agent
 from .models.iid_model import IIDModel
-from .models.self_supervised_model import SelfSupervisedModel
 from .models.task_incremental_model import TaskIncrementalModel
 
 logger = get_logger(__file__)
@@ -45,26 +44,15 @@ class SelfSupervisionHParams(Serializable):
     ewc: Optional[EWCTask.Options] = None
 
 
-class SelfSupervisedClassIncrementalModel(SelfSupervisedModel, ClassIncrementalModel):
-    @dataclass
-    class HParams(SelfSupervisedModel.HParams, ClassIncrementalModel.HParams):
-        pass
-
-class SelfSupervisedActorCritic(SelfSupervisedModel, ActorCritic):
-    @dataclass
-    class HParams(SelfSupervisedModel.HParams, ActorCritic.HParams):
-        pass
-
-
-# TODO: Not sure if this is better than defining all the models above.
-@lru_cache(maxsize=None, typed=True)
-def make_self_supervised_model_class(model_class: Type[Model]) -> Type[Union[SelfSupervisedModel, Model]]:
-    class SelfSupervisedVariant(SelfSupervisedModel, model_class):
-        @dataclass
-        class HParams(SelfSupervisedModel, model_class.HParams):
-            pass
-    SelfSupervisedVariant.__name__ = "SelfSupervised" + model_class.__name__
-    return SelfSupervisedVariant
+# # TODO: Not sure if this is better than defining all the models above.
+# @lru_cache(maxsize=None, typed=True)
+# def make_self_supervised_model_class(model_class: Type[Model]) -> Type[Union[SelfSupervisedModel, Model]]:
+#     class SelfSupervisedVariant(SelfSupervisedModel, model_class):
+#         @dataclass
+#         class HParams(SelfSupervisedModel, model_class.HParams):
+#             pass
+#     SelfSupervisedVariant.__name__ = "SelfSupervised" + model_class.__name__
+#     return SelfSupervisedVariant
 
 
 @dataclass
@@ -85,23 +73,23 @@ class SelfSupervision(Method, target_setting=Setting):
     # get the help text of each type of hyperparameter to show up. We can still
     # parse them just fine by calling .from_args() on them, but still, would be
     # better if the help text were visible from the command-line.
-    hparams: SelfSupervisedModel.HParams = mutable_field(SelfSupervisedModel.HParams)
+    hparams: Model.HParams = mutable_field(Model.HParams)
 
-    @singledispatchmethod
-    def model_class(self, setting: Setting):
-        return NotImplementedError(f"No model registered for setting {setting}")
+    # @singledispatchmethod
+    # def model_class(self, setting: Setting):
+    #     return NotImplementedError(f"No model registered for setting {setting}")
     
-    @model_class.register
-    def _(self, setting: ClassIncrementalSetting):
-        return SelfSupervisedClassIncrementalModel
+    # @model_class.register
+    # def _(self, setting: ClassIncrementalSetting):
+    #     return SelfSupervisedClassIncrementalModel
     
-    @model_class.register
-    def _(self, setting: IIDSetting):
-        return IIDModel
+    # @model_class.register
+    # def _(self, setting: IIDSetting):
+    #     return IIDModel
 
-    @model_class.register
-    def _(self, setting: RLSetting):
-        return SelfSupervisedActorCritic
+    # @model_class.register
+    # def _(self, setting: RLSetting):
+    #     return ActorCritic
 
 if __name__ == "__main__":
     SelfSupervision.main()

@@ -11,14 +11,14 @@ from torch import Tensor
 
 from methods.method import Method
 from methods.models import Agent, Model, OutputHead
-from methods.models.class_incremental_model import ClassIncrementalModel
 from methods.models.iid_model import IIDModel
 from methods.models.task_incremental_model import TaskIncrementalModel
+from methods.models.model_addons import ClassIncrementalModel as ClassIncrementalModelMixin
 from settings import (ActiveSetting, ClassIncrementalSetting, IIDSetting,
                       RLSetting, Setting, SettingType, TaskIncrementalSetting)
 from utils import get_logger, singledispatchmethod
 
-from .models import HParams, Model
+from .models import Model
 from .models.agent import Agent
 from .models.random_agent import RandomAgent
 
@@ -54,7 +54,7 @@ class RandomPredictionsMixin(ABC):
         return RandomOutputHead
 
 
-class RandomClassIncrementalModel(RandomPredictionsMixin, ClassIncrementalModel):
+class RandomClassIncrementalModel(RandomPredictionsMixin, Model):
     pass
 
 
@@ -99,7 +99,7 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         return RandomAgent
 
     @model_class.register
-    def _(self, setting: ClassIncrementalSetting) -> Type[ClassIncrementalModel]:
+    def _(self, setting: ClassIncrementalSetting) -> Type[ClassIncrementalModelMixin]:
         # IDEA: Generate the model dynamically instead of creating one of each.
         # (This doesn't work atm because super() gives back a Model)
         # return get_random_model_class(super().model_class(setting))

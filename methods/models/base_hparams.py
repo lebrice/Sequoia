@@ -1,15 +1,16 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Dict, List, Optional, Tuple, Type, ClassVar
 
 import torchvision.models as tv_models
-from simple_parsing import Serializable, choice, mutable_field
+from simple_parsing import choice, mutable_field
 from torch import nn, optim
-from torch.optim.optimizer import Optimizer
+from torch.optim.optimizer import Optimizer  # type: ignore
 
 from methods.models.output_heads import OutputHead
-from utils import Parseable
+from utils import Parseable, Serializable
 
 from .pretrained_utils import get_pretrained_encoder
+
 
 available_optimizers: Dict[str, Type[Optimizer]] = {
     "sgd": optim.SGD,
@@ -26,11 +27,17 @@ available_encoders: Dict[str, Type[nn.Module]] = {
     "resnet152": tv_models.resnet152,
     "alexnet": tv_models.alexnet,
     "densenet": tv_models.densenet161,
+    # TODO: Add the self-supervised pl modules here!
 }
 
 @dataclass
-class HParams(Serializable, Parseable):
-    """ Hyperparameters of the LightningModule."""
+class BaseHParams(Serializable, Parseable):
+    """ Set of 'base' Hyperparameters for the 'base' LightningModule. """
+    # Class variable versions of the above dicts, for easier subclassing.
+    # NOTE: These don't get parsed from the command-line.
+    available_optimizers: ClassVar[Dict[str, Type[Optimizer]]] = available_optimizers
+    available_encoders: ClassVar[Dict[str, Type[nn.Module]]] = available_optimizers
+    
     # Batch size to use.
     # TODO: Would we need to change this when using DP or DDP of
     # pytorch-lightning?
@@ -73,7 +80,7 @@ class HParams(Serializable, Parseable):
 
     def make_optimizer(self, *args, **kwargs) -> Optimizer:
         """ Creates the Optimizer object from the options. """
-        optimizer_class = available_optimizers[self.optimizer]
+        optimizer_class = self.available_optimizers[self.optimizer]
         options = {
             "lr": self.learning_rate,
             "weight_decay": self.weight_decay,
@@ -87,7 +94,7 @@ class HParams(Serializable, Parseable):
         Returns:
             Tuple[nn.Module, int]: the encoder and the hidden size.
         """
-        encoder_model = available_encoders[self.encoder]
+        encoder_model = self.available_encoders[self.encoder]
         encoder, hidden_size = get_pretrained_encoder(
             encoder_model=encoder_model,
             pretrained=not self.train_from_scratch,
@@ -96,7 +103,3 @@ class HParams(Serializable, Parseable):
         )
         return encoder, hidden_size
 
-    def merge(self, other: "HParams") -> "HParams":
-        hparams_dict = self.to_dict()
-        hparams_dict.update(other.to_dict())
-        return type(self).from_dict(hparams_dict)

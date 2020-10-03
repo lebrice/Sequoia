@@ -13,12 +13,13 @@ from common.loss import Loss
 from utils.logging_utils import get_logger
 
 from settings import SettingType
-from .model import Model
+
+from ..base_model import BaseModel
 
 logger = get_logger(__file__)
 
 
-class SemiSupervisedModel(Model[SettingType]):
+class SemiSupervisedModel(BaseModel[SettingType]):
     def get_loss(self,
                  forward_pass: Dict[str, Tensor],
                  y: Union[Optional[Tensor], List[Optional[Tensor]]] = None,

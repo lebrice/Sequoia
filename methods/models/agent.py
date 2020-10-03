@@ -25,7 +25,7 @@ from utils import prod, try_get
 from utils.serialization import Pickleable
 from utils.logging_utils import get_logger
 
-from .hparams import HParams as BaseHParams
+from .base_hparams import BaseHParams
 from .model import Model
 from .output_heads import OutputHead
 

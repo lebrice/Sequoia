@@ -22,11 +22,13 @@ def mixed_samples(config: Config):
     """ Fixture that produces some samples from each task. """
     dataset = MNIST(config.data_dir, download=True, train=True)
     datasets: List[TaskSet] = ClassIncremental(dataset, nb_tasks=5)
+    n_samples_per_task = 10
+    indices = list(range(10))
     samples_per_task: Dict[int, Tensor] = {
-        i: tuple(torch.as_tensor(v_i) for v_i in dataset.get_samples(list(range(10))))
-        for i, dataset in enumerate(datasets)
+        i: tuple(map(torch.as_tensor, taskset.get_samples(indices)))
+        for i, taskset in enumerate(datasets)
     }
-    yield samples_per_task 
+    yield samples_per_task
 
 
 class MockOutputHead(OutputHead):

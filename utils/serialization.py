@@ -22,6 +22,7 @@ from .detach import detach
 from .encode import encode
 from .logging_utils import get_logger
 from .move import move
+from .utils import dict_union
 
 T = TypeVar("T")
 logger = get_logger(__file__)
@@ -65,7 +66,13 @@ class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  
         return type(self).from_dict(detach(self.to_dict()))
 
     def to(self, device: Union[str, torch.device]):
-        """Returns a new object with all the attributes 'moved' to `device`."""
+        """Returns a new object with all the attributes 'moved' to `device`.
+
+        NOTE: This doesn't implement anything related to the other args like
+        memory format or dtype.
+        TODO: Maybe add something to convert everything that is a Tensor or 
+        numpy array to a given dtype?
+        """
         return type(self).from_dict(move(self.to_dict(), device))
 
     def cpu(self):
@@ -73,3 +80,17 @@ class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  
 
     def cuda(self, device: Union[str, torch.device]=None):
         return self.to(device or "cuda")
+
+    def merge(self, other: "Serializable") -> "Serializable":
+        """ Overwrite values in `self` present in 'other' with the values from
+        `other`.
+        Also merges child elements recursively.
+        
+        Returns a new object, i.e. this doesn't modify `self` in-place.
+        """
+        self_dict = self.to_dict()
+        if isinstance(other, SerializableBase):
+            other = other.to_dict()
+        elif not isinstance(other, dict):
+            raise RuntimeError(f"Can't merge self with {other}.")
+        return type(self).from_dict(dict_union(self_dict, other))

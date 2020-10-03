@@ -27,7 +27,7 @@ from torch.utils.data import DataLoader
 from utils import Parseable, camel_case, get_logger, remove_suffix, try_get
 from utils.utils import get_path_to_source_file
 
-from .models import HParams, Model
+from .models import Model
 
 logger = get_logger(__file__)
 
@@ -51,10 +51,9 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
     We could even perhaps reuse the Method object on different Settings entirely!
     """
     # HyperParameters of the method.
-    hparams: HParams = mutable_field(HParams)
+    hparams: Model.HParams = mutable_field(Model.HParams)
     # Options for the Trainer object.
     trainer_options: TrainerConfig = mutable_field(TrainerConfig)
-    
 
     # Class attribute that holds the setting this method was designed to target.
     target_setting: ClassVar[Optional[Type[Setting]]] = None
@@ -208,6 +207,18 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
         """
         if hasattr(self.model, "on_task_switch"):
             self.model.on_task_switch(task_id)
+
+    def model_class(self, setting: SettingType) -> Type[LightningModule]:
+        """ Returns the type of model to use for the given setting.
+        
+        You could extend this to customize which model is used depending on the
+        setting.
+        
+        TODO: As @oleksost pointed out, this might allow the creation of weird
+        'frankenstein' methods that are super-specific to each setting, without
+        really having anything in common.
+        """
+        return Model
 
     def create_model(self, setting: SettingType) -> Model[SettingType]:
         """Creates the Model (a LightningModule) for the given Setting.
@@ -397,7 +408,7 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
             name = remove_suffix(name, "_method")
         return name
 
-    def upgrade_hparams(self, new_type: Type[HParams]) -> HParams:
+    def upgrade_hparams(self, new_type: Type[Model.HParams]) -> Model.HParams:
         """Upgrades the current hparams to the new type, filling in the new
         values from the command-line.
 

@@ -1,5 +1,5 @@
 from .agent import Agent
-from .hparams import HParams, available_encoders, available_optimizers
+from .base_hparams import BaseHParams, available_encoders, available_optimizers
 from .model import Model
 from .output_heads import OutputHead
 

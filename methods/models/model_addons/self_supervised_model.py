@@ -5,32 +5,31 @@ to add self-supervised losses to your model.
 """
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, cast
+from typing import Dict, Optional, Tuple, TypeVar, cast
 
+from simple_parsing import mutable_field
 from torch import Tensor
 
 from common.config import Config
 from common.loss import Loss
-from common.tasks import AEReconstructionTask, VAEReconstructionTask, EWCTask
+from common.tasks import AEReconstructionTask, EWCTask, VAEReconstructionTask
 from common.tasks.auxiliary_task import AuxiliaryTask
 from common.tasks.simclr import SimCLRTask
 from settings import Setting, SettingType
-from simple_parsing import mutable_field
 from utils.logging_utils import get_logger
 from utils.module_dict import ModuleDict
 
-from .model import Model
+from ..base_model import BaseModel
 
 logger = get_logger(__file__)
-from typing import TypeVar
 HParamsType = TypeVar("HparamsType", bound="SelfSupervisedModel.HParams")
 
-class SelfSupervisedModel(Model[SettingType]):
+class SelfSupervisedModel(BaseModel[SettingType]):
     """
     Model 'mixin' that adds various configurable self-supervised losses.
     """
     @dataclass
-    class HParams(Model.HParams):
+    class HParams(BaseModel.HParams):
         """Hyperparameters of a Self-Supervised method. """
         simclr: Optional[SimCLRTask.Options] = None
         vae: Optional[VAEReconstructionTask.Options] = None

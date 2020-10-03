@@ -20,13 +20,12 @@ from utils import get_logger, singledispatchmethod
 
 from .class_incremental_method import ClassIncrementalMethod
 from .method import Method
-from .models import HParams, Model, OutputHead
+from .models import Model, OutputHead
 from .models.actor_critic_agent import ActorCritic
 from .models.agent import Agent
-from .models.class_incremental_model import ClassIncrementalModel
 from .models.iid_model import IIDModel
 from .models.task_incremental_model import TaskIncrementalModel
-
+from .models.model_addons import ClassIncrementalModel as ClassIncrementalModelMixin
 logger = get_logger(__file__)
 
 
@@ -40,8 +39,8 @@ class BaselineMethod(Method, target_setting=Setting):
         raise NotImplementedError(f"No model registered for setting {setting}!")
     
     @model_class.register
-    def _(self, setting: ClassIncrementalSetting) -> Type[ClassIncrementalModel]:
-        return ClassIncrementalModel
+    def _(self, setting: ClassIncrementalSetting) -> Type[ClassIncrementalModelMixin]:
+        return Model
 
     @model_class.register
     def _(self, setting: TaskIncrementalSetting) -> Type[TaskIncrementalModel]:

@@ -4,41 +4,50 @@ This is meant
 
 TODO: There is a bunch of work to be done here.
 """
+import dataclasses
+import itertools
+from abc import ABC
 from dataclasses import dataclass
-from typing import *
+from collections import abc as collections_abc
+from typing import (Any, ClassVar, Dict, Generic, List, NamedTuple, Optional,
+                    Sequence, Tuple, Type, TypeVar, Union)
 
-import numpy as np
-import pytorch_lightning as pl
 import torch
 from pytorch_lightning import LightningDataModule, LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
-from torch import Tensor, nn, optim
-from torch.optim.optimizer import Optimizer
-from torch.utils.data import DataLoader
-from torchvision import models as tv_models
+from torch import Tensor
 
 from common.config import Config
 from common.loss import Loss
-from common.tasks.auxiliary_task import AuxiliaryTask
 from methods.models.output_heads import OutputHead
-from simple_parsing import Serializable, choice, mutable_field
 from utils.logging_utils import get_logger
+
+from .base_hparams import BaseHParams
 
 logger = get_logger(__file__)
 SettingType = TypeVar("SettingType", bound=LightningDataModule)
 
+from .batch import Batch
 
-# WIP (@lebrice): Playing around with this idea, to try and maybe use the idea
-# of creating typed objects for the 'Observation', the 'Action' and the 'Reward'
-# for each kind of model.
-from .model_addons import SemiSupervisedModel, ClassIncrementalModel, SelfSupervisedModel
 
-class Model(SemiSupervisedModel,
-            ClassIncrementalModel,
-            SelfSupervisedModel,
-            Generic[SettingType]):
+@dataclass(frozen=True)
+class BaseObservation(Batch):
+    """ """
+    x: Tensor
+
+
+@dataclass(frozen=True)
+class ClassIncrementalObservation(BaseObservation):
+    """ """
+    t: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
+
+
+class BaseModel(LightningModule, Generic[SettingType]):
     """ Base model LightningModule (nn.Module extended by pytorch-lightning)
+    
+    WIP: (@lebrice): Trying to tidy up the hierarchy of the different kinds of
+    models a little bit. 
     
     This model splits the learning task into a representation-learning problem
     and a downstream task (output head) applied on top of it.   
@@ -47,25 +56,47 @@ class Model(SemiSupervisedModel,
     is used by the [train/val/test]_step methods which are called by
     pytorch-lightning.
     """
-    
+    # NOTE: we put this here just so its easier to subclass these classes from
+    # future subclasses of 'Model'.
 
     @dataclass
-    class HParams(SelfSupervisedModel.HParams,
-                  ClassIncrementalModel.HParams):
+    class HParams(BaseHParams):
         """ HParams of the Model. """
 
+    @dataclass(frozen=True)
+    class Observation(Batch):
+        __slots__ = ("x",)
+        x: Tensor
+
+    @dataclass(frozen=True)
+    class Action(Batch):
+        # Predictions from the model in a supervised setting, or chosen action
+        # in an RL setting.
+        __slots__ = ("y_pred",)
+        y_pred: Tensor
+
+    @dataclass(frozen=True)
+    class Reward(Batch):
+        y: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
 
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__()
-        # super().__init__(setting=setting, hparams=hparams, config=config)
         self.setting: SettingType = setting
-        # TODO: Not setting this property, so the trainer doesn't fallback to
-        # using it.
-        # self.datamodule: LightningDataModule = setting
         self.hp = hparams
         self.config: Config = config
+        # TODO: Decided to Not set this property, so the trainer doesn't
+        # fallback to using it instead of the passed datamodules/dataloaders.
+        # self.datamodule: LightningDataModule = setting
 
-        # self.save_hyperparameters()
+        # TODO: Debug this, seemed to be causing issues because it was trying to
+        # save the 'setting' argument, which contained some things that weren't
+        # pickleable.
+        all_params_dict = {
+            "hparams": hparams.to_dict(),
+            "config": config.to_dict(),
+        }
+        self.save_hyperparameters(all_params_dict)
+
         self.input_shape  = self.setting.dims
         self.output_shape = self.setting.action_shape
         self.reward_shape = self.setting.reward_shape
@@ -74,8 +105,12 @@ class Model(SemiSupervisedModel,
         logger.debug(f"Input shape: {self.input_shape}")
         logger.debug(f"Output shape: {self.output_shape}")
         logger.debug(f"Reward shape: {self.reward_shape}")
-
-        # Here we assume that all methods have a form of 'encoder' and 'output head'.
+        
+        # (Testing) Setting this attribute is supposed to help with ddp/etc
+        # training in pytorch-lightning. Not 100% sure.
+        self.example_input_array = torch.rand(self.batch_size, *self.input_shape)
+        
+        # Create an 'encoder' and an 'output head'.
         self.encoder, self.hidden_size = self.hp.make_encoder()
         self.output_head = self.create_output_head()
 
@@ -91,7 +126,9 @@ class Model(SemiSupervisedModel,
         """
         # TODO: Playing with the idea that we could use something like an object
         # or NamedTuple for the 'observation'.
-        x, *_ = observation
+        # TODO: If the default/non-default ordering required by NamedTuple ever
+        # becomes a problem, then we could switch out to using dicts. 
+        observation = self.Observation(*observation)
         x, *_ = self.preprocess_batch(x)
         h_x = self.encode(x)
         y_pred = self.output_task(x=x, h_x=h_x)
@@ -144,6 +181,28 @@ class Model(SemiSupervisedModel,
     def test_step(self, batch, batch_idx: int, dataloader_idx: int = None):
         loss_name = "test"
         return self.shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
+    
+    def split_batch(self, batch: Tuple[Tensor, ...]) -> Tuple[Observation, Reward]:
+        """ WIP: IDEA: Split the batch intelligently, depending on the
+        number of 'required' fields in `Observation` and in `Reward` classes.
+        
+        To make this simpler, we're always going to return an Observation and a Reward
+        object, even if the batch is unsupervised, however in that case the
+        Reward object will have `y=None`.
+        """
+        assert isinstance(batch, (tuple, list))
+        def n_required_fields(named_tuple_type: Type[NamedTuple]):
+            # Need to figure out a way to get the number fields through the
+            # class itself.
+            named_tuple = named_tuple_type._make(itertools.count())
+            return len(named_tuple._fields) - len(named_tuple._field_defaults)
+        required_for_obs = n_required_fields(self.Observation)
+        required_for_reward = n_required_fields(self.Reward)
+        # TODO       
+        
+        observation = self.Observation(x=tensors.x, t=tensors.t)
+        reward = Reward(y=tensors.y)
+        return observation, reward
             
     def shared_step(self, batch: Tuple[Tensor, ...],
                           batch_idx: int,
@@ -159,6 +218,8 @@ class Model(SemiSupervisedModel,
             assert isinstance(dataloader_idx, int)
             loss_name += f"/{dataloader_idx}"
         # TODO: This makes sense? What if the batch is unlabeled?
+        observation: Observation
+        reward: Reward
         observation, reward = self.split_batch(batch)
         forward_pass = self(observation)
         loss_object: Loss = self.get_loss(forward_pass, y=reward.y, loss_name=loss_name)
@@ -196,7 +257,9 @@ class Model(SemiSupervisedModel,
             total_loss += supervised_loss
         return total_loss
 
-
+    def preprocess_observation(self, observation) -> Observation:
+        return observation
+    
     def preprocess_batch(self,
                          *batch: Union[Tensor, Tuple[Tensor, ...]]
                          ) -> Tuple[Tensor, Optional[Tensor]]:
