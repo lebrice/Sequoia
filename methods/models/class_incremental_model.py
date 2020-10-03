@@ -1,10 +1,12 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, Set
+from contextlib import contextmanager
 
 import numpy as np
 import torch
 from torch import Tensor, nn
 from torch.utils.data import DataLoader
+from pytorch_lightning.core.decorators import auto_move_data
 
 from common.config import Config
 from methods.models.model import Model, OutputHead
@@ -12,13 +14,13 @@ from settings import ClassIncrementalSetting
 from utils.logging_utils import get_logger
 
 from .semi_supervised_model import SemiSupervisedModel
-
+from .model import Observation, Reward, Batch
 logger = get_logger(__file__)
 
 
 SettingType = TypeVar("SettingType", bound=ClassIncrementalSetting)
 
-class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
+class ClassIncrementalModel(SemiSupervisedModel[SettingType]):
     """ Extension of the Model LightningModule aimed at CL settings.
     TODO: Add the stuff related to multihead/continual learning here?
     """
@@ -47,13 +49,12 @@ class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
         self.previous_task: Optional[int] = None
         self.current_task: Optional[int] = None
 
-
         self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()
         if self.hp.multihead:
             output_head = self.create_output_head()
             self.output_head = output_head
             self.output_heads[str(self.setting.current_task_id)] = output_head
-
+    
     @property
     def output_head(self) -> OutputHead:
         """ Get the output head for the current task.
@@ -64,12 +65,16 @@ class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
         if self.hp.multihead:
             if ((self.training and self.setting.task_labels_at_train_time) or
                 (not self.training and self.setting.task_labels_at_test_time)):
-                current_task_id = self.setting.current_task_id
+                current_task_id = self.current_task
+                # current_task_id = self.setting.current_task_id
 
             elif self.task_inference_module is not None:
                 # current_task_id = self.task_inference_module(...)
                 raise NotImplementedError("TODO")
+            
+            # TODO: Look into this, seems a bit weird.
             elif self._output_head is not None:
+                # Just return the current output head.
                 return self._output_head
             else:
                 raise RuntimeError("No way of determining the task id and output head is None!")
@@ -115,10 +120,78 @@ class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
         # then add a RegressionOutputHead, a SegmentationOutputHead, etc etc.
         return OutputHead
 
-    def output_task(self, h_x: Tensor) -> Tensor:
-        if self.hp.detach_output_head:
-            h_x = h_x.detach()
-        return super().output_task(h_x)
+    @auto_move_data
+    def forward(self, observation: Observation, **kwargs) -> Dict[str, Tensor]:
+        """ Forward pass of the Model. Returns a dict."""
+        # Just testing things out here.
+        observation = Observation(*observation)
+        x = observation.x
+        task_labels = observation.t
+        # IDEA: This would basically call super.forward() on the slices of the
+        # batch, and then re-combine the forward pass dicts before returning
+        # the results.
+        # It's a bit extra. Maybe we only really ever want to have the output
+        # task be the 'branched-out/multi-task' portion.
+        if task_labels is None or not len(task_labels):
+            # Default back to using the current output head.
+            return super().forward(observation)
+        
+        if isinstance(task_labels, (Tensor, np.ndarray)):
+            task_labels = task_labels.tolist()
+
+        unique_task_labels: Set[Optional[int]] = set(task_labels)
+        batch_size = len(x)
+        batch_indices = torch.arange(batch_size)
+
+        # The 'merged' forward pass result dict.
+        merged_results: Dict = {}
+        
+        # Split off the input batch, do a forward pass for each sub-task.
+        # (could be done in parallel but whatever.)
+        # TODO: Also, not sure if this will play well with DP, DDP, etc.
+        for task_id in unique_task_labels:
+            task_indices = torch.as_tensor([
+                i for i, task_label in enumerate(task_labels)
+                if task_label == task_id
+            ])
+            # TODO: Use -1 instead of 'None' and always index into
+            # `self.output_heads`!
+            with self.temporarily_in_task(task_id):
+                # partial observation, (WITHOUT the task labels).
+                partial_observation = Observation(x[task_indices])
+                task_results = super().forward(observation=partial_observation)
+
+            if not merged_results:
+                # Create the merged results, with empty tensors.
+                for name, result in task_results.items():
+                    assert False, (result.shape, result.ndims())
+                    placeholder = result.new_empty([batch_size, result.shape[1:]])
+                    merged_results[name] = placeholder
+            
+            # Write out the partial results in the 'merged' result dict.
+            for name, result in task_results.items():
+                merged_results[name][task_indices] = result
+           
+        return merged_results            
+        assert False, (unique_task_labels, rev_indices, task_labels)
+        
+    @contextmanager
+    def temporarily_in_task(self, task_id: Optional[int]):
+        """WIP: This would be used to temporarily change the 'output_head'
+        attribute,
+        """
+        start_task_id = self.current_task
+        assert isinstance(task_id, int) or task_id is None, task_id
+        self.on_task_switch(task_id)
+        yield
+        self.on_task_switch(start_task_id)
+                
+        # store back the output head in the module dict
+        self.output_heads[str(task_id)] = self.output_head
+
+        self.output_head = start_output_head
+        self.current_task
+    
     
     def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]],
                            batch_idx: int,
@@ -149,7 +222,7 @@ class ClassIncrementalModel(SemiSupervisedModel, Model[SettingType]):
 
                 self.on_task_switch(self.current_task)
         
-        return super()._shared_step(
+        return super().shared_step(
             batch=batch,
             batch_idx=batch_idx,
             dataloader_idx=dataloader_idx,

@@ -79,7 +79,8 @@ class OutputHead(nn.Module):
         # For example, but you could change this in your subclass.
         self.loss_fn = nn.CrossEntropyLoss()
 
-    def forward(self, h_x: Tensor) -> Tensor:  # type: ignore
+    def forward(self, x: Tensor, h_x: Tensor) -> Tensor:  # type: ignore
+        # TODO: This should probably take in a dict and return a dict, or something like that?
         # TODO: We should maybe convert this to also return a dict instead
         # of a Tensor, just to be consistent with everything else. This could
         # also maybe help with having multiple different output heads, each

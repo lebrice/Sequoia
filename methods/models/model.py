@@ -30,6 +30,30 @@ from .hparams import HParams as HParamsBase
 logger = get_logger(__file__)
 SettingType = TypeVar("SettingType", bound=LightningDataModule)
 
+class Batch(NamedTuple):
+    """ TODO: @oleksost is this what you were thinking about?
+    """
+    x: Tensor
+    y: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
+    t: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
+
+    @property
+    def size(self) -> int:
+        return self.x.shape[0]
+
+    @property
+    def task_labels(self) -> Sequence[Optional[int]]:
+        if self.t is not None: 
+            return self.t
+        return [None for _ in range(self.size)]
+
+class Observation(NamedTuple):
+    x: Tensor
+    t: List[Optional[int]] = []
+
+class Reward(NamedTuple):
+    y: Union[Tensor, Sequence[Optional[Tensor]]]
+
 
 class Model(LightningModule, Generic[SettingType]):
     """ Base model LightningModule (nn.Module extended by pytorch-lightning)
@@ -78,6 +102,23 @@ class Model(LightningModule, Generic[SettingType]):
             logger.debug("Hparams:")
             logger.debug(self.hp.dumps(indent="\t"))
 
+    @auto_move_data
+    def forward(self, observation: Observation) -> Dict[str, Tensor]:
+        """ Forward pass of the Model. Returns a dict.
+        """
+        # TODO: Playing with the idea that we could use something like an object
+        # or NamedTuple for the 'observation'.
+        x, task_labels = observation
+        x, *_ = self.preprocess_batch(x)
+        h_x = self.encode(x)
+        y_pred = self.output_task(x=x, h_x=h_x)
+        return dict(
+            x=x,
+            task_labels=task_labels,
+            h_x=h_x,
+            y_pred=y_pred,
+        )
+
     def encode(self, x: Tensor) -> Tensor:
         """Encodes a batch of samples `x` into a hidden vector.
 
@@ -94,10 +135,16 @@ class Model(LightningModule, Generic[SettingType]):
             h_x = h_x[0]
         return h_x
 
-    def output_task(self, h_x: Tensor) -> Tensor:
+    def output_task(self, x: Tensor, h_x: Tensor) -> Tensor:
+        """ Pass the required inputs to the output head and get predictions.
+        
+        NOTE: This method is basically just here so we can customize what we
+        pass to the output head, or what we take from it, similar to the
+        `encode` method.
+        """
         if self.hp.detach_output_head:
             h_x = h_x.detach()
-        return self.output_head(h_x)
+        return self.output_head.forward(x, h_x)
 
     def create_output_head(self) -> OutputHead:
         """ Create the output head for the task. """
@@ -105,44 +152,51 @@ class Model(LightningModule, Generic[SettingType]):
 
     def training_step(self, batch: Tuple[Tensor, Optional[Tensor]], batch_idx: int):
         self.train()
-        return self._shared_step(batch, batch_idx, loss_name="train", training=True)
+        return self.shared_step(batch, batch_idx, loss_name="train", training=True)
 
     def validation_step(self, batch, batch_idx: int, dataloader_idx: int = None):
         loss_name = "val"
-        return self._shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
+        return self.shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
 
     def test_step(self, batch, batch_idx: int, dataloader_idx: int = None):
         loss_name = "test"
-        return self._shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
+        return self.shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
     
-    def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]],
-                           batch_idx: int,
-                           dataloader_idx: int = None,
-                           loss_name: str = "",
-                           training: bool = True,
+    def split_batch(self, batch: Tuple[Tensor, ...]) -> Tuple[Observation, Optional[Reward]]:
+        assert isinstance(batch, (tuple, list))
+        tensors: Batch = Batch(*batch)
+        observation = Observation(x=tensors.x, t=tensors.t)
+        reward = None
+        if tensors.y is not None:
+            reward = Reward(y=tensors.y)
+        return observation, reward
+            
+    def shared_step(self, batch: Tuple[Tensor, ...],
+                          batch_idx: int,
+                          dataloader_idx: int = None,
+                          loss_name: str = "",
+                          training: bool = True,
                     ) -> Dict:
-        assert loss_name
-        
+        """
+        This is the shared step for this 'example' LightningModule. 
+        Feel free to customize/change it if you want!
+        """
         if dataloader_idx is not None:
             assert isinstance(dataloader_idx, int)
             loss_name += f"/{dataloader_idx}"
-        x, y, t = batch
-        # x, y = self.preprocess_batch(x, y, t)
-        
-        forward_pass = self(x, task_labels=t)
-        loss: Loss = self.get_loss(forward_pass, y=y, loss_name=loss_name)
-        # NOTE: loss is supposed to be a tensor, but I'm testing out giving a Loss object instead.
-        result = loss.to_pl_dict()
-        result["objective"] = loss.losses[self.output_head.name].metric
+        # TODO: This makes sense? What if the batch is unlabeled?
+        observation, reward = self.split_batch(batch)
+        forward_pass = self(observation)
+        loss_object: Loss = self.get_loss(forward_pass, y=reward.y, loss_name=loss_name)
+        return {
+            "loss": loss_object.loss,
+            "log": loss_object.to_log_dict(),
+            "progress_bar": loss_object.to_pbar_message(),
+            "loss_object": loss_object,
+        }
+        # The above can also easily be done like this:
+        result = loss_object.to_pl_dict()
         return result
-
-        # return {
-        #     "loss": loss.loss,
-        #     "log": loss.to_log_dict(),
-        #     "progress_bar": loss.to_pbar_message(),
-        #     "loss_object": loss,
-        #     "objective": loss.losses[self.output_head.name].metric,
-        # }
 
     def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor = None, loss_name: str="") -> Loss:
         """Returns a Loss object containing the total loss and metrics. 
@@ -168,25 +222,6 @@ class Model(LightningModule, Generic[SettingType]):
             total_loss += supervised_loss
         return total_loss
 
-    @auto_move_data
-    def forward(self, x: Tensor, **kwargs) -> Dict[str, Tensor]:
-        x, *_ = self.preprocess_batch(x)
-        h_x = self.encode(x)
-        y_pred = self.output_task(h_x)
-        return dict(
-            x=x,
-            h_x=h_x,
-            y_pred=y_pred,
-        )
-
-    def backward(self, trainer, loss: Tensor, optimizer: Optimizer, optimizer_idx: int) -> None:
-        """ Customize the backward pass.
-        Was thinking of using the Loss object as the loss, but it feels a bit hacky.
-        """
-        if isinstance(loss, Loss):
-            loss.total_loss.backward()
-        else:
-            super().backward(trainer, loss, optimizer, optimizer_idx)
 
     def preprocess_batch(self,
                          *batch: Union[Tensor, Tuple[Tensor, ...]]
@@ -194,14 +229,13 @@ class Model(LightningModule, Generic[SettingType]):
         """Preprocess the input batch before it is used for training.
                 
         By default this just splits a (potentially unsupervised) batch into x
-        and y's. 
+        and y's, and any batch which is a tuple of more than 2 items is left
+        unchanged.
+               
         When tackling a different problem or if additional preprocessing or data
-        augmentations are needed, you could just subclass Classifier and change
-        this method's behaviour.
-
-        NOTE: This also discards the task labels for each example, which are
-        normally given by the dataloaders from Continuum.
-
+        augmentations are needed, feel free to customize/change this to fit your
+        needs.
+        
         TODO: Re-add the task labels for each sample so we use the right output
         head at the 'example' level.
 
