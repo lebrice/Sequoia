@@ -13,11 +13,12 @@ from dataclasses import dataclass, is_dataclass
 from inspect import getsourcefile
 from pathlib import Path
 from typing import (ClassVar, Dict, Generic, List, Optional, Sequence, Set,
-                    Tuple, Type, TypeVar, Union)
+                    Tuple, Type, TypeVar, Union, Any)
 
 import torch
 from common.config import Config, TrainerConfig
 from common.loss import Loss
+from common.metrics import Metrics
 from pytorch_lightning import (Callback, LightningDataModule, LightningModule,
                                Trainer)
 from settings import Results, Setting, SettingType
@@ -27,7 +28,8 @@ from torch.utils.data import DataLoader
 from utils import Parseable, camel_case, get_logger, remove_suffix, try_get
 from utils.utils import get_path_to_source_file
 
-from .models import Model
+from .models.model import Model, Observation, Reward
+from .models.batch import Batch
 
 logger = get_logger(__file__)
 
@@ -135,22 +137,29 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
              test_dataloaders: Optional[Union[DataLoader, List[DataLoader]]] = None,
              ckpt_path: Optional[str] = 'best',
              verbose: bool = True,
-             datamodule: Optional[LightningDataModule] = None):
-        """ Test the method on the given test dataloader/dataloaders.
+             datamodule: Optional[LightningDataModule] = None) -> Metrics:
+        """ Test the method on the given test data and return the corresponding
+        Metrics.
 
         TODO: It would be better if we had a more "closed" interface where we
         would just give the unlabeled samples and ask for predictions, and
         calculate the accuracy ourselves.
         """
-        return self.trainer.test(
+        test_results = self.trainer.test(
             model=self.model,
             test_dataloaders=test_dataloaders,
             ckpt_path=ckpt_path,
             verbose=verbose,
             datamodule=datamodule,
         )
+        assert len(test_results) == 1
+        assert "loss_object" in test_results[0]
+        total_loss: Loss = test_results[0]["loss_object"]
+    
+    def split_batch(self, batch: Any) -> Tuple[Batch, Batch]:
+        return self.model.split_batch(batch)
 
-    def predict(self, **inputs) -> Tensor:
+    def get_prediction(self, inputs) -> Tensor:
         """ Get a batch of predictions for this batch of inputs.
         
         TODO: @lebrice How should we specify what the input batch should
@@ -161,26 +170,26 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
         """
         self.model.eval()
         with torch.no_grad():
-            forward_pass_result = self.model(inputs)
+            inputs = self.model.Observation.from_inputs(inputs)
+            forward_pass = self.model(inputs)
         
-        if isinstance(forward_pass_result, dict):
+        if isinstance(forward_pass, Tensor):
+            # Forward pass wasn't a dict, so we assume it's the right tensor.
+            action = forward_pass
+        else:
             # NOTE (@lebrice): I think it's reasonable to assume that the
             # 'prediction' can always be found at one of these keys. Worst comes
             # to worst, we could always add more keys to this list if needed.
             # TODO: We could also maybe get the right key to use from the
             # current setting! This sounds cleaner, design-wise.
-            possible_keys: List[str] = ["y_pred", "action", "actions"]
-            y_pred = try_get(forward_pass_result, *possible_keys)
-            if y_pred is None:
+            possible_keys: List[str] = ["y_pred", "actions", "action"]
+            action = try_get(forward_pass, *possible_keys)
+            if action is None:
                 raise RuntimeError(
                     f"Unable to retrieve the 'prediction' from the results of "
-                    f"the forward pass! (tried keys {possible_keys})"
+                    f"the forward pass! (tried keys {possible_keys}) type(forward_pass) = {type(forward_pass)}"
                 )
-            return y_pred
-        else:
-            assert isinstance(forward_pass_result, Tensor)
-            # Forward pass wasn't a dict, so we assume it's the right tensor.
-            return forward_pass_result
+        return action
 
     def predict_image_labels(self,
                              x: Tensor,
@@ -198,7 +207,8 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
         Your method should ideally leverage this information when available, as
         it makes the problem a lot easier!
         """
-        y_pred = self.predict(x=x, task_labels=task_labels)
+        actions = self.predict(x=x, task_labels=task_labels)
+        
         return torch.argmax(y_pred, dim=-1)
 
     def on_task_switch(self, task_id: int) -> None:
@@ -360,7 +370,7 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
         all_results: Dict[Type[Setting], Results] = OrderedDict()
         for setting_type in applicable_settings:
             setting = setting_type.from_args(argv)
-            results = self.apply_to(setting)
+            results = setting.apply(self)
             all_results[setting_type] = results
         print(f"All results for method of type {type(self)}:")
         print({

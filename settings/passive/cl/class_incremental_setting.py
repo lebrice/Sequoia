@@ -273,7 +273,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
                 if not self.task_labels_at_test_time:
                     task_labels = None
 
-                y_pred = method.predict(x=x, y=y, task_labels=task_labels)
+                y_pred = method.get_prediction(x=x, y=y, task_labels=task_labels)
                 total += len(x)
                 correct += sum(np.argmax(y_pred, -1) == y)
             
@@ -313,13 +313,12 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         method.config = config
         method.configure(setting=self)
 
-
         self.config = config
         # Get the arguments that will be used to create the dataloaders.
         # TODO: We create the dataloaders here and pass them to the method, but
         # we could maybe do this differently. This isn't super clean atm.
         # Get the batch size from the model, or the config, or 32.
-        batch_size = getattr(method, "batch_size", getattr(config, "batch_size", 32))
+        batch_size = getattr(method.model, "batch_size", getattr(config, "batch_size", 32))
         # Get the data dir from self, the config, or 'data'.
         data_dir = getattr(self, "data_dir", getattr(config, "data_dir", "data"))
         dataloader_kwargs = dict(
@@ -454,8 +453,9 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
                     # give a list of Nones. We could also maybe give a portion
                     # of the task labels, which could be interesting.
                     task_labels = [None] * len(x_batch)
+
                 # Get the predicted label for this batch of inputs.
-                y_pred = method.predict(x=x_batch, task_labels=task_labels)
+                y_pred = method.get_prediction(dict(x=x_batch, task_labels=task_labels))
                 # Get the metrics for that batch.
                 batch_metrics = self.get_metrics(y_pred=y_pred, y=y_batch)
                 # TODO: Remove this, just debugging.
@@ -573,20 +573,19 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         
         NOTE: The dataloader is passive for now (just a regular DataLoader).
         """
+        # TODO: Idea, maybe the dataloaders could return namedtuples, just for
+        # convenience?
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_fit:
             self.setup("fit")
         dataset = self.train_datasets[self.current_task_id]
-        # TODO: Add some kind of Wrapper around the dataset to make the dataset
+        # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised.
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        batch_transforms = [
-            RelabelTransform(task_classes=self.current_task_classes(train=True))
-        ]
         env: DataLoader = PassiveEnvironment(
             dataset,
-            batch_transforms=batch_transforms,
+            batch_transforms=self.train_batch_transforms(),
             **kwargs,
         )
         # TODO: Add some kind of wrapper that hides the task labels from
@@ -604,12 +603,10 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             self.setup("fit")
         dataset = self.val_datasets[self.current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        batch_transforms = [
-            RelabelTransform(task_classes=self.current_task_classes(train=True))
-        ]
+        
         env: DataLoader = PassiveEnvironment(
             dataset,
-            batch_transforms=batch_transforms,
+            batch_transforms=self.valid_batch_transforms(),
             **kwargs,
         )
         return env
@@ -625,15 +622,26 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             self.setup("test")
         dataset = self.test_datasets[self.current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        batch_transforms = [
-            RelabelTransform(task_classes=self.current_task_classes(train=False))
-        ]
         env: DataLoader = PassiveEnvironment(
             dataset,
-            batch_transforms=batch_transforms,
+            batch_transforms=self.test_batch_transforms(),
             **kwargs,
         )
         return env
+
+    def train_batch_transforms(self) -> List[Callable]:
+        return [
+            RelabelTransform(task_classes=self.current_task_classes(train=True)),
+            ReorderTensors(), # (x, y, t) -> (x, (t), y)
+        ]
+    def valid_batch_transforms(self) -> List[Callable]:
+        return self.train_batch_transforms()
+
+    def test_batch_transforms(self) -> List[Callable]:
+        return [
+            RelabelTransform(task_classes=self.current_task_classes(train=False)),
+            ReorderTensors(), # (x, y, t) -> (x, t, y)
+        ]
 
     @property
     def current_task_id(self) -> Optional[int]:
@@ -716,8 +724,27 @@ class RelabelTransform(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):
             return batch
         if len(batch) == 1:
             return batch        
-        x, y, *extra_inputs = batch
+        x, y, *task_labels = batch
+        
+        if y.max() < len(self.task_classes):
+            # No need to relabel this batch.
+            # @lebrice: Can we really skip relabeling in this case?
+            return batch
+
         new_y = torch.empty_like(y)
         for i, label in enumerate(self.task_classes):
             new_y[y == label] = i
-        return (x, new_y, *extra_inputs)
+        return (x, new_y, *task_labels)
+
+@dataclass
+class ReorderTensors(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):
+    def __call__(self, batch: Tuple[Tensor, ...]):
+        if isinstance(batch, list):
+            batch = tuple(batch)
+        # if not isinstance(batch, tuple):
+        #     return batch
+        x, y, *extra_labels = batch
+        if len(extra_labels) == 1:
+            task_labels = extra_labels[0]
+            return (x, task_labels, y)
+        return batch

@@ -28,7 +28,7 @@ class SemiSupervisedModel(BaseModel[SettingType]):
     class Reward(BaseModel.Reward):
         # This just indicates that the 'y' can now also be a Sequence of
         # optional tensors, instead of either just a tensor or None.
-        y: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
+        y: Union[Optional[Tensor], Sequence[Optional[Tensor]]]
 
     def get_loss(self,
                  forward_pass: Dict[str, Tensor],

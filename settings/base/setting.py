@@ -229,7 +229,7 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
         all_results: Dict[Type[Method], Results] = OrderedDict()
         for method_type in applicable_methods:
             method = method_type.from_args(argv)
-            results = method.apply(self)
+            results = self.apply(method)
             all_results[method_type] = results
         logger.info(f"All results for setting of type {type(self)}:")
         logger.info({

@@ -343,7 +343,7 @@ def zip_dicts(*dicts: Dict[K, V],
 
 def dict_intersection(*dicts: Dict[K, V]) -> Iterable[Tuple[K, Tuple[V, ...]]]:
     """Gives back an iterator over the keys and values common to all dicts. """
-    dicts = [dict(d) for d in dicts]
+    dicts = [dict(d.items()) for d in dicts]
     common_keys = set(dicts[0])
     for d in dicts:
         common_keys.intersection_update(d)
@@ -353,8 +353,10 @@ def dict_intersection(*dicts: Dict[K, V]) -> Iterable[Tuple[K, Tuple[V, ...]]]:
 
 def try_get(d: Dict[K, V], *keys: K, default: V = None) -> Optional[V]:
     for k in keys:
-        if k in d:
+        try:
             return d[k]
+        except KeyError:
+            pass
     return default
 
 

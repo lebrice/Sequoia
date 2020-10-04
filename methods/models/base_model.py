@@ -17,6 +17,7 @@ import torch
 from pytorch_lightning import LightningDataModule, LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
+from simple_parsing.helpers.flatten import FlattenedAccess
 from torch import Tensor
 
 from common.config import Config
@@ -25,11 +26,29 @@ from methods.models.output_heads import OutputHead
 from utils.logging_utils import get_logger
 
 from .base_hparams import BaseHParams
-
 logger = get_logger(__file__)
 SettingType = TypeVar("SettingType", bound=LightningDataModule)
+from .split_batch import split_batch
+from .batch import Batch, Observation, Action, Reward
 
-from .batch import Batch
+
+@dataclass(frozen=True)
+class ForwardPass(Batch, FlattenedAccess):
+    """ Typed version of the result of a forward pass through a model.
+
+    FlattenedAccess is really sweet. We can get/set any attributes in the
+    children by getting/setting them directly on the parent. So if the
+    `observation` has an `x` attribute, we can get on this object directly with
+    `self.x`, and it will fetch the attribute from the observation. Same goes
+    for setting the attribute.
+    """  
+    observations: Observation
+    representations: Any
+    actions: Action
+
+    @property
+    def h_x(self) -> Any:
+        return self.representations
 
 
 class BaseModel(LightningModule, Generic[SettingType]):
@@ -47,27 +66,13 @@ class BaseModel(LightningModule, Generic[SettingType]):
     """
     # NOTE: we put this here just so its easier to subclass these classes from
     # future subclasses of 'Model'.
+    Observation = Observation
+    Action = Action
+    Reward = Reward
 
     @dataclass
     class HParams(BaseHParams):
         """ HParams of the Model. """
-
-    @dataclass(frozen=True)
-    class Observation(Batch):
-        __slots__ = ("x",)
-        x: Tensor
-
-    @dataclass(frozen=True)
-    class Action(Batch):
-        # Predictions from the model in a supervised setting, or chosen action
-        # in an RL setting.
-        __slots__ = ("y_pred",)
-        y_pred: Tensor
-
-    @dataclass(frozen=True)
-    class Reward(Batch):
-        __slots__ = ("y",)
-        y: Optional[Tensor]
 
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__()
@@ -90,12 +95,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.input_shape  = self.setting.dims
         self.output_shape = self.setting.action_shape
         self.reward_shape = self.setting.reward_shape
-
-        logger.debug(f"setting: {self.setting}")
-        logger.debug(f"Input shape: {self.input_shape}")
-        logger.debug(f"Output shape: {self.output_shape}")
-        logger.debug(f"Reward shape: {self.reward_shape}")
-
         # (Testing) Setting this attribute is supposed to help with ddp/etc
         # training in pytorch-lightning. Not 100% sure.
         # self.example_input_array = torch.rand(self.batch_size, *self.input_shape)
@@ -105,20 +104,23 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.output_head = self.create_output_head()
 
     # @auto_move_data
-    def forward(self, input_batch: Any) -> Dict[str, Tensor]:
+    def forward(self, input_batch: Any) -> ForwardPass:
         """ Forward pass of the Model. Returns a dict.
         """
-        observation: self.Observation = self.Observation.from_inputs(input_batch)
+        observations = self.Observation.from_inputs(input_batch)
+        
         # Encode the observation to get representations.
-        representations = self.encode(observation)
-        # 
-        action = self.get_action(observation, representations)
+        representations = self.encode(observations)
+        # Pass the observations and representations to the output head to get
+        # the 'action' (prediction).
+        actions = self.get_actions(observations, representations)
 
-        return dict(
-            observation=observation,
+        forward_pass = ForwardPass(
+            observations=observations,
             representations=representations,
-            action=action,
+            actions=actions,
         )
+        return forward_pass
 
     def encode(self, observation: Union[Tensor, Observation]) -> Tensor:
         """Encodes a batch of samples `x` into a hidden vector.
@@ -145,7 +147,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             h_x = h_x[0]
         return h_x
 
-    def get_action(self, observation: Union[Tensor, Observation], h_x: Tensor) -> Action:
+    def get_actions(self, observations: Union[Tensor, Observation], h_x: Tensor) -> Action:
         """ Pass the required inputs to the output head and get predictions.
         
         NOTE: This method is basically just here so we can customize what we
@@ -153,10 +155,13 @@ class BaseModel(LightningModule, Generic[SettingType]):
         `encode` method.
         """
         # Here in this base model we only use the 'x' from the observation.
-        x: Tensor = observation if isinstance(observation, Tensor) else observation.x
+        x: Tensor = observations if isinstance(observations, Tensor) else observations.x
         if self.hp.detach_output_head:
             h_x = h_x.detach()
-        return self.output_head(x, h_x)
+        y_pred = self.output_head(x, h_x)
+        # TODO: Actually change the return type of the output head maybe, so it
+        # gives back an action?
+        return self.Action(y_pred)
 
     def create_output_head(self) -> OutputHead:
         """ Create the output head for the task. """
@@ -189,12 +194,14 @@ class BaseModel(LightningModule, Generic[SettingType]):
             loss_name += f"/{dataloader_idx}"
 
         # Split the batch into the observations and the rewards.
-        observation: BaseModel.Observation
-        reward: BaseModel.Reward
         observation, reward = self.split_batch(batch)
+
+        # Get the results of the forward pass:
+        # - "observation": the augmented/transformed/processed observation.
+        # - "representations": the representations for the observations.
+        # - "actions": The actions (predictions)
         forward_pass = self(observation)
-        
-        reward = self.preprocess_rewards(reward)        
+        reward = self.preprocess_rewards(reward)
         loss_object: Loss = self.get_loss(forward_pass, reward, loss_name=loss_name)
         return {
             "loss": loss_object.loss,
@@ -205,8 +212,16 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # The above can also easily be done like this:
         result = loss_object.to_pl_dict()
         return result
+    
+    def split_batch(self, batch: Any) -> Tuple[Observation, Reward]:
+        """ Splits the batch into the observations and the rewards. """
+        return split_batch(
+            batch,
+            Observation=self.Observation,
+            Reward=self.Reward
+        )
 
-    def get_loss(self, forward_pass: Dict[str, Tensor], reward: Reward = None, loss_name: str = "") -> Loss:
+    def get_loss(self, forward_pass: Dict[str, Batch], reward: Reward = None, loss_name: str = "") -> Loss:
         """Returns a Loss object containing the total loss and metrics. 
 
         Args:
@@ -237,167 +252,65 @@ class BaseModel(LightningModule, Generic[SettingType]):
     def preprocess_rewards(self, reward: Reward) -> Reward:
         return reward
     
-    def split_batch(self, batch: Any) -> Tuple[Observation, Reward]:
-        """ Split a batch into Observations and Rewards.
-        
-        To make this simpler, we're always going to return an Observation and a Reward
-        object, even if the batch is unlabeled. In that case, the Reward object
-        will have `y=None`.
-        
-        WIP: IDEA: Split the batch intelligently, depending on the
-        number of 'required' fields in `Observation` and in `Reward` classes.
-        """
-        if isinstance(batch, Tensor):
-            batch = (batch,)
-        
-        if isinstance(batch, dict):
-            obs_fields = self.Observation.field_names
-            rew_fields = self.Reward.field_names
-            assert not set(obs_fields).intersection(set(rew_fields)), (
-                "self.Observation and self.Reward shouldn't share fields names"
-            )
-            obs_kwargs = {
-                k: v for k, v in batch.items() if k in obs_fields
-            }
-            rew_kwargs = {
-                k: v for k, v in batch.items() if k in rew_fields
-            }
-            obs = self.Observation(**obs_kwargs)
-            rew = self.Reward(**rew_kwargs)
-            return obs, rew
+    def validation_epoch_end(
+            self,
+            outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
+        ) -> Dict[str, Dict[str, Tensor]]:
+        return self._shared_epoch_end(outputs, loss_name="val")
 
-        if not isinstance(batch, (tuple, list)):
-            raise NotImplementedError(f"TODO: support batches of type {type(batch)}")
-        
-        # If the batch already has two elements, check if they are already of
-        # the right type, to avoid unnecessary computation below.
-        if len(batch) == 2:
-            obs, rew = batch
-            if isinstance(obs, self.Observation) and isinstance(rew, self.Reward):
-                return obs, rew
+    def test_epoch_end(
+            self,
+            outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
+        ) -> Dict[str, Dict[str, Tensor]]:
+        # assert False, outputs
+        return self._shared_epoch_end(outputs, loss_name="test")
 
-        # NOTE: Its not a big deal that we call these functions on every batch
-        # rather than just once, because they use an LRU cache, and we're
-        # probably always calling it with the same argument.
+    def _shared_epoch_end(
+        self,
+        outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]],
+        loss_name: str="",
+    ) -> Dict[str, Dict[str, Tensor]]:
+        
+        # Sum of the metrics acquired during the epoch.
+        # NOTE: This is the 'online' metrics in the case of a training/val epoch
+        # and the 'average' & 'online' in the case of a test epoch (as they are
+        # the same in that case).
 
-        # Get the min, max and total number of args for each object type.
-        min_for_obs = n_required_fields(self.Observation)
-        max_for_obs = n_fields(self.Observation)
-        n_required_for_obs = min_for_obs
-        n_optional_for_obs = max_for_obs - min_for_obs
-        
-        min_for_rew = n_required_fields(self.Reward)
-        max_for_reward = n_fields(self.Reward)
-        n_required_for_rew = min_for_rew
-        n_optional_for_rew = max_for_reward - min_for_obs
-        
-        min_items = min_for_obs + min_for_rew
-        max_items = max_for_obs + max_for_reward
-        
-        n_items = len(batch)
-        if  (n_items < min_items or
-             n_items > max_items):
-            raise RuntimeError(
-                f"There aren't the right number of elements in the batch to "
-                f"create both an Observation and a Reward!\n"
-                f"(batch has {n_items} items, but type "
-                f"{self.Observation} requires from {min_for_obs} to "
-                f"{max_for_obs} args, while {self.Reward} requires from "
-                f"{min_for_rew} to {max_for_reward} args. "
-            )
-        
-        # Batch looks like:
-        # [
-        #     O_1, O_2, ..., O_{min_obs}, (O_{min_obs+1}), ..., (O_{max_obs}),
-        #     R_1, R_2, ..., R_{min_rew}, (R_{min_rew+1}), ..., (R_{max_rew}),
-        # ]
-        if n_items == 0:
-            obs = self.Observation()
-            rew = self.Reward()
-        if n_items == max_items:
-            # Easiest case! Just use all the values.
-            obs = self.Observation(*batch[:max_for_obs])
-            rew = self.Reward(*batch[max_for_obs:])
-        elif n_items == min_items:
-            # Easy case as well. Also simply uses all the values directly.
-            obs = self.Observation(*batch[:min_for_obs])
-            rew = self.Reward(*batch[min_for_obs:])
-        elif n_optional_for_obs == 0 and n_optional_for_rew != 0:
-            # All the extra args go in the reward.
-            obs = self.Observation(*batch[:min_for_obs])
-            rew = self.Reward(*batch[min_for_obs:])
-        elif n_optional_for_obs != 0 and n_optional_for_rew == 0:
-            # All the extra args go in the observation.
-            obs = self.Observation(*batch[:max_for_obs])
-            rew = self.Reward(*batch[max_for_obs:])
+        epoch_loss: Loss = Loss(name=loss_name)
+
+        if not isinstance(outputs[0], list):
+            # We used only a single dataloader.
+            for output in outputs:
+                if isinstance(output, list):
+                    # we had multiple test/val dataloaders (i.e. multiple tasks)
+                    # We get the loss for each task at each step. The outputs are for each of the dataloaders.
+                    for i, task_output in enumerate(output):
+                        task_loss = task_output["loss_object"] 
+                        epoch_loss += task_loss
+                elif isinstance(output, dict):
+                    # There was a single dataloader: `output` is the dict returned
+                    # by (val/test)_step.
+                    loss_info = output["loss_object"]
+                    epoch_loss += loss_info
+                else:
+                    raise RuntimeError(f"Unexpected output: {output}")
         else:
-            # We can't tell where the 'extra' tensors should go.
-            
-            # TODO: Maybe just assume that all the 'extra' tensors are meant to
-            # be part of the observation? or the reward? For instance:
-            # Option 1: All the extra args go in the observation:
-            # obs = self.Observation(*batch[:n_items-n_required_for_rew])
-            # rew = self.Observation(*batch[n_items-n_required_for_rew:])
-            # Option 2: All the extra args go in the reward:
-            # obs = self.Observation(*batch[:n_required_for_obs])
-            # rew = self.Observation(*batch[n_required_for_obs:])
-            n_extra = n_items - min_items
-            max_extra = n_optional_for_obs + n_optional_for_rew
-            raise NotImplementedError(
-                f"Can't tell where to put these extra tensors!\n"
-                f"(batch has {n_items} items, but type "
-                f"{self.Observation} requires from {min_for_obs} to "
-                f"{max_for_obs} args, while {self.Reward} requires from "
-                f"{min_for_rew} to {max_for_reward} args. There are "
-                f"{n_extra} extra items out of a potential of {max_extra}."
-            )
-        return obs, rew
-
-    # def validation_epoch_end(
-    #         self,
-    #         outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
-    #     ) -> Dict[str, Dict[str, Tensor]]:
-    #     return self._shared_epoch_end(outputs, loss_name="val")
-
-    # def test_epoch_end(
-    #         self,
-    #         outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
-    #     ) -> Dict[str, Dict[str, Tensor]]:
-    #     # assert False, outputs
-    #     return self._shared_epoch_end(outputs, loss_name="test")
-
-    # def _shared_epoch_end(
-    #     self,
-    #     outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]],
-    #     loss_name: str="",
-    # ) -> Dict[str, Dict[str, Tensor]]:
+            for i, dataloader_output in enumerate(outputs):
+                loss_i: Loss = Loss(name=f"{i}")
+                for output in dataloader_output:
+                    if isinstance(output, dict) and "loss_object" in output:
+                        loss_info = output["loss_object"]
+                        loss_i += loss_info
+                    else:
+                        raise RuntimeError(f"Unexpected output: {output}")
+                epoch_loss += loss_i
+        # TODO: Log stuff here?
+        for name, value in epoch_loss.to_log_dict().items():
+            logger.info(f"{name}: {value}")
+            if self.logger:
+                self.logger.log(name, value)
+        return epoch_loss.to_pl_dict()
         
-    #     # Sum of the metrics acquired during the epoch.
-    #     # NOTE: This is the 'online' metrics in the case of a training/val epoch
-    #     # and the 'average' & 'online' in the case of a test epoch (as they are
-    #     # the same in that case).
-
-    #     total_loss: Loss = Loss(name=loss_name)
-    #     assert len(outputs) == 1
-    #     output = outputs[0]
-
-    #     for output in outputs:
-    #         if isinstance(output, list):
-    #             # we had multiple test/val dataloaders (i.e. multiple tasks)
-    #             # We get the loss for each task at each step. The outputs are for each of the dataloaders.
-    #             for i, task_output in enumerate(output):
-    #                 task_loss = task_output["loss_object"] 
-    #                 total_loss += task_loss
-    #         elif isinstance(output, dict):
-    #             # There was a single dataloader: `output` is the dict returned
-    #             # by (val/test)_step.
-    #             loss_info = output["loss_object"]
-    #             total_loss += loss_info
-    #         else:
-    #             raise RuntimeError(f"Unexpected output: {output}")
-
-    #     return total_loss.to_pl_dict()
-
     def configure_optimizers(self):
         return self.hp.make_optimizer(self.parameters())
 
@@ -429,19 +342,3 @@ class BaseModel(LightningModule, Generic[SettingType]):
         model_summary = ModelSummary(self, mode=mode)
         log.debug('\n' + str(model_summary))
         return model_summary
-
-@functools.lru_cache()
-def n_fields(batch_type: Type) -> int:
-    return len(dataclasses.fields(batch_type))
-
-@functools.lru_cache()
-def n_required_fields(batch_type: Type) -> int:
-    # Need to figure out a way to get the number fields through the
-    # class itself.
-    fields = dataclasses.fields(batch_type)
-    required_fields = [
-        f for f in fields
-        if f.default is dataclasses.MISSING and
-        f.default_factory is dataclasses.MISSING
-    ]
-    return len(required_fields)

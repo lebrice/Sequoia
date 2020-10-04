@@ -100,7 +100,14 @@ class Batch(Sequence[Item]):
             item.to(*args, **kwargs) if isinstance(item, Tensor) else item
             for item in self
         ))
-
+    
+    def shapes(self) -> Tuple[Optional[torch.Size], ...]:
+        """ Returns a tuple of the shapes of the elements in the batch. 
+        If an element doesn't have a 'shape' attribute, returns None for that
+        element.
+        """
+        return tuple(getattr(item, "shape", None) for item in self)
+    
     @property
     def batch_size(self) -> int:
         return self[0].shape[0]
@@ -121,3 +128,27 @@ class Batch(Sequence[Item]):
             f"into a Batch object of type {cls}!"
         )
         return cls(inputs)
+    
+
+# TODO: FIXME: We should probably be using something like an Observation / 
+# action / reward space! Would that replace or complement these objects?
+# Maybe we could actually add a `space` @property on these? Is there such a
+# thing as 'optional' dimensions in gym Spaces?
+
+
+@dataclass(frozen=True)
+class Observation(Batch):
+    x: Tensor
+
+
+@dataclass(frozen=True)
+class Action(Batch):
+    # Predictions from the model in a supervised setting, or chosen action
+    # in an RL setting.
+    y_pred: Tensor
+
+
+@dataclass(frozen=True)
+class Reward(Batch):
+    y: Optional[Tensor]
+

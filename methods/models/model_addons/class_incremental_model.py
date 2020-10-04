@@ -11,6 +11,7 @@ from pytorch_lightning.core.decorators import auto_move_data
 from common.config import Config
 
 from settings import ClassIncrementalSetting
+from utils import dict_intersection, zip_dicts
 from utils.logging_utils import get_logger
 
 from .semi_supervised_model import SemiSupervisedModel
@@ -35,10 +36,10 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # TODO: Does it make no sense to have multihead=True when the model doesn't
         # have access to task labels. Need to figure out how to manage this between TaskIncremental and Classifier.
         multihead: bool = False
-
+    
     @dataclass(frozen=True)
     class Observation(BaseModel.Observation):
-        """ """
+        """ Adds the 'task labels' field to the base Observation. """
         task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
 
     def __init__(self, setting: ClassIncrementalSetting, hparams: HParams, config: Config):
@@ -147,44 +148,91 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             return super().forward(observation)
         
         if isinstance(task_labels, (Tensor, np.ndarray)):
-            task_labels = task_labels.tolist()
-
-        unique_task_labels: Set[Optional[int]] = set(task_labels)
-        batch_size = observation.batch_size
+            unique_task_labels = torch.unique(task_labels).tolist()
+        else:
+            unique_task_labels = list(set(task_labels))
         
+        if len(unique_task_labels) == 1:
+            # If everything is in the same task, no need to split/merge.
+            task_id = unique_task_labels[0]
+            with self.temporarily_in_task(task_id):
+                return super().forward(observation)
+
+        batch_size = observation.batch_size
         # The 'merged' forward pass result dict.
         merged_results: Dict = {}
         
+        logger.debug(f"Mix of tasks: ")
+        assert False, input_batch.shapes()
+        
+        all_task_indices: Dict[Any, Tensor] = {}
+        
+        # Get the indices for each task.
+        for task_id in unique_task_labels:
+            if isinstance(task_labels, (Tensor, np.ndarray)):
+                task_indices = torch.arange(batch_size)[task_labels == task_id]
+            else:
+                task_indices = torch.as_tensor([
+                    i for i, task_label in enumerate(task_labels)
+                    if task_label == task_id
+                ])
+            all_task_indices[task_id] = task_indices
+        
+        # Get the percentage of each task in the batch.
+        fraction_of_batch: Dict[int, float] = {
+            task_id: len(task_indices) / batch_size
+            for task_id, task_indices in all_task_indices.items()
+        }
+        logger.debug(f"Fraction of tasks in the batch: {fraction_of_batch}")
         # Split off the input batch, do a forward pass for each sub-task.
         # (could be done in parallel but whatever.)
         # TODO: Also, not sure if this will play well with DP, DDP, etc.
-        for task_id in unique_task_labels:
-            task_indices = torch.as_tensor([
-                i for i, task_label in enumerate(task_labels)
-                if task_label == task_id
-            ])
-            # TODO: Use -1 instead of 'None' and always index into
-            # `self.output_heads`!
+        for task_id, task_indices in all_task_indices.items():
+            # TODO: Maybe Use -1 instead of 'None' and always index into
+            # `self.output_heads`?
             with self.temporarily_in_task(task_id):
-                # partial observation, (WITHOUT the task labels).
+                logger.debug(
+                    f"Doing partial forward for "
+                    f"{len(task_indices)/batch_size:.0%} of the batch which "
+                    f"has task_id of '{task_id}'.")
+
+                # Make a partial observation without the task labels, so that
+                # super().forward will use the current output head.
                 tensor_slices = {
                     name: tensor[task_indices] for name, tensor in observation.items()
                     if name != "task_labels"
                 }
                 partial_observation = self.Observation(**tensor_slices)
-                task_results = super().forward(partial_observation)
+                task_forward_pass = super().forward(partial_observation)
 
             if not merged_results:
-                # Create the merged results, filled empty tensors based on the
-                # shape of the first results we get.
-                for name, part_of_result_tensor in task_results.items():
-                    placeholder = part_of_result_tensor.new_empty([batch_size, *part_of_result_tensor.shape[1:]])
+                # Create the merged results: a dict with empty tensors based on
+                # the shape of the first results we get.
+                for name, partial_result in task_forward_pass.items():
+                    if isinstance(partial_result, Tensor):
+                        placeholder = partial_result.new_empty([batch_size, *partial_result.shape[1:]])
+                    else:
+                        placeholder_tensors = {
+                            name: value.new_empty([batch_size, *value.shape[1:]])
+                            for name, value in partial_result.items()
+                            if isinstance(value, Tensor)
+                        }
+                        placeholder = type(partial_result)(**placeholder_tensors)
                     merged_results[name] = placeholder
-            
-            # Fill in the result tensor clues out the partial results in the 'merged' result dict's tensors.
-            for name, part_of_result_tensor in task_results.items():
-                result_tensor = merged_results[name]
-                result_tensor[task_indices] = part_of_result_tensor
+
+            # Merge the results from each task by setting at the right indices
+            # in the placeholder tensors. 
+            for name, (full_result, partial_result) in dict_intersection(merged_results, task_forward_pass):
+                if isinstance(full_result, Tensor):
+                    full_result[task_indices] = partial_result
+                else:
+                    for name, (full_tensor, partial_tensor) in dict_intersection(full_result, partial_result):
+                        if full_tensor is None:
+                            assert partial_tensor is None
+                        else:    
+                            assert isinstance(full_tensor, Tensor)
+                            assert isinstance(partial_tensor, Tensor)
+                            full_tensor[task_indices] = partial_tensor
 
         return merged_results
 
@@ -256,57 +304,59 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         return self.setting.current_task_classes(self.training)
 
     def preprocess_batch(self, *batch) -> Tuple[Tensor, Optional[Tensor]]:
-        # TODO: Sort this out a bit.
-        x, y, *extra_inputs = super().preprocess_batch(*batch)
-        task_labels: Optional[Tensor] = None
-        if len(extra_inputs) >= 1:
-            task_labels = extra_inputs[0]
+        assert False, batch
+        
+    #     # TODO: Sort this out a bit.
+    #     x, y, *extra_inputs = super().preprocess_batch(*batch)
+    #     task_labels: Optional[Tensor] = None
+    #     if len(extra_inputs) >= 1:
+    #         task_labels = extra_inputs[0]
 
-        if task_labels is None and y is not None:
-            # This basically checks if the labels in y have already been
-            # relabeled in the range [0-n_classes_per_task]. If they aren't,
-            # then raises an error.
-            current_task_id = self.setting.current_task_id
-            current_task_classes = self.setting.task_classes(current_task_id, self.training)
-            logger.debug(f"Current task id: {current_task_id}")
-            logger.debug(f"Classes in current task: {current_task_classes}")
-            n_classes_per_task = self.setting.n_classes_per_task
-            # y_unique are the (sorted) unique values found within the batch.
-            # idx[i] holds the index of the value at y[i] in y_unique, s.t. for
-            # all i in range(0, len(y)) --> y[i] == y_unique[idx[i]]
-            y_unique, idx = y.unique(sorted=True, return_inverse=True)
+    #     if task_labels is None and y is not None:
+    #         # This basically checks if the labels in y have already been
+    #         # relabeled in the range [0-n_classes_per_task]. If they aren't,
+    #         # then raises an error.
+    #         current_task_id = self.setting.current_task_id
+    #         current_task_classes = self.setting.task_classes(current_task_id, self.training)
+    #         logger.debug(f"Current task id: {current_task_id}")
+    #         logger.debug(f"Classes in current task: {current_task_classes}")
+    #         n_classes_per_task = self.setting.n_classes_per_task
+    #         # y_unique are the (sorted) unique values found within the batch.
+    #         # idx[i] holds the index of the value at y[i] in y_unique, s.t. for
+    #         # all i in range(0, len(y)) --> y[i] == y_unique[idx[i]]
+    #         y_unique, idx = y.unique(sorted=True, return_inverse=True)
 
             
-            if set(y_unique.tolist()) <= set(range(n_classes_per_task)):
-                # The images were already re-labeled by the continuum package.
-                return x, y
-            # TODO: This might not make sense anymore, given that I think the
-            # Continuum package already re-labels these for us. We could however
-            # just figure out which output head to use, if we stored the
-            # 'classes' that were assigned to each output head during training.
-            # (This might be similar to the "labels trick" from
-            # https://arxiv.org/abs/1803.10123)
-            elif not (set(y_unique.tolist()) <= set(current_task_classes)):
-                raise RuntimeError(
-                    f"There are labels in the batch that aren't part of the "
-                    f"current task! (current task: "
-                    f"{current_task_id}), Current task classes: "
-                    f"{current_task_classes}, batch labels: {y_unique})"
-                )
-            else:
-                # Relabel the images manually, which really sucks!
-                y = self.relabel(y, current_task_classes)
-        return x, y
+    #         if set(y_unique.tolist()) <= set(range(n_classes_per_task)):
+    #             # The images were already re-labeled by the continuum package.
+    #             return x, y
+    #         # TODO: This might not make sense anymore, given that I think the
+    #         # Continuum package already re-labels these for us. We could however
+    #         # just figure out which output head to use, if we stored the
+    #         # 'classes' that were assigned to each output head during training.
+    #         # (This might be similar to the "labels trick" from
+    #         # https://arxiv.org/abs/1803.10123)
+    #         elif not (set(y_unique.tolist()) <= set(current_task_classes)):
+    #             raise RuntimeError(
+    #                 f"There are labels in the batch that aren't part of the "
+    #                 f"current task! (current task: "
+    #                 f"{current_task_id}), Current task classes: "
+    #                 f"{current_task_classes}, batch labels: {y_unique})"
+    #             )
+    #         else:
+    #             # Relabel the images manually, which really sucks!
+    #             y = self.relabel(y, current_task_classes)
+    #     return x, y
 
-    def relabel(self, y: Tensor, current_task_classes: List[int]) -> Tensor:
-        # Re-label the given batch so the losses/metrics work correctly.
-        # Example: if the current task classes is [2, 3] then relabel that
-        # those examples as [0, 1].
-        # TODO: Double-check that that this is what is usually done in CL.
-        new_y = torch.empty_like(y)
-        for i, label in enumerate(current_task_classes):
-            new_y[y == label] = i
-        return new_y
+    # def relabel(self, y: Tensor, current_task_classes: List[int]) -> Tensor:
+    #     # Re-label the given batch so the losses/metrics work correctly.
+    #     # Example: if the current task classes is [2, 3] then relabel that
+    #     # those examples as [0, 1].
+    #     # TODO: Double-check that that this is what is usually done in CL.
+    #     new_y = torch.empty_like(y)
+    #     for i, label in enumerate(current_task_classes):
+    #         new_y[y == label] = i
+    #     return new_y
 
     def load_state_dict(self, state_dict: Union[Dict[str, Tensor], Dict[str, Tensor]],
                         strict: bool = True):
@@ -317,7 +367,10 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             # For now, we're just gonna pretend it's not a problem, I guess?
             strict = False
 
-        missing_keys, unexpected_keys = super().load_state_dict(state_dict=state_dict, strict=False)
+        missing_keys, unexpected_keys = super().load_state_dict(
+            state_dict=state_dict,
+            strict=False
+        )
         
         # TODO: Double-check that this makes sense and works properly.
         if self.hp.multihead and unexpected_keys:

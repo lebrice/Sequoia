@@ -32,6 +32,7 @@ SettingType = TypeVar("SettingType", bound=LightningDataModule)
 # WIP (@lebrice): Playing around with this idea, to try and maybe use the idea
 # of creating typed objects for the 'Observation', the 'Action' and the 'Reward'
 # for each kind of model.
+from .base_model import Observation, Action, Reward, ForwardPass 
 from .model_addons import SemiSupervisedModel, ClassIncrementalModel, SelfSupervisedModel
 
 class Model(SemiSupervisedModel,
@@ -47,7 +48,7 @@ class Model(SemiSupervisedModel,
     is used by the [train/val/test]_step methods which are called by
     pytorch-lightning.
     """
-    
+
     @dataclass
     class HParams(
         # SemiSupervisedModel.HParams,
@@ -56,9 +57,38 @@ class Model(SemiSupervisedModel,
     ):
         """ HParams of the Model. """
 
+    # @dataclass(frozen=True)
+    # class Observation(
+    #     SemiSupervisedModel.Observation,
+    #     SelfSupervisedModel.Observation,
+    #     ClassIncrementalModel.Observation,
+    # ):
+    #    pass
+
+    # @dataclass(frozen=True)
+    # class Action(
+    #     SemiSupervisedModel.Action,
+    #     SelfSupervisedModel.Action,
+    #     ClassIncrementalModel.Action,
+    # ):
+    #    pass
+
+    # @dataclass(frozen=True)
+    # class Reward(
+    #     SemiSupervisedModel.Reward,
+    #     SelfSupervisedModel.Reward,
+    #     ClassIncrementalModel.Reward,
+    # ):
+    #    pass
 
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
+
+        logger.debug(f"setting of type {type(self.setting)}")
+        logger.debug(f"Input shape: {self.input_shape}")
+        logger.debug(f"Output shape: {self.output_shape}")
+        logger.debug(f"Reward shape: {self.reward_shape}")
+        
         if self.config.debug and self.config.verbose:
             logger.debug("Config:")
             logger.debug(self.config.dumps(indent="\t"))
