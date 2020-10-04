@@ -57,13 +57,11 @@ class IIDSetting(TaskIncrementalSetting):
         return super().apply(method, config)
 
     def test_loop(self, method: "Method") -> IIDResults:
-        # TODO: Finish this:
-        # TODO: Move split_batch over to the Setting somehow.
         test_metrics = Metrics()
         for x_batch, y_batch in self.test_dataloader():
             predictions = method.get_prediction(x_batch)
             test_metrics += self.get_metrics(y_pred=predictions, y=y_batch)
-        return self.results_class(test_metrics=test_metrics)
+        return self.results_class(test_metrics)
         
     def train_batch_transforms(self) -> List[Callable]:
         return [
