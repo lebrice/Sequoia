@@ -161,7 +161,7 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
         """
         self.model.eval()
         with torch.no_grad():
-            forward_pass_result = self.model(**inputs)
+            forward_pass_result = self.model(inputs)
         
         if isinstance(forward_pass_result, dict):
             # NOTE (@lebrice): I think it's reasonable to assume that the
@@ -178,6 +178,7 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
                 )
             return y_pred
         else:
+            assert isinstance(forward_pass_result, Tensor)
             # Forward pass wasn't a dict, so we assume it's the right tensor.
             return forward_pass_result
 

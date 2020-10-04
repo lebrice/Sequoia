@@ -35,8 +35,8 @@ class BaseHParams(Serializable, Parseable):
     """ Set of 'base' Hyperparameters for the 'base' LightningModule. """
     # Class variable versions of the above dicts, for easier subclassing.
     # NOTE: These don't get parsed from the command-line.
-    available_optimizers: ClassVar[Dict[str, Type[Optimizer]]] = available_optimizers
-    available_encoders: ClassVar[Dict[str, Type[nn.Module]]] = available_optimizers
+    available_optimizers: ClassVar[Dict[str, Type[Optimizer]]] = available_optimizers.copy()
+    available_encoders: ClassVar[Dict[str, Type[nn.Module]]] = available_encoders.copy()
     
     # Batch size to use.
     # TODO: Would we need to change this when using DP or DDP of

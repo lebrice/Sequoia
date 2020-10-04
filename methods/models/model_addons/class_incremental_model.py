@@ -39,7 +39,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
     @dataclass(frozen=True)
     class Observation(BaseModel.Observation):
         """ """
-        t: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
+        task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
 
     def __init__(self, setting: ClassIncrementalSetting, hparams: HParams, config: Config):
         self._output_head: OutputHead = None
@@ -126,29 +126,32 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # then add a RegressionOutputHead, a SegmentationOutputHead, etc etc.
         return OutputHead
 
-    @auto_move_data
-    def forward(self, observation: Observation, **kwargs) -> Dict[str, Tensor]:
+    # @auto_move_data
+    def forward(self, input_batch: Any) -> Dict[str, Tensor]:
         """ Forward pass of the Model. Returns a dict."""
         # Just testing things out here.
-        observation = Observation(*observation)
-        x = observation.x
-        task_labels = observation.t
+        observation: self.Observation = self.Observation.from_inputs(input_batch)
+        assert isinstance(observation, self.Observation)
+        
+        # Get the task labels from the observation.
+        task_labels = observation.task_labels
+        
         # IDEA: This would basically call super.forward() on the slices of the
         # batch, and then re-combine the forward pass dicts before returning
         # the results.
         # It's a bit extra. Maybe we only really ever want to have the output
         # task be the 'branched-out/multi-task' portion.
         if task_labels is None or not len(task_labels):
-            # Default back to using the current output head.
+            # Default back to the behaviour of the parent class, which will use
+            # the current output head (at attribute `self.output_head`).
             return super().forward(observation)
         
         if isinstance(task_labels, (Tensor, np.ndarray)):
             task_labels = task_labels.tolist()
 
         unique_task_labels: Set[Optional[int]] = set(task_labels)
-        batch_size = len(x)
-        batch_indices = torch.arange(batch_size)
-
+        batch_size = observation.batch_size
+        
         # The 'merged' forward pass result dict.
         merged_results: Dict = {}
         
@@ -164,22 +167,27 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             # `self.output_heads`!
             with self.temporarily_in_task(task_id):
                 # partial observation, (WITHOUT the task labels).
-                partial_observation = Observation(x[task_indices])
-                task_results = super().forward(observation=partial_observation)
+                tensor_slices = {
+                    name: tensor[task_indices] for name, tensor in observation.items()
+                    if name != "task_labels"
+                }
+                partial_observation = self.Observation(**tensor_slices)
+                task_results = super().forward(partial_observation)
 
             if not merged_results:
-                # Create the merged results, with empty tensors.
-                for name, result in task_results.items():
-                    placeholder = result.new_empty([batch_size, *result.shape[1:]])
+                # Create the merged results, filled empty tensors based on the
+                # shape of the first results we get.
+                for name, part_of_result_tensor in task_results.items():
+                    placeholder = part_of_result_tensor.new_empty([batch_size, *part_of_result_tensor.shape[1:]])
                     merged_results[name] = placeholder
             
-            # Write out the partial results in the 'merged' result dict.
-            for name, result in task_results.items():
-                merged_results[name][task_indices] = result
-           
-        return merged_results            
-        assert False, (unique_task_labels, rev_indices, task_labels)
-        
+            # Fill in the result tensor clues out the partial results in the 'merged' result dict's tensors.
+            for name, part_of_result_tensor in task_results.items():
+                result_tensor = merged_results[name]
+                result_tensor[task_indices] = part_of_result_tensor
+
+        return merged_results
+
     @contextmanager
     def temporarily_in_task(self, task_id: Optional[int]):
         """WIP: This would be used to temporarily change the 'output_head'

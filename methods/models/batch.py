@@ -1,22 +1,33 @@
+""" WIP (@lebrice): Playing around with the idea of using a typed object to represent
+the different forms of "batches" that different settings produce and that
+different models expect.
+"""
 import dataclasses
 import itertools
-from torch import Tensor
-from dataclasses import dataclass
-from typing import Sequence, Union, Any, ClassVar, Tuple, Dict, List, Sequence, Tuple
 from collections import abc as collections_abc
+from dataclasses import dataclass
+from typing import (Any, ClassVar, Dict, Generic, Iterable, List, Optional,
+                    Sequence, Tuple, TypeVar, Union)
+
+import torch
+from torch import Tensor
 
 # WIP (@lebrice): Playing around with this idea, to try and maybe use of typed
 # objects for the 'Observation', the 'Action' and the 'Reward' for each kind of
 # model. Might be a bit too complicated though.
 
+Item = TypeVar("Item")
+
 @dataclass(frozen=True)
-class Batch(Sequence[Union[Tensor, Any]]):
+class Batch(Sequence[Item]):
     field_names: ClassVar[Tuple[str, ...]]
 
     def __post_init__(self):
         type(self).field_names = [f.name for f in dataclasses.fields(self)]
         
-    def __iter__(self):
+    def __iter__(self) -> Iterable[Item]:
+        for name in self.field_names:
+            yield getattr(self, name)
         return iter(self.as_tuple())
 
     def __len__(self):
@@ -59,23 +70,54 @@ class Batch(Sequence[Union[Tensor, Any]]):
             return getattr(self, index)
         elif isinstance(index, collections_abc.Iterable):
             return tuple(self[item] for item in index)
+    
+    def items(self) -> Iterable[Tuple[str, Item]]:
+        for name in self.field_names:
+            yield name, getattr(self, name)
+    
+    @property
+    def device(self) -> Optional[torch.device]:
+        """ Returns the device common to all the elements in the Batch, else
+        None if there is no consensus. """
+        device = None
+        for tensor in self:
+            if not hasattr(tensor, "device"):
+                continue
+            if device is None:
+                device = tensor.device
+            if device != tensor.device:
+                return None # No consensus on the device
+        return device
 
-    def as_tuple(self):
+    def as_tuple(self) -> Tuple[Item, ...]:
         return dataclasses.astuple(self)
 
-    def as_dict(self):
+    def as_dict(self) -> Dict[str, Item]:
         return dataclasses.asdict(self)
 
     def to(self, *args, **kwargs):
-        return type(self)(
-            tensor.to(*args, **kwargs) for tensor in self
-        )
+        return type(self)(*(
+            item.to(*args, **kwargs) if isinstance(item, Tensor) else item
+            for item in self
+        ))
 
     @property
     def batch_size(self) -> int:
         return self[0].shape[0]
 
-    def __getattr__(self, attr):
-        print(f"Tried to get missing attr {attr} on Batch.")
-        assert False, attr
-        # return getattr(self._asdict(), attr)
+    @classmethod
+    def from_inputs(cls, inputs):
+        """ Converts a batch of items into a 'Batch' object. """
+        if isinstance(inputs, cls):
+            return inputs
+        if isinstance(inputs, Tensor):
+            return cls(inputs)
+        if isinstance(inputs, dict):
+            return cls(**inputs)
+        if isinstance(inputs, (tuple, list)):
+            return cls(*inputs)
+        raise RuntimeError(
+            f"Don't know how to turn inputs {inputs} (type {type(inputs)}) "
+            f"into a Batch object of type {cls}!"
+        )
+        return cls(inputs)

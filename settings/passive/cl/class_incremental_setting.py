@@ -310,6 +310,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         
         # TODO: At the moment, we're nice enough to do this, but this would
         # maybe allow the method to "cheat"!
+        method.config = config
         method.configure(setting=self)
 
 
@@ -447,7 +448,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             test_task_loader = self.test_dataloader(**self.dataloader_kwargs)
             pbar = tqdm(test_task_loader)
             for x_batch, y_batch, task_labels in pbar:
-                assert y_batch.max() == 1, y_batch
+                assert not any(y_batch >= self.n_classes_per_task), (y_batch, self.n_classes_per_task)
                 if not self.task_labels_at_test_time:
                     # If the task labels aren't given at test time, then we
                     # give a list of Nones. We could also maybe give a portion

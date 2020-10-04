@@ -8,7 +8,6 @@ import pytest
 
 from common import ClassificationMetrics
 from conftest import get_dataset_params, parametrize, slow
-from methods.models.class_incremental_model import ClassIncrementalModel
 from settings import (ClassIncrementalResults, ClassIncrementalRLSetting,
                       ClassIncrementalSetting, ContinualRLSetting, IIDSetting,
                       Results, RLSetting, Setting, TaskIncrementalResults,
@@ -78,14 +77,11 @@ def validate_results(results: Results, setting: Setting):
         results (Results): A given Results object.
     """
     assert results is not None
-    assert results.hparams is not None
-    assert results.test_loss is not None
     assert results.objective > 0
     print(f"Objective: {results.objective}")
 
     if isinstance(results, ClassIncrementalResults):
         assert isinstance(setting, ClassIncrementalSetting)
-        assert isinstance(results.hparams, ClassIncrementalModel.HParams)
 
         average_accuracy = results.objective
 

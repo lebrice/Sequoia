@@ -3,7 +3,8 @@ Addon that enables training on semi-supervised batches.
 
 NOTE: Not used at the moment, but should work just fine.
 """
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Sequence
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -15,14 +16,23 @@ from utils.logging_utils import get_logger
 from settings import SettingType
 
 from ..base_model import BaseModel
+from ..batch import Batch
+
 
 logger = get_logger(__file__)
 
 
 class SemiSupervisedModel(BaseModel[SettingType]):
+    
+    @dataclass(frozen=True)
+    class Reward(BaseModel.Reward):
+        # This just indicates that the 'y' can now also be a Sequence of
+        # optional tensors, instead of either just a tensor or None.
+        y: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
+
     def get_loss(self,
                  forward_pass: Dict[str, Tensor],
-                 y: Union[Optional[Tensor], List[Optional[Tensor]]] = None,
+                 reward: Optional[BaseModel.Reward] = None,
                  loss_name: str="") -> Loss:
         """Trains the model on a batch of (potentially partially labeled) data. 
 
@@ -41,10 +51,17 @@ class SemiSupervisedModel(BaseModel[SettingType]):
             Loss: a loss object made from both the unsupervised and
                 supervised losses. 
         """
+        
+        # TODO: We could also just use '-1' instead as the 'no-label' val: this
+        # would make it a bit simpler than having both lists and tensors in the
+        # batch, but then we sometimes might have to check if everything in `y`
+        # is equal to -1, which sounds a bit dumb.
+        
+        y: Union[Optional[Tensor], List[Optional[Tensor]]] = reward.y
         if y is None or isinstance(y, Tensor):
             # Fully labeled/unlabeled batch
             labeled_ratio = float(y is not None)
-            return super().get_loss(forward_pass, y, loss_name=loss_name)
+            return super().get_loss(forward_pass, reward, loss_name=loss_name)
 
         is_labeled: np.ndarray = np.asarray([y_i is None for y_i in y])
 

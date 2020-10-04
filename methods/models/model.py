@@ -48,196 +48,145 @@ class Model(SemiSupervisedModel,
     pytorch-lightning.
     """
     
-
     @dataclass
-    class HParams(SelfSupervisedModel.HParams,
-                  ClassIncrementalModel.HParams):
+    class HParams(
+        # SemiSupervisedModel.HParams,
+        SelfSupervisedModel.HParams,
+        ClassIncrementalModel.HParams,
+    ):
         """ HParams of the Model. """
 
 
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
-        super().__init__()
-        # super().__init__(setting=setting, hparams=hparams, config=config)
-        self.setting: SettingType = setting
-        # TODO: Not setting this property, so the trainer doesn't fallback to
-        # using it.
-        # self.datamodule: LightningDataModule = setting
-        self.hp = hparams
-        self.config: Config = config
-
-        # self.save_hyperparameters()
-        self.input_shape  = self.setting.dims
-        self.output_shape = self.setting.action_shape
-        self.reward_shape = self.setting.reward_shape
-
-        logger.debug(f"setting: {self.setting}")
-        logger.debug(f"Input shape: {self.input_shape}")
-        logger.debug(f"Output shape: {self.output_shape}")
-        logger.debug(f"Reward shape: {self.reward_shape}")
-
-        # Here we assume that all methods have a form of 'encoder' and 'output head'.
-        self.encoder, self.hidden_size = self.hp.make_encoder()
-        self.output_head = self.create_output_head()
-
+        super().__init__(setting=setting, hparams=hparams, config=config)
         if self.config.debug and self.config.verbose:
             logger.debug("Config:")
             logger.debug(self.config.dumps(indent="\t"))
             logger.debug("Hparams:")
             logger.debug(self.hp.dumps(indent="\t"))
 
-    @auto_move_data
-    def forward(self, observation: Tuple[Tensor, ...]) -> Dict[str, Tensor]:
-        """ Forward pass of the Model. Returns a dict.
-        """
-        # TODO: Playing with the idea that we could use something like an object
-        # or NamedTuple for the 'observation'.
-        x, *_ = observation
-        x, *_ = self.preprocess_batch(x)
-        h_x = self.encode(x)
-        y_pred = self.output_task(x=x, h_x=h_x)
+    # @auto_move_data
+    # def forward(self, observation: "Model.Observation") -> Dict[str, Tensor]:
+    #     """ Forward pass of the Model. Returns a dict.
+    #     """
+    #     # TODO: Playing with the idea that we could use something like an object
+    #     # or NamedTuple for the 'observation'. What would we return then? A
+    #     # Prediction object? or a dict with all the forward pass tensors?
+    #     x, *_ = self.preprocess_batch(observation.x)
+    #     h_x = self.encode(x)
+    #     y_pred = self.output_task(x=x, h_x=h_x)
 
-        return dict(
-            x=x,
-            h_x=h_x,
-            y_pred=y_pred,
-        )
+    #     return dict(
+    #         x=x,
+    #         h_x=h_x,
+    #         y_pred=y_pred,
+    #     )
 
-    def encode(self, x: Tensor) -> Tensor:
-        """Encodes a batch of samples `x` into a hidden vector.
+    # def training_step(self, batch: Tuple[Tensor, Optional[Tensor]], batch_idx: int):
+    #     self.train()
+    #     return self.shared_step(batch, batch_idx, loss_name="train", training=True)
 
-        Args:
-            x (Tensor): Tensor for a batch of pre-processed samples.
+    # def validation_step(self, batch, batch_idx: int, dataloader_idx: int = None):
+    #     loss_name = "val"
+    #     return self.shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
 
-        Returns:
-            Tensor: The hidden vector / embedding for that sample, with size
-                [<batch_size>, `self.hp.hidden_size`].
-        """
-        h_x = self.encoder(x)
-        if isinstance(h_x, list) and len(h_x) == 1:
-            # Some pretrained encoders sometimes give back a list with one tensor. (?)
-            h_x = h_x[0]
-        return h_x
-
-    def output_task(self, x: Tensor, h_x: Tensor) -> Tensor:
-        """ Pass the required inputs to the output head and get predictions.
-        
-        NOTE: This method is basically just here so we can customize what we
-        pass to the output head, or what we take from it, similar to the
-        `encode` method.
-        """
-        if self.hp.detach_output_head:
-            h_x = h_x.detach()
-        return self.output_head(x, h_x)
-
-    def create_output_head(self) -> OutputHead:
-        """ Create the output head for the task. """
-        return OutputHead(self.hidden_size, self.output_shape, name="classification")
-
-    def training_step(self, batch: Tuple[Tensor, Optional[Tensor]], batch_idx: int):
-        self.train()
-        return self.shared_step(batch, batch_idx, loss_name="train", training=True)
-
-    def validation_step(self, batch, batch_idx: int, dataloader_idx: int = None):
-        loss_name = "val"
-        return self.shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
-
-    def test_step(self, batch, batch_idx: int, dataloader_idx: int = None):
-        loss_name = "test"
-        return self.shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
+    # def test_step(self, batch, batch_idx: int, dataloader_idx: int = None):
+    #     loss_name = "test"
+    #     return self.shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
             
-    def shared_step(self, batch: Tuple[Tensor, ...],
-                          batch_idx: int,
-                          dataloader_idx: int = None,
-                          loss_name: str = "",
-                          training: bool = True,
-                    ) -> Dict:
-        """
-        This is the shared step for this 'example' LightningModule. 
-        Feel free to customize/change it if you want!
-        """
-        if dataloader_idx is not None:
-            assert isinstance(dataloader_idx, int)
-            loss_name += f"/{dataloader_idx}"
-        # TODO: This makes sense? What if the batch is unlabeled?
-        observation, reward = self.split_batch(batch)
-        forward_pass = self(observation)
-        loss_object: Loss = self.get_loss(forward_pass, y=reward.y, loss_name=loss_name)
-        return {
-            "loss": loss_object.loss,
-            "log": loss_object.to_log_dict(),
-            "progress_bar": loss_object.to_pbar_message(),
-            "loss_object": loss_object,
-        }
-        # The above can also easily be done like this:
-        result = loss_object.to_pl_dict()
-        return result
+    # def shared_step(self, batch: Tuple[Tensor, ...],
+    #                       batch_idx: int,
+    #                       dataloader_idx: int = None,
+    #                       loss_name: str = "",
+    #                       training: bool = True,
+    #                 ) -> Dict:
+    #     """
+    #     This is the shared step for this 'example' LightningModule. 
+    #     Feel free to customize/change it if you want!
+    #     """
+    #     if dataloader_idx is not None:
+    #         assert isinstance(dataloader_idx, int)
+    #         loss_name += f"/{dataloader_idx}"
+    #     # TODO: This makes sense? What if the batch is unlabeled?
+    #     observation, reward = self.split_batch(batch)
+    #     forward_pass = self(observation)
+    #     loss_object: Loss = self.get_loss(forward_pass, y=reward.y, loss_name=loss_name)
+    #     return {
+    #         "loss": loss_object.loss,
+    #         "log": loss_object.to_log_dict(),
+    #         "progress_bar": loss_object.to_pbar_message(),
+    #         "loss_object": loss_object,
+    #     }
+    #     # The above can also easily be done like this:
+    #     result = loss_object.to_pl_dict()
+    #     return result
 
-    def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor = None, loss_name: str="") -> Loss:
-        """Returns a Loss object containing the total loss and metrics. 
+    # def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor = None, loss_name: str="") -> Loss:
+    #     """Returns a Loss object containing the total loss and metrics. 
 
-        Args:
-            x (Tensor): The input examples.
-            y (Tensor, optional): The associated labels. Defaults to None.
-            name (str, optional): Name to give to the resulting loss object. Defaults to "".
+    #     Args:
+    #         x (Tensor): The input examples.
+    #         y (Tensor, optional): The associated labels. Defaults to None.
+    #         name (str, optional): Name to give to the resulting loss object. Defaults to "".
 
-        Returns:
-            Loss: An object containing everything needed for logging/progressbar/metrics/etc.
-        """
-        assert loss_name
-        x = forward_pass["x"]
-        h_x = forward_pass["h_x"]
-        y_pred = forward_pass["y_pred"]
-        # Create an 'empty' Loss object with the given name, so that we always
-        # return a Loss object, even when `y` is None and we can't the loss from
-        # the output_head.
-        total_loss = Loss(name=loss_name)
-        if y is not None:
-            supervised_loss = self.output_head.get_loss(forward_pass, y=y)
-            total_loss += supervised_loss
-        return total_loss
+    #     Returns:
+    #         Loss: An object containing everything needed for logging/progressbar/metrics/etc.
+    #     """
+    #     assert loss_name
+    #     x = forward_pass["x"]
+    #     h_x = forward_pass["h_x"]
+    #     y_pred = forward_pass["y_pred"]
+    #     # Create an 'empty' Loss object with the given name, so that we always
+    #     # return a Loss object, even when `y` is None and we can't the loss from
+    #     # the output_head.
+    #     total_loss = Loss(name=loss_name)
+    #     if y is not None:
+    #         supervised_loss = self.output_head.get_loss(forward_pass, y=y)
+    #         total_loss += supervised_loss
+    #     return total_loss
 
 
-    def preprocess_batch(self,
-                         *batch: Union[Tensor, Tuple[Tensor, ...]]
-                         ) -> Tuple[Tensor, Optional[Tensor]]:
-        """Preprocess the input batch before it is used for training.
+    # def preprocess_batch(self,
+    #                      *batch: Union[Tensor, Tuple[Tensor, ...]]
+    #                      ) -> Tuple[Tensor, Optional[Tensor]]:
+    #     """Preprocess the input batch before it is used for training.
                 
-        By default this just splits a (potentially unsupervised) batch into x
-        and y's, and any batch which is a tuple of more than 2 items is left
-        unchanged.
+    #     By default this just splits a (potentially unsupervised) batch into x
+    #     and y's, and any batch which is a tuple of more than 2 items is left
+    #     unchanged.
                
-        When tackling a different problem or if additional preprocessing or data
-        augmentations are needed, feel free to customize/change this to fit your
-        needs.
+    #     When tackling a different problem or if additional preprocessing or data
+    #     augmentations are needed, feel free to customize/change this to fit your
+    #     needs.
         
-        TODO: Re-add the task labels for each sample so we use the right output
-        head at the 'example' level.
+    #     TODO: Re-add the task labels for each sample so we use the right output
+    #     head at the 'example' level.
 
-        Parameters
-        ----------
-        - batch : Tensor
+    #     Parameters
+    #     ----------
+    #     - batch : Tensor
         
-            a batch of inputs.
+    #         a batch of inputs.
         
-        Returns
-        -------
-        Tensor
-            The preprocessed inputs.
-        Optional[Tensor]
-            The processed labels, if there are any.
-        """
-        assert isinstance(batch, tuple)
+    #     Returns
+    #     -------
+    #     Tensor
+    #         The preprocessed inputs.
+    #     Optional[Tensor]
+    #         The processed labels, if there are any.
+    #     """
+    #     assert isinstance(batch, tuple)
         
-        if len(batch) == 1:
-            batch = batch[0]
-        if isinstance(batch, Tensor):
-            return batch, None
+    #     if len(batch) == 1:
+    #         batch = batch[0]
+    #     if isinstance(batch, Tensor):
+    #         return batch, None
 
-        if len(batch) == 2:
-            return batch[0], batch[1]
-        else:
-            # Batch has more than 2 items, so we return it as-is..
-            return batch
+    #     if len(batch) == 2:
+    #         return batch[0], batch[1]
+    #     else:
+    #         # Batch has more than 2 items, so we return it as-is..
+    #         return batch
     
     # def validation_epoch_end(
     #         self,
@@ -284,34 +233,34 @@ class Model(SemiSupervisedModel,
 
     #     return total_loss.to_pl_dict()
 
-    def configure_optimizers(self):
-        return self.hp.make_optimizer(self.parameters())
+    # def configure_optimizers(self):
+    #     return self.hp.make_optimizer(self.parameters())
 
-    @property
-    def batch_size(self) -> int:
-        return self.hp.batch_size
+    # @property
+    # def batch_size(self) -> int:
+    #     return self.hp.batch_size
 
-    @batch_size.setter
-    def batch_size(self, value: int) -> None:
-        self.hp.batch_size = value 
+    # @batch_size.setter
+    # def batch_size(self, value: int) -> None:
+    #     self.hp.batch_size = value 
     
-    @property
-    def learning_rate(self) -> float:
-        return self.hp.learning_rate
+    # @property
+    # def learning_rate(self) -> float:
+    #     return self.hp.learning_rate
     
-    @learning_rate.setter
-    def learning_rate(self, value: float) -> None:
-        self.hp.learning_rate = value
+    # @learning_rate.setter
+    # def learning_rate(self, value: float) -> None:
+    #     self.hp.learning_rate = value
 
-    def on_task_switch(self, task_id: int, training: bool = False) -> None:
-        """Called when switching between tasks.
+    # def on_task_switch(self, task_id: int, training: bool = False) -> None:
+    #     """Called when switching between tasks.
         
-        Args:
-            task_id (int): the Id of the task.
-            training (bool): Wether we are currently training or valid/testing.
-        """
+    #     Args:
+    #         task_id (int): the Id of the task.
+    #         training (bool): Wether we are currently training or valid/testing.
+    #     """
 
-    def summarize(self, mode: str = ModelSummary.MODE_DEFAULT) -> ModelSummary:
-        model_summary = ModelSummary(self, mode=mode)
-        log.debug('\n' + str(model_summary))
-        return model_summary
+    # def summarize(self, mode: str = ModelSummary.MODE_DEFAULT) -> ModelSummary:
+    #     model_summary = ModelSummary(self, mode=mode)
+    #     log.debug('\n' + str(model_summary))
+    #     return model_summary

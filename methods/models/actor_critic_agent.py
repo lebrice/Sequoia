@@ -38,7 +38,7 @@ class ActorCriticHead(nn.Module):
             nn.Linear(self.actor_input_dims, self.actor_output_dims),
         )
 
-    @auto_move_data
+    # @auto_move_data
     def forward(self, state: Tensor) -> Dict[str, Tensor]:
         action = self.actor(state)
         predicted_reward = self.critic([state, action])

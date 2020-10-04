@@ -50,8 +50,8 @@ class SelfSupervisedModel(BaseModel[SettingType]):
                 logger.info(f"enabling the '{task_name}' auxiliary task (coefficient of {task.coefficient})")
                 task.enable()
 
-    def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor = None, loss_name: str = "") -> Loss:
-        loss: Loss = super().get_loss(forward_pass, y=y, loss_name=loss_name)
+    def get_loss(self, forward_pass: Dict[str, Tensor], reward: BaseModel.Reward = None, loss_name: str = "") -> Loss:
+        loss: Loss = super().get_loss(forward_pass, reward=reward, loss_name=loss_name)
 
         # Add the self-supervised losses from all the enabled auxiliary tasks.
         for task_name, aux_task in self.tasks.items():
