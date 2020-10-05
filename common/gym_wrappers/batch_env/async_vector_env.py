@@ -17,8 +17,8 @@ from gym.vector.async_vector_env import (AlreadyPendingCallError, AsyncState,
                                          NoAsyncCallError)
 from utils.logging_utils import get_logger
 
-from .worker import (CloudpickleWrapper, Commands,
-                     _custom_worker_shared_memory, custom_worker)
+from .worker import (CloudpickleWrapper, Commands, _custom_worker,
+                     _custom_worker_shared_memory)
 
 logger = get_logger(__file__)
 T = TypeVar("T")
@@ -35,6 +35,7 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
                  env_fns: Sequence[Callable[[], EnvType]],
                  context=None,
                  worker=None,
+                 shared_memory=True,
                  **kwargs):
         if context is None:
             system: str = platform.system()
@@ -61,13 +62,16 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         # worker_ function, copy it into `worker.py`, modify it, and then change
         # the value of `worker` here.
         if worker is None:
-            worker = _custom_worker_shared_memory
-
+            if shared_memory:
+                worker = _custom_worker_shared_memory
+            else:
+                worker = _custom_worker
         self.expects_result: List[bool] = []
         super().__init__(
             env_fns=env_fns,
             context=context,
             worker=worker,
+            shared_memory=shared_memory,
             **kwargs
         )
 
@@ -210,8 +214,9 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         environments at the given indices.
         """
         apply_at_indices = partial(self.apply_at, index=index)
-        from .batched_method import BatchedMethod
         from operator import methodcaller
+
+        from .batched_method import BatchedMethod
 
         class Proxy:
             """ Some Pretty sweet functional magic going on here.
