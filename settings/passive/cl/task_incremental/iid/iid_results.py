@@ -22,7 +22,7 @@ class IIDResults(Results):
     same plots as in ClassIncremental (there is only one task).
     """
     test_metric: Metrics
-        
+
     @property
     def objective(self) -> float:
         if isinstance(self.test_metric, ClassificationMetrics):
@@ -36,8 +36,13 @@ class IIDResults(Results):
         save_dir = Path(save_dir)
         save_dir.mkdir(exist_ok=True, parents=True)
         plots: Dict[str, plt.Figure] = self.make_plots()
+        
         # Save the actual 'results' object to a file in the save dir.
-        self.save(save_dir / "results.json")
+        self.test_metric = self.test_metric.numpy()
+        
+        results_json_path = save_dir / "results.json"
+        self.save(results_json_path)
+        print(f"Saved a copy of the results to {results_json_path}")
         
         print(f"\nPlots: {plots}\n")
         for fig_name, figure in plots.items():

@@ -23,10 +23,11 @@ from .metrics_utils import (get_accuracy, get_class_accuracy,
 
 @dataclass(order=True)
 class ClassificationMetrics(Metrics):
-    # fields we generate from the confusion matrix (if provided)
+    # fields we generate from the confusion matrix (if provided) or from the
+    # forward pass tensors.
     accuracy: float = 0.
-    confusion_matrix: Optional[Tensor] = field(default=None, repr=False, compare=False)
-    class_accuracy: Tensor = field(default=None, repr=False, compare=False)
+    confusion_matrix: Optional[Union[Tensor, np.ndarray]] = field(default=None, repr=False, compare=False)
+    class_accuracy: Optional[Union[Tensor, np.ndarray]] = field(default=None, repr=False, compare=False)
     
     def __post_init__(self,
                       x: Tensor=None,
@@ -44,8 +45,6 @@ class ClassificationMetrics(Metrics):
 
         #TODO: add other useful metrics (potentially ones using x or h_x?)
         if self.confusion_matrix is not None:
-            if not isinstance(self.confusion_matrix, Tensor):
-                self.confusion_matrix = torch.as_tensor(self.confusion_matrix)
             self.accuracy = get_accuracy(self.confusion_matrix)
             self.class_accuracy = get_class_accuracy(self.confusion_matrix)
 
@@ -114,7 +113,7 @@ class ClassificationMetrics(Metrics):
             class_accuracy=move(self.class_accuracy, device),
             confusion_matrix=move(self.confusion_matrix, device),
         )
-
+        
     # def __lt__(self, other: Union["ClassificationMetrics", Any]) -> bool:
     #     if isinstance(other, ClassificationMetrics):
     #         return self.accuracy < other.accuracy

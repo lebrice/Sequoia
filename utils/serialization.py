@@ -46,6 +46,7 @@ class Pickleable():
 
 
 S = TypeVar("S", bound="Serializable")
+from typing import ClassVar
 
 @dataclass
 class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  # type: ignore
@@ -73,7 +74,14 @@ class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  
         TODO: Maybe add something to convert everything that is a Tensor or 
         numpy array to a given dtype?
         """
-        return type(self).from_dict(move(self.to_dict(), device))
+        return type(self).from_dict({
+            name: move(item, device)
+            for name, item in self.items()
+        })
+
+    def items(self) -> Iterable[Tuple[str, Any]]:
+        for field in fields(self):
+            yield field.name, getattr(self, field.name)
 
     def cpu(self):
         return self.to("cpu")
@@ -81,6 +89,16 @@ class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  
     def cuda(self, device: Union[str, torch.device]=None):
         return self.to(device or "cuda")
 
+    def numpy(self):
+        """Returns a new object with all the tensor fields converted to numpy arrays."""
+        def to_numpy(val: Any):
+            if isinstance(val, Tensor):
+                return val.detach().cpu().numpy()
+            return val
+        return type(self)(**{
+            name: to_numpy(val) for name, val in self.items()
+        })
+    
     def merge(self, other: "Serializable") -> "Serializable":
         """ Overwrite values in `self` present in 'other' with the values from
         `other`.

@@ -474,20 +474,17 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
             # Manual test loop:
             test_task_loader = self.test_dataloader(**self.dataloader_kwargs)
             pbar = tqdm(test_task_loader)
-            for x_batch, y_batch, task_labels in pbar:
-                assert not any(y_batch >= self.n_classes_per_task), (y_batch, self.n_classes_per_task)
+            for observations, rewards in pbar:
                 if not self.task_labels_at_test_time:
                     # If the task labels aren't given at test time, then we
                     # give a list of Nones. We could also maybe give a portion
                     # of the task labels, which could be interesting.
-                    task_labels = [None] * len(x_batch)
+                    observations.task_labels = [None] * observations.batch_size
 
                 # Get the predicted label for this batch of inputs.
-                y_pred = method.get_prediction(dict(x=x_batch, task_labels=task_labels))
+                actions = method.get_actions(observations)
                 # Get the metrics for that batch.
-                batch_metrics = self.get_metrics(y_pred=y_pred, y=y_batch)
-                # TODO: Remove this, just debugging.
-                assert isinstance(batch_metrics, ClassificationMetrics)
+                batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
                 # Save the metrics for this batch in the list above.
                 test_metrics[task_id].append(batch_metrics)
                 pbar.set_postfix(batch_metrics.to_pbar_message())
@@ -646,7 +643,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
         )
         return env
 
-    def test_dataloader(self, **kwargs) -> PassiveEnvironment:
+    def test_dataloader(self, **kwargs) -> PassiveEnvironment["ClassIncrementalSetting.Observations", Actions, Rewards]:
         """Returns a DataLoader for the test dataset of the current task.
 
         NOTE: The dataloader is passive for now (just a regular DataLoader).
@@ -675,7 +672,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
         return [
             RelabelTransform(task_classes=self.current_task_classes(train=True)),
             ReorderTensors(), # (x, y, t) -> (x, (t), y)
-            self.split_batch_transform(),
+            self.split_batch_transform,
         ]
 
     def train_batch_transforms(self) -> List[BatchTransform]:

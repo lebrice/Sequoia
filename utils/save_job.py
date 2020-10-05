@@ -1,3 +1,4 @@
+""" Unused atm. Was used to save objects asynchronously with a worker. """
 import torch
 import torch.multiprocessing as mp
 from pathlib import Path

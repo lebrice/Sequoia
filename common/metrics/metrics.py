@@ -6,13 +6,13 @@ the metrics from PL much yet, to be honest).
 """
 from collections import OrderedDict
 from dataclasses import InitVar, dataclass, field
-from typing import Dict, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import torch
 from torch import Tensor
-from utils.serialization import Serializable
 from utils.logging_utils import cleanup
+from utils.serialization import Serializable
 
 
 @dataclass
@@ -95,3 +95,13 @@ class Metrics(Serializable):
 
     def to_pbar_message(self) -> Dict[str, Union[str, float]]:
         return OrderedDict()
+
+    def numpy(self):
+        """Returns a new object with all the tensor fields converted to numpy arrays."""
+        def to_numpy(val: Any):
+            if isinstance(val, Tensor):
+                return val.detach().cpu().numpy()
+            return val
+        return type(self)(**{
+            name: to_numpy(val) for name, val in self.items()
+        })

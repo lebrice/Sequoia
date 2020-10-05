@@ -74,6 +74,11 @@ class ClassIncrementalResults(Results):
         save_dir.mkdir(exist_ok=True, parents=True)
         plots: Dict[str, plt.Figure] = self.make_plots()
         print(f"\nPlots: {plots}\n")
+
+        results_json_path = save_dir / "results.json"
+        self.save(results_json_path)
+        print(f"Saved a copy of the results to {results_json_path}")
+
         for fig_name, figure in plots.items():
             print(f"fig_name: {fig_name}")
             figure.show()
