@@ -29,6 +29,11 @@ class Setting2(Setting1):
 
 
 def test_settings_override_with_constant_take_init():
+    """ Test that when a value for one of the constant fields is passed to the
+    constructor, its value is ignored and getting that attribute on the object
+    gives back the constant value. 
+    If the field isn't constant, the value should be set on the object as usual.
+    """
     bob1 = Setting1(foo=3, bar=7)
     assert bob1.foo == 3
     assert bob1.bar == 7

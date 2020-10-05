@@ -24,7 +24,7 @@ class IIDSetting(TaskIncrementalSetting):
     Implemented as a variant of Task-Incremental CL, but with only one task.
     
     """
-    results_class: ClassVar[Type[Results]] = IIDResults
+    Results: ClassVar[Type[Results]] = IIDResults
 
     # Held constant, since this is an IID setting.
     nb_tasks: int = constant(1)
@@ -58,22 +58,15 @@ class IIDSetting(TaskIncrementalSetting):
 
     def test_loop(self, method: "Method") -> IIDResults:
         test_metrics = Metrics()
-        for x_batch, y_batch in self.test_dataloader():
-            predictions = method.get_prediction(x_batch)
-            test_metrics += self.get_metrics(y_pred=predictions, y=y_batch)
-        return self.results_class(test_metrics)
-        
-    def train_batch_transforms(self) -> List[Callable]:
-        return [
-            DropTaskLabels()
-        ]
+        for observations, rewards in self.test_dataloader():
+            actions = method.get_actions(observations)
+            test_metrics += self.get_metrics(actions=actions, rewards=rewards)
+        return self.Results(test_metrics)
 
-    def valid_batch_transforms(self) -> List[Callable]:
-        return self.train_batch_transforms()
-
-    def test_batch_transforms(self) -> List[Callable]:
+    def batch_transforms(self) -> List[Callable]:
         return [
-            DropTaskLabels()
+            DropTaskLabels(),
+            self.split_batch_transform,
         ]
 
 

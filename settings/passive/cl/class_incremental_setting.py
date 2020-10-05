@@ -24,32 +24,32 @@ from abc import abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import (Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union)
+from typing import (Callable, ClassVar, Dict, List, Optional, Sequence, Tuple,
+                    Type, Union)
 
 import matplotlib.pyplot as plt
 import torch
-from continuum import ClassIncremental
-from continuum.tasks import split_train_val
-from continuum.datasets import *
-from continuum.datasets import _ContinuumDataset
-from continuum.scenarios.base import _BaseCLLoader
-from pytorch_lightning import LightningModule, Trainer
-from simple_parsing import choice, list_field
-from torch import Tensor
-from tqdm import tqdm
-from torch.utils.data import DataLoader
-        
 from common import ClassificationMetrics, Metrics, get_metrics
 from common.config import Config
 from common.loss import Loss
-from common.transforms import Transforms
+from common.transforms import Transforms, BatchTransform, SplitBatch
+from continuum import ClassIncremental
+from continuum.datasets import *
+from continuum.datasets import _ContinuumDataset
+from continuum.scenarios.base import _BaseCLLoader
+from continuum.tasks import split_train_val
+from pytorch_lightning import LightningModule, Trainer
 from settings.base import Results
 from settings.base.environment import ObservationType, RewardType
+from simple_parsing import choice, list_field
+from torch import Tensor
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 from utils import dict_union, get_logger
-from utils.utils import constant, mean
+from utils.utils import constant, mean, take
 
-from ..passive_setting import PassiveSetting
 from ..passive_environment import PassiveEnvironment
+from ..passive_setting import PassiveSetting
 from .class_incremental_results import ClassIncrementalResults
 
 logger = get_logger(__file__)
@@ -94,9 +94,13 @@ dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
     "core50-v2-391": (224, 224, 3),
 }
 
+from ..passive_environment import Actions, ActionType
+from ..passive_environment import Observations as BaseObservations
+from ..passive_environment import Rewards
+
 
 @dataclass
-class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
+class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, RewardType]):
     """Settings where the data is non-stationary, and grouped into tasks.
 
     The current task can be set at the `current_task_id` attribute.
@@ -112,6 +116,13 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             CIFAR10, CIFAR100, EMNIST, KMNIST, MNIST, QMNIST, FashionMNIST,
         ]
     }
+    # Change the type of observations that this env will give back:   
+    @dataclass(frozen=True)
+    class Observations(PassiveSetting.Observations):
+        """ Adds the 'task labels' field to the base Observation. """
+        task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
+
+    
     # A continual dataset to use. (Should be taken from the continuum package).
     dataset: str = choice(available_datasets.keys(), default="mnist")
     # Default path to which the datasets will be downloaded.
@@ -123,7 +134,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         # BUG: The input_shape given to the Model doesn't have the right number
         # of channels, even if we 'fixed' them here. However the images are fine
         # after.
-        Transforms.fix_channels,
+        Transforms.three_channels,
         Transforms.channels_first_if_needed,
     )
     
@@ -225,7 +236,22 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         # This will be set by the Experiment, or passed to the `apply` method.
         # TODO: This could be a bit cleaner.
         self.config: Config = None
-
+    
+    def _check_dataloaders_give_correct_types(self):
+        """ Do a quick check to make sure that the dataloaders give back the
+        right observations / reward types.
+        """
+        for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
+            for observations, rewards in take(loader_method(), 5):
+                assert isinstance(observations, self.Observations), type(observations)
+                assert isinstance(rewards, self.Rewards), type(rewards)
+                # TODO: If we add gym spaces to all settings, then check that
+                # the observations are in the observation space, sample a random
+                # action from the action space, check that it is contained
+                # within that space, and then get a reward by sending it to the
+                # dataloader. Check that the reward received is in the reward
+                # space.
+        
     def apply(self, method: "Method", config: Config) -> ClassIncrementalResults:
         """Apply the given method on this setting, producing some results.
 
@@ -334,6 +360,8 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         
         logger.debug(f"Dataloader kwargs: {dataloader_kwargs}")
         
+        self._check_dataloaders_give_correct_types()
+        
         # Training loop:
         for task_id in range(self.nb_tasks):
             logger.info(f"Starting training on task {task_id}")
@@ -375,7 +403,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         results: ClassIncrementalResults = self.test_loop(method)
         logger.info(f"Resulting objective of Test Loop: {results.objective}")
         print(results.summary())
-        print(results.to_log_dict())
+        log_dict = results.to_log_dict()
         results.save_to_dir(self.config.log_dir)
         return results
 
@@ -472,9 +500,9 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         return results
 
     def get_metrics(self,
-                    y_pred: Tensor,
-                    y: Tensor) -> Union[float, Metrics]:
-        """ Calculate the "metric" from the model prediction and the true label.
+                    actions: Actions,
+                    rewards: Rewards) -> Union[float, Metrics]:
+        """ Calculate the "metric" from the model predictions (actions) and the true labels (rewards).
         
         In this example, we return a 'Metrics' object:
         - `ClassificationMetrics` for classification problems,
@@ -484,12 +512,10 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         making plots, wandb logging, and serialization), but you can also just
         return floats if you want, no problem.
         """
-        # TODO: For unsupervised / semi-supervised training, we could accept
-        # something else here, no?
         from common.metrics import get_metrics
-        y_pred = y_pred.cpu().detach()
-        y = y.cpu().detach()
-        return get_metrics(y_pred=y_pred, y=y)
+        # In this particular setting, we only use the y_pred from actions and
+        # the y from the rewards.
+        return get_metrics(y_pred=actions.y_pred, y=rewards.y)
 
     def make_train_cl_loader(self, train_dataset: _ContinuumDataset) -> _BaseCLLoader:
         """ Creates a train ClassIncremental object from continuum. """
@@ -534,7 +560,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
     # LightningDataModule methods:
     
     def prepare_data(self, data_dir: Path = None, **kwargs):
-        data_dir = data_dir or self.data_dir
+        data_dir = data_dir or self.data_dir or self.config.data_dir
         self.make_dataset(data_dir, download=True)
         self.data_dir = data_dir
         super().prepare_data(**kwargs)
@@ -583,9 +609,14 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised.
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        
+        batch_transforms: List[Callable] = self.train_batch_transforms()
+        if not any(isinstance(t, SplitBatch) for t in batch_transforms):
+            batch_transforms.append(self.split_batch_transform)
+
         env: DataLoader = PassiveEnvironment(
             dataset,
-            batch_transforms=self.train_batch_transforms(),
+            batch_transforms=batch_transforms,
             **kwargs,
         )
         # TODO: Add some kind of wrapper that hides the task labels from
@@ -604,9 +635,13 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         dataset = self.val_datasets[self.current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         
+        batch_transforms: List[Callable] = self.val_batch_transforms()
+        if not any(isinstance(t, SplitBatch) for t in batch_transforms):
+            batch_transforms.append(self.split_batch_transform)
+
         env: DataLoader = PassiveEnvironment(
             dataset,
-            batch_transforms=self.valid_batch_transforms(),
+            batch_transforms=batch_transforms,
             **kwargs,
         )
         return env
@@ -622,26 +657,36 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
             self.setup("test")
         dataset = self.test_datasets[self.current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        
+        batch_transforms: List[Callable] = self.test_batch_transforms()
+        if not any(isinstance(t, SplitBatch) for t in batch_transforms):
+            batch_transforms.append(self.split_batch_transform)
+
         env: DataLoader = PassiveEnvironment(
             dataset,
-            batch_transforms=self.test_batch_transforms(),
+            batch_transforms=batch_transforms,
+            # TODO: Enable this:
+            # pretend_to_be_active=True,
             **kwargs,
         )
         return env
 
-    def train_batch_transforms(self) -> List[Callable]:
+    def batch_transforms(self) -> List[BatchTransform]:
         return [
             RelabelTransform(task_classes=self.current_task_classes(train=True)),
             ReorderTensors(), # (x, y, t) -> (x, (t), y)
+            self.split_batch_transform(),
         ]
-    def valid_batch_transforms(self) -> List[Callable]:
-        return self.train_batch_transforms()
 
-    def test_batch_transforms(self) -> List[Callable]:
-        return [
-            RelabelTransform(task_classes=self.current_task_classes(train=False)),
-            ReorderTensors(), # (x, y, t) -> (x, t, y)
-        ]
+    def train_batch_transforms(self) -> List[BatchTransform]:
+        return self.batch_transforms()
+    
+    def val_batch_transforms(self) -> List[BatchTransform]:
+        return self.train_batch_transforms()
+    
+    def test_batch_transforms(self) -> List[BatchTransform]:
+        return self.val_batch_transforms()
+    
 
     @property
     def current_task_id(self) -> Optional[int]:

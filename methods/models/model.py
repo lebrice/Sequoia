@@ -32,8 +32,10 @@ SettingType = TypeVar("SettingType", bound=LightningDataModule)
 # WIP (@lebrice): Playing around with this idea, to try and maybe use the idea
 # of creating typed objects for the 'Observation', the 'Action' and the 'Reward'
 # for each kind of model.
-from .base_model import Observation, Action, Reward, ForwardPass 
+from .base_model import ForwardPass
+from settings import Observations, Actions, Rewards
 from .model_addons import SemiSupervisedModel, ClassIncrementalModel, SelfSupervisedModel
+
 
 class Model(SemiSupervisedModel,
             ClassIncrementalModel,
@@ -57,29 +59,6 @@ class Model(SemiSupervisedModel,
     ):
         """ HParams of the Model. """
 
-    # @dataclass(frozen=True)
-    # class Observation(
-    #     SemiSupervisedModel.Observation,
-    #     SelfSupervisedModel.Observation,
-    #     ClassIncrementalModel.Observation,
-    # ):
-    #    pass
-
-    # @dataclass(frozen=True)
-    # class Action(
-    #     SemiSupervisedModel.Action,
-    #     SelfSupervisedModel.Action,
-    #     ClassIncrementalModel.Action,
-    # ):
-    #    pass
-
-    # @dataclass(frozen=True)
-    # class Reward(
-    #     SemiSupervisedModel.Reward,
-    #     SelfSupervisedModel.Reward,
-    #     ClassIncrementalModel.Reward,
-    # ):
-    #    pass
 
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)

@@ -11,28 +11,19 @@ import torch
 from torch import Tensor
 
 from common.loss import Loss
+from common.batch import Batch
+from settings import SettingType, Observations, Actions, Rewards
 from utils.logging_utils import get_logger
 
-from settings import SettingType
-
 from ..base_model import BaseModel
-from ..batch import Batch
-
 
 logger = get_logger(__file__)
 
 
 class SemiSupervisedModel(BaseModel[SettingType]):
-    
-    @dataclass(frozen=True)
-    class Reward(BaseModel.Reward):
-        # This just indicates that the 'y' can now also be a Sequence of
-        # optional tensors, instead of either just a tensor or None.
-        y: Union[Optional[Tensor], Sequence[Optional[Tensor]]]
-
     def get_loss(self,
                  forward_pass: Dict[str, Tensor],
-                 reward: Optional[BaseModel.Reward] = None,
+                 reward: Optional[Rewards] = None,
                  loss_name: str="") -> Loss:
         """Trains the model on a batch of (potentially partially labeled) data. 
 

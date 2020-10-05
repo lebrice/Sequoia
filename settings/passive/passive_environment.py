@@ -1,24 +1,49 @@
-from torch.utils.data import DataLoader
-from settings.base.environment import EnvironmentBase, ObservationType, RewardType, ActionType
 from typing import *
+
 from common.transforms import Compose
+from torch.utils.data import DataLoader, Dataset, IterableDataset
+
+from ..base.environment import (Actions, ActionType, Environment, Observations,
+                                ObservationType, Rewards, RewardType)
 
 
-class PassiveEnvironment(DataLoader, EnvironmentBase, Generic[ObservationType, RewardType]):
+class PassiveEnvironment(DataLoader, Environment[Union[ActionType,
+                                                       Tuple[ObservationType,
+                                                             ActionType]],
+                                                 ActionType,
+                                                 RewardType]):
     """Environment in which actions have no influence on future observations.
     
+    Can either be iterated on like a normal dataset, in which case it gives back
+    the observation and the reward at the same time, or as an Active dataset,
+    where it gives the reward only after an action (doesn't matter what action)
+    is sent.
+    
     Normal supervised datasets such as Mnist, ImageNet, etc. fit under this
-    category. 
-    For now, this is exactly the same as a DataLoader, basically.
-
-    TODO: Could instead subclass the ActiveEnvironment class and add a little
-    'mechanism' to yield tuples instead of observations and rewards separately.
+    category. Similarly to Environment, this just adds some methods on top of
+    the usual PyTorch DataLoader.
     """
     def __init__(self,
-                 dataset,
+                 dataset: Union[IterableDataset, Dataset],
                  pretend_to_be_active: bool = False,
                  batch_transforms: List[Callable] = None,
                  **kwargs):
+        """Creates the DataLoader/Environment for the given dataset.
+
+        Parameters
+        ----------
+        dataset : [type]
+            The dataset to iterate on.
+
+        pretend_to_be_active : bool, optional
+            Wether to withhold , by default False
+        
+        batch_transforms : List[Callable], optional
+            [description], by default None
+        
+        **kwargs:
+            The rest of the usual dataloader kwargs.
+        """
         # TODO: When True, withold the labels from the yielded batches until a
         # prediction is received through in the 'send' method.
         self.pretend_to_be_active = pretend_to_be_active

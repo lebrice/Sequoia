@@ -10,7 +10,7 @@ from pytorch_lightning.core.decorators import auto_move_data
 
 from common.config import Config
 
-from settings import ClassIncrementalSetting
+from settings import ClassIncrementalSetting, Observations, Actions, Rewards
 from utils import dict_intersection, zip_dicts
 from utils.logging_utils import get_logger
 
@@ -37,11 +37,6 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # have access to task labels. Need to figure out how to manage this between TaskIncremental and Classifier.
         multihead: bool = False
     
-    @dataclass(frozen=True)
-    class Observation(BaseModel.Observation):
-        """ Adds the 'task labels' field to the base Observation. """
-        task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
-
     def __init__(self, setting: ClassIncrementalSetting, hparams: HParams, config: Config):
         self._output_head: OutputHead = None
 
@@ -131,8 +126,8 @@ class ClassIncrementalModel(BaseModel[SettingType]):
     def forward(self, input_batch: Any) -> Dict[str, Tensor]:
         """ Forward pass of the Model. Returns a dict."""
         # Just testing things out here.
-        observation: self.Observation = self.Observation.from_inputs(input_batch)
-        assert isinstance(observation, self.Observation)
+        observation: Observations = self.Observations.from_inputs(input_batch)
+        assert isinstance(observation, self.Observations)
         
         # Get the task labels from the observation.
         task_labels = observation.task_labels

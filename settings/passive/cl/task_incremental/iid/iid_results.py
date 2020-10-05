@@ -36,6 +36,9 @@ class IIDResults(Results):
         save_dir = Path(save_dir)
         save_dir.mkdir(exist_ok=True, parents=True)
         plots: Dict[str, plt.Figure] = self.make_plots()
+        # Save the actual 'results' object to a file in the save dir.
+        self.save(save_dir / "results.json")
+        
         print(f"\nPlots: {plots}\n")
         for fig_name, figure in plots.items():
             print(f"fig_name: {fig_name}")
@@ -56,8 +59,6 @@ class IIDResults(Results):
         figure: plt.Figure
         axes: plt.Axes
         figure, axes = plt.subplots()
-        # y = 
-        # x = np.
         rects = axes.hist(self.test_metric.class_accuracy)
         axes.set_title("Class Accuracy")
         axes.set_xlabel("Class")

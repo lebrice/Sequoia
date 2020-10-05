@@ -1,6 +1,6 @@
 from dataclasses import dataclass, replace
 
-from settings import IIDSetting
+from settings import IIDSetting, Observations
 from utils import constant, get_logger
 
 from .task_incremental_model import TaskIncrementalModel
@@ -18,11 +18,12 @@ class IIDModel(TaskIncrementalModel[IIDSetting]):
     class HParams(TaskIncrementalModel.HParams):
         multihead: bool = constant(False)
 
-    def preprocess_observations(self, observation) -> TaskIncrementalModel.Observation:
-        return replace(observation, task_labels=None)
+    def preprocess_observations(self, observations: Observations) -> Observations:
+        # Drop the task labels, we don't need them.
+        return replace(observations, task_labels=None)
     
     # TODO: These can actually be used here, since we don't really care about
-    # the metrics over time during training, we just want the aggregated metrics!
+    # the metrics over time during training, we just want the aggregated metric.
     
     # def validation_epoch_end(
     #         self,

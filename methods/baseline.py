@@ -10,7 +10,7 @@ from common.config import Config
 from common.loss import Loss
 from pytorch_lightning import LightningModule, Trainer
 from settings import (ClassIncrementalSetting, ContinualRLSetting,
-                      EnvironmentBase, IIDSetting, Results, RLSetting, Setting,
+                      Environment, IIDSetting, Results, RLSetting, Setting,
                       SettingType, TaskIncrementalSetting)
 from simple_parsing import ArgumentParser, mutable_field, subparsers
 

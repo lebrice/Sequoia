@@ -18,19 +18,20 @@ from pytorch_lightning import LightningDataModule, LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
 from simple_parsing.helpers.flatten import FlattenedAccess
+from simple_parsing import list_field
 from torch import Tensor
 
 from common.config import Config
 from common.loss import Loss
+from common.transforms import SplitBatch, Transforms
+from common.batch import Batch
 from methods.models.output_heads import OutputHead
+from settings.base.setting import Setting, SettingType, Observations, Actions, Rewards
 from utils.logging_utils import get_logger
-
 from .base_hparams import BaseHParams
-logger = get_logger(__file__)
-SettingType = TypeVar("SettingType", bound=LightningDataModule)
-from .split_batch import split_batch
-from .batch import Batch, Observation, Action, Reward
+from settings import Observations, Actions, Rewards
 
+logger = get_logger(__file__)
 
 @dataclass(frozen=True)
 class ForwardPass(Batch, FlattenedAccess):
@@ -42,9 +43,9 @@ class ForwardPass(Batch, FlattenedAccess):
     `self.x`, and it will fetch the attribute from the observation. Same goes
     for setting the attribute.
     """  
-    observations: Observation
+    observations: Observations
     representations: Any
-    actions: Action
+    actions: Actions
 
     @property
     def h_x(self) -> Any:
@@ -64,12 +65,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
     is used by the [train/val/test]_step methods which are called by
     pytorch-lightning.
     """
-    # NOTE: we put this here just so its easier to subclass these classes from
-    # future subclasses of 'Model'.
-    Observation = Observation
-    Action = Action
-    Reward = Reward
-
     @dataclass
     class HParams(BaseHParams):
         """ HParams of the Model. """
@@ -78,6 +73,14 @@ class BaseModel(LightningModule, Generic[SettingType]):
         super().__init__()
         self.setting: SettingType = setting
         self.hp = hparams
+        
+        self.Observations: Type[Observations] = setting.Observations
+        self.Actions: Type[Actions] = setting.Actions
+        self.Rewards: Type[Rewards] = setting.Rewards
+        
+        self.split_batch_transform = SplitBatch(observation_type=self.Observations,
+                                                reward_type=self.Rewards) 
+        
         self.config: Config = config
         # TODO: Decided to Not set this property, so the trainer doesn't
         # fallback to using it instead of the passed datamodules/dataloaders.
@@ -103,11 +106,13 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.encoder, self.hidden_size = self.hp.make_encoder()
         self.output_head = self.create_output_head()
 
-    # @auto_move_data
+    @auto_move_data
     def forward(self, input_batch: Any) -> ForwardPass:
-        """ Forward pass of the Model. Returns a dict.
+        """ Forward pass of the Model.
+        
+        Returns a ForwardPass object (or a dict)
         """
-        observations = self.Observation.from_inputs(input_batch)
+        observations: Observations = self.Observations.from_inputs(input_batch)
         
         # Encode the observation to get representations.
         representations = self.encode(observations)
@@ -122,7 +127,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         )
         return forward_pass
 
-    def encode(self, observation: Union[Tensor, Observation]) -> Tensor:
+    def encode(self, observations: Observations) -> Tensor:
         """Encodes a batch of samples `x` into a hidden vector.
 
         Args:
@@ -133,21 +138,24 @@ class BaseModel(LightningModule, Generic[SettingType]):
             Tensor: The hidden vector / embedding for that sample, with size
                 [<batch_size>, `self.hp.hidden_size`].
         """
-        preprocessed_observations = self.preprocess_observations(observation)
-        # Here in this base model we only use the 'x' from the observations.
-        x: Tensor
-        if isinstance(observation, Tensor):
-            x = observation
-        else:
-            x = observation.x
-
-        h_x = self.encoder(x)
+        assert isinstance(observations, self.Observations)
+        # If there's any additional 'input preprocessing' to do, do it here.
+        # NOTE (@lebrice): This is currently done this way so that we don't have
+        # to pass transforms to the settings from the method side.
+        """
+        TODOS:
+        - Mark the transforms fields on the Setting as ClassVars.
+        - Add those fields on the Method/models' HParam!                        
+        """
+        preprocessed_observations = self.preprocess_observations(observations)
+        # Here in this base model the encoder only takes the 'x' from the observations.
+        h_x = self.encoder(preprocessed_observations.x)
         if isinstance(h_x, list) and len(h_x) == 1:
             # Some pretrained encoders sometimes give back a list with one tensor. (?)
             h_x = h_x[0]
         return h_x
-
-    def get_actions(self, observations: Union[Tensor, Observation], h_x: Tensor) -> Action:
+    
+    def get_actions(self, observations: Union[Tensor, Observations], h_x: Tensor) -> Actions:
         """ Pass the required inputs to the output head and get predictions.
         
         NOTE: This method is basically just here so we can customize what we
@@ -161,7 +169,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         y_pred = self.output_head(x, h_x)
         # TODO: Actually change the return type of the output head maybe, so it
         # gives back an action?
-        return self.Action(y_pred)
+        return self.Actions(y_pred)
 
     def create_output_head(self) -> OutputHead:
         """ Create the output head for the task. """
@@ -180,7 +188,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         return self.shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
 
     def shared_step(self,
-                    batch: Tuple[Tensor, ...],
+                    batch: Tuple[Observations, Rewards],
                     batch_idx: int,
                     dataloader_idx: int = None,
                     loss_name: str = "",
@@ -192,16 +200,25 @@ class BaseModel(LightningModule, Generic[SettingType]):
         if dataloader_idx is not None:
             assert isinstance(dataloader_idx, int)
             loss_name += f"/{dataloader_idx}"
-
-        # Split the batch into the observations and the rewards.
+        
+        # If needed, split the batch into the observations and the rewards.
+        # NOTE: This does nothing if the batch is already split the right way.
         observation, reward = self.split_batch(batch)
-
-        # Get the results of the forward pass:
+        
+        # Get the forward pass results, containing:
         # - "observation": the augmented/transformed/processed observation.
         # - "representations": the representations for the observations.
         # - "actions": The actions (predictions)
         forward_pass = self(observation)
-        reward = self.preprocess_rewards(reward)
+
+        if reward is None or reward.y is None:
+            # TODO: Get the reward from the environment (the dataloader).
+            pass
+            # if self.training:
+            #     rewards = self.setting.train_env.send(forward_pass["actions"])
+            # else: # How to differentiate between valid/test?
+            #     rewards = 
+        
         loss_object: Loss = self.get_loss(forward_pass, reward, loss_name=loss_name)
         return {
             "loss": loss_object.loss,
@@ -213,15 +230,21 @@ class BaseModel(LightningModule, Generic[SettingType]):
         result = loss_object.to_pl_dict()
         return result
     
-    def split_batch(self, batch: Any) -> Tuple[Observation, Reward]:
-        """ Splits the batch into the observations and the rewards. """
-        return split_batch(
-            batch,
-            Observation=self.Observation,
-            Reward=self.Reward
-        )
+    @auto_move_data
+    def split_batch(self, batch: Any) -> Tuple[Observations, Rewards]:
+        """ Splits the batch into the observations and the rewards. 
+        
+        Uses the types defined on the setting that this model is being applied
+        on (which were copied to `self.Observations` and `self.Actions`).
+        """
+        if isinstance(batch, (tuple, list)) and len(batch) == 2:
+            observations, rewards = batch
+            if (isinstance(observations, self.Observations) and
+                isinstance(rewards, self.Rewards)):
+                return observations, rewards
+        return self.split_batch_transform(batch)
 
-    def get_loss(self, forward_pass: Dict[str, Batch], reward: Reward = None, loss_name: str = "") -> Loss:
+    def get_loss(self, forward_pass: Dict[str, Batch], reward: Rewards = None, loss_name: str = "") -> Loss:
         """Returns a Loss object containing the total loss and metrics. 
 
         Args:
@@ -246,70 +269,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
             total_loss += supervised_loss
         return total_loss
 
-    def preprocess_observations(self, observation) -> Observation:
+    def preprocess_observations(self, observation) -> Observations:
         return observation
     
-    def preprocess_rewards(self, reward: Reward) -> Reward:
+    def preprocess_rewards(self, reward: Rewards) -> Rewards:
         return reward
-    
-    def validation_epoch_end(
-            self,
-            outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
-        ) -> Dict[str, Dict[str, Tensor]]:
-        return self._shared_epoch_end(outputs, loss_name="val")
-
-    def test_epoch_end(
-            self,
-            outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]]
-        ) -> Dict[str, Dict[str, Tensor]]:
-        # assert False, outputs
-        return self._shared_epoch_end(outputs, loss_name="test")
-
-    def _shared_epoch_end(
-        self,
-        outputs: Union[List[Dict[str, Tensor]], List[List[Dict[str, Tensor]]]],
-        loss_name: str="",
-    ) -> Dict[str, Dict[str, Tensor]]:
-        
-        # Sum of the metrics acquired during the epoch.
-        # NOTE: This is the 'online' metrics in the case of a training/val epoch
-        # and the 'average' & 'online' in the case of a test epoch (as they are
-        # the same in that case).
-
-        epoch_loss: Loss = Loss(name=loss_name)
-
-        if not isinstance(outputs[0], list):
-            # We used only a single dataloader.
-            for output in outputs:
-                if isinstance(output, list):
-                    # we had multiple test/val dataloaders (i.e. multiple tasks)
-                    # We get the loss for each task at each step. The outputs are for each of the dataloaders.
-                    for i, task_output in enumerate(output):
-                        task_loss = task_output["loss_object"] 
-                        epoch_loss += task_loss
-                elif isinstance(output, dict):
-                    # There was a single dataloader: `output` is the dict returned
-                    # by (val/test)_step.
-                    loss_info = output["loss_object"]
-                    epoch_loss += loss_info
-                else:
-                    raise RuntimeError(f"Unexpected output: {output}")
-        else:
-            for i, dataloader_output in enumerate(outputs):
-                loss_i: Loss = Loss(name=f"{i}")
-                for output in dataloader_output:
-                    if isinstance(output, dict) and "loss_object" in output:
-                        loss_info = output["loss_object"]
-                        loss_i += loss_info
-                    else:
-                        raise RuntimeError(f"Unexpected output: {output}")
-                epoch_loss += loss_i
-        # TODO: Log stuff here?
-        for name, value in epoch_loss.to_log_dict().items():
-            logger.info(f"{name}: {value}")
-            if self.logger:
-                self.logger.log(name, value)
-        return epoch_loss.to_pl_dict()
         
     def configure_optimizers(self):
         return self.hp.make_optimizer(self.parameters())

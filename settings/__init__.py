@@ -1,12 +1,13 @@
 """
 """
-from typing import Any, Dict, Iterable, List, Set, Type
 import inspect
+from typing import Any, Dict, Iterable, List, Set, Type
 
-from .base import (ActionType, EnvironmentBase, ObservationType, Results,
-                   RewardType, Setting, SettingType)
-from .passive import *
+from .base import (Actions, ActionType, Environment, Observations,
+                   ObservationType, Results, Rewards, RewardType, Setting,
+                   SettingType)
 from .active import *
+from .passive import *
 
 all_settings: List[Type[Setting]] = [
     IIDSetting,

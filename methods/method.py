@@ -21,15 +21,15 @@ from common.loss import Loss
 from common.metrics import Metrics
 from pytorch_lightning import (Callback, LightningDataModule, LightningModule,
                                Trainer)
-from settings import Results, Setting, SettingType
+from settings import Results, Setting, SettingType, Observations, Actions, Rewards
 from simple_parsing import Serializable, mutable_field
 from torch import Tensor
 from torch.utils.data import DataLoader
 from utils import Parseable, camel_case, get_logger, remove_suffix, try_get
 from utils.utils import get_path_to_source_file
 
-from .models.model import Model, Observation, Reward
-from .models.batch import Batch
+from .models.model import Model, ForwardPass
+from common.batch import Batch
 
 logger = get_logger(__file__)
 
@@ -159,57 +159,17 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
     def split_batch(self, batch: Any) -> Tuple[Batch, Batch]:
         return self.model.split_batch(batch)
 
-    def get_prediction(self, inputs) -> Tensor:
-        """ Get a batch of predictions for this batch of inputs.
+    def get_actions(self, observations: Observations) -> Actions:
+        """ Get a batch of predictions (actions) for a batch of observations.
         
-        TODO: @lebrice How should we specify what the input batch should
-        contain, without restricting how future subclasses implement this method
-        too much? (I hate using **kwargs!)
-        Maybe some kind of 'Observation' dataclass or namedtuple? Sounds a bit
-        over-engineered, even for me..
+        This gets called by the Setting during the test loop.
         """
         self.model.eval()
         with torch.no_grad():
-            inputs = self.model.Observation.from_inputs(inputs)
-            forward_pass = self.model(inputs)
-        
-        if isinstance(forward_pass, Tensor):
-            # Forward pass wasn't a dict, so we assume it's the right tensor.
-            action = forward_pass
-        else:
-            # NOTE (@lebrice): I think it's reasonable to assume that the
-            # 'prediction' can always be found at one of these keys. Worst comes
-            # to worst, we could always add more keys to this list if needed.
-            # TODO: We could also maybe get the right key to use from the
-            # current setting! This sounds cleaner, design-wise.
-            possible_keys: List[str] = ["y_pred", "actions", "action"]
-            action = try_get(forward_pass, *possible_keys)
-            if action is None:
-                raise RuntimeError(
-                    f"Unable to retrieve the 'prediction' from the results of "
-                    f"the forward pass! (tried keys {possible_keys}) type(forward_pass) = {type(forward_pass)}"
-                )
-        return action
-
-    def predict_image_labels(self,
-                             x: Tensor,
-                             task_labels: List[Optional[float]] = None) -> Tensor:
-        """ When in a classification setting, give back the predicted labels for
-        this batch of images.
-        
-        When `task_labels` is not None, then it is a list of optional floats.
-        If `task_labels[i]` is an integer, then it indicates that `images[i]` is
-        an image taken from the task with index `task_labels[i]`. If
-        `task_labels[i]` is None, then the task label for that image isn't
-        given.
-        Naturally, when `task_labels` is None, no task labels are given.
-
-        Your method should ideally leverage this information when available, as
-        it makes the problem a lot easier!
-        """
-        actions = self.predict(x=x, task_labels=task_labels)
-        
-        return torch.argmax(y_pred, dim=-1)
+            forward_pass = self.model(observations)
+        # Simplified this for now, but we could add more flexibility later.
+        assert isinstance(forward_pass, ForwardPass)
+        return forward_pass.actions
 
     def on_task_switch(self, task_id: int) -> None:
         """

@@ -37,51 +37,28 @@ from torch.utils.data import DataLoader
 
 from common.config import Config
 from common.loss import Loss
-from common.transforms import Compose, Transforms
+from common.transforms import Compose, Transforms, Transform, BatchTransform, SplitBatch
 from simple_parsing import (ArgumentParser, Serializable, list_field,
                             mutable_field, subparsers)
 from utils import Parseable, camel_case, dict_union, get_logger, remove_suffix
 
 from .results import Results
+from .setting_meta import SettingMeta
+from .environment import Environment, Observations, Actions, Rewards
+
 
 logger = get_logger(__file__)
 
-Loader = TypeVar("Loader", bound=DataLoader)
-ResultsType = TypeVar("ResultsType", bound=Results)
+EnvironmentType = TypeVar("EnvironmentType", bound=Environment)
 SettingType = TypeVar("SettingType", bound="Setting")
 
 
-class SettingMeta(_DataModuleWrapper, Type["Setting"]):
-    """ Metaclass for the nodes in the Setting inheritance tree.
-    
-    Might remove this. Was experimenting with using this to create class
-    properties for each Setting.
-
-    TODO: A little while back I noticed some strange behaviour when trying
-    to create a Setting class (either manually or through the command-line), and
-    I attributed it to PL adding a `_DataModuleWrapper` metaclass to
-    `LightningDataModule`, which seemed to be causing problems related to
-    calling __init__ when using dataclasses. I don't quite recall exactly what
-    was happening and was causing an issue, so it would be a good idea to try
-    removing this metaclass and writing a test to make sure there was a problem
-    to begin with, and also to make sure that adding back this class fixes it.
-    """
-    def __call__(cls, *args, **kwargs):
-        # This is used to filter the arguments passed to the constructor
-        # of the Setting and only keep the ones that are fields with init=True.
-        init_fields: List[str] = [f.name for f in fields(cls) if f.init]
-        extra_args: Dict[str, Any] = {}
-        for k in list(kwargs.keys()):
-            if k not in init_fields:
-                extra_args[k] = kwargs.pop(k)
-        if extra_args:
-            logger.warning(UserWarning(
-                f"Ignoring args {extra_args} when creating class {cls}."
-            ))
-        return super().__call__(*args, **kwargs)
-
 @dataclass
-class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], metaclass=SettingMeta):
+class Setting(LightningDataModule,
+              Generic[EnvironmentType],
+              Serializable,
+              Parseable,
+              metaclass=SettingMeta):
     """ Base class for all research settings in ML: Root node of the tree. 
 
     A 'setting' is loosely defined here as a learning problem with a specific
@@ -102,8 +79,26 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
     This is a dataclass. Its attributes are can also be used as command-line
     arguments using `simple_parsing`.
     """
-    # Overwrite this in a subclass to customize which type of Results to create.
-    results_class: ClassVar[Type[Results]] = Results
+    ## ---------- Class Variables ------------- 
+    ## Fields in this block are class attributes. They don't create command-line
+    ## arguments.
+    
+    # Type of Observations that the dataloaders (a.k.a. "environments") will
+    # produce for this type of Setting.
+    Observations: ClassVar[Type[Observations]] = Observations
+    # Type of Actions that the dataloaders (a.k.a. "environments") will receive
+    # through their `send` method, for this type of Setting.
+    Actions: ClassVar[Type[Actions]] = Actions
+    # Type of Rewards that the dataloaders (a.k.a. "environments") will return
+    # after receiving an action, for this type of Setting.
+    Rewards: ClassVar[Type[Rewards]] = Rewards
+    
+    # The type of Results that are given back when a method is applied on this
+    # Setting. The `Results` class basically defines the 'evaluation metric' for
+    # a given type of setting. See the `Results` class for more info.
+    Results: ClassVar[Type[Results]] = Results
+    
+            
     # These are some "private" class attributes.
     # For any new Setting subclass, it's parent setting.
     _parent: ClassVar[Type["Setting"]] = None
@@ -111,12 +106,13 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
     _children: ClassVar[List[Type["Setting"]]] = []
     # List of all methods 'applicable' to this setting.
     _applicable_methods: ClassVar[Set[Type]] = set()    
-
+    
+    ##
+    ##   -------------
+    
     # Transforms to be used. When no value is given for 
     # `[train/val/test]_transforms`, this value is used as a default.
-    # TODO: Currently trying to find a way to specify the transforms from the
-    # command-line, Therefore don't rely on that being done perfectly just yet.
-    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels)
+    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
     # Transforms to be applied to the training datasets. When unset, the value
     # of `transforms` is used.
     train_transforms: List[Transforms] = list_field()
@@ -126,6 +122,7 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
     # Transforms to be applied to the testing datasets. When unset, the value
     # of `transforms` is used.
     test_transforms: List[Transforms] = list_field()
+   
 
     # Fraction of training data to use to create the validation set.
     val_fraction: float = 0.2
@@ -136,13 +133,12 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
     # Number of labeled examples.
     n_labeled_examples: Optional[int] = None
 
-
     # These should be set by all settings, not from the command-line. Hence we
     # mark them as InitVars, which means they should be passed to __post_init__.
     obs_shape: Tuple[int, ...] = ()
     action_shape: Tuple[int, ...] = ()
     reward_shape: Tuple[int, ...] = ()
-      
+
     def __post_init__(self,
                       obs_shape: Tuple[int, ...] = (),
                       action_shape: Tuple[int, ...] = (),
@@ -152,6 +148,17 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
         """
         logger.debug(f"__post_init__ of Setting")
         # Actually compose the list of Transforms or callables into a single transform.
+        # self.transforms: Compose = Compose(self.transforms)
+        # self.train_transforms: Compose = Compose(self.train_transforms())
+        # self.val_transforms: Compose = Compose(self.val_transforms())
+        # self.test_transforms: Compose = Compose(self.test_transforms())
+        # TODO: Adds an additional transform that splits stuff into Observations
+        # and Rewards.
+        # IDEA: Add a `BatchTransform` class to mark the transforms which can
+        # operate on batch objects rather than just on tensors. Use
+        # __init_subclass__ in that class to wrap the __call__ method
+        # of the transforms and get the tensor from the observation
+        # automatically.
         self.transforms: Compose = Compose(self.transforms)
         self.train_transforms: Compose = Compose(self.train_transforms or self.transforms)
         self.val_transforms: Compose = Compose(self.val_transforms or self.transforms)
@@ -161,6 +168,11 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
             train_transforms=self.train_transforms,
             val_transforms=self.val_transforms,
             test_transforms=self.test_transforms,
+        )
+        # Transform that will split batches into Observations and Rewards.
+        self.split_batch_transform = SplitBatch(
+            observation_type=self.Observations,
+            reward_type=self.Rewards
         )
 
         self.obs_shape = self.obs_shape or obs_shape
@@ -209,8 +221,44 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
             `Trainer` & `LightningDataModule` API to be neat and fast.
         """
 
+    # LightningDataModule methods:
+    def prepare_data(self, data_dir: Path = None, **kwargs):
+        data_dir = data_dir or self.data_dir or self.config.data_dir
+        self.make_dataset(data_dir, download=True)
+        self.data_dir = data_dir
+        super().prepare_data(**kwargs)
+
+    def setup(self, stage: Optional[str] = None, *args, **kwargs):
+        super().setup(stage, *args, **kwargs)
+
+    # def train_dataloader(self, **kwargs) -> EnvironmentType:
+    #     # TODO: Testing this out.
+    #     if not self.has_prepared_data:
+    #         self.prepare_data()
+    #     if not self.has_setup_fit:
+    #         self.setup("fit")
+    #     kwargs = dict_union(self.dataloader_kwargs, kwargs)
+    #     try:
+    #         return super().train_dataloader(**kwargs)
+    #     except TypeError as e:
+    #         logger.error(f"Couldn't find train_dataloader method: {e}")
+    #         raise NotImplementedError(
+    #             f"Couldn't find a train_dataloader method! you need to add it!"
+    #         )
+    
+   
+    # Transforms that apply on Observation objects (the whole batch).
+    def batch_transforms(self) -> List[Callable]:
+        return [self.split_batch_transform]
+    def train_batch_transforms(self) -> List[Callable]:
+        return self.batch_transforms()
+    def valid_batch_transforms(self) -> List[Callable]:
+        return self.train_batch_transforms()
+    def test_batch_transforms(self) -> List[Callable]:
+        return self.valid_batch_transforms()
+    
     @classmethod
-    def main(cls, argv: Optional[Union[str, List[str]]]=None) -> ResultsType:
+    def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
         from main import Experiment
         experiment: Experiment
         # Create the Setting object from the command-line:
@@ -223,13 +271,14 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
         results: ResultsType = experiment.launch(argv)
         return results
 
-    def apply_all(self, argv: Union[str, List[str]]=None) -> Dict[Type["Method"], Results]:
+    def apply_all(self, argv: Union[str, List[str]] = None) -> Dict[Type["Method"], Results]:
         applicable_methods = self.get_all_applicable_methods()
         from methods import Method
         all_results: Dict[Type[Method], Results] = OrderedDict()
+        config = Config.from_args(argv)
         for method_type in applicable_methods:
             method = method_type.from_args(argv)
-            results = self.apply(method)
+            results = self.apply(method, config)
             all_results[method_type] = results
         logger.info(f"All results for setting of type {type(self)}:")
         logger.info({
@@ -257,10 +306,6 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
             parent: Type[Setting]
             assert cls not in parent._children
             parent._children.append(cls)
-        # for t in cls.__bases__:
-        #     if inspect.isclass(t) and issubclass(t, Setting):
-        #         if cls not in t.sub_settings:
-        #             t.sub_settings.append(cls)
         super().__init_subclass__(**kwargs)
 
     @classmethod

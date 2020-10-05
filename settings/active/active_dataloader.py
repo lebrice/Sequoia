@@ -5,14 +5,14 @@ import torch
 from torch import multiprocessing as mp
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 
-from settings.base.environment import (ActionType, EnvironmentBase,
+from settings.base.environment import (ActionType, Environment,
                                        ObservationType, RewardType)
 from utils.logging_utils import get_logger, log_calls
 
 logger = get_logger(__file__)
 
 
-class ActiveDataLoader(DataLoader, EnvironmentBase[ObservationType, ActionType, RewardType]):
+class ActiveDataLoader(DataLoader, Environment[ObservationType, ActionType, RewardType]):
     """Extends DataLoader to support sending back actions to the 'dataset'.
     
     TODO: Not really used at the moment besides as a base class for the

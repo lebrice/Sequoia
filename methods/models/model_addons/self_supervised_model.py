@@ -15,7 +15,7 @@ from common.loss import Loss
 from common.tasks import AEReconstructionTask, EWCTask, VAEReconstructionTask
 from common.tasks.auxiliary_task import AuxiliaryTask
 from common.tasks.simclr import SimCLRTask
-from settings import Setting, SettingType
+from settings import Setting, SettingType, Observations, Actions, Rewards
 from utils.logging_utils import get_logger
 from utils.module_dict import ModuleDict
 
@@ -50,7 +50,7 @@ class SelfSupervisedModel(BaseModel[SettingType]):
                 logger.info(f"enabling the '{task_name}' auxiliary task (coefficient of {task.coefficient})")
                 task.enable()
 
-    def get_loss(self, forward_pass: Dict[str, Tensor], reward: BaseModel.Reward = None, loss_name: str = "") -> Loss:
+    def get_loss(self, forward_pass: Dict[str, Tensor], reward: Rewards = None, loss_name: str = "") -> Loss:
         loss: Loss = super().get_loss(forward_pass, reward=reward, loss_name=loss_name)
 
         # Add the self-supervised losses from all the enabled auxiliary tasks.

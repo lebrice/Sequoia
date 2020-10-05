@@ -1,3 +1,4 @@
-from .setting import Setting, SettingType
-from .environment import EnvironmentBase, ObservationType, ActionType, RewardType
+from .environment import (Actions, ActionType, Environment, Observations,
+                          ObservationType, Rewards, RewardType)
 from .results import Results
+from .setting import Setting, SettingType
