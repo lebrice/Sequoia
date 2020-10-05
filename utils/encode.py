@@ -17,16 +17,16 @@ from simple_parsing.helpers.serialization import register_decoding_fn
 register_decoding_fn(Tensor, torch.as_tensor)
 register_decoding_fn(np.ndarray, np.asarray)
 
-@encode.register(Tensor)
-def no_op_encode(value: Any):
-    return value
+# @encode.register(Tensor)
+# def no_op_encode(value: Any):
+#     return value
 
 # TODO: Look deeper into how things are pickled and moved by pytorch-lightning.
 # Right now there is a warning by pytorch-lightning saying that some metrics
 # will not be included in a checkpoint because they are lists instead of Tensors.
 # This is because they got encoded with the function below when they shouldn't
 # have. 
-# @encode.register(Tensor)
+@encode.register(Tensor)
 @encode.register(np.ndarray)
 def encode_tensor(obj: Union[Tensor, np.ndarray]) -> List:
     return obj.tolist()
