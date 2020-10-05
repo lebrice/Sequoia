@@ -25,6 +25,8 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
     def __init__(self,
                  dataset: Union[IterableDataset, Dataset],
                  pretend_to_be_active: bool = False,
+                 # TODO: not sure it's super worth it, this adds a bit of
+                 # unneeded complexity.
                  batch_transforms: List[Callable] = None,
                  observations_type: Type[ObservationType] = None,
                  rewards_type: Type[RewardType] = None,
@@ -39,8 +41,9 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         pretend_to_be_active : bool, optional
             Wether to withhold , by default False
         
-        batch_transforms : List[Callable], optional
-            [description], by default None
+        batch_transforms : List[Callable[Tuple[Tensor, ...]]], optional
+            Transforms that operate on all the entire batch of tensors that is
+            returned by the dataset, by default None.
         
         **kwargs:
             The rest of the usual dataloader kwargs.
@@ -48,18 +51,19 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         # TODO: When True, withold the labels from the yielded batches until a
         # prediction is received through in the 'send' method.
         self.pretend_to_be_active = pretend_to_be_active
-
         self.batch_transforms: Compose = Compose(batch_transforms or [])
         from common.transforms import SplitBatch
         if not any(isinstance(t, SplitBatch) for t in self.batch_transforms):
             if observations_type and rewards_type:
                 self.batch_transforms.append(SplitBatch(observations_type, rewards_type))
-            raise RuntimeError(
-                f"`batch_transforms` needs to contain a SplitBatch "
-                f"transform! Or, you can use the `observations_type` and "
-                f"`rewards_type` args of the {__class__} constructor and it "
-                f"will create one for you. "
-            )
+            else:
+                raise RuntimeError(
+                    f"`batch_transforms` needs to contain a SplitBatch "
+                    f"transform! Or, you can pass an `observations_type` and a"
+                    f"`rewards_type` to the {__class__} constructor and it "
+                    f"will create one for you. \n"
+                    f"(transforms: {self.batch_transforms})"
+                )
         
         super().__init__(dataset=dataset, **kwargs)
         self.observations: Union[Observations, Any] = None

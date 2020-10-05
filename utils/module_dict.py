@@ -1,4 +1,4 @@
-""" Typed wrapper around `nn.ModuleDict`. """
+""" Typed wrapper around `nn.ModuleDict`, just that just adds a get method. """
 from typing import TypeVar, Union, Optional, overload
 from torch import nn
 

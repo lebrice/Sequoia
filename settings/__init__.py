@@ -19,4 +19,6 @@ from .passive import *
 #     RLSetting,
 # ]
 ## OR, dynamic version:
-all_settings: List[Type[Setting]] = Setting.all_children()
+all_settings: List[Type[Setting]] = frozenset([
+    Setting, *Setting.all_children()
+])

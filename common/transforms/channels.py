@@ -57,9 +57,11 @@ class ThreeChannels(Callable[[Tensor], Tensor]):
             elif x.shape[-1] == 1:
                 x = x.repeat(1, 1, 1, 3)
                 names = ("N", "H", "W", "C")
-        if isinstance(x, Tensor) and names:
-            # Cool new pytorch feature!
-            x = x.refine_names(*names)
+        # FIXME: Turning this off for now, since using named dimensions
+        # generates a whole lot of UserWarnings atm.
+        # if isinstance(x, Tensor) and names:
+        #     # Cool new pytorch feature!
+        #     x.rename(*names)
         return x
     
     def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:

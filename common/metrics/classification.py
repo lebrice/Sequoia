@@ -113,7 +113,11 @@ class ClassificationMetrics(Metrics):
             class_accuracy=move(self.class_accuracy, device),
             confusion_matrix=move(self.confusion_matrix, device),
         )
-        
+
+    @property
+    def objective(self) -> float:
+        return float(self.accuracy)
+
     # def __lt__(self, other: Union["ClassificationMetrics", Any]) -> bool:
     #     if isinstance(other, ClassificationMetrics):
     #         return self.accuracy < other.accuracy

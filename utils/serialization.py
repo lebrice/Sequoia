@@ -89,15 +89,6 @@ class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  
     def cuda(self, device: Union[str, torch.device]=None):
         return self.to(device or "cuda")
 
-    def numpy(self):
-        """Returns a new object with all the tensor fields converted to numpy arrays."""
-        def to_numpy(val: Any):
-            if isinstance(val, Tensor):
-                return val.detach().cpu().numpy()
-            return val
-        return type(self)(**{
-            name: to_numpy(val) for name, val in self.items()
-        })
     
     def merge(self, other: "Serializable") -> "Serializable":
         """ Overwrite values in `self` present in 'other' with the values from

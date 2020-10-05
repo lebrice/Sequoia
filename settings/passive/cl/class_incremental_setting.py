@@ -3,7 +3,7 @@
 Example command to run a method on this setting (in debug mode):
 ```
 python main.py --setting class_incremental --method baseline --debug  \
-    --batch_size 10 --max_epochs 1
+    --batch_size 128 --max_epochs 1
 ```
 
 TODO: I'm not sure this fits the "Class-Incremental" definition from
@@ -55,6 +55,8 @@ from .class_incremental_results import ClassIncrementalResults
 from ..passive_setting import PassiveSetting
 from ..passive_environment import PassiveEnvironment, Actions, ActionType, Observations, Rewards
 
+from settings.assumptions.incremental import IncrementalSetting
+
 logger = get_logger(__file__)
 
 num_classes_in_dataset: Dict[str, int] = {
@@ -99,9 +101,12 @@ dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
 
 
 @dataclass
-class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, RewardType]):
-    """Settings where the data is non-stationary, and grouped into tasks.
+class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
+    """Supervised Setting where the data is a sequence of 'tasks'.
 
+    This class is basically is the supervised version of an Incremental Setting
+    
+    
     The current task can be set at the `current_task_id` attribute.
     """
     # Class variable holding a dict of the names and types of all available
@@ -114,11 +119,14 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
             QMNIST, FashionMNIST,
         ]
     }
-    @dataclass(frozen=True)
-    class Observations(PassiveSetting.Observations):
-        """ Adds the 'task labels' field to the base Observation. """
-        task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
+    
+    Results: ClassVar[Type[Results]] = ClassIncrementalResults
 
+    @dataclass(frozen=True)
+    class Observations(IncrementalSetting.Observations,
+                       PassiveSetting.Observations):
+        """Incremental Observations, in a supervised context.""" 
+        pass
     
     # A continual dataset to use. (Should be taken from the continuum package).
     dataset: str = choice(available_datasets.keys(), default="mnist")
@@ -135,25 +143,6 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
         Transforms.channels_first_if_needed,
     )
     
-    # Wether task labels are available at train time.
-    # NOTE: Forced to True at the moment.
-    task_labels_at_train_time: bool = constant(True)
-    # Wether task labels are available at test time.
-    task_labels_at_test_time: bool = False
-    # Wether we get informed when reaching the boundary between two tasks during
-    # training. Only used when `smooth_task_boundaries` is False.
-    # TODO: Setting constant for now, but we could add task boundary detection
-    # later on!
-    known_task_boundaries_at_train_time: bool = constant(True)
-    # Wether we get informed when reaching the boundary between two tasks during
-    # training. Only used when `smooth_task_boundaries` is False.
-    known_task_boundaries_at_test_time: bool = constant(True)
-
-    # TODO: Actually add the 'smooth' task boundary case.
-    # Wether we have clear boundaries between tasks, or if the transition is
-    # smooth.
-    smooth_task_boundaries: bool = constant(False) # constant for now.
-
     # Either number of classes per task, or a list specifying for
     # every task the amount of new classes.
     increment: Union[int, List[int]] = list_field(2, type=int, nargs="*", alias="n_classes_per_task")
@@ -194,7 +183,7 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
             image_shape = self.dims
         else:
             image_shape: Tuple[int, int, int] = dims_for_dataset[self.dataset]
-        
+
         if isinstance(self.increment, list) and len(self.increment) == 1:
             # This can happen when parsing a list from the command-line.
             self.increment = self.increment[0]
@@ -219,22 +208,21 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
         # make things a bit more complicated.
         assert isinstance(self.increment, int) and isinstance(self.test_increment, int)
         self.n_classes_per_task: int = self.increment
-       
+
         super().__post_init__(
             obs_shape=image_shape,
             action_shape=self.n_classes_per_task,
             reward_shape=1, # the labels have shape (1,) always.
         )
-        self._current_task_id: int = 0
+
         self.train_datasets: List[_ContinuumDataset] = []
         self.val_datasets: List[_ContinuumDataset] = []
         self.test_datasets: List[_ContinuumDataset] = []
         
         # This will be set by the Experiment, or passed to the `apply` method.
         # TODO: This could be a bit cleaner.
-        self.config: Config = None
-    
-        
+        self.config: Config
+
     def apply(self, method: "Method", config: Config) -> ClassIncrementalResults:
         """Apply the given method on this setting to producing some results."""
         # NOTE: (@lebrice) The test loop is written by hand here because I don't
@@ -243,48 +231,17 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
         from methods import Method
         method: Method
 
+        self.config = config
+        method.config = config
         # TODO: At the moment, we're nice enough to do this, but this would
         # maybe allow the method to "cheat"!
         method.configure(setting=self)
-        method.config = config
 
         self.configure(method, config)
                 
-        # Training loop:
-        for task_id in range(self.nb_tasks):
-            logger.info(f"Starting training on task {task_id}")
-            self.current_task_id = task_id
-
-            if self.known_task_boundaries_at_train_time:
-                # Inform the model of a task boundary. If the task labels are
-                # available, then also give the id of the new task to the
-                # method.
-                # TODO: Should we also inform the method of wether or not the
-                # task switch is occuring during training or testing?
-                if not self.task_labels_at_train_time:
-                    method.on_task_switch(None)
-                else:
-                    method.on_task_switch(task_id)
-
-            # Creating the dataloaders ourselves (rather than passing 'self' as
-            # the datamodule):
-            # success = trainer.fit(model, datamodule=self)
-            task_train_loader = self.train_dataloader()
-            task_val_loader = self.val_dataloader()
-            
-            success = method.fit(
-                train_dataloader=task_train_loader,
-                valid_dataloader=task_val_loader,
-                # datamodule=self,
-            )
-            if success:
-                logger.debug(f"Finished Training on task {task_id}.")
-            if not success:
-                raise RuntimeError(
-                    f"Something didn't work during training: "
-                    f"method.fit() returned {success}"
-                )
-
+        # Run the Training loop (which is defined in IncrementalSetting).
+        self.train_loop(method)
+        
         results: ClassIncrementalResults = self.test_loop(method)
         logger.info(f"Resulting objective of Test Loop: {results.objective}")
         print(results.summary())
@@ -292,7 +249,6 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
         results.save_to_dir(self.config.log_dir)
         return results
 
-    
     def prepare_data(self, data_dir: Path = None, **kwargs):
         data_dir = data_dir or self.data_dir or self.config.data_dir
         self.make_dataset(data_dir, download=True)
@@ -338,9 +294,10 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised.
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        batch_transforms = self.train_batch_transforms()
         self.train_env = PassiveEnvironment(
             dataset,
-            batch_transforms=self.train_batch_transforms(),
+            batch_transforms=batch_transforms,
             observations_type=self.Observations,
             rewards_type=self.Rewards,
             **kwargs,
@@ -358,12 +315,11 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         
         batch_transforms: List[Callable] = self.val_batch_transforms()
-        if not any(isinstance(t, SplitBatch) for t in batch_transforms):
-            batch_transforms.append(self.split_batch_transform)
-
         self.val_env = PassiveEnvironment(
             dataset,
             batch_transforms=batch_transforms,
+            observations_type=self.Observations,
+            rewards_type=self.Rewards,
             **kwargs,
         )
         return self.val_env
@@ -379,123 +335,29 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         
         batch_transforms: List[Callable] = self.test_batch_transforms()
-        if not any(isinstance(t, SplitBatch) for t in batch_transforms):
-            batch_transforms.append(self.split_batch_transform)
-
         self.test_env = PassiveEnvironment(
             dataset,
             batch_transforms=batch_transforms,
-            # TODO: Enable this:
+            observations_type=self.Observations,
+            rewards_type=self.Rewards,
+            # TODO: Enabling this at test time, just for fun. This means that we
+            # could perhaps just keep track of the metrics in the testing environment!
             pretend_to_be_active=True,
             **kwargs,
         )
         return self.test_env
 
-    @property
-    def current_task_id(self) -> Optional[int]:
-        """ Get the current task id.
-        
-        TODO: Do we want to return None if the task labels aren't currently
-        available? (at either Train or Test time?) Or if we 'detect' if
-        this is being called from the method?
-        """
-        return self._current_task_id
-
-    @current_task_id.setter
-    def current_task_id(self, value: int) -> None:
-        """ Sets the current task id. """
-        self._current_task_id = value
-
-    def test_loop(self, method: "Method") -> ClassIncrementalResults:
-        """ (WIP): Runs the class-incremental CL test loop and returns the Results.
-
-        Args:
-            method (Method): The Method to evaluate.
-
-        Returns:
-            `ClassIncrementalResults`:  An object that holds the test metrics
-            and that is used to calculate the `objective`, a float representing
-            how 'good' this method was on this given setting. This object is
-            also useful for creating the plots, serialization, and logging to
-            wandb. See `ClassIncrementalResults` for more info.
-
-        Important Notes:
-        - **Not all settings need to have a `test_loop` method!** The 'training'
-            and 'testing' logic could all be mixed together in the `apply`
-            method in whatever way you want! (e.g. test-time training, OSAKA,
-            etc.) This method is just here to make the `apply` method a bit more
-            tidy.
-        
-        -   The PL way of doing this here would be something like:
-            `test_results = method.test(datamodule=self)`, however, there are
-            some issues with doing it this way (as I just recently learned):
-            - This gives the method/model access to the labels at test time;
-            - The Method/LightningModule gets the responsibility of creating the
-              metrics we're interested in measuring in its `test_step` method.
-            - It might be difficult to customize the test loop. For example,
-              How would one go about adding some kind of 'test-time training'
-              or OSAKA-like evaluation setup using the usual
-              `[train/val/test]_step` methods?
-
-            However, I'd rather not do that, and write out the test loop
-            manually here, which also allows us more flexibility, but also has
-            some downsides:
-            - We don't currently support any of the Callbacks from
-              pytorch-lightning during testing.
-
-            For some subclasses (e.g `IIDSetting`), it might be totally fine to
-            just use the usual Trainer.fit() and Trainer.test() methods, so feel
-            free to overwrite this method with your own implementation if that
-            makes your life easier.
-        """
-        from methods import Method
-        method: Method
-
-        # Create a list that will hold the test metrics encountered during
-        test_metrics: List[List[Metrics]] = [
-            [] for _ in range(self.nb_tasks)
-        ]
-
-        for task_id in range(self.nb_tasks):
-            self.current_task_id = task_id
-
-            assert not self.smooth_task_boundaries, "TODO: (#18) Make another 'Continual' setting that supports smooth task boundaries."
-            # Inform the model of a task boundary. If the task labels are
-            # available, then also give the id of the new task.
-            # TODO: Should we also inform the method of wether or not the task
-            # switch is occuring during training or testing?
-            if self.known_task_boundaries_at_test_time:
-                if not self.task_labels_at_test_time:
-                    method.on_task_switch(None)
-                else:
-                    method.on_task_switch(task_id)
-
-            # Manual test loop:
-            test_task_loader = self.test_dataloader(**self.dataloader_kwargs)
-            pbar = tqdm(test_task_loader)
-            for observations, rewards in pbar:
-                if not self.task_labels_at_test_time:
-                    # If the task labels aren't given at test time, then we
-                    # give a list of Nones. We could also maybe give a portion
-                    # of the task labels, which could be interesting.
-                    assert observations.task_labels is None
-
-                # Get the predicted label for this batch of inputs.
-                actions = method.get_actions(observations)
-                # Get the metrics for that batch.
-                batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
-                # Save the metrics for this batch in the list above.
-                test_metrics[task_id].append(batch_metrics)
-                pbar.set_postfix(batch_metrics.to_pbar_message())
-            pbar.close()
-            
-            average_task_metrics = mean(test_metrics[task_id])
-            logger.info(f"Results on task {task_id}: {average_task_metrics}")
-
-        results = ClassIncrementalResults(test_metrics=test_metrics)
-        return results
-
     def configure(self, method: MethodABC, config: Config):
+        """ Setup the data_dir and the dataloader kwargs using properties of the
+        Method or the Config.
+
+        Parameters
+        ----------
+        method : MethodABC
+            The Method that is being applied on this setting.
+        config : Config
+            [description]
+        """
         self.config = config
         # Get the arguments that will be used to create the dataloaders.
         # TODO: We create the dataloaders here and pass them to the method, but
@@ -520,23 +382,6 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
         # dataloaders is of the right type and shape etc.
         self._check_dataloaders_give_correct_types()
 
-    def get_metrics(self,
-                    actions: Actions,
-                    rewards: Rewards) -> Union[float, Metrics]:
-        """ Calculate the "metric" from the model predictions (actions) and the true labels (rewards).
-        
-        In this example, we return a 'Metrics' object:
-        - `ClassificationMetrics` for classification problems,
-        - `RegressionMetrics` for regression problems.
-        
-        We use these objects because they are awesome (they basically simplify
-        making plots, wandb logging, and serialization), but you can also just
-        return floats if you want, no problem.
-        """
-        from common.metrics import get_metrics
-        # In this particular setting, we only use the y_pred from actions and
-        # the y from the rewards.
-        return get_metrics(y_pred=actions.y_pred, y=rewards.y)
 
     def make_train_cl_loader(self, train_dataset: _ContinuumDataset) -> _BaseCLLoader:
         """ Creates a train ClassIncremental object from continuum. """
@@ -578,15 +423,14 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
             **kwargs
         )
 
-    
     def train_batch_transforms(self) -> List[Callable]:
         transforms = [
             RelabelTransform(task_classes=self.current_task_classes(train=True)),
-            ReorderTensors(), # (x, y, t) -> (x, (t), y)
+            ReorderTensors(), # (x, y, t) -> (x, t, y)
+            SplitBatch(self.Observations, self.Rewards),
         ]
         if not self.task_labels_at_train_time:
             transforms.append(DropTaskLabels())
-        transforms.append(self.split_batch_transform)
         return transforms
     
     def val_batch_transforms(self) -> List[Callable]:
@@ -596,10 +440,10 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
         transforms = [
             RelabelTransform(task_classes=self.current_task_classes(train=False)),
             ReorderTensors(), # (x, y, t) -> (x, (t), y)
+            SplitBatch(self.Observations, self.Rewards),
         ]
         if not self.task_labels_at_test_time:
             transforms.append(DropTaskLabels())
-        transforms.append(self.split_batch_transform)
         return transforms
 
 
@@ -610,18 +454,22 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, ActionType, Reward
         for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
             env = loader_method()
             for observations, *rewards in take(env, 5):
-                assert isinstance(observations, self.Observations), type(observations)
-                rewards: Optional[Rewards] = rewards[0] if rewards else None
-                if rewards is not None:
+                try:
+                    assert isinstance(observations, self.Observations), type(observations)
+                    rewards: Optional[Rewards] = rewards[0] if rewards else None
+                    if rewards is not None:
+                        assert isinstance(rewards, self.Rewards), type(rewards)
+                    # TODO: If we add gym spaces to all settings, then check that
+                    # the observations are in the observation space, sample a random
+                    # action from the action space, check that it is contained
+                    # within that space, and then get a reward by sending it to the
+                    # dataloader. Check that the reward received is in the reward
+                    # space.
+                    rewards = env.send(123123)
                     assert isinstance(rewards, self.Rewards), type(rewards)
-                # TODO: If we add gym spaces to all settings, then check that
-                # the observations are in the observation space, sample a random
-                # action from the action space, check that it is contained
-                # within that space, and then get a reward by sending it to the
-                # dataloader. Check that the reward received is in the reward
-                # space.
-                rewards = env.send(123123)
-                assert isinstance(rewards, self.Rewards), type(rewards)
+                except Exception as e:
+                    logger.error(f"There's a problem with the method {loader_method} (env {env})")
+                    raise e
     
     # These methods below are used by the ClassIncrementalModel, mostly when
     # using a multihead model, to figure out how to relabel the batches, or how

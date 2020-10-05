@@ -23,18 +23,16 @@ ClassIncrementalModel = Model
 
 @dataclass
 class ClassIncrementalMethod(Method, target_setting=ClassIncrementalSetting):
-    """ Base class for methods that want to target a Task Incremental setting.
+    """ Base class for methods that want to specifically target the ClassIncremental setting.
 
-    TODO: Figure out if this makes sense, really.
-
-    Method which is to be applied to a class incremental CL problem setting.
+    TODO: This basically only adds a KNN Callback and VAE Callback
     """
-    name: ClassVar[str] = "baseline"
     # HyperParameters of the LightningModule. Overwrite this in your class.
     hparams: Model.HParams = mutable_field(Model.HParams)
-    # Options for the KNN classifier callback, which is used to evaluate the
-    # quality of the representations on each test and val task after each
+    # Adds Options for the KNN classifier callback, which is used to evaluate
+    # the quality of the representations on each test and val task after each
     # training epoch.
+    # TODO: Debug/test this callback to make sure it still works fine.
     knn_callback: KnnCallback = mutable_field(KnnCallback)
 
     def __post_init__(self):
@@ -42,39 +40,13 @@ class ClassIncrementalMethod(Method, target_setting=ClassIncrementalSetting):
         self.model: Model
 
     def create_callbacks(self, setting: SettingType) -> List[Callback]:
+        # TODO: Move this to something like a `configure_callbacks` method 
+        # in the corresponding models, since PL might add it.
         from common.callbacks.vae_callback import SaveVaeSamplesCallback
         return super().create_callbacks(setting) + [
             self.knn_callback,
             SaveVaeSamplesCallback(),
         ]
-
-    def train(self, setting: ClassIncrementalSetting) -> None:
-        """ Trains the model. Overwrite this to customize training. """
-        self.trainer.fit_setting(setting=setting, model=self.model)
-
-    def model_class(self, setting: SettingType) -> Type[Model]:
-        if issubclass(setting, ClassIncrementalSetting):
-            return Model
-        raise NotImplementedError(f"No model registered for setting {setting}!")
-
-    def create_model(self, setting: ClassIncrementalSetting) -> Model:
-        """Creates the Model (a LightningModule).
-
-        The model should accept a Setting or datamodule in its constructor.
-
-        Args:
-            setting (Setting): The experimental setting.
-
-        Returns:
-            ClassIncrementalModel: The Model that is to be applied to that setting.
-        """
-        super().create_model
-        return self.model_class(setting)(
-            setting=setting,
-            hparams=self.hparams,
-            config=self.config,
-        )
-
 
 if __name__ == "__main__":
     ClassIncrementalMethod.main()

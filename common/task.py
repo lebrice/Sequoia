@@ -1,3 +1,8 @@
+""" NOTE: Unused at the moment.
+
+This defines a `Task` object that is just used to represent the 'information'
+related to a 'Task'.
+"""
 from dataclasses import dataclass, field
 from typing import List
 

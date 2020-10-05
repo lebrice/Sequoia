@@ -156,8 +156,9 @@ class Setting(SettingABC,
         self.train_transforms: Compose = Compose(self.train_transforms or self.transforms)
         self.val_transforms: Compose = Compose(self.val_transforms or self.transforms)
         self.test_transforms: Compose = Compose(self.test_transforms or self.transforms)
-
-        super().__init__(
+        print(type(self).__bases__)
+        
+        LightningDataModule.__init__(self,
             train_transforms=self.train_transforms,
             val_transforms=self.val_transforms,
             test_transforms=self.test_transforms,

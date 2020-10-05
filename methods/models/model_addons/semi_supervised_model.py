@@ -47,7 +47,7 @@ class SemiSupervisedModel(BaseModel[SettingType]):
         # would make it a bit simpler than having both lists and tensors in the
         # batch, but then we sometimes might have to check if everything in `y`
         # is equal to -1, which sounds a bit dumb.
-        
+
         y: Union[Optional[Tensor], List[Optional[Tensor]]] = reward.y
         if y is None or isinstance(y, Tensor):
             # Fully labeled/unlabeled batch

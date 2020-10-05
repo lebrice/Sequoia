@@ -11,7 +11,7 @@ from common.loss import Loss
 from common.task import Task
 from utils import cuda_available
 from utils.serialization import Serializable
-
+from methods.models.base_model import BaseModel
 
 class AuxiliaryTask(nn.Module):
     """ Represents an additional loss to apply to a `Classifier`.
@@ -27,13 +27,13 @@ class AuxiliaryTask(nn.Module):
     input_shape: ClassVar[Tuple[int, ...]] = ()
     hidden_size: ClassVar[int] = -1
 
-    _model: ClassVar[LightningModule]
+    _model: ClassVar[BaseModel]
     # Class variables for holding the Modules shared with with the classifier. 
     encoder: ClassVar[nn.Module]
-    classifier: ClassVar[nn.Module]  # type: ignore
+    output_head: ClassVar[nn.Module]  # type: ignore
 
     preprocessing: ClassVar[Callable[[Tensor, Optional[Tensor]], Tuple[Tensor, Optional[Tensor]]]]
-    
+
     @dataclass
     class Options(Serializable):
         """Settings for this Auxiliary Task. """
@@ -42,8 +42,8 @@ class AuxiliaryTask(nn.Module):
 
     def __init__(self, *args, options: Options = None, **kwargs):
         """Creates a new Auxiliary Task to further train the encoder.
-        
-        Should use the `encoder` and `classifier` components of the parent
+
+        Can use the `encoder` and `classifier` components of the parent
         `Classifier` instance.
         
         NOTE: Since this object will be stored inside the `tasks` dict in the
@@ -74,7 +74,7 @@ class AuxiliaryTask(nn.Module):
         return AuxiliaryTask.encoder(x)
 
     def logits(self, h_x: Tensor) -> Tensor:
-        return AuxiliaryTask.classifier(h_x)
+        return AuxiliaryTask.output_head(h_x)
 
     @abstractmethod
     def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor=None) -> Loss:

@@ -21,6 +21,7 @@ logger = get_logger(__file__)
 @total_ordering
 @dataclass
 class RegressionMetrics(Metrics):
+    """TODO: Use this in the RL settings! """
     mse: Tensor = 0.  # type: ignore
     l1_error: Tensor = 0.  # type: ignore
 
@@ -39,6 +40,10 @@ class RegressionMetrics(Metrics):
             else:
                 self.mse = functional.mse_loss(y_pred, y)
                 self.l1_loss = functional.l1_loss(y_pred, y)
+
+    @property
+    def objective(self) -> float:
+        return float(self.mse)
 
     def __add__(self, other: "RegressionMetrics") -> "RegressionMetrics":
         # NOTE: Creates new tensors, and links them to the previous ones by

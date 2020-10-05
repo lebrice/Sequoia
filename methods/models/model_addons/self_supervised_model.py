@@ -9,6 +9,7 @@ from typing import Dict, Optional, Tuple, TypeVar, cast
 
 from simple_parsing import mutable_field
 from torch import Tensor
+from torch import nn
 
 from common.config import Config
 from common.loss import Loss
@@ -17,7 +18,7 @@ from common.tasks.auxiliary_task import AuxiliaryTask
 from common.tasks.simclr import SimCLRTask
 from settings import Setting, SettingType, Observations, Actions, Rewards
 from utils.logging_utils import get_logger
-from utils.module_dict import ModuleDict
+# from utils.module_dict import ModuleDict
 
 from ..base_model import BaseModel
 
@@ -51,13 +52,15 @@ class SelfSupervisedModel(BaseModel[SettingType]):
                 task.enable()
 
     def get_loss(self, forward_pass: Dict[str, Tensor], reward: Rewards = None, loss_name: str = "") -> Loss:
+        # Get the output task loss (the loss of the base model)
         loss: Loss = super().get_loss(forward_pass, reward=reward, loss_name=loss_name)
 
         # Add the self-supervised losses from all the enabled auxiliary tasks.
         for task_name, aux_task in self.tasks.items():
             assert task_name, "Auxiliary tasks should have a name!"
             if aux_task.enabled:
-                aux_loss: Loss = aux_task.get_loss(forward_pass, y=y)
+                # NOTE: Auxiliary tasks only take the 'y' tensor from the rewards atm:
+                aux_loss: Loss = aux_task.get_loss(forward_pass, y=reward.y)
                 # Scale the loss by the corresponding coefficient before adding
                 # it to the total loss.
                 loss += aux_task.coefficient * aux_loss
@@ -78,7 +81,7 @@ class SelfSupervisedModel(BaseModel[SettingType]):
         AuxiliaryTask.classifier = self.output_head
         AuxiliaryTask.preprocessing = self.preprocess_batch
 
-        tasks: Dict[str, AuxiliaryTask] = ModuleDict()
+        tasks: Dict[str, AuxiliaryTask] = nn.ModuleDict()
 
         # TODO(@lebrice): Should we create the tasks even if they aren't used,
         # and then 'enable' them when they are needed? (I'm thinking that maybe

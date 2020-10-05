@@ -1,3 +1,4 @@
+import dataclasses
 import inspect
 from abc import ABC, abstractmethod
 from typing import List, Optional, Union, ClassVar, Type, Iterable, Set, TypeVar
@@ -9,8 +10,11 @@ from .method_abc import MethodABC
 from .base.environment import Actions, Environment, Observations, Rewards
 from .base.results import Results
 from utils.logging_utils import get_logger
-# MethodABC = TypeVar("MethodABC")
+
+from common import Batch
+
 logger = get_logger(__file__)
+
 
 class SettingABC(LightningDataModule):
     """ Abstract base class for a Setting.
@@ -24,10 +28,23 @@ class SettingABC(LightningDataModule):
     - **train_dataloader** the training environment/dataloader.
     - **val_dataloader** the val environments/dataloader(s).
     - **test_dataloader** the test environments/dataloader(s).
+    
+    "Abstract"-ish (required) class attributes:
+    - `Results`: The class of Results that are created when applying a Method on
+      this setting.
+    - `Observations`: The type of Observations that will be produced  in this
+        setting.
+    - `Actions`: The type of Actions that are expected from this setting.
+    - `Rewards`: The type of Rewards that this setting will (potentially) return
+      upon receiving an action from the method.
     """
-
+    Results: ClassVar[Type[Results]] = Results
+    Observations: ClassVar[Type[Observations]] = Observations
+    Actions: ClassVar[Type[Actions]] = Actions
+    Rewards: ClassVar[Type[Rewards]] = Rewards
+        
     @abstractmethod
-    def apply(self, method: MethodABC, config: Config) -> Results:
+    def apply(self, method: MethodABC, config: Config) -> "SettingABC.Results":
         """ Applies a Method on this experimental Setting to produce Results. 
  
         Defines the training/evaluation procedure specific to this Setting.
@@ -35,7 +52,7 @@ class SettingABC(LightningDataModule):
         The training/evaluation loop can be defined however you want, as long as
         it respects the following constraints:
         
-        1.  This method should always return either a float of a Results object
+        1.  This method should always return either a float or a Results object
             that indicates the "performance" of this method on this setting.
              
         2. More importantly: You **have** to make sure that you do not break

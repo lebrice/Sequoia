@@ -275,6 +275,8 @@ def camel_case(name):
 def constant(v: T, **kwargs) -> T:
     return field(default=v, init=False, **kwargs)
 
+def flag(default: bool, *args, **kwargs):
+    return field(default=default, nargs=1, *args, **kwargs)
 
 def dict_union(*dicts: Dict[K, V], recurse: bool=True, dict_factory=dict) -> Dict[K, V]:
     """ Simple dict union until we use python 3.9

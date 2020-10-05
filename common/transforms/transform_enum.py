@@ -23,7 +23,6 @@ from utils.serialization import encode, register_decoding_fn
 
 logger = get_logger(__file__)
 
-from .batch_transform import BatchTransform
 from .channels import (ChannelsFirst, ChannelsFirstIfNeeded, ChannelsLast,
                        ChannelsLastIfNeeded, ThreeChannels)
 from .to_tensor import ToTensor

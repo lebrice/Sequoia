@@ -24,12 +24,12 @@ from utils.plotting import PlotSectionLabel, autolabel
 from utils.utils import mean
 
 from .. import Results
-
+from settings.assumptions.incremental import IncrementalSetting
 logger = get_logger(__file__)
 
 
 @dataclass
-class ClassIncrementalResults(Results):
+class ClassIncrementalResults(IncrementalSetting.Results):
     """Results for a ClassIncrementalSetting.
     
     The main objective in this setting is the average test accuracy over all
@@ -47,26 +47,6 @@ class ClassIncrementalResults(Results):
     evaluation loop ourselves.
     """
     test_metrics: List[List[Metrics]] = list_field(repr=False)
-    average_task_metrics: List[Metrics] = list_field(init=False)
-    average_metrics: Metrics = field(default=None, init=False)
-    
-    def __post_init__(self):
-        assert isinstance(self.test_metrics, list) and self.test_metrics, self.test_metrics
-        self.average_task_metrics = list(map(mean, self.test_metrics))
-        self.average_metrics = mean(self.average_task_metrics)
-    
-    @property
-    def num_tasks(self) -> int:
-        return len(self.test_metrics)
-    
-    @property
-    def objective(self) -> float:
-        average_metrics = self.average_metrics
-        if isinstance(average_metrics, ClassificationMetrics):
-            return average_metrics.accuracy
-        if isinstance(average_metrics, RegressionMetrics):
-            return average_metrics.mse
-        return average_metrics
 
     def save_to_dir(self, save_dir: Union[str, Path]) -> None:
         # TODO: Add wandb logging here somehow.
@@ -99,7 +79,7 @@ class ClassIncrementalResults(Results):
         axes: plt.Axes
         figure, axes = plt.subplots()
         x = list(range(self.num_tasks))
-        y = [metrics.accuracy for metrics in self.average_task_metrics]
+        y = [metrics.accuracy for metrics in self.average_metrics_per_task]
         rects = axes.bar(x, y)
         axes.set_title("Task Accuracy")
         axes.set_xlabel("Task")
@@ -107,7 +87,7 @@ class ClassIncrementalResults(Results):
         axes.set_ylim(0, 1.0)
         autolabel(axes, rects)
         return figure
-        
+
     def cumul_metrics_plot(self):
         """TODO: Create a plot that shows the evolution of the test accuracy
         over all test tasks seen so far.
@@ -133,7 +113,7 @@ class ClassIncrementalResults(Results):
     def summary(self) -> str:
         s = StringIO()
         with redirect_stdout(s):
-            for i, average_task_metrics in enumerate(self.average_task_metrics):
+            for i, average_task_metrics in enumerate(self.average_metrics_per_task):
                 print(f"Test Results on task {i}: {average_task_metrics}")
             print(f"Average test metrics accross all the test tasks: {self.average_metrics}")
         s.seek(0)
@@ -142,7 +122,7 @@ class ClassIncrementalResults(Results):
     def to_log_dict(self) -> Dict[str, float]:
         results = OrderedDict()
         results["objective"] = self.objective
-        for i, average_task_metrics in enumerate(self.average_task_metrics):
+        for i, average_task_metrics in enumerate(self.average_metrics_per_task):
             if isinstance(average_task_metrics, ClassificationMetrics):
                 results[f"task_{i}/accuracy"] = average_task_metrics.accuracy
             elif isinstance(average_task_metrics, RegressionMetrics):

@@ -3,7 +3,7 @@ from simple_parsing import list_field
 from typing import Callable, Tuple, List, Union
 import torch
 from torch import Tensor
-from settings import Observations
+from settings import Observations, Rewards
 
 @dataclass
 class RelabelTransform(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):
@@ -16,22 +16,24 @@ class RelabelTransform(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):
     Note that the order in `task_classes` is perserved. For instance, in the
     above example, if `task_classes = [3, 2]`, then the new labels would be
     `[1, 0, 1]`.
+    
+    IMPORTANT: This transform needs to be applied BEFORE ReorderTensor or
+    SplitBatch, because it expects the batch to be (x, y, t) order
     """
     task_classes: List[int] = list_field()
     
     def __call__(self, batch: Tuple[Tensor, ...]):
-        if isinstance(batch, list):
-            batch = tuple(batch)
-        if not isinstance(batch, tuple):
-            return batch
+        assert isinstance(batch, (list, tuple)), batch
+        if len(batch) == 2:
+            observations, rewards = batch
         if len(batch) == 1:
-            return batch        
+            return batch
         x, y, *task_labels = batch
         
-        if y.max() < len(self.task_classes):
-            # No need to relabel this batch.
-            # @lebrice: Can we really skip relabeling in this case?
-            return batch
+        # if y.max() == len(self.task_classes):
+        #     # No need to relabel this batch.
+        #     # @lebrice: Can we really skip relabeling in this case?
+        #     return batch
 
         new_y = torch.empty_like(y)
         for i, label in enumerate(self.task_classes):
@@ -43,25 +45,45 @@ class RelabelTransform(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):
 class ReorderTensors(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):
     # reorder tensors in the batch so the task labels go into the observations:
     # (x, y, t) -> (x, t, y)
+    # TODO: Change this to:
+    # (x, y, t) -> ((x, t), y) maybe?
     def __call__(self, batch: Tuple[Tensor, ...]):
-        if isinstance(batch, list):
-            batch = tuple(batch)
-        # if not isinstance(batch, tuple):
-        #     return batch
-        x, y, *extra_labels = batch
-        if len(extra_labels) == 1:
-            task_labels = extra_labels[0]
-            return (x, task_labels, y)
-        return batch
-
+        assert isinstance(batch, (list, tuple))
+        if len(batch) == 2:
+            observations, rewards = batch
+            if isinstance(observations, Observations) and isinstance(rewards, Rewards):
+                return batch
+        elif len(batch) == 3:
+            x, y, *extra_labels = batch
+            if len(extra_labels) == 1:
+                task_labels = extra_labels[0]
+                return (x, task_labels, y)
+        assert False, batch
 
 @dataclass
 class DropTaskLabels(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):
     def __call__(self, batch: Union[Tuple[Tensor, ...], Observations]):
-        if isinstance(batch, Observations):
-            return replace(batch, task_labels=None)
-        if not isinstance(batch, (tuple, list)):
-            return batch
-        if len(batch) == 3:
-            return batch[0], batch[1]
-        return batch
+        assert isinstance(batch, (tuple, list))
+        if len(batch) == 2:
+            observations, rewards = batch
+            if isinstance(observations, Observations) and isinstance(rewards, Rewards):
+                return replace(observations, task_labels=None), rewards
+        elif len(batch) == 3:
+            # This is tricky. If we're placed BEFORE the 'ReorderTensors',
+            # then the ordering is `x, y, t`, while if we're AFTER, the
+            # ordering would then be 'x, t, y'..
+            x, v1, v2 = batch
+            # IDEA: For now, we assume that the 'y' is a lot more erratic than
+            # the task label. Therefore, the number of unique consecutive should
+            # be greater for `y` than for `t`.
+            u1 = len(v1.unique_consecutive())
+            u2 = len(v2.unique_consecutive())
+            if u1 > u2:
+                y, t = v1, v2
+            elif u1 == u2:
+                # hmmm wtf?
+                assert False, (v1, v2, u1, u2)
+            else:
+                y, t = v2, v1
+            return x, y, t
+        assert False, f"There are no task labels to drop: {batch}"

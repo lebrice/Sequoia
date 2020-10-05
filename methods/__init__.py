@@ -1,5 +1,6 @@
 from typing import List, Type
 
+from settings.method_abc import MethodABC
 from .method import Method
 from .baseline import BaselineMethod
 from .random_baseline import RandomBaselineMethod
@@ -8,7 +9,7 @@ from .self_supervision import SelfSupervision
 # from .pl_bolts_methods.cpcv2 import CPCV2Method
 # TODO: We could also 'register' the methods as they are declared!
 
-all_methods: List[Type[Method]] = [
+all_methods: List[Type[MethodABC]] = [
     BaselineMethod,
     RandomBaselineMethod,
     SelfSupervision,

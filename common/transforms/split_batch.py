@@ -5,7 +5,7 @@ import numpy as np
 from torch import Tensor
 
 from ..batch import Batch
-from .batch_transform import Transform
+from .transform import Transform
 
 # Type variables just for the below function.
 ObservationType = TypeVar("ObservationType", bound=Batch)
