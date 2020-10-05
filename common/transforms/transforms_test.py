@@ -1,9 +1,9 @@
+import pytest
 import torch
 
-from .transforms import ChannelsFirst, ChannelsLast, Compose, Transforms, ChannelsFirstIfNeeded
+from . import (ChannelsFirst, ChannelsFirstIfNeeded, ChannelsLast, Compose,
+               ThreeChannels, Transforms)
 
-
-import pytest
 
 @pytest.mark.parametrize("transform,input_shape,output_shape",
 [   
@@ -49,6 +49,12 @@ import pytest
     (Transforms.channels_last_if_needed, (12, 13, 3), (12, 13, 3)),
     # Does nothing when the channel dim isn't in {1, 3}:
     (Transforms.channels_last_if_needed, (7, 12, 13), (7, 12, 13)),
+    
+    # Test out the 'ThreeChannels' transform
+    (Transforms.three_channels, (7, 12, 13), (7, 12, 13)),
+    (Transforms.three_channels, (1, 28, 28), (3, 28, 28)),
+    (Transforms.three_channels, (28, 28, 1), (28, 28, 3)),
+    
 ])
 def test_transform(transform: Transforms, input_shape, output_shape):
     x = torch.rand(input_shape)
@@ -66,12 +72,10 @@ def test_compose_shape_change_same_as_result_shape():
     assert x.shape == transform.shape_change(start_shape) == (3, 9, 9)
 
 import gym
-from .transforms import ChannelsFirstIfNeeded, ChannelsLastIfNeeded
-from common.gym_wrappers import TransformObservation
-from common.gym_wrappers import PixelStateWrapper
+from common.gym_wrappers import PixelStateWrapper, TransformObservation
 
 
-def test_channels_first_transform_gym_env():
+def test_channels_first_transform_on_gym_env():
     env = gym.make("CartPole-v0")
     env = PixelStateWrapper(env)
     assert env.reset().shape == (400, 600, 3)
