@@ -33,28 +33,29 @@ from typing import *
 import torch
 from pytorch_lightning import LightningDataModule
 from pytorch_lightning.core.datamodule import _DataModuleWrapper
+from simple_parsing import (ArgumentParser, Serializable, list_field,
+                            mutable_field, subparsers)
 from torch.utils.data import DataLoader
 
 from common.config import Config
 from common.loss import Loss
-from common.transforms import Compose, Transforms, Transform, BatchTransform, SplitBatch
-from simple_parsing import (ArgumentParser, Serializable, list_field,
-                            mutable_field, subparsers)
+from common.transforms import Compose, Transforms, Transform, SplitBatch
 from utils import Parseable, camel_case, dict_union, get_logger, remove_suffix
 
 from .results import Results
 from .setting_meta import SettingMeta
 from .environment import Environment, Observations, Actions, Rewards
 
-
 logger = get_logger(__file__)
 
 EnvironmentType = TypeVar("EnvironmentType", bound=Environment)
 SettingType = TypeVar("SettingType", bound="Setting")
 
+from ..setting_abc import SettingABC
+from ..method_abc import MethodABC
 
 @dataclass
-class Setting(LightningDataModule,
+class Setting(SettingABC,
               Generic[EnvironmentType],
               Serializable,
               Parseable,
@@ -98,14 +99,6 @@ class Setting(LightningDataModule,
     # a given type of setting. See the `Results` class for more info.
     Results: ClassVar[Type[Results]] = Results
     
-            
-    # These are some "private" class attributes.
-    # For any new Setting subclass, it's parent setting.
-    _parent: ClassVar[Type["Setting"]] = None
-    # A list of all the direct children of this setting.
-    _children: ClassVar[List[Type["Setting"]]] = []
-    # List of all methods 'applicable' to this setting.
-    _applicable_methods: ClassVar[Set[Type]] = set()    
     
     ##
     ##   -------------
@@ -198,60 +191,13 @@ class Setting(LightningDataModule,
         self.config: Config = None
 
     @abstractmethod
-    def apply(self, method: "Method", config: Config) -> float:
-        """ Applies the given Method on this experimental setting.
- 
-        Defines the training/evaluation procedure specific to this Setting.
-        
-        The training/evaluation loop can be defined however you want, as long as
-        it respects the following constraints:
-        
-        1.  This method should always return a single float that indicates the
-            "performance" of this method on this setting. We could assume that
-            higher is better for now. 
-        2. More importantly: You **have** to make sure that you do not break
-            compatibility with more general methods targetting a parent setting!
-            It should always be the case that all methods designed for any of
-            this Setting's parents should also be applicable via polymorphism,
-            i.e., anything that is defined to work on the class `Animal` should
-            also work on the class `Cat`!
-        3. While not enforced, it is strongly encourged that you define your
-            training/evaluation routines at a pretty high level, so that Methods
-            that get applied to your Setting can make use of pytorch-lightning's
-            `Trainer` & `LightningDataModule` API to be neat and fast.
-        """
+    def apply(self, method: MethodABC, config: Config) -> Results:
+        pass
 
-    # LightningDataModule methods:
-    def prepare_data(self, data_dir: Path = None, **kwargs):
-        data_dir = data_dir or self.data_dir or self.config.data_dir
-        self.make_dataset(data_dir, download=True)
-        self.data_dir = data_dir
-        super().prepare_data(**kwargs)
-
-    def setup(self, stage: Optional[str] = None, *args, **kwargs):
-        super().setup(stage, *args, **kwargs)
-
-    # def train_dataloader(self, **kwargs) -> EnvironmentType:
-    #     # TODO: Testing this out.
-    #     if not self.has_prepared_data:
-    #         self.prepare_data()
-    #     if not self.has_setup_fit:
-    #         self.setup("fit")
-    #     kwargs = dict_union(self.dataloader_kwargs, kwargs)
-    #     try:
-    #         return super().train_dataloader(**kwargs)
-    #     except TypeError as e:
-    #         logger.error(f"Couldn't find train_dataloader method: {e}")
-    #         raise NotImplementedError(
-    #             f"Couldn't find a train_dataloader method! you need to add it!"
-    #         )
-    
-   
     # Transforms that apply on Observation objects (the whole batch).
-    def batch_transforms(self) -> List[Callable]:
-        return [self.split_batch_transform]
+    # TODO: (@lebrice): This is still a bit wonky, need to design this better.
     def train_batch_transforms(self) -> List[Callable]:
-        return self.batch_transforms()
+        return [self.split_batch_transform]
     def valid_batch_transforms(self) -> List[Callable]:
         return self.train_batch_transforms()
     def test_batch_transforms(self) -> List[Callable]:
@@ -272,7 +218,7 @@ class Setting(LightningDataModule,
         return results
 
     def apply_all(self, argv: Union[str, List[str]] = None) -> Dict[Type["Method"], Results]:
-        applicable_methods = self.get_all_applicable_methods()
+        applicable_methods = self.get_applicable_methods()
         from methods import Method
         all_results: Dict[Type[Method], Results] = OrderedDict()
         config = Config.from_args(argv)
@@ -286,37 +232,6 @@ class Setting(LightningDataModule,
             for method, results in all_results.items()
         })
         return all_results
-
-    @classmethod
-    def get_all_applicable_methods(cls) -> List[Type["Method"]]:
-        from methods import all_methods, Method
-        return list(filter(lambda m: m.is_applicable(cls), all_methods))
-
-    def __init_subclass__(cls, **kwargs):
-        """ Called whenever a new subclass of `Setting` is declared. """
-        assert is_dataclass(cls), f"Setting type {cls} isn't a dataclass!"
-        logger.debug(f"Registering a new setting: {cls.get_name()}")
-
-        # Exceptionally, create this new empty list that will hold all the
-        # forthcoming subclasses of this particular new setting.
-        cls.children = []
-        # Inform all the nodes higher in the tree that they have a new subclass.
-        parent = cls.__base__
-        if issubclass(parent, Setting):
-            parent: Type[Setting]
-            assert cls not in parent._children
-            parent._children.append(cls)
-        super().__init_subclass__(**kwargs)
-
-    @classmethod
-    def get_name(cls) -> str:
-        """ Gets the name of this setting class. """
-        # LightningDataModule has a `name` class attribute of `...`!
-        if getattr(cls, "name", None) != Ellipsis:
-            return cls.name
-        else:
-            name = camel_case(cls.__qualname__)
-            return remove_suffix(name, "_setting")
 
     @classmethod
     def add_argparse_args(cls, parent_parser: ArgumentParser) -> ArgumentParser:
@@ -340,45 +255,3 @@ class Setting(LightningDataModule,
     def get_path_to_source_file(cls: Type) -> Path:
         from utils.utils import get_path_to_source_file
         return get_path_to_source_file(cls)
-
-    @property
-    def children(self):
-        return self._children
-
-    @children.setter
-    def children(self, value: List):
-        if value:
-            logger.warning(UserWarning(
-                f"Setting the children attribute of class {type(self)} to a "
-                f"non-empty list, are you sure you know what you're doing?"
-            ))
-        type(self)._children = value
-
-    @property
-    def all_children(self) -> Iterable[Type["Setting"]]:
-        """Iterates over the inheritance tree, in-order.
-        """
-        # Yield the immediate children.
-        for child in self._children:
-            yield child
-            # Yield from the children themselves.
-            yield from child.all_children
-
-    @property
-    def parent(self) -> Optional[Type["Setting"]]:
-        """Returns the first base class that is an instance of SettingMeta, else
-        None
-        """
-        base_nodes = [
-            base for base in type(self).__bases__ if isclass(base) and issubclass(base, Setting)
-        ]
-        return base_nodes[0] if base_nodes else None
-
-    @property
-    def parents(self) -> Iterable[Type["Setting"]]:
-        """TODO: yields the lineage, from bottom to top. """
-        parent = self.parent
-        if parent:
-            yield parent
-            yield from parent.parents
-

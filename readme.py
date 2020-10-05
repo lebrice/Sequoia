@@ -36,7 +36,7 @@ def get_tree_string(with_methods: bool = False, with_docstring: bool = False):
         source_file = get_relative_path_to(setting)
         message += [f"{setting.__name__} ({source_file})"]
 
-        applicable_methods = setting.get_all_applicable_methods()
+        applicable_methods = setting.get_applicable_methods()
 
         n_children = len(setting.children)
         bar = "│" if n_children else " "
@@ -108,7 +108,7 @@ def get_tree_string_markdown(with_methods: bool = False, with_docstring: bool = 
         source_file = get_relative_path_to(setting)
         message_lines += [f"- ## [{setting.__name__}]({source_file})"]
 
-        applicable_methods = setting.get_all_applicable_methods()
+        applicable_methods = setting.get_applicable_methods()
         tab = "\t"
 
         if with_docstring:

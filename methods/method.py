@@ -5,37 +5,33 @@ we use pytorch-lightning, and a few little utility classes such as `Metrics` and
 `Loss`, which are basically just like dicts/objects, with some cool other
 methods.
 """
-import inspect
-import os
 from abc import ABC
 from collections import OrderedDict
 from dataclasses import dataclass, is_dataclass
-from inspect import getsourcefile
 from pathlib import Path
-from typing import (ClassVar, Dict, Generic, List, Optional, Sequence, Set,
-                    Tuple, Type, TypeVar, Union, Any)
+from typing import (Any, ClassVar, Dict, Generic, List, Optional, Sequence,
+                    Set, Tuple, Type, TypeVar, Union)
 
 import torch
-from common.config import Config, TrainerConfig
-from common.loss import Loss
-from common.metrics import Metrics
+from common import Config, TrainerConfig, Loss, Metrics, Batch
 from pytorch_lightning import (Callback, LightningDataModule, LightningModule,
                                Trainer)
-from settings import Results, Setting, SettingType, Observations, Actions, Rewards
+from settings import Results, Setting, SettingType, Observations, Actions, Rewards, Environment
 from simple_parsing import Serializable, mutable_field
 from torch import Tensor
 from torch.utils.data import DataLoader
-from utils import Parseable, camel_case, get_logger, remove_suffix, try_get
-from utils.utils import get_path_to_source_file
+from simple_parsing import mutable_field
 
-from .models.model import Model, ForwardPass
-from common.batch import Batch
+from utils import Parseable, Serializable, get_logger
+from utils.utils import get_path_to_source_file
+from settings.method_abc import MethodABC
+from .models.model import ForwardPass, Model
 
 logger = get_logger(__file__)
 
 
 @dataclass
-class Method(Serializable, Generic[SettingType], Parseable, ABC):
+class Method(MethodABC, Serializable, Parseable, ABC):
     """ A Method gets applied to a Setting to produce Results.
 
     A "Method", concretely, should consist of a LightningModule and a Trainer.
@@ -43,24 +39,15 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
     - Settings are LightningDataModules, and are used to create the
         train/val/test dataloaders.
 
-    The attributes here are all the configurable options / hyperparameters
-    of the method.
-    TODO: Not sure if the arguments to the Trainer object should be considered
-    hyperparameters, hence I'm not sure where to put the TrainerConfig object.
-    For now I'll keep it in Config (as if they weren't hyperparameters).
-
     GOAL: The goal is to have a Method be applicable to a variety of Settings!
     We could even perhaps reuse the Method object on different Settings entirely!
     """
+    # NOTE: these two fields are also used to create the command-line arguments.
+    
     # HyperParameters of the method.
     hparams: Model.HParams = mutable_field(Model.HParams)
     # Options for the Trainer object.
     trainer_options: TrainerConfig = mutable_field(TrainerConfig)
-
-    # Class attribute that holds the setting this method was designed to target.
-    target_setting: ClassVar[Optional[Type[Setting]]] = None
-    # class attribute that lists all the settings this method is applicable for.
-    _applicable_settings: ClassVar[Set[Type[Setting]]] = set()
 
     def __post_init__(self):
         # The model and Trainer objects will be created in `self.configure`. 
@@ -68,33 +55,6 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
         # type information for static type checking.
         self.trainer: Trainer
         self.model: LightningModule
-
-    
-    #NOTE: (@lebrice) Removing this, as it is basically a duplicate of the
-    # `Setting.apply` method, and I'm also trying to avoid giving the Setting
-    # object directly to the method, whenever possible.
-    # def apply_to(self, setting: SettingType) -> Results:
-    #     """ Applies this method to the particular experimental setting.
-
-    #     Extend this class and overwrite this method to customize training.       
-    #     """
-    #     if not self.is_applicable(setting):
-    #         raise RuntimeError(
-    #             f"Can only apply methods of type {type(self)} on settings "
-    #             f"that inherit from {type(self).target_setting}. "
-    #             f"(Given setting is of type {type(setting)})."
-    #         )
-
-    #     # Seed everything first:
-    #     self.config.seed_everything()
-    #     # Create a model and a Trainer for the given setting:
-    #     self.configure(setting)
-    #     # TODO: get the config object to be somewhere else, I guess?
-    #     # TODO: "Who's" responsability should it be to create a Trainer object?
-    #     return setting.apply(
-    #         method=self,
-    #         config=self.config,
-    #     )
 
     def configure(self, setting: SettingType) -> None:
         """Configures the method for the given Setting.
@@ -111,25 +71,25 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
         """
         # IDEA: Could also pass some kind of proxy object from the Setting to
         # the method, and hide/delete some attributes whenever the method
-        # shouldn't have access to them? 
+        # shouldn't have access to them?
         # print(setting.dumps_json(indent="\t"))
-        self.trainer = self.create_trainer(setting)
-        self.model = self.create_model(setting)
-        
+        self.trainer: Trainer = self.create_trainer(setting)
+        self.model: LightningModule = self.create_model(setting)
 
     def fit(self,
-            train_dataloader: Optional[DataLoader] = None,
-            val_dataloaders: Optional[Union[DataLoader, List[DataLoader]]] = None,
-            datamodule: Optional[LightningDataModule] = None):
-        """Trains the method (and its model) on the setting.
+            train_dataloader: Environment[Observations, Actions, Rewards] = None,
+            valid_dataloader: Environment[Observations, Actions, Rewards] = None,
+            datamodule: LightningDataModule = None):
+        """Called by the Setting to train the method.
 
+        Might be called more than once before training is 'done'.
         Overwrite this to customize training.
         """
         assert self.model is not None, f"For now, Setting should have been nice enough to call method.configure(setting=self) before calling `fit`!"
         return self.trainer.fit(
             model=self.model,
             train_dataloader=train_dataloader,
-            val_dataloaders=val_dataloaders,
+            val_dataloaders=valid_dataloader,
             datamodule=datamodule,
         )
 
@@ -156,9 +116,6 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
         assert "loss_object" in test_results[0]
         total_loss: Loss = test_results[0]["loss_object"]
     
-    def split_batch(self, batch: Any) -> Tuple[Batch, Batch]:
-        return self.model.split_batch(batch)
-
     def get_actions(self, observations: Observations) -> Actions:
         """ Get a batch of predictions (actions) for a batch of observations.
         
@@ -170,14 +127,6 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
         # Simplified this for now, but we could add more flexibility later.
         assert isinstance(forward_pass, ForwardPass)
         return forward_pass.actions
-
-    def on_task_switch(self, task_id: int) -> None:
-        """
-        TODO: Not sure if it makes sense to put this here. Might have to move
-        it to Class/Task incremental or something like that.
-        """
-        if hasattr(self.model, "on_task_switch"):
-            self.model.on_task_switch(task_id)
 
     def model_class(self, setting: SettingType) -> Type[LightningModule]:
         """ Returns the type of model to use for the given setting.
@@ -195,6 +144,9 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
         """Creates the Model (a LightningModule) for the given Setting.
 
         The model should ideally accept a Setting in its constructor.
+        
+        IDEA: Would it be better if we could instead pass some kind of 'spec' so
+        methods can't change things inside the Setting? 
 
         Args:
             setting (SettingType): An experimental setting.
@@ -207,10 +159,10 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
         hparams_class = model_class.HParams
         logger.debug(f"model class for this setting: {model_class}")
         logger.debug(f"hparam class for this setting: {hparams_class}")
-        logger.debug(f"Hyperparameters class on the method: {type(self.hparams)}")
+        logger.debug(f"hparam class on the method: {type(self.hparams)}")
 
         if isinstance(self.hparams, hparams_class):
-            # All good. Just create the model, passing the setting and hparams.
+            # Create the model, passing the setting and hparams.
             return model_class(setting=setting, hparams=self.hparams, config=self.config)
         else:
             # Need to 'upgrade' the hparams.
@@ -264,52 +216,7 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
     def create_callbacks(self, setting: SettingType) -> List[Callback]:
         # TODO: Add some callbacks here if you want.
         return []
-
-    @classmethod
-    def is_applicable(cls, setting: Union[Setting, Type[Setting]]) -> bool:
-        """Returns wether this Method is applicable to the given setting.
-
-        A method is applicable on a given setting if and only if the setting is
-        the method's target setting, or if it is a descendant of the method's
-        target setting (below the target setting in the tree).
-        
-        Concretely, since the tree is implemented as an inheritance hierarchy,
-        a method is applicable to any setting which is an instance (or subclass)
-        of its target setting.
-
-        Args:
-            setting (SettingType): a Setting.
-
-        Returns:
-            bool: Wether or not this method is applicable on the given setting.
-        """            
-        assert cls.target_setting, f"Method {cls} has no target setting!"
-        # NOTE: Setting is a subclass of LightningDataModule.
-        if isinstance(setting, LightningDataModule):
-            # if given a Setting or LightningDataModule object, get it's type.
-            setting_type = type(setting)
-        elif inspect.isclass(setting) and issubclass(setting, LightningDataModule):
-            setting_type = setting
-        else:
-            raise RuntimeError(
-                f"Invalid setting {setting}. Must be either an instance or a "
-                f"subclass of Setting or LightningDataModule."
-            )
-
-        if not issubclass(setting_type, Setting):
-            # If the given setting type is a LightningDataModule that doesn't
-            # inherit from 'Setting' then we consider it the same way we would
-            # an IID setting.
-            from settings import IIDSetting
-            setting_type = IIDSetting
-
-        return issubclass(setting_type, cls.target_setting)
     
-    @classmethod
-    def get_all_applicable_settings(cls) -> List[Type[SettingType]]:
-        from settings import Setting, all_settings
-        return list(filter(cls.is_applicable, all_settings))
-
     @classmethod
     def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
         from main import Experiment
@@ -324,8 +231,8 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
         results: Results = experiment.launch(argv)
         return results
 
-    def apply_all(self, argv: Union[str, List[str]]=None) -> Dict[Type["Method"], Results]:
-        applicable_settings = self.get_all_applicable_settings()
+    def apply_all(self, argv: Union[str, List[str]] = None) -> Dict[Type["Method"], Results]:
+        applicable_settings = self.get_applicable_settings()
 
         all_results: Dict[Type[Setting], Results] = OrderedDict()
         for setting_type in applicable_settings:
@@ -338,8 +245,9 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
             for method, results in all_results.items()
         })
         return all_results
+    target_setting: ClassVar[Type["SettingABC"]] = None
 
-    def __init_subclass__(cls, target_setting: Type[Setting]=None, **kwargs) -> None:
+    def __init_subclass__(cls, target_setting: Type[Setting] = None, **kwargs) -> None:
         """Called when creating a new subclass of Method.
 
         Args:
@@ -352,32 +260,23 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
                 f"The Method class {cls} should be decorated with @dataclass!\n"
                 f"While this isn't strictly necessary for things to work, it is"
                 f"highly recommended, as any dataclass-style class attributes "
-                f"don't have the corresponding command-line arguments "
+                f"won't have the corresponding command-line arguments "
                 f"generated, which can cause a lot of subtle bugs."
             ))
-
-        if target_setting:
-            logger.debug(f"Method {cls} is designed for setting {target_setting}")
-            cls.target_setting = target_setting
-            cls.target_setting._applicable_methods.add(cls)
-        else:
-            logger.debug(f"Method {cls} didn't set a `target_setting` argument in the "
-                         f"class constructor, using the target setting of the parent")
-            target_setting = cls.target_setting
-
-        assert target_setting, "You must specify a `setting` argument when creating a new Method!"
-        cls._applicable_settings.add(target_setting)
         
+        if target_setting:
+            cls.target_setting = target_setting
+        elif hasattr(cls, "target_setting"):
+            target_setting = cls.target_setting
+        else:
+            raise RuntimeError(
+                f"You must either pass a `target_setting` argument to the "
+                f"class statement or have a `target_setting` class variable "
+                f"when creating a new subclass of {__class__}."
+            )
+        # Register this new method on the Setting.
+        target_setting.register_method(cls)
         return super().__init_subclass__(**kwargs)
-    
-    @classmethod
-    def get_name(cls) -> str:
-        """ Gets the name of this method class. """
-        name = getattr(cls, "name", None)
-        if name is None:
-            name = camel_case(cls.__qualname__)
-            name = remove_suffix(name, "_method")
-        return name
 
     def upgrade_hparams(self, new_type: Type[Model.HParams]) -> Model.HParams:
         """Upgrades the current hparams to the new type, filling in the new
@@ -393,20 +292,23 @@ class Method(Serializable, Generic[SettingType], Parseable, ABC):
             HParams: [description]
         """
         argv = self._argv
-        logger.info(f"Current method was originally created from args {argv}")
-        new_hparams: HParams = new_type.from_args(argv)
-        logger.info(f"Hparams for that type of model (from the method): {self.hparams}")
-        logger.info(f"Hparams for that type of model (from command-line): {new_hparams}")
-        
-        # if self.hparams:
-        #     # IDEA: use some fancy dict comparisons to keep things that aren't the same
-        #     # Not needed, because we saved the args that were used to create the instance.
-        #     default_values = self.hparams.from_dict({})
-        #     current_values = self.hparams.to_dict()
-        #     different_values = utils.
-        #     new_hparams = new_type.from_dict(hparams_dict, drop_extra_fields=True)
+        logger.debug(f"Current method was originally created from args {argv}")
+        new_hparams: Model.HParams = new_type.from_args(argv)
+        logger.debug(f"Hparams for that type of model (from the method): {self.hparams}")
+        logger.debug(f"Hparams for that type of model (from command-line): {new_hparams}")
         return new_hparams
     
     @classmethod
     def get_path_to_source_file(cls: Type) -> Path:
         return get_path_to_source_file(cls)
+
+    def split_batch(self, batch: Any) -> Tuple[Batch, Batch]:
+        return self.model.split_batch(batch)
+    
+    def on_task_switch(self, task_id: int) -> None:
+        """
+        TODO: Not sure if it makes sense to put this here. Might have to move
+        it to Class/Task incremental or something like that.
+        """
+        if hasattr(self.model, "on_task_switch"):
+            self.model.on_task_switch(task_id)

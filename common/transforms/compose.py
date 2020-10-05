@@ -1,4 +1,4 @@
-from typing import Callable, List, TypeVar, Union, Tuple
+from typing import Callable, List, TypeVar, Union, Tuple, Optional, Sequence
 
 import torch
 from torch import Tensor
@@ -8,6 +8,7 @@ from utils.logging_utils import get_logger
 logger = get_logger(__file__)
 
 T = TypeVar("T", bound=Callable)
+
 
 class Compose(List[T], ComposeBase):
     """ Extend the Compose class of torchvision with methods of `list`.

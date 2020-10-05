@@ -115,7 +115,7 @@ class Experiment(Parseable, Serializable):
             # Evaluate all applicable methods on this setting.
             all_results: Dict[Type[Method], Results] = {}
 
-            for first_method in self.setting.get_all_applicable_methods():
+            for first_method in self.setting.get_applicable_methods():
                 method = first_method.from_args(argv)
                 results = self.setting.apply(method, config=self.config)
                 all_results[first_method] = results
@@ -136,11 +136,11 @@ class Experiment(Parseable, Serializable):
                 # The name of the method to use if given, so we have to find all
                 # settings that have an applicable method with that name.
                 for setting in all_settings:
-                    methods = setting.get_all_applicable_methods()
+                    methods = setting.get_applicable_methods()
                     if any(m.get_name() == self.method for m in methods):
                         applicable_settings.append(setting)
             else:
-                applicable_settings = self.method.get_all_applicable_settings()
+                applicable_settings = self.method.get_applicable_settings()
 
             for setting_type in applicable_settings:
                 # For each setting, if method_name was set, then we need to find

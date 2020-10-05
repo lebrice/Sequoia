@@ -29,7 +29,7 @@ from methods.models.output_heads import OutputHead
 from settings.base.setting import Setting, SettingType, Observations, Actions, Rewards
 from utils.logging_utils import get_logger
 from .base_hparams import BaseHParams
-from settings import Observations, Actions, Rewards
+from settings import Environment, Observations, Actions, Rewards
 
 logger = get_logger(__file__)
 
@@ -175,24 +175,49 @@ class BaseModel(LightningModule, Generic[SettingType]):
         """ Create the output head for the task. """
         return OutputHead(self.hidden_size, self.output_shape, name="classification")
 
-    def training_step(self, batch: Tuple[Tensor, Optional[Tensor]], batch_idx: int):
-        self.train()
-        return self.shared_step(batch, batch_idx, loss_name="train", training=True)
+    def training_step(self,
+                      batch: Tuple[Observations, Optional[Rewards]],
+                      *args,
+                      **kwargs):
+        return self.shared_step(
+            batch,
+            *args,
+            environment=self.setting.train_env,
+            loss_name="train",
+            **kwargs
+        )
 
-    def validation_step(self, batch, batch_idx: int, dataloader_idx: int = None):
-        loss_name = "val"
-        return self.shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
+    def validation_step(self,
+                      batch: Tuple[Observations, Optional[Rewards]],
+                      *args,
+                      **kwargs):
+        return self.shared_step(
+            batch,
+            *args,
+            environment=self.setting.val_env,
+            loss_name="val",
+            **kwargs
+        )
 
-    def test_step(self, batch, batch_idx: int, dataloader_idx: int = None):
-        loss_name = "test"
-        return self.shared_step(batch, batch_idx, dataloader_idx=dataloader_idx, loss_name=loss_name, training=False)
+    def test_step(self,
+                      batch: Tuple[Observations, Optional[Rewards]],
+                      *args,
+                      **kwargs):
+        return self.shared_step(
+            batch,
+            *args,
+            environment=self.setting.test_env,
+            loss_name="test",
+            **kwargs
+        )
 
     def shared_step(self,
                     batch: Tuple[Observations, Rewards],
                     batch_idx: int,
+                    environment: Environment,
+                    loss_name: str,
                     dataloader_idx: int = None,
-                    loss_name: str = "",
-                    training: bool = True) -> Dict:
+                    optimizer_idx: int = None) -> Dict:
         """
         This is the shared step for this 'example' LightningModule. 
         Feel free to customize/change it if you want!
@@ -202,24 +227,24 @@ class BaseModel(LightningModule, Generic[SettingType]):
             loss_name += f"/{dataloader_idx}"
         
         # If needed, split the batch into the observations and the rewards.
-        # NOTE: This does nothing if the batch is already split the right way.
-        observation, reward = self.split_batch(batch)
+        # NOTE: This does nothing if the batch is already split into
+        # Observations and Rewards objects.
+        observations, rewards = self.split_batch(batch)
         
         # Get the forward pass results, containing:
         # - "observation": the augmented/transformed/processed observation.
         # - "representations": the representations for the observations.
         # - "actions": The actions (predictions)
-        forward_pass = self(observation)
+        forward_pass: ForwardPass = self(observations)
+        # get the actions from the forward pass:
+        actions = forward_pass.actions
 
-        if reward is None or reward.y is None:
-            # TODO: Get the reward from the environment (the dataloader).
-            pass
-            # if self.training:
-            #     rewards = self.setting.train_env.send(forward_pass["actions"])
-            # else: # How to differentiate between valid/test?
-            #     rewards = 
-        
-        loss_object: Loss = self.get_loss(forward_pass, reward, loss_name=loss_name)
+        if rewards is None:
+            # Get the reward from the environment (the dataloader).
+            rewards = environment.send(actions)
+            assert rewards is not None
+
+        loss_object: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)
         return {
             "loss": loss_object.loss,
             "log": loss_object.to_log_dict(),

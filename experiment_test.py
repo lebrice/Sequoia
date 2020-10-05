@@ -53,7 +53,7 @@ def method_type(request, monkeypatch, set_argv_for_debug):
 def setting_type(request, monkeypatch, set_argv_for_debug):
     setting_class: Type[Setting] = request.param
     monkeypatch.setattr(setting_class, "apply", mock_apply)
-    for method_type in setting_class.get_all_applicable_methods():
+    for method_type in setting_class.get_applicable_methods():
         pass
         # monkeypatch.setattr(method_type, "apply_to", mock_apply_to)
     return setting_class
@@ -81,7 +81,7 @@ def test_none_setting(method_type: Optional[Type[Method]],
     method = method_type.get_name() if use_method_name else method_type
     experiment = Experiment(method=method, setting=None)
     all_results = experiment.launch("--debug --fast_dev_run --batch-size 1")
-    for setting_type in method_type.get_all_applicable_settings():
+    for setting_type in method_type.get_applicable_settings():
         result = all_results[setting_type]
         assert result == (method_type, setting_type)
 
@@ -92,11 +92,11 @@ def test_none_method(setting_type: Optional[Type[Setting]],
     setting = setting_type.get_name() if use_setting_name else setting_type
     experiment = Experiment(method=None, setting=setting)
     all_results = experiment.launch("--debug --fast_dev_run --batch-size 1")
-    for method_type in setting_type.get_all_applicable_methods():
+    for method_type in setting_type.get_applicable_methods():
         result = all_results[method_type]
         assert result == (method_type, setting_type)
 
     # assert all_results == {
     #     method_type: (method_type, setting_type)
-    #     for method_type in setting_type.get_all_applicable_methods()
+    #     for method_type in setting_type.get_applicable_methods()
     # }

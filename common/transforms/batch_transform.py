@@ -8,7 +8,6 @@ from typing import Any, Callable, TypeVar, Union
 from ..batch import Batch
 from .transform import InputType, OutputType, Transform
 
-# TODO: Maybe add a wrapper version of this? So for
 
 class BatchTransform(Transform[Union[Batch, InputType], OutputType], ABC):
     """ABC that marks a Transform as being able to operate on 'Batch' objects

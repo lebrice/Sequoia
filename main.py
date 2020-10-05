@@ -2,7 +2,6 @@
 
 
 """
-
 from methods import all_methods
 from settings import all_settings
 from utils import get_logger
@@ -19,7 +18,7 @@ if __name__ == "__main__":
         logger.debug(
         f"- {setting.get_name()}: {setting} ({setting.get_path_to_source_file()})"
     )
-
+        
     logger.debug("Registered Methods: \n" + "\n".join(
         f"- {method.get_name()}: {method} ({method.get_path_to_source_file()})" for method in all_methods
     ))

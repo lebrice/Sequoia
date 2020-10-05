@@ -72,7 +72,7 @@ def get_all_dataset_names(method_class: Type[Method] = None) -> List[str]:
 
     dataset_names: Iterable[List[str]] = map(
         lambda s: list(s.available_datasets),
-        method_class.get_all_applicable_settings()
+        method_class.get_applicable_settings()
     )
     return list(set(sum(dataset_names, [])))
 

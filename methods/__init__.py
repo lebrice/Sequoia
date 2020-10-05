@@ -1,7 +1,7 @@
 from typing import List, Type
 
-from .baseline import BaselineMethod
 from .method import Method
+from .baseline import BaselineMethod
 from .random_baseline import RandomBaselineMethod
 from .self_supervision import SelfSupervision
 

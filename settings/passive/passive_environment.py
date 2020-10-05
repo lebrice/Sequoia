@@ -7,18 +7,17 @@ from ..base.environment import (Actions, ActionType, Environment, Observations,
                                 ObservationType, Rewards, RewardType)
 
 
-class PassiveEnvironment(DataLoader, Environment[Union[ActionType,
-                                                       Tuple[ObservationType,
-                                                             ActionType]],
+class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
+                                                       Optional[ActionType]],
                                                  ActionType,
                                                  RewardType]):
     """Environment in which actions have no influence on future observations.
-    
+
     Can either be iterated on like a normal dataset, in which case it gives back
     the observation and the reward at the same time, or as an Active dataset,
     where it gives the reward only after an action (doesn't matter what action)
     is sent.
-    
+
     Normal supervised datasets such as Mnist, ImageNet, etc. fit under this
     category. Similarly to Environment, this just adds some methods on top of
     the usual PyTorch DataLoader.
@@ -27,6 +26,8 @@ class PassiveEnvironment(DataLoader, Environment[Union[ActionType,
                  dataset: Union[IterableDataset, Dataset],
                  pretend_to_be_active: bool = False,
                  batch_transforms: List[Callable] = None,
+                 observations_type: Type[ObservationType] = None,
+                 rewards_type: Type[RewardType] = None,
                  **kwargs):
         """Creates the DataLoader/Environment for the given dataset.
 
@@ -47,33 +48,52 @@ class PassiveEnvironment(DataLoader, Environment[Union[ActionType,
         # TODO: When True, withold the labels from the yielded batches until a
         # prediction is received through in the 'send' method.
         self.pretend_to_be_active = pretend_to_be_active
-        self.labels: Optional[Any] = None
-        self.batch_transforms: Compose = Compose(batch_transforms or [])
-        super().__init__(dataset=dataset, **kwargs)
-    
-    # def __next__(self) -> Tuple[ObservationType, RewardType]:
-    #     """ Generate the next observation. """
-    #     return super().__next__()
 
-    def __iter__(self) -> Iterable[Tuple[ObservationType, RewardType]]:
-        """ Iterate over the environment, yielding batches of Observations (x) and rewards (y) """
+        self.batch_transforms: Compose = Compose(batch_transforms or [])
+        from common.transforms import SplitBatch
+        if not any(isinstance(t, SplitBatch) for t in self.batch_transforms):
+            if observations_type and rewards_type:
+                self.batch_transforms.append(SplitBatch(observations_type, rewards_type))
+            raise RuntimeError(
+                f"`batch_transforms` needs to contain a SplitBatch "
+                f"transform! Or, you can use the `observations_type` and "
+                f"`rewards_type` args of the {__class__} constructor and it "
+                f"will create one for you. "
+            )
+        
+        super().__init__(dataset=dataset, **kwargs)
+        self.observations: Union[Observations, Any] = None
+        self.rewards: Union[Rewards, Any] = None
+        
+        # TODO: Create Observation / Action / Reward gym spaces!
+        # IDEA: Could make use of some of the properties of the `Batch` object,
+        # such as the `shapes` property.
+
+    def __iter__(self) -> Iterable[Tuple[ObservationType, Optional[RewardType]]]:
+        """Iterate over the dataset, yielding batches of Observations and
+        Rewards (or None if in 'fake active' mode).
+        """
         for batch in super().__iter__():
             batch = self.batch_transforms(batch)
-            if not self.pretend_to_be_active:
-                yield batch
+            
+            # For now, just to simplify, we assume that the batch has already
+            # been split into Observations and Actions by a SplitBatch transform.
+            assert len(batch) == 2
+            assert isinstance(batch[0], Observations)
+            assert isinstance(batch[1], Rewards)
+            self.observations, self.rewards = batch
+            
+            if self.pretend_to_be_active:
+                # TODO: Should we yield one item, or two?
+                yield self.observations, None
             else:
-                assert isinstance(batch, tuple), "Can only pretend to be active if the batches have labels (are tuples)!"
-                samples, *self.labels = batch
-                yield samples
+                yield self.observations, self.rewards
 
-    def send(self, action: Any) -> None:
-        """ Return the withheld labels when in 'active' mode, and does nothing
-        otherwise.
+    def send(self, action: Any) -> Rewards:
+        """ Return the last latch of rewards from the dataset (which were
+        withheld if in 'active' mode)
         """
-        if self.pretend_to_be_active:
-            return self.labels
-        # TODO: What do to in this case? The loader is receiving an action,
-        # but it already gave back the labels!
+        return self.rewards
     
     def close(self):
         pass

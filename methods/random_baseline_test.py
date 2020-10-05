@@ -27,7 +27,7 @@ supported_datasets: List[str] = [
 
 
 def test_get_applicable_settings():
-    settings = Method.get_all_applicable_settings()
+    settings = Method.get_applicable_settings()
     assert set(settings) == set(all_settings)
 
 # Reuse the method accross all tests below
@@ -54,7 +54,7 @@ def method(tmp_path_factory: Callable[[str], Path]):
 
 # @parametrize("dataset", get_dataset_params(Method, supported_datasets))
 @slow
-@parametrize("setting_type", Method.get_all_applicable_settings())
+@parametrize("setting_type", Method.get_applicable_settings())
 def test_fast_dev_run(method: RandomBaselineMethod, setting_type: Type[Setting], test_dataset: str):
     dataset = test_dataset
     if dataset not in setting_type.available_datasets:

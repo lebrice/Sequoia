@@ -13,6 +13,7 @@ from settings.base import Results
 from utils.utils import constant
 
 from .. import TaskIncrementalSetting
+from settings.passive.cl.batch_transforms import DropTaskLabels
 from .iid_results import IIDResults
 
 # TODO: Remove the task labels here.
@@ -58,8 +59,12 @@ class IIDSetting(TaskIncrementalSetting):
 
     def test_loop(self, method: "Method") -> IIDResults:
         test_metrics = Metrics()
-        for observations, rewards in self.test_dataloader():
+        test_env = self.test_dataloader()
+        for observations, rewards in test_env:
             actions = method.get_actions(observations)
+            # If we're in 'active' mode, then do this.
+            if rewards is None:
+                rewards = test_env.send(actions)
             test_metrics += self.get_metrics(actions=actions, rewards=rewards)
         return self.Results(test_metrics)
 
@@ -68,16 +73,6 @@ class IIDSetting(TaskIncrementalSetting):
             DropTaskLabels(),
             self.split_batch_transform,
         ]
-
-
-@dataclass
-class DropTaskLabels(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):
-    def __call__(self, batch: Tuple[Tensor, ...]):
-        if not isinstance(batch, (tuple, list)):
-            return batch
-        if len(batch) == 3:
-            return batch[0], batch[1]
-        return batch
 
 SettingType = TypeVar("SettingType", bound=IIDSetting)
 

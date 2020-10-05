@@ -25,7 +25,7 @@ supported_datasets: List[str] = [
 
 
 def test_get_applicable_settings():
-    settings = Method.get_all_applicable_settings()
+    settings = Method.get_applicable_settings()
     assert ClassIncrementalSetting in settings
     assert TaskIncrementalSetting in settings
     assert IIDSetting in settings
@@ -67,7 +67,7 @@ def method_and_coefficients(request, tmp_path_factory: Callable[[str], Path]):
 
 # @parametrize("dataset", get_dataset_params(Method, supported_datasets))
 @slow
-@parametrize("setting_type", Method.get_all_applicable_settings())
+@parametrize("setting_type", Method.get_applicable_settings())
 def test_fast_dev_run(
         method_and_coefficients: Tuple[SelfSupervision, Dict[str, float]],
         setting_type: Type[Setting],
