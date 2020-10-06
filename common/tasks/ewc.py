@@ -54,6 +54,7 @@ class EWCTask(AuxiliaryTask):
         # self.previous_model_weights: Dict[str, Tensor] = DictBuffer()
         # self.old_weights: Tensor
         self._i: int = 0
+        self.n_switches: int = 0
 
     def state_dict(self, destination=None, prefix='', keep_vars=False) -> Dict:
         state = super().state_dict(destination=destination, prefix=prefix, keep_vars=keep_vars)
@@ -85,7 +86,10 @@ class EWCTask(AuxiliaryTask):
         """
         if not self.enabled:
             return
-        if task_id != self.previous_task:
+        if self.previous_task is None and task_id is not None and self.n_switches == 0:
+            logger.debug(f"Starting the first task, no EWC update.")
+            pass
+        elif task_id != self.previous_task:
             logger.debug(f"Switching tasks: {self.previous_task} -> {task_id}: "
                          f"Updating the EWC 'anchor' weights.")
             self.previous_task = task_id
@@ -95,7 +99,8 @@ class EWCTask(AuxiliaryTask):
             }))
             # self.previous_model_weights.requires_grad_(False)
             # self.old_weights = parameters_to_vector(self.model.parameters())
-        
+        self.n_switches += 1
+
     def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor = None) -> Loss:
         """Gets the 'EWC' loss. 
 
@@ -105,7 +110,9 @@ class EWCTask(AuxiliaryTask):
         
         This doesn't actually use any of the provided arguments.
         """
-        assert self.previous_task is not None
+        if self.previous_task is None:
+            # We're in the first task: do nothing.
+            return Loss(name=self.name)
 
         old_weights: Dict[str, Tensor] = self.previous_model_weights
         new_weights: Dict[str, Tensor] = dict(self.model.named_parameters())
