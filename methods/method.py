@@ -75,14 +75,17 @@ class Method(MethodABC, Serializable, Parseable, ABC):
         # print(setting.dumps_json(indent="\t"))
         self.trainer: Trainer = self.create_trainer(setting)
         self.model: LightningModule = self.create_model(setting)
+        self.Observations: Type[Observations] = setting.Observations
+        self.Actions: Type[Actions] = setting.Actions
+        self.Rewards: Type[Rewards] = setting.Rewards
 
     def fit(self,
             train_dataloader: Environment[Observations, Actions, Rewards] = None,
             valid_dataloader: Environment[Observations, Actions, Rewards] = None,
             datamodule: LightningDataModule = None):
         """Called by the Setting to train the method.
-
-        Might be called more than once before training is 'done'.
+        Could be called more than once before training is 'over', for instance
+        when training on a series of tasks.
         Overwrite this to customize training.
         """
         assert self.model is not None, f"For now, Setting should have been nice enough to call method.configure(setting=self) before calling `fit`!"

@@ -52,24 +52,29 @@ class MethodABC(ABC):
         
         # if given an object, get it's type.
         if isinstance(setting, LightningDataModule):
-            setting_type = type(setting)
+            setting = type(setting)
         
-        if (not issubclass(setting_type, SettingABC)
-            and issubclass(setting_type, LightningDataModule)):
+        if (not issubclass(setting, SettingABC)
+            and issubclass(setting, LightningDataModule)):
             # TODO: If we're trying to check if this method would be compatible
             # with a LightningDataModule, rather than a Setting, then we treat
             # that LightningModule the same way we would an IIDSetting.
             # i.e., if we're trying to apply a Method on something that isn't in
             # the tree, then we consider that datamodule as the IIDSetting node.
             from settings import IIDSetting
-            setting_type = IIDSetting
+            setting = IIDSetting
 
-        return issubclass(setting_type, cls.target_setting)
+        return issubclass(setting, cls.target_setting)
 
     @classmethod
     def get_applicable_settings(cls) -> List[Type["SettingABC"]]:
-        """ Returns all settings on which this method is applicable. """
-        return list(cls.target_setting.all_children())
+        """ Returns all settings on which this method is applicable.
+        NOTE: This only returns 'concrete' Settings.
+        """
+        from settings import all_settings
+        return list(filter(cls.is_applicable, all_settings))
+        # This would return ALL the setting:
+        # return list([cls.target_setting, *cls.target_setting.all_children()])
 
     @classmethod
     def get_name(cls) -> str:

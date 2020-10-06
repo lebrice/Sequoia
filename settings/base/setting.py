@@ -18,6 +18,7 @@ See: [Pytorch-Lightning](https://pytorch-lightning.readthedocs.io/en/latest/)
 See: [LightningDataModule](https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html)
 
 """
+
 import inspect
 import os
 import shlex
@@ -30,11 +31,12 @@ from functools import partial
 from pathlib import Path
 from typing import *
 
+import gym
 import torch
 from pytorch_lightning import LightningDataModule
 from pytorch_lightning.core.datamodule import _DataModuleWrapper
 from simple_parsing import (ArgumentParser, Serializable, list_field,
-                            mutable_field, subparsers)
+                            mutable_field, subparsers, field)
 from torch.utils.data import DataLoader
 
 from common.config import Config
@@ -99,7 +101,6 @@ class Setting(SettingABC,
     # a given type of setting. See the `Results` class for more info.
     Results: ClassVar[Type[Results]] = Results
     
-    
     ##
     ##   -------------
     
@@ -115,7 +116,6 @@ class Setting(SettingABC,
     # Transforms to be applied to the testing datasets. When unset, the value
     # of `transforms` is used.
     test_transforms: List[Transforms] = list_field()
-   
 
     # Fraction of training data to use to create the validation set.
     val_fraction: float = 0.2
@@ -128,35 +128,32 @@ class Setting(SettingABC,
 
     # These should be set by all settings, not from the command-line. Hence we
     # mark them as InitVars, which means they should be passed to __post_init__.
-    obs_shape: Tuple[int, ...] = ()
-    action_shape: Tuple[int, ...] = ()
-    reward_shape: Tuple[int, ...] = ()
+    # x_shape: Tuple[int, ...] = field(init=False)
+    # action_shape: Tuple[int, ...] = field(init=False)
+    # reward_shape: Tuple[int, ...] = field(init=False)
 
+    observation_space: gym.Space = None
+    action_space: gym.Space = None
+    reward_space: gym.Space = None
+    
     def __post_init__(self,
-                      obs_shape: Tuple[int, ...] = (),
-                      action_shape: Tuple[int, ...] = (),
-                      reward_shape: Tuple[int, ...] = ()):
+                      observation_space: gym.Space = None,
+                      action_space: gym.Space = None,
+                      reward_space: gym.Space = None):
         """ Initializes the fields of the setting that weren't set from the
         command-line.
         """
         logger.debug(f"__post_init__ of Setting")
+        
+        self.observation_space = observation_space
+        self.action_space = action_space
+        self.reward_space = reward_space
+
         # Actually compose the list of Transforms or callables into a single transform.
-        # self.transforms: Compose = Compose(self.transforms)
-        # self.train_transforms: Compose = Compose(self.train_transforms())
-        # self.val_transforms: Compose = Compose(self.val_transforms())
-        # self.test_transforms: Compose = Compose(self.test_transforms())
-        # TODO: Adds an additional transform that splits stuff into Observations
-        # and Rewards.
-        # IDEA: Add a `BatchTransform` class to mark the transforms which can
-        # operate on batch objects rather than just on tensors. Use
-        # __init_subclass__ in that class to wrap the __call__ method
-        # of the transforms and get the tensor from the observation
-        # automatically.
         self.transforms: Compose = Compose(self.transforms)
         self.train_transforms: Compose = Compose(self.train_transforms or self.transforms)
         self.val_transforms: Compose = Compose(self.val_transforms or self.transforms)
         self.test_transforms: Compose = Compose(self.test_transforms or self.transforms)
-        print(type(self).__bases__)
         
         LightningDataModule.__init__(self,
             train_transforms=self.train_transforms,
@@ -168,23 +165,20 @@ class Setting(SettingABC,
             observation_type=self.Observations,
             reward_type=self.Rewards
         )
-
-        self.obs_shape = self.obs_shape or obs_shape
-        self.action_shape = self.action_shape or action_shape
-        self.reward_shape = self.reward_shape or reward_shape
-
         logger.debug(f"Transforms: {self.transforms}")
-        if obs_shape and self.transforms:
-            # TODO: Testing out an idea: letting the transforms tell us how
-            # they change the shape of the image.
-            logger.debug(f"Obs shape before transforms: {obs_shape}")
-            self.obs_shape: Tuple[int, ...] = self.transforms.shape_change(obs_shape)
-            logger.debug(f"Obs shape after transforms: {self.obs_shape}")
+
+        # TODO: Testing out an idea: letting the transforms tell us how
+        # they change the shape of the observations.
+        x_shape = self.observation_space["x"].shape
+        if x_shape and self.transforms:
+            logger.debug(f"x shape before transforms: {x_shape}")
+            x_shape: Tuple[int, ...] = self.transforms.shape_change(x_shape)
+            logger.debug(f"x shape after transforms: {x_shape}")
+        self.observation_space["x"].shape = x_shape
 
         self.dataloader_kwargs: Dict[str, Any] = {}
-
-        if self.obs_shape and not self.dims:
-            self.dims = self.obs_shape
+        if x_shape and not self.dims:
+            self.dims = x_shape
 
         # This should probably be set on `self` inside of `apply` call.
         # TODO: It's a bit confusing to also have a `config` attribute on the
@@ -192,8 +186,23 @@ class Setting(SettingABC,
         self.config: Config = None
 
     @abstractmethod
-    def apply(self, method: MethodABC, config: Config) -> Results:
-        pass
+    def apply(self, method: MethodABC, config: Config) -> "Setting.Results":
+        assert False, "this should never be called."
+        method.fit(
+            train_dataloader=self.train_dataloader(),
+            val_dataloader=self.val_dataloader(),
+        )
+        total_metrics = Metrics()
+        test_environment = self.test_dataloader()
+        for observations in test_environment:
+            # Get the predictions/actions:
+            actions = method.get_actions(observations)
+            # Get the rewards for the given predictions.
+            rewards = test_environment.send(actions)
+            # Calculate the 'metrics' (TODO: This should be done be in the env!)
+            metrics = self.get_metrics(actions=actions, rewards=rewards)
+            total_metrics += metrics
+        return results
 
     # Transforms that apply on Observation objects (the whole batch).
     # TODO: (@lebrice): This is still a bit wonky, need to design this better.
@@ -256,3 +265,47 @@ class Setting(SettingABC,
     def get_path_to_source_file(cls: Type) -> Path:
         from utils.utils import get_path_to_source_file
         return get_path_to_source_file(cls)
+
+    def configure(self, method: MethodABC):
+        """ Setup the data_dir and the dataloader kwargs using properties of the
+        Method or of self.Config.
+
+        Parameters
+        ----------
+        method : MethodABC
+            The Method that is being applied on this setting.
+        config : Config
+            [description]
+        """
+        assert self.config is not None
+        config = self.config
+        # Get the arguments that will be used to create the dataloaders.
+        
+        # TODO: Should the data_dir be in the Setting, or the Config?
+        self.data_dir = config.data_dir
+        
+        # Create the dataloader kwargs, if needed.
+        if not self.dataloader_kwargs:
+            batch_size = 32
+            if hasattr(method, "batch_size"):
+                batch_size = method.batch_size
+            elif hasattr(method, "model") and hasattr(method.model, "batch_size"):
+                batch_size = method.model.batch_size
+            elif hasattr(config, "batch_size"):
+                batch_size = config.batch_size
+
+            dataloader_kwargs = dict(
+                batch_size=batch_size,
+                num_workers=config.num_workers,
+                shuffle=False,
+            )
+        # Save the dataloader kwargs in `self` so that calling `train_dataloader()`
+        # from outside with no arguments (i.e. when fitting the model with self
+        # as the datamodule) will use the same args as passing the dataloaders
+        # manually.
+        self.dataloader_kwargs = dataloader_kwargs
+        logger.debug(f"Dataloader kwargs: {dataloader_kwargs}")
+
+        # Debugging: Run a quick check to see that what is returned by the
+        # dataloaders is of the right type and shape etc.
+        self._check_dataloaders_give_correct_types()

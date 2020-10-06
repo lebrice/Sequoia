@@ -58,21 +58,19 @@ class IIDSetting(TaskIncrementalSetting):
         return super().apply(method, config)
 
     def test_loop(self, method: "Method") -> IIDResults:
-        test_metrics = Metrics()
+        test_metrics = []
         test_env = self.test_dataloader()
-        for observations, rewards in test_env:
+        for observations, *rewards in test_env:
             actions = method.get_actions(observations)
-            # If we're in 'active' mode, then do this.
+            # If we're in 'active' mode, then rewards was empty:
+            rewards = rewards[0] if rewards else None
             if rewards is None:
                 rewards = test_env.send(actions)
-            test_metrics += self.get_metrics(actions=actions, rewards=rewards)
+            batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
+            test_metrics.append(batch_metrics)
+
         return self.Results(test_metrics)
 
-    def batch_transforms(self) -> List[Callable]:
-        return [
-            DropTaskLabels(),
-            self.split_batch_transform,
-        ]
 
 SettingType = TypeVar("SettingType", bound=IIDSetting)
 

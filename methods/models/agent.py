@@ -32,11 +32,11 @@ from .output_heads import OutputHead
 logger = get_logger(__file__)
 SettingType = TypeVar("SettingType", bound=RLSetting)
 
-class Agent(Model[SettingType], Pickleable):
+class Agent(Model[SettingType]):
     """ LightningModule that interacts with `ActiveDataLoader` dataloaders.
     """
     @dataclass
-    class HParams(BaseHParams):
+    class HParams(Model.HParams):
         """ HParams of the Agent. """
 
     def __init__(self, setting: RLSetting, hparams: HParams, config: Config):

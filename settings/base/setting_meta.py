@@ -6,6 +6,8 @@ from pytorch_lightning.core.datamodule import _DataModuleWrapper
 from dataclasses import fields
 from utils.logging_utils import get_logger
 
+logger = get_logger(__file__)
+
 class SettingMeta(_DataModuleWrapper, Type["Setting"]):
     """ Metaclass for the nodes in the Setting inheritance tree.
     

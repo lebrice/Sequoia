@@ -61,8 +61,8 @@ class ClassIncrementalResults(IncrementalSetting.Results):
 
         for fig_name, figure in plots.items():
             print(f"fig_name: {fig_name}")
-            figure.show()
-            plt.waitforbuttonpress(10)
+            # figure.show()
+            # plt.waitforbuttonpress(10)
             path = (save_dir/ fig_name).with_suffix(".jpg")
             path.parent.mkdir(exist_ok=True, parents=True)
             figure.savefig(path)

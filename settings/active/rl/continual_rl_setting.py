@@ -13,17 +13,22 @@ from torch import Tensor
 from common.gym_wrappers import (MultiTaskEnvironment, PixelStateWrapper,
                                  SmoothTransitions, TransformObservation,
                                  has_wrapper)
+from common.config import Config
 from common.transforms import ChannelsFirstIfNeeded, Compose, Transforms
 from utils import dict_union, get_logger
 
 from ..active_setting import ActiveSetting
 from .gym_dataloader import GymDataLoader
 
+
+from settings.method_abc import MethodABC
+from settings.assumptions.incremental import IncrementalSetting
+# from settings.base import Observations, Rewards, Actions
 logger = get_logger(__file__)
 
 
 @dataclass
-class ContinualRLSetting(ActiveSetting):
+class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     """ Reinforcement Learning Setting where the environment changes over time.
 
     This is an Active setting which uses gym environments as sources of data.
@@ -32,7 +37,11 @@ class ContinualRLSetting(ActiveSetting):
     in cartpole, making the task progressively harder as the agent interacts with
     the environment.
     """
-     
+    @dataclass(frozen=True)
+    class Observations(IncrementalSetting.Observations,
+                       ActiveSetting.Observations):
+        """ Observations in an RL Setting. """
+
     available_datasets: ClassVar[Dict[str, str]] = {
         "cartpole": "CartPole-v0"
     }
@@ -137,6 +146,51 @@ class ContinualRLSetting(ActiveSetting):
         self.train_env: GymDataLoader
         self.val_env: GymDataLoader
         self.test_env: GymDataLoader
+
+    def apply(self, method: MethodABC, config: Config):
+        self.config = config
+        method.config = config
+        method.configure(self)
+        self.configure(method)
+        
+        self.train_loop(method)
+        return self.test_loop(method)    
+    
+    def train_dataloader(self, *args, **kwargs) -> GymDataLoader:
+        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        pre_batch_wrappers = self.train_wrappers()
+        self.train_env = GymDataLoader(
+            env=self.env_name,
+            pre_batch_wrappers=pre_batch_wrappers,
+            max_steps=self.max_steps,
+            on_missing_action=self.on_missing_action,
+            **kwargs
+        )
+        return self.train_env
+    
+    def val_dataloader(self, *args, **kwargs) -> GymDataLoader:
+        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        wrappers = self.val_wrappers()
+        self.val_env = GymDataLoader(
+            env=self.env_name,
+            pre_batch_wrappers=wrappers,
+            max_steps=self.max_steps,
+            on_missing_action=self.on_missing_action,
+            **kwargs
+        )
+        return self.val_env
+
+    def test_dataloader(self, *args, **kwargs) -> GymDataLoader:
+        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        wrappers = self.test_wrappers()
+        self.test_env = GymDataLoader(
+            env=self.env_name,
+            pre_batch_wrappers=wrappers,
+            max_steps=self.max_steps,
+            on_missing_action=self.on_missing_action,
+            **kwargs
+        )
+        return self.test_env
 
 
     def create_task_schedule_for_env(self, env: MultiTaskEnvironment) -> Dict[int, Dict[str, float]]:
@@ -264,43 +318,6 @@ class ContinualRLSetting(ActiveSetting):
         if not self.observe_state_directly:
             wrappers.append(partial(TransformObservation, f=self.test_transforms))
         return wrappers
-
-    def train_dataloader(self, *args, **kwargs) -> GymDataLoader:
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        pre_batch_wrappers = self.train_wrappers()
-        self.train_env = GymDataLoader(
-            env=self.env_name,
-            pre_batch_wrappers=pre_batch_wrappers,
-            max_steps=self.max_steps,
-            on_missing_action=self.on_missing_action,
-            **kwargs
-        )
-        return self.train_env
-    
-    def val_dataloader(self, *args, **kwargs) -> GymDataLoader:
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        wrappers = self.val_wrappers()
-        self.val_env = GymDataLoader(
-            env=self.env_name,
-            pre_batch_wrappers=wrappers,
-            max_steps=self.max_steps,
-            on_missing_action=self.on_missing_action,
-            **kwargs
-        )
-        return self.val_env
-
-    def test_dataloader(self, *args, **kwargs) -> GymDataLoader:
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        wrappers = self.test_wrappers()
-        self.test_env = GymDataLoader(
-            env=self.env_name,
-            pre_batch_wrappers=wrappers,
-            max_steps=self.max_steps,
-            on_missing_action=self.on_missing_action,
-            **kwargs
-        )
-        return self.test_env
-
 
 if __name__ == "__main__":
     ContinualRLSetting.main()

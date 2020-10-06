@@ -89,7 +89,17 @@ class SettingABC(LightningDataModule):
             train_dataloader=self.train_dataloader(),
             val_dataloader=self.val_dataloader(),
         )
-        results: Results = method.test(test_dataloaders=self.test_dataloader())
+
+        total_metrics = Metrics()
+        test_environment = self.test_dataloader()
+        for observations in test_environment:
+            # Get the predictions/actions:
+            actions = method.get_actions(observations)
+            # Get the rewards for the given predictions.
+            rewards = test_environment.send(actions)
+            # Calculate the 'metrics' (TODO: This should be done be in the env!)
+            metrics = self.get_metrics(actions=actions, rewards=rewards)
+            total_metrics += metrics
         return results
 
     @abstractmethod
@@ -176,7 +186,7 @@ class SettingABC(LightningDataModule):
 
     @classmethod
     def get_parent(cls) -> Optional[Type["SettingABC"]]:
-        """Returns the first base class that is an instance of SettingMeta, else
+        """Returns the first base class that is an instance of SettingABC, else
         None
         """
         base_nodes = [

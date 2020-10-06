@@ -30,6 +30,7 @@ from typing import (Callable, ClassVar, Dict, List, Optional, Sequence, Tuple,
 
 import matplotlib.pyplot as plt
 import torch
+import numpy as np
 from continuum import ClassIncremental
 from continuum.datasets import *
 from continuum.datasets import _ContinuumDataset
@@ -109,6 +110,15 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     
     The current task can be set at the `current_task_id` attribute.
     """
+    
+    Results: ClassVar[Type[Results]] = ClassIncrementalResults
+
+    @dataclass(frozen=True)
+    class Observations(IncrementalSetting.Observations,
+                       PassiveSetting.Observations):
+        """Incremental Observations, in a supervised context.""" 
+        pass
+
     # Class variable holding a dict of the names and types of all available
     # datasets.
     available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = {
@@ -119,20 +129,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             QMNIST, FashionMNIST,
         ]
     }
-    
-    Results: ClassVar[Type[Results]] = ClassIncrementalResults
-
-    @dataclass(frozen=True)
-    class Observations(IncrementalSetting.Observations,
-                       PassiveSetting.Observations):
-        """Incremental Observations, in a supervised context.""" 
-        pass
-    
     # A continual dataset to use. (Should be taken from the continuum package).
     dataset: str = choice(available_datasets.keys(), default="mnist")
-    # Default path to which the datasets will be downloaded.
-    data_dir: Path = Path("data")
-
+    
     # Transformations to use. See the Transforms enum for the available values.
     transforms: List[Transforms] = list_field(
         Transforms.to_tensor,
@@ -142,7 +141,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         Transforms.three_channels,
         Transforms.channels_first_if_needed,
     )
-    
+
     # Either number of classes per task, or a list specifying for
     # every task the amount of new classes.
     increment: Union[int, List[int]] = list_field(2, type=int, nargs="*", alias="n_classes_per_task")
@@ -208,11 +207,25 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # make things a bit more complicated.
         assert isinstance(self.increment, int) and isinstance(self.test_increment, int)
         self.n_classes_per_task: int = self.increment
-
+        
+        from gym.spaces import Box, Discrete, Tuple as SpaceTuple, Dict as SpaceDict
+        action_shape = (self.n_classes_per_task,)
+        self.observation_space = SpaceDict({
+            "x": Box(low=0, high=1, shape=image_shape, dtype=np.float32),
+            "task_labels": Discrete(self.nb_tasks)
+        })
+        # TODO: Change the actions from logits to predicted labels.
+        # self.action_space = Discrete(self.n_classes_per_task)
+        self.action_space = Box(low=-np.inf, high=np.inf, shape=(self.n_classes_per_task,))
+        self.reward_space = Discrete(self.num_classes)
+        print(self.observation_space)
+        print(self.action_space)
+        # TODO: Need to change this so the 'actions' are actually the predicted
+        # labels, not the logits.
         super().__post_init__(
-            obs_shape=image_shape,
-            action_shape=self.n_classes_per_task,
-            reward_shape=1, # the labels have shape (1,) always.
+            observation_space=self.observation_space,
+            action_space=self.action_space,
+            reward_space=self.reward_space, # the labels have shape (1,) always.
         )
 
         self.train_datasets: List[_ContinuumDataset] = []
@@ -222,6 +235,8 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # This will be set by the Experiment, or passed to the `apply` method.
         # TODO: This could be a bit cleaner.
         self.config: Config
+        # Default path to which the datasets will be downloaded.
+        self.data_dir: Optional[Path] = None
 
     def apply(self, method: "Method", config: Config) -> ClassIncrementalResults:
         """Apply the given method on this setting to producing some results."""
@@ -236,9 +251,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # TODO: At the moment, we're nice enough to do this, but this would
         # maybe allow the method to "cheat"!
         method.configure(setting=self)
-
-        self.configure(method, config)
-                
+        self.configure(method)                
         # Run the Training loop (which is defined in IncrementalSetting).
         self.train_loop(method)
         
@@ -299,6 +312,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             dataset,
             batch_transforms=batch_transforms,
             observations_type=self.Observations,
+            actions_type=self.Actions,
             rewards_type=self.Rewards,
             **kwargs,
         )
@@ -319,6 +333,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             dataset,
             batch_transforms=batch_transforms,
             observations_type=self.Observations,
+            actions_type=self.Actions,
             rewards_type=self.Rewards,
             **kwargs,
         )
@@ -339,6 +354,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             dataset,
             batch_transforms=batch_transforms,
             observations_type=self.Observations,
+            actions_type=self.Actions,
             rewards_type=self.Rewards,
             # TODO: Enabling this at test time, just for fun. This means that we
             # could perhaps just keep track of the metrics in the testing environment!
@@ -347,9 +363,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         )
         return self.test_env
 
-    def configure(self, method: MethodABC, config: Config):
+    def configure(self, method: MethodABC):
         """ Setup the data_dir and the dataloader kwargs using properties of the
-        Method or the Config.
+        Method or of self.Config.
 
         Parameters
         ----------
@@ -358,19 +374,28 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         config : Config
             [description]
         """
-        self.config = config
+        assert self.config is not None
+        config = self.config
         # Get the arguments that will be used to create the dataloaders.
-        # TODO: We create the dataloaders here and pass them to the method, but
-        # we could maybe do this differently. This isn't super clean atm.
-        # Get the batch size from the model, or the config, or 32.
-        batch_size = getattr(method.model, "batch_size", getattr(config, "batch_size", 32))
-        # Get the data dir from self, the config, or 'data'.
-        data_dir = getattr(self, "data_dir", getattr(config, "data_dir", "data"))
-        dataloader_kwargs = dict(
-            batch_size=batch_size,
-            num_workers=config.num_workers,
-            shuffle=False,
-        )
+        
+        # TODO: Should the data_dir be in the Setting, or the Config?
+        self.data_dir = config.data_dir
+        
+        # Create the dataloader kwargs, if needed.
+        if not self.dataloader_kwargs:
+            batch_size = 32
+            if hasattr(method, "batch_size"):
+                batch_size = method.batch_size
+            elif hasattr(method, "model") and hasattr(method.model, "batch_size"):
+                batch_size = method.model.batch_size
+            elif hasattr(config, "batch_size"):
+                batch_size = config.batch_size
+
+            dataloader_kwargs = dict(
+                batch_size=batch_size,
+                num_workers=config.num_workers,
+                shuffle=False,
+            )
         # Save the dataloader kwargs in `self` so that calling `train_dataloader()`
         # from outside with no arguments (i.e. when fitting the model with self
         # as the datamodule) will use the same args as passing the dataloaders
@@ -381,7 +406,6 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # Debugging: Run a quick check to see that what is returned by the
         # dataloaders is of the right type and shape etc.
         self._check_dataloaders_give_correct_types()
-
 
     def make_train_cl_loader(self, train_dataset: _ContinuumDataset) -> _BaseCLLoader:
         """ Creates a train ClassIncremental object from continuum. """
@@ -459,13 +483,15 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
                     rewards: Optional[Rewards] = rewards[0] if rewards else None
                     if rewards is not None:
                         assert isinstance(rewards, self.Rewards), type(rewards)
-                    # TODO: If we add gym spaces to all settings, then check that
-                    # the observations are in the observation space, sample a random
-                    # action from the action space, check that it is contained
-                    # within that space, and then get a reward by sending it to the
-                    # dataloader. Check that the reward received is in the reward
-                    # space.
-                    rewards = env.send(123123)
+                    # TODO: If we add gym spaces to all environments, then check
+                    # that the observations are in the observation space, sample
+                    # a random action from the action space, check that it is
+                    # contained within that space, and then get a reward by
+                    # sending it to the dataloader. Check that the reward
+                    # received is in the reward space.
+                    
+                    actions = self.Actions(torch.rand([observations.batch_size, self.n_classes_per_task]))
+                    rewards = env.send(actions)
                     assert isinstance(rewards, self.Rewards), type(rewards)
                 except Exception as e:
                     logger.error(f"There's a problem with the method {loader_method} (env {env})")

@@ -9,16 +9,17 @@ from .base import (Actions, ActionType, Environment, Observations,
                    SettingType)
 from .active import *
 from .passive import *
-# all_settings: List[Type[Setting]] = [
-#     IIDSetting,
-#     TaskIncrementalSetting,
-#     ClassIncrementalSetting,
-#     ContinualRLSetting,
-#     ClassIncrementalRLSetting,
-#     TaskIncrementalRLSetting,
-#     RLSetting,
-# ]
-## OR, dynamic version:
-all_settings: List[Type[Setting]] = frozenset([
-    Setting, *Setting.all_children()
-])
+# all concrete settings:
+all_settings: List[Type[Setting]] = [
+    IIDSetting,
+    TaskIncrementalSetting,
+    ClassIncrementalSetting,
+    ContinualRLSetting,
+    ClassIncrementalRLSetting,
+    TaskIncrementalRLSetting,
+    RLSetting,
+]
+## Or, get All the settings:
+# all_settings: List[Type[Setting]] = frozenset([
+#     Setting, *Setting.all_children()
+# ])

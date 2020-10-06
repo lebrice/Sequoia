@@ -4,6 +4,7 @@ This is meant
 
 TODO: There is a bunch of work to be done here.
 """
+import gym
 import dataclasses
 import itertools
 import functools
@@ -78,9 +79,12 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.Actions: Type[Actions] = setting.Actions
         self.Rewards: Type[Rewards] = setting.Rewards
         
-        self.split_batch_transform = SplitBatch(observation_type=self.Observations,
-                                                reward_type=self.Rewards) 
+        self.observation_space: gym.Space = setting.observation_space
+        self.action_space: gym.Space = setting.action_space
+        self.reward_space: gym.Space = setting.reward_space
         
+        self.split_batch_transform = SplitBatch(observation_type=self.Observations,
+                                                reward_type=self.Rewards)
         self.config: Config = config
         # TODO: Decided to Not set this property, so the trainer doesn't
         # fallback to using it instead of the passed datamodules/dataloaders.
@@ -95,9 +99,9 @@ class BaseModel(LightningModule, Generic[SettingType]):
         }
         self.save_hyperparameters(all_params_dict)
 
-        self.input_shape  = self.setting.dims
-        self.output_shape = self.setting.action_shape
-        self.reward_shape = self.setting.reward_shape
+        self.input_shape  = self.observation_space["x"].shape
+        self.output_shape = self.action_space.shape
+        self.reward_shape = self.reward_space.shape
         # (Testing) Setting this attribute is supposed to help with ddp/etc
         # training in pytorch-lightning. Not 100% sure.
         # self.example_input_array = torch.rand(self.batch_size, *self.input_shape)
@@ -155,7 +159,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             h_x = h_x[0]
         return h_x
     
-    def get_actions(self, observations: Union[Tensor, Observations], h_x: Tensor) -> Actions:
+    def get_actions(self, observations: Observations, representations: Tensor) -> Actions:
         """ Pass the required inputs to the output head and get predictions.
         
         NOTE: This method is basically just here so we can customize what we
@@ -164,6 +168,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         """
         # Here in this base model we only use the 'x' from the observation.
         x: Tensor = observations if isinstance(observations, Tensor) else observations.x
+        h_x = representations
         if self.hp.detach_output_head:
             h_x = h_x.detach()
         y_pred = self.output_head(x, h_x)
@@ -237,8 +242,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # - "actions": The actions (predictions)
         forward_pass: ForwardPass = self(observations)
         # get the actions from the forward pass:
-        actions = forward_pass.actions
-
+        actions = forward_pass.actions        
         if rewards is None:
             # Get the reward from the environment (the dataloader).
             rewards = environment.send(actions)

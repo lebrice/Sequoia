@@ -24,12 +24,11 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
     """
     def __init__(self,
                  dataset: Union[IterableDataset, Dataset],
+                 observations_type: Type[ObservationType],
+                 rewards_type: Type[RewardType],
+                 actions_type: Type[ActionType],
                  pretend_to_be_active: bool = False,
-                 # TODO: not sure it's super worth it, this adds a bit of
-                 # unneeded complexity.
                  batch_transforms: List[Callable] = None,
-                 observations_type: Type[ObservationType] = None,
-                 rewards_type: Type[RewardType] = None,
                  **kwargs):
         """Creates the DataLoader/Environment for the given dataset.
 
@@ -51,6 +50,10 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         # TODO: When True, withold the labels from the yielded batches until a
         # prediction is received through in the 'send' method.
         self.pretend_to_be_active = pretend_to_be_active
+        self.observations_type = observations_type
+        self.actions_type = actions_type
+        self.rewards_type = rewards_type
+
         self.batch_transforms: Compose = Compose(batch_transforms or [])
         from common.transforms import SplitBatch
         if not any(isinstance(t, SplitBatch) for t in self.batch_transforms):
@@ -93,10 +96,11 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             else:
                 yield self.observations, self.rewards
 
-    def send(self, action: Any) -> Rewards:
+    def send(self, action: Actions) -> Rewards:
         """ Return the last latch of rewards from the dataset (which were
         withheld if in 'active' mode)
         """
+        assert isinstance(action, self.actions_type)
         return self.rewards
     
     def close(self):

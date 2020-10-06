@@ -11,7 +11,7 @@ from pytorch_lightning.core.decorators import auto_move_data
 from common.config import Config
 
 from settings import ClassIncrementalSetting, Observations, Actions, Rewards
-from utils import dict_intersection, zip_dicts
+from utils import dict_intersection, zip_dicts, prod
 from utils.logging_utils import get_logger
 
 from .semi_supervised_model import SemiSupervisedModel
@@ -36,7 +36,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # TODO: Does it make no sense to have multihead=True when the model doesn't
         # have access to task labels. Need to figure out how to manage this between TaskIncremental and Classifier.
         multihead: bool = False
-    
+
     def __init__(self, setting: ClassIncrementalSetting, hparams: HParams, config: Config):
         self._output_head: OutputHead = None
 
@@ -103,10 +103,12 @@ class ClassIncrementalModel(BaseModel[SettingType]):
     def create_output_head(self) -> OutputHead:
         """Creates a new output head for the current task.
         """
-        output_size = self.setting.action_shape
+        # TODO: The output head needs an integer for the output_size, would be
+        # nicer if it just took in the output_space instead.
+        n_outputs = prod(self.action_space.shape)
         return self.output_head_class(
             input_size=self.hidden_size,
-            output_size=output_size,
+            output_size=n_outputs,
         ).to(self.device)
 
     @property
