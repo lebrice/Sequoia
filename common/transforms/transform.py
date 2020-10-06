@@ -21,6 +21,9 @@ class Transform(Generic[InputType, OutputType]):
         NOTE: Maybe later if some transforms create tuples, like SIMCLR, or if
         they also create labels (like dicts) or somethings, then we probably
         will have to change this.
+
+        TODO: To push this idea even further, we could change this so it also
+        accepts a gym.Space, and return a gym.Space!
         """
         # Default to saying that this transform doesn't affect the shape.
         return input_shape

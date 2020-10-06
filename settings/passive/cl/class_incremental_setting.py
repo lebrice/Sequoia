@@ -471,32 +471,6 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         return transforms
 
 
-    def _check_dataloaders_give_correct_types(self):
-        """ Do a quick check to make sure that the dataloaders give back the
-        right observations / reward types.
-        """
-        for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
-            env = loader_method()
-            for observations, *rewards in take(env, 5):
-                try:
-                    assert isinstance(observations, self.Observations), type(observations)
-                    rewards: Optional[Rewards] = rewards[0] if rewards else None
-                    if rewards is not None:
-                        assert isinstance(rewards, self.Rewards), type(rewards)
-                    # TODO: If we add gym spaces to all environments, then check
-                    # that the observations are in the observation space, sample
-                    # a random action from the action space, check that it is
-                    # contained within that space, and then get a reward by
-                    # sending it to the dataloader. Check that the reward
-                    # received is in the reward space.
-                    
-                    actions = self.Actions(torch.rand([observations.batch_size, self.n_classes_per_task]))
-                    rewards = env.send(actions)
-                    assert isinstance(rewards, self.Rewards), type(rewards)
-                except Exception as e:
-                    logger.error(f"There's a problem with the method {loader_method} (env {env})")
-                    raise e
-    
     # These methods below are used by the ClassIncrementalModel, mostly when
     # using a multihead model, to figure out how to relabel the batches, or how
     # many classes there are in the current task (since we support a different
@@ -530,12 +504,32 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         """ Gives back the labels present in the current task. """
         return self.task_classes(self._current_task_id, train)
     
-    def relabel(self, y: Tensor, train: bool):
-        # Re-label the given batch so the losses/metrics work correctly.
-        # Example: if the current task classes is [2, 3] then relabel that
-        # those examples as [0, 1].
-        # TODO: Double-check that that this is what is usually done in CL.
-        new_y = torch.empty_like(y)
-        for i, label in enumerate(self.current_task_classes(train)):
-            new_y[y == label] = i
-        return new_y
+    def _check_dataloaders_give_correct_types(self):
+        """ Do a quick check to make sure that the dataloaders give back the
+        right observations / reward types.
+        """
+        for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
+            env = loader_method()
+            for observations, *rewards in take(env, 5):
+                try:
+                    assert isinstance(observations, self.Observations), type(observations)
+                    observations: Observations
+                    batch_size = observations.batch_size
+                    rewards: Optional[Rewards] = rewards[0] if rewards else None
+                    if rewards is not None:
+                        assert isinstance(rewards, self.Rewards), type(rewards)
+                    # TODO: If we add gym spaces to all environments, then check
+                    # that the observations are in the observation space, sample
+                    # a random action from the action space, check that it is
+                    # contained within that space, and then get a reward by
+                    # sending it to the dataloader. Check that the reward
+                    # received is in the reward space.
+                    actions = self.action_space.sample()
+                    assert actions.shape == (batch_size, self.n_classes_per_task)
+                    actions = self.Actions(torch.as_tensor(actions))
+                    rewards = env.send(actions)
+                    assert isinstance(rewards, self.Rewards), type(rewards)
+                except Exception as e:
+                    logger.error(f"There's a problem with the method {loader_method} (env {env})")
+                    raise e
+    

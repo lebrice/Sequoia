@@ -11,11 +11,12 @@ from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from gym.vector.async_vector_env import write_to_shared_memory
 from gym.vector.async_vector_env import _worker, _worker_shared_memory
 
-from utils.logging_utils import get_logger
+# TODO: Find a way to turn off the logs coming from the workers. 
+# from utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
 process_name = mp.current_process().name
 print(f"Current process name: {process_name}")
+
 
 class Commands:
     step = "step"
@@ -43,7 +44,8 @@ def _custom_worker_shared_memory(index: int,
                                  pipe: Connection,
                                  parent_pipe: Connection,
                                  shared_memory,
-                                 error_queue: Queue):
+                                 error_queue: Queue,
+                                 in_series: int = None):
     """Copied and modified from `gym.vector.async_vector_env`.
 
     Args:
@@ -53,11 +55,17 @@ def _custom_worker_shared_memory(index: int,
         parent_pipe ([type]): [description]
         shared_memory ([type]): [description]
         error_queue ([type]): [description]
-
+        **new**: (TODO:)
+        in_series: (int, optional): When passed, we create `in_series`
+        environments in series in this worker.
     Raises:
         RuntimeError: [description]
     """
     assert shared_memory is not None
+    # if in_series is not None:
+    #     # TODO: Would need to un-flatten the chunks in the class that uses this.
+    #     env = gym.vector.SyncVectorEnv([env_fn for i in range(in_series)])
+    # else:
     env = env_fn()
     observation_space = env.observation_space
     parent_pipe.close()

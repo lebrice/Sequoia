@@ -13,8 +13,7 @@ class TransformObservation(TransformObservation_):
         super().__init__(env, f=f)
         self.observation_space = self.env.observation_space
         self.f: Compose
-        self.observation_space.shape = self.f.shape_change(self.observation_space.shape)
-        logger.debug(f"New observation shape after transforms: {self.observation_space}")
-
-
+        if hasattr(self.f, "shape_change"):
+            self.observation_space.shape = self.f.shape_change(self.observation_space.shape)
+            logger.debug(f"New observation shape after transforms: {self.observation_space}")
 

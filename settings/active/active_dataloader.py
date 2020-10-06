@@ -63,7 +63,7 @@ class ActiveDataLoader(DataLoader, Environment[ObservationType, ActionType, Rewa
         """ Sends an action to the 'dataset'/'Environment'.
         
         Does nothing when the environment is a simple Dataset (when it isn't an
-        instance of EnvironmentBase).        
+        instance of EnvironmentBase). 
         
         TODO: Figure out the interactions with num_workers and send, if any.
         """

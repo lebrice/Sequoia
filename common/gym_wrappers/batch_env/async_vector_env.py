@@ -30,7 +30,6 @@ class ExtendedAsyncState(Enum):
 EnvType = TypeVar("EnvType", bound=gym.Env)
 
 class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
-    
     def __init__(self,
                  env_fns: Sequence[Callable[[], EnvType]],
                  context=None,
@@ -66,6 +65,8 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
                 worker = _custom_worker_shared_memory
             else:
                 worker = _custom_worker
+        # List that stores wether a function is being applied on an env and we
+        # should expect a result response for that env.
         self.expects_result: List[bool] = []
         super().__init__(
             env_fns=env_fns,

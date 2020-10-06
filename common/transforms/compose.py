@@ -26,7 +26,7 @@ class Compose(List[T], ComposeBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         ComposeBase.__init__(self, transforms=self)
-
+    
     def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
         logger.debug(f"shape_change on Compose: input shape: {input_shape}")
         # TODO: Give the impact of this transform on a given input shape.

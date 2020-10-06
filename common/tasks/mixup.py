@@ -165,7 +165,7 @@ class MixupTask(AuxiliaryTask):
 
     def enable(self):
         self.mean_encoder = deepcopy(AuxiliaryTask.encoder)
-        self.mean_classifier = deepcopy(AuxiliaryTask.classifier)
+        self.mean_classifier = deepcopy(AuxiliaryTask.output_head)
 
     def disable(self):
         del self.mean_encoder
@@ -191,14 +191,14 @@ class MixupTask(AuxiliaryTask):
             )
             average_models(
                 self.mean_classifier,
-                AuxiliaryTask.classifier,
+                AuxiliaryTask.output_head,
                 old_frac=self.options.mean_teacher_mixing_coefficient
             )
 
     def on_task_switch(self, task: Task, **kwargs) -> None:
         if self.enabled and task != self.previous_task:
             logger.info(f"Discarding the mean classifier on switch to task {task}")
-            self.mean_classifier = deepcopy(AuxiliaryTask.classifier)
+            self.mean_classifier = deepcopy(AuxiliaryTask.output_head)
             self.previous_task = task
 
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Loss:

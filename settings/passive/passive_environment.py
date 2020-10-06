@@ -22,6 +22,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
     category. Similarly to Environment, this just adds some methods on top of
     the usual PyTorch DataLoader.
     """
+    passive: ClassVar[bool] = True
     def __init__(self,
                  dataset: Union[IterableDataset, Dataset],
                  observations_type: Type[ObservationType],
@@ -54,7 +55,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self.actions_type = actions_type
         self.rewards_type = rewards_type
 
-        self.batch_transforms: Compose = Compose(batch_transforms or [])
+        self.batch_transforms: List[Callable] = batch_transforms or []
         from common.transforms import SplitBatch
         if not any(isinstance(t, SplitBatch) for t in self.batch_transforms):
             if observations_type and rewards_type:
@@ -67,6 +68,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
                     f"will create one for you. \n"
                     f"(transforms: {self.batch_transforms})"
                 )
+        self.batch_transforms = Compose(self.batch_transforms)
         
         super().__init__(dataset=dataset, **kwargs)
         self.observations: Union[Observations, Any] = None

@@ -41,7 +41,7 @@ def method(tmp_path_factory: Callable[[str], Path]):
         --knn_samples 0
         --seed 123
         --fast_dev_run
-        --batch_size 1000
+        --batch_size 16
         """
         # TODO: There is something weird going on here. We don't get chance
         # levels on IID cifar100 or even Mnist when in the IID setting when
@@ -76,7 +76,7 @@ def test_fast_dev_run_multihead(tmp_path: Path, config: Config):
         --fast_dev_run
         --default_root_dir {tmp_path}
         --multihead True
-        --batch_size 100
+        --batch_size 10
     """)
     results: TaskIncrementalResults = setting.apply(method, config=config)
     metrics = results.average_metrics_per_task

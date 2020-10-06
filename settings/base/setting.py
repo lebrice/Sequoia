@@ -42,7 +42,7 @@ from torch.utils.data import DataLoader
 from common.config import Config
 from common.loss import Loss
 from common.transforms import Compose, Transforms, Transform, SplitBatch
-from utils import Parseable, camel_case, dict_union, get_logger, remove_suffix
+from utils import Parseable, camel_case, dict_union, get_logger, remove_suffix, take
 
 from .results import Results
 from .setting_meta import SettingMeta
@@ -132,9 +132,9 @@ class Setting(SettingABC,
     # action_shape: Tuple[int, ...] = field(init=False)
     # reward_shape: Tuple[int, ...] = field(init=False)
 
-    observation_space: gym.Space = None
-    action_space: gym.Space = None
-    reward_space: gym.Space = None
+    observation_space: gym.Space = field(init=None)
+    action_space: gym.Space = field(init=None)
+    reward_space: gym.Space = field(init=None)
     
     def __post_init__(self,
                       observation_space: gym.Space = None,
@@ -309,3 +309,44 @@ class Setting(SettingABC,
         # Debugging: Run a quick check to see that what is returned by the
         # dataloaders is of the right type and shape etc.
         self._check_dataloaders_give_correct_types()
+
+    def _check_dataloaders_give_correct_types(self):
+        """ Do a quick check to make sure that the dataloaders give back the
+        right observations / reward types.
+        """
+        for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
+            env = loader_method()
+            from settings.passive import PassiveEnvironment
+            from settings.active import ActiveEnvironment
+            if isinstance(env, PassiveEnvironment):
+                print(f"{env} is a PassiveEnvironment!")
+            else:
+                print(f"{env} is an ActiveEnvironment!")
+
+            for batch in take(env, 5):
+                if isinstance(env, PassiveEnvironment):
+                    observations, *rewards = batch
+                else:
+                    observations, rewards = batch, None
+                try:
+                    assert isinstance(observations, self.Observations), type(observations)
+                    observations: Observations
+                    batch_size = observations.batch_size
+                    rewards: Optional[Rewards] = rewards[0] if rewards else None
+                    if rewards is not None:
+                        assert isinstance(rewards, self.Rewards), type(rewards)
+                    # TODO: If we add gym spaces to all environments, then check
+                    # that the observations are in the observation space, sample
+                    # a random action from the action space, check that it is
+                    # contained within that space, and then get a reward by
+                    # sending it to the dataloader. Check that the reward
+                    # received is in the reward space.
+                    actions = self.action_space.sample()
+                    assert actions.shape[0] == batch_size
+                    actions = self.Actions(torch.as_tensor(actions))
+                    rewards = env.send(actions)
+                    assert isinstance(rewards, self.Rewards), type(rewards)
+                except Exception as e:
+                    logger.error(f"There's a problem with the method {loader_method} (env {env})")
+                    raise e
+    

@@ -23,10 +23,10 @@ Need to talk more about this for sure.
 """
 
 from typing import (Any, Callable, Dict, Generator, Iterable, List, Optional,
-                    Sequence, Tuple, Type, TypeVar, Union)
-
+                    Sequence, Tuple, Type, TypeVar, Union, Iterator)
+import multiprocessing as mp
 import gym
-from gym import Env, Wrapper
+from gym import Env, Wrapper, spaces
 from gym.vector import VectorEnv
 from torch import Tensor
 
@@ -36,13 +36,27 @@ from settings.active.active_dataloader import ActiveDataLoader
 from utils.logging_utils import get_logger
 
 from .make_env import make_batched_env
-
+from common.batch import Batch
 
 logger = get_logger(__file__)
 T = TypeVar("T")
 
+from common.gym_wrappers.env_dataset import StepResult, EnvDatasetItem
+from settings.base.environment import Observations, Actions, Rewards
 
-class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor], gym.Wrapper):
+
+# TODO: The typing information from settings.base.environment isn't quite
+# accurate here... The observations are bound by Tensors or numpy arrays, not
+# 'Batch' objects.
+
+# from settings.base.environment import ObservationType, ActionType, RewardType
+ObservationType = TypeVar("ObservationType")
+ActionType = TypeVar("ActionType")
+RewardType = TypeVar("RewardType")
+
+
+# class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor], gym.Wrapper):
+class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], gym.Wrapper, Iterable):
     """[WIP] ActiveDataLoader for batched Gym envs.
     
     Exposes **both** the ActiveDataLoader API as well as the usual `gym.Env`
@@ -74,51 +88,99 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor], gym.Wrapper):
         states, reward, done, info = env.step(action)
         loss = loss_function(...)
     ```
-   
+    
+    TODO: Clean up this constructor, it has way too many arguments.
     """
     def __init__(self,
-                 env: Union[str, Callable[[], Env], VectorEnv],
-                 batch_size: int = None,
+                 env: Union[str, Callable[[], Env]],
+                 batch_size: int = 1,
                  max_steps: int = 1_000_000,
-                 pre_batch_wrappers: List[Union[Type[Wrapper], Tuple[Type[Wrapper], Dict]]] = None,
+                 #   
+                 #  observation_space: gym.Space = None,
+                 #  action_space: gym.Space = None,
+                 #  reward_space: gym.Space = None,
+                 #
+                 on_missing_action: Callable[[EnvDatasetItem, gym.Space], ActionType] = None,
+                 #
+                 pre_batch_wrappers: List[Callable] = None,
                  post_batch_wrappers: List[Callable] = None,
-                 on_missing_action: Callable = None,
+                 # todo: Use those ?
+                 observations_type: Type[Observations] = None,
+                #  rewards_type: Type[Rewards] = None,
+                #  actions_type: Type[Actions] = None,
+                 # TODO: Still debugging both multiprocessing and non-multiprocessing versions. 
+                 use_multiprocessing: bool = True,
                  **kwargs):
-        self.base_env = env
+        if not isinstance(env, str) or callable(env):
+            raise RuntimeError(
+                f"`env` must be either a str (gym ID) or acallable which takes "
+                f"no argument and returns a `gym.Env` (Received {env})."
+            )
+        self.env_name: Optional[str] = env if isinstance(env, str) else None
         self.max_steps = max_steps
-        self.kwargs = kwargs
+        self.n_parallel_envs: int = batch_size
+        # self.batch_transform = batch_transform
+        self.observations_type: Type[ObservationType] = observations_type
+        # self.rewards_type: Type[RewardType] = rewards_type
+        # self.actions_type: Type[ActionType] = actions_type
+        
+        # NOTE: Since we're gonna pass 'batch_size = None' to the DataLoader
+        # constructor below, accessing `self.batch_size` will always return None
+        # in the future.
         self._batch_size = batch_size
-        self.on_missing_action = on_missing_action
         # TODO: Move the Policy stuff into a wrapper?
         # self.policy: Callable[[Tensor], Tensor] = policy
-        if has_wrapper(env, VectorEnv):
-            self.env: AsyncVectorEnv = env
-        else:
-            assert batch_size is not None, "Need to pass a batch_size when the env isn't already batched!"
-            self.env: AsyncVectorEnv = make_batched_env(
-                env,
-                batch_size=batch_size,
-                wrappers=pre_batch_wrappers,
+        assert not has_wrapper(env, VectorEnv), "Env shouldn't already be vectorized!"
+        if use_multiprocessing and batch_size > 32:
+            # TODO: Maybe add some kind of 'internal' and 'external' batch size?
+            # Like, external_batch_size would be the size of the batches returned
+            # by this loader, while 'internal_batch_size' would be the number of
+            # envs which actually produce data?
+            # TODO: Create some kind of hybrid of AsyncVectorEnv and SyncVectorEnv,
+            # where there could be more than one env per process, since most of
+            # the overhead is probably due to MP, not to the env.
+            raise RuntimeError(
+                f"TODO: The batch_size arg passed to {__class__} ({batch_size}) "
+                f"is too large for the current RL setup, because we currently "
+                f"have to create `batch_size` environments, with one process "
+                f"per environment. (There are {mp.cpu_count()} CPUs on this "
+                f"machine)\n"
+                f"If you want larger batches, you could use this loader to "
+                f"fill up some kind of replay buffer, and then create batches "
+                f"by sampling from that buffer. "
             )
-
+        self.env = make_batched_env(
+            env,
+            batch_size=batch_size,
+            wrappers=pre_batch_wrappers,
+            asynchronous=use_multiprocessing,
+        )
         self.post_batch_wrappers = post_batch_wrappers or []
         for wrapper in self.post_batch_wrappers:
             self.env = wrapper(self.env)
         
-        if not isinstance(self.env, EnvDataset):
-            # Add a wrapper to create an IterableDataset from the env.
-            self.env = EnvDataset(
-                self.env,
-                max_steps=max_steps,
-                on_missing_action=self.on_missing_action
-            )
+        assert not isinstance(self.env, EnvDataset), "env Shouldn't already be an EnvDataset"
+        # if not isinstance(self.env, EnvDataset):
+        # if issubclass(self.observations_type, Batch):
+        #     dataset_item_type = self.observations_type.from_args
+        # elif self.observations_type:
+        #     dataset_item_type = self.observations_type
+        # else:
+        #     dataset_item_type = EnvDatasetItem
 
-        # logger.debug(f"wrappers: {pre_batch_wrappers}, state shape: {self.env.reset().shape}")
-        logger.debug(f"observation space: {self.env.observation_space}")
-        logger.debug(f"env reset shape: {self.env.reset().shape}")
+        # Add a wrapper to create an IterableDataset from the env.
+        self.env = EnvDataset(
+            self.env,
+            max_steps=max_steps,
+            # dataset_item_type=dataset_item_type,
+            on_missing_action=on_missing_action,
+        )
+        # if self.observations_type:
+        #     from common.gym_wrappers.env_dataset import TransformEnvDatasetItem
+        #     self.env = TransformEnvDatasetItem(self.env, f=self.observations_type.from_inputs)
 
         # We set this to 0 because we are using workers internally in the
-        # VecEnv instead of the usual dataloadering workers. 
+        # VecEnv instead of the usual dataloadering workers.
         kwargs["num_workers"] = 0
 
         super().__init__(
@@ -129,11 +191,62 @@ class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor], gym.Wrapper):
             **kwargs,
         )
         Wrapper.__init__(self, env=self.env)
+        self.env: Union[AsyncVectorEnv, EnvDataset]
+        self.observation_space: gym.Space = self.env.observation_space
+        self.action_space: gym.Space = self.env.action_space
+        self.reward_space: gym.Space = spaces.Tuple([
+            spaces.Box(
+                low=self.env.reward_range[0],
+                high=self.env.reward_range[1],
+                shape=())
+            for _ in range(self.n_parallel_envs)
+        ])
+        
+        # self._iterator: Iterator = None
+        
+    # def __next__(self) -> EnvDatasetItem:
+    #     if self._iterator is None:
+    #         self._iterator = self.__iter__()
+    #     return next(self._iterator)
 
-    def __iter__(self):
-        self.env.reset()
-        assert self.num_workers == 0, "Shouldn't be using multiple workers!"
-        return super().__iter__()
+    def __iter__(self) -> Iterable[Union[ObservationType, EnvDatasetItem]]:
+        # logger.debug(f"Resetting the env")
+        # self.reset()
+        # logger.debug(f"Done resetting the env.")
+        # self.env.reset()
+        
+        assert self.num_workers == 0, "Shouldn't be using multiple DataLoader workers!"
+        # This gives back the single-process dataloader iterator over the 'dataset'
+        # which in this case is the environment.
+        # return iter(self.env)
+        # return super().__iter__()
+    
+        for i, batch in enumerate(super().__iter__()):
+            logger.debug(f"At step {i}: {type(batch)}, ")
+            batch: EnvDatasetItem
+            if self.observations_type:
+                yield self.observations_type.from_inputs(batch)
+            else:
+                yield batch
+
+        # return super().__iter__()
+        # TODO: Could we also maybe just return iter(self.env) ?
+        # self._iterator = super().__iter__()
+        # return self._iterator
+
+    def set_policy(self, policy: Callable[[EnvDatasetItem], ActionType]) -> None:
+        self.env.set_policy(policy)
 
     def random_actions(self):
         return self.env.random_actions()
+
+    def step(self, action: Union[ActionType, Any]) -> StepResult:
+        return self.env.step(action)
+
+    def send(self, action: Union[ActionType, Any]) -> RewardType:
+        # if self.actions_type and not isinstance(action, self.actions_type):
+        #     raise RuntimeError(f"Expected to receive an action of type {self.actions_type}?")
+        return self.env.send(action)
+    
+    def __del__(self):
+        self.env.close()

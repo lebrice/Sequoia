@@ -368,7 +368,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             state_dict=state_dict,
             strict=False
         )
-        
+
         # TODO: Double-check that this makes sense and works properly.
         if self.hp.multihead and unexpected_keys:
             for i in range(self.setting.nb_tasks):

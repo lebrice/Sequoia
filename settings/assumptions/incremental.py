@@ -79,7 +79,7 @@ class IncrementalSetting(SettingABC):
 
     def __post_init__(self, *args, **kwargs):
         assert False, "This Shouldn't ever be called!"
-        super().__post_init__(self, *args, **kwargs)
+        # super().__post_init__(self, *args, **kwargs)
 
     @property
     def current_task_id(self) -> Optional[int]:
@@ -181,6 +181,7 @@ class IncrementalSetting(SettingABC):
         ]
 
         for task_id in range(self.nb_tasks):
+            logger.info(f"Starting testing on task {task_id}")
             self._current_task_id = task_id
 
             assert not self.smooth_task_boundaries, "TODO: (#18) Make another 'Continual' setting that supports smooth task boundaries."
@@ -210,15 +211,13 @@ class IncrementalSetting(SettingABC):
                 actions = method.get_actions(observations)
                 # if the reward is None, we need to get it from the env.
                 rewards = test_task_env.send(actions)
-                try:
-                    # Get the metrics for that batch.
-                    batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
-                except Exception as e:
-                    logger.error(f"Error: {e}")
-                    breakpoint()
+                
+                # Get the metrics for that batch.
+                batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
+                
                 # Save the metrics for this batch in the list above.
                 test_metrics[task_id].append(batch_metrics)
-                    # pbar.set_postfix(batch_metrics.to_pbar_message())
+                # pbar.set_postfix(batch_metrics.to_pbar_message())
 
             average_task_metrics = mean(test_metrics[task_id])
             logger.info(f"Test Results on task {task_id}: {average_task_metrics}")
@@ -239,6 +238,7 @@ class IncrementalSetting(SettingABC):
         making plots, wandb logging, and serialization), but you can also just
         return floats if you want, no problem.
         """
+        assert False, (actions, rewards)
         from common.metrics import get_metrics
         # In this particular setting, we only use the y_pred from actions and
         # the y from the rewards.

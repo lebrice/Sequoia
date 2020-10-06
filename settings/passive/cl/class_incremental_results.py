@@ -47,26 +47,7 @@ class ClassIncrementalResults(IncrementalSetting.Results):
     evaluation loop ourselves.
     """
     test_metrics: List[List[Metrics]] = list_field(repr=False)
-
-    def save_to_dir(self, save_dir: Union[str, Path]) -> None:
-        # TODO: Add wandb logging here somehow.
-        save_dir = Path(save_dir)
-        save_dir.mkdir(exist_ok=True, parents=True)
-        plots: Dict[str, plt.Figure] = self.make_plots()
-        print(f"\nPlots: {plots}\n")
-
-        results_json_path = save_dir / "results.json"
-        self.save(results_json_path)
-        print(f"Saved a copy of the results to {results_json_path}")
-
-        for fig_name, figure in plots.items():
-            print(f"fig_name: {fig_name}")
-            # figure.show()
-            # plt.waitforbuttonpress(10)
-            path = (save_dir/ fig_name).with_suffix(".jpg")
-            path.parent.mkdir(exist_ok=True, parents=True)
-            figure.savefig(path)
-            print(f"Saved figure at path {path}")
+       
 
     def make_plots(self):
         results = {

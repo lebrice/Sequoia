@@ -83,6 +83,10 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.action_space: gym.Space = setting.action_space
         self.reward_space: gym.Space = setting.reward_space
         
+        self.input_shape  = self.observation_space["x"].shape
+        self.output_shape = self.action_shape = self.action_space.shape
+        self.reward_shape = self.reward_space.shape
+        
         self.split_batch_transform = SplitBatch(observation_type=self.Observations,
                                                 reward_type=self.Rewards)
         self.config: Config = config
@@ -99,9 +103,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
         }
         self.save_hyperparameters(all_params_dict)
 
-        self.input_shape  = self.observation_space["x"].shape
-        self.output_shape = self.action_space.shape
-        self.reward_shape = self.reward_space.shape
         # (Testing) Setting this attribute is supposed to help with ddp/etc
         # training in pytorch-lightning. Not 100% sure.
         # self.example_input_array = torch.rand(self.batch_size, *self.input_shape)

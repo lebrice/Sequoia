@@ -40,18 +40,14 @@ class Agent(Model[SettingType]):
         """ HParams of the Agent. """
 
     def __init__(self, setting: RLSetting, hparams: HParams, config: Config):
-        # super().__init__()
         super().__init__(setting=setting, hparams=hparams, config=config)
         self.setting: RLSetting
-        assert self.setting.dims == self.setting.obs_shape, (self.setting.dims, self.setting.obs_shape)
-        self.input_shape = self.setting.obs_shape
-        if isinstance(self.setting.action_space, Discrete):
-            self.action_shape = (self.setting.action_space.n,)
-        elif isinstance(self.setting.action_space, Box):
-            self.action_shape = self.setting.action_space.shape
-
-        self.output_shape = self.action_shape
-        self.reward_shape = self.setting.reward_shape
+        # TODO: Here we 'change' action_shape action_shape is the shape of the "logits" here on which action
+        # to choose.
+        if isinstance(self.action_space, Discrete):
+            self.action_shape = (self.action_space.n,)
+        elif isinstance(self.action_space, Box):
+            self.action_shape = self.action_space.shape
         self.total_reward: Tensor = 0.  # type: ignore
 
         self.output_head: OutputHead = self.create_output_head()

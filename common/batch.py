@@ -5,6 +5,7 @@ different models expect.
 from abc import ABC
 import dataclasses
 import itertools
+import numpy as np
 from collections import abc as collections_abc
 from dataclasses import dataclass
 from typing import (Any, ClassVar, Dict, Generic, Iterable, List, Optional,
@@ -135,7 +136,7 @@ class Batch(Sequence[Item], ABC):
         """ Converts a batch of items into a 'Batch' object. """
         if isinstance(inputs, cls):
             return inputs
-        if isinstance(inputs, Tensor):
+        if isinstance(inputs, (Tensor, np.ndarray)):
             return cls(inputs)
         if isinstance(inputs, dict):
             return cls(**inputs)
@@ -146,3 +147,7 @@ class Batch(Sequence[Item], ABC):
             f"into a Batch object of type {cls}!"
         )
         return cls(inputs)
+
+    @classmethod
+    def from_args(cls, *args):
+        return cls.from_inputs(args)
