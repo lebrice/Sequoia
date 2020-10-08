@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Union, List, Type, ClassVar
+from typing import Optional, Union, List, Type, ClassVar, Any
 
+import gym
+import numpy as np
 from pytorch_lightning import LightningDataModule
 
 from .base import Actions, Environment, Observations, Rewards
@@ -15,8 +17,10 @@ class MethodABC(ABC):
     target_setting: ClassVar[Type["SettingABC"]]
 
     @abstractmethod
-    def get_actions(self, observations: Observations) -> Actions:
-        """ Get a batch of predictions (actions) for the given observations. """
+    def get_actions(self, observations: Observations, action_space: gym.Space) -> Union[Actions, Any]:
+        """ Get a batch of predictions (actions) for the given observations.
+        returned actions must fit the action space.
+        """
 
     @abstractmethod
     def fit(self,
@@ -85,3 +89,14 @@ class MethodABC(ABC):
             name = camel_case(cls.__qualname__)
             name = remove_suffix(name, "_method")
         return name
+
+    def __init_subclass__(cls, target_setting: Type["SettingABC"]=None):
+        """Called when creating a new subclass of Method.
+
+        Args:
+            target_setting (Type[Setting], optional): The target setting.
+                Defaults to None, in which case the method will inherit the
+                target setting of it's parent class.
+        """
+        cls.target_setting = target_setting
+        return super().__init_subclass__()

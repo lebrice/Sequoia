@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import (Callable, ClassVar, Dict, List, Optional, Sequence, Tuple,
                     Type, Union)
 
+import gym
 import matplotlib.pyplot as plt
 import torch
 import numpy as np
@@ -36,6 +37,7 @@ from continuum.datasets import *
 from continuum.datasets import _ContinuumDataset
 from continuum.scenarios.base import _BaseCLLoader
 from continuum.tasks import split_train_val
+from gym import spaces
 from pytorch_lightning import LightningModule, Trainer
 from simple_parsing import choice, list_field
 from torch import Tensor
@@ -62,18 +64,18 @@ logger = get_logger(__file__)
 
 num_classes_in_dataset: Dict[str, int] = {
     "mnist": 10,
-    "fashion_mnist": 10,
+    "fashionmnist": 10,
     "kmnist": 10,
     "emnist": 10,
     "qmnist": 10,
-    "mnist_fellowship": 30,
+    "mnistfellowship": 30,
     "cifar10": 10,
     "cifar100": 100,
-    "cifar_fellowship": 110,
+    "cifarfellowship": 110,
     "imagenet100": 100,
     "imagenet1000": 1000,
-    "permuted_mnist": 10,
-    "rotated_mnist": 10,
+    "permutedmnist": 10,
+    "rotatedmnist": 10,
     "core50": 50,
     "core50-v2-79": 50,
     "core50-v2-196": 50,
@@ -82,18 +84,18 @@ num_classes_in_dataset: Dict[str, int] = {
 
 dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
     "mnist": (28, 28, 1),
-    "fashion_mnist": (28, 28, 1),
+    "fashionmnist": (28, 28, 1),
     "kmnist": (28, 28, 1),
     "emnist": (28, 28, 1),
     "qmnist": (28, 28, 1),
-    "mnist_fellowship": (28, 28, 1),
+    "mnistfellowship": (28, 28, 1),
     "cifar10": (32, 32, 3),
     "cifar100": (32, 32, 3),
-    "cifar_fellowship": (32, 32, 3),
+    "cifarfellowship": (32, 32, 3),
     "imagenet100": (224, 224, 3),
     "imagenet1000": (224, 224, 3),
-    "permuted_mnist": (28, 28, 1),
-    "rotated_mnist": (28, 28, 1),
+    "permutedmnist": (28, 28, 1),
+    "rotatedmnist": (28, 28, 1),
     "core50": (224, 224, 3),
     "core50-v2-79": (224, 224, 3),
     "core50-v2-196": (224, 224, 3),
@@ -207,19 +209,16 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # make things a bit more complicated.
         assert isinstance(self.increment, int) and isinstance(self.test_increment, int)
         self.n_classes_per_task: int = self.increment
-        
-        from gym.spaces import Box, Discrete, Tuple as SpaceTuple, Dict as SpaceDict
-        action_shape = (self.n_classes_per_task,)
-        self.observation_space = SpaceDict({
-            "x": Box(low=0, high=1, shape=image_shape, dtype=np.float32),
-            "task_labels": Discrete(self.nb_tasks)
-        })
+
+        self.observation_space = spaces.Tuple([
+            spaces.Box(low=0, high=1, shape=image_shape, dtype=np.float32),
+            spaces.Discrete(self.nb_tasks),
+        ])
         # TODO: Change the actions from logits to predicted labels.
-        # self.action_space = Discrete(self.n_classes_per_task)
-        self.action_space = Box(low=-np.inf, high=np.inf, shape=(self.n_classes_per_task,))
-        self.reward_space = Discrete(self.num_classes)
-        print(self.observation_space)
-        print(self.action_space)
+        self.action_space = spaces.Discrete(self.n_classes_per_task)
+        # self.action_space = Box(low=-np.inf, high=np.inf, shape=(self.n_classes_per_task,))
+        self.reward_space = spaces.Discrete(self.num_classes)
+        
         # TODO: Need to change this so the 'actions' are actually the predicted
         # labels, not the logits.
         super().__post_init__(
@@ -314,6 +313,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             observations_type=self.Observations,
             actions_type=self.Actions,
             rewards_type=self.Rewards,
+            observation_space=self.observation_space,
+            action_space=self.action_space,
+            reward_space=self.reward_space,
             **kwargs,
         )
         return self.train_env
@@ -335,6 +337,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             observations_type=self.Observations,
             actions_type=self.Actions,
             rewards_type=self.Rewards,
+            observation_space=self.observation_space,
+            action_space=self.action_space,
+            reward_space=self.reward_space,
             **kwargs,
         )
         return self.val_env
@@ -356,6 +361,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             observations_type=self.Observations,
             actions_type=self.Actions,
             rewards_type=self.Rewards,
+            observation_space=self.observation_space,
+            action_space=self.action_space,
+            reward_space=self.reward_space,
             # TODO: Enabling this at test time, just for fun. This means that we
             # could perhaps just keep track of the metrics in the testing environment!
             pretend_to_be_active=True,

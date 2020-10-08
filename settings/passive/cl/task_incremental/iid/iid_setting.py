@@ -61,7 +61,7 @@ class IIDSetting(TaskIncrementalSetting):
         test_metrics = []
         test_env = self.test_dataloader()
         for observations, *rewards in test_env:
-            actions = method.get_actions(observations)
+            actions = method.get_actions(observations, test_env.action_space)
             # If we're in 'active' mode, then rewards was empty:
             rewards = rewards[0] if rewards else None
             if rewards is None:

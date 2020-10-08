@@ -1,5 +1,5 @@
 from settings.base import Results
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from settings.assumptions.incremental import IncrementalSetting
 from utils import mean
 from common import Metrics, RegressionMetrics, ClassificationMetrics
@@ -13,7 +13,7 @@ class RLResults(IncrementalSetting.Results, Results):
     Similar to ClassIncrementalResults, but here the metrics would be the mean
     reward, something like that.
     """
-    test_metrics: List[List[RegressionMetrics]]
+    test_metrics: List[List[RegressionMetrics]] = field(repr=False)
 
     @property
     def objective(self) -> float:
@@ -23,11 +23,7 @@ class RLResults(IncrementalSetting.Results, Results):
     def mean_reward(self):        
         average_metric = self.average_metrics
         assert False, average_metric
-    
-    @property
-    def objective(self) -> float:
-        return self.mean_reward
-    
+        
     def summary(self):
         return f"Mean reward: {self.mean_reward}"
         return super().summary()

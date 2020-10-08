@@ -31,6 +31,7 @@ def test_max_steps_is_respected():
         # pre_batch_wrappers=wrappers,
         max_steps=max_steps,
     )
+    env.reset()
     for epoch in range(epochs):
         for i, batch in enumerate(env):
             assert i < max_steps, f"Max steps should have been respected: {i}"
@@ -39,6 +40,52 @@ def test_max_steps_is_respected():
     assert epoch == epochs - 1
     env.close()
 
+
+def test_multiple_epochs_works():
+    epochs = 3
+    max_steps = 5
+    batch_size = 7
+    env: GymDataLoader = GymDataLoader(
+        env="CartPole-v0",
+        # pre_batch_wrappers=wrappers,
+        batch_size=batch_size,
+        max_steps=max_steps,
+    )
+    all_rewards = []
+    with env:
+        env.reset()
+        for epoch in range(epochs):
+            for i, batch in enumerate(env):
+                assert i < max_steps, f"Max steps should have been respected: {i}"
+                rewards = env.send(env.action_space.sample())
+                all_rewards.extend(rewards)
+            assert i == max_steps - 1
+        assert epoch == epochs - 1
+    assert len(all_rewards) == epochs * max_steps * batch_size
+
+
+
+
+def test_reward_isnt_always_one():
+    epochs = 3
+    max_steps = 5
+    env: GymDataLoader = GymDataLoader(
+        env="CartPole-v0",
+        # pre_batch_wrappers=wrappers,
+        max_steps=max_steps,
+    )
+    all_rewards = []
+    with env:
+        env.reset()
+        for epoch in range(epochs):
+            for i, batch in enumerate(env):
+                assert i < max_steps, f"Max steps should have been respected: {i}"
+                rewards = env.send(env.action_space.sample())
+                all_rewards.extend(rewards)
+            assert i == max_steps - 1
+        assert epoch == epochs - 1
+    
+    assert all_rewards != np.ones(len(all_rewards)).tolist()
 
 
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])

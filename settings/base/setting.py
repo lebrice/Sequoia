@@ -169,12 +169,12 @@ class Setting(SettingABC,
 
         # TODO: Testing out an idea: letting the transforms tell us how
         # they change the shape of the observations.
-        x_shape = self.observation_space["x"].shape
+        x_shape = self.observation_space[0].shape
         if x_shape and self.transforms:
             logger.debug(f"x shape before transforms: {x_shape}")
             x_shape: Tuple[int, ...] = self.transforms.shape_change(x_shape)
             logger.debug(f"x shape after transforms: {x_shape}")
-        self.observation_space["x"].shape = x_shape
+        self.observation_space[0].shape = x_shape
 
         self.dataloader_kwargs: Dict[str, Any] = {}
         if x_shape and not self.dims:
@@ -196,7 +196,7 @@ class Setting(SettingABC,
         test_environment = self.test_dataloader()
         for observations in test_environment:
             # Get the predictions/actions:
-            actions = method.get_actions(observations)
+            actions = method.get_actions(observations, test_environment.action_space)
             # Get the rewards for the given predictions.
             rewards = test_environment.send(actions)
             # Calculate the 'metrics' (TODO: This should be done be in the env!)

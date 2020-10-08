@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import (Any, ClassVar, Dict, Generic, List, Optional, Sequence,
                     Set, Tuple, Type, TypeVar, Union)
 
+import gym
 import torch
 from common import Config, TrainerConfig, Loss, Metrics, Batch
 from pytorch_lightning import (Callback, LightningDataModule, LightningModule,
@@ -119,7 +120,7 @@ class Method(MethodABC, Serializable, Parseable, ABC):
         assert "loss_object" in test_results[0]
         total_loss: Loss = test_results[0]["loss_object"]
     
-    def get_actions(self, observations: Observations) -> Actions:
+    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         """ Get a batch of predictions (actions) for a batch of observations.
         
         This gets called by the Setting during the test loop.

@@ -1,6 +1,7 @@
 from typing import List, Type
 
 from settings.method_abc import MethodABC
+AbstractMethod = MethodABC
 from .method import Method
 from .baseline import BaselineMethod
 from .random_baseline import RandomBaselineMethod
@@ -18,7 +19,8 @@ all_methods: List[Type[MethodABC]] = [
     # TaskIncrementalMethod,
     # SelfSupervision,
 ]
-print(" All methods: ", all_methods)
+
+# print(" All methods: ", all_methods)
 
 def register_method(new_method: Type[Method]) -> Type[Method]:
     if new_method not in all_methods:

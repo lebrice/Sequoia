@@ -1,5 +1,6 @@
 from typing import *
-
+import gym
+from gym import spaces
 from common.transforms import Compose
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 
@@ -28,6 +29,9 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
                  observations_type: Type[ObservationType],
                  rewards_type: Type[RewardType],
                  actions_type: Type[ActionType],
+                 observation_space: gym.Space,
+                 reward_space: gym.Space,
+                 action_space: gym.Space,
                  pretend_to_be_active: bool = False,
                  batch_transforms: List[Callable] = None,
                  **kwargs):
@@ -77,6 +81,16 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         # TODO: Create Observation / Action / Reward gym spaces!
         # IDEA: Could make use of some of the properties of the `Batch` object,
         # such as the `shapes` property.
+        self.observation_space = spaces.Tuple([
+            observation_space for _ in range(self.batch_size)
+        ])
+        self.action_space = spaces.Tuple([
+            action_space for _ in range(self.batch_size)
+        ])
+        self.reward_space = spaces.Tuple([
+            reward_space for _ in range(self.batch_size)
+        ])
+        # IDEA: set a 'space' classvar?
 
     def __iter__(self) -> Iterable[Tuple[ObservationType, Optional[RewardType]]]:
         """Iterate over the dataset, yielding batches of Observations and
@@ -102,7 +116,9 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         """ Return the last latch of rewards from the dataset (which were
         withheld if in 'active' mode)
         """
-        assert isinstance(action, self.actions_type)
+        if isinstance(action, self.actions_type):
+            action = action.y_pred
+        # assert self.action_space.contains(action), action
         return self.rewards
     
     def close(self):

@@ -94,7 +94,7 @@ class SettingABC(LightningDataModule):
         test_environment = self.test_dataloader()
         for observations in test_environment:
             # Get the predictions/actions:
-            actions = method.get_actions(observations)
+            actions = method.get_actions(observations, test_environment.action_space)
             # Get the rewards for the given predictions.
             rewards = test_environment.send(actions)
             # Calculate the 'metrics' (TODO: This should be done be in the env!)

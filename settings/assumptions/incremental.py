@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Union, Sequence, Optional
-from torch import Tensor
 
+import torch
 import tqdm
 from simple_parsing import field
+from torch import Tensor
 
 from common import Metrics, ClassificationMetrics, RegressionMetrics
 from utils import flag, constant, mean
@@ -71,7 +72,8 @@ class IncrementalSetting(SettingABC):
     # Wether we have clear boundaries between tasks, or if the transition is
     # smooth.
     smooth_task_boundaries: bool = constant(False) # constant for now.
-    # The number of tasks.
+    # The number of tasks. By default 0, which means that it will be set
+    # depending on other fields in __post_init__, or eventually be just 1. 
     nb_tasks: int = field(0, alias=["n_tasks", "num_tasks"])
 
     # Attributes (not parsed through the command-line):
@@ -108,7 +110,13 @@ class IncrementalSetting(SettingABC):
                 # method.
                 # TODO: Should we also inform the method of wether or not the
                 # task switch is occuring during training or testing?
-                if not self.task_labels_at_train_time:
+                if not hasattr(method, "on_task_switch"):
+                    logger.warning(UserWarning(
+                        f"On a task boundary, but since your method doesn't "
+                        f"have an `on_task_switch` method, it won't know about "
+                        f"it! "
+                    ))
+                elif not self.task_labels_at_train_time:
                     method.on_task_switch(None)
                 else:
                     method.on_task_switch(task_id)
@@ -124,9 +132,9 @@ class IncrementalSetting(SettingABC):
                 valid_dataloader=task_val_loader,
                 # datamodule=self,
             )
-            if success:
+            if success != 0:
                 logger.debug(f"Finished Training on task {task_id}.")
-            if not success:
+            else:
                 raise RuntimeError(
                     f"Something didn't work during training: "
                     f"method.fit() returned {success}"
@@ -175,50 +183,67 @@ class IncrementalSetting(SettingABC):
         from methods import Method
         method: Method
 
+        from settings.passive import PassiveEnvironment
+        from settings.active import ActiveEnvironment
+                
         # Create a list that will hold the test metrics encountered during
         test_metrics: List[List[Metrics]] = [
             [] for _ in range(self.nb_tasks)
         ]
-
         for task_id in range(self.nb_tasks):
             logger.info(f"Starting testing on task {task_id}")
             self._current_task_id = task_id
 
-            assert not self.smooth_task_boundaries, "TODO: (#18) Make another 'Continual' setting that supports smooth task boundaries."
+            # assert not self.smooth_task_boundaries, "TODO: (#18) Make another 'Continual' setting that supports smooth task boundaries."
             # Inform the model of a task boundary. If the task labels are
             # available, then also give the id of the new task.
             # TODO: Should we also inform the method of wether or not the task
             # switch is occuring during training or testing?
             if self.known_task_boundaries_at_test_time:
-                if not self.task_labels_at_test_time:
+                if not hasattr(method, "on_task_switch"):
+                    logger.warning(UserWarning(
+                        f"On a task boundary, but since your method doesn't "
+                        f"have an `on_task_switch` method, it won't know about "
+                        f"it! "
+                    ))
+                elif not self.task_labels_at_test_time:
                     method.on_task_switch(None)
                 else:
                     method.on_task_switch(task_id)
 
             # Manual test loop:
             test_task_env = self.test_dataloader()
-            # with tqdm.tqdm(test_task_env) as pbar:
-            for observations, *rewards in test_task_env:
-                # TODO: Remove this, just debugging atm.
-                assert isinstance(observations, self.Observations), Observations
-                rewards = rewards[0] if rewards else None
-                if rewards is not None:
-                    assert isinstance(rewards, self.Rewards), rewards
-                if not self.task_labels_at_test_time:
-                    assert observations.task_labels is None
+            with tqdm.tqdm(test_task_env) as pbar:
+                for batch in pbar:
+                    if isinstance(test_task_env, PassiveEnvironment):
+                        observations, _ = batch
+                        assert isinstance(observations, self.Observations)
+                    else:
+                        observations = batch
+                        observations = self.Observations.from_inputs(observations)
+                    
+                    assert isinstance(observations, self.Observations), Observations
 
-                # Get the predicted label for this batch of inputs.
-                actions = method.get_actions(observations)
-                # if the reward is None, we need to get it from the env.
-                rewards = test_task_env.send(actions)
-                
-                # Get the metrics for that batch.
-                batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
-                
-                # Save the metrics for this batch in the list above.
-                test_metrics[task_id].append(batch_metrics)
-                # pbar.set_postfix(batch_metrics.to_pbar_message())
+                    if not self.task_labels_at_test_time:
+                        assert observations.task_labels is None
 
+                    # Get the predicted label for this batch of inputs.
+                    actions = method.get_actions(observations, test_task_env.action_space)
+                    # if the reward is None, we need to get it from the env.
+                    # TODO: Fix this, use the actions from the method:
+                    # actions = test_task_env.action_space.sample()
+                    rewards = test_task_env.send(actions)
+                    
+                    # Get the metrics for that batch.
+                    batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
+                    
+                    # Save the metrics for this batch in the list above.
+                    test_metrics[task_id].append(batch_metrics)
+                    if isinstance(batch_metrics, Metrics):
+                        pbar.set_postfix(batch_metrics.to_pbar_message())
+                    else:
+                        pbar.set_postfix({"metric": batch_metrics})
+                test_task_env.close()
             average_task_metrics = mean(test_metrics[task_id])
             logger.info(f"Test Results on task {task_id}: {average_task_metrics}")
 
@@ -238,11 +263,14 @@ class IncrementalSetting(SettingABC):
         making plots, wandb logging, and serialization), but you can also just
         return floats if you want, no problem.
         """
-        assert False, (actions, rewards)
         from common.metrics import get_metrics
         # In this particular setting, we only use the y_pred from actions and
         # the y from the rewards.
-        return get_metrics(y_pred=actions.y_pred, y=rewards.y)
+        if isinstance(actions, Actions):
+            actions = torch.as_tensor(actions.y_pred)
+        if isinstance(rewards, Rewards):
+            rewards = torch.as_tensor(rewards.y)
+        return get_metrics(y_pred=actions, y=rewards)
     
     @abstractmethod
     def train_dataloader(self, *args, **kwargs) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
