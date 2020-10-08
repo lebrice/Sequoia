@@ -2,6 +2,8 @@
 represent the different forms of "batches" that settings produce and that
 different models expect.
 """
+import gym
+from gym import spaces
 from abc import ABC
 import dataclasses
 import itertools
@@ -25,6 +27,9 @@ class Batch(Sequence[Item], ABC):
     Tensor-like methods like `move()`.
     """
     field_names: ClassVar[Tuple[str, ...]]
+    
+    # TODO: Would it make sense to add a gym Space classvar here? 
+    # space: ClassVar[Optional[gym.Space]] = None
 
     def __post_init__(self):
         type(self).field_names = [f.name for f in dataclasses.fields(self)]
@@ -38,9 +43,9 @@ class Batch(Sequence[Item], ABC):
         super().__init_subclass__(*args, **kwargs)
 
     def __iter__(self) -> Iterator[Item]:
-        for name in self.field_names:
-            yield getattr(self, name)
-        yield from iter(self.as_tuple())
+        # for name in self.field_names:
+        #     yield getattr(self, name)
+        return iter(self.as_tuple())
 
     def __len__(self):
         return len(self.field_names)
@@ -141,6 +146,8 @@ class Batch(Sequence[Item], ABC):
         if isinstance(inputs, dict):
             return cls(**inputs)
         if isinstance(inputs, (tuple, list)):
+            if len(inputs) == 1 and isinstance(inputs[0], (list, tuple)):
+                inputs = inputs[0]
             return cls(*inputs)
         raise RuntimeError(
             f"Don't know how to turn inputs {inputs} (type {type(inputs)}) "
