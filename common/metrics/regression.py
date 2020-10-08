@@ -74,6 +74,12 @@ class RegressionMetrics(Metrics):
         message["l1_error"] = float(self.l1_error.item())
         return message
     
+    def to_log_dict(self, verbose=False):
+        log_dict = super().to_log_dict(verbose=verbose)
+        log_dict["mse"] = self.mse
+        log_dict["l1_error"] = self.l1_error
+        return log_dict
+    
     def __mul__(self, factor: Union[float, Tensor]) -> "Loss":
         # Multiplying a 'RegressionMetrics' object multiplies its 'mse'.
         return RegressionMetrics(

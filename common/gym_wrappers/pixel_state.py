@@ -42,10 +42,10 @@ class PixelStateWrapper(PixelObservationWrapper):
         self.state = self.to_array(self.state)
         return self.state
     
-    def render(self, *args, mode: str="human", **kwargs):
+    def render(self, mode: str="human", **kwargs):
         if mode == "human" and self.viewer and not self.viewer.window.visible:
             self.viewer.window.set_visible(True)
-        return super().render(*args, mode=mode, **kwargs)
+        return super().render(mode=mode, **kwargs)
 
     def to_array(self, image) -> np.ndarray:
         if not isinstance(image, np.ndarray):

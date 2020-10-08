@@ -9,6 +9,7 @@ from typing import Dict, Optional, Union, Any
 
 import numpy as np
 import torch
+import wandb
 from torch import Tensor
 
 from simple_parsing import field
@@ -87,6 +88,15 @@ class ClassificationMetrics(Metrics):
         )
         return result
 
+    def to_log_dict(self, verbose=False):
+        log_dict = super().to_log_dict(verbose=verbose)
+        log_dict["accuracy"] = self.accuracy
+        if verbose:
+            # Maybe add those as plots, rather than tensors?
+            log_dict["class_accuracy"] = self.class_accuracy
+            log_dict["confusion_matrix"] = self.confusion_matrix
+        return log_dict
+    
     def __str__(self):
         s = super().__str__()
         s = s.replace(f"accuracy={self.accuracy}", f"accuracy={self.accuracy:.3%}")

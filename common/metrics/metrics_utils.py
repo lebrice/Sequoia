@@ -78,7 +78,7 @@ def get_confusion_matrix(y_pred: Union[np.ndarray, Tensor], y: Union[np.ndarray,
         y_pred = y_pred.detach().cpu().numpy()
     if isinstance(y, Tensor):
         y = y.detach().cpu().numpy()
-    assert len(y_pred.shape) == 2
+    assert len(y_pred.shape) == 2, (y.shape, y_pred.shape)
     
     if y_pred.shape[-1] == 1:
         n_classes = 2  # y_pred is the logit for binary classification.
@@ -90,7 +90,8 @@ def get_confusion_matrix(y_pred: Union[np.ndarray, Tensor], y: Union[np.ndarray,
     y = y.flatten().astype(int)
     y_preds = y_preds.flatten().astype(int)
     
-    assert y.shape == y_preds.shape and y.dtype == y_preds.dtype == np.int
+    assert y.shape == y_preds.shape, (y.shape, y_preds.shape)
+    assert y.dtype == y_preds.dtype == np.int, (y.dtype, y_preds.dtype)
     confusion_matrix = np.zeros([n_classes, n_classes])
     assert 0 <= y.min() and y.max() < n_classes, (y, n_classes)
     assert 0 <= y_preds.min() and y_preds.max() < n_classes, (y_preds, n_classes)

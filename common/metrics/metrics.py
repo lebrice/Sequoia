@@ -88,10 +88,9 @@ class Metrics(Serializable):
         TODO: Maybe create a `make_plots()` method to get wandb plots from the
         metric?
         """
-        log_dict = self.to_dict()
         if verbose:
-            return log_dict
-        return cleanup(log_dict)
+            return {"n_samples": self.n_samples}
+        return {}
 
     def to_pbar_message(self) -> Dict[str, Union[str, float]]:
         return OrderedDict()
@@ -101,6 +100,8 @@ class Metrics(Serializable):
         def to_numpy(val: Any):
             if isinstance(val, Tensor):
                 return val.detach().cpu().numpy()
+            if isinstance(val, (list, tuple)):
+                return np.array(val)
             return val
         return type(self)(**{
             name: to_numpy(val) for name, val in self.items()

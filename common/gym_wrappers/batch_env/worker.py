@@ -72,6 +72,7 @@ def _custom_worker_shared_memory(index: int,
     try:
         while True:
             command, data = pipe.recv()
+            # print(f"Worker {index} received command {command}")
             if command == Commands.reset:
                 observation = env.reset()
                 write_to_shared_memory(index, observation, shared_memory,

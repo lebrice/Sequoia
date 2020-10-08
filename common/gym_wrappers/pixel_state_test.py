@@ -53,3 +53,21 @@ def test_render_with_human_mode():
             if done:
                 env.reset()
         assert env.viewer.window is window
+
+
+
+def test_render_with_human_mode_with_env_dataset():
+    from .env_dataset import EnvDataset
+    with PixelStateWrapper(gym.make("CartPole-v0")) as env:
+        env = EnvDataset(env)
+        window = env.viewer.window
+        for i, batch in zip(range(500), env):
+            obs, done, info = batch
+            env.render(mode="human")
+            assert obs.shape == (400, 600, 3)
+            action = env.action_space.sample()
+            rewards = env.send(action)
+             
+            if done:
+                env.reset()
+        assert env.viewer.window is window
