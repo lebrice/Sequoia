@@ -4,7 +4,6 @@ from typing import ClassVar, Tuple, Union
 import torch
 from torch import nn
 
-from common.dims import Dims
 from common.layers import DeConvBlock, Reshape
 from common.tasks.auxiliary_task import AuxiliaryTask
 

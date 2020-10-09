@@ -4,26 +4,28 @@ import torch
 from torch import nn
 
 from .decoders import CifarDecoder, ImageNetDecoder, MnistDecoder
-from common.dims import Dims
 
 import functools
 
 
-def get_decoder_class_for_dataset(input_shape: Union[Tuple[int, int, int], Dims]) -> Type[nn.Module]:
+# Dict mapping from image (height, width) to the type of decoder to use.
+# TODO: Add some more decoders for other image datasets/shapes.
+registered_decoders: Dict[Tuple[int, int], Type[nn.Module]] = {
+    (28, 28): MnistDecoder,
+    (32, 32): CifarDecoder,
+    (224, 224): ImageNetDecoder,
+}
+
+def get_decoder_class_for_dataset(input_shape: Union[Tuple[int, int, int]]) -> Type[nn.Module]:
     assert len(input_shape) == 3, input_shape
-
-    if not isinstance(input_shape, Dims):
-        if input_shape[0] == min(input_shape):
-            # Image is in C, H, W format
-            input_shape = Dims(c=input_shape[0], h=input_shape[1], w=input_shape[2])  # type: ignore
-        elif input_shape[-1] == min(input_shape):
-            input_shape = Dims(c=input_shape[2], h=input_shape[0], w=input_shape[1])  # type: ignore
-
-    if input_shape.h == 28:
-        return functools.partial(MnistDecoder, out_channels=input_shape.c)
-    elif input_shape.h == 32:
-        return CifarDecoder
-    elif input_shape.h == 224:
-        return ImageNetDecoder
-    else:
-        raise RuntimeError(f"No decoder available for input shape {input_shape}")
+    channels: int
+    width: int
+    height: int
+    if input_shape[0] == min(input_shape):
+        # Image is in C, H, W format
+        channels, height, width = input_shape
+    elif input_shape[-1] == min(input_shape):
+        height, width, channels = input_shape
+    if (height, width) in registered_decoders:
+        return registered_decoders[(height, width)]
+    raise RuntimeError(f"No decoder available for input shape {input_shape}")
