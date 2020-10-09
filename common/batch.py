@@ -21,10 +21,42 @@ Item = TypeVar("Item", bound=collections_abc.Sized)
 
 @dataclass(frozen=True)
 class Batch(Sequence[Item], ABC):
-    """A typed version of a batch of tensors.
+    """ABC for objects that represent a batch of tensors. Behaves like tuple.
 
-    Essentially a qwerky mix of NamedTuple, Dict, and dataclass, with some
-    Tensor-like methods like `move()`.
+    Can be used the same way as a tuple of tensors, or an immutable mapping from
+    strings to tensors.
+    Also has some Tensor-like methods like to(), numpy(), detach(), etc.
+    Supports tuple and indexing also.
+    
+    NOTE: One difference with dict is that __iter__ gives an
+    iterator over the values, not the string keys.
+    
+    Examples:
+    
+    >>> import torch
+    >>> from typing import Optional
+    >>> from dataclasses import dataclass
+    >>> @dataclass(frozen=True)
+    ... class MyBatch(Batch):
+    ...     x: Tensor
+    ...     y: Tensor = None
+    >>> batch = MyBatch(x=torch.ones([10, 3, 32, 32]), y=torch.arange(10))
+    >>> batch.shapes
+    (torch.Size([10, 3, 32, 32]), torch.Size([10]))
+    >>> batch.batch_size
+    10
+    >>> batch.dtypes
+    (torch.float32, torch.int64)
+    >>> batch.dtype # No shared dtype, so dtype returns None.
+    >>> batch.float().dtype # Converting the all items to float dtype:
+    torch.float64
+    
+    Device-related methods:
+    
+    >>> batch.device  # Returns the device common to all items, or None.
+    device(type='cpu')
+    >>> batch.to("cuda").device
+    device(type='cuda', index=0)
     """
     field_names: ClassVar[Tuple[str, ...]]
     
@@ -63,6 +95,17 @@ class Batch(Sequence[Item], ABC):
             # Plus, there really shouldn't be that many fields in a Batch object
             # anyway.
             raise NotImplementedError(f"Batch doesn't support slice indexing.")
+        elif isinstance(index, (tuple, list)):
+            field_index = index[0]
+            if len(index) <= 1:
+                raise IndexError(f"Invalid index {index}: When indexing with "
+                                 f"tuples, they need to have len > 1.")
+            if isinstance(field_index, int):
+                return self[field_index][index[1:]]
+            if field_index != slice(None):
+                raise IndexError("Can only use int or empty slice as first "
+                                 "item of index tuple.")
+            return tuple(value[index[1:]] for value in self.values())
         raise IndexError(index)
 
     def __setitem__(self, index: Union[int, str], value: Any):
@@ -92,18 +135,51 @@ class Batch(Sequence[Item], ABC):
             yield name, getattr(self, name)
     
     @property
-    def device(self) -> Optional[torch.device]:
+    def devices(self) -> Tuple[Optional[torch.device]]:
         """ Returns the device common to all the elements in the Batch, else
-        None if there is no consensus. """
-        device = None
-        for item in self.values():
-            item_device = getattr(item, "device", None)
-            if item_device is not None and device is None:
-                device = item_device
-            if item_device != device:
-                # No consensus on the devices, so return None.
-                return None
-        return device
+        None if not all items share the same device. """
+        return tuple(
+            getattr(value, "device", None) for value in self.values()
+        )
+
+    @property
+    def device(self) -> Optional[torch.device]:
+        """Returns the device common to all items, or None.
+
+        Returns
+        -------
+        Tuple[Optional[torch.device]]
+            None if the devices are unknown/different, or the common device.
+        """
+        devices = self.devices
+        if not devices or not all(device == devices[0] for device in devices):
+            # No common dtype.
+            return None
+        return devices[0]
+
+    @property
+    def dtypes(self) -> Tuple[Optional[torch.dtype]]:
+        return tuple(getattr(value, "dtype", None) for value in self.values())
+
+    @property
+    def dtype(self) -> Tuple[Optional[torch.dtype]]:
+        """Returns the dtype common to all tensors, or None.
+
+        Returns
+        -------
+        Tuple[Optional[torch.dtype]]
+            None if the dtypes are unknown/different, or the common dtype.
+
+        Raises
+        ------
+        NotImplementedError
+            [description]
+        """
+        dtypes = self.dtypes
+        if not dtypes or not all(dtype == dtypes[0] for dtype in dtypes):
+            # No common dtype.
+            return None
+        return dtypes[0]
 
     def as_tuple(self) -> Tuple[Item, ...]:
         return dataclasses.astuple(self)
@@ -116,7 +192,24 @@ class Batch(Sequence[Item], ABC):
             name: item.to(*args, **kwargs) if isinstance(item, Tensor) else item
             for name, item in self.items()
         })
-    
+
+    def float(self):
+        return self.to(dtype=float)
+
+    def numpy(self):
+        """Returns a new Batch object of the same type, with all Tensors
+        converted to numpy arrays.
+
+        Returns
+        -------
+        [type]
+            [description]
+        """
+        return type(self)(**{
+            k: v.detach().cpu().numpy() if isinstance(v, Tensor) else v
+            for k, v in self.items()
+        })
+
     @property
     def shapes(self) -> Tuple[Optional[Union[torch.Size, Tuple[int, ...]]], ...]:
         """ Returns a tuple of the shapes of the elements in the batch. 
@@ -124,7 +217,7 @@ class Batch(Sequence[Item], ABC):
         element.
         """
         return tuple(getattr(item, "shape", None) for item in self.values())
-    
+
     @property
     def batch_size(self) -> Optional[int]:
         """ Returns the batch size, i.e. the length of the first dimension of
@@ -155,6 +248,7 @@ class Batch(Sequence[Item], ABC):
         )
         return cls(inputs)
 
-    @classmethod
-    def from_args(cls, *args):
-        return cls.from_inputs(args)
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod()
