@@ -4,13 +4,13 @@ import torch
 from torch import Tensor
 from torchvision.transforms import Compose as ComposeBase
 from utils.logging_utils import get_logger
-
+from .transform import Transform, InputType, OutputType
 logger = get_logger(__file__)
 
 T = TypeVar("T", bound=Callable)
 
 
-class Compose(List[T], ComposeBase):
+class Compose(List[T], ComposeBase, Transform[InputType, OutputType]):
     """ Extend the Compose class of torchvision with methods of `list`.
     
     This can also be passed in members of the `Transforms` enum, which makes it

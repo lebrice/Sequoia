@@ -7,4 +7,4 @@ from .step_callback_wrapper import StepCallbackWrapper, StepCallback, PeriodicCa
 from .batch_env import AsyncVectorEnv
 from .env_dataset import EnvDataset
 from .convert_tensors import ConvertToFromTensors
-from .transform_observation import TransformObservation
+from .transform_wrappers import TransformObservation, TransformAction, TransformReward

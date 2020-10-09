@@ -26,7 +26,7 @@ class ConvertToFromTensors(gym.Wrapper):
             elif isinstance(action, np.ndarray):
                 action = action.tolist()
             if not self.action_space.contains(action):
-                if isinstance(action, (list, np.ndarray, Tensor)) and len(action) == 1:
+                if isinstance(action, (list, tuple, np.ndarray)) and len(action) == 1:
                     action = action[0]
             if not self.action_space.contains(action):
                 assert False, (original, action, self.action_space.contains(action))
