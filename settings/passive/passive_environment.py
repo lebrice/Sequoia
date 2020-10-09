@@ -96,6 +96,7 @@ class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
         # self.rewards: Union[Rewards, Any] = None
 
         if not all([observation_space, action_space, reward_space]):
+            # Need to determine at least one of the spaces from the dataset's tensors. 
             if isinstance(self.dataset, IterableDataset):
                 temp_iterator = iter(self.dataset)
                 sample = next(temp_iterator)
@@ -112,21 +113,33 @@ class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
                 )
             if len(sample) > 2:
                 if split_batch_fn:
-                    sample_batch = split_batch_fn(sample_batch)
+                    sample = split_batch_fn(sample)
                 else:
                     raise RuntimeError(
                         "You need to give a `split_batch_fn` to be used whenever "
                         "there are more than 2 tensors per batch."
                     )
-            observation, rewards = sample
-
+            observation, reward = sample
+            # NOTE: We don't pass these through self.observation and self.reward
+            # since those could potentially depend on the obs/reward spaces.
+            # observation = self.observation(observation)
+            # reward = self.reward(reward)
+            
             if observation_space is None:
+                if isinstance(observation, tuple):
+                    # The observation is a tuple. What are we gonna do?
+                    raise RuntimeError(
+                        "Can't infer the obs space, since observations are "
+                        "tuples! You'll have to pass an observation_space!"
+                    )
                 assert observation.min() >= 0. # Assuming this for now.
                 assert observation.max() <= 1.
                 observation_space = spaces.Box(low=0, high=1, shape=observation.shape)
 
             if not action_space and not reward_space:
-                # TODO: Need to know how many classes there are in the dataset!
+                # We need a way to know how many classes there are in the dataset!
+                # We _could_ iterate over the dataset to figure out the labels,
+                # but that seems a bit dumb to me.
                 if n_classes is None:
                     raise RuntimeError(
                         "Need to have n_classes passed when neither of "
@@ -134,10 +147,10 @@ class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
                     )
                 # TODO: This also assumes that the rewards above is an int or an int tensor.
                 # assert False, rewards
-                if isinstance(rewards, int) or not torch.is_floating_point(rewards):
+                if isinstance(reward, int) or not torch.is_floating_point(torch.as_tensor(reward)):
                     action_space = reward_space = spaces.Discrete(n=n_classes)
                 else:
-                    assert False, rewards
+                    assert False, reward
             elif not action_space:
                 action_space = reward_space
             else:
@@ -147,7 +160,9 @@ class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
         # TODO: Should we be doing this? This is so we match the AsyncVectorEnv
         # from the gym.vector API.
         # NOTE: On the last batch, if drop_last = False, the observations/actions
-        # will not reflect the spaces. Not sure if this could be a problem later.    
+        # will not reflect the spaces. Not sure if this could be a problem later.
+        # NOTE: Since we set the same object instance at each index, then
+        # modifying just one would modify all of them.    
         self.observation_space = spaces.Tuple([
             observation_space for _ in range(self.batch_size)
         ])
@@ -159,34 +174,37 @@ class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
         ])
 
         self._iterator: Optional[_BaseDataLoaderIter] = None
+        # NOTE: These here are never processed with self.observation or self.reward. 
         self._previous_batch: Optional[Tuple[ObservationType, RewardType]] = None
         self._current_batch: Optional[Tuple[ObservationType, RewardType]] = None
         self._next_batch: Optional[Tuple[ObservationType, RewardType]] = None
-        self._done: bool = False
+        self._done: Optional[bool] = None
         self._closed: bool = False
 
-    def __getitem__(self, index):
-        return self.dataset[index]
-
     def reset(self) -> ObservationType:
-        """ Resets the env by deleting and re-creating the iterator. """
-        if self._iterator:
-            self._iterator.close()
+        """ Resets the env by deleting and re-creating the iterator.
+        Returns the first batch of observations.
+        """
         del self._iterator
         self._iterator = self.__iter__()
-
         self._previous_batch = None
-        self._current_batch = next(self._iterator)
-        return self._current_batch[0]
+        self._current_batch = self.get_next_batch()
+        self._done = False
+        # TODO: Not sure if we should be doing this here.
+        # self._next_batch = next(self._iterator, None)
+        obs = self._current_batch[0]
+        return self.observation(obs)
 
     def close(self) -> None:
+        del self._iterator
         self._closed = True
 
-    def __next__(self) -> Tuple[ObservationType, RewardType]:
+    def get_next_batch(self) -> Tuple[ObservationType, RewardType]:
         """Gets the next batch from the underlying dataset.
 
-        Returns the result of the `split_batch_fn`, if set.
-
+        Uses the `split_batch_fn`, if needed. Does NOT apply the self.observation
+        and self.reward methods.
+        
         Returns
         -------
         Tuple[ObservationType, RewardType]
@@ -196,26 +214,35 @@ class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
             self._iterator = self.__iter__()
         batch = next(self._iterator)
         if self.split_batch_fn:
-            return self.split_batch_fn(batch)
+            batch = self.split_batch_fn(batch)
         return batch
-    
+        # obs, reward = batch
+        # return self.observation(obs), self.reward(reward)
+
     def step(self, action: ActionType) -> Tuple[ObservationType, RewardType, bool, Dict]:
         if self._closed:
-            raise gym.error.ClosedEnvironmentError("Env is closed!")
+            raise gym.error.ClosedEnvironmentError("Can't step on a closed env.")
+        if self._done is None:
+            raise gym.error.ResetNeeded("Need to reset the env before calling step.")
         if self._done:
-            raise gym.error.ResetNeeded("Need to reset the env, as it is done!")
+            raise gym.error.ResetNeeded("Need to reset the env since it is done.")
 
         # IDEA: Let subclasses customize how the action impacts the env?
         self.use_action(action)
+        
+        # Transform the Action, if needed:
+        action = self.action(action)
 
         # NOTE: This prev/current/next setup is so we can give the right 'done'
         # signal.
         self._previous_batch = self._current_batch
         if self._next_batch is None:
             # This should only ever happen right after resetting.
-            self._next_batch = next(self, None)
+            self._next_batch = next(self._iterator, None)
         self._current_batch = self._next_batch
-        self._next_batch = next(self, None)
+        self._next_batch = next(self._iterator, None)
+
+        assert self._previous_batch is not None
 
         # TODO: Return done=True when the iterator is exhausted?
         self._done = self._next_batch is None
@@ -225,6 +252,51 @@ class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
         info = {}
         return obs, reward, self._done, info
 
+    def action(self, action: ActionType) -> ActionType:
+        """ Transform the action, if needed.
+
+        Parameters
+        ----------
+        action : ActionType
+            [description]
+
+        Returns
+        -------
+        ActionType
+            [description]
+        """
+        return action
+    
+    def observation(self, observation: ObservationType) -> ObservationType:
+        """ Transform the observation, if needed.
+
+        Parameters
+        ----------
+        observation : ObservationType
+            [description]
+
+        Returns
+        -------
+        ObservationType
+            [description]
+        """
+        return observation
+    
+    def reward(self, reward: RewardType) -> RewardType:
+        """ Transform the reward, if needed.
+
+        Parameters
+        ----------
+        reward : RewardType
+            [description]
+
+        Returns
+        -------
+        RewardType
+            [description]
+        """
+        return reward
+    
     def use_action(self, action):
         """ Override this method if you want the actions to affect the env
         somehow. (You could also just override the `step` method, I guess).
