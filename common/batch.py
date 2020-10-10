@@ -246,7 +246,7 @@ class Batch(Sequence[Item], ABC):
             f"Don't know how to turn inputs {inputs} (type {type(inputs)}) "
             f"into a Batch object of type {cls}!"
         )
-        return cls(inputs)
+        # return cls(inputs)
 
 
 if __name__ == "__main__":

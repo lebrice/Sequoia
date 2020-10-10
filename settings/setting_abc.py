@@ -42,7 +42,7 @@ class SettingABC(LightningDataModule):
     Observations: ClassVar[Type[Observations]] = Observations
     Actions: ClassVar[Type[Actions]] = Actions
     Rewards: ClassVar[Type[Rewards]] = Rewards
-        
+
     @abstractmethod
     def apply(self, method: MethodABC, config: Config) -> "SettingABC.Results":
         """ Applies a Method on this experimental Setting to produce Results. 

@@ -14,10 +14,11 @@ from torch import Tensor
 from common.gym_wrappers import (MultiTaskEnvironment, PixelStateWrapper,
                                  SmoothTransitions, TransformObservation,
                                  has_wrapper)
-from common.gym_wrappers.env_dataset import EnvDatasetItem, StepResult
+from common.gym_wrappers.env_dataset import StepResult
 from common.config import Config
 from common.transforms import ChannelsFirstIfNeeded, Compose, Transforms
-from utils import dict_union, get_logger
+from common.metrics import Metrics, RegressionMetrics
+from utils import dict_union, get_logger, flag
 
 from ..active_setting import ActiveSetting
 from .gym_dataloader import GymDataLoader
@@ -71,12 +72,15 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     
     # Wether we observe the internal state (angle of joints, etc) or get a pixel
     # input instead (harder).
-    observe_state_directly: bool = False
+    # TODO: Setting this to True for the moment.
+    # BUG: Seems like the image isn't changing very much over time! Need to test
+    # this in the PixelStateWrapper.
+    observe_state_directly: bool = flag(default=True)
     
     # Max number of steps ("length" of the training and test "datasets").
-    max_steps: int = 1_000_000
+    max_steps: int = 10_000
     # Number of steps per task.
-    steps_per_task: int = 100_000
+    steps_per_task: int = 5_000
 
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
@@ -103,6 +107,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         self.transforms: Compose = Compose(self.transforms)
         logger.debug(f"self.transforms (after compose): {self.transforms}")
 
+        if self.nb_tasks == 0:
+            self.nb_tasks = self.max_steps // self.steps_per_task
         # TODO: There is this design problem here, where we "need" to inform
         # the parent of the shape of our observations, actions, and rewards,
         # but in order to create a temporary environment, we need access to
@@ -212,12 +218,14 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         env: GymDataLoader = GymDataLoader(
             env=self.env_name,
             pre_batch_wrappers=wrappers,
-            max_steps=5,
+            max_steps=max_steps,
+            # TODO: Having a lot of trouble trying to get the GymDataLoader to
+            # return Observations objects..
             observations_type=self.Observations,
+            # use_multiprocessing=False,
             **kwargs,
         )
         return env
-        
         
         from common.gym_wrappers.env_dataset import TransformEnvDatasetItem
         env: GymDataLoader = GymDataLoader(
@@ -247,22 +255,22 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         #     assert isinstance(obs_batch, self.Observations), obs_batch
         #     break
         
-        batch_size = env.observation_space.shape[0]
-        assert isinstance(env.action_space, spaces.Tuple)
-        assert len(env.action_space) == batch_size
-        assert self.action_space == env.action_space[0]
+        # batch_size = env.observation_space.shape[0]
+        # assert isinstance(env.action_space, spaces.Tuple)
+        # assert len(env.action_space) == batch_size
+        # assert self.action_space == env.action_space[0]
         
-        assert isinstance(env.reward_space, spaces.Tuple)
-        assert len(env.reward_space) == batch_size
-        assert self.reward_space == env.reward_space[0]
-        # Update the observation/action spaces on `self` to have the batch size?
-        # TODO: Not sure if this is a good idea..
-        self.observation_space["x"].shape = (
-            batch_size,
-            *self.observation_space["x"].shape
-        )
-        self.action_space = env.action_space
-        self.reward_space = env.reward_space
+        # assert isinstance(env.reward_space, spaces.Tuple)
+        # assert len(env.reward_space) == batch_size
+        # assert self.reward_space == env.reward_space[0]
+        # # Update the observation/action spaces on `self` to have the batch size?
+        # # TODO: Not sure if this is a good idea..
+        # self.observation_space["x"].shape = (
+        #     batch_size,
+        #     *self.observation_space["x"].shape
+        # )
+        # self.action_space = env.action_space
+        # self.reward_space = env.reward_space
         return env
     
 
@@ -356,20 +364,6 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         else:
             wrappers.append(partial(MultiTaskEnvironment, task_schedule=self.task_schedule))
         return wrappers
-
-    def on_missing_action(self,
-                          observation: EnvDatasetItem,
-                          action_space: gym.Space) -> Tensor:
-        """Called whenever a GymDataloader is missing an action when iterating.
-        """
-        # return action_space.sample()
-        raise RuntimeError(
-            "You need to send an action using the `send` method "
-            "every time you get a value from the dataset! "
-            "Otherwise, you can also set the the `on_missing_action` method "
-            "to return a 'filler' action given the current context. "
-        )
-        return None
 
     # TODO: Could overwrite those to use different wrappers for train/val/test.
     def train_wrappers(self)-> List[Union[Callable, Tuple[Callable, Dict]]]:

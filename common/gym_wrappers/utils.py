@@ -66,7 +66,7 @@ def space_with_new_shape(space: gym.Space, new_shape: Tuple[int, ...]) -> gym.Sp
     if isinstance(space, spaces.Discrete):
         # Can't change the shape of a Discrete space, return a new one anyway.
         assert space.shape is (), "Discrete spaces should have empty shape."
-        assert new_shape is (), "Can't change the shape of a Discrete space."
+        assert len(new_shape) == 0, f"Can't change the shape of a Discrete space to {new_shape}."
         return spaces.Discrete(n=space.n)
 
     elif isinstance(space, spaces.Tuple):

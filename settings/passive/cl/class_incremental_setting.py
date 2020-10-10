@@ -53,7 +53,6 @@ from settings.base.results import Results
 from settings.base.environment import ObservationType, RewardType
 from utils import dict_union, get_logger, constant, mean, take
 
-from .batch_transforms import RelabelTransform, ReorderTensors, DropTaskLabels
 from .class_incremental_results import ClassIncrementalResults
 from ..passive_setting import PassiveSetting
 from ..passive_environment import PassiveEnvironment, Actions, ActionType, Observations, Rewards
@@ -210,21 +209,20 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         assert isinstance(self.increment, int) and isinstance(self.test_increment, int)
         self.n_classes_per_task: int = self.increment
 
-        self.observation_space = spaces.Tuple([
+        observation_space = spaces.Tuple([
             spaces.Box(low=0, high=1, shape=image_shape, dtype=np.float32),
             spaces.Discrete(self.nb_tasks),
         ])
         # TODO: Change the actions from logits to predicted labels.
-        self.action_space = spaces.Discrete(self.n_classes_per_task)
+        action_space = spaces.Discrete(self.n_classes_per_task)
         # self.action_space = Box(low=-np.inf, high=np.inf, shape=(self.n_classes_per_task,))
-        self.reward_space = spaces.Discrete(self.num_classes)
-        
-        # TODO: Need to change this so the 'actions' are actually the predicted
-        # labels, not the logits.
+        # self.reward_space = spaces.Discrete(self.num_classes)
+        reward_space = spaces.Discrete(self.n_classes_per_task)
+
         super().__post_init__(
-            observation_space=self.observation_space,
-            action_space=self.action_space,
-            reward_space=self.reward_space, # the labels have shape (1,) always.
+            observation_space=observation_space,
+            action_space=action_space,
+            reward_space=reward_space, # the labels have shape (1,) always.
         )
 
         self.train_datasets: List[_ContinuumDataset] = []
@@ -306,18 +304,19 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised.
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        batch_transforms = self.train_batch_transforms()
+        
         self.train_env = PassiveEnvironment(
             dataset,
-            batch_transforms=batch_transforms,
-            observations_type=self.Observations,
-            actions_type=self.Actions,
-            rewards_type=self.Rewards,
+            split_batch_fn=self.split_batch,
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
             **kwargs,
         )
+        # TODO: Do we want to update self.observation_space here?
+        self.observation_space = self.train_env.observation_space[0]
+        self.action_space = self.train_env.action_space[0]
+        self.reward_space = self.train_env.reward_space[0]
         return self.train_env
 
     def val_dataloader(self, **kwargs) -> PassiveEnvironment:
@@ -330,13 +329,10 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         dataset = self.val_datasets[self.current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         
-        batch_transforms: List[Callable] = self.val_batch_transforms()
+        # batch_transforms: List[Callable] = self.val_batch_transforms()
         self.val_env = PassiveEnvironment(
             dataset,
-            batch_transforms=batch_transforms,
-            observations_type=self.Observations,
-            actions_type=self.Actions,
-            rewards_type=self.Rewards,
+            split_batch_fn=self.split_batch,
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
@@ -354,23 +350,52 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         dataset = self.test_datasets[self.current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         
-        batch_transforms: List[Callable] = self.test_batch_transforms()
+        # batch_transforms: List[Callable] = self.test_batch_transforms()
+        # FIXME: the transform that splits the batch is actually changing the
+        # shape of the observation space of the environment!
+
         self.test_env = PassiveEnvironment(
             dataset,
-            batch_transforms=batch_transforms,
-            observations_type=self.Observations,
-            actions_type=self.Actions,
-            rewards_type=self.Rewards,
+            split_batch_fn=self.split_batch,
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
-            # TODO: Enabling this at test time, just for fun. This means that we
-            # could perhaps just keep track of the metrics in the testing environment!
-            pretend_to_be_active=True,
             **kwargs,
         )
         return self.test_env
 
+    def split_batch(self, batch: Tuple[Tensor, ...]) -> Tuple[Observations, Rewards]:
+        """ Applies the various transforms to the tensors in the batch and
+        returns a tuple of Observations and Rewards.
+
+        Parameters
+        ----------
+        batch : Tuple[Tensor, ...]
+            A batch of data coming from the dataset.
+
+        Returns
+        -------
+        Tuple[Observations, Rewards]
+            A tuple of Observations and Rewards.
+        """
+        # In this context (class_incremental), we will always have 3 items per
+        # batch, because we use the ClassIncremental scenario from Continuum.
+        x, y, t = batch
+        # Relabel y so it is always in [0, n_classes_per_task) for each task.
+        current_task_classes = self.current_task_classes(train=True)
+        y = relabel(y, task_classes=current_task_classes)
+        # Re-arrange tensors: (x, y, t) -> ((x, t), y)
+        observations = (x, t)
+        rewards = y
+        # Create the 'Observations' and 'Rewards' objects.
+        # TODO: We might not need these objects, we could have general functions
+        # for moving/detaching/numpy-ing tuples or list or dicts of tensors, and
+        # use those in combination with the corresponding spaces instead.
+        # return observations, rewards
+        observations = self.Observations.from_inputs(observations)
+        rewards = self.Rewards.from_inputs(rewards)
+        return observations, rewards
+    
     def configure(self, method: MethodABC):
         """ Setup the data_dir and the dataloader kwargs using properties of the
         Method or of self.Config.
@@ -455,30 +480,6 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             **kwargs
         )
 
-    def train_batch_transforms(self) -> List[Callable]:
-        transforms = [
-            RelabelTransform(task_classes=self.current_task_classes(train=True)),
-            ReorderTensors(), # (x, y, t) -> (x, t, y)
-            SplitBatch(self.Observations, self.Rewards),
-        ]
-        if not self.task_labels_at_train_time:
-            transforms.append(DropTaskLabels())
-        return transforms
-    
-    def val_batch_transforms(self) -> List[Callable]:
-        return self.train_batch_transforms()
-    
-    def test_batch_transforms(self) -> List[Callable]:
-        transforms = [
-            RelabelTransform(task_classes=self.current_task_classes(train=False)),
-            ReorderTensors(), # (x, y, t) -> (x, (t), y)
-            SplitBatch(self.Observations, self.Rewards),
-        ]
-        if not self.task_labels_at_test_time:
-            transforms.append(DropTaskLabels())
-        return transforms
-
-
     # These methods below are used by the ClassIncrementalModel, mostly when
     # using a multihead model, to figure out how to relabel the batches, or how
     # many classes there are in the current task (since we support a different
@@ -517,27 +518,56 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         right observations / reward types.
         """
         for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
+            logger.debug(f"Checking loader method {loader_method.__name__}")
             env = loader_method()
-            for observations, *rewards in take(env, 5):
-                try:
-                    assert isinstance(observations, self.Observations), type(observations)
-                    observations: Observations
-                    batch_size = observations.batch_size
-                    rewards: Optional[Rewards] = rewards[0] if rewards else None
-                    if rewards is not None:
-                        assert isinstance(rewards, self.Rewards), type(rewards)
-                    # TODO: If we add gym spaces to all environments, then check
-                    # that the observations are in the observation space, sample
-                    # a random action from the action space, check that it is
-                    # contained within that space, and then get a reward by
-                    # sending it to the dataloader. Check that the reward
-                    # received is in the reward space.
-                    actions = self.action_space.sample()
-                    assert actions.shape == (batch_size, self.n_classes_per_task)
-                    actions = self.Actions(torch.as_tensor(actions))
-                    rewards = env.send(actions)
-                    assert isinstance(rewards, self.Rewards), type(rewards)
-                except Exception as e:
-                    logger.error(f"There's a problem with the method {loader_method} (env {env})")
-                    raise e
-    
+            obs = env.reset()
+            assert isinstance(obs, self.Observations)
+            # take a 
+            first_samples = obs[:, 0]
+            assert tuple(v.shape for v in first_samples) == self.size()
+            assert len(first_samples) == 2
+            assert obs[0][0].shape == self.dims[0], (obs[0][0].shape, self.size(0))
+            assert obs[1][0].shape == self.size(1)
+            
+            for i in range(5):
+                actions = env.action_space.sample()
+                observations, rewards, done, info = env.step(actions)
+                assert isinstance(observations, self.Observations), type(observations)
+                assert isinstance(rewards, self.Rewards), type(rewards)
+                batch_size = observations.batch_size
+                actions = env.action_space.sample()
+                if done:
+                    observations = env.reset()
+            env.close()
+
+
+    def get_metrics(self,
+                    actions: Actions,
+                    rewards: Rewards) -> Union[float, Metrics]:
+        """ Calculate the "metric" from the model predictions (actions) and the true labels (rewards).
+        
+        In this example, we return a 'Metrics' object:
+        - `ClassificationMetrics` for classification problems,
+        - `RegressionMetrics` for regression problems.
+        
+        We use these objects because they are awesome (they basically simplify
+        making plots, wandb logging, and serialization), but you can also just
+        return floats if you want, no problem.
+        
+        TODO: This is duplicated from Incremental. Need to fix this.
+        """
+        from common.metrics import get_metrics
+        # In this particular setting, we only use the y_pred from actions and
+        # the y from the rewards.
+        if isinstance(actions, Actions):
+            actions = torch.as_tensor(actions.y_pred)
+        if isinstance(rewards, Rewards):
+            rewards = torch.as_tensor(rewards.y)
+        return get_metrics(y_pred=actions, y=rewards)
+
+
+def relabel(y: Tensor, task_classes: List[int]) -> Tensor:
+    new_y = torch.empty_like(y)
+    for i, label in enumerate(task_classes):
+        new_y[y == label] = i
+    return new_y

@@ -90,13 +90,13 @@ class MethodABC(ABC):
             name = remove_suffix(name, "_method")
         return name
 
-    def __init_subclass__(cls, target_setting: Type["SettingABC"]=None):
-        """Called when creating a new subclass of Method.
+    # def __init_subclass__(cls, target_setting: Type["SettingABC"]=None):
+    #     """Called when creating a new subclass of Method.
 
-        Args:
-            target_setting (Type[Setting], optional): The target setting.
-                Defaults to None, in which case the method will inherit the
-                target setting of it's parent class.
-        """
-        cls.target_setting = target_setting
-        return super().__init_subclass__()
+    #     Args:
+    #         target_setting (Type[Setting], optional): The target setting.
+    #             Defaults to None, in which case the method will inherit the
+    #             target setting of it's parent class.
+    #     """
+    #     cls.target_setting = target_setting
+    #     return super().__init_subclass__()

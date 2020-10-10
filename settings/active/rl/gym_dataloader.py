@@ -41,7 +41,7 @@ from common.batch import Batch
 logger = get_logger(__file__)
 T = TypeVar("T")
 
-from common.gym_wrappers.env_dataset import StepResult, EnvDatasetItem
+from common.gym_wrappers.env_dataset import StepResult
 from settings.base.environment import Observations, Actions, Rewards
 
 
@@ -100,7 +100,7 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
                  #  action_space: gym.Space = None,
                  #  reward_space: gym.Space = None,
                  #
-                 on_missing_action: Callable[[EnvDatasetItem, gym.Space], ActionType] = None,
+                 on_missing_action: Callable[[ObservationType, gym.Space], ActionType] = None,
                  #
                  pre_batch_wrappers: List[Callable] = None,
                  post_batch_wrappers: List[Callable] = None,
@@ -131,6 +131,7 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
         # TODO: Move the Policy stuff into a wrapper?
         # self.policy: Callable[[Tensor], Tensor] = policy
         assert not has_wrapper(env, VectorEnv), "Env shouldn't already be vectorized!"
+        
         if use_multiprocessing and batch_size > 32:
             # TODO: Maybe add some kind of 'internal' and 'external' batch size?
             # Like, external_batch_size would be the size of the batches returned
@@ -158,16 +159,18 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
         self.post_batch_wrappers = post_batch_wrappers or []
         for wrapper in self.post_batch_wrappers:
             self.env = wrapper(self.env)
+
+        from common.gym_wrappers import TransformObservation
+        # if self.observations_type:
+        #     self.env = TransformObservation(self.env, f=self.observations_type.from_inputs)
         
-        assert not isinstance(self.env, EnvDataset), "env Shouldn't already be an EnvDataset"
-        # if not isinstance(self.env, EnvDataset):
         # if issubclass(self.observations_type, Batch):
         #     dataset_item_type = self.observations_type.from_args
         # elif self.observations_type:
         #     dataset_item_type = self.observations_type
         # else:
         #     dataset_item_type = EnvDatasetItem
-
+        
         # Add a wrapper to create an IterableDataset from the env.
         self.env = EnvDataset(
             self.env,
@@ -201,51 +204,61 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
                 shape=())
             for _ in range(self.n_parallel_envs)
         ])
-        
-        # self._iterator: Iterator = None
+        self._iterator: Iterator = None
         
     # def __next__(self) -> EnvDatasetItem:
     #     if self._iterator is None:
     #         self._iterator = self.__iter__()
     #     return next(self._iterator)
 
-    def __iter__(self) -> Iterable[Union[ObservationType, EnvDatasetItem]]:
+    def __iter__(self) -> Iterable[ObservationType]:
         # logger.debug(f"Resetting the env")
         # self.reset()
         # logger.debug(f"Done resetting the env.")
         # self.env.reset()
-        
         assert self.num_workers == 0, "Shouldn't be using multiple DataLoader workers!"
+        # return self.env
         # This gives back the single-process dataloader iterator over the 'dataset'
-        # which in this case is the environment.
-        # return iter(self.env)
-        # return super().__iter__()
+        # which in this case is the environment:
+        return super().__iter__()
+        # while True:
+        # for i, batch in enumerate(iter(self.env)):
+        #     logger.debug(f"At step {i}: {type(batch)}, ")
+        #     if self.observations_type:
+        #         yield self.observations_type.from_inputs(batch)
+        #     else:
+        #         yield batch
+            # raise StopIteration
     
-        for i, batch in enumerate(super().__iter__()):
-            logger.debug(f"At step {i}: {type(batch)}, ")
-            batch: EnvDatasetItem
-            if self.observations_type:
-                yield self.observations_type.from_inputs(batch)
-            else:
-                yield batch
-
+        # return iter(self.env)
+        
+        # self.env.reset()
+        # while True:
+        #     logger.debug(f"At step {i}: {type(batch)}, ")
+        #     batch: EnvDatasetItem
+        
+            # yield batch[0]
+        # self.env.close()
+        # return super().__iter__()
         # return super().__iter__()
         # TODO: Could we also maybe just return iter(self.env) ?
         # self._iterator = super().__iter__()
         # return self._iterator
 
-    def set_policy(self, policy: Callable[[EnvDatasetItem], ActionType]) -> None:
+    def set_policy(self, policy: Callable[[ObservationType], ActionType]) -> None:
         self.env.set_policy(policy)
 
     def random_actions(self):
         return self.env.random_actions()
 
     def step(self, action: Union[ActionType, Any]) -> StepResult:
+        # logger.debug(f"Calling step on self.env")
         return self.env.step(action)
 
     def send(self, action: Union[ActionType, Any]) -> RewardType:
         # if self.actions_type and not isinstance(action, self.actions_type):
         #     raise RuntimeError(f"Expected to receive an action of type {self.actions_type}?")
+        # logger.debug(f"Receiving actions {action}")
         return self.env.send(action)
     
     def __del__(self):

@@ -212,10 +212,13 @@ class DummyEnvironment(gym.Env):
         self.reward_range = (0, max(target, max_value - target))
 
         self.done: bool = False
+        self._reset: bool = False
 
     def step(self, action: int):
         # The action modifies the state, producing a new state, and you get the
         # reward associated with that transition.
+        if not self._reset:
+            raise RuntimeError("Need to reset before you can step.")
         if action == 1:
             self.i += 1
         elif action == 2:
@@ -227,5 +230,6 @@ class DummyEnvironment(gym.Env):
         return self.i, reward, done, {}
 
     def reset(self):
+        self._reset = True
         self.i = 0
         return self.i

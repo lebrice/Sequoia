@@ -8,6 +8,7 @@ import gym
 import torch
 import numpy as np
 from gym import spaces
+from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 
 from common.transforms import Compose
@@ -17,7 +18,8 @@ from ..base.environment import (Actions, ActionType, Environment, Observations,
                                 ObservationType, Rewards, RewardType)
 from torch.utils.data.dataloader import _BaseDataLoaderIter
 logger = get_logger(__file__)
-
+from common.batch import Batch
+from common.gym_wrappers.utils import space_with_new_shape
 
 class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
                                                           Optional[ActionType]],
@@ -45,6 +47,7 @@ class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
                  action_space: gym.Space = None,
                  reward_space: gym.Space = None,
                  n_classes: int = None,
+                 adjust_spaces_with_data: bool = True,
                 #  pretend_to_be_active: bool = False,
                  **kwargs):
         """Creates the DataLoader/Environment for the given dataset.
@@ -67,111 +70,13 @@ class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
         **kwargs:
             The rest of the usual DataLoader kwargs.
         """
+        super().__init__(dataset=dataset, **kwargs)
         self.split_batch_fn = split_batch_fn
         
-        # TODO: When True, withold the labels from the yielded batches until a
-        # prediction is received through in the 'send' method.
-        # self.pretend_to_be_active = pretend_to_be_active
-        # self.observations_type = observations_type
-        # self.actions_type = actions_type
-        # self.rewards_type = rewards_type
-
-        # self.batch_transforms: List[Callable] = batch_transforms or []
-        # from common.transforms import SplitBatch
-        # if not any(isinstance(t, SplitBatch) for t in self.batch_transforms):
-            # if observations_type and rewards_type:
-            #     self.batch_transforms.append(SplitBatch(observations_type, rewards_type))
-            # else:
-            #     raise RuntimeError(
-            #         f"`batch_transforms` needs to contain a SplitBatch "
-            #         f"transform! Or, you can pass an `observations_type` and a"
-            #         f"`rewards_type` to the {__class__} constructor and it "
-            #         f"will create one for you. \n"
-            #         f"(transforms: {self.batch_transforms})"
-            #     )
-        # self.batch_transforms = Compose(self.batch_transforms)
-
-        super().__init__(dataset=dataset, **kwargs)
-        # self.observations: Union[Observations, Any] = None
-        # self.rewards: Union[Rewards, Any] = None
-
-        if not all([observation_space, action_space, reward_space]):
-            # Need to determine at least one of the spaces from the dataset's tensors. 
-            if isinstance(self.dataset, IterableDataset):
-                temp_iterator = iter(self.dataset)
-                sample = next(temp_iterator)
-                del temp_iterator
-            else:
-                sample = self.dataset[0]
-
-            if not isinstance(sample, (tuple, list)) or len(sample) == 1:
-                # IDEA: In this case I guess we could require the action/reward
-                # spaces to be passed through the constructor arguments?
-                raise NotImplementedError(
-                    "Can't use the PassiveEnvironment DataLoader/gym.Env hybrid "
-                    "on unsupervised datasets yet. "
-                )
-            if len(sample) > 2:
-                if split_batch_fn:
-                    sample = split_batch_fn(sample)
-                else:
-                    raise RuntimeError(
-                        "You need to give a `split_batch_fn` to be used whenever "
-                        "there are more than 2 tensors per batch."
-                    )
-            observation, reward = sample
-            # NOTE: We don't pass these through self.observation and self.reward
-            # since those could potentially depend on the obs/reward spaces.
-            # observation = self.observation(observation)
-            # reward = self.reward(reward)
-            
-            if observation_space is None:
-                if isinstance(observation, tuple):
-                    # The observation is a tuple. What are we gonna do?
-                    raise RuntimeError(
-                        "Can't infer the obs space, since observations are "
-                        "tuples! You'll have to pass an observation_space!"
-                    )
-                assert observation.min() >= 0. # Assuming this for now.
-                assert observation.max() <= 1.
-                observation_space = spaces.Box(low=0, high=1, shape=observation.shape)
-
-            if not action_space and not reward_space:
-                # We need a way to know how many classes there are in the dataset!
-                # We _could_ iterate over the dataset to figure out the labels,
-                # but that seems a bit dumb to me.
-                if n_classes is None:
-                    raise RuntimeError(
-                        "Need to have n_classes passed when neither of "
-                        "action_space or reward_space are given."
-                    )
-                # TODO: This also assumes that the rewards above is an int or an int tensor.
-                # assert False, rewards
-                if isinstance(reward, int) or not torch.is_floating_point(torch.as_tensor(reward)):
-                    action_space = reward_space = spaces.Discrete(n=n_classes)
-                else:
-                    assert False, reward
-            elif not action_space:
-                action_space = reward_space
-            else:
-                reward_space = action_space
-
-        # Batch these spaces to reflect the batch size.
-        # TODO: Should we be doing this? This is so we match the AsyncVectorEnv
-        # from the gym.vector API.
-        # NOTE: On the last batch, if drop_last = False, the observations/actions
-        # will not reflect the spaces. Not sure if this could be a problem later.
-        # NOTE: Since we set the same object instance at each index, then
-        # modifying just one would modify all of them.    
-        self.observation_space = spaces.Tuple([
-            observation_space for _ in range(self.batch_size)
-        ])
-        self.action_space = spaces.Tuple([
-            action_space for _ in range(self.batch_size)
-        ])
-        self.reward_space = spaces.Tuple([
-            reward_space for _ in range(self.batch_size)
-        ])
+        self.observation_space: gym.Space = observation_space
+        self.action_space: gym.Space = action_space
+        self.reward_space: gym.Space = reward_space
+        self.n_classes: Optional[int] = n_classes
 
         self._iterator: Optional[_BaseDataLoaderIter] = None
         # NOTE: These here are never processed with self.observation or self.reward. 
@@ -180,6 +85,105 @@ class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
         self._next_batch: Optional[Tuple[ObservationType, RewardType]] = None
         self._done: Optional[bool] = None
         self._closed: bool = False
+
+        if adjust_spaces_with_data:
+            self._adjust_spaces_using_data()
+
+    def _adjust_spaces_using_data(self) -> None:
+        """ Adjust the observation / reward spaces to reflect the data, if
+        possible.
+        """ 
+        observation_space = self.observation_space
+        action_space = self.action_space
+        reward_space = self.reward_space
+        n_classes = self.n_classes
+        
+        # Temporarily create an iterator to get a batch of data.
+        temp_iterator = iter(self)
+        sample_batch = next(temp_iterator)
+        del temp_iterator
+
+        if not isinstance(sample_batch, (tuple, list, Batch)):
+            raise RuntimeError(f"Batches should be lists, tuples or Batch "
+                               f"objects, not {type(sample_batch)}.")
+        
+        # if self.split_batch_fn:
+        #     # Use the function to split the batch.
+        #     sample_batch = self.split_batch_fn(sample_batch)
+        if len(sample_batch) != 2:
+            raise RuntimeError("Need to pass a split_batch_fn since batches "
+                               "don't have length 2.")
+
+        observations, rewards = sample_batch
+        # assert isinstance(observations, Observations), "Assuming this for now."
+        # assert isinstance(rewards, Rewards), "Assuming this for now."
+        
+        if isinstance(observations, (Tensor, np.ndarray)):
+            observations = (observations,)
+        if isinstance(rewards, (Tensor, np.ndarray)):
+            rewards = (rewards,)
+
+        
+        image_batch = observations[0]
+        image = image_batch[0]
+        if not observation_space:
+            assert image.min() >= 0., "Assuming this for now."
+            assert image.max() <= 1., "Assuming this for now."
+            assert len(image.shape) >= 3, image.shape
+            if len(observations) == 1:
+                observation_space = spaces.Box(low=0, high=1, shape=image.shape)
+            else:
+                raise RuntimeError(f"Can't infer the space when observations have more than one tensor.")
+        else:
+            # Adjust the obs space to match the shape of the real observations.
+            observation_space = space_with_new_shape(
+                observation_space,
+                image.shape if len(observations) == 1 else
+                tuple(tensor.shape[1:] for tensor in observations)
+            )
+
+        self.observation_space = spaces.Tuple([
+            observation_space for _ in range(self.batch_size)
+        ])
+        
+        reward_batch = rewards[0]
+        reward = reward_batch[0]
+        if not reward_space:
+            if action_space:
+                reward_space = action_space
+            elif n_classes is not None:
+                reward_space = spaces.Discrete(n=n_classes)
+            else:
+                raise RuntimeError("Need n_classes or action_space when "
+                                   "reward_space isn't given.")
+        else:
+            # Adjust the reward space to match the shape of the actual rewards.
+            reward_space = space_with_new_shape(
+                reward_space,
+                reward.shape if len(rewards) == 1 else
+                tuple(tensor.shape[1:] for tensor in rewards)
+            )
+
+        self.reward_space = spaces.Tuple([
+            reward_space for _ in range(self.batch_size)
+        ])
+
+        if not action_space:
+            assert reward_space
+            action_space = reward_space
+        self.action_space = spaces.Tuple([
+            action_space for _ in range(self.batch_size)
+        ])
+        # Batch these spaces to reflect the batch size.
+        # TODO: Should we be doing this? This is so we match the AsyncVectorEnv
+        # from the gym.vector API.
+        # NOTE: On the last batch, if drop_last = False, the observations/actions
+        # will not reflect the spaces. Not sure if this could be a problem later.
+        # NOTE: Since we set the same object instance at each index, then
+        # modifying just one would modify all of them.    
+        
+        
+
 
     def reset(self) -> ObservationType:
         """ Resets the env by deleting and re-creating the iterator.
@@ -213,8 +217,8 @@ class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
         if self._iterator is None:
             self._iterator = self.__iter__()
         batch = next(self._iterator)
-        if self.split_batch_fn:
-            batch = self.split_batch_fn(batch)
+        # if self.split_batch_fn:
+        #     batch = self.split_batch_fn(batch)
         return batch
         # obs, reward = batch
         # return self.observation(obs), self.reward(reward)
@@ -327,7 +331,10 @@ class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
         """Iterate over the dataset, yielding batches of Observations and
         Rewards, just like a regular DataLoader.
         """
-        return super().__iter__()
+        if self.split_batch_fn:
+            return map(self.split_batch_fn, super().__iter__())
+        else:
+            return super().__iter__()
         # for batch in super().__iter__():
         #     batch = self.batch_transforms(batch)
             

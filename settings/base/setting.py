@@ -33,6 +33,8 @@ from typing import *
 
 import gym
 import torch
+import numpy as np
+from gym import spaces
 from pytorch_lightning import LightningDataModule
 from pytorch_lightning.core.datamodule import _DataModuleWrapper
 from simple_parsing import (ArgumentParser, Serializable, list_field,
@@ -131,10 +133,6 @@ class Setting(SettingABC,
     # x_shape: Tuple[int, ...] = field(init=False)
     # action_shape: Tuple[int, ...] = field(init=False)
     # reward_shape: Tuple[int, ...] = field(init=False)
-
-    observation_space: gym.Space = field(init=None)
-    action_space: gym.Space = field(init=None)
-    reward_space: gym.Space = field(init=None)
     
     def __post_init__(self,
                       observation_space: gym.Space = None,
@@ -145,41 +143,42 @@ class Setting(SettingABC,
         """
         logger.debug(f"__post_init__ of Setting")
         
-        self.observation_space = observation_space
-        self.action_space = action_space
-        self.reward_space = reward_space
-
         # Actually compose the list of Transforms or callables into a single transform.
         self.transforms: Compose = Compose(self.transforms)
         self.train_transforms: Compose = Compose(self.train_transforms or self.transforms)
         self.val_transforms: Compose = Compose(self.val_transforms or self.transforms)
         self.test_transforms: Compose = Compose(self.test_transforms or self.transforms)
-        
+
         LightningDataModule.__init__(self,
             train_transforms=self.train_transforms,
             val_transforms=self.val_transforms,
             test_transforms=self.test_transforms,
         )
-        # Transform that will split batches into Observations and Rewards.
-        self.split_batch_transform = SplitBatch(
-            observation_type=self.Observations,
-            reward_type=self.Rewards
-        )
+        
+        self._observation_space = observation_space
+        self._action_space = action_space
+        self._reward_space = reward_space
+
+        
+        # # Transform that will split batches into Observations and Rewards.
+        # self.split_batch_transform = SplitBatch(
+        #     observation_type=self.Observations,
+        #     reward_type=self.Rewards
+        # )
         logger.debug(f"Transforms: {self.transforms}")
 
         # TODO: Testing out an idea: letting the transforms tell us how
         # they change the shape of the observations.
-        x_shape = self.observation_space[0].shape
-        if x_shape and self.transforms:
-            logger.debug(f"x shape before transforms: {x_shape}")
-            x_shape: Tuple[int, ...] = self.transforms.shape_change(x_shape)
-            logger.debug(f"x shape after transforms: {x_shape}")
-        self.observation_space[0].shape = x_shape
+        # if x_shape and self.transforms:
+        #     logger.debug(f"x shape before transforms: {x_shape}")
+        #     x_shape: Tuple[int, ...] = self.transforms.shape_change(x_shape)
+        #     logger.debug(f"x shape after transforms: {x_shape}")
+        # self.observation_space = x_shape
 
         self.dataloader_kwargs: Dict[str, Any] = {}
-        if x_shape and not self.dims:
-            self.dims = x_shape
 
+        # TODO: We have to set the 'dims' property from LightningDataModule so
+        # that models know the input dimensions.
         # This should probably be set on `self` inside of `apply` call.
         # TODO: It's a bit confusing to also have a `config` attribute on the
         # Setting. Might want to change this a bit.
@@ -203,16 +202,48 @@ class Setting(SettingABC,
             metrics = self.get_metrics(actions=actions, rewards=rewards)
             total_metrics += metrics
         return results
-
-    # Transforms that apply on Observation objects (the whole batch).
-    # TODO: (@lebrice): This is still a bit wonky, need to design this better.
-    def train_batch_transforms(self) -> List[Callable]:
-        return [self.split_batch_transform]
-    def valid_batch_transforms(self) -> List[Callable]:
-        return self.train_batch_transforms()
-    def test_batch_transforms(self) -> List[Callable]:
-        return self.valid_batch_transforms()
     
+    @property
+    def observation_space(self) -> gym.Space:
+        return self._observation_space
+
+    @observation_space.setter
+    def observation_space(self, value: gym.Space) -> None:
+        """Sets a the observation space.
+        
+        NOTE: This also changes the value of the `dims` attribute and the result
+        of the `size()` method from LightningDataModule.
+        """
+        if not isinstance(value, gym.Space):
+            raise RuntimeError("Value must be a `gym.Space`.")
+        if not self._dims:
+            if isinstance(value, spaces.Box):
+                self.dims = value.shape
+            elif isinstance(value, spaces.Tuple):
+                self.dims = tuple(space.shape for space in value.spaces)
+            else:
+                raise NotImplementedError(
+                    f"Don't know how to set the 'dims' attribute using "
+                    f"observation space {value}"
+                )
+        self._observation_space = value
+
+    @property
+    def action_space(self) -> gym.Space:
+        return self._action_space
+
+    @action_space.setter
+    def action_space(self, value: gym.Space) -> None:
+        self._action_space = value
+
+    @property
+    def reward_space(self) -> gym.Space:
+        return self._reward_space
+
+    @reward_space.setter
+    def reward_space(self, value: gym.Space) -> None:
+        self._reward_space = value
+            
     @classmethod
     def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
         from main import Experiment

@@ -13,21 +13,21 @@ from .passive_environment import PassiveEnvironment
 
 
 def test_passive_environment_as_dataloader():
-    # from continuum.datasets import MNIST
+    batch_size = 1
     dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
-    env: Iterable[Tuple[Tensor, Tensor]] = PassiveEnvironment(dataset, n_classes=10)
+    env: Iterable[Tuple[Tensor, Tensor]] = PassiveEnvironment(dataset, batch_size=batch_size, n_classes=10,)
 
     for x, y in env:
-        assert x.shape == (1, 3, 28, 28)
+        assert x.shape == (batch_size, 3, 28, 28)
         x = x.permute(0, 2, 3, 1)
-        assert y.item() == 5
+        assert y.tolist() == [5]
+        break
 
         # reward = env.send(4)
         # assert reward is None, reward
         # plt.imshow(x[0])
         # plt.title(f"y: {y[0]}")
         # plt.waitforbuttonpress(10)
-        break
 
 
 def test_mnist_as_gym_env():
@@ -165,8 +165,6 @@ def test_multiple_epochs():
     env.close()
 
 
-
-
 def test_env_requires_reset_before_step():
     # from continuum.datasets import MNIST
     max_samples = 100
@@ -181,6 +179,7 @@ def test_env_requires_reset_before_step():
 
     with pytest.raises(gym.error.ResetNeeded):
         env.step(env.action_space.sample())
+
 
 def test_split_batch_fn():
     # from continuum.datasets import MNIST
@@ -213,17 +212,24 @@ def test_split_batch_fn():
             # Need to pass the observation space, in this case.
             observation_space=spaces.Tuple([
                 spaces.Box(low=0, high=1, shape=(3, 28, 28)),
-                spaces.Box(low=np.array([i * classes_per_task]),
-                           high=np.array([(i+1) * classes_per_task]),
-                           dtype=int)
-            ])
+                spaces.Discrete(scenario.nb_tasks) # task label
+            ]),
+            action_space=spaces.Box(
+                low=np.array([i * classes_per_task]),
+                high=np.array([(i+1) * classes_per_task]),
+                dtype=int,
+            )
         )
-
+        assert spaces.Box(
+            low=np.array([i * classes_per_task]),
+            high=np.array([(i+1) * classes_per_task]),
+            dtype=int,
+        ).shape == (1,)
         assert isinstance(env.observation_space[0], spaces.Tuple)
         assert env.observation_space[0][0].shape == (3, 28, 28)
-        assert env.observation_space[0][1].shape == (1,)
-        assert env.action_space[0].shape == ()
-        assert env.reward_space[0].shape == ()
+        assert env.observation_space[0][1].shape == ()
+        assert env.action_space[0].shape == (1,)
+        assert env.reward_space[0].shape == (1,)
         
         env.seed(123)
         
