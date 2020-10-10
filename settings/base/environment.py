@@ -6,19 +6,16 @@ can't send anything to the usual DataLoader).
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import (Generic, Iterable, TypeVar, Optional)
-from torch import Tensor
+from typing import Generic, Iterable, Optional, TypeVar
 
+import gym
+from torch import Tensor
+from torch.utils.data import DataLoader
+
+from common.batch import Batch
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
-
-from common.batch import Batch
-
-# TODO: FIXME: We should probably be using something like an Observation / 
-# action / reward space! Would that replace or complement these objects?
-# Maybe we could actually add a `space` @property on these? Is there such a
-# thing as 'optional' dimensions in gym Spaces?
 
 
 @dataclass(frozen=True)
@@ -42,6 +39,10 @@ class Actions(Batch):
     @property
     def action(self) -> Tensor:
         return self.y_pred
+    @property
+    def prediction(self) -> Tensor:
+        return self.y_pred
+
 
 @dataclass(frozen=True)
 class Rewards(Batch):
@@ -52,28 +53,36 @@ class Rewards(Batch):
     """
     y: Optional[Tensor]
 
+    @property
+    def labels(self) -> Tensor:
+        return self.y
 
 ObservationType = TypeVar("ObservationType", bound=Observations)
 ActionType = TypeVar("ActionType", bound=Actions)
 RewardType = TypeVar("RewardType", bound=Rewards)
 
 
-class Environment(Generic[ObservationType, ActionType, RewardType], Iterable[ObservationType], ABC):
+class Environment(gym.Env, Generic[ObservationType, ActionType, RewardType], ABC):
     """ ABC for a learning 'environment', wether RL, Supervised or CL.
-
-    This defines the basic "interface" of an Environment:
-    1. It is an iterable of Observations
-    2. You can send actions to it to receive rewards.
 
     Different settings can implement this interface however they want.
     """
-    @abstractmethod
-    def __iter__(self) -> Iterable[ObservationType]:
-        """ Returns a generator yielding observations and accepting actions. """
+    # TODO: This is currently changing. We don't really need to force the envs
+    # on the RL branch to also be iterables/dataloaders, only those on the
+    # supervised learning branch. Rather than force RL/active setups to adopt
+    # something like __iter__ and send, we can adapt 'active' datasets to be gym
+    # Envs instead.
+    # The reason why I was considering doing it that way would have been so we
+    # could use pytorch lightning Trainers and the other "facilities" meant for
+    # supervised learning in RL.
+    
+    # @abstractmethod
+    # def __iter__(self) -> Iterable[ObservationType]:
+    #     """ Returns a generator yielding observations and accepting actions. """
 
-    @abstractmethod
-    def send(self, action: ActionType) -> RewardType:
-        """ Send an action to the environment, and returns the corresponding reward. """
+    # @abstractmethod
+    # def send(self, action: ActionType) -> RewardType:
+    #     """ Send an action to the environment, and returns the corresponding reward. """
 
     # TODO: (@lebrice): Not sure if we really want/need an abstract __next__. 
     # @abstractmethod

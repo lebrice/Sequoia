@@ -23,7 +23,7 @@ Actions = ClassIncrementalSetting.Actions
 Rewards = ClassIncrementalSetting.Rewards
 
 
-class MyNewMethod(AbstractMethod, target_setting=ClassIncrementalSetting):
+class MyNewMethod(Method, target_setting=ClassIncrementalSetting):
     """ Example of writing a new method. """
 
     @dataclass
@@ -40,6 +40,23 @@ class MyNewMethod(AbstractMethod, target_setting=ClassIncrementalSetting):
 
     def configure(self, setting: Setting):
         """ Configure this method before being applied on a setting. """
+
+    def fit(self,
+            train_env: PassiveEnvironment = None,
+            valid_env: PassiveEnvironment = None,
+            datamodule: pl.LightningDataModule = None):
+        """Train your method however you want, using the train and valid envs/dataloaders.
+
+        Parameters
+        ----------
+        train_env : PassiveEnvironment, optional
+            Hybrid of DataLoader & gym.Env which you can use to train your method.
+            By default None.
+        valid_env : PassiveEnvironment, optional
+            Hybrid of DataLoader & gym.Env which you can use to train your method.
+            By default None 
+        """
+        # configure() will have been called by the setting before we get here.
         self.trainer = pl.Trainer(
             gpus=1,
             max_epochs=1,
@@ -47,31 +64,22 @@ class MyNewMethod(AbstractMethod, target_setting=ClassIncrementalSetting):
         )
         self.model = MyModel(
             setting=setting,
-            observation_space=setting.observation_space,
-            action_space=setting.action_space,
-            reward_space=setting.reward_space,
+            observation_space=train_env.observation_space,
+            action_space=train_env.action_space,
+            reward_space=train_env.reward_space,
             **self.hparams.to_dict()
         )
-
-    def fit(self,
-            train_dataloader: PassiveEnvironment = None,
-            valid_dataloader: PassiveEnvironment = None,
-            datamodule: pl.LightningDataModule = None):        
-        # configure() will have been called by the setting before we get here.
-        assert self.trainer and self.model
-        env = train_dataloader
         self.trainer.fit(
             model=self.model,
-            train_dataloader=train_dataloader,
-            val_dataloaders=valid_dataloader,
+            train_dataloader=train_env,
+            val_dataloaders=train_env,
             datamodule=datamodule,
         )
 
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         with torch.no_grad():
-            y_pred = self.model.get_predictions(observations)
+            y_pred = self.model.get_predictions(observations)          
         return self.target_setting.Actions(y_pred)
-        return super().get_actions(observations, action_space)
 
 
 class MyModel(pl.LightningModule):
@@ -83,26 +91,33 @@ class MyModel(pl.LightningModule):
                  learning_rate: float = 3e-4):
         super().__init__()
         self.setting: ClassIncrementalSetting = setting
-        self.observation_space = observation_space
-        self.action_space = action_space
-        self.reward_space = reward_space
+        # The spaces we're given have a batch dimension, so we just extract a
+        # single slice.
+        self.observation_space = observation_space[0]
+        self.action_space = action_space[0]
+        self.reward_space = reward_space[0]
         self.learning_rate = learning_rate
-        print(f"observation_space: {observation_space}")
-        print(f"action_space: {action_space}")
+        print(f"Observation space: {self.observation_space}")
+        print(f"Action space: {self.action_space}")
+        print(f"Reward space: {self.action_space}")
+
+        # In Class-Incremental setting, the observation space 
+        assert isinstance(self.observation_space, spaces.Tuple)
         
-        assert isinstance(observation_space, spaces.Tuple)
-        image_space: spaces.Box = observation_space[0]
+        image_space: spaces.Box = self.observation_space[0]
         input_features = np.prod(image_space.shape, dtype=int)
         
-        if isinstance(action_space, spaces.Discrete):
+        if isinstance(self.action_space, spaces.Discrete):
             # Classification problem
-            self.output_shape = (action_space.n,)
+            self.output_shape = (self.action_space.n,)
             self.loss = nn.CrossEntropyLoss()
-        elif isinstance(action_space, spaces.Box):
+        elif isinstance(self.action_space, spaces.Box):
             # Regression problem
-            self.output_shape = action_space.shape
+            self.output_shape = self.action_space.shape
             self.loss = nn.MSELoss()
-            
+        else:
+            assert False, self.action_space
+
         output_features = np.prod(self.output_shape, dtype=int)
         
         self.net = nn.Sequential(
@@ -121,9 +136,15 @@ class MyModel(pl.LightningModule):
         return actions
 
     def training_step(self, batch: Tuple[Observations, Rewards], batch_idx: int, **kwargs):
+        return self.shared_step(batch, batch_idx)
+
+    def validation_step(self, batch: Tuple[Observations, Rewards], batch_idx: int, **kwargs):
+        return self.shared_step(batch, batch_idx)
+
+    def shared_step(self, batch: Tuple[Observations, Rewards], batch_idx: int, **kwargs):
         # Since we're training, we get both observations and rewards.
-        observations: ClassIncrementalSetting.Observations = batch[0]
-        rewards: ClassIncrementalSetting.Rewards = batch[1]
+        observations: Observations = batch[0]
+        rewards: Rewards = batch[1]
 
         image_labels = rewards.y
         # Get the predictions:
@@ -144,49 +165,28 @@ class MyModel(pl.LightningModule):
         # result.log("accuracy", accuracy, prog_bar=True)
         # return result
 
-    def validation_step(self, batch: Tuple[Observations, Rewards], batch_idx: int, **kwargs):
-        # Since we're training, we get both observations and rewards.
-        observations: ClassIncrementalSetting.Observations = batch[0]
-        rewards: ClassIncrementalSetting.Rewards = batch[1]
-
-        image_labels = rewards.y
-        # Get the predictions:
-        logits = self(observations)
-
-        loss = self.loss(logits, image_labels)
-        predicted_labels = logits.argmax(-1)
-        accuracy = (predicted_labels == image_labels).sum().float() / len(image_labels)
-        metrics: Metrics = get_metrics(y_pred=logits, y=image_labels)
-
-        # TrainResult auto-detaches the loss after the optimization steps are complete
-        return {
-            "loss": loss,
-            "log": metrics.to_log_dict(),
-            "progress_bar": metrics.to_pbar_message(),
-        }
-
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
-    
+
+
 if __name__ == "__main__":
     parser = ArgumentParser(description=__doc__)
     parser.add_arguments(Config, dest="config", default=Config())
     parser.add_arguments(MyNewMethod.HParams, dest="hparams")
-    
-    # pl.Trainer.add_argparse_args(parser)
+
     args = parser.parse_args()
-    # pl.Trainer.from_argparse_args(args)
-    
+
     config: Config = args.config
-    
     hparams: MyNewMethod.HParams = args.hparams
+
     method = MyNewMethod(hparams=hparams, config=config)
 
     for SettingClass in method.get_applicable_settings():
         print(f"Type of Setting: {SettingClass}")
         
         # for dataset in SettingClass.available_datasets:
-        # Instantiate the Setting.
+            # Instantiate the Setting.
+            # TODO: Remove
         dataset = "mnist"
         setting = SettingClass(dataset=dataset)
 

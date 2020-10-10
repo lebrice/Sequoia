@@ -125,11 +125,11 @@ class IncrementalSetting(SettingABC):
             # the datamodule):
             # success = trainer.fit(model, datamodule=self)
             task_train_loader = self.train_dataloader()
-            task_val_loader = self.val_dataloader()
+            task_valid_loader = self.val_dataloader()
             
             success = method.fit(
-                train_dataloader=task_train_loader,
-                valid_dataloader=task_val_loader,
+                train_env=task_train_loader,
+                valid_env=task_valid_loader,
                 # datamodule=self,
             )
             if success != 0:
@@ -249,28 +249,6 @@ class IncrementalSetting(SettingABC):
 
         results = self.Results(test_metrics=test_metrics)
         return results
-
-    def get_metrics(self,
-                    actions: Actions,
-                    rewards: Rewards) -> Union[float, Metrics]:
-        """ Calculate the "metric" from the model predictions (actions) and the true labels (rewards).
-        
-        In this example, we return a 'Metrics' object:
-        - `ClassificationMetrics` for classification problems,
-        - `RegressionMetrics` for regression problems.
-        
-        We use these objects because they are awesome (they basically simplify
-        making plots, wandb logging, and serialization), but you can also just
-        return floats if you want, no problem.
-        """
-        from common.metrics import get_metrics
-        # In this particular setting, we only use the y_pred from actions and
-        # the y from the rewards.
-        if isinstance(actions, Actions):
-            actions = torch.as_tensor(actions.y_pred)
-        if isinstance(rewards, Rewards):
-            rewards = torch.as_tensor(rewards.y)
-        return get_metrics(y_pred=actions, y=rewards)
     
     @abstractmethod
     def train_dataloader(self, *args, **kwargs) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:

@@ -24,8 +24,8 @@ class MethodABC(ABC):
 
     @abstractmethod
     def fit(self,
-            train_dataloader: Environment[Observations, Actions, Rewards] = None,
-            valid_dataloader: Environment[Observations, Actions, Rewards] = None,
+            train_env: Environment[Observations, Actions, Rewards] = None,
+            valid_env: Environment[Observations, Actions, Rewards] = None,
             datamodule: LightningDataModule = None):
         """Called by the Setting to train the method.
 

@@ -30,6 +30,7 @@ from .models.model import ForwardPass, Model
 
 logger = get_logger(__file__)
 
+# TODO: Rename this BaselineMethod.
 
 @dataclass
 class Method(MethodABC, Serializable, Parseable, ABC):
@@ -314,5 +315,7 @@ class Method(MethodABC, Serializable, Parseable, ABC):
         TODO: Not sure if it makes sense to put this here. Might have to move
         it to Class/Task incremental or something like that.
         """
-        if hasattr(self.model, "on_task_switch"):
-            self.model.on_task_switch(task_id)
+        model = getattr(self, "model", None)
+        if model:
+            if hasattr(model, "on_task_switch"):
+                model.on_task_switch(task_id)

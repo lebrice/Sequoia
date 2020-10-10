@@ -86,8 +86,8 @@ class SettingABC(LightningDataModule):
         method.config = config
         method.configure(self)
         method.fit(
-            train_dataloader=self.train_dataloader(),
-            val_dataloader=self.val_dataloader(),
+            train_env=self.train_dataloader(),
+            valid_env=self.val_dataloader(),
         )
 
         total_metrics = Metrics()

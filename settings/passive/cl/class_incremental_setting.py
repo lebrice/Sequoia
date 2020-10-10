@@ -311,6 +311,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
+            pin_memory=True,
             **kwargs,
         )
         # TODO: Do we want to update self.observation_space here?
@@ -539,32 +540,6 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
                 if done:
                     observations = env.reset()
             env.close()
-
-
-    def get_metrics(self,
-                    actions: Actions,
-                    rewards: Rewards) -> Union[float, Metrics]:
-        """ Calculate the "metric" from the model predictions (actions) and the true labels (rewards).
-        
-        In this example, we return a 'Metrics' object:
-        - `ClassificationMetrics` for classification problems,
-        - `RegressionMetrics` for regression problems.
-        
-        We use these objects because they are awesome (they basically simplify
-        making plots, wandb logging, and serialization), but you can also just
-        return floats if you want, no problem.
-        
-        TODO: This is duplicated from Incremental. Need to fix this.
-        """
-        from common.metrics import get_metrics
-        # In this particular setting, we only use the y_pred from actions and
-        # the y from the rewards.
-        if isinstance(actions, Actions):
-            actions = torch.as_tensor(actions.y_pred)
-        if isinstance(rewards, Rewards):
-            rewards = torch.as_tensor(rewards.y)
-        return get_metrics(y_pred=actions, y=rewards)
-
 
 def relabel(y: Tensor, task_classes: List[int]) -> Tensor:
     new_y = torch.empty_like(y)

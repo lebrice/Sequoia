@@ -21,8 +21,8 @@ logger = get_logger(__file__)
 from common.batch import Batch
 from common.gym_wrappers.utils import space_with_new_shape
 
-class PassiveEnvironment(DataLoader, gym.Env, Environment[Tuple[ObservationType,
-                                                          Optional[ActionType]],
+class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
+                                                       Optional[ActionType]],
                                                  ActionType,
                                                  RewardType]):
     """Environment in which actions have no influence on future observations.

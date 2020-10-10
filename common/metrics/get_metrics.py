@@ -34,7 +34,7 @@ def get_metrics(y_pred: Union[Tensor, np.ndarray],
     x = to_optional_tensor(x)
     h_x = to_optional_tensor(h_x)
     if y is not None and y_pred is not None:
-        if y.shape != y_pred.shape:
+        if y.shape != y_pred.shape or not torch.is_floating_point(y):
             # TODO: I think this condition also works for binary classification,
             # at least when the logits have a shape[-1] == 2, but I don't know if it
             # would cause some trouble if there is a single logit, rather than 2.

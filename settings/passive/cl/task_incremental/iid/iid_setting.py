@@ -4,13 +4,14 @@ only one task.
 from dataclasses import dataclass
 from typing import (Callable, ClassVar, Dict, List, Optional, Tuple, Type,
                     TypeVar, Union)
-
+import itertools
+import tqdm
 from torch import Tensor
 from common.loss import Loss
 from common.metrics import Metrics
 from common.config import Config
 from settings.base import Results
-from utils.utils import constant
+from utils.utils import constant, dict_union
 
 from .. import TaskIncrementalSetting
 from settings.passive.cl.batch_transforms import DropTaskLabels
@@ -59,15 +60,20 @@ class IIDSetting(TaskIncrementalSetting):
 
     def test_loop(self, method: "Method") -> IIDResults:
         test_metrics = []
-        test_env = self.test_dataloader()
-        for observations, *rewards in test_env:
-            actions = method.get_actions(observations, test_env.action_space)
-            # If we're in 'active' mode, then rewards was empty:
-            rewards = rewards[0] if rewards else None
-            if rewards is None:
-                rewards = test_env.send(actions)
-            batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
-            test_metrics.append(batch_metrics)
+        env = self.test_dataloader()
+        observations = env.reset()
+        
+        actions = method.get_actions(observations, env.action_space)
+        with tqdm.tqdm(itertools.count(), total=len(env)) as pbar:
+            for i in pbar:
+                observations, rewards, done, info = env.step(actions)
+                actions = method.get_actions(observations, env.action_space)
+
+                batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
+                test_metrics.append(batch_metrics)
+                pbar.set_postfix(batch_metrics.to_pbar_message())
+                if done:
+                    break
 
         return self.Results(test_metrics)
 

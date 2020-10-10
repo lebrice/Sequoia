@@ -18,8 +18,8 @@ See: [Pytorch-Lightning](https://pytorch-lightning.readthedocs.io/en/latest/)
 See: [LightningDataModule](https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html)
 
 """
-
 import inspect
+import itertools
 import os
 import shlex
 from abc import abstractmethod
@@ -43,6 +43,7 @@ from torch.utils.data import DataLoader
 
 from common.config import Config
 from common.loss import Loss
+from common.metrics import Metrics
 from common.transforms import Compose, Transforms, Transform, SplitBatch
 from utils import Parseable, camel_case, dict_union, get_logger, remove_suffix, take
 
@@ -188,21 +189,68 @@ class Setting(SettingABC,
     def apply(self, method: MethodABC, config: Config) -> "Setting.Results":
         assert False, "this should never be called."
         method.fit(
-            train_dataloader=self.train_dataloader(),
-            val_dataloader=self.val_dataloader(),
+            train_env=self.train_dataloader(),
+            valid_env=self.val_dataloader(),
         )
-        total_metrics = Metrics()
-        test_environment = self.test_dataloader()
-        for observations in test_environment:
+
+        # Test loop:
+        test_metrics: List[Metrics] = []
+        test_env = self.test_dataloader()
+
+        # Get initial observations.
+        observations = test_env.reset()
+        # get actions for a batch of observations.
+        actions = method.get_actions(observations, test_env.action_space)
+
+        for i in itertools.count():
+            observations, rewards, done, info = test_env.step(actions)
             # Get the predictions/actions:
-            actions = method.get_actions(observations, test_environment.action_space)
-            # Get the rewards for the given predictions.
-            rewards = test_environment.send(actions)
+            actions = method.get_actions(observations, test_env.action_space)
             # Calculate the 'metrics' (TODO: This should be done be in the env!)
-            metrics = self.get_metrics(actions=actions, rewards=rewards)
-            total_metrics += metrics
-        return results
-    
+            batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
+            test_metrics.append(batch_metrics)
+
+            if done:
+                break
+
+        return self.Results(test_metrics=test_metrics)
+
+    def get_metrics(self,
+                    actions: Actions,
+                    rewards: Rewards) -> Union[float, Metrics]:
+        """ Calculate the "metric" from the model predictions (actions) and the true labels (rewards).
+        
+        In this example, we return a 'Metrics' object:
+        - `ClassificationMetrics` for classification problems,
+        - `RegressionMetrics` for regression problems.
+        
+        We use these objects because they are awesome (they basically simplify
+        making plots, wandb logging, and serialization), but you can also just
+        return floats if you want, no problem.
+        
+        TODO: This is duplicated from Incremental. Need to fix this.
+        """
+        from common.metrics import get_metrics
+        # In this particular setting, we only use the y_pred from actions and
+        # the y from the rewards.
+        if isinstance(actions, Actions):
+            actions = torch.as_tensor(actions.y_pred)
+        if isinstance(rewards, Rewards):
+            rewards = torch.as_tensor(rewards.y)
+        # TODO: At the moment there's this problem, ClassificationMetrics wants
+        # to create a confusion matrix, which requires 'logits' (so it knows how
+        # many classes.
+        if isinstance(self.action_space, spaces.Discrete):
+            batch_size = rewards.shape[0]
+            if len(actions.shape) == 1 or (actions.shape[-1] == 1 and self.action_space.n != 2):
+                fake_logits = torch.zeros([batch_size, self.action_space.n], dtype=int)
+                # FIXME: There must be a smarter way to do this indexing.
+                for i, action in enumerate(actions):
+                    fake_logits[i, action] = 1
+                actions = fake_logits
+
+        return get_metrics(y_pred=actions, y=rewards)
+
     @property
     def observation_space(self) -> gym.Space:
         return self._observation_space
