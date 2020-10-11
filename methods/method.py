@@ -82,8 +82,8 @@ class Method(MethodABC, Serializable, Parseable, ABC):
         self.Rewards: Type[Rewards] = setting.Rewards
 
     def fit(self,
-            train_dataloader: Environment[Observations, Actions, Rewards] = None,
-            valid_dataloader: Environment[Observations, Actions, Rewards] = None,
+            train_env: Environment[Observations, Actions, Rewards] = None,
+            valid_env: Environment[Observations, Actions, Rewards] = None,
             datamodule: LightningDataModule = None):
         """Called by the Setting to train the method.
         Could be called more than once before training is 'over', for instance
@@ -93,8 +93,8 @@ class Method(MethodABC, Serializable, Parseable, ABC):
         assert self.model is not None, f"For now, Setting should have been nice enough to call method.configure(setting=self) before calling `fit`!"
         return self.trainer.fit(
             model=self.model,
-            train_dataloader=train_dataloader,
-            val_dataloaders=valid_dataloader,
+            train_dataloader=train_env,
+            val_dataloaders=valid_env,
             datamodule=datamodule,
         )
 

@@ -242,6 +242,7 @@ class Setting(SettingABC,
         # many classes.
         if isinstance(self.action_space, spaces.Discrete):
             batch_size = rewards.shape[0]
+            actions = torch.as_tensor(actions)
             if len(actions.shape) == 1 or (actions.shape[-1] == 1 and self.action_space.n != 2):
                 fake_logits = torch.zeros([batch_size, self.action_space.n], dtype=int)
                 # FIXME: There must be a smarter way to do this indexing.

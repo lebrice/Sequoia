@@ -14,7 +14,6 @@ from settings.base import Results
 from utils.utils import constant, dict_union
 
 from .. import TaskIncrementalSetting
-from settings.passive.cl.batch_transforms import DropTaskLabels
 from .iid_results import IIDResults
 
 # TODO: Remove the task labels here.
@@ -47,35 +46,6 @@ class IIDSetting(TaskIncrementalSetting):
     # An optional custom class order for testing, used for NC.
     # Defaults to the value of `class_order`.
     test_class_order: Optional[List[int]] = constant(None)
-
-    def apply(self, method: "Method", config: Config):
-        # TODO: Trying to figure out a way to also allow plain/simple
-        # pytorch-lightning training in the case of IID settings/methods.
-        # if method.target_setting in {TaskIncrementalSetting, ClassIncrementalSetting}:
-        #     return super().evaluate(method)
-        # else:
-        #     # Plain old pytorch-lightning training.
-        #     pass
-        return super().apply(method, config)
-
-    def test_loop(self, method: "Method") -> IIDResults:
-        test_metrics = []
-        env = self.test_dataloader()
-        observations = env.reset()
-        
-        actions = method.get_actions(observations, env.action_space)
-        with tqdm.tqdm(itertools.count(), total=len(env)) as pbar:
-            for i in pbar:
-                observations, rewards, done, info = env.step(actions)
-                actions = method.get_actions(observations, env.action_space)
-
-                batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
-                test_metrics.append(batch_metrics)
-                pbar.set_postfix(batch_metrics.to_pbar_message())
-                if done:
-                    break
-
-        return self.Results(test_metrics)
 
 
 SettingType = TypeVar("SettingType", bound=IIDSetting)

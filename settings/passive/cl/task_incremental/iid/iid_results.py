@@ -1,12 +1,14 @@
 """Defines the Results of apply a Method to an IID Setting.  
 """
-import numpy as np
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Union
 from io import StringIO
 from contextlib import redirect_stdout
+
+import numpy as np
 import matplotlib.pyplot as plt
+from simple_parsing import list_field
 
 from common import ClassificationMetrics, Loss, Metrics, RegressionMetrics
 from settings.base.results import Results
@@ -21,7 +23,7 @@ class IIDResults(TaskIncrementalResults):
     TODO: This should be customized, as it doesn't really make sense to use the
     same plots as in ClassIncremental (there is only one task).
     """
-    test_metrics: List[Metrics]
+    test_metrics: List[Metrics] = list_field(repr=False)
 
     def __post_init__(self):
         if len(self.test_metrics) > 1:

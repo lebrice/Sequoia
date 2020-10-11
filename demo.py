@@ -60,7 +60,7 @@ class MyNewMethod(Method, target_setting=ClassIncrementalSetting):
         self.trainer = pl.Trainer(
             gpus=1,
             max_epochs=1,
-            fast_dev_run=True,
+            # fast_dev_run=True,
         )
         self.model = MyModel(
             setting=setting,
@@ -88,7 +88,7 @@ class MyModel(pl.LightningModule):
                  observation_space: gym.Space,
                  action_space: gym.Space,
                  reward_space: gym.Space,
-                 learning_rate: float = 3e-4):
+                 learning_rate: float = 1e-4):
         super().__init__()
         self.setting: ClassIncrementalSetting = setting
         # The spaces we're given have a batch dimension, so we just extract a
@@ -119,20 +119,34 @@ class MyModel(pl.LightningModule):
             assert False, self.action_space
 
         output_features = np.prod(self.output_shape, dtype=int)
-        
         self.net = nn.Sequential(
+            nn.Conv2d(3, 6, 5),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(6, 16, 5),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
             nn.Flatten(),
-            nn.Linear(input_features, output_features),
+            nn.Linear(256, 120),
+            nn.ReLU(),
+            nn.Linear(120, 84),
+            nn.ReLU(),
+            nn.Linear(84, output_features),
         )
 
     def forward(self, observations) -> Tensor:
         x, task_labels = observations
+        # assert False, self.net(x).shape
         return self.net(x)
 
     def get_predictions(self, observations):
         """ Get a batch of predictions (aka actions) for these observations. """ 
         logits = self(observations)
-        actions = logits.argmax(-1)
+        actions = logits.argmax(dim=-1)
+        # import matplotlib.pyplot as plt
+        # plt.imshow(observations[0][0].permute(1, 2, 0))
+        # plt.show()
+        # assert False, (logits[0], actions[0])
         return actions
 
     def training_step(self, batch: Tuple[Observations, Rewards], batch_idx: int, **kwargs):
@@ -195,3 +209,4 @@ if __name__ == "__main__":
         
         print(f"Results for setting {SettingClass}, dataset {dataset}:")
         print(results.summary())
+        exit(0)

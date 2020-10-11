@@ -56,6 +56,8 @@ class IterableWrapper(gym.Wrapper, ABC):
 
 def space_with_new_shape(space: gym.Space, new_shape: Tuple[int, ...]) -> gym.Space:
     """ Returns a new space of the same type, but with a new shape. """
+    if new_shape is None:
+        return space
     if isinstance(space, spaces.Box):
         assert isinstance(new_shape, (tuple, list))
         space: spaces.Box

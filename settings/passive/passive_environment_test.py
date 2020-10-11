@@ -1,15 +1,16 @@
-from typing import Tuple, Iterable
+from typing import Iterable, Tuple
 
+import gym
+import matplotlib.pyplot as plt
+import pytest
+import torch
+from gym import spaces
 from torch import Tensor
 from torchvision.datasets import MNIST
-import matplotlib.pyplot as plt
-import gym
-from gym import spaces
-import pytest
 
 from common.transforms import Compose, Transforms
-
 from .passive_environment import PassiveEnvironment
+
 
 
 def test_passive_environment_as_dataloader():
@@ -54,8 +55,8 @@ def test_mnist_as_gym_env():
         assert not done
     env.close()
 
-from torch.utils.data import Subset
 import numpy as np
+from torch.utils.data import Subset
 
 
 def test_env_gives_done_on_last_item():
@@ -125,7 +126,7 @@ def test_env_done_works_with_batch_size():
 
 
 
-def test_multiple_epochs():
+def test_multiple_epochs_env():
     max_epochs = 3
     max_samples = 100
     batch_size = 5
@@ -163,6 +164,70 @@ def test_multiple_epochs():
     assert total_steps == max_batches * max_epochs
 
     env.close()
+
+
+
+def test_multiple_epochs_dataloader():
+    """ Test that we can iterate on the dataloader more than once. """
+    max_epochs = 3
+    max_samples = 200
+    batch_size = 5
+    max_batches = max_samples // batch_size
+    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    dataset = Subset(dataset, list(range(max_samples)))
+
+    env = PassiveEnvironment(dataset,
+                             n_classes=10,
+                             batch_size=batch_size)
+
+    assert env.observation_space[0].shape == (3, 28, 28)
+    assert env.action_space[0].shape == ()
+    assert env.reward_space[0].shape == ()
+    total_steps = 0
+    for epoch in range(max_epochs):
+        for obs, reward in env:
+            assert obs.shape == (batch_size, 3, 28, 28)
+            assert reward.shape == (batch_size,)
+            total_steps += 1      
+
+    assert total_steps == max_batches * max_epochs
+
+
+
+def test_multiple_epochs_dataloader_with_split_batch_fn():
+    """ Test that we can iterate on the dataloader more than once. """
+    max_epochs = 3
+    max_samples = 200
+    batch_size = 5
+    
+    def split_batch_fn(batch):
+        x, y, = batch
+        # some dummy function.
+        return torch.zeros_like(x), y
+    
+    
+    max_batches = max_samples // batch_size
+    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    dataset = Subset(dataset, list(range(max_samples)))
+
+    env = PassiveEnvironment(dataset,
+                             n_classes=10,
+                             batch_size=batch_size,
+                             split_batch_fn=split_batch_fn)
+
+    assert env.observation_space[0].shape == (3, 28, 28)
+    assert env.action_space[0].shape == ()
+    assert env.reward_space[0].shape == ()
+    total_steps = 0
+    for epoch in range(max_epochs):
+        for obs, reward in env:
+            assert obs.shape == (batch_size, 3, 28, 28)
+            assert torch.all(obs == 0)
+            assert reward.shape == (batch_size,)
+            total_steps += 1      
+
+    assert total_steps == max_batches * max_epochs
+
 
 
 def test_env_requires_reset_before_step():

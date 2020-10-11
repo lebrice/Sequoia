@@ -136,10 +136,12 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
                 raise RuntimeError(f"Can't infer the space when observations have more than one tensor.")
         else:
             # Adjust the obs space to match the shape of the real observations.
+            # BUG: When a tensor is None, then what do we do?
             observation_space = space_with_new_shape(
                 observation_space,
-                image.shape if len(observations) == 1 else
-                tuple(tensor.shape[1:] for tensor in observations)
+                observation[0].shape if len(observations) == 1 else
+                tuple(tensor.shape[1:] if hasattr(tensor, "shape") else None 
+                      for tensor in observations)
             )
 
         self.observation_space = spaces.Tuple([

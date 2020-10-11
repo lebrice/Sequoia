@@ -1,14 +1,14 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Union, List, Type, ClassVar, Any
+from typing import Optional, Union, List, Type, ClassVar, Any, TypeVar, Generic
 
 import gym
 import numpy as np
 from pytorch_lightning import LightningDataModule
 
 from .base import Actions, Environment, Observations, Rewards
+SettingType = TypeVar("SettingType", bound="SettingABC")
 
-
-class MethodABC(ABC):
+class MethodABC(Generic[SettingType], ABC):
     """ ABC for a Method, which is a solution to a research problem (a Setting).
     """
     # Class attribute that holds the setting this method was designed to target.

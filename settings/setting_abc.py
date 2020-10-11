@@ -1,17 +1,16 @@
 import dataclasses
 import inspect
 from abc import ABC, abstractmethod
-from typing import List, Optional, Union, ClassVar, Type, Iterable, Set, TypeVar
+from typing import (ClassVar, Iterable, List, Optional, Set, Type, TypeVar,
+                    Union)
 
 from pytorch_lightning import LightningDataModule
-
-from common.config import Config
-from .method_abc import MethodABC
-from .base.environment import Actions, Environment, Observations, Rewards
-from .base.results import Results
 from utils.logging_utils import get_logger
 
-from common import Batch
+from common import Metrics, Config
+from .base.environment import Actions, Environment, Observations, Rewards
+from .base.results import Results
+from .method_abc import MethodABC
 
 logger = get_logger(__file__)
 
@@ -121,6 +120,14 @@ class SettingABC(LightningDataModule):
     @abstractmethod
     def test_dataloader(self, *args, **kwargs) -> Environment[Observations, Actions, Rewards]:
         pass
+
+    @abstractmethod
+    def get_metrics(self,
+                    actions: Actions,
+                    rewards: Rewards) -> Union[float, Metrics]:
+        """ Calculate the "metric" from the model predictions (actions) and the
+        true labels (rewards).
+        """
 
     ## Below this are some class attributes and methods related to the Tree.
 

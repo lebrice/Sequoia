@@ -1,3 +1,4 @@
+import itertools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Union, Sequence, Optional
@@ -76,6 +77,11 @@ class IncrementalSetting(SettingABC):
     # depending on other fields in __post_init__, or eventually be just 1. 
     nb_tasks: int = field(0, alias=["n_tasks", "num_tasks"])
 
+    # Number of episodes to perform through the test environment in the test
+    # loop. Depending on what an 'episode' might represent in your setting, this
+    # could be as low as 1 (for example, supervised learning, episode == epoch).
+    test_loop_episodes: int = 1
+    
     # Attributes (not parsed through the command-line):
     _current_task_id: int = field(default=0, init=False)
 
@@ -185,15 +191,13 @@ class IncrementalSetting(SettingABC):
 
         from settings.passive import PassiveEnvironment
         from settings.active import ActiveEnvironment
-                
-        # Create a list that will hold the test metrics encountered during
-        test_metrics: List[List[Metrics]] = [
-            [] for _ in range(self.nb_tasks)
-        ]
+ 
+        # Create a list that will hold the test metrics encountered during each
+        # task.
+        test_metrics: List[List[Metrics]] = []
         for task_id in range(self.nb_tasks):
             logger.info(f"Starting testing on task {task_id}")
             self._current_task_id = task_id
-
             # assert not self.smooth_task_boundaries, "TODO: (#18) Make another 'Continual' setting that supports smooth task boundaries."
             # Inform the model of a task boundary. If the task labels are
             # available, then also give the id of the new task.
@@ -211,44 +215,62 @@ class IncrementalSetting(SettingABC):
                 else:
                     method.on_task_switch(task_id)
 
-            # Manual test loop:
+            # Test loop:
             test_task_env = self.test_dataloader()
-            with tqdm.tqdm(test_task_env) as pbar:
-                for batch in pbar:
-                    if isinstance(test_task_env, PassiveEnvironment):
-                        observations, _ = batch
-                        assert isinstance(observations, self.Observations)
-                    else:
-                        observations = batch
-                        observations = self.Observations.from_inputs(observations)
-                    
-                    assert isinstance(observations, self.Observations), Observations
+            task_metrics = []
+            for episode in range(self.test_loop_episodes):
+                episode_metrics = self.run_episode(
+                    method=method,
+                    env=test_task_env,
+                )
+                task_metrics.extend(episode_metrics)
+            test_task_env.close()
+            
+            # Add the metrics for this task to the list of all metrics.
+            test_metrics.append(task_metrics)
 
-                    if not self.task_labels_at_test_time:
-                        assert observations.task_labels is None
-
-                    # Get the predicted label for this batch of inputs.
-                    actions = method.get_actions(observations, test_task_env.action_space)
-                    # if the reward is None, we need to get it from the env.
-                    # TODO: Fix this, use the actions from the method:
-                    # actions = test_task_env.action_space.sample()
-                    rewards = test_task_env.send(actions)
-                    
-                    # Get the metrics for that batch.
-                    batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
-                    
-                    # Save the metrics for this batch in the list above.
-                    test_metrics[task_id].append(batch_metrics)
-                    if isinstance(batch_metrics, Metrics):
-                        pbar.set_postfix(batch_metrics.to_pbar_message())
-                    else:
-                        pbar.set_postfix({"metric": batch_metrics})
-                test_task_env.close()
-            average_task_metrics = mean(test_metrics[task_id])
+            average_task_metrics = mean(task_metrics)
             logger.info(f"Test Results on task {task_id}: {average_task_metrics}")
 
         results = self.Results(test_metrics=test_metrics)
         return results
+
+    def run_episode(self, method: MethodABC, env: Environment) -> List[Metrics]:
+        """ Apply the method on the env until it is done (one episode).
+        Returns a list of the Metrics for each batch.
+        
+        In the CL/Supervised Learning context, one epoch might be one epoch.
+        NOTE: This doesn't close the environment.
+        """
+        episode_metrics: List[Metrics] = []
+
+        # Reset the environment, which gives the first batch of observations.
+        observations = env.reset()
+        actions = method.get_actions(observations, env.action_space)
+
+        # Create a nice progress bar.
+        # NOTE: The env might now always have a length attribte, actually.
+        total_batches = len(env)
+        pbar = tqdm.tqdm(itertools.count(), total=total_batches-1)
+
+        # Close the pbar before exiting.
+        with pbar:
+            for i in pbar:
+                observations, rewards, done, info = env.step(actions)
+                batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
+                # print(observations.batch_size, actions.batch_size, rewards.batch_size)
+                # print(actions.y_pred == rewards.y)
+                episode_metrics.append(batch_metrics)
+
+                actions = method.get_actions(observations, env.action_space)
+
+                if isinstance(batch_metrics, Metrics):
+                    # display metrics in the progress bar.
+                    pbar.set_postfix(batch_metrics.to_pbar_message())
+                
+                if done:
+                    break
+        return episode_metrics
     
     @abstractmethod
     def train_dataloader(self, *args, **kwargs) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:

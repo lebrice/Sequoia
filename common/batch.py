@@ -105,7 +105,8 @@ class Batch(Sequence[Item], ABC):
             if field_index != slice(None):
                 raise IndexError("Can only use int or empty slice as first "
                                  "item of index tuple.")
-            return tuple(value[index[1:]] for value in self.values())
+            return tuple(value[index[1:]] if value is not None else None 
+                         for value in self.values())
         raise IndexError(index)
 
     def __setitem__(self, index: Union[int, str], value: Any):

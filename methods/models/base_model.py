@@ -83,7 +83,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.action_space: gym.Space = setting.action_space
         self.reward_space: gym.Space = setting.reward_space
         
-        self.input_shape  = self.observation_space["x"].shape
+        self.input_shape  = self.observation_space[0].shape
         self.output_shape = self.action_shape = self.action_space.shape
         self.reward_shape = self.reward_space.shape
         

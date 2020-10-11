@@ -307,7 +307,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         
         self.train_env = PassiveEnvironment(
             dataset,
-            split_batch_fn=self.split_batch,
+            split_batch_fn=self.split_batch_function(training=True),
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
@@ -333,7 +333,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # batch_transforms: List[Callable] = self.val_batch_transforms()
         self.val_env = PassiveEnvironment(
             dataset,
-            split_batch_fn=self.split_batch,
+            split_batch_fn=self.split_batch_function(training=True),
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
@@ -357,7 +357,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
         self.test_env = PassiveEnvironment(
             dataset,
-            split_batch_fn=self.split_batch,
+            split_batch_fn=self.split_batch_function(training=False),
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
@@ -365,37 +365,45 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         )
         return self.test_env
 
-    def split_batch(self, batch: Tuple[Tensor, ...]) -> Tuple[Observations, Rewards]:
-        """ Applies the various transforms to the tensors in the batch and
-        returns a tuple of Observations and Rewards.
-
-        Parameters
-        ----------
-        batch : Tuple[Tensor, ...]
-            A batch of data coming from the dataset.
-
-        Returns
-        -------
-        Tuple[Observations, Rewards]
-            A tuple of Observations and Rewards.
+    def split_batch_function(self, training: bool) -> Callable[[Tuple[Tensor, ...]], Tuple[Observations, Rewards]]:
+        """ Returns a callable that can be used to split a batch into observations and rewards.
         """
-        # In this context (class_incremental), we will always have 3 items per
-        # batch, because we use the ClassIncremental scenario from Continuum.
-        x, y, t = batch
-        # Relabel y so it is always in [0, n_classes_per_task) for each task.
-        current_task_classes = self.current_task_classes(train=True)
-        y = relabel(y, task_classes=current_task_classes)
-        # Re-arrange tensors: (x, y, t) -> ((x, t), y)
-        observations = (x, t)
-        rewards = y
-        # Create the 'Observations' and 'Rewards' objects.
-        # TODO: We might not need these objects, we could have general functions
-        # for moving/detaching/numpy-ing tuples or list or dicts of tensors, and
-        # use those in combination with the corresponding spaces instead.
-        # return observations, rewards
-        observations = self.Observations.from_inputs(observations)
-        rewards = self.Rewards.from_inputs(rewards)
-        return observations, rewards
+        def split_batch(batch: Tuple[Tensor, ...]) -> Tuple[Observations, Rewards]:
+            """Splits the batch into a tuple of Observations and Rewards.
+
+            Parameters
+            ----------
+            batch : Tuple[Tensor, ...]
+                A batch of data coming from the dataset.
+
+            Returns
+            -------
+            Tuple[Observations, Rewards]
+                A tuple of Observations and Rewards.
+            """
+            # In this context (class_incremental), we will always have 3 items per
+            # batch, because we use the ClassIncremental scenario from Continuum.
+            x, y, t = batch
+            # Relabel y so it is always in [0, n_classes_per_task) for each task.
+            current_task_classes = self.current_task_classes(train=training)
+            y = relabel(y, task_classes=current_task_classes)
+            
+            # Re-arrange tensors: (x, y, t) -> ((x, t), y)
+            observations = (x, t)
+            rewards = y
+            
+            if ((training and not self.task_labels_at_train_time) or 
+                (not training and not self.task_labels_at_test_time)):
+                # Remove the task labels if we're not currently allowed to have
+                # them.
+                # TODO: Using None might cause some issues. Maybe set -1 instead?
+                observations = (x, t.new_full(t.size(), -1))
+
+            # Create the 'Observations' and 'Rewards' objects.
+            observations = self.Observations.from_inputs(observations)
+            rewards = self.Rewards.from_inputs(rewards)
+            return observations, rewards
+        return split_batch
     
     def configure(self, method: MethodABC):
         """ Setup the data_dir and the dataloader kwargs using properties of the

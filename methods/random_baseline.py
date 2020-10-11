@@ -2,25 +2,28 @@
 
 Should be applicable to any Setting.
 """
-import gym
 from abc import ABC
 from dataclasses import dataclass
 from typing import Type, Union
 
-import tqdm
-import torch
+import gym
 import numpy as np
+import torch
+import tqdm
 from torch import Tensor
+from utils import get_logger, singledispatchmethod
 
+from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from methods.method import Method
 from methods.models import Agent, Model, OutputHead
 from methods.models.iid_model import IIDModel
+from methods.models.model_addons import \
+    ClassIncrementalModel as ClassIncrementalModelMixin
 from methods.models.task_incremental_model import TaskIncrementalModel
-from methods.models.model_addons import ClassIncrementalModel as ClassIncrementalModelMixin
-from settings import (ActiveSetting, ClassIncrementalSetting, IIDSetting,
-                      RLSetting, Setting, SettingType, TaskIncrementalSetting, Observations, Actions, Rewards)
-from utils import get_logger, singledispatchmethod
-from common.metrics import Metrics, ClassificationMetrics, RegressionMetrics
+from settings import (Actions, ActiveSetting, ClassIncrementalSetting,
+                      Environment, IIDSetting, Observations, Rewards,
+                      RLSetting, Setting, SettingType, TaskIncrementalSetting)
+
 from .models import Model
 from .models.agent import Agent
 from .models.random_agent import RandomAgent
@@ -91,27 +94,30 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     with respect to the `Model` class, as it is moreso aimed at being a `passive`
     Model than an active one at the moment.
     """
-    def fit(self, train_dataloader=None, valid_dataloader=None, datamodule=None):
-        example_obs = None
-        example_reward = None
-        labels_encountered = set()        
-        for obs, reward in train_dataloader:
-            example_obs = obs
-            if reward is not None:
-                example_reward = reward
+    def fit(self,
+            train_env: Environment=None,
+            valid_env: Environment=None,
+            datamodule=None
+        ):
+        # This is useless atm (we don't train) but just for testing purposes.
+        # self.observation_space = train_env.observation_space
+        # self.action_space = train_env.action_space
         return 1
+
+    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
+        obs_shapes = observations.shapes
+        batch_size = observations.batch_size
+        # assert False, observations.shapes
+        return action_space.sample()
+        # return self.Actions(torch.as_tensor([
+        #     self.action_space.sample() for _ in range(batch_size)
+        # ]))
 
     def configure(self, setting: Setting):
         self.setting = setting
         self.action_space = setting.action_space
         super().configure(setting)
 
-    def get_actions(self, observations: Observations) -> Actions:
-        obs_shapes = observations.shapes
-        batch_size = observations.batch_size
-        return self.Actions(torch.as_tensor([
-            self.action_space.sample() for _ in range(batch_size)
-        ]))
 
     @singledispatchmethod
     def validate_results(self, setting: Setting, results: Setting.Results):
