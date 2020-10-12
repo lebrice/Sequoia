@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, List
 
 import gym
 import torch
@@ -25,13 +25,29 @@ class RegressionHead(OutputHead):
                 f"TODO: Regression head doesn't support output shapes that are "
                 f"more than 1d for atm, (output space: {output_space})."
             )
-            # TODO: Add support for something like a "decoder head"?
-        output_size = prod(output_space.shape)
+            # TODO: Add support for something like a "decoder head" (maybe as a
+            # subclass of RegressionHead)?
         super().__init__(
             input_size=input_size,
-            output_size=output_size,
+            output_space=output_space,
             hparams=hparams,
             name=name,
+        )
+        assert isinstance(output_space, spaces.Box)
+        output_size = prod(output_space.shape)
+        
+        hidden_layers: List[nn.Module] = []
+        in_features = self.input_size
+        for i, neurons in enumerate(self.hparams.hidden_neurons):
+            out_features = neurons
+            hidden_layers.append(nn.Linear(in_features, out_features))
+            hidden_layers.append(nn.ReLU())
+            in_features = out_features # next input size is output size of prev.
+
+        self.dense = nn.Sequential(
+            nn.Flatten(),
+            *hidden_layers,
+            nn.Linear(in_features, output_size)
         )
         self.loss_fn = nn.MSELoss()
 

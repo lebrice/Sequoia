@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, List
 
 import gym
 import torch
@@ -24,13 +24,27 @@ class ClassificationHead(OutputHead):
                  output_space: gym.Space,
                  hparams: "OutputHead.HParams" = None,
                  name: str = "classification"):
-        assert isinstance(output_space, spaces.Discrete)
-        output_size = output_space.n
         super().__init__(
             input_size=input_size,
-            output_size=output_size,
+            output_space=output_space,
             hparams=hparams,
             name=name,
+        )
+        assert isinstance(output_space, spaces.Discrete)
+        output_size = output_space.n
+        
+        hidden_layers: List[nn.Module] = []
+        in_features = self.input_size
+        for i, neurons in enumerate(self.hparams.hidden_neurons):
+            out_features = neurons
+            hidden_layers.append(nn.Linear(in_features, out_features))
+            hidden_layers.append(nn.ReLU())
+            in_features = out_features # next input size is output size of prev.
+
+        self.dense = nn.Sequential(
+            nn.Flatten(),
+            *hidden_layers,
+            nn.Linear(in_features, output_size)
         )
         # if output_size == 2:
         #     # TODO: Should we be using this loss instead?
@@ -56,9 +70,18 @@ class ClassificationHead(OutputHead):
         logits: Tensor = actions.logits
         y_pred: Tensor = actions.y_pred
 
-        loss = self.loss_fn(logits, y)
-        metrics = ClassificationMetrics(y_pred=logits, y=y)
+        n_classes = logits.shape[-1]
+        # Could remove these: just used for debugging.
+        assert len(y.shape) == 1, y.shape
+        assert not torch.is_floating_point(y), y.dtype
+        assert 0 <= y.min(), y
+        assert y.max() < n_classes, y
 
+        loss = self.loss_fn(logits, y)
+        
+        assert loss.shape == ()
+        metrics = ClassificationMetrics(y_pred=logits, y=y)
+        
         assert self.name, "Output Heads should have a name!"
         loss_object = Loss(
             name=self.name,

@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import ClassVar, Dict, List, Any
 
+import gym
+from gym import spaces
 from torch import Tensor, nn
 from torch.nn import Flatten  # type: ignore
 
@@ -58,31 +60,14 @@ class OutputHead(nn.Module):
 
     def __init__(self,
                  input_size: int,
-                 output_size: int,
+                 output_space: gym.Space,
                  hparams: "OutputHead.HParams" = None,
                  name: str = ""):
         super().__init__()
         self.input_size = input_size
-        self.output_size = output_size
+        self.output_space: gym.Space = output_space
         self.hparams = hparams or self.HParams()
         self.name = name or type(self).name
-
-        hidden_layers: List[nn.Module] = []
-        in_features = self.input_size
-        for i, neurons in enumerate(self.hparams.hidden_neurons):
-            out_features = neurons
-            hidden_layers.append(nn.Linear(in_features, out_features))
-            hidden_layers.append(nn.ReLU())
-            in_features = out_features # next input size is output size of prev.
-
-        self.dense = nn.Sequential(
-            Flatten(),
-            *hidden_layers,
-            nn.Linear(in_features, output_size)
-        )
-
-        # For example, but you could change this in your subclass.
-        self.loss_fn = nn.CrossEntropyLoss()
 
     @abstractmethod
     def forward(self, observations: Observations, representations: Tensor) -> Actions:
@@ -101,8 +86,6 @@ class OutputHead(nn.Module):
             An object containing the action to take, and which can be used to
             calculate the loss later on.
         """
-        # TODO: This should probably take in a dict and return a dict, or something like that?
-        return self.dense(representations)
 
     @abstractmethod
     def get_loss(self, forward_pass: ForwardPass, y: Tensor) -> Loss:
