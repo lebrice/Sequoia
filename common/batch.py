@@ -211,6 +211,41 @@ class Batch(Sequence[Item], ABC):
             for k, v in self.items()
         })
 
+    def detach(self):
+        """Returns a new Batch object of the same type, with all Tensors
+        detached.
+
+        Returns
+        -------
+        Batch
+            New object of the same type, but with all tensors detached.
+        """
+        return type(self)(**{
+            k: v.detach() if isinstance(v, Tensor) else v for k, v in self.items()
+        })
+
+    def cpu(self, **kwargs):
+        """Returns a new Batch object of the same type, with all Tensors
+        moved to cpu.
+
+        Returns
+        -------
+        Batch
+            New object of the same type, but with all tensors moved to CPU.
+        """
+        return self.to(device="cpu", **kwargs)
+
+    def cuda(self, device=None, **kwargs):
+        """Returns a new Batch object of the same type, with all Tensors
+        moved to cuda device.
+
+        Returns
+        -------
+        Batch
+            New object of the same type, but with all tensors moved to cuda.
+        """
+        return self.to(device=(device or "cuda"), **kwargs)
+
     @property
     def shapes(self) -> Tuple[Optional[Union[torch.Size, Tuple[int, ...]]], ...]:
         """ Returns a tuple of the shapes of the elements in the batch. 

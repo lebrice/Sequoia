@@ -9,57 +9,14 @@ from dataclasses import dataclass
 from typing import Generic, Iterable, Optional, TypeVar
 
 import gym
+from common.batch import Batch
 from torch import Tensor
 from torch.utils.data import DataLoader
-
-from common.batch import Batch
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
-
-
-@dataclass(frozen=True)
-class Observations(Batch):
-    """ A batch of "observations" coming from an Environment. """
-    x: Tensor
-    @property
-    def state(self) -> Tensor:
-        return self.x
-
-@dataclass(frozen=True)
-class Actions(Batch):
-    """ A batch of "actions" coming from an Environment.
-    
-    For example, in a supervised setting, this would be the predicted labels,
-    while in an RL setting, this would be the next 'actions' to take in the
-    Environment.
-    """
-    y_pred: Tensor
-    
-    @property
-    def action(self) -> Tensor:
-        return self.y_pred
-    @property
-    def prediction(self) -> Tensor:
-        return self.y_pred
-
-
-@dataclass(frozen=True)
-class Rewards(Batch):
-    """ A batch of "rewards" coming from an Environment.
-
-    For example, in a supervised setting, this would be the true labels, while
-    in an RL setting, this would be the 'reward' for a state-action pair.
-    """
-    y: Optional[Tensor]
-
-    @property
-    def labels(self) -> Tensor:
-        return self.y
-
-ObservationType = TypeVar("ObservationType", bound=Observations)
-ActionType = TypeVar("ActionType", bound=Actions)
-RewardType = TypeVar("RewardType", bound=Rewards)
+from .objects import (Actions, ActionType, Observations, ObservationType,
+                      Rewards, RewardType)
 
 
 class Environment(gym.Env, Generic[ObservationType, ActionType, RewardType], ABC):

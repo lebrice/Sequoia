@@ -15,43 +15,27 @@ from typing import (Any, ClassVar, Dict, Generic, List, NamedTuple, Optional,
                     Sequence, Tuple, Type, TypeVar, Union)
 
 import torch
+from gym import spaces
 from pytorch_lightning import LightningDataModule, LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
-from simple_parsing.helpers.flatten import FlattenedAccess
 from simple_parsing import list_field
-from torch import Tensor
+from torch import nn, Tensor
 
 from common.config import Config
 from common.loss import Loss
 from common.transforms import SplitBatch, Transforms
 from common.batch import Batch
-from methods.models.output_heads import OutputHead
 from settings.base.setting import Setting, SettingType, Observations, Actions, Rewards
 from utils.logging_utils import get_logger
-from .base_hparams import BaseHParams
 from settings import Environment, Observations, Actions, Rewards
 
+from .base_hparams import BaseHParams
+from .output_heads import OutputHead, RegressionHead, ClassificationHead
+from .forward_pass import ForwardPass
+
+
 logger = get_logger(__file__)
-
-@dataclass(frozen=True)
-class ForwardPass(Batch, FlattenedAccess):
-    """ Typed version of the result of a forward pass through a model.
-
-    FlattenedAccess is really sweet. We can get/set any attributes in the
-    children by getting/setting them directly on the parent. So if the
-    `observation` has an `x` attribute, we can get on this object directly with
-    `self.x`, and it will fetch the attribute from the observation. Same goes
-    for setting the attribute.
-    """  
-    observations: Observations
-    representations: Any
-    actions: Actions
-
-    @property
-    def h_x(self) -> Any:
-        return self.representations
-
 
 class BaseModel(LightningModule, Generic[SettingType]):
     """ Base model LightningModule (nn.Module extended by pytorch-lightning)
@@ -84,7 +68,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.reward_space: gym.Space = setting.reward_space
         
         self.input_shape  = self.observation_space[0].shape
-        self.output_shape = self.action_shape = self.action_space.shape
         self.reward_shape = self.reward_space.shape
         
         self.split_batch_transform = SplitBatch(observation_type=self.Observations,
@@ -106,7 +89,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # (Testing) Setting this attribute is supposed to help with ddp/etc
         # training in pytorch-lightning. Not 100% sure.
         # self.example_input_array = torch.rand(self.batch_size, *self.input_shape)
-
+        
         # Create the encoder and the output head. 
         self.encoder, self.hidden_size = self.hp.make_encoder()
         self.output_head = self.create_output_head()
@@ -159,7 +142,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # Some pretrained encoders sometimes give back a list with one tensor. (?)
             h_x = h_x[0]
         return h_x
-    
+
     def get_actions(self, observations: Observations, representations: Tensor) -> Actions:
         """ Pass the required inputs to the output head and get predictions.
         
@@ -167,19 +150,31 @@ class BaseModel(LightningModule, Generic[SettingType]):
         pass to the output head, or what we take from it, similar to the
         `encode` method.
         """
-        # Here in this base model we only use the 'x' from the observation.
-        x: Tensor = observations if isinstance(observations, Tensor) else observations.x
-        h_x = representations
         if self.hp.detach_output_head:
-            h_x = h_x.detach()
-        y_pred = self.output_head(x, h_x)
-        # TODO: Actually change the return type of the output head maybe, so it
-        # gives back an action?
-        return self.Actions(y_pred)
+            representations = representations.detach()
+
+        actions = self.output_head(
+            observations=observations,
+            representations=representations
+        )
+        assert isinstance(actions, self.Actions)
+        return actions
 
     def create_output_head(self) -> OutputHead:
-        """ Create the output head for the task. """
-        return OutputHead(self.hidden_size, self.output_shape, name="classification")
+        """ Create an output head for the current action space. """
+
+        if isinstance(self.action_space, spaces.Discrete):
+            self.output_shape = (self.action_space.n,)
+            return ClassificationHead(self.hidden_size, output_space=self.action_space)
+
+        if isinstance(self.action_space, spaces.Box):
+            # Regression problem
+            self.output_shape = self.action_space.shape
+            return RegressionHead(self.hidden_size, output_space=self.action_space)
+
+        raise NotImplementedError(
+            f"No output head available for action space {self.action_space}"
+        )
 
     def training_step(self,
                       batch: Tuple[Observations, Optional[Rewards]],
@@ -231,33 +226,31 @@ class BaseModel(LightningModule, Generic[SettingType]):
         if dataloader_idx is not None:
             assert isinstance(dataloader_idx, int)
             loss_name += f"/{dataloader_idx}"
-        
-        # If needed, split the batch into the observations and the rewards.
-        # NOTE: This does nothing if the batch is already split into
-        # Observations and Rewards objects.
+
         observations, rewards = self.split_batch(batch)
-        
+
         # Get the forward pass results, containing:
         # - "observation": the augmented/transformed/processed observation.
         # - "representations": the representations for the observations.
         # - "actions": The actions (predictions)
         forward_pass: ForwardPass = self(observations)
+        
         # get the actions from the forward pass:
-        actions = forward_pass.actions        
+        actions = forward_pass.actions
+        
         if rewards is None:
             # Get the reward from the environment (the dataloader).
             rewards = environment.send(actions)
             assert rewards is not None
-
-        loss_object: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)
+        loss: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)
         return {
-            "loss": loss_object.loss,
-            "log": loss_object.to_log_dict(),
-            "progress_bar": loss_object.to_pbar_message(),
-            "loss_object": loss_object,
+            "loss": loss.loss,
+            "log": loss.to_log_dict(),
+            "progress_bar": loss.to_pbar_message(),
+            "loss_object": loss,
         }
-        # The above can also easily be done like this:
-        result = loss_object.to_pl_dict()
+        # The above can also easily be retrieved like this:
+        result = loss.to_pl_dict()
         return result
     
     @auto_move_data
@@ -274,7 +267,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
                 return observations, rewards
         return self.split_batch_transform(batch)
 
-    def get_loss(self, forward_pass: Dict[str, Batch], reward: Rewards = None, loss_name: str = "") -> Loss:
+    def get_loss(self, forward_pass: Dict[str, Batch], rewards: Rewards = None, loss_name: str = "") -> Loss:
         """Returns a Loss object containing the total loss and metrics. 
 
         Args:
@@ -290,12 +283,10 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # return a Loss object, even when `y` is None and we can't the loss from
         # the output_head.
         total_loss = Loss(name=loss_name)
-        labels = None if reward is None else reward.y
-        if labels is not None:
-            # Here in this base model, we only use 'y' from the rewards.
-            # TODO: change that, so that the output heads can be extended to
-            # accept other things than just `y`, if needed (seems fine for now).
-            supervised_loss = self.output_head.get_loss(forward_pass, y=labels)
+        if rewards:
+            assert rewards.y is not None
+            # So far we only use 'y' from the rewards in the output head.
+            supervised_loss = self.output_head.get_loss(forward_pass, y=rewards.y)
             total_loss += supervised_loss
         return total_loss
 

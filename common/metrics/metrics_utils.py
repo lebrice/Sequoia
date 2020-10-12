@@ -82,6 +82,7 @@ def get_confusion_matrix(y_pred: Union[np.ndarray, Tensor], y: Union[np.ndarray,
     if len(y_pred.shape) == 1 and y_pred.dtype not in {np.float32, np.float64}:
         # y_pred is already the predicted labels.
         y_preds = y_pred
+        raise NotImplementedError(f"Can't determine the number of classes. Pass logits rather than predicted labels.")
     elif y_pred.shape[-1] == 1:
         n_classes = 2  # y_pred is the logit for binary classification.
         y_preds = y_pred.round()

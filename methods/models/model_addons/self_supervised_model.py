@@ -51,16 +51,17 @@ class SelfSupervisedModel(BaseModel[SettingType]):
                 logger.info(f"enabling the '{task_name}' auxiliary task (coefficient of {task.coefficient})")
                 task.enable()
 
-    def get_loss(self, forward_pass: Dict[str, Tensor], reward: Rewards = None, loss_name: str = "") -> Loss:
+    def get_loss(self, forward_pass: Dict[str, Tensor], rewards: Rewards = None, loss_name: str = "") -> Loss:
         # Get the output task loss (the loss of the base model)
-        loss: Loss = super().get_loss(forward_pass, reward=reward, loss_name=loss_name)
+        loss: Loss = super().get_loss(forward_pass, rewards=rewards, loss_name=loss_name)
 
         # Add the self-supervised losses from all the enabled auxiliary tasks.
         for task_name, aux_task in self.tasks.items():
             assert task_name, "Auxiliary tasks should have a name!"
             if aux_task.enabled:
-                # NOTE: Auxiliary tasks only take the 'y' tensor from the rewards atm:
-                aux_loss: Loss = aux_task.get_loss(forward_pass, y=reward.y)
+                # TODO: Auxiliary tasks all share the same 'y' for now, but it
+                # might make more sense to organize this differently. 
+                aux_loss: Loss = aux_task.get_loss(forward_pass, y=rewards.y)
                 # Scale the loss by the corresponding coefficient before adding
                 # it to the total loss.
                 loss += aux_task.coefficient * aux_loss

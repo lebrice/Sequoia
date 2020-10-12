@@ -1,14 +1,18 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List
+from typing import ClassVar, Dict, List, Any
 
 from torch import Tensor, nn
 from torch.nn import Flatten  # type: ignore
 
 from common.loss import Loss
-from common.metrics import ClassificationMetrics
+from common.metrics import get_metrics, ClassificationMetrics
 from simple_parsing import list_field
 from utils.serialization import Serializable
 from utils.utils import camel_case, remove_suffix
+
+from settings import Observations, Actions, Rewards
+from ..forward_pass import ForwardPass 
 
 
 class OutputHead(nn.Module):
@@ -43,18 +47,20 @@ class OutputHead(nn.Module):
                 elif len(self.hidden_neurons) > 1:
                     # Set the number of hidden layers to the number of passed values.
                     self.hidden_layers = len(self.hidden_neurons)
-            
             elif self.hidden_layers > 0 and len(self.hidden_neurons) == 1:
                 # Duplicate that value for each of the `hidden_layers` layers.
                 self.hidden_neurons *= self.hidden_layers
-            
             if self.hidden_layers != len(self.hidden_neurons):
                 raise RuntimeError(
                     f"Invalid values: hidden_layers ({self.hidden_layers}) != "
                     f"len(hidden_neurons) ({len(self.hidden_neurons)})."
                 )
 
-    def __init__(self, input_size: int, output_size: int, hparams: "OutputHead.HParams" = None, name: str = ""):
+    def __init__(self,
+                 input_size: int,
+                 output_size: int,
+                 hparams: "OutputHead.HParams" = None,
+                 name: str = ""):
         super().__init__()
         self.input_size = input_size
         self.output_size = output_size
@@ -66,47 +72,42 @@ class OutputHead(nn.Module):
         for i, neurons in enumerate(self.hparams.hidden_neurons):
             out_features = neurons
             hidden_layers.append(nn.Linear(in_features, out_features))
+            hidden_layers.append(nn.ReLU())
             in_features = out_features # next input size is output size of prev.
-        
-        # self.flatten = Flatten()
+
         self.dense = nn.Sequential(
             Flatten(),
             *hidden_layers,
             nn.Linear(in_features, output_size)
         )
-        # self.output = nn.Linear(in_features, output_size)
 
         # For example, but you could change this in your subclass.
         self.loss_fn = nn.CrossEntropyLoss()
 
-    def forward(self, x: Tensor, h_x: Tensor) -> Tensor:  # type: ignore
-        # TODO: This should probably take in a dict and return a dict, or something like that?
-        # TODO: We should maybe convert this to also return a dict instead
-        # of a Tensor, just to be consistent with everything else. This could
-        # also maybe help with having multiple different output heads, each
-        # having a different name and giving back a dictionary of their own
-        # forward pass tensors (if needed) and predictions?
-        return self.dense(h_x)
+    @abstractmethod
+    def forward(self, observations: Observations, representations: Tensor) -> Actions:
+        """Given the observations and their representations, produce "actions".
+        
+        Parameters
+        ----------
+        observations : Observations
+            Object containing the input examples.
+        representations : Any
+            The results of encoding the input examples.
 
-    def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor) -> Loss:
-        x = forward_pass["x"]
-        h_x = forward_pass["h_x"]
-        y_pred = forward_pass["y_pred"]
-        loss = self.loss_fn(y_pred, y)
-        from common.metrics import get_metrics
-        y = y.reshape([x.shape[0], -1])
-        metrics = get_metrics(
-            x=x,
-            h_x=h_x,
-            y_pred=y_pred,
-            y=y
-        )
-        assert self.name, "Output Heads should have a name!"
-        loss_object = Loss(
-            name=self.name,
-            loss=loss,
-            # NOTE: we're passing the tensors to the Loss object because we let
-            # it create the Metrics for us automatically.
-            metrics={self.name: metrics},
-        )
-        return loss_object
+        Returns
+        -------
+        Actions
+            An object containing the action to take, and which can be used to
+            calculate the loss later on.
+        """
+        # TODO: This should probably take in a dict and return a dict, or something like that?
+        return self.dense(representations)
+
+    @abstractmethod
+    def get_loss(self, forward_pass: ForwardPass, y: Tensor) -> Loss:
+        """ Given the forward pass (including the actions produced by this
+        output head), and the corresponding rewards, get a Loss to use for
+        training.
+        """
+        

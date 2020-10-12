@@ -16,7 +16,6 @@ from utils import get_logger, singledispatchmethod
 from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
 from methods.method import Method
 from methods.models import Agent, Model, OutputHead
-from methods.models.iid_model import IIDModel
 from methods.models.model_addons import \
     ClassIncrementalModel as ClassIncrementalModelMixin
 from methods.models.task_incremental_model import TaskIncrementalModel
@@ -67,9 +66,6 @@ class RandomClassIncrementalModel(RandomPredictionsMixin, Model):
 class RandomTaskIncrementalModel(RandomPredictionsMixin, TaskIncrementalModel):
     pass
 
-
-class RandomIIDModel(RandomPredictionsMixin, IIDModel):
-    pass
 
 
 
@@ -178,10 +174,6 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     @model_class.register
     def _(self, setting: TaskIncrementalSetting) -> Type[TaskIncrementalModel]:
         return RandomTaskIncrementalModel
-
-    @model_class.register
-    def _(self, setting: IIDSetting) -> Type[IIDModel]:
-        return RandomIIDModel
 
 
 if __name__ == "__main__":

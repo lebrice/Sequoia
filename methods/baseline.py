@@ -23,7 +23,6 @@ from .method import Method
 from .models import Model, OutputHead
 from .models.actor_critic_agent import ActorCritic
 from .models.agent import Agent
-from .models.iid_model import IIDModel
 from .models.task_incremental_model import TaskIncrementalModel
 from .models.model_addons import ClassIncrementalModel as ClassIncrementalModelMixin
 logger = get_logger(__file__)
@@ -45,10 +44,6 @@ class BaselineMethod(Method, target_setting=Setting):
     @model_class.register
     def _(self, setting: TaskIncrementalSetting) -> Type[TaskIncrementalModel]:
         return TaskIncrementalModel
-
-    @model_class.register
-    def _(self, setting: IIDSetting) -> Type[IIDModel]:
-        return IIDModel
 
     @model_class.register
     def _(self, setting: ContinualRLSetting) -> Type[Agent]:

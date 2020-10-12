@@ -20,17 +20,12 @@ class Metrics(Serializable):
     # This field isn't used in comparisons between Metrics.
     n_samples: int = field(default=0, compare=False)
 
-    x:      InitVar[Optional[Tensor]] = None
-    h_x:    InitVar[Optional[Tensor]] = None
-    y_pred: InitVar[Optional[Tensor]] = None
-    y:      InitVar[Optional[Tensor]] = None
-
+    
+    # TODO: Refactor this to take any kwargs, and then let each metric type
+    # specify its own InitVars.
+    
     @torch.no_grad()
-    def __post_init__(self,
-                      x: Tensor = None,
-                      h_x: Tensor = None,
-                      y_pred: Tensor = None,
-                      y: Tensor = None):
+    def __post_init__(self, **tensors):
         """Creates metrics given `y_pred` and `y`.
 
         NOTE: Doesn't use `x` and `h_x` for now.
@@ -42,7 +37,7 @@ class Metrics(Serializable):
             y (Tensor, optional): The true label. Defaults to None.
         """
         # get the batch size:
-        for tensor in [x, h_x, y_pred, y]:
+        for tensor in tensors.values():
             if isinstance(tensor, (np.ndarray, Tensor)):
                 self.n_samples = tensor.shape[0]
                 break

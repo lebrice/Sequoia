@@ -58,14 +58,13 @@ class Model(SemiSupervisedModel,
     ):
         """ HParams of the Model. """
 
-
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
 
         logger.debug(f"setting of type {type(self.setting)}")
-        logger.debug(f"Input shape: {self.input_shape}")
-        logger.debug(f"Output shape: {self.output_shape}")
-        logger.debug(f"Reward shape: {self.reward_shape}")
+        logger.debug(f"Observation space: {self.observation_space}")
+        logger.debug(f"Action/Output space: {self.action_space}")
+        logger.debug(f"Reward/Label space: {self.reward_space}")
         
         if self.config.debug and self.config.verbose:
             logger.debug("Config:")

@@ -26,7 +26,6 @@ from .method import Method
 from .models import Model
 from .models.actor_critic_agent import ActorCritic
 from .models.agent import Agent
-from .models.iid_model import IIDModel
 from .models.task_incremental_model import TaskIncrementalModel
 
 logger = get_logger(__file__)
@@ -69,10 +68,6 @@ class SelfSupervision(Method, target_setting=Setting):
     name: ClassVar[str] = "self_supervision"
 
     # Hyperparameters of the model.
-    # TODO: If we were to support more models, we might have a problem trying to
-    # get the help text of each type of hyperparameter to show up. We can still
-    # parse them just fine by calling .from_args() on them, but still, would be
-    # better if the help text were visible from the command-line.
     hparams: Model.HParams = mutable_field(Model.HParams)
 
     # @singledispatchmethod

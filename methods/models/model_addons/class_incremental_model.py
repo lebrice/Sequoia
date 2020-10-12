@@ -100,30 +100,6 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # logger.debug(f"Setting output head to {value}")
         self._output_head = value
 
-    def create_output_head(self) -> OutputHead:
-        """Creates a new output head for the current task.
-        """
-        # TODO: The output head needs an integer for the output_size, would be
-        # nicer if it just took in the output_space instead.
-        n_outputs = prod(self.action_space.shape)
-        return self.output_head_class(
-            input_size=self.hidden_size,
-            output_size=n_outputs,
-        ).to(self.device)
-
-    @property
-    def output_head_class(self) -> Type[OutputHead]:
-        """Property which returns the type of output head to use.
-
-        overwrite this if your model does something different than classification.
-
-        Returns:
-            Type[OutputHead]: A subclass of OutputHead.
-        """
-        # TODO: Add a ClassificationOutputHead (largely the same as OutputHead),
-        # then add a RegressionOutputHead, a SegmentationOutputHead, etc etc.
-        return OutputHead
-
     # @auto_move_data
     def forward(self, input_batch: Any) -> Dict[str, Tensor]:
         """ Forward pass of the Model. Returns a dict."""
@@ -143,12 +119,12 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             # Default back to the behaviour of the parent class, which will use
             # the current output head (at attribute `self.output_head`).
             return super().forward(observation)
-        
+
         if isinstance(task_labels, (Tensor, np.ndarray)):
             unique_task_labels = torch.unique(task_labels).tolist()
         else:
             unique_task_labels = list(set(task_labels))
-        
+
         if len(unique_task_labels) == 1:
             # If everything is in the same task, no need to split/merge.
             task_id = unique_task_labels[0]
@@ -156,11 +132,12 @@ class ClassIncrementalModel(BaseModel[SettingType]):
                 return super().forward(observation)
 
         batch_size = observation.batch_size
+
         # The 'merged' forward pass result dict.
         merged_results: Dict = {}
         
         logger.debug(f"Mix of tasks: ")
-        assert False, input_batch.shapes()
+        # TODO: Write tests to check that this works.
         
         all_task_indices: Dict[Any, Tensor] = {}
         

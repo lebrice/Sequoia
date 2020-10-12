@@ -3,7 +3,7 @@
 Gives the accuracy, the class accuracy, and the confusion matrix for a given set
 of (raw/pre-activation) logits Tensor `y_pred` and the class labels `y`. 
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, InitVar
 from functools import total_ordering
 from typing import Dict, Optional, Union, Any
 
@@ -30,17 +30,19 @@ class ClassificationMetrics(Metrics):
     confusion_matrix: Optional[Union[Tensor, np.ndarray]] = field(default=None, repr=False, compare=False)
     class_accuracy: Optional[Union[Tensor, np.ndarray]] = field(default=None, repr=False, compare=False)
     
+    x:      InitVar[Optional[Tensor]] = None
+    h_x:    InitVar[Optional[Tensor]] = None
+    y_pred: InitVar[Optional[Tensor]] = None
+    y:      InitVar[Optional[Tensor]] = None
+    
     def __post_init__(self,
-                      x: Tensor=None,
-                      h_x: Tensor=None,
-                      y_pred: Tensor=None,
-                      y: Tensor=None):
-        # get the batch size:
-        for tensor in [x, h_x, y_pred, y]:
-            if tensor is not None:
-                self.n_samples = tensor.shape[0]
-                break
-        
+                      x: Tensor = None,
+                      h_x: Tensor = None,
+                      y_pred: Tensor = None,
+                      y: Tensor = None):
+
+        super().__post_init__(x=x, h_x=h_x, y_pred=y_pred, y=y)
+
         if self.confusion_matrix is None and y_pred is not None and y is not None:
             self.confusion_matrix = get_confusion_matrix(y_pred=y_pred, y=y)
 
@@ -48,6 +50,7 @@ class ClassificationMetrics(Metrics):
         if self.confusion_matrix is not None:
             self.accuracy = get_accuracy(self.confusion_matrix)
             self.class_accuracy = get_class_accuracy(self.confusion_matrix)
+
 
     def __add__(self, other: "ClassificationMetrics") -> "ClassificationMetrics":
         # TODO: Might be a good idea to add a `task` attribute to Metrics or

@@ -4,8 +4,8 @@ Gives the mean squared error between a prediction Tensor `y_pred` and the
 target tensor `y`. 
 """
 
-from dataclasses import dataclass
-from typing import Dict, Union, Any
+from dataclasses import dataclass, InitVar
+from typing import Dict, Union, Any, Optional
 from functools import total_ordering
 
 import torch
@@ -25,6 +25,11 @@ class RegressionMetrics(Metrics):
     mse: Tensor = 0.  # type: ignore
     l1_error: Tensor = 0.  # type: ignore
 
+    x:      InitVar[Optional[Tensor]] = None
+    h_x:    InitVar[Optional[Tensor]] = None
+    y_pred: InitVar[Optional[Tensor]] = None
+    y:      InitVar[Optional[Tensor]] = None
+    
     def __post_init__(self,
                       x: Tensor=None,
                       h_x: Tensor=None,
