@@ -386,22 +386,26 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             x, y, t = batch
 
             # Relabel y so it is always in [0, n_classes_per_task) for each task.
-            current_task_classes = self.current_task_classes(train=training)
-            
-            labels_in_batch = set(torch.unique(y).tolist())
             task_labels_in_batch = torch.unique(t).tolist()
-            if len(task_labels_in_batch) != 1:
-                raise NotImplementedError(
-                    "TODO: How to relabel when batch contains data from different tasks?"
-                )
-            if task_labels_in_batch != [0]:
-                # TODO: Index using the task labels, to get the classes for each
-                # task label, and then relabel each y depending on its `t` value.
-                assert labels_in_batch <= set(current_task_classes)
-                # Assert that the labels have NOT already been relabeled to [0, n_classes_per_task]
-                y = relabel(y, task_classes=current_task_classes)
-                
-            # Assert that the labels have already been relabeled to [0, n_classes_per_task]
+
+            # Index using the task labels, to get the classes for each
+            # task label, and then relabel each y to its index within the labels
+            # of its corresponding task.
+            # TODO: Make sure that this is how we want to do this. This
+            # wouldn't make sense for example if successive tasks could use
+            # the same input image, but with a different label!
+
+            # NOTE: This supports relabeling data from multiple tasks.
+            
+            all_indices = np.arange(x.shape[0])
+            for task_label in task_labels_in_batch:
+                # Get the set of classes for the task at index `t`.
+                classes_in_task = self.task_classes(task_label, train=training)
+                # Relabel that portion of the labels.
+                indices = all_indices[t == task_label]
+                y[indices] = relabel(y[indices], task_classes=classes_in_task)
+
+            # Make sure that the labels are in [0, n_classes_per_task] range:
             assert 0 <= y.min(), y
             assert y.max() < self.n_classes_per_task, y
             
