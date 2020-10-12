@@ -384,9 +384,26 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             # In this context (class_incremental), we will always have 3 items per
             # batch, because we use the ClassIncremental scenario from Continuum.
             x, y, t = batch
+
             # Relabel y so it is always in [0, n_classes_per_task) for each task.
             current_task_classes = self.current_task_classes(train=training)
-            y = relabel(y, task_classes=current_task_classes)
+            
+            labels_in_batch = set(torch.unique(y).tolist())
+            task_labels_in_batch = torch.unique(t).tolist()
+            if len(task_labels_in_batch) != 1:
+                raise NotImplementedError(
+                    "TODO: How to relabel when batch contains data from different tasks?"
+                )
+            if task_labels_in_batch != [0]:
+                # TODO: Index using the task labels, to get the classes for each
+                # task label, and then relabel each y depending on its `t` value.
+                assert labels_in_batch <= set(current_task_classes)
+                # Assert that the labels have NOT already been relabeled to [0, n_classes_per_task]
+                y = relabel(y, task_classes=current_task_classes)
+                
+            # Assert that the labels have already been relabeled to [0, n_classes_per_task]
+            assert 0 <= y.min(), y
+            assert y.max() < self.n_classes_per_task, y
             
             # Re-arrange tensors: (x, y, t) -> ((x, t), y)
             observations = (x, t)
@@ -397,7 +414,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
                 # Remove the task labels if we're not currently allowed to have
                 # them.
                 # TODO: Using None might cause some issues. Maybe set -1 instead?
-                observations = (x, t.new_full(t.size(), -1))
+                observations = (x, None)
 
             # Create the 'Observations' and 'Rewards' objects.
             observations = self.Observations.from_inputs(observations)
@@ -531,13 +548,26 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             env = loader_method()
             obs = env.reset()
             assert isinstance(obs, self.Observations)
-            # take a 
-            first_samples = obs[:, 0]
-            assert tuple(v.shape for v in first_samples) == self.size()
-            assert len(first_samples) == 2
-            assert obs[0][0].shape == self.dims[0], (obs[0][0].shape, self.size(0))
-            assert obs[1][0].shape == self.size(1)
+            # Convert the observation to numpy arrays, to make it easier to
+            # check if the elements are in the spaces.
+            obs = obs.numpy()
+            # take a slice of the first batch, to get sample tensors.
+            first_obs = obs[:, 0]
             
+            # TODO: Here we'd like to be able to check that the first observation
+            # is inside the observation space, but we can't do that because the
+            # task label might be None, and so that would make it fail.
+            x, task_label = first_obs
+            if task_label is None:
+                assert x in self.observation_space[0]
+            else:
+                assert first_obs in self.observation_space
+            
+            assert len(first_obs) == len(self.size())
+            for sample_item, expected_shape in zip(first_obs, self.size()):
+                if isinstance(sample_item, (Tensor, np.ndarray)):
+                    assert sample_item.shape == expected_shape
+
             for i in range(5):
                 actions = env.action_space.sample()
                 observations, rewards, done, info = env.step(actions)
@@ -549,8 +579,27 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
                     observations = env.reset()
             env.close()
 
+
 def relabel(y: Tensor, task_classes: List[int]) -> Tensor:
-    new_y = torch.empty_like(y)
+    """ Relabel the elements of 'y' to their  index in the task classes.
+    
+    Example:
+    
+    >>> import torch
+    >>> y = torch.as_tensor([2, 3, 2, 3, 2, 2])
+    >>> task_classes = [2, 3]
+    >>> relabel(y, task_classes)
+    tensor([0, 1, 0, 1, 0, 0])
+    """
+    # TODO: Double-check that this never leaves any zeros where it shouldn't.
+    new_y = torch.zeros_like(y)
+    unique_y = set(torch.unique(y).tolist())
+    assert unique_y <= set(task_classes), (unique_y, task_classes)
     for i, label in enumerate(task_classes):
         new_y[y == label] = i
     return new_y
+
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod()

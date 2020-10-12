@@ -139,7 +139,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             # BUG: When a tensor is None, then what do we do?
             observation_space = space_with_new_shape(
                 observation_space,
-                observation[0].shape if len(observations) == 1 else
+                observations[0].shape if len(observations) == 1 else
                 tuple(tensor.shape[1:] if hasattr(tensor, "shape") else None 
                       for tensor in observations)
             )
@@ -183,9 +183,6 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         # will not reflect the spaces. Not sure if this could be a problem later.
         # NOTE: Since we set the same object instance at each index, then
         # modifying just one would modify all of them.    
-        
-        
-
 
     def reset(self) -> ObservationType:
         """ Resets the env by deleting and re-creating the iterator.
@@ -196,8 +193,6 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self._previous_batch = None
         self._current_batch = self.get_next_batch()
         self._done = False
-        # TODO: Not sure if we should be doing this here.
-        # self._next_batch = next(self._iterator, None)
         obs = self._current_batch[0]
         return self.observation(obs)
 

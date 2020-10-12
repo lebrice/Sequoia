@@ -239,9 +239,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
         actions = forward_pass.actions
         
         if rewards is None:
+            assert False, "not using this API atm."
             # Get the reward from the environment (the dataloader).
             rewards = environment.send(actions)
             assert rewards is not None
+
         loss: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)
         return {
             "loss": loss.loss,
@@ -290,12 +292,12 @@ class BaseModel(LightningModule, Generic[SettingType]):
             total_loss += supervised_loss
         return total_loss
 
-    def preprocess_observations(self, observation) -> Observations:
-        return observation
+    def preprocess_observations(self, observations: Observations) -> Observations:
+        return observations
     
     def preprocess_rewards(self, reward: Rewards) -> Rewards:
         return reward
-        
+
     def configure_optimizers(self):
         return self.hp.make_optimizer(self.parameters())
 

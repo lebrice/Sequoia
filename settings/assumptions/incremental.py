@@ -199,6 +199,7 @@ class IncrementalSetting(SettingABC):
             logger.info(f"Starting testing on task {task_id}")
             self._current_task_id = task_id
             # assert not self.smooth_task_boundaries, "TODO: (#18) Make another 'Continual' setting that supports smooth task boundaries."
+            
             # Inform the model of a task boundary. If the task labels are
             # available, then also give the id of the new task.
             # TODO: Should we also inform the method of wether or not the task
@@ -245,8 +246,7 @@ class IncrementalSetting(SettingABC):
         episode_metrics: List[Metrics] = []
 
         # Reset the environment, which gives the first batch of observations.
-        observations = env.reset()
-        actions = method.get_actions(observations, env.action_space)
+        observations: Observations = env.reset()
 
         # Create a nice progress bar.
         # NOTE: The env might now always have a length attribte, actually.
@@ -256,18 +256,18 @@ class IncrementalSetting(SettingABC):
         # Close the pbar before exiting.
         with pbar:
             for i in pbar:
-                observations, rewards, done, info = env.step(actions)
-                batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
-                # print(observations.batch_size, actions.batch_size, rewards.batch_size)
-                # print(actions.y_pred == rewards.y)
-                episode_metrics.append(batch_metrics)
-
                 actions = method.get_actions(observations, env.action_space)
+                observations, rewards, done, info = env.step(actions)
+                
+                batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
+                episode_metrics.append(batch_metrics)
 
                 if isinstance(batch_metrics, Metrics):
                     # display metrics in the progress bar.
                     pbar.set_postfix(batch_metrics.to_pbar_message())
-                
+                else:
+                    pbar.set_postfix({"batch metrics": batch_metrics})
+
                 if done:
                     break
         return episode_metrics
