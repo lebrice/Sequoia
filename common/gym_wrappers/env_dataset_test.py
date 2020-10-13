@@ -39,7 +39,7 @@ def test_step_normally_works_fine():
 
 from .env_dataset import random_policy
 
-# @pytest.mark.xfail(reason="TODO: Make sure that 'next/send' and 'step' produce the same results.")
+
 def test_iterating_with_policy():
     env = DummyEnvironment()
     env = EnvDataset(env, max_steps=8)
@@ -64,8 +64,9 @@ def test_iterating_with_policy():
 
     for i, batch in enumerate(env):
         print(f"Step {i}: batch: {batch}")
-        (observation, action), (reward, next_observation) = batch
+        (observation, action, next_observation), reward = batch
         assert observation == expected_obs[i]
+        assert next_observation == expected_obs[i+1]
         assert action == actions[i]
         assert reward == expected_rewards[i]
 
@@ -80,21 +81,45 @@ def test_raise_error_when_missing_action():
         env.seed(123)
 
         with pytest.raises(RuntimeError):
-            for i, (obs, done, info) in zip(range(5), env):
+            for i, observation in zip(range(5), env):
                 pass
 
-@pytest.mark.xfail(reason="TODO: Changing the API atm.")
 def test_doesnt_raise_error_when_action_sent():
     env = DummyEnvironment()
     with EnvDataset(env) as env:
         env.reset()
         env.seed(123)
     
-        for i, (obs, done, info) in zip(range(5), env):
+        for i, obs in zip(range(5), env):
+            assert obs in env.observation_space
+            reward = env.send(env.action_space.sample())
+
+
+def test_max_episodes():
+    max_episodes = 3
+    env = EnvDataset(
+        env=gym.make("CartPole-v0"),
+        max_episodes=max_episodes,
+    )
+    env.seed(123)
+    for episode in range(max_episodes):
+        # This makes use of the fact that given this seed, the episode should only
+        # last a set number of frames.
+        for i, observation in enumerate(env):
+            print(f"step {i} {observation}")
+            action = 0
+            reward = env.send(action)
+            if i >= 20:
+                assert False, "The episode should never be longer than about 10 steps!"
+    
+    with pytest.raises(gym.error.ClosedEnvironmentError):
+        for i, observation in enumerate(env):
+            print(f"step {i} {observation}")
+            action = 0
             env.send(env.action_space.sample())
 
-@pytest.mark.xfail(reason="TODO: Check the 'max_steps' and 'max_episodes' mechanism, there might be a gym Wrapper better suited for that.")
-def test_one_epoch_only():
+
+def test_max_steps():
     epochs = 3
     max_steps = 5
     env = EnvDataset(
@@ -112,13 +137,15 @@ def test_one_epoch_only():
             assert i < max_steps, f"Max steps should have been respected: {i}"
             rewards = env.send(env.action_space.sample())
             all_rewards.append(rewards)
-        assert len(all_rewards) == 5
+        assert len(all_rewards) == max_steps
         env.reset()
-        
+
         with pytest.raises(gym.error.ClosedEnvironmentError):
             for i in range(10):
-                batch = next(env)
+                print(i)
+                observation = next(env)
                 rewards = env.send(env.action_space.sample())
                 all_rewards.append(rewards)
-    assert len(all_rewards) == epochs * max_steps
+    
+    assert len(all_rewards) == max_steps
 
