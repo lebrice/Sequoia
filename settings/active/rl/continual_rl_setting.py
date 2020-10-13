@@ -121,27 +121,28 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             image_transforms=self.transforms,
         )
         temp_env.reset()
-        from gym.spaces import Dict as SpaceDict
-        self.observation_space = SpaceDict({
-            "x": temp_env.observation_space
-        })
-        self.action_space = temp_env.action_space
-        self.reward_space = getattr(temp_env, "reward_space", None)
-        if self.reward_space is None:
+        
+        observation_space = spaces.Tuple([
+            temp_env.observation_space,
+            spaces.Discrete(self.nb_tasks),
+        ])
+        # TODO: We could probably add the 'next state' in the action space! 
+        action_space = temp_env.action_space
+        reward_space = getattr(temp_env, "reward_space", None)
+        if reward_space is None:
             # The reward is always a scalar in gym environments, as far as I can
             # tell.
             reward_range = temp_env.reward_range
-            from gym.spaces import Box
-            self.reward_space = Box(low=reward_range[0], high=reward_range[1], shape=())
+            reward_space = spaces.Box(low=reward_range[0], high=reward_range[1], shape=())
         
-        logger.debug(f"Observation space: {self.observation_space}")
-        logger.debug(f"Action space: {self.action_space}")
-        logger.debug(f"Reward space: {self.reward_space}")
+        logger.debug(f"Observation space: {observation_space}")
+        logger.debug(f"Action space: {action_space}")
+        logger.debug(f"Reward space: {reward_space}")
 
         super().__post_init__(
-            observation_space=self.observation_space,
-            action_space=self.action_space,
-            reward_space=self.reward_space,
+            observation_space=observation_space,
+            action_space=action_space,
+            reward_space=reward_space,
         )
         # Create a task schedule. This uses the temp env just to get the
         # properties that can be set for each task.
@@ -177,15 +178,30 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         return results
   
     def train_dataloader(self, *args, **kwargs) -> GymDataLoader[Observations, Actions, Rewards]:
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_fit:
+            self.setup("fit")
+        
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        # Get the train wrappers.
         wrappers = self.train_wrappers()
         if self.train_env:
             self.train_env.close()
             del self.train_env
         self.train_env = self.make_env_dataloader(wrappers, *args, **kwargs)
+        # Update the observation/action/reward spaces to actually reflet that of
+        # the dataloader.
+        self.observation_space = self.train_env.observation_space[0]
+        self.action_space = self.train_env.action_space[0]
+        self.reward_space = self.train_env.reward_space[0]
         return self.train_env
-    
+
     def val_dataloader(self, *args, **kwargs) -> GymDataLoader[Observations, Actions, Rewards]:
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_fit:
+            self.setup("fit")
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         wrappers = self.val_wrappers()
         if self.val_env:
@@ -195,6 +211,10 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         return self.val_env
         
     def test_dataloader(self, *args, **kwargs) -> GymDataLoader[Observations, Actions, Rewards]:
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_test:
+            self.setup("test")
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         wrappers = self.test_wrappers()
         if self.test_env:
@@ -203,75 +223,20 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         self.test_env = self.make_env_dataloader(wrappers, *args, **kwargs)
         return self.test_env
 
-    def make_observations(self, state: Union[np.ndarray, Tensor]) -> Observations:
-        # WIP: Convert the 'state' part of the EnvDatasetItem into an Observation.
-        assert isinstance(state, (np.ndarray, torch.Tensor))
-        x = torch.as_tensor(state)
-        observations = self.Observations(x)
-        return observations
-
     def make_env_dataloader(self, wrappers, *args, **kwargs):
-        # TODO: Figure this stuff out:
-        on_missing_action = self.on_missing_action
         max_steps = self.max_steps
-        
         env: GymDataLoader = GymDataLoader(
             env=self.env_name,
             pre_batch_wrappers=wrappers,
             max_steps=max_steps,
             # TODO: Having a lot of trouble trying to get the GymDataLoader to
             # return Observations objects..
-            observations_type=self.Observations,
             # use_multiprocessing=False,
+            observations_type=self.Observations,
             **kwargs,
         )
         return env
         
-        from common.gym_wrappers.env_dataset import TransformEnvDatasetItem
-        env: GymDataLoader = GymDataLoader(
-            env=self.env_name,
-            pre_batch_wrappers=wrappers,
-            # post_batch_wrappers=post_batch_wrappers,
-            max_steps=max_steps,
-            on_missing_action=on_missing_action,
-            # observations_type=self.Observations,
-            # actions_type=self.Actions,
-            # rewards_type=self.Rewards,
-            **kwargs
-        )
-        # from common.gym_wrappers.env_dataset import TransformEnvDatasetItem
-        # env = TransformObservation(env, f=self.make_observations)
-        
-        # TODO: The state is still a Tensor or np.ndarray, not an Observations.
-        # This will also be true when iterating over the env with .step().
-        # state = env.reset()
-        
-        # thing = env.step(env.action_space.sample())
-        # assert False, thing
-        # BUG: When iterating over the env, it always gives back EnvDatasetItems
-        # with a Tensor as the observation, instead of giving the Observations
-        # we'd like.
-        # for obs_batch in env:
-        #     assert isinstance(obs_batch, self.Observations), obs_batch
-        #     break
-        
-        # batch_size = env.observation_space.shape[0]
-        # assert isinstance(env.action_space, spaces.Tuple)
-        # assert len(env.action_space) == batch_size
-        # assert self.action_space == env.action_space[0]
-        
-        # assert isinstance(env.reward_space, spaces.Tuple)
-        # assert len(env.reward_space) == batch_size
-        # assert self.reward_space == env.reward_space[0]
-        # # Update the observation/action spaces on `self` to have the batch size?
-        # # TODO: Not sure if this is a good idea..
-        # self.observation_space["x"].shape = (
-        #     batch_size,
-        #     *self.observation_space["x"].shape
-        # )
-        # self.action_space = env.action_space
-        # self.reward_space = env.reward_space
-        return env
     
 
     def create_task_schedule_for_env(self, env: MultiTaskEnvironment) -> Dict[int, Dict[str, float]]:
@@ -384,45 +349,40 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             wrappers.append(partial(TransformObservation, f=self.test_transforms))
         return wrappers
 
+    def get_metrics(self,
+                    actions: Actions,
+                    rewards: Rewards) -> Union[float, Metrics]:
+        # We customize this here so that the 'Metrics' is the right kind.
+        # actions = self.Actions.from_inputs(actions)
+        # rewards = self.Rewards.from_inputs(rewards)
+        # The metrics here is the mean reward. We do this with:
+        return rewards.mean()
+        return RegressionMetrics(mse=rewards.mean())
+        assert False, (actions, rewards)
+
     def _check_dataloaders_give_correct_types(self):
         """ Do a quick check to make sure that the dataloaders give back the
         right observations / reward types.
         """
+        return
         # TODO: This method is duplicated in a few places just for debugging atm:
         # (ClassIncrementalSetting, Setting, and here).
         for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
             env = loader_method()
-            
+            state = env.reset()
             from settings.passive import PassiveEnvironment
             from settings.active import ActiveEnvironment
             from utils.utils import take
             
-            for i, batch in zip(range(5), env):
-                logger.debug(f"Checking at step {i} in env {env}")
-                observations, rewards = batch, None
+            # This works fine:
+            for i in range(5):
+                obs, reward, done, info = env.step(env.action_space.sample())
+                assert isinstance(obs, self.Observations)
+                assert isinstance(reward, self.Rewards)
 
-                if not isinstance(observations, self.Observations):
-                    assert False, (type(observations), [type(v) for v in observations])
-
-                observations: Observations
-                batch_size = observations.batch_size
-                batch_size = observations.batch_size
-                rewards: Optional[Rewards] = rewards[0] if rewards else None
-                if rewards is not None:
-                    assert isinstance(rewards, self.Rewards), type(rewards)
-                # TODO: If we add gym spaces to all environments, then check
-                # that the observations are in the observation space, sample
-                # a random action from the action space, check that it is
-                # contained within that space, and then get a reward by
-                # sending it to the dataloader. Check that the reward
-                # received is in the reward space.
-                actions = self.action_space.sample()
-                assert len(actions) == batch_size
-                if not isinstance(actions, self.Actions):
-                    actions = self.Actions(actions)
-                rewards = env.send(actions)
-                assert isinstance(rewards, self.Rewards), type(rewards)
+            # TODO: Check the interaction when using the env as a dataloader!
             
+            env.close()
 
 if __name__ == "__main__":
     ContinualRLSetting.main()

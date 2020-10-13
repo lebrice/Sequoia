@@ -37,36 +37,15 @@ def test_step_normally_works_fine():
     obs, reward, done, info = env.step(0)
     assert (obs, reward, done, info) == (0, 5, False, {})
 
-# @pytest.mark.xfail(reason="TODO: Make sure that 'next/send' and 'step' produce the same results.")
-def test_using_next_does_the_same_as_above():
-    env = DummyEnvironment()
-    env = EnvDataset(env)
-    env.seed(123)
-        
-    # obs, reward, done, info = env.step(0)
-    # assert (obs, reward, done, info) == (0, 5, False, {})
-    # obs, reward, done, info = env.step(1)
-    # assert (obs, reward, done, info) == (1, 4, False, {})
-    # obs, reward, done, info = env.step(1)
-    # assert (obs, reward, done, info) == (2, 3, False, {})
-    # obs, reward, done, info = env.step(2)
-    # assert (obs, reward, done, info) == (1, 4, False, {})
-    # obs, reward, done, info = env.step(1)
-    # assert (obs, reward, done, info) == (2, 3, False, {})
-    # obs, reward, done, info = env.step(1)
-    # assert (obs, reward, done, info) == (3, 2, False, {})
-    # obs, reward, done, info = env.step(1)
-    # assert (obs, reward, done, info) == (4, 1, False, {})
-    
-    # obs, reward, done, info = env.step(1)
-    # assert (obs, reward, done, info) == (5, 0, True, {})
+from .env_dataset import random_policy
 
-    # env.reset()
-    # obs, reward, done, info = env.step(0)
-    # assert (obs, reward, done, info) == (0, 5, False, {})
-    
-    # Equivalent to this:
-    actions = [0, 1, 1, 2, 1, 1, 1, 1]
+# @pytest.mark.xfail(reason="TODO: Make sure that 'next/send' and 'step' produce the same results.")
+def test_iterating_with_policy():
+    env = DummyEnvironment()
+    env = EnvDataset(env, max_steps=8)
+    env.seed(123)
+
+    actions = [0, 1, 1, 2, 1, 1, 1, 1, 0, 0, 0]
     expected_obs = [0, 0, 1, 2, 1, 2, 3, 4, 5]
     expected_rewards = [5, 4, 3, 4, 3, 2, 1, 0]
     expected_dones = [False, False, False, False, False, False, False, True]
@@ -74,25 +53,24 @@ def test_using_next_does_the_same_as_above():
     reset_obs = 0
     # obs = env.reset()
     # assert obs == reset_obs
+    n_calls = 0
+    
+    def custom_policy(observations, action_space):
+        nonlocal n_calls
+        action = actions[n_calls]
+        n_calls += 1
+        return action    
+    env.set_policy(custom_policy)
 
-    actual_obs = []
-    actual_dones = []
-    actual_rewards = []
+    for i, batch in enumerate(env):
+        print(f"Step {i}: batch: {batch}")
+        (observation, action), (reward, next_observation) = batch
+        assert observation == expected_obs[i]
+        assert action == actions[i]
+        assert reward == expected_rewards[i]
 
-    for i, observation in enumerate(env):
-        print(f"Step {i}: batch: {observation}")
-        # obs = observation
-        actual_obs.append(observation)
-        # actual_dones.append(done)
-        
         if i == len(actions):
             break
-        rewards = env.send(actions[i])
-        actual_rewards.append(rewards)
-    assert actual_obs == expected_obs
-    # assert actual_dones == expected_dones
-    assert actual_rewards == expected_dones
-    
 
 
 def test_raise_error_when_missing_action():
@@ -100,12 +78,12 @@ def test_raise_error_when_missing_action():
     with EnvDataset(env) as env:
         env.reset()
         env.seed(123)
-        
+
         with pytest.raises(RuntimeError):
             for i, (obs, done, info) in zip(range(5), env):
                 pass
 
-
+@pytest.mark.xfail(reason="TODO: Changing the API atm.")
 def test_doesnt_raise_error_when_action_sent():
     env = DummyEnvironment()
     with EnvDataset(env) as env:
@@ -121,7 +99,6 @@ def test_one_epoch_only():
     max_steps = 5
     env = EnvDataset(
         env=gym.make("CartPole-v0"),
-        one_epoch_only=True,
         max_steps=max_steps,
     )
     all_rewards = []

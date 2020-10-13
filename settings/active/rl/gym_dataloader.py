@@ -100,8 +100,8 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
                  #  action_space: gym.Space = None,
                  #  reward_space: gym.Space = None,
                  #
-                 on_missing_action: Callable[[ObservationType, gym.Space], ActionType] = None,
-                 #
+                 policy: Callable[[ObservationType, gym.Space], ActionType] = None,
+                 dataset_item_type: Callable = None,
                  pre_batch_wrappers: List[Callable] = None,
                  post_batch_wrappers: List[Callable] = None,
                  # todo: Use those ?
@@ -111,6 +111,7 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
                  # TODO: Still debugging both multiprocessing and non-multiprocessing versions. 
                  use_multiprocessing: bool = True,
                  **kwargs):
+
         if not isinstance(env, str) or callable(env):
             raise RuntimeError(
                 f"`env` must be either a str (gym ID) or acallable which takes "
@@ -161,26 +162,14 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
             self.env = wrapper(self.env)
 
         from common.gym_wrappers import TransformObservation
-        # if self.observations_type:
-        #     self.env = TransformObservation(self.env, f=self.observations_type.from_inputs)
-        
-        # if issubclass(self.observations_type, Batch):
-        #     dataset_item_type = self.observations_type.from_args
-        # elif self.observations_type:
-        #     dataset_item_type = self.observations_type
-        # else:
-        #     dataset_item_type = EnvDatasetItem
         
         # Add a wrapper to create an IterableDataset from the env.
         self.env = EnvDataset(
             self.env,
+            policy=policy,
             max_steps=max_steps,
-            # dataset_item_type=dataset_item_type,
-            on_missing_action=on_missing_action,
+            dataset_item_type=dataset_item_type,
         )
-        # if self.observations_type:
-        #     from common.gym_wrappers.env_dataset import TransformEnvDatasetItem
-        #     self.env = TransformEnvDatasetItem(self.env, f=self.observations_type.from_inputs)
 
         # We set this to 0 because we are using workers internally in the
         # VecEnv instead of the usual dataloadering workers.
@@ -221,29 +210,7 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
         # This gives back the single-process dataloader iterator over the 'dataset'
         # which in this case is the environment:
         return super().__iter__()
-        # while True:
-        # for i, batch in enumerate(iter(self.env)):
-        #     logger.debug(f"At step {i}: {type(batch)}, ")
-        #     if self.observations_type:
-        #         yield self.observations_type.from_inputs(batch)
-        #     else:
-        #         yield batch
-            # raise StopIteration
-    
-        # return iter(self.env)
         
-        # self.env.reset()
-        # while True:
-        #     logger.debug(f"At step {i}: {type(batch)}, ")
-        #     batch: EnvDatasetItem
-        
-            # yield batch[0]
-        # self.env.close()
-        # return super().__iter__()
-        # return super().__iter__()
-        # TODO: Could we also maybe just return iter(self.env) ?
-        # self._iterator = super().__iter__()
-        # return self._iterator
 
     def set_policy(self, policy: Callable[[ObservationType], ActionType]) -> None:
         self.env.set_policy(policy)

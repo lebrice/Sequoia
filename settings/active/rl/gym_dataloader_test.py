@@ -6,13 +6,16 @@ import gym
 import numpy as np
 import pytest
 import torch
+
 from common.gym_wrappers import (AsyncVectorEnv, ConvertToFromTensors,
                                  EnvDataset, PixelStateWrapper)
 from common.transforms import ChannelsFirstIfNeeded
 from conftest import DummyEnvironment, xfail
+from gym import spaces
 from gym.envs.classic_control import CartPoleEnv, PendulumEnv
 from common.gym_wrappers import TransformObservation
 from torch import Tensor
+
 from utils import take
 from utils.logging_utils import get_logger
 
@@ -21,6 +24,24 @@ from .make_env import default_wrappers_for_env
 
 logger = get_logger(__file__)
 
+
+
+@pytest.mark.parametrize("batch_size", [1, 2, 5])
+def test_spaces(batch_size: int):
+    env_fns = [partial(gym.make, ) for _ in range(batch_size)]
+    env = "CartPole-v0"
+    with GymDataLoader(env, batch_size=batch_size) as env:
+        assert isinstance(env.observation_space, spaces.Tuple)
+        assert len(env.observation_space.spaces) == batch_size
+        for space in env.observation_space.spaces:
+            assert isinstance(space, spaces.Box)
+            assert space.shape == (4,)
+        
+        assert isinstance(env.action_space, spaces.Tuple)
+        assert len(env.action_space.spaces) == batch_size
+        for space in env.action_space.spaces:
+            assert isinstance(space, spaces.Discrete)
+            assert space.n == 2
 
 
 def test_max_steps_is_respected():
