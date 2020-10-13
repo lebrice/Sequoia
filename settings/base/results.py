@@ -44,6 +44,8 @@ class Results(Serializable, ABC):
     TODO: Add wandb logging here somehow.
     """
     lower_is_better: ClassVar[bool] = False
+    # Name for the 'objective'.
+    objective_name: ClassVar[str] = "Objective"
 
     @property
     @abstractmethod
@@ -72,10 +74,13 @@ class Results(Serializable, ABC):
         :rtype: Dict[str, plt.Figure]
         """
     
-    # @abstractmethod
-    def log_wandb(self) -> Dict[str, Any]:
+    @abstractmethod
+    def to_log_dict(self) -> Dict[str, Any]:
         """Create a dict version of the results, to be logged to wandb
         """
+        return {
+            self.objective_name: self.objective
+        }
 
     def save(self, path: Union[str, Path], dump_fn=None, **kwargs) -> None:
         path = Path(path)

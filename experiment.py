@@ -106,6 +106,7 @@ class Experiment(Parseable, Serializable):
                 self.method = self.method.from_args(argv)
             
             # Give the same Config to both the Setting and the Method.
+            # TODO: Decide who should be holding what options from the config.
             self.method.config = self.config
             self.setting.config = self.config
             

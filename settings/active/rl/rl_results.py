@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from settings.assumptions.incremental import IncrementalSetting
 from utils import mean
 from common import Metrics, RegressionMetrics, ClassificationMetrics
-from typing import List
+from typing import List, ClassVar
 
 
 @dataclass
@@ -14,6 +14,7 @@ class RLResults(IncrementalSetting.Results, Results):
     reward, something like that.
     """
     test_metrics: List[List[RegressionMetrics]] = field(repr=False)
+    objective_name: ClassVar[str] = "Mean Reward"      
 
     @property
     def objective(self) -> float:

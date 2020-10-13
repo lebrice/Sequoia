@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from io import StringIO
 from itertools import accumulate, chain
 from functools import partial
-from typing import Dict, List, Union
+from typing import Dict, List, Union, ClassVar
 from pathlib import Path
 
 
@@ -43,15 +43,16 @@ class ClassIncrementalResults(IncrementalSetting.Results):
     All of these will be created from the list of test metrics (Classification
     metrics for now).
     
-    TODO: Add back Wandb logging somehow, even though we're doing the
+    TODO: Add back Wandb logging somehow, even though we might be doing the
     evaluation loop ourselves.
+    TODO: Fix this for the 'incremental regression' case.
     """
     test_metrics: List[List[Metrics]] = list_field(repr=False)
-       
+    objective_name: ClassVar[str] = "Average Accuracy"
 
     def make_plots(self):
         results = {
-            "task_accuracies": self.task_accuracies_plot()
+            "task_metrics": self.task_accuracies_plot()
         }
         return results
 
@@ -101,13 +102,22 @@ class ClassIncrementalResults(IncrementalSetting.Results):
         return s.read()
 
     def to_log_dict(self) -> Dict[str, float]:
-        results = OrderedDict()
-        results["objective"] = self.objective
+        results = {}
+        results[self.objective_name] = self.objective
+        average_metrics = self.average_metrics
+
+        if isinstance(average_metrics, ClassificationMetrics):
+            results["accuracy/average"] = average_metrics.accuracy
+        elif isinstance(average_metrics, RegressionMetrics):
+            results["mse/average"] = average_metrics.mse
+        else:
+            results["average metrics"] = average_metrics
+
         for i, average_task_metrics in enumerate(self.average_metrics_per_task):
             if isinstance(average_task_metrics, ClassificationMetrics):
-                results[f"task_{i}/accuracy"] = average_task_metrics.accuracy
+                results[f"accuracy/task_{i}"] = average_task_metrics.accuracy
             elif isinstance(average_task_metrics, RegressionMetrics):
-                results[f"task_{i}/mse"] = average_task_metrics.mse
+                results[f"mse/task_{i}"] = average_task_metrics.mse
             else:
                 results[f"task_{i}"] = average_task_metrics
         return results

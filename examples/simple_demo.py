@@ -1,12 +1,14 @@
 """ Demo script. """
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import ClassVar, Dict, Optional, Tuple, Type
 
 import gym
 import numpy as np
 import pytorch_lightning as pl
 import torch
+import wandb
 from gym import spaces
+from pytorch_lightning.core.decorators import auto_move_data
 from simple_parsing import ArgumentParser, Serializable
 from torch import Tensor, nn
 
@@ -25,6 +27,8 @@ Rewards = ClassIncrementalSetting.Rewards
 
 class MyNewMethod(Method, target_setting=ClassIncrementalSetting):
     """ Example of writing a new method. """
+    # Name for our new method.
+    name: ClassVar[str] = "demo"
 
     @dataclass
     class HParams(Serializable):
@@ -33,13 +37,29 @@ class MyNewMethod(Method, target_setting=ClassIncrementalSetting):
 
     def __init__(self, hparams: HParams, config: Config):
         self.hparams = hparams
-        self.config = config
+        self.config: Config = config
         
         self.trainer: pl.Trainer
         self.model: MyModel
 
     def configure(self, setting: Setting):
-        """ Configure this method before being applied on a setting. """
+        """ Configure this method before being applied on a given setting. """
+        setting_name: str = setting.get_name()
+        method_name: str = self.get_name()
+        dataset = setting.dataset
+        from pytorch_lightning.loggers import WandbLogger
+        logger = WandbLogger(
+            name=f"{self.name}-{setting_name}-{dataset}",
+            save_dir="results",
+            project="demo",
+            group=f"{setting_name}-{dataset}",
+        )
+        self.trainer = pl.Trainer(
+            gpus=1,
+            max_epochs=1,
+            logger=logger,
+            # fast_dev_run=True,
+        )
 
     def fit(self,
             train_env: PassiveEnvironment = None,
@@ -57,13 +77,8 @@ class MyNewMethod(Method, target_setting=ClassIncrementalSetting):
             By default None 
         """
         # configure() will have been called by the setting before we get here.
-        self.trainer = pl.Trainer(
-            gpus=1,
-            max_epochs=1,
-            # fast_dev_run=True,
-        )
+        
         self.model = MyModel(
-            setting=setting,
             observation_space=train_env.observation_space,
             action_space=train_env.action_space,
             reward_space=train_env.reward_space,
@@ -84,13 +99,11 @@ class MyNewMethod(Method, target_setting=ClassIncrementalSetting):
 
 class MyModel(pl.LightningModule):
     def __init__(self,
-                 setting: Setting,
                  observation_space: gym.Space,
                  action_space: gym.Space,
                  reward_space: gym.Space,
                  learning_rate: float = 1e-4):
         super().__init__()
-        self.setting: ClassIncrementalSetting = setting
         # The spaces we're given have a batch dimension, so we just extract a
         # single slice.
         self.observation_space = observation_space[0]
@@ -105,7 +118,6 @@ class MyModel(pl.LightningModule):
         assert isinstance(self.observation_space, spaces.Tuple)
         
         image_space: spaces.Box = self.observation_space[0]
-        input_features = np.prod(image_space.shape, dtype=int)
         
         if isinstance(self.action_space, spaces.Discrete):
             # Classification problem
@@ -118,9 +130,13 @@ class MyModel(pl.LightningModule):
         else:
             assert False, self.action_space
 
-        output_features = np.prod(self.output_shape, dtype=int)
+        in_channels = image_space.shape[0]
+        assert in_channels in {1, 3}, "should only be 1 or 3 input channels."
+        
+        n_outputs = np.prod(self.output_shape, dtype=int)
+        
         self.net = nn.Sequential(
-            nn.Conv2d(3, 6, 5),
+            nn.Conv2d(in_channels, 6, 5),
             nn.ReLU(),
             nn.MaxPool2d(2),
             nn.Conv2d(6, 16, 5),
@@ -131,9 +147,10 @@ class MyModel(pl.LightningModule):
             nn.ReLU(),
             nn.Linear(120, 84),
             nn.ReLU(),
-            nn.Linear(84, output_features),
+            nn.Linear(84, n_outputs),
         )
 
+    @auto_move_data
     def forward(self, observations) -> Tensor:
         x, task_labels = observations
         # assert False, self.net(x).shape
@@ -183,7 +200,7 @@ class MyModel(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
 
-if __name__ == "__main__":
+def demo():
     parser = ArgumentParser(description=__doc__)
     parser.add_arguments(Config, dest="config", default=Config())
     parser.add_arguments(MyNewMethod.HParams, dest="hparams")
@@ -195,18 +212,50 @@ if __name__ == "__main__":
 
     method = MyNewMethod(hparams=hparams, config=config)
 
+    all_results: Dict[Type[Setting], Dict[str, Results]] = {}
+    
     for SettingClass in method.get_applicable_settings():
+        all_results[SettingClass] = {}
         print(f"Type of Setting: {SettingClass}")
         
         # for dataset in SettingClass.available_datasets:
-            # Instantiate the Setting.
-            # TODO: Remove
-        dataset = "mnist"
-        setting = SettingClass(dataset=dataset)
+        for dataset in ["mnist", "fashion_mnist"]:
+            # Instantiate the Setting, using the default options for each
+            # setting, for instance the number of tasks, etc.
+            setting = SettingClass(dataset=dataset)
 
-        # Apply the method on the setting.
-        results: Results = setting.apply(method, config=config)
+            # Apply the method on the setting.
+            results: Results = setting.apply(method, config=config)
+            all_results[SettingClass][dataset] = results
+            print(f"Results for setting {SettingClass}, dataset {dataset}:")
+            print(results.summary())
+            wandb.log(results.to_log_dict())
+            wandb.log(results.make_plots())
+            wandb.summary["method"] = method.get_name()
+            wandb.summary["setting"] = setting.get_name()
+            wandb.summary["dataset"] = dataset
+            wandb.summary[results.objective_name] = results.objective
+
+    print("----- All Results -------")
+
+    for setting_type, dataset_to_results in all_results.items():
+        print(f" ----- {setting_type} ------")
+        objective_name = results.objective_name
+        import pandas as pd
         
-        print(f"Results for setting {SettingClass}, dataset {dataset}:")
-        print(results.summary())
-        exit(0)
+        datasets = []
+        objectives = []
+        for dataset, result in dataset_to_results.items():
+            datasets.append(dataset)
+            objectives.append(result.objective)
+        
+        results_df = pd.DataFrame({
+            objective_name:     datasets,
+            method.get_name(): objectives
+        })
+        print(results_df)
+        print(results_df.to_latex(index=False))  
+
+
+if __name__ == "__main__":
+    demo()
