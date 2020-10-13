@@ -5,6 +5,7 @@ from typing import (Dict, Generic, Iterator, List, NamedTuple, Tuple, Type,
 import gym
 import numpy as np
 from gym import spaces
+from torch.utils.data import IterableDataset
 
 from utils.logging_utils import get_logger
 
@@ -41,7 +42,7 @@ def has_wrapper(env: gym.Wrapper, wrapper_type: Type[gym.Wrapper]) -> bool:
     return False
 
 
-class IterableWrapper(gym.Wrapper, ABC):
+class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
     """ ABC that allows iterating over the wrapped env, if it is iterable.
     
     This allows us to wrap dataloader-based Environments and still use the gym

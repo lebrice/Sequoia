@@ -125,8 +125,10 @@ class EnvDataset(gym.Wrapper,
         ------
         gym.error.ClosedEnvironmentError
             If the env is already closed.
+        gym.error.ResetNeeded
+            If the env hasn't been reset before this is called.
         StopIteration
-            When the step limit has been reached. 
+            When the step limit has been reached.
         StopIteration
             When the episode limit has been reached.
         RuntimeError
@@ -149,38 +151,13 @@ class EnvDataset(gym.Wrapper,
         self._observation, self._reward, self._done, self._info = self.step(self._action)
         return self._observation
 
-    #     # NOTE: See the docstring of `GymDataLoader` for an explanation of why
-    #     # this doesn't return the same thing as `step()`.
-
-    #     # self._action was passed through 'send', now we can give back the observations
-    #     # of the previous step, and then update the env.
-    #     if self._current_step_result is None:
-    #         # This means we're at the start of an episode.
-    #         self._action = self.action_space.sample()
-    #         self._previous_step_result = self.step(self._action)
-
-    #     # Update the env for the next step.
-    #     self._previous_step_result = self._current_step_result
-    #     self._current_step_result = self.step(self._action)
-
-    #     item = self.env_dataset_item(self._current_step_result)        
-    #     # Delete the action, to force the user to pass one to send or to use a
-    #     # default policy.
-    #     self._action = None
-    #     return item
-
     def send(self, action: ActionType) -> RewardType:
         """ Sends an action to the environment, returning a reward.
         This will raise an error when if not called without
         """
-        # assert False, (
-        #     "TODO: work in progress, if you're gonna pretend this is an "
-        #     "'active' environment, then use the gym API for now."
-        # )
         assert action is not None, "Don't send a None action!"
         self._action = action
         self.__next__()
-        # self._observations, self._rewards, self._done, self._info = self.step(self._action)
         self._n_sends += 1
         return self._reward
 
@@ -196,7 +173,7 @@ class EnvDataset(gym.Wrapper,
             raise gym.error.ClosedEnvironmentError("Env has already reached limit and is closed.")
         
         if self.policy:
-            return self.iterator_with_policy()
+            return self.policy_iterator()
         else:
             return self.iterator_with_send()
 
@@ -214,10 +191,9 @@ class EnvDataset(gym.Wrapper,
         RuntimeError
             [description]
         """
-        
         if self._closed:
             raise gym.error.ClosedEnvironmentError("Can't iterate over closed Env.")
-
+        # First step:
         if not self._reset:
             self._observation = self.reset()
         self._done = False
@@ -239,7 +215,8 @@ class EnvDataset(gym.Wrapper,
             if self._action is None:
                 raise RuntimeError(
                     "You have to send an action using send() between every "
-                    "observation (since there is no policy)."
+                    "observation (since there was no policy set at the start "
+                    "of this iteration)."
                 )
 
             if not isinstance(self._done, bool):
@@ -262,9 +239,13 @@ class EnvDataset(gym.Wrapper,
             logger.debug("Done iterating, closing the env.")
             self.close()
 
-    def iterator_with_policy(self) -> Iterable[Item]:
-        """Iterate when using a policy, yielding 'items' which could be state
-        transitions.
+    def policy_iterator(self) -> Iterable[Item]:
+        """Iterator for the env that uses a policy to yield 'items', which could
+        be state transitions.
+
+        TODO: Do we want to iterate over a single episode here? Or loop over
+        many episodes? In other words, should we provide the 'user' with a
+        single "trajectory" per iteration?
 
         Returns
         -------

@@ -42,7 +42,7 @@ from .env_dataset import random_policy
 
 def test_iterating_with_policy():
     env = DummyEnvironment()
-    env = EnvDataset(env, max_steps=8)
+    env = EnvDataset(env, max_episodes=1)
     env.seed(123)
 
     actions = [0, 1, 1, 2, 1, 1, 1, 1, 0, 0, 0]
@@ -59,7 +59,8 @@ def test_iterating_with_policy():
         nonlocal n_calls
         action = actions[n_calls]
         n_calls += 1
-        return action    
+        return action
+    
     env.set_policy(custom_policy)
 
     for i, batch in enumerate(env):
@@ -73,6 +74,35 @@ def test_iterating_with_policy():
         if i == len(actions):
             break
 
+
+def test_iterating_with_send():
+    env = DummyEnvironment(target=5)
+    env = EnvDataset(env)
+    env.seed(123)
+
+    actions = [0, 1, 1, 2, 1, 1, 1, 1, 0, 0, 0]
+    expected_obs = [0, 0, 1, 2, 1, 2, 3, 4, 5]
+    expected_rewards = [5, 4, 3, 4, 3, 2, 1, 0]
+    expected_dones = [False, False, False, False, False, False, False, True]
+
+    reset_obs = 0
+    # obs = env.reset()
+    # assert obs == reset_obs
+    n_calls = 0
+
+    for i, observation in enumerate(env):
+        print(f"Step {i}: batch: {observation}")
+        assert observation == expected_obs[i]
+        
+        action = actions[i]
+        reward = env.send(action)
+        assert reward == expected_rewards[i]
+    # TODO: The episode will end as soon as 'done' is encountered, which means
+    # that we will never be given the 'final' observation. In this case, the
+    # DummyEnvironment will set done=True when the state is state = target = 5 
+    # in this case.
+    assert observation == 4
+    
 
 def test_raise_error_when_missing_action():
     env = DummyEnvironment()
