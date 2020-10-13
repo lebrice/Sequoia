@@ -1,5 +1,6 @@
 from typing import Dict, Tuple, Union
-
+import gym
+from gym import spaces
 import torch
 from common.layers import Lambda
 from torch import Tensor, nn
@@ -19,13 +20,24 @@ def concat_obs_and_action(observation_action: Tuple[Tensor, Tensor]) -> Tensor:
     return torch.cat([observation, action], dim=-1)
 
 
-class ActorCriticHead(nn.Module):
-    def __init__(self, input_size: Union[int, Tuple[int, ...]], action_dims: int):
-        super().__init__()
+class ActorCriticHead(OutputHead):
+    def __init__(self,
+                 input_size: int,
+                 action_space: gym.Space,
+                 reward_space: gym.Space,
+                 hparams: "OutputHead.HParams" = None,
+                 name: str = "classification"):
+        assert isinstance(action_space, spaces.Discrete), "Only support discrete space for now."
+        super().__init__(
+            input_size=input_size,
+            action_space=action_space,
+            reward_space=reward_space,
+            hparams=hparams,
+            name=name,
+        )
         if not isinstance(input_size, int):
             input_size = prod(input_size)
-        if not isinstance(action_dims, int):
-            action_dims = prod(action_dims)
+        action_dims = prod(action_space.shape)
 
         self.critic_input_dims = input_size + action_dims
         self.critic_output_dims = 1

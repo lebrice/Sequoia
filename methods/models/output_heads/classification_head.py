@@ -21,17 +21,19 @@ class ClassificationActions(Actions):
 class ClassificationHead(OutputHead):
     def __init__(self,
                  input_size: int,
-                 output_space: gym.Space,
+                 action_space: gym.Space,
+                 reward_space: gym.Space = None,
                  hparams: "OutputHead.HParams" = None,
                  name: str = "classification"):
         super().__init__(
             input_size=input_size,
-            output_space=output_space,
+            action_space=action_space,
+            reward_space=reward_space,
             hparams=hparams,
             name=name,
         )
-        assert isinstance(output_space, spaces.Discrete)
-        output_size = output_space.n
+        assert isinstance(action_space, spaces.Discrete)
+        output_size = action_space.n
         
         hidden_layers: List[nn.Module] = []
         in_features = self.input_size

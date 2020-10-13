@@ -16,25 +16,27 @@ from .output_head import OutputHead
 class RegressionHead(OutputHead):
     def __init__(self,
                  input_size: int,
-                 output_space: gym.Space,
+                 action_space: gym.Space,
+                 reward_space: gym.Space = None,
                  hparams: OutputHead.HParams = None,
                  name: str = "regression"):
-        assert isinstance(output_space, spaces.Box)
-        if len(output_space.shape) > 1:
+        assert isinstance(action_space, spaces.Box)
+        if len(action_space.shape) > 1:
             raise NotImplementedError(
                 f"TODO: Regression head doesn't support output shapes that are "
-                f"more than 1d for atm, (output space: {output_space})."
+                f"more than 1d for atm, (output space: {action_space})."
             )
             # TODO: Add support for something like a "decoder head" (maybe as a
             # subclass of RegressionHead)?
         super().__init__(
             input_size=input_size,
-            output_space=output_space,
+            action_space=action_space,
+            reward_space=reward_space,
             hparams=hparams,
             name=name,
         )
-        assert isinstance(output_space, spaces.Box)
-        output_size = prod(output_space.shape)
+        assert isinstance(action_space, spaces.Box)
+        output_size = prod(action_space.shape)
         
         hidden_layers: List[nn.Module] = []
         in_features = self.input_size

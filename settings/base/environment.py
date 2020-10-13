@@ -9,7 +9,9 @@ from dataclasses import dataclass
 from typing import Generic, Iterable, Optional, TypeVar
 
 import gym
+import numpy as np
 from common.batch import Batch
+from gym import spaces
 from torch import Tensor
 from torch.utils.data import DataLoader
 from utils.logging_utils import get_logger
@@ -32,7 +34,7 @@ class Environment(gym.Env, Generic[ObservationType, ActionType, RewardType], ABC
     # The reason why I was considering doing it that way would have been so we
     # could use pytorch lightning Trainers and the other "facilities" meant for
     # supervised learning in RL.
-    
+
     # @abstractmethod
     # def __iter__(self) -> Iterable[ObservationType]:
     #     """ Returns a generator yielding observations and accepting actions. """

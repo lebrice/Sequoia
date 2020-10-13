@@ -51,7 +51,11 @@ class ActorCritic(Agent):
     def create_output_head(self) -> OutputHead:
         """ Create the output head for the task. """
         # TODO: Should the value and policy be different output heads?
-        return ActorCriticHead(self.hidden_size, self.output_shape)
+        return ActorCriticHead(
+            input_size=self.hidden_size,
+            action_space=self.action_space,
+            reward_space=self.reward_space,
+        )
 
     def get_value(self, observation: Tensor, action: Tensor) -> Tensor:
         # FIXME: This is here just for debugging purposes.  

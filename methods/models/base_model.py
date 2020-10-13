@@ -165,12 +165,20 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
         if isinstance(self.action_space, spaces.Discrete):
             self.output_shape = (self.action_space.n,)
-            return ClassificationHead(self.hidden_size, output_space=self.action_space)
+            return ClassificationHead(
+                input_size=self.hidden_size,
+                action_space=self.action_space,
+                reward_space=self.reward_space,
+            )
 
         if isinstance(self.action_space, spaces.Box):
             # Regression problem
             self.output_shape = self.action_space.shape
-            return RegressionHead(self.hidden_size, output_space=self.action_space)
+            return RegressionHead(
+                input_size=self.hidden_size,
+                action_space=self.action_space,
+                reward_space=self.reward_space,
+            )
 
         raise NotImplementedError(
             f"No output head available for action space {self.action_space}"

@@ -48,17 +48,6 @@ class ActiveDataLoader(DataLoader, Environment[ObservationType, ActionType, Rewa
     # def __next__(self) -> ObservationType:
     #     return self.observation
 
-    def __iter__(self):
-        return super().__iter__()
-        # # TODO: This is also an idea:
-        # for batch in super().__iter__():
-        #     if isinstance(batch, tuple):
-        #         *inputs, label = batch
-        #         self.observation = inputs
-        #         self.reward = label
-        #         yield self.observation
-        #     yield batch
-
     def send(self, action: ActionType) -> RewardType:
         """ Sends an action to the 'dataset'/'Environment'.
         
