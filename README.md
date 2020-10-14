@@ -15,6 +15,7 @@ pip install -r requirements.txt
 ## TODOS:
 - [ ] Add more documentation.
 - [ ] Make sure Wandb logging works well and doesn't produce garbage.
+- [ ] Validate/Test out the RL branch.
 - [ ] ImageNet Training on the Mila cluster.
 - [ ] Test/debug Multi-GPU training on Mila cluster.
 - [ ] Test/debug Multi-node-Multi-GPU training on Mila cluster.
@@ -65,36 +66,7 @@ pip install -r requirements.txt
 	arguments using `simple_parsing`.
 
 
-	- ## [PassiveSetting](settings/passive/passive_setting.py)
-
-		Setting where actions have no influence on future observations. 
-
-		For example, supervised learning is a Passive setting, since predicting a
-		label has no effect on the reward you're given (the label) or on the next
-		samples you observe.
-
-
-		- ## [ClassIncrementalSetting](settings/passive/cl/class_incremental_setting.py)
-
-			Settings where the data is non-stationary, and grouped into tasks.
-
-			The current task can be set at the `current_task_id` attribute.
-
-
-			- ## [TaskIncrementalSetting](settings/passive/cl/task_incremental/task_incremental_setting.py)
-
-				Setting where data arrives in a series of Tasks, and where the task
-				labels are always available (both train and test time).
-
-
-				- ## [IIDSetting](settings/passive/cl/task_incremental/iid/iid_setting.py)
-
-					Your 'usual' learning Setting, where the samples are i.i.d.
-
-					Implemented as a variant of Task-Incremental CL, but with only one task.
-
-
-	- ## [ActiveSetting](settings/active/setting.py)
+	- ## [ActiveSetting](settings/active/active_setting.py)
 
 		LightningDataModule for an 'active' setting.
 
@@ -139,14 +111,64 @@ pip install -r requirements.txt
 						Implemented as a TaskIncrementalRLSetting, but with a single task.
 
 
+	- ## [PassiveSetting](settings/passive/passive_setting.py)
+
+		Setting where actions have no influence on future observations. 
+
+		For example, supervised learning is a Passive setting, since predicting a
+		label has no effect on the reward you're given (the label) or on the next
+		samples you observe.
+
+
+		- ## [ClassIncrementalSetting](settings/passive/cl/class_incremental_setting.py)
+
+			Supervised Setting where the data is a sequence of 'tasks'.
+
+			This class is basically is the supervised version of an Incremental Setting
+
+
+			The current task can be set at the `current_task_id` attribute.
+
+
+			- ## [TaskIncrementalSetting](settings/passive/cl/task_incremental/task_incremental_setting.py)
+
+				Setting where data arrives in a series of Tasks, and where the task
+				labels are always available (both train and test time).
+
+
+				- ## [IIDSetting](settings/passive/cl/task_incremental/iid/iid_setting.py)
+
+					Your 'usual' learning Setting, where the samples are i.i.d.
+
+					Implemented as a variant of Task-Incremental CL, but with only one task.
+
+
+
 
 
 ## Registered Methods (so far):
 
-* [BaselineMethod](methods/baseline.py)
-     Target setting: [Setting](settings/base/setting.py)
-* [RandomBaselineMethod](methods/random_baseline.py)
-     Target setting: [Setting](settings/base/setting.py)
-* [SelfSupervision](methods/self_supervision.py)
-     Target setting: [Setting](settings/base/setting.py)
+- ## [BaselineMethod](methods/baseline_method.py) 
+
+	 - Target setting: [Setting](settings/base/setting.py)
+
+	Versatile Baseline method which targets all settings.
+
+	Uses pytorch-lightning's Trainer for training and LightningModule as model. 
+
+	Uses a [BaselineModel](methods/models/baseline_model/baseline_model.py), which
+	can be used for:
+	- Self-Supervised training with modular auxiliary tasks;
+	- Semi-Supervised training on partially labeled batches;
+	- Multi-Head prediction (e.g. in task-incremental scenario);
+
+- ## [RandomBaselineMethod](methods/random_baseline.py) 
+
+	 - Target setting: [Setting](settings/base/setting.py)
+
+	Baseline method that gives random predictions for any given setting.
+
+	This method doesn't have a model or any parameters. It just returns a random
+	action for every observation.
+
 

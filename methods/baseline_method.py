@@ -38,11 +38,15 @@ logger = get_logger(__file__)
 
 @dataclass
 class BaselineMethod(AbstractMethod, Serializable, Parseable, target_setting=Setting):
-    """ Baseline method which targets all settings. 
+    """ Versatile Baseline method which targets all settings.
     
-    Uses pytorch-lightning for training.
+    Uses pytorch-lightning's Trainer for training and LightningModule as model. 
 
-    You could use
+    Uses a [BaselineModel](methods/models/baseline_model/baseline_model.py), which
+    can be used for:
+    - Self-Supervised training with modular auxiliary tasks;
+    - Semi-Supervised training on partially labeled batches;
+    - Multi-Head prediction (e.g. in task-incremental scenario);
     """
     # NOTE: these two fields are also used to create the command-line arguments.
     

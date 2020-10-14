@@ -7,7 +7,7 @@ from io import StringIO
 from pathlib import Path
 from typing import List, Type
 
-from methods import Method, all_methods
+from methods import MethodABC, all_methods
 from settings import Setting, all_settings
 
 
@@ -38,7 +38,7 @@ def get_tree_string(with_methods: bool = False, with_docstring: bool = False):
 
         applicable_methods = setting.get_applicable_methods()
 
-        n_children = len(setting.children)
+        n_children = len(setting.get_children())
         bar = "│" if n_children else " "
         
         if with_docstring:
@@ -56,10 +56,10 @@ def get_tree_string(with_methods: bool = False, with_docstring: bool = False):
             message += [f"{p} "]
         
         # message = "\n".join(message) + "\n"
-        # print(f"Children: {setting.children}")
-        # print(f"Children[0]'s children: {setting.children[0].children}")
+        # print(f"Children: {setting.get_children()}")
+        # print(f"Children[0]'s children: {setting.get_children()[0].children}")
         
-        for i, child_setting in enumerate(setting.children):
+        for i, child_setting in enumerate(setting.get_children()):
             child_prefix = prefix + ""
             # Recurse!
             child_message = _setting_tree(child_setting, child_prefix, indentation + 1)
@@ -140,10 +140,10 @@ def get_tree_string_markdown(with_methods: bool = False, with_docstring: bool = 
             message_lines += [""]
         
         # message = "\n".join(message) + "\n"
-        # print(f"Children: {setting.children}")
-        # print(f"Children[0]'s children: {setting.children[0].children}")
+        # print(f"Children: {setting.get_children()}")
+        # print(f"Children[0]'s children: {setting.get_children()[0].children}")
         
-        for child_setting in setting.children:
+        for child_setting in setting.get_children():
             child_message = _setting_tree(child_setting)
             child_message = textwrap.indent(child_message, tab)
             message_lines += [""]
@@ -159,10 +159,21 @@ def get_tree_string_markdown(with_methods: bool = False, with_docstring: bool = 
 def print_methods():
     for method in all_methods:
         source_file = get_relative_path_to(method)
-        print(f"* [{method.__name__}]({source_file})")
         target_setting: Type[Setting] = method.target_setting
         setting_file = get_relative_path_to(target_setting)
-        print(f"     Target setting: [{target_setting.__name__}]({setting_file})")
+        print(f"- ## [{method.__name__}]({source_file}) ")
+        print()
+        print(f"\t - Target setting: [{target_setting.__name__}]({setting_file})")
+        print()
+        docstring: str = method.__doc__
+        docstring_lines = docstring.splitlines()
+        # The first line is always less indented than the rest, which looks weird:
+        first_line = docstring_lines[0].lstrip()
+        # Remove the common indent in the rest of the docstring lines:
+        other_lines = textwrap.dedent("\n".join(docstring_lines[1:]))
+        # re-indent the docstring, with all equal indentation now:
+        docstring = first_line + "\n" + other_lines
+        print(textwrap.indent(docstring, "\t"))
 
 
 def add_stuff_to_readme(readme_path=Path("README.md")):

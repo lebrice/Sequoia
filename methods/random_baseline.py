@@ -32,13 +32,8 @@ from settings.method_base import MethodABC
 class RandomBaselineMethod(MethodABC, target_setting=Setting):
     """ Baseline method that gives random predictions for any given setting.
 
-    We do this by creating a base BaselineModel with an output head that gives random
-    predictions.
-    
-    TODO: Actually make this compatible with other settings than
-    task-incremental and iid. There will probably be some code shuffling to do
-    with respect to the `BaselineModel` class, as it is moreso aimed at being a `passive`
-    BaselineModel than an active one at the moment.
+    This method doesn't have a model or any parameters. It just returns a random
+    action for every observation.
     """
     def fit(self,
             train_env: Environment=None,
