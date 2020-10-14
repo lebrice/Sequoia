@@ -16,7 +16,7 @@ from torch import Tensor, nn
 from common.config import Config
 from common.metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                             get_metrics)
-from methods import AbstractMethod, Method
+from methods import MethodABC as MethodBase
 from settings import (ClassIncrementalSetting, PassiveEnvironment, Results,
                       Setting)
 from utils.utils import prod
@@ -27,7 +27,7 @@ Actions = ClassIncrementalSetting.Actions
 Rewards = ClassIncrementalSetting.Rewards
 
 
-class MyNewMethod(Method, target_setting=ClassIncrementalSetting):
+class MyNewMethod(MethodBase, target_setting=ClassIncrementalSetting):
     """ Example of writing a new method. """
     # Name for our new method.
     name: ClassVar[str] = "demo"
@@ -226,22 +226,22 @@ def demo(method_type = MyNewMethod) -> Dict[Type[Setting], Dict[str, Results]]:
             # setting, for instance the number of tasks, etc.
             setting = SettingClass(dataset=dataset)
             # # Apply the method on the setting.
-            results: Results = setting.apply(method, config=config)
-            all_results[SettingClass][dataset] = results
+            # results: Results = setting.apply(method, config=config)
+            # all_results[SettingClass][dataset] = results
             
-            ## Use this (and comment out below) to debug just the tables below:
-            # class FakeResult:
-            #     objective: float = 1.23
-            # all_results[SettingClass][dataset] = FakeResult()
+            # Use this (and comment out below) to debug just the tables below:
+            class FakeResult:
+                objective: float = 1.23
+            all_results[SettingClass][dataset] = FakeResult()
              
-            print(f"Results for Method {method.get_name()} on setting {SettingClass}, dataset {dataset}:")
-            print(results.summary())
-            wandb.log(results.to_log_dict())
-            wandb.log(results.make_plots())
-            wandb.summary["method"] = method.get_name()
-            wandb.summary["setting"] = setting.get_name()
-            wandb.summary["dataset"] = dataset
-            wandb.summary[results.objective_name] = results.objective
+            # print(f"Results for Method {method.get_name()} on setting {SettingClass}, dataset {dataset}:")
+            # print(results.summary())
+            # wandb.log(results.to_log_dict())
+            # wandb.log(results.make_plots())
+            # wandb.summary["method"] = method.get_name()
+            # wandb.summary["setting"] = setting.get_name()
+            # wandb.summary["dataset"] = dataset
+            # wandb.summary[results.objective_name] = results.objective
 
     print(f"----- All Results for method {method_type} -------")
     # Create a LaTeX table with all the results for all the settings.
@@ -255,22 +255,23 @@ def demo(method_type = MyNewMethod) -> Dict[Type[Setting], Dict[str, Results]]:
         all_datasets.extend(dataset_to_results.keys())                
     all_datasets = list(set(all_datasets))
     
-    # Create a multi-index for the dataframe.
-    tuples = []
-    for setting, dataset_to_results in all_results.items():
-        setting_name = setting.get_name()
-        tuples.extend((setting_name, dataset) for dataset in dataset_to_results.keys())
-    tuples = list(set(tuples))
-    multi_index = pd.MultiIndex.from_tuples(tuples, names=["setting", "dataset"])
-    single_index = pd.Index(["Objective"])
-    df = pd.DataFrame(index=multi_index, columns=single_index)
+    ## Create a multi-index for the dataframe.
+    # tuples = []
+    # for setting, dataset_to_results in all_results.items():
+    #     setting_name = setting.get_name()
+    #     tuples.extend((setting_name, dataset) for dataset in dataset_to_results.keys())
+    # tuples = sorted(list(set(tuples)))
+    # multi_index = pd.MultiIndex.from_tuples(tuples, names=["setting", "dataset"])
+    # single_index = pd.Index(["Objective"])
+    # df = pd.DataFrame(index=multi_index, columns=single_index)
 
-    # df = pd.DataFrame(index=all_setting_names, columns=all_datasets)
+    df = pd.DataFrame(index=all_setting_names, columns=all_datasets)
 
     for setting_type, dataset_to_results in all_results.items():
         setting_name = setting_type.get_name()
         for dataset, result in dataset_to_results.items():
-            df["Objective"][setting_name, dataset] = result.objective
+            # df["Objective"][setting_name, dataset] = result.objective
+            df[dataset][setting_name] = result.objective
 
     caption = f"Results for method {method_type.__name__} on all its applicable settings."
     print(df)

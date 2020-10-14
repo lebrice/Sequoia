@@ -11,7 +11,7 @@ from common.loss import Loss
 from common.task import Task
 from utils import cuda_available
 from utils.serialization import Serializable
-from methods.models.base_model import BaseModel
+from methods.models.baseline_model import BaseModel
 
 class AuxiliaryTask(nn.Module):
     """ Represents an additional loss to apply to a `Classifier`.

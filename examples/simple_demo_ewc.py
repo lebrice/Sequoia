@@ -15,7 +15,7 @@ from simple_parsing import ArgumentParser, Serializable
 
 from settings import Setting, PassiveEnvironment, PassiveSetting, ClassIncrementalSetting, Results
 from common.config import Config
-from methods import Method
+from methods import MethodABC
 from utils.logging_utils import get_logger
 from utils import dict_intersection
 
@@ -114,16 +114,16 @@ class MyImprovedModel(MyModel):
 
 
 
-def compare_methods(methods: List[Type[Method]]):
+def compare_methods(methods: List[Type[MethodABC]]):
     # Make one huge dictionary that maps from:
     # <method, <setting, <dataset, result>>>
-    all_results: Dict[Type[Method], Dict[Type[Setting], Dict[str, Results]]] = {}
+    all_results: Dict[Type[MethodABC], Dict[Type[Setting], Dict[str, Results]]] = {}
     
     for method_class in methods:
         all_results[method_class] = demo(method_class)
 
     print("----- All Results -------")
-    all_methods: List[Type[Method]] = list(all_results.keys())
+    all_methods: List[Type[MethodABC]] = list(all_results.keys())
     all_method_names: List[str] = [m.get_name() for m in all_methods]
     
     all_settings: List[Type[Setting]] = []
@@ -141,27 +141,29 @@ def compare_methods(methods: List[Type[Method]]):
     import pandas as pd
     
     # Create the a multi-index, so we can later index df[setting, datset][method]
+    # Option 1: All [settings x all datasets]
     # iterables = [all_setting_names, all_datasets]
     # columns = pd.MultiIndex.from_product(iterables, names=["setting", "dataset"])
 
+    # Option 2: Index will be [Setting, <datasets in that setting>]
     # Create the column index using the tuples that apply.
     tuples = []
     for method_class, setting_to_dataset_to_results in all_results.items():
         for setting, dataset_to_results in setting_to_dataset_to_results.items():
             setting_name = setting.get_name()
             tuples.extend((setting_name, dataset) for dataset in dataset_to_results.keys())
-    tuples = list(set(tuples))          
-    columns = pd.MultiIndex.from_tuples(tuples, names=["setting", "dataset"])
-    rows = pd.Index(all_method_names, name="Method")
-    df = pd.DataFrame(index=rows, columns=columns)
-    # df.index.rename("Method", inplace=True)
+    tuples = sorted(list(set(tuples)))          
+    multi_index = pd.MultiIndex.from_tuples(tuples, names=["setting", "dataset"])
+    single_index = pd.Index(all_method_names, name="Method")
     
+    df = pd.DataFrame(index=multi_index, columns=single_index)
+
     for method_class, setting_to_dataset_to_results in all_results.items():
         method_name = method_class.get_name()
         for setting, dataset_to_results in setting_to_dataset_to_results.items():
             setting_name = setting.get_name()
             for dataset, result in dataset_to_results.items():
-                df[setting_name, dataset][method_name] = result.objective
+                df[method_name][setting_name, dataset] = result.objective
     
     caption = f"Comparison of different methods on their applicable settings."
     print(df)

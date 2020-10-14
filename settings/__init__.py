@@ -2,11 +2,14 @@
 """
 import inspect
 from typing import Any, Dict, Iterable, List, Set, Type
-# from .setting_abc import SettingABC
+# from .setting_base import SettingABC
 # from .method_abc import MethodABC
-from .base import (Actions, ActionType, Environment, Observations,
-                   ObservationType, Results, Rewards, RewardType, Setting,
-                   SettingType)
+
+from .base.objects import (Actions, ActionType, Observations,
+                   ObservationType, Rewards, RewardType)
+from .base.results import Results
+from .base.environment import Environment
+from .base.setting import Setting, SettingType
 from .active import *
 from .passive import *
 # all concrete settings:

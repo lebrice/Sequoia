@@ -8,9 +8,9 @@ from pytorch_lightning import LightningDataModule
 from utils.logging_utils import get_logger
 
 from common import Metrics, Config
-from .base.environment import Actions, Environment, Observations, Rewards
-from .base.results import Results
-from .method_abc import MethodABC
+from settings.base.environment import Actions, Environment, Observations, Rewards
+from settings.base.results import Results
+from settings.method_base import MethodABC
 
 logger = get_logger(__file__)
 

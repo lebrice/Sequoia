@@ -9,13 +9,15 @@ from torch.utils.data import DataLoader
 from pytorch_lightning.core.decorators import auto_move_data
 
 from common.config import Config
+from common.batch import Batch
 
 from settings import ClassIncrementalSetting, Observations, Actions, Rewards
 from utils import dict_intersection, zip_dicts, prod
 from utils.logging_utils import get_logger
 
 from .semi_supervised_model import SemiSupervisedModel
-from ..base_model import Batch, BaseModel, OutputHead
+from .base_model import BaseModel
+from ..output_heads import OutputHead
 logger = get_logger(__file__)
 
 

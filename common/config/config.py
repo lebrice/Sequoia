@@ -46,9 +46,7 @@ class Config(Serializable, Parseable):
     seed: Optional[int] = None
     # Which device to use. Defaults to 'cuda' if available.
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # Options for wandb logging.
-    wandb: WandbLoggerConfig = mutable_field(WandbLoggerConfig)
-
+    
     def __post_init__(self):
         self.seed_everything()
 
@@ -56,6 +54,8 @@ class Config(Serializable, Parseable):
         if self.seed is not None:
             seed_everything(self.seed)
 
+    # Options for wandb logging.
+    wandb: WandbLoggerConfig = mutable_field(WandbLoggerConfig)
     def create_loggers(self) -> Optional[Union[LightningLoggerBase, List[LightningLoggerBase]]]:
         if self.debug:
             return None

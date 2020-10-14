@@ -10,9 +10,10 @@ from torchvision.transforms import functional as TF
 from common.layers import Flatten, Lambda
 from common.loss import Loss
 from common.metrics import ClassificationMetrics, Metrics, get_metrics
-from common.tasks.auxiliary_task import AuxiliaryTask
 from utils.utils import fix_channels
 from utils.logging_utils import get_logger
+
+from ..auxiliary_task import AuxiliaryTask
 
 logger = get_logger(__file__)
 

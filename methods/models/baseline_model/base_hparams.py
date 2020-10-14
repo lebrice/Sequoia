@@ -9,7 +9,7 @@ from torch.optim.optimizer import Optimizer  # type: ignore
 from methods.models.output_heads import OutputHead
 from utils import Parseable, Serializable
 
-from .pretrained_utils import get_pretrained_encoder
+from utils.pretrained_utils import get_pretrained_encoder
 
 
 available_optimizers: Dict[str, Type[Optimizer]] = {

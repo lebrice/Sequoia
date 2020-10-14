@@ -6,9 +6,10 @@ import torch
 from torch import Tensor, nn
 
 from common.loss import Loss
-from common.tasks.auxiliary_task import AuxiliaryTask
 
 from .decoder_for_dataset import get_decoder_class_for_dataset
+from ..auxiliary_task import AuxiliaryTask
+
 
 
 class AEReconstructionTask(AuxiliaryTask):

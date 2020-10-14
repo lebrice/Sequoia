@@ -24,7 +24,7 @@ from ..active_setting import ActiveSetting
 from .gym_dataloader import GymDataLoader
 
 
-from settings.method_abc import MethodABC
+from settings.method_base import MethodABC
 from settings.assumptions.incremental import IncrementalSetting
 from settings.base import Observations, Rewards, Actions, Results
 logger = get_logger(__file__)

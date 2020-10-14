@@ -11,7 +11,7 @@ from torch.nn import functional as F
 from common.layers import Flatten
 from common.loss import Loss
 from common.metrics import get_metrics
-from common.tasks.auxiliary_task import AuxiliaryTask
+from ..auxiliary_task import AuxiliaryTask
 
 from .bases import ClassifyTransformationTask, wrap_pil_transform
 

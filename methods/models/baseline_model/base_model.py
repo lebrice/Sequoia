@@ -31,8 +31,8 @@ from utils.logging_utils import get_logger
 from settings import Environment, Observations, Actions, Rewards
 
 from .base_hparams import BaseHParams
-from .output_heads import OutputHead, RegressionHead, ClassificationHead
-from .forward_pass import ForwardPass
+from ..output_heads import OutputHead, RegressionHead, ClassificationHead
+from ..forward_pass import ForwardPass
 
 
 logger = get_logger(__file__)

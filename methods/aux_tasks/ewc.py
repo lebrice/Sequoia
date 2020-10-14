@@ -16,8 +16,7 @@ from torch.utils.data import DataLoader
 
 # from common.dict_buffer import DictBuffer
 from common.loss import Loss
-from common.task import Task
-from common.tasks.auxiliary_task import AuxiliaryTask
+from methods.aux_tasks.auxiliary_task import AuxiliaryTask
 from methods.models.output_heads import OutputHead
 from utils import dict_intersection, dict_union
 from utils.logging_utils import get_logger

@@ -68,10 +68,9 @@ class ActorCritic(Agent):
     def get_action(self, observation: Tensor) -> Tensor:
         # FIXME: This is here just for debugging purposes.
         # assert False, (observation.shape, observation.dtype)
-        actions = self.setting.val_env.random_actions()
-        actions = torch.as_tensor(actions, dtype=self.dtype, device=self.device)
-        return actions
-
+        # actions = self.setting.val_env.random_actions()
+        # actions = torch.as_tensor(actions, dtype=self.dtype, device=self.device)
+        # return actions
         observation = torch.as_tensor(observation, dtype=self.dtype, device=self.device)
         return self.actor(observation)
 

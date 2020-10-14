@@ -6,8 +6,8 @@ from torch import Tensor, nn
 from torchvision import transforms as T
 from torchvision.transforms import functional as TF
 
-from common.tasks.auxiliary_task import AuxiliaryTask
-from common.tasks.transformation_based.bases import RegressTransformationTask, wrap_pil_transform
+from ..auxiliary_task import AuxiliaryTask
+from .bases import RegressTransformationTask, wrap_pil_transform
 
 
 class AdjustBrightnessTask(RegressTransformationTask):

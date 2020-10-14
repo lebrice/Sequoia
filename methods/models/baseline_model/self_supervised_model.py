@@ -13,14 +13,14 @@ from torch import nn
 
 from common.config import Config
 from common.loss import Loss
-from common.tasks import AEReconstructionTask, EWCTask, VAEReconstructionTask
-from common.tasks.auxiliary_task import AuxiliaryTask
-from common.tasks.simclr import SimCLRTask
+from methods.aux_tasks import AEReconstructionTask, EWCTask, VAEReconstructionTask
+from methods.aux_tasks.auxiliary_task import AuxiliaryTask
+from methods.aux_tasks.simclr import SimCLRTask
 from settings import Setting, SettingType, Observations, Actions, Rewards
 from utils.logging_utils import get_logger
 # from utils.module_dict import ModuleDict
 
-from ..base_model import BaseModel
+from .base_model import BaseModel
 
 logger = get_logger(__file__)
 HParamsType = TypeVar("HparamsType", bound="SelfSupervisedModel.HParams")

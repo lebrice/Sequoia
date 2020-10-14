@@ -15,7 +15,7 @@ from common.batch import Batch
 from settings import SettingType, Observations, Actions, Rewards
 from utils.logging_utils import get_logger
 
-from ..base_model import BaseModel
+from .base_model import BaseModel
 
 logger = get_logger(__file__)
 

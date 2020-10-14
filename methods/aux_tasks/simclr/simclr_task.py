@@ -12,9 +12,10 @@ from torch import Tensor
 from torchvision.transforms import Compose, Lambda, ToPILImage
 
 from common.loss import Loss
-from common.tasks.auxiliary_task import AuxiliaryTask
 from simple_parsing import mutable_field
 from simple_parsing.helpers import Serializable
+
+from ..auxiliary_task import AuxiliaryTask
 
 try:
     from .falr.config import HParams, ExperimentType

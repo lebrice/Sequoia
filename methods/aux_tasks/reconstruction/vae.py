@@ -8,7 +8,7 @@ from torch.nn import functional as F
 
 from common.layers import DeConvBlock, Flatten, Reshape
 from common.loss import Loss
-from common.tasks.auxiliary_task import AuxiliaryTask
+from ..auxiliary_task import AuxiliaryTask
 
 from .ae import AEReconstructionTask
 from .decoder_for_dataset import get_decoder_class_for_dataset

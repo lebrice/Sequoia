@@ -5,7 +5,7 @@ import torch
 from torch import nn
 
 from common.layers import DeConvBlock, Reshape
-from common.tasks.auxiliary_task import AuxiliaryTask
+from ..auxiliary_task import AuxiliaryTask
 
 
 class Decoder(nn.Sequential, ABC):

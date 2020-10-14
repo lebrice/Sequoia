@@ -19,7 +19,7 @@ from torchvision import models as tv_models
 
 from common.config import Config
 from common.loss import Loss
-from common.tasks.auxiliary_task import AuxiliaryTask
+from methods.aux_tasks.auxiliary_task import AuxiliaryTask
 from methods.models.output_heads import OutputHead
 from simple_parsing import Serializable, choice, mutable_field
 from utils.logging_utils import get_logger
@@ -33,13 +33,14 @@ SettingType = TypeVar("SettingType", bound=LightningDataModule)
 # for each kind of model.
 from .base_model import ForwardPass
 from settings import Observations, Actions, Rewards
-from .model_addons import SemiSupervisedModel, ClassIncrementalModel, SelfSupervisedModel
+from .semi_supervised_model import SemiSupervisedModel
+from .class_incremental_model import ClassIncrementalModel
+from .self_supervised_model import SelfSupervisedModel
 
-
-class Model(SemiSupervisedModel,
-            ClassIncrementalModel,
-            SelfSupervisedModel,
-            Generic[SettingType]):
+class BaselineModel(SemiSupervisedModel,
+                    ClassIncrementalModel,
+                    SelfSupervisedModel,
+                    Generic[SettingType]):
     """ Base model LightningModule (nn.Module extended by pytorch-lightning)
     
     This model splits the learning task into a representation-learning problem

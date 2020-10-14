@@ -1,12 +1,16 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Union, List, Type, ClassVar, Any, TypeVar, Generic
+from typing import Any, ClassVar, Generic, List, Optional, Type, TypeVar, Union
 
 import gym
 import numpy as np
 from pytorch_lightning import LightningDataModule
 
-from .base import Actions, Environment, Observations, Rewards
+from settings.base.environment import Environment
+from settings.base.objects import Actions, Observations, Rewards
+
+
 SettingType = TypeVar("SettingType", bound="SettingABC")
+
 
 class MethodABC(Generic[SettingType], ABC):
     """ ABC for a Method, which is a solution to a research problem (a Setting).
@@ -52,7 +56,7 @@ class MethodABC(Generic[SettingType], ABC):
         Returns:
             bool: Wether or not this method is applicable on the given setting.
         """
-        from .setting_abc import SettingABC
+        from .setting_base import SettingABC
         
         # if given an object, get it's type.
         if isinstance(setting, LightningDataModule):
@@ -89,6 +93,31 @@ class MethodABC(Generic[SettingType], ABC):
             name = camel_case(cls.__qualname__)
             name = remove_suffix(name, "_method")
         return name
+
+    
+    def __init_subclass__(cls, target_setting: Type["SettingABC"] = None, **kwargs) -> None:
+        """Called when creating a new subclass of Method.
+
+        Args:
+            target_setting (Type[Setting], optional): The target setting.
+                Defaults to None, in which case the method will inherit the
+                target setting of it's parent class.
+        """
+        
+
+        if target_setting:
+            cls.target_setting = target_setting
+        elif hasattr(cls, "target_setting"):
+            target_setting = cls.target_setting
+        else:
+            raise RuntimeError(
+                f"You must either pass a `target_setting` argument to the "
+                f"class statement or have a `target_setting` class variable "
+                f"when creating a new subclass of {__class__}."
+            )
+        # Register this new method on the Setting.
+        target_setting.register_method(cls)
+        return super().__init_subclass__(**kwargs)
 
     # def __init_subclass__(cls, target_setting: Type["SettingABC"]=None):
     #     """Called when creating a new subclass of Method.

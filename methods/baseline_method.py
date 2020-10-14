@@ -5,7 +5,6 @@ we use pytorch-lightning, and a few little utility classes such as `Metrics` and
 `Loss`, which are basically just like dicts/objects, with some cool other
 methods.
 """
-from abc import ABC
 from collections import OrderedDict
 from dataclasses import dataclass, is_dataclass
 from pathlib import Path
@@ -14,52 +13,58 @@ from typing import (Any, ClassVar, Dict, Generic, List, Optional, Sequence,
 
 import gym
 import torch
-from common import Config, TrainerConfig, Loss, Metrics, Batch
 from pytorch_lightning import (Callback, LightningDataModule, LightningModule,
                                Trainer)
-from settings import Results, Setting, SettingType, Observations, Actions, Rewards, Environment
 from simple_parsing import Serializable, mutable_field
 from torch import Tensor
 from torch.utils.data import DataLoader
-from simple_parsing import mutable_field
 
-from utils import Parseable, Serializable, get_logger
+from common import Batch, Config, Loss, Metrics, TrainerConfig
+from common.callbacks import KnnCallback
+from settings.active.rl import ContinualRLSetting
+from settings.base.environment import Environment
+from settings.base.objects import Actions, Observations, Rewards
+from settings.base.results import Results
+from settings.base.setting import Setting, SettingType
+from settings.method_base import MethodABC as AbstractMethod
+from utils import Parseable, Serializable, get_logger, singledispatchmethod
 from utils.utils import get_path_to_source_file
-from settings.method_abc import MethodABC
-from .models.model import ForwardPass, Model
+
+from .models import ActorCritic, BaselineModel, ForwardPass
 
 logger = get_logger(__file__)
 
-# TODO: Rename this to BaselineMethod.
+
 
 @dataclass
-class Method(MethodABC, Serializable, Parseable, ABC):
-    """ A Method gets applied to a Setting to produce Results.
+class BaselineMethod(AbstractMethod, Serializable, Parseable, target_setting=Setting):
+    """ Baseline method which targets all settings. 
+    
+    Uses pytorch-lightning for training.
 
-    A "Method", concretely, should consist of a LightningModule and a Trainer.
-    - The model should accept a setting into its constructor.
-    - Settings are LightningDataModules, and are used to create the
-        train/val/test dataloaders.
-
-    GOAL: The goal is to have a Method be applicable to a variety of Settings!
-    We could even perhaps reuse the Method object on different Settings entirely!
+    You could use
     """
     # NOTE: these two fields are also used to create the command-line arguments.
     
     # HyperParameters of the method.
-    hparams: Model.HParams = mutable_field(Model.HParams)
+    hparams: BaselineModel.HParams = mutable_field(BaselineModel.HParams)
     # Options for the Trainer object.
     trainer_options: TrainerConfig = mutable_field(TrainerConfig)
-
+    config: Config = mutable_field(Config)
+    
+    # Adds Options for a KNN classifier callback, which is used to evaluate
+    # the quality of the representations on each test and val task after each
+    # training epoch.
+    # TODO: Debug/test this callback to make sure it still works fine.
+    # TODO: Debug/test this callback to make sure it still works fine.
+    knn_callback: KnnCallback = mutable_field(KnnCallback)
+    
     def __post_init__(self):
         # The model and Trainer objects will be created in `self.configure`. 
         # NOTE: This right here doesn't create the fields, it just gives some
         # type information for static type checking.
         self.trainer: Trainer
         self.model: LightningModule
-        # TODO: This will be set by the Experiment atm, but we should probably
-        # sort out which option should be set how and by whom.
-        self.config: Config
 
     def configure(self, setting: SettingType) -> None:
         """Configures the method for the given Setting.
@@ -74,10 +79,6 @@ class Method(MethodABC, Serializable, Parseable, ABC):
         essentially giving the 'Setting' object
         directly to the method.. so I guess the object could maybe 
         """
-        # IDEA: Could also pass some kind of proxy object from the Setting to
-        # the method, and hide/delete some attributes whenever the method
-        # shouldn't have access to them?
-        # print(setting.dumps_json(indent="\t"))
         self.trainer: Trainer = self.create_trainer(setting)
         self.model: LightningModule = self.create_model(setting)
         self.Observations: Type[Observations] = setting.Observations
@@ -135,8 +136,9 @@ class Method(MethodABC, Serializable, Parseable, ABC):
         # Simplified this for now, but we could add more flexibility later.
         assert isinstance(forward_pass, ForwardPass)
         return forward_pass.actions
-
-    def model_class(self, setting: SettingType) -> Type[LightningModule]:
+    
+    @singledispatchmethod
+    def model_class(self, setting: SettingType) -> Type[BaselineModel]:
         """ Returns the type of model to use for the given setting.
         
         You could extend this to customize which model is used depending on the
@@ -146,10 +148,15 @@ class Method(MethodABC, Serializable, Parseable, ABC):
         'frankenstein' methods that are super-specific to each setting, without
         really having anything in common.
         """
-        return Model
+        return BaselineModel
 
-    def create_model(self, setting: SettingType) -> Model[SettingType]:
-        """Creates the Model (a LightningModule) for the given Setting.
+    # @model_class.register
+    # def _(self, setting: ContinualRLSetting) -> Type[Agent]:
+    # TODO: Need to debug this.
+    #     return ActorCritic
+
+    def create_model(self, setting: SettingType) -> BaselineModel[SettingType]:
+        """Creates the BaselineModel (a LightningModule) for the given Setting.
 
         The model should ideally accept a Setting in its constructor.
         
@@ -160,10 +167,10 @@ class Method(MethodABC, Serializable, Parseable, ABC):
             setting (SettingType): An experimental setting.
 
         Returns:
-            Model[SettingType]: The Model that is to be applied to that setting.
+            BaselineModel[SettingType]: The BaselineModel that is to be applied to that setting.
         """
         # Get the type of model to use for that setting.
-        model_class: Type[Model] = self.model_class(setting)
+        model_class: Type[BaselineModel] = self.model_class(setting)
         hparams_class = model_class.HParams
         logger.debug(f"model class for this setting: {model_class}")
         logger.debug(f"hparam class for this setting: {hparams_class}")
@@ -173,20 +180,9 @@ class Method(MethodABC, Serializable, Parseable, ABC):
             # Create the model, passing the setting and hparams.
             return model_class(setting=setting, hparams=self.hparams, config=self.config)
         else:
-            # Need to 'upgrade' the hparams.
-            # TODO: @lebrice This is ugly, and should be cleaned up somehow. Let
-            # me know what you think:
-            #
-            # The problem is that in order to have the --help option display all
-            # the options for the Method (including the model hparams), the
-            # hparams should be one or more fields on the Method object.
-            #
-            # However, if in our method we use a different Model class depending
-            # on the type of Setting, then we would need the hyperparameters to
-            # be of the type required by the model!
-            #
-            # Therefore, here we upgrade `self.hparams` (if present) to the
-            # right type (`model_class.HParams`)
+            # Need to 'upgrade' the hparams on the method to match those on the
+            # model.
+            # TODO: @lebrice This is ugly.
             logger.warning(UserWarning(
                 f"The hparams attribute on the {self.get_name()} Method are of "
                 f"type {type(self.hparams)}, while the HParams on the model "
@@ -221,11 +217,16 @@ class Method(MethodABC, Serializable, Parseable, ABC):
             callbacks=callbacks,
         )
         return trainer
-
-    def create_callbacks(self, setting: SettingType) -> List[Callback]:
-        # TODO: Add some callbacks here if you want.
-        return []
     
+    def create_callbacks(self, setting: SettingType) -> List[Callback]:
+        # TODO: Move this to something like a `configure_callbacks` method 
+        # in the model, once PL adds it.
+        from common.callbacks.vae_callback import SaveVaeSamplesCallback
+        return [
+            self.knn_callback,
+            SaveVaeSamplesCallback(),
+        ]
+
     @classmethod
     def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
         from main import Experiment
@@ -254,9 +255,8 @@ class Method(MethodABC, Serializable, Parseable, ABC):
             for method, results in all_results.items()
         })
         return all_results
-    target_setting: ClassVar[Type["SettingABC"]] = None
 
-    def __init_subclass__(cls, target_setting: Type[Setting] = None, **kwargs) -> None:
+    def __init_subclass__(cls, *args, **kwargs) -> None:
         """Called when creating a new subclass of Method.
 
         Args:
@@ -266,28 +266,16 @@ class Method(MethodABC, Serializable, Parseable, ABC):
         """
         if not is_dataclass(cls):
             logger.critical(UserWarning(
-                f"The Method class {cls} should be decorated with @dataclass!\n"
+                f"The BaselineMethod subclass {cls} should be decorated with "
+                f"@dataclass!\n"
                 f"While this isn't strictly necessary for things to work, it is"
                 f"highly recommended, as any dataclass-style class attributes "
                 f"won't have the corresponding command-line arguments "
                 f"generated, which can cause a lot of subtle bugs."
             ))
-        
-        if target_setting:
-            cls.target_setting = target_setting
-        elif hasattr(cls, "target_setting"):
-            target_setting = cls.target_setting
-        else:
-            raise RuntimeError(
-                f"You must either pass a `target_setting` argument to the "
-                f"class statement or have a `target_setting` class variable "
-                f"when creating a new subclass of {__class__}."
-            )
-        # Register this new method on the Setting.
-        target_setting.register_method(cls)
-        return super().__init_subclass__(**kwargs)
+        super().__init_subclass__(*args, **kwargs)
 
-    def upgrade_hparams(self, new_type: Type[Model.HParams]) -> Model.HParams:
+    def upgrade_hparams(self, new_type: Type[BaselineModel.HParams]) -> BaselineModel.HParams:
         """Upgrades the current hparams to the new type, filling in the new
         values from the command-line.
 
@@ -302,7 +290,7 @@ class Method(MethodABC, Serializable, Parseable, ABC):
         """
         argv = self._argv
         logger.debug(f"Current method was originally created from args {argv}")
-        new_hparams: Model.HParams = new_type.from_args(argv)
+        new_hparams: BaselineModel.HParams = new_type.from_args(argv)
         logger.debug(f"Hparams for that type of model (from the method): {self.hparams}")
         logger.debug(f"Hparams for that type of model (from command-line): {new_hparams}")
         return new_hparams
