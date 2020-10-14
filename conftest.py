@@ -13,8 +13,7 @@ import pytest
 
 import sys; sys.path.extend([".", ".."])
 from common.config import Config, TrainerConfig
-from methods.method import Method
-from settings import Setting
+from settings import MethodABC, Setting
 from simple_parsing import Serializable
 
 
@@ -65,10 +64,10 @@ def id_fn(params: Any) -> str:
 
     return str(params)
 
-def get_all_dataset_names(method_class: Type[Method] = None) -> List[str]:
-    # When not given a method class, use the Method class (gives ALL the
+def get_all_dataset_names(method_class: Type[MethodABC] = None) -> List[str]:
+    # When not given a method class, use the MethodABC class (gives ALL the
     # possible datasets).
-    method_class = method_class or Method
+    method_class = method_class or MethodABC
 
     dataset_names: Iterable[List[str]] = map(
         lambda s: list(s.available_datasets),
@@ -77,7 +76,7 @@ def get_all_dataset_names(method_class: Type[Method] = None) -> List[str]:
     return list(set(sum(dataset_names, [])))
 
 
-def get_dataset_params(method_type: Type[Method],
+def get_dataset_params(method_type: Type[MethodABC],
                        supported_datasets: List[str],
                        skip_unsuported: bool = True) -> List[str]:
     all_datasets = get_all_dataset_names(method_type)
@@ -148,7 +147,7 @@ def parametrize_test_datasets(metafunc):
     datasets_from_command_line = metafunc.config.getoption(test_datasets_option_name)
 
     if "ALL" in datasets_from_command_line:
-        method_class: Optional[Type[Method]] = find_class_under_test(
+        method_class: Optional[Type[MethodABC]] = find_class_under_test(
             module,
             function,
             name="method",

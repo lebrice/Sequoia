@@ -12,9 +12,7 @@ from common import Metrics, ClassificationMetrics, RegressionMetrics
 from utils import flag, constant, mean
 from utils.logging_utils import get_logger
 
-from settings.base import Actions, Environment, Observations, Results, Rewards
-from settings.setting_base import Results, SettingABC
-from settings.method_base import MethodABC
+from settings.base import SettingABC, MethodABC, Actions, Environment, Observations, Results, Rewards
 
 logger = get_logger(__file__)
 

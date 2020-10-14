@@ -13,9 +13,6 @@ from gym.vector.utils import CloudpickleWrapper
 # TODO: Find a way to turn off the logs coming from the workers. 
 # from utils.logging_utils import get_logger
 
-process_name = mp.current_process().name
-print(f"Current process name: {process_name}")
-
 
 class Commands:
     step = "step"
@@ -60,6 +57,9 @@ def _custom_worker_shared_memory(index: int,
     Raises:
         RuntimeError: [description]
     """
+    process_name = mp.current_process().name
+    # print(f"Current process name: {process_name}")
+
     assert shared_memory is not None
     # if in_series is not None:
     #     # TODO: Would need to un-flatten the chunks in the class that uses this.

@@ -8,7 +8,7 @@ from typing import Optional, Type
 import pytest
 
 from common.config import Config
-from methods import BaselineMethod, Method, RandomBaselineMethod, all_methods
+from methods import BaselineMethod, MethodABC, RandomBaselineMethod, all_methods
 from settings import Results, Setting, all_settings
 
 from .experiment import Experiment
@@ -17,7 +17,7 @@ from .experiment import Experiment
 @pytest.mark.xfail(
     reason="@lebrice: I changed my mind on this. For example, it could make "
     "sense to have multiple methods called 'baseline' when a new Setting needs "
-    "to create a new subclass of the BaselineMethod or a new Method altogether."
+    "to create a new subclass of the BaselineMethod or a new MethodABC altogether."
 )
 def test_no_collisions_in_method_names():
     assert len(set(method.get_name() for method in all_methods)) == len(all_methods)
@@ -27,7 +27,7 @@ def test_no_collisions_in_setting_names():
     assert len(set(setting.get_name() for setting in all_settings)) == len(all_settings)
 
 
-def mock_apply(self: Setting, method: Method, config: Config) -> Results:
+def mock_apply(self: Setting, method: MethodABC, config: Config) -> Results:
     # 1. Configure the method to work on the setting.
     # method.configure(self)
     # 2. Train the method on the setting.
@@ -44,7 +44,7 @@ def set_argv_for_debug(monkeypatch):
 
 @pytest.fixture(params=all_methods)
 def method_type(request, monkeypatch, set_argv_for_debug):
-    method_class: Type[Method] = request.param
+    method_class: Type[MethodABC] = request.param
     # monkeypatch.setattr(method_class, "apply_to", mock_apply_to)
     return method_class
 
@@ -61,7 +61,7 @@ def setting_type(request, monkeypatch, set_argv_for_debug):
 
 @pytest.mark.parametrize("use_method_name", [False, True])
 @pytest.mark.parametrize("use_setting_name", [False, True])
-def test_combination_of_string_or_type(method_type: Optional[Type[Method]],
+def test_combination_of_string_or_type(method_type: Optional[Type[MethodABC]],
                                        use_method_name: bool,
                                        setting_type: Optional[Type[Setting]],
                                        use_setting_name: bool):
@@ -76,7 +76,7 @@ def test_combination_of_string_or_type(method_type: Optional[Type[Method]],
 
 
 @pytest.mark.parametrize("use_method_name", [False, True])
-def test_none_setting(method_type: Optional[Type[Method]],
+def test_none_setting(method_type: Optional[Type[MethodABC]],
                       use_method_name: bool):
     method = method_type.get_name() if use_method_name else method_type
     experiment = Experiment(method=method, setting=None)

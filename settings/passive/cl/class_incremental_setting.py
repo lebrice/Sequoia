@@ -48,9 +48,7 @@ from common import ClassificationMetrics, Metrics, get_metrics
 from common.config import Config
 from common.loss import Loss
 from common.transforms import Transforms, SplitBatch, Compose
-from settings.method_base import MethodABC
-from settings.base.results import Results
-from settings.base.environment import ObservationType, RewardType
+from settings.base import MethodABC, Results, ObservationType, RewardType
 from utils import dict_union, get_logger, constant, mean, take
 
 from .class_incremental_results import ClassIncrementalResults

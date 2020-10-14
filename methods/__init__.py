@@ -1,6 +1,6 @@
 from typing import List, Type
 
-from settings.method_base import MethodABC
+from settings.base import MethodABC
 AbstractMethod = MethodABC
 
 from .baseline_method import BaselineMethod

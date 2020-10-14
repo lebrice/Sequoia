@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytorch_lightning as pl
 import torch
-import wandb
 from pytorch_lightning import Callback, Trainer
 from torch import Tensor
 from torch.utils.data import DataLoader
@@ -79,9 +78,10 @@ class SaveVaeSamplesCallback(Callback):
         reconstruction_images_dir.mkdir(parents=True, exist_ok=True)
         file_name = reconstruction_images_dir / f"step_{self.trainer.global_step:08d}.png"
         comparison = comparison.cpu().detach()
-        
-        if self.trainer.logger:
-            self.trainer.logger.log({"reconstruction": wandb.Image(comparison)})
+        # TODO: Debug this:
+        # import wandb
+        # if self.trainer.logger:
+        #     self.trainer.logger.log({"reconstruction": wandb.Image(comparison)})
         save_image(comparison, file_name, nrow=n)
 
     @torch.no_grad()
@@ -97,9 +97,10 @@ class SaveVaeSamplesCallback(Callback):
         generation_images_dir = self.model.config.log_dir / "generated_samples"
         generation_images_dir.mkdir(parents=True, exist_ok=True)
         file_name = generation_images_dir / f"step_{self.trainer.global_step:08d}.png"
-
-        if self.model.logger:
-            self.model.logger.experiment.log({"generated": wandb.Image(fake_samples)})
+        
+        # import wandb
+        # if self.model.logger:
+        #     self.model.logger.experiment.log({"generated": wandb.Image(fake_samples)})
         
         save_image(fake_samples, file_name, normalize=True)
         logger.debug(f"saved image at path {file_name}")

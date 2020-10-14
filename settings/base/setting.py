@@ -56,8 +56,7 @@ logger = get_logger(__file__)
 EnvironmentType = TypeVar("EnvironmentType", bound=Environment)
 SettingType = TypeVar("SettingType", bound="Setting")
 
-from ..setting_base import SettingABC
-from ..method_base import MethodABC
+from  .bases import SettingABC, MethodABC
 
 @dataclass
 class Setting(SettingABC,

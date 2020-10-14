@@ -10,9 +10,6 @@ from torchvision.datasets import MNIST, FashionMNIST
 
 from .passive_environment import PassiveEnvironment
 
-# from pl_bolts.datamodules import (CIFAR10DataModule, FashionMNISTDataModule,
-#                                   ImagenetDataModule, MNISTDataModule)
-
 @dataclass
 class PassiveSetting(Setting[PassiveEnvironment[ObservationType, ActionType, RewardType]]):
     """Setting where actions have no influence on future observations. 

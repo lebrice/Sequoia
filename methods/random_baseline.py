@@ -2,31 +2,18 @@
 
 Should be applicable to any Setting.
 """
-from abc import ABC
 from dataclasses import dataclass
-from typing import Type, Union
 
 import gym
-import numpy as np
-import torch
-import tqdm
-from torch import Tensor
 from utils import get_logger, singledispatchmethod
 
-from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
-from methods.baseline_method import BaselineMethod
-from methods.models import Agent, BaselineModel, OutputHead
-from settings import (Actions, ActiveSetting, ClassIncrementalSetting,
-                      Environment, IIDSetting, Observations, Rewards,
-                      RLSetting, Setting, SettingType, TaskIncrementalSetting)
+from common.metrics import ClassificationMetrics
+from settings.base import MethodABC, Actions, Observations, Environment
 
-from .models import BaselineModel
-from .models.agent import Agent
-from .models.random_agent import RandomAgent
+from settings import ClassIncrementalSetting, Setting
 
 logger = get_logger(__file__)
 
-from settings.method_base import MethodABC
 
 @dataclass
 class RandomBaselineMethod(MethodABC, target_setting=Setting):
