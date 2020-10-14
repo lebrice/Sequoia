@@ -18,6 +18,17 @@ from .iid_results import IIDResults
 
 # TODO: Remove the task labels here.
 
+# TODO: IDEA: Add the pytorch lightning datamodules in the list of
+# 'available datasets' for the IID setting, and make sure that it doesn't mess
+# up the methods in the parents (train/val loop, dataloader construction, etc.)
+# IDEA: Maybe overwrite the 'train/val/test_dataloader' methods on the setting
+# and when the chosen dataset is a LightnignDataModule, then just return the
+# result from the corresponding method on the LightningDataModule, rather than
+# from super().
+# from pl_bolts.datamodules import (CIFAR10DataModule, FashionMNISTDataModule,
+#                                   ImagenetDataModule, MNISTDataModule)
+
+
 @dataclass
 class IIDSetting(TaskIncrementalSetting):
     """Your 'usual' learning Setting, where the samples are i.i.d.

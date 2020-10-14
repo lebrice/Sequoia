@@ -189,7 +189,7 @@ class IncrementalSetting(SettingABC):
         test_metrics: List[List[Metrics]] = []
         for task_id in range(self.nb_tasks):
             logger.info(f"Starting testing on task {task_id}")
-            self._current_task_id = task_id
+            self.current_task_id = task_id
             # assert not self.smooth_task_boundaries, "TODO: (#18) Make another 'Continual' setting that supports smooth task boundaries."
             
             # Inform the model of a task boundary. If the task labels are

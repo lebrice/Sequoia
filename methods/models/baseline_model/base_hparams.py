@@ -39,10 +39,15 @@ class BaseHParams(Serializable, Parseable):
     available_optimizers: ClassVar[Dict[str, Type[Optimizer]]] = available_optimizers.copy()
     available_encoders: ClassVar[Dict[str, Type[nn.Module]]] = available_encoders.copy()
     
-    # Batch size to use.
-    # TODO: Would we need to change this when using DP or DDP of
-    # pytorch-lightning?
-    batch_size: int = 64
+    # Learning rate of the optimizer.
+    learning_rate: float = 0.001
+    # L2 regularization term for the model weights.
+    weight_decay: float = 1e-6
+    # Which optimizer to use.
+    optimizer: str = choice(available_optimizers.keys(), default="adam")
+    # Use an encoder architecture from the torchvision.models package.
+    encoder: str = choice(available_encoders.keys(), default="resnet18")
+    
 
     # Number of hidden units (before the output head).
     # When left to None (default), the hidden size from the pretrained
@@ -51,14 +56,7 @@ class BaseHParams(Serializable, Parseable):
     # encoder in order to map from the pretrained encoder's output size H_e
     # to this new hidden size `new_hidden_size`.
     new_hidden_size: Optional[int] = None
-    # Which optimizer to use.
-    optimizer: str = choice(available_optimizers.keys(), default="adam")
-    # Learning rate of the optimizer.
-    learning_rate: float = 0.001
-    # L2 regularization term for the model weights.
-    weight_decay: float = 1e-6
-    # Use an encoder architecture from the torchvision.models package.
-    encoder: str = choice(available_encoders.keys(), default="resnet18")
+    
     # Retrain the encoder from scratch.
     train_from_scratch: bool = False
     # Wether we should keep the weights of the pretrained encoder frozen.
@@ -89,13 +87,23 @@ class BaseHParams(Serializable, Parseable):
         options.update(kwargs)
         return optimizer_class(*args, **options)
 
-    def make_encoder(self) -> Tuple[nn.Module, int]:
+    @property
+    def encoder_model(self) -> Type[nn.Module]:
+        return self.available_encoders[self.encoder]
+    
+    def make_encoder(self, encoder_name: str = None) -> Tuple[nn.Module, int]:
         """Creates an Encoder model and returns the resulting hidden size.
 
         Returns:
             Tuple[nn.Module, int]: the encoder and the hidden size.
         """
-        encoder_model = self.available_encoders[self.encoder]
+        if encoder_name is None:
+            encoder_name = self.encoder
+        if encoder_name not in self.available_encoders:
+            raise KeyError(
+                f"No encoder with name {encoder_name} found! "
+                f"(available encoders: {list(self.available_encoders.keys())}.")
+        encoder_model = self.available_encoders[encoder_name]
         encoder, hidden_size = get_pretrained_encoder(
             encoder_model=encoder_model,
             pretrained=not self.train_from_scratch,

@@ -348,9 +348,13 @@ class Setting(SettingABC,
         return get_path_to_source_file(cls)
 
     def configure(self, method: MethodABC):
-        """ Setup the data_dir and the dataloader kwargs using properties of the
-        Method or of self.Config.
-
+        """ Configure the setting before the method is applied to it.
+        
+        TODO: This is basically just here so we can figure out the batch size
+        to use and the directory where the data should be downloaded, which are
+        properties on the Config object (which atm is not in the setting, but on
+        either the Method or the Experiment.). Need to clean this up.
+        
         Parameters
         ----------
         method : MethodABC

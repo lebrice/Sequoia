@@ -39,9 +39,11 @@ def get_pretrained_encoder(encoder_model: Callable,
     logger.debug(f"Using encoder model {encoder_model.__name__}")
     logger.debug(f"pretrained: {pretrained}")
     logger.debug(f"freezing the pretrained weights: {freeze_pretrained_weights}")
-
-    encoder = encoder_model(pretrained=pretrained)
-
+    try:
+        encoder = encoder_model(pretrained=pretrained)
+    except TypeError as e:
+        encoder = encoder_model()
+    
     if pretrained and freeze_pretrained_weights:
         # Fix the parameters of the model.
         for param in encoder.parameters():
@@ -51,6 +53,7 @@ def get_pretrained_encoder(encoder_model: Callable,
     # We want to replace the last layer (the classification layer) with a
     # projection from their hidden space dimension to ours.
     new_classifier: Optional[nn.Linear] = None
+    classifier = None
     if not replace_classifier:
         # We will create the 'new classifier' but then not add it.
         # this allows us to also get the 'hidden_size' of the resulting encoder.
