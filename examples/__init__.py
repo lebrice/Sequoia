@@ -1,1 +1,0 @@
-from .new_setting import NewSetting
