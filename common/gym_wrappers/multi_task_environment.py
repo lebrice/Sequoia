@@ -139,7 +139,7 @@ class MultiTaskEnvironment(gym.Wrapper):
 
     @current_task.setter
     def current_task(self, task: Union[Dict[str, float], Sequence[float]]):
-        logger.debug(f"(_step: {self.steps}): Setting the current task to {task}.")
+        # logger.debug(f"(_step: {self.steps}): Setting the current task to {task}.")
         self._current_task.clear()
         self._current_task.update(self.default_task)
 

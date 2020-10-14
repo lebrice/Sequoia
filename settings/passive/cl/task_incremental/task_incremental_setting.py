@@ -11,7 +11,7 @@ from settings.base import Results
 from utils.utils import constant
 
 from ..class_incremental_setting import ClassIncrementalSetting
-from .results import TaskIncrementalResults
+from . import TaskIncrementalResults
 
 
 @dataclass
@@ -19,7 +19,7 @@ class TaskIncrementalSetting(ClassIncrementalSetting):
     """ Setting where data arrives in a series of Tasks, and where the task
     labels are always available (both train and test time).
     """
-    results_class: ClassVar[Type[Results]] = TaskIncrementalResults
+    Results: ClassVar[Type[Results]] = TaskIncrementalResults
 
     # Wether task labels are available at train time. (Forced to True.)
     task_labels_at_train_time: bool = constant(True)

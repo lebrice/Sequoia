@@ -4,13 +4,14 @@ import functools
 import inspect
 import itertools
 import operator
+import os
 import random
 import re
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import MutableMapping
 from dataclasses import Field, fields
 from functools import reduce
-from inspect import isabstract, isclass
+from inspect import getsourcefile, isabstract, isclass
 from itertools import filterfalse, groupby
 from pathlib import Path
 from typing import (Any, Callable, Deque, Dict, Iterable, List, MutableMapping,
@@ -18,9 +19,8 @@ from typing import (Any, Callable, Deque, Dict, Iterable, List, MutableMapping,
 
 import numpy as np
 import torch
-from torch import Tensor, cuda, nn
-
 from simple_parsing import field
+from torch import Tensor, cuda, nn
 
 cuda_available = cuda.is_available()
 gpus_available = cuda.device_count()
@@ -28,6 +28,12 @@ gpus_available = cuda.device_count()
 T = TypeVar("T")
 K = TypeVar("K")
 V = TypeVar("V")
+
+
+def mean(values: Iterable[T]) -> T:
+    values = list(values)
+    return sum(values) / len(values)
+
 
 def n_consecutive(items: Iterable[T], n: int=2, yield_last_batch=True) -> Iterable[Tuple[T, ...]]:
     values: List[T] = []
@@ -133,8 +139,9 @@ def loss_str(loss_tensor: Tensor) -> str:
 def set_seed(seed: int):
     """ Set the pytorch/numpy random seed. """
     import random
-    import torch
+
     import numpy as np
+    import torch
     random.seed(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -147,10 +154,6 @@ def prod(iterable: Iterable[T]) -> T:
     24
     """
     return reduce(operator.mul, iterable, 1)
-
-def to_optional_tensor(x: Optional[Union[Tensor, np.ndarray, List]]) -> Optional[Tensor]:
-    """ Converts `x` into a Tensor if `x` is not None, else None. """
-    return x if x is None else torch.as_tensor(x)
 
 
 def common_fields(a, b) -> Iterable[Tuple[str, Tuple[Field, Field]]]:
@@ -272,20 +275,23 @@ def camel_case(name):
 def constant(v: T, **kwargs) -> T:
     return field(default=v, init=False, **kwargs)
 
+def flag(default: bool, *args, **kwargs):
+    return field(default=default, nargs=1, *args, **kwargs)
 
-def dict_union(*dicts: Dict[K, V], dict_factory=OrderedDict) -> Dict[K, V]:
+def dict_union(*dicts: Dict[K, V], recurse: bool=True, dict_factory=dict) -> Dict[K, V]:
     """ Simple dict union until we use python 3.9
     
-    >>> from collections import OrderedDict
-    >>> a = OrderedDict(a=1, b=2, c=3)
-    >>> b = OrderedDict(c=5, d=6, e=7)
-    >>> dict_union(a, b)
-    OrderedDict([('a', 1), ('b', 2), ('c', 5), ('d', 6), ('e', 7)])
-    >>> a = OrderedDict(a=1, b=OrderedDict(c=2, d=3))
-    >>> b = OrderedDict(a=2, b=OrderedDict(c=3, e=6))
-    >>> dict_union(a, b)
-    OrderedDict([('a', 2), ('b', OrderedDict([('c', 3), ('d', 3), ('e', 6)]))])
+    If `recurse` is True, also does the union of nested dictionaries.
+    NOTE: The returned dictionary has keys sorted alphabetically.
 
+    >>> a = dict(a=1, b=2, c=3)
+    >>> b = dict(c=5, d=6, e=7)
+    >>> dict_union(a, b)
+    {'a': 1, 'b': 2, 'c': 5, 'd': 6, 'e': 7}
+    >>> a = dict(a=1, b=dict(c=2, d=3))
+    >>> b = dict(a=2, b=dict(c=3, e=6))
+    >>> dict_union(a, b)
+    {'a': 2, 'b': {'c': 3, 'd': 3, 'e': 6}}
     """
     result: Dict = dict_factory()
     if not dicts:
@@ -295,20 +301,27 @@ def dict_union(*dicts: Dict[K, V], dict_factory=OrderedDict) -> Dict[K, V]:
     all_keys.update(*dicts)
     all_keys = sorted(all_keys)
 
-    # Create a neat generator of generators.
+    # Create a neat generator of generators, to save some memory.
     all_values: Iterable[Tuple[V, Iterable[K]]] = (
-        (k, [d[k] for d in dicts if k in d]) for k in all_keys
+        (k, (d[k] for d in dicts if k in d)) for k in all_keys
     )
     for k, values in all_values:
         sub_dicts: List[Dict] = []
-        for i, v in enumerate(values):
-            if isinstance(v, dict):
+        new_value: V = None
+        n_values = 0
+        for v in values:
+            if isinstance(v, dict) and recurse:
                 sub_dicts.append(v)
             else:
+                # Overwrite the new value for that key.
                 new_value = v
-        if len(sub_dicts) == (i + 1):
-            # We only this here if all values for key `k` were dictionaries.
-            new_value = dict_union(*sub_dicts, dict_factory=dict_factory)
+            n_values += 1
+        
+        if len(sub_dicts) == n_values and recurse:
+            # We only get here if all values for key `k` were dictionaries,
+            # and if recurse was True.
+            new_value = dict_union(*sub_dicts, recurse=True, dict_factory=dict_factory)
+        
         
         result[k] = new_value
     return result
@@ -332,7 +345,7 @@ def zip_dicts(*dicts: Dict[K, V],
 
 def dict_intersection(*dicts: Dict[K, V]) -> Iterable[Tuple[K, Tuple[V, ...]]]:
     """Gives back an iterator over the keys and values common to all dicts. """
-    dicts = [dict(d) for d in dicts]
+    dicts = [dict(d.items()) for d in dicts]
     common_keys = set(dicts[0])
     for d in dicts:
         common_keys.intersection_update(d)
@@ -342,8 +355,10 @@ def dict_intersection(*dicts: Dict[K, V]) -> Iterable[Tuple[K, Tuple[V, ...]]]:
 
 def try_get(d: Dict[K, V], *keys: K, default: V = None) -> Optional[V]:
     for k in keys:
-        if k in d:
+        try:
             return d[k]
+        except KeyError:
+            pass
     return default
 
 
@@ -386,6 +401,12 @@ def get_all_subclasses_of(cls: Type[T]) -> Iterable[Type[T]]:
 def get_all_concrete_subclasses_of(cls: Type[T]) -> Iterable[Type[T]]:
     yield from filterfalse(inspect.isabstract, get_all_subclasses_of(cls))
 
+
+def get_path_to_source_file(cls: Type) -> Path:
+    cwd = Path(os.getcwd())
+    source_path = Path(getsourcefile(cls)).absolute()
+    source_file = source_path.relative_to(cwd)
+    return source_file
 
 
 if __name__ == "__main__":

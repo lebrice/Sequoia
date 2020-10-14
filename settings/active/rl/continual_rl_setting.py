@@ -2,28 +2,37 @@ from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable, ClassVar, Dict, List, Sequence, Tuple, Union
+from typing import Callable, ClassVar, Dict, List, Sequence, Tuple, Union, Optional, Type
 
 import gym
 import numpy as np
-from common.gym_wrappers import (MultiTaskEnvironment, PixelStateWrapper,
-                                 SmoothTransitions)
-from common.gym_wrappers.utils import has_wrapper
-from common.transforms import ChannelsFirstIfNeeded, Compose, Transforms
-from gym import Env, Wrapper
-from settings.active.rl import GymDataLoader
-from settings.active.setting import ActiveSetting
+import torch
+from gym import Env, Wrapper, spaces
 from simple_parsing import choice, list_field, mutable_field
 from torch import Tensor
-from utils import dict_union
-from utils.logging_utils import get_logger
 
+from common.gym_wrappers import (MultiTaskEnvironment, PixelStateWrapper,
+                                 SmoothTransitions, TransformObservation,
+                                 has_wrapper)
+from common.gym_wrappers.env_dataset import StepResult
+from common.config import Config
+from common.transforms import ChannelsFirstIfNeeded, Compose, Transforms
+from common.metrics import Metrics, RegressionMetrics
+from utils import dict_union, get_logger, flag
+
+from ..active_setting import ActiveSetting
+from .gym_dataloader import GymDataLoader
+
+
+from settings.method_base import MethodABC
+from settings.assumptions.incremental import IncrementalSetting
+from settings.base import Observations, Rewards, Actions, Results
 logger = get_logger(__file__)
-from common.gym_wrappers import TransformObservation
 
+from .rl_results import RLResults
 
 @dataclass
-class ContinualRLSetting(ActiveSetting):
+class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     """ Reinforcement Learning Setting where the environment changes over time.
 
     This is an Active setting which uses gym environments as sources of data.
@@ -32,7 +41,29 @@ class ContinualRLSetting(ActiveSetting):
     in cartpole, making the task progressively harder as the agent interacts with
     the environment.
     """
-     
+    Results: ClassVar[Type[Results]] = RLResults
+    def __new__(cls, *args, **kwargs):
+        return super().__new__(cls, *args, **kwargs)
+    @dataclass(frozen=True)
+    class Observations(IncrementalSetting.Observations,
+                       ActiveSetting.Observations):
+        """ Observations in an RL Setting. """
+        # Just as a reminder, these are the fields defined in the base classes:
+        # x: Tensor
+        # task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
+        
+        @classmethod
+        def from_inputs(cls, inputs: Tuple[Tensor, bool, Dict]):
+            """ We customize this class method for the RL setting. """
+            if isinstance(inputs, (list, tuple)) and len(inputs) == 3:
+                obs, done, info = inputs
+                x = obs
+                task_labels = None
+                # TODO: Add an "Observations transform" which adds the task labels
+                # to the observations.
+                return cls(x=x, task_labels=task_labels)
+            return super().from_inputs(inputs)
+
     available_datasets: ClassVar[Dict[str, str]] = {
         "cartpole": "CartPole-v0"
     }
@@ -41,13 +72,16 @@ class ContinualRLSetting(ActiveSetting):
     
     # Wether we observe the internal state (angle of joints, etc) or get a pixel
     # input instead (harder).
-    observe_state_directly: bool = False
+    # TODO: Setting this to True for the moment.
+    # BUG: Seems like the image isn't changing very much over time! Need to test
+    # this in the PixelStateWrapper.
+    observe_state_directly: bool = flag(default=True)
     
     # Max number of steps ("length" of the training and test "datasets").
-    max_steps: int = 1_000_000
+    max_steps: int = 10_000
     # Number of steps per task.
-    steps_per_task: int = 100_000
-    
+    steps_per_task: int = 5_000
+
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
 
@@ -64,10 +98,7 @@ class ContinualRLSetting(ActiveSetting):
     # because of negative strides.
     transforms: List[Transforms] = list_field(ChannelsFirstIfNeeded())
 
-    def __post_init__(self,
-                      obs_shape: Tuple[int, ...] = (),
-                      action_shape: Tuple[int, ...] = (),
-                      reward_shape: Tuple[int, ...] = ()):
+    def __post_init__(self):
         self.task_schedule: Dict[int, Dict[str, float]] = OrderedDict()
         # TODO: Test out using the `Compose` as the type annotation above. If it
         # works and still allows us to parse the transforms from command line,
@@ -76,6 +107,8 @@ class ContinualRLSetting(ActiveSetting):
         self.transforms: Compose = Compose(self.transforms)
         logger.debug(f"self.transforms (after compose): {self.transforms}")
 
+        if self.nb_tasks == 0:
+            self.nb_tasks = self.max_steps // self.steps_per_task
         # TODO: There is this design problem here, where we "need" to inform
         # the parent of the shape of our observations, actions, and rewards,
         # but in order to create a temporary environment, we need access to
@@ -88,33 +121,29 @@ class ContinualRLSetting(ActiveSetting):
             image_transforms=self.transforms,
         )
         temp_env.reset()
-        observation_space = temp_env.observation_space
+        
+        observation_space = spaces.Tuple([
+            temp_env.observation_space,
+            spaces.Discrete(self.nb_tasks),
+        ])
+        # TODO: We could probably add the 'next state' in the action space! 
         action_space = temp_env.action_space
-        reward_range = temp_env.reward_range
-
-        obs_shape = obs_shape or observation_space.shape
-        action_shape = action_shape or action_space.shape
-        # The reward is always a scalar in gym environments, as far as I can tell.
-        reward_shape = reward_shape or (1,)
-
+        reward_space = getattr(temp_env, "reward_space", None)
+        if reward_space is None:
+            # The reward is always a scalar in gym environments, as far as I can
+            # tell.
+            reward_range = temp_env.reward_range
+            reward_space = spaces.Box(low=reward_range[0], high=reward_range[1], shape=())
+        
         logger.debug(f"Observation space: {observation_space}")
-        logger.debug(f"Observation shape: {obs_shape}")
         logger.debug(f"Action space: {action_space}")
-        logger.debug(f"Action shape: {action_shape}")
+        logger.debug(f"Reward space: {reward_space}")
 
         super().__post_init__(
-            obs_shape=obs_shape,
-            action_shape=action_shape,
-            reward_shape=reward_shape,
+            observation_space=observation_space,
+            action_space=action_space,
+            reward_space=reward_space,
         )
-        # TODO: (@lebrice) I have an idea, What if  we change the postinit args
-        # to be the observation space, action space, and reward space, and
-        # create those spaces, even for the supervised settings! This would make
-        # the API much more consistent between RL and Supervised learning!
-        self.observation_space = observation_space
-        self.action_space = action_space
-        self.reward_range = reward_range
-
         # Create a task schedule. This uses the temp env just to get the
         # properties that can be set for each task.
         self.task_schedule = self.create_task_schedule_for_env(temp_env)
@@ -131,13 +160,84 @@ class ContinualRLSetting(ActiveSetting):
         self.train_task_schedule = deepcopy(self.task_schedule)
         self.val_task_schedule = deepcopy(self.task_schedule)
         self.test_task_schedule = deepcopy(self.task_schedule)
-        
+
         # These will be created when the `[train/val/test]_dataloader` methods
         # get called. We add them here just for type-hinting purposes.
-        self.train_env: GymDataLoader
-        self.val_env: GymDataLoader
-        self.test_env: GymDataLoader
+        self.train_env: GymDataLoader = None
+        self.val_env: GymDataLoader = None
+        self.test_env: GymDataLoader = None
 
+    def apply(self, method: MethodABC, config: Config):
+        self.config = config
+        method.config = config
+        method.configure(self)
+        self.configure(method)
+        self.train_loop(method)
+        results = self.test_loop(method)
+        # method.validate_results(self, results)
+        return results
+  
+    def train_dataloader(self, *args, **kwargs) -> GymDataLoader[Observations, Actions, Rewards]:
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_fit:
+            self.setup("fit")
+        
+        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        # Get the train wrappers.
+        wrappers = self.train_wrappers()
+        if self.train_env:
+            self.train_env.close()
+            del self.train_env
+        self.train_env = self.make_env_dataloader(wrappers, *args, **kwargs)
+        # Update the observation/action/reward spaces to actually reflet that of
+        # the dataloader.
+        self.observation_space = self.train_env.observation_space[0]
+        self.action_space = self.train_env.action_space[0]
+        self.reward_space = self.train_env.reward_space[0]
+        return self.train_env
+
+    def val_dataloader(self, *args, **kwargs) -> GymDataLoader[Observations, Actions, Rewards]:
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_fit:
+            self.setup("fit")
+        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        wrappers = self.val_wrappers()
+        if self.val_env:
+            self.val_env.close()
+            del self.val_env
+        self.val_env = self.make_env_dataloader(wrappers, *args, **kwargs)
+        return self.val_env
+        
+    def test_dataloader(self, *args, **kwargs) -> GymDataLoader[Observations, Actions, Rewards]:
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_test:
+            self.setup("test")
+        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        wrappers = self.test_wrappers()
+        if self.test_env:
+            self.test_env.close()
+            del self.test_env
+        self.test_env = self.make_env_dataloader(wrappers, *args, **kwargs)
+        return self.test_env
+
+    def make_env_dataloader(self, wrappers, *args, **kwargs):
+        max_steps = self.max_steps
+        env: GymDataLoader = GymDataLoader(
+            env=self.env_name,
+            pre_batch_wrappers=wrappers,
+            max_steps=max_steps,
+            # TODO: Having a lot of trouble trying to get the GymDataLoader to
+            # return Observations objects..
+            # use_multiprocessing=False,
+            observations_type=self.Observations,
+            **kwargs,
+        )
+        return env
+        
+    
 
     def create_task_schedule_for_env(self, env: MultiTaskEnvironment) -> Dict[int, Dict[str, float]]:
         """Create a task schedule for the given environment.
@@ -230,77 +330,59 @@ class ContinualRLSetting(ActiveSetting):
             wrappers.append(partial(MultiTaskEnvironment, task_schedule=self.task_schedule))
         return wrappers
 
-    def on_missing_action(self,
-                          observation: Tensor,
-                          done: Sequence[bool],
-                          info: List[Dict],
-                          action_space: gym.Space) -> Tensor:
-        logger.debug("Yo, why exactly is this being called? I thought we "
-                     "were providing an action at every step already..")
-        return action_space.sample()
-        raise RuntimeError(
-            "You need to send an action using the `send` method "
-            "every time you get a value from the dataset! "
-            "Otherwise, you can also override the `on_missing_action` method "
-            "to return a 'filler' action given the current context. "
-        )
-        return None
-
     # TODO: Could overwrite those to use different wrappers for train/val/test.
     def train_wrappers(self)-> List[Union[Callable, Tuple[Callable, Dict]]]:
-        common_wrappers = self.env_wrappers()
-        return common_wrappers + [
-            partial(TransformObservation, f=self.train_transforms)
-        ]
+        wrappers = self.env_wrappers()
+        if not self.observe_state_directly:
+            wrappers.append(partial(TransformObservation, f=self.train_transforms))
+        return wrappers
 
     def val_wrappers(self) -> List[Union[Callable, Tuple[Callable, Dict]]]:
-        common_wrappers = self.env_wrappers()
-        return common_wrappers + [
-            partial(TransformObservation, f=self.val_transforms)
-        ]
+        wrappers = self.env_wrappers()
+        if not self.observe_state_directly:
+            wrappers.append(partial(TransformObservation, f=self.test_transforms))
+        return wrappers
 
     def test_wrappers(self) -> List[Union[Callable, Tuple[Callable, Dict]]]:
-        common_wrappers = self.env_wrappers()
-        return common_wrappers + [
-            partial(TransformObservation, f=self.test_transforms)
-        ]
+        wrappers = self.env_wrappers()
+        if not self.observe_state_directly:
+            wrappers.append(partial(TransformObservation, f=self.test_transforms))
+        return wrappers
 
-    def train_dataloader(self, *args, **kwargs) -> GymDataLoader:
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        pre_batch_wrappers = self.train_wrappers()
-        self.train_env = GymDataLoader(
-            env=self.env_name,
-            pre_batch_wrappers=pre_batch_wrappers,
-            max_steps=self.max_steps,
-            on_missing_action=self.on_missing_action,
-            **kwargs
-        )
-        return self.train_env
-    
-    def val_dataloader(self, *args, **kwargs) -> GymDataLoader:
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        wrappers = self.val_wrappers()
-        self.val_env = GymDataLoader(
-            env=self.env_name,
-            pre_batch_wrappers=wrappers,
-            max_steps=self.max_steps,
-            on_missing_action=self.on_missing_action,
-            **kwargs
-        )
-        return self.val_env
+    def get_metrics(self,
+                    actions: Actions,
+                    rewards: Rewards) -> Union[float, Metrics]:
+        # We customize this here so that the 'Metrics' is the right kind.
+        # actions = self.Actions.from_inputs(actions)
+        # rewards = self.Rewards.from_inputs(rewards)
+        # The metrics here is the mean reward. We do this with:
+        return rewards.mean()
+        return RegressionMetrics(mse=rewards.mean())
+        assert False, (actions, rewards)
 
-    def test_dataloader(self, *args, **kwargs) -> GymDataLoader:
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        wrappers = self.test_wrappers()
-        self.test_env = GymDataLoader(
-            env=self.env_name,
-            pre_batch_wrappers=wrappers,
-            max_steps=self.max_steps,
-            on_missing_action=self.on_missing_action,
-            **kwargs
-        )
-        return self.test_env
+    def _check_dataloaders_give_correct_types(self):
+        """ Do a quick check to make sure that the dataloaders give back the
+        right observations / reward types.
+        """
+        return
+        # TODO: This method is duplicated in a few places just for debugging atm:
+        # (ClassIncrementalSetting, Setting, and here).
+        for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
+            env = loader_method()
+            state = env.reset()
+            from settings.passive import PassiveEnvironment
+            from settings.active import ActiveEnvironment
+            from utils.utils import take
+            
+            # This works fine:
+            for i in range(5):
+                obs, reward, done, info = env.step(env.action_space.sample())
+                assert isinstance(obs, self.Observations)
+                assert isinstance(reward, self.Rewards)
 
+            # TODO: Check the interaction when using the env as a dataloader!
+            
+            env.close()
 
 if __name__ == "__main__":
     ContinualRLSetting.main()

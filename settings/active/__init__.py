@@ -2,6 +2,6 @@
 from .active_dataloader import ActiveDataLoader
 from .rl import (ClassIncrementalRLSetting, ContinualRLSetting, RLSetting,
                  TaskIncrementalRLSetting)
-from .setting import ActiveSetting
+from .active_setting import ActiveSetting
 
 ActiveEnvironment = ActiveDataLoader

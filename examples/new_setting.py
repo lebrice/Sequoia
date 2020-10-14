@@ -1,4 +1,4 @@
-"""TODO (@lebrice): Create an example of a new Setting class.
+"""TODO (@lebrice): Give an example of how to create a new setting.
 """
 from settings import ClassIncrementalSetting
 

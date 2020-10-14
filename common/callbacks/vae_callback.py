@@ -13,8 +13,8 @@ from torchvision.utils import save_image
 
 import pl_bolts
 from common.loss import Loss
-from methods.models.model import Model
-from common.tasks.reconstruction import AEReconstructionTask, VAEReconstructionTask
+from methods.models import BaselineModel
+from methods.aux_tasks.reconstruction import AEReconstructionTask, VAEReconstructionTask
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
@@ -54,7 +54,7 @@ class SaveVaeSamplesCallback(Callback):
                 self.reconstruction_task = self.model.tasks[AEReconstructionTask.name]
                 self.generation_task = None
 
-    def on_train_epoch_end(self, trainer: Trainer, pl_module: Model):
+    def on_train_epoch_end(self, trainer: Trainer, pl_module: BaselineModel):
         # do something
         if self.generation_task:    
             # Save a batch of fake images after each epoch.

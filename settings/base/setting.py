@@ -1,136 +1,70 @@
 """ This module defines the `Setting` class, an ML "problem" to solve. 
 
-A few examples of
+The `Setting` class is an abstract base class which should represent the most
+general learning setting imaginable, i.e. with the fewest assumptions about the
+data, the environment, the agent, etc.
 
 
-This `Setting` class should in principle be the most general learning setting
-imaginable, i.e. with the fewest assumptions about the data, the environment,
-the agent, etc.
+The Setting class is currently loosely based on the `LightningDataModule` class
+from pytorch-lightning, with the goal of having an `IIDSetting` node somewhere
+in the tree, which would be totally interchangeable with existing datamodules
+from pytorch-lightning.
 
-What this
+The hope is that by staying close to that API, we can make it easier for people
+to adopt the repo, and also, if possible, directly reuse existing models from
+pytorch-lightning.
 
+See: [Pytorch-Lightning](https://pytorch-lightning.readthedocs.io/en/latest/)  
+See: [LightningDataModule](https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html)
 
-The Setting class is based on the `LightningDataModule` from pl_bolts
-(pytorch-lightning-bolts).
-
-
-The hope is that by staying close to that
-API, we can reuse some of the models that people develop while target that API.
-- `train_dataloader`, `val_dataloader` and `test_dataloader` give
-    dataloaders of the current task.
-- `train_dataloaders`, `val_dataloaders` and `test_dataloaders` give the 
-    dataloaders of all the tasks. NOTE: this isn't part of the
-    LightningDataModule API.
 """
 import inspect
+import itertools
 import os
 import shlex
 from abc import abstractmethod
 from argparse import Namespace
 from collections import OrderedDict
 from dataclasses import InitVar, dataclass, fields, is_dataclass
-from inspect import getsourcefile
+from inspect import getsourcefile, isclass
 from functools import partial
 from pathlib import Path
 from typing import *
 
+import gym
 import torch
+import numpy as np
+from gym import spaces
 from pytorch_lightning import LightningDataModule
 from pytorch_lightning.core.datamodule import _DataModuleWrapper
+from simple_parsing import (ArgumentParser, Serializable, list_field,
+                            mutable_field, subparsers, field)
 from torch.utils.data import DataLoader
 
 from common.config import Config
 from common.loss import Loss
-from common.transforms import Compose, Transforms
-from simple_parsing import (ArgumentParser, Serializable, list_field,
-                            mutable_field, subparsers)
-from utils import Parseable, camel_case, dict_union, get_logger, remove_suffix
+from common.metrics import Metrics
+from common.transforms import Compose, Transforms, Transform, SplitBatch
+from utils import Parseable, camel_case, dict_union, get_logger, remove_suffix, take
 
 from .results import Results
+from .setting_meta import SettingMeta
+from .environment import Environment, Observations, Actions, Rewards
 
 logger = get_logger(__file__)
 
-Loader = TypeVar("Loader", bound=DataLoader)
-ResultsType = TypeVar("ResultsType", bound=Results)
+EnvironmentType = TypeVar("EnvironmentType", bound=Environment)
 SettingType = TypeVar("SettingType", bound="Setting")
 
-
-class SettingMeta(_DataModuleWrapper, Type["Setting"]):
-    """ Metaclass for the nodes in the Setting inheritance tree.
-    
-    Might remove this. Was experimenting with using this to create class
-    properties for each Setting.
-
-    TODO: A little while back I noticed some strange behaviour when trying
-    to create a Setting class (either manually or through the command-line), and
-    I attributed it to PL adding a `_DataModuleWrapper` metaclass to
-    `LightningDataModule`, which seemed to be causing problems related to
-    calling __init__ when using dataclasses. I don't quite recall exactly what
-    was happening and was causing an issue, so it would be a good idea to try
-    removing this metaclass and writing a test to make sure there was a problem
-    to begin with, and also to make sure that adding back this class fixes it.
-    """
-    def __call__(cls, *args, **kwargs):
-        # This is used to filter the arguments passed to the constructor
-        # of the Setting and only keep the ones that are fields with init=True.
-        init_fields: List[str] = [f.name for f in fields(cls) if f.init]
-        extra_args: Dict[str, Any] = {}
-        for k in list(kwargs.keys()):
-            if k not in init_fields:
-                extra_args[k] = kwargs.pop(k)
-        if extra_args:
-            logger.warning(UserWarning(
-                f"Ignoring args {extra_args} when creating class {cls}."
-            ))
-        return super().__call__(*args, **kwargs)
-
-    _parent: "SettingMeta" = None
-    _children: ClassVar[List[Type["Setting"]]] = []
-    _applicable_methods: ClassVar[Set[Type]] = set()
-
-    @property
-    def children(cls):
-        return cls._children
-
-    @children.setter
-    def children(cls, value: List):
-        if value:
-            logger.warning(UserWarning(
-                f"Setting the children attribute of class {cls} to a non-empty "
-                f"list, are you sure of what you're doing?"
-            ))
-        cls._children = value
-
-    @property
-    def all_children(cls) -> Iterable[Type["Setting"]]:
-        """Iterates over the inheritance tree, in-order.
-        """
-        # Yield the immediate children
-        for child in cls._children:
-            yield child
-            yield from child.all_children
-
-    @property
-    def parent(cls) -> Optional["SettingMeta"]:
-        """Returns the first base class that is an instance of SettingMeta, else
-        None
-        """
-        base_nodes = [
-            base for base in cls.__bases__ if isinstance(base, SettingMeta)
-        ]
-        return base_nodes[0] if base_nodes else None
-
-    @property
-    def parents(cls) -> Iterable[Type["Setting"]]:
-        """TODO: yields the lineage, from bottom to top. """
-        parent = cls.parent
-        if parent:
-            yield parent
-            yield from parent.parents
-
+from ..setting_base import SettingABC
+from ..method_base import MethodABC
 
 @dataclass
-class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], metaclass=SettingMeta):
+class Setting(SettingABC,
+              Generic[EnvironmentType],
+              Serializable,
+              Parseable,
+              metaclass=SettingMeta):
     """ Base class for all research settings in ML: Root node of the tree. 
 
     A 'setting' is loosely defined here as a learning problem with a specific
@@ -151,127 +85,216 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
     This is a dataclass. Its attributes are can also be used as command-line
     arguments using `simple_parsing`.
     """
-    # Overwrite this in a subclass to customize which type of Results to create.
-    results_class: ClassVar[Type[Results]] = Results
-
-    # Transforms to be used.
-    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels)
-
-    # TODO: Currently trying to find a way to specify the transforms from the command-line.
-    # As a consequence, don't try to set these from the command-line for now.
+    ## ---------- Class Variables ------------- 
+    ## Fields in this block are class attributes. They don't create command-line
+    ## arguments.
+    
+    # Type of Observations that the dataloaders (a.k.a. "environments") will
+    # produce for this type of Setting.
+    Observations: ClassVar[Type[Observations]] = Observations
+    # Type of Actions that the dataloaders (a.k.a. "environments") will receive
+    # through their `send` method, for this type of Setting.
+    Actions: ClassVar[Type[Actions]] = Actions
+    # Type of Rewards that the dataloaders (a.k.a. "environments") will return
+    # after receiving an action, for this type of Setting.
+    Rewards: ClassVar[Type[Rewards]] = Rewards
+    
+    # The type of Results that are given back when a method is applied on this
+    # Setting. The `Results` class basically defines the 'evaluation metric' for
+    # a given type of setting. See the `Results` class for more info.
+    Results: ClassVar[Type[Results]] = Results
+    
+    ##
+    ##   -------------
+    
+    # Transforms to be used. When no value is given for 
+    # `[train/val/test]_transforms`, this value is used as a default.
+    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
+    # Transforms to be applied to the training datasets. When unset, the value
+    # of `transforms` is used.
     train_transforms: List[Transforms] = list_field()
-
-    # TODO: These two aren't being used atm (at least not in ClassIncremental), 
-    # since the CL Loader from Continuum only takes in common_transforms and
-    # train_transforms.
+    # Transforms to be applied to the validation datasets. When unset, the value
+    # of `transforms` is used.
     val_transforms: List[Transforms] = list_field()
+    # Transforms to be applied to the testing datasets. When unset, the value
+    # of `transforms` is used.
     test_transforms: List[Transforms] = list_field()
 
-    # fraction of training data to devote to validation. Defaults to 0.2.
+    # Fraction of training data to use to create the validation set.
     val_fraction: float = 0.2
 
-    # These should be set by all settings, not from the command-line. Hence we
-    # set them as InitVars, meaning they get set by the argument in
-    # __post_init__.
+    # TODO: Add support for semi-supervised training.
+    # Fraction of the dataset that is labeled.
+    labeled_data_fraction: int = 1.0
+    # Number of labeled examples.
+    n_labeled_examples: Optional[int] = None
 
-    obs_shape: Tuple[int, ...] = ()
-    action_shape: Tuple[int, ...] = ()
-    reward_shape: Tuple[int, ...] = ()
+    # These should be set by all settings, not from the command-line. Hence we
+    # mark them as InitVars, which means they should be passed to __post_init__.
+    # x_shape: Tuple[int, ...] = field(init=False)
+    # action_shape: Tuple[int, ...] = field(init=False)
+    # reward_shape: Tuple[int, ...] = field(init=False)
     
     def __post_init__(self,
-                      obs_shape: Tuple[int, ...] = (),
-                      action_shape: Tuple[int, ...] = (),
-                      reward_shape: Tuple[int, ...] = ()):
+                      observation_space: gym.Space = None,
+                      action_space: gym.Space = None,
+                      reward_space: gym.Space = None):
         """ Initializes the fields of the setting that weren't set from the
         command-line.
         """
         logger.debug(f"__post_init__ of Setting")
+        
         # Actually compose the list of Transforms or callables into a single transform.
         self.transforms: Compose = Compose(self.transforms)
         self.train_transforms: Compose = Compose(self.train_transforms or self.transforms)
         self.val_transforms: Compose = Compose(self.val_transforms or self.transforms)
         self.test_transforms: Compose = Compose(self.test_transforms or self.transforms)
 
-        super().__init__(
+        LightningDataModule.__init__(self,
             train_transforms=self.train_transforms,
             val_transforms=self.val_transforms,
             test_transforms=self.test_transforms,
         )
+        
+        self._observation_space = observation_space
+        self._action_space = action_space
+        self._reward_space = reward_space
 
-        self.obs_shape = self.obs_shape or obs_shape
-        self.action_shape = self.action_shape or action_shape
-        self.reward_shape = self.reward_shape or reward_shape
-
+        
+        # # Transform that will split batches into Observations and Rewards.
+        # self.split_batch_transform = SplitBatch(
+        #     observation_type=self.Observations,
+        #     reward_type=self.Rewards
+        # )
         logger.debug(f"Transforms: {self.transforms}")
-        if obs_shape and self.transforms:
-            # TODO: Testing out an idea: letting the transforms tell us how
-            # they change the shape of the image.
-            logger.debug(f"Obs shape before transforms: {obs_shape}")
-            self.obs_shape: Tuple[int, ...] = self.transforms.shape_change(obs_shape)
-            logger.debug(f"Obs shape after transforms: {self.obs_shape}")
+
+        # TODO: Testing out an idea: letting the transforms tell us how
+        # they change the shape of the observations.
+        # if x_shape and self.transforms:
+        #     logger.debug(f"x shape before transforms: {x_shape}")
+        #     x_shape: Tuple[int, ...] = self.transforms.shape_change(x_shape)
+        #     logger.debug(f"x shape after transforms: {x_shape}")
+        # self.observation_space = x_shape
 
         self.dataloader_kwargs: Dict[str, Any] = {}
 
-        if self.obs_shape and not self.dims:
-            self.dims = self.obs_shape
-
-        # This will be set when the setting gets configured
+        # TODO: We have to set the 'dims' property from LightningDataModule so
+        # that models know the input dimensions.
+        # This should probably be set on `self` inside of `apply` call.
+        # TODO: It's a bit confusing to also have a `config` attribute on the
+        # Setting. Might want to change this a bit.
         self.config: Config = None
 
-        # Wether the setup methods have been called yet or not.
-        # TODO: Remove those, its just ugly and doesn't seem needed.
-        self._setup: bool = False
-        self._prepared: bool = False
-        self._configured: bool = False
+    @abstractmethod
+    def apply(self, method: MethodABC, config: Config) -> "Setting.Results":
+        assert False, "this should never be called."
+        method.fit(
+            train_env=self.train_dataloader(),
+            valid_env=self.val_dataloader(),
+        )
 
-    def apply(self, method: "Method") -> Results:
-        """ Applies a method on this experimental setting.
+        # Test loop:
+        test_metrics: List[Metrics] = []
+        test_env = self.test_dataloader()
+
+        # Get initial observations.
+        observations = test_env.reset()
+        # get actions for a batch of observations.
+        actions = method.get_actions(observations, test_env.action_space)
+
+        for i in itertools.count():
+            observations, rewards, done, info = test_env.step(actions)
+            # Get the predictions/actions:
+            actions = method.get_actions(observations, test_env.action_space)
+            # Calculate the 'metrics' (TODO: This should be done be in the env!)
+            batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
+            test_metrics.append(batch_metrics)
+
+            if done:
+                break
+
+        return self.Results(test_metrics=test_metrics)
+
+    def get_metrics(self,
+                    actions: Actions,
+                    rewards: Rewards) -> Union[float, Metrics]:
+        """ Calculate the "metric" from the model predictions (actions) and the true labels (rewards).
         
-        Extend this class and overwrite this method to customize your
-        training/evaluation protocol.
+        In this example, we return a 'Metrics' object:
+        - `ClassificationMetrics` for classification problems,
+        - `RegressionMetrics` for regression problems.
+        
+        We use these objects because they are awesome (they basically simplify
+        making plots, wandb logging, and serialization), but you can also just
+        return floats if you want, no problem.
+        
+        TODO: This is duplicated from Incremental. Need to fix this.
         """
-        # 1. Configure the method to work on the setting.
-        method.configure(self)
-        # 2. Train the method on the setting.
-        method.train(self)
-        # 3. Evaluate the method on the setting and return the results.
-        return self.evaluate(method)
+        from common.metrics import get_metrics
+        # In this particular setting, we only use the y_pred from actions and
+        # the y from the rewards.
+        if isinstance(actions, Actions):
+            actions = torch.as_tensor(actions.y_pred)
+        if isinstance(rewards, Rewards):
+            rewards = torch.as_tensor(rewards.y)
+        # TODO: At the moment there's this problem, ClassificationMetrics wants
+        # to create a confusion matrix, which requires 'logits' (so it knows how
+        # many classes.
+        if isinstance(self.action_space, spaces.Discrete):
+            batch_size = rewards.shape[0]
+            actions = torch.as_tensor(actions)
+            if len(actions.shape) == 1 or (actions.shape[-1] == 1 and self.action_space.n != 2):
+                fake_logits = torch.zeros([batch_size, self.action_space.n], dtype=int)
+                # FIXME: There must be a smarter way to do this indexing.
+                for i, action in enumerate(actions):
+                    fake_logits[i, action] = 1
+                actions = fake_logits
 
-    def evaluate(self, method: "Method") -> ResultsType:
-        """Tests the method and returns the Results.
+        return get_metrics(y_pred=actions, y=rewards)
 
-        Overwrite this to customize testing for your experimental setting.
+    @property
+    def observation_space(self) -> gym.Space:
+        return self._observation_space
 
-        Returns:
-            ResultsType: A Results object for this particular setting.
+    @observation_space.setter
+    def observation_space(self, value: gym.Space) -> None:
+        """Sets a the observation space.
+        
+        NOTE: This also changes the value of the `dims` attribute and the result
+        of the `size()` method from LightningDataModule.
         """
-        from methods import Method
-        method: Method
-        trainer = method.trainer
+        if not isinstance(value, gym.Space):
+            raise RuntimeError("Value must be a `gym.Space`.")
+        if not self._dims:
+            if isinstance(value, spaces.Box):
+                self.dims = value.shape
+            elif isinstance(value, spaces.Tuple):
+                self.dims = tuple(space.shape for space in value.spaces)
+            else:
+                raise NotImplementedError(
+                    f"Don't know how to set the 'dims' attribute using "
+                    f"observation space {value}"
+                )
+        self._observation_space = value
 
-        # Run the actual evaluation.
-        assert trainer.datamodule is self
-        test_outputs = trainer.test(
-            datamodule=self,
-            # verbose=False,
-        )
-        assert test_outputs, f"BUG: Pytorch lightning bug, Trainer.test() returned None!"
-        test_loss: Loss = test_outputs[0]["loss_object"]
+    @property
+    def action_space(self) -> gym.Space:
+        return self._action_space
 
-        model = method.model
-        from methods.models import Model
-        if isinstance(model, Model):
-            hparams = model.hp
-        else:
-            assert False, f"TODO: Remove this ({model})."
-            hparams = model.hparams
-        return self.results_class(
-            hparams=hparams,
-            test_loss=test_loss,
-        )
+    @action_space.setter
+    def action_space(self, value: gym.Space) -> None:
+        self._action_space = value
 
+    @property
+    def reward_space(self) -> gym.Space:
+        return self._reward_space
+
+    @reward_space.setter
+    def reward_space(self, value: gym.Space) -> None:
+        self._reward_space = value
+            
     @classmethod
-    def main(cls, argv: Optional[Union[str, List[str]]]=None) -> ResultsType:
+    def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
         from main import Experiment
         experiment: Experiment
         # Create the Setting object from the command-line:
@@ -284,13 +307,14 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
         results: ResultsType = experiment.launch(argv)
         return results
 
-    def apply_all(self, argv: Union[str, List[str]]=None) -> Dict[Type["Method"], Results]:
-        applicable_methods = self.get_all_applicable_methods()
+    def apply_all(self, argv: Union[str, List[str]] = None) -> Dict[Type["Method"], Results]:
+        applicable_methods = self.get_applicable_methods()
         from methods import Method
         all_results: Dict[Type[Method], Results] = OrderedDict()
+        config = Config.from_args(argv)
         for method_type in applicable_methods:
             method = method_type.from_args(argv)
-            results = method.apply(self)
+            results = self.apply(method, config)
             all_results[method_type] = results
         logger.info(f"All results for setting of type {type(self)}:")
         logger.info({
@@ -298,69 +322,6 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
             for method, results in all_results.items()
         })
         return all_results
-
-    def configure(self, config: Config, **dataloader_kwargs):
-        """ Set some of the misc options in the setting which might come from
-        the Method or the Experiment.
-        
-        TODO: This isn't super clean, but we basically want to be able to give
-        the batch_size, data_dir, num_workers etc to the Setting somehow,
-        without letting it "know" what kind of method is being applied to it.
-        """
-        self.config = config
-        self.data_dir = config.data_dir
-        self.dataloader_kwargs.update(num_workers=config.num_workers)
-        self.dataloader_kwargs.update(dataloader_kwargs)
-        self._configured = True
-
-    def setup_if_needed(self, *args, **kwargs) -> bool:
-        if not self._configured:
-            # set the data_dir and the dataloader kwargs
-            self.configure(config=self.config or Config())
-            self._configured = True
-        # TODO: Don't know how to properly check when this is the 'main worker'.
-        # (We should only download data on the main worker).
-        if not self._prepared and (self.config.device.type == "cpu" or
-                                   torch.cuda.device_count() == 1):
-            self.prepare_data()
-            self._prepared = True
-        if not self._setup:
-            self.setup(*args, **kwargs)
-            self._setup = True
-
-    @classmethod
-    def get_all_applicable_methods(cls) -> List[Type["Method"]]:
-        from methods import all_methods, Method
-        return list(filter(lambda m: m.is_applicable(cls), all_methods))
-
-    def __init_subclass__(cls, **kwargs):
-        assert is_dataclass(cls), f"Setting type {cls} isn't a dataclass!"
-        logger.debug(f"Registering a new setting: {cls.get_name()}")
-
-        # Exceptionally, create this new empty list that will hold all the
-        # forthcoming subclasses of this particular new setting.
-        cls.children = []
-        # Inform all the nodes higher in the tree that they have a new subclass.
-        parent = cls.__base__
-        if issubclass(parent, Setting):
-            parent: Type[Setting]
-            assert cls not in parent.children
-            parent.children.append(cls)
-        # for t in cls.__bases__:
-        #     if inspect.isclass(t) and issubclass(t, Setting):
-        #         if cls not in t.sub_settings:
-        #             t.sub_settings.append(cls)
-        super().__init_subclass__(**kwargs)
-
-    @classmethod
-    def get_name(cls) -> str:
-        """ Gets the name of this setting class. """
-        # LightningDataModule has a `name` class attribute of `...`!
-        if getattr(cls, "name", None) != Ellipsis:
-            return cls.name
-        else:
-            name = camel_case(cls.__qualname__)
-            return remove_suffix(name, "_setting")
 
     @classmethod
     def add_argparse_args(cls, parent_parser: ArgumentParser) -> ArgumentParser:
@@ -382,7 +343,90 @@ class Setting(LightningDataModule, Serializable, Parseable, Generic[Loader], met
 
     @classmethod
     def get_path_to_source_file(cls: Type) -> Path:
-        cwd = Path(os.getcwd())
-        source_path = Path(getsourcefile(cls)).absolute()
-        source_file = source_path.relative_to(cwd)
-        return source_file
+        from utils.utils import get_path_to_source_file
+        return get_path_to_source_file(cls)
+
+    def configure(self, method: MethodABC):
+        """ Setup the data_dir and the dataloader kwargs using properties of the
+        Method or of self.Config.
+
+        Parameters
+        ----------
+        method : MethodABC
+            The Method that is being applied on this setting.
+        config : Config
+            [description]
+        """
+        assert self.config is not None
+        config = self.config
+        # Get the arguments that will be used to create the dataloaders.
+        
+        # TODO: Should the data_dir be in the Setting, or the Config?
+        self.data_dir = config.data_dir
+        
+        # Create the dataloader kwargs, if needed.
+        if not self.dataloader_kwargs:
+            batch_size = 32
+            if hasattr(method, "batch_size"):
+                batch_size = method.batch_size
+            elif hasattr(method, "model") and hasattr(method.model, "batch_size"):
+                batch_size = method.model.batch_size
+            elif hasattr(config, "batch_size"):
+                batch_size = config.batch_size
+
+            dataloader_kwargs = dict(
+                batch_size=batch_size,
+                num_workers=config.num_workers,
+                shuffle=False,
+            )
+        # Save the dataloader kwargs in `self` so that calling `train_dataloader()`
+        # from outside with no arguments (i.e. when fitting the model with self
+        # as the datamodule) will use the same args as passing the dataloaders
+        # manually.
+        self.dataloader_kwargs = dataloader_kwargs
+        logger.debug(f"Dataloader kwargs: {dataloader_kwargs}")
+
+        # Debugging: Run a quick check to see that what is returned by the
+        # dataloaders is of the right type and shape etc.
+        self._check_dataloaders_give_correct_types()
+
+    def _check_dataloaders_give_correct_types(self):
+        """ Do a quick check to make sure that the dataloaders give back the
+        right observations / reward types.
+        """
+        for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
+            env = loader_method()
+            from settings.passive import PassiveEnvironment
+            from settings.active import ActiveEnvironment
+            if isinstance(env, PassiveEnvironment):
+                print(f"{env} is a PassiveEnvironment!")
+            else:
+                print(f"{env} is an ActiveEnvironment!")
+
+            for batch in take(env, 5):
+                if isinstance(env, PassiveEnvironment):
+                    observations, *rewards = batch
+                else:
+                    observations, rewards = batch, None
+                try:
+                    assert isinstance(observations, self.Observations), type(observations)
+                    observations: Observations
+                    batch_size = observations.batch_size
+                    rewards: Optional[Rewards] = rewards[0] if rewards else None
+                    if rewards is not None:
+                        assert isinstance(rewards, self.Rewards), type(rewards)
+                    # TODO: If we add gym spaces to all environments, then check
+                    # that the observations are in the observation space, sample
+                    # a random action from the action space, check that it is
+                    # contained within that space, and then get a reward by
+                    # sending it to the dataloader. Check that the reward
+                    # received is in the reward space.
+                    actions = self.action_space.sample()
+                    assert actions.shape[0] == batch_size
+                    actions = self.Actions(torch.as_tensor(actions))
+                    rewards = env.send(actions)
+                    assert isinstance(rewards, self.Rewards), type(rewards)
+                except Exception as e:
+                    logger.error(f"There's a problem with the method {loader_method} (env {env})")
+                    raise e
+    

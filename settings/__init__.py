@@ -1,13 +1,18 @@
-
-# from .active import *
-from typing import Any, Dict, Iterable, List, Set, Type
-
-from utils.utils import get_all_concrete_subclasses_of, get_all_subclasses_of
+"""
+"""
 import inspect
-from .base import *
-from .passive import *
-from .active import *
+from typing import Any, Dict, Iterable, List, Set, Type
+# from .setting_base import SettingABC
+# from .method_abc import MethodABC
 
+from .base.objects import (Actions, ActionType, Observations,
+                   ObservationType, Rewards, RewardType)
+from .base.results import Results
+from .base.environment import Environment
+from .base.setting import Setting, SettingType
+from .active import *
+from .passive import *
+# all concrete settings:
 all_settings: List[Type[Setting]] = [
     IIDSetting,
     TaskIncrementalSetting,
@@ -16,7 +21,8 @@ all_settings: List[Type[Setting]] = [
     ClassIncrementalRLSetting,
     TaskIncrementalRLSetting,
     RLSetting,
-    ## Dynamic version:
-    # setting for name, setting in vars().items()
-    # if inspect.isclass(setting) and issubclass(setting, Setting)
 ]
+## Or, get All the settings:
+# all_settings: List[Type[Setting]] = frozenset([
+#     Setting, *Setting.all_children()
+# ])

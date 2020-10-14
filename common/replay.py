@@ -16,7 +16,7 @@ from torch.utils.data import TensorDataset
 from simple_parsing.helpers.serialization.serializable import D
 from common.loss import Loss
 from simple_parsing import field, mutable_field
-from utils.json_utils import Serializable, Pickleable
+from utils.serialization import Serializable, Pickleable
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)

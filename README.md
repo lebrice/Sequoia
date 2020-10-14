@@ -27,6 +27,7 @@ pip install -r requirements.txt
 - Take a quick look at [simple_parsing](https://github.com/lebrice/SimpleParsing) (A python package I've created) which we use to generate the command-line arguments for the experiments.
 - Take a look at the `Setting` class, which looks a 
 
+
 ### Adding a new Setting or Method:
 - [ ] Write a test that demonstrates how your new setting or method should behave.
 - [ ] Implement your new method / setting

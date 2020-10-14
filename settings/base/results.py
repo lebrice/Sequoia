@@ -18,63 +18,101 @@ exhibits catastrophic forgetting when applied on a Class or Task Incremental
 Setting.
 """
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import total_ordering
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Type, TypeVar, Union
 
-from common.loss import Loss
-from common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
+import matplotlib.pyplot as plt
 from simple_parsing import Serializable
+
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
-R = TypeVar("R", bound="Results")
-
 
 @dataclass
 @total_ordering
-class Results(Serializable):
+class Results(Serializable, ABC):
     """ Represents the results of an experiment.
     
-    Here you can define what the quantity to maximize/minize is.
-    This could be helpful when doing Hyper-Parameter Optimization.
+    Here you can define what the quantity to maximize/minize is. This class
+    should also be used to create the plots that will be helpful to understand
+    and compare different results.
 
-    TODO: @lebrice: Determine which component is "in charge" of determining what
-    the objective is: is it the Method? or the Setting?.
-    For instance, in a Task-Incremental experiment, the objective is different
-    than in an RL experiment.
+    TODO: Add wandb logging here somehow.
     """
-    hparams: Any
-    test_loss: Loss
     lower_is_better: ClassVar[bool] = False
+    # Name for the 'objective'.
+    objective_name: ClassVar[str] = "Objective"
 
     @property
-    def metric(self) -> Metrics:
-        """ Gets the most 'important' Metrics object for this results. """
-        return self.test_loss.metric
-
-    @property
+    @abstractmethod
     def objective(self) -> float:
-        """ Returns a float value that measure how good this result is.
+        """ Returns a float value that indicating how "good" this result is.
         
+        If the `lower_is_better` class variable is set to `False` (default), 
+        then this
         """
-        metrics = self.metric
-        if isinstance(metrics, ClassificationMetrics):
-            return metrics.accuracy
-        if isinstance(metrics, RegressionMetrics):
-            return metrics.mse
-        logger.warning(RuntimeWarning(
-            "Not sure what the objective is, returning the loss."
-        ))
-        return float(self.test_loss.loss)
+        raise NotImplementedError("Each Result subclass should implement this.")
+    
+    @abstractmethod
+    def summary(self) -> str:
+        """Gives a string describing the results, in a way that is easy to understand.
+
+        :return: A summary of the results.
+        :rtype: str
+        """
+
+    @abstractmethod
+    def make_plots(self) -> Dict[str, plt.Figure]:
+        """Generates the plots that are useful for understanding/interpreting or
+        comparing this kind of results.
+
+        :return: A dictionary mapping from plot name to the matplotlib figure.
+        :rtype: Dict[str, plt.Figure]
+        """
+    
+    @abstractmethod
+    def to_log_dict(self) -> Dict[str, Any]:
+        """Create a dict version of the results, to be logged to wandb
+        """
+        return {
+            self.objective_name: self.objective
+        }
 
     def save(self, path: Union[str, Path], dump_fn=None, **kwargs) -> None:
         path = Path(path)
         path.parent.mkdir(exist_ok=True, parents=True)
         return super().save(path, dump_fn=dump_fn, **kwargs)
+
+    def save_to_dir(self,
+                    save_dir: Union[str, Path],
+                    filename: str = "results.json") -> None:
+        save_dir = Path(save_dir)
+        save_dir.mkdir(exist_ok=True, parents=True)
+
+        print(f"Results summary:")
+        self.summary
     
+        results_dump_file = save_dir / filename
+        self.save(results_dump_file)
+        print(f"Saved a copy of the results to {results_dump_file}")
+
+        plots: Dict[str, plt.Figure] = self.make_plots()
+        plot_paths: Dict[str, Path] = {}
+        for fig_name, figure in plots.items():
+            print(f"fig_name: {fig_name}")
+            # figure.show()
+            # plt.waitforbuttonpress(10)
+            path = (save_dir/ fig_name).with_suffix(".jpg")
+            path.parent.mkdir(exist_ok=True, parents=True)
+            figure.savefig(path)
+            # print(f"Saved figure at path {path}")
+            plot_paths[fig_name] = path
+        print(f"\nSaved Plots to: {plot_paths}\n")
+            
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, Results):
             return self.objective == other.objective

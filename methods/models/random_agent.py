@@ -21,7 +21,7 @@ class RandomAgent(ActorCritic):
     are random.
     """
 
-    @auto_move_data
+    # @auto_move_data
     def forward(self, batch: Union[Tensor, Tuple[Tensor, Tensor, List[bool], Dict]]) -> Dict[str, Tensor]:
         if isinstance(batch, tuple):
             assert False, "TODO: don't know how to handle batch"

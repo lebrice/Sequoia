@@ -8,7 +8,6 @@ import pytest
 
 from .smooth_environment import SmoothTransitions
 
-
 def test_task_schedule():
     environment_name = "CartPole-v0"
     # wandb.init(name="SSCL/RL_testing/smooth", monitor_gym=True)
@@ -29,15 +28,13 @@ def test_task_schedule():
         original,
         task_schedule=task_schedule,
     )
-    assert env.gravity == starting_gravity
-    assert env.length == starting_length
-    env = gym.wrappers.Monitor(env, f"recordings/smooth_{environment_name}", force=True)
+    # env = gym.wrappers.Monitor(env, f"recordings/smooth_{environment_name}", force=True)
     env.seed(123)
     env.reset()
 
     assert env.gravity == starting_gravity
     assert env.length == starting_length
-    plt.ion()
+    # plt.ion()
 
     params: Dict[int, Dict[str, float]] = OrderedDict()
 
@@ -59,7 +56,7 @@ def test_task_schedule():
 
     # assert False, params[step]
     env.close()
-    plt.ioff()
+    # plt.ioff()
     plt.close()
 
 

@@ -22,44 +22,38 @@ from settings import RLSetting
 from settings.active import ActiveDataLoader
 from settings.active.rl import GymDataLoader
 from utils import prod, try_get
-from utils.json_utils import Pickleable
+from utils.serialization import Pickleable
 from utils.logging_utils import get_logger
 
-from .hparams import HParams as BaseHParams
-from .model import Model
+from .baseline_model import BaselineModel, BaseHParams
 from .output_heads import OutputHead
 
 logger = get_logger(__file__)
 SettingType = TypeVar("SettingType", bound=RLSetting)
 
-class Agent(Model[SettingType], Pickleable):
+# TODO: Need to rework this a little bit
+
+
+class Agent(BaselineModel[SettingType]):
     """ LightningModule that interacts with `ActiveDataLoader` dataloaders.
     """
     @dataclass
-    class HParams(BaseHParams):
+    class HParams(BaselineModel.HParams):
         """ HParams of the Agent. """
 
     def __init__(self, setting: RLSetting, hparams: HParams, config: Config):
-        # super().__init__()
         super().__init__(setting=setting, hparams=hparams, config=config)
         self.setting: RLSetting
-        assert self.setting.dims == self.setting.obs_shape, (self.setting.dims, self.setting.obs_shape)
-        self.input_shape = self.setting.obs_shape
-        if isinstance(self.setting.action_space, Discrete):
-            self.action_shape = (self.setting.action_space.n,)
-        elif isinstance(self.setting.action_space, Box):
-            self.action_shape = self.setting.action_space.shape
-
-        self.output_shape = self.action_shape
-        self.reward_shape = self.setting.reward_shape
+        # TODO: Here we 'change' action_shape action_shape is the shape of the "logits" here on which action
+        # to choose.
+        if isinstance(self.action_space, Discrete):
+            self.action_shape = (self.action_space.n,)
+        elif isinstance(self.action_space, Box):
+            self.action_shape = self.action_space.shape
         self.total_reward: Tensor = 0.  # type: ignore
 
         self.output_head: OutputHead = self.create_output_head()
-    
-    def create_output_head(self) -> OutputHead:
-        """ Create the output head for the task. """
-        return OutputHead(self.hidden_size, self.output_shape, name="policy")
-
+   
     def configure_optimizers(self):
         return self.hp.make_optimizer(self.parameters())
 
@@ -88,7 +82,7 @@ class Agent(Model[SettingType], Pickleable):
 
     @abstractmethod
     def get_loss(self, forward_pass: Dict[str, Tensor], reward: Tensor = None, loss_name: str = "") -> Loss:
-        """Gets a Loss given the results of the forward pass and the reward.00
+        """Gets a Loss given the results of the forward pass and the reward.
 
         Args:
             forward_pass (Dict[str, Tensor]): Results of the forward pass.

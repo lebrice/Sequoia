@@ -1,4 +1,10 @@
-""" Define a "Class-Incremental" Continual Learning Setting.
+""" Defines a `Setting` subclass for "Class-Incremental" Continual Learning.
+
+Example command to run a method on this setting (in debug mode):
+```
+python main.py --setting class_incremental --method baseline --debug  \
+    --batch_size 128 --max_epochs 1
+```
 
 TODO: I'm not sure this fits the "Class-Incremental" definition from
 [iCaRL](https://arxiv.org/abs/1611.07725) at the moment:
@@ -12,61 +18,63 @@ TODO: I'm not sure this fits the "Class-Incremental" definition from
     iii) its computational requirements and memory footprint should remain
         bounded, or at least grow very slowly, with respect to the number of classes
         seen so far."
-
-The Setting class is based on the `LightningDataModule` from
-pl_bolts (pytorch-lightning-bolts). The hope is that by staying close to that
-API, we can reuse some of the models that people develop while target that API.
-- `train_dataloader`, `val_dataloader` and `test_dataloader` give
-    dataloaders of the current task.
-- `train_dataloaders`, `val_dataloaders` and `test_dataloaders` give the 
-    dataloaders of all the tasks. NOTE: this isn't part of the
-    LightningDataModule API.
-
 """
+import dataclasses
 import warnings
 from abc import abstractmethod
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import (Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union)
+from typing import (Callable, ClassVar, Dict, List, Optional, Sequence, Tuple,
+                    Type, Union)
 
-from simple_parsing import choice, list_field
-from torch import Tensor
-from torch.utils.data import DataLoader
-
-from common import ClassificationMetrics, Metrics
-from common.config import Config
-from common.loss import Loss
-from common.transforms import Transforms
-from continuum import ClassIncremental, split_train_val
+import gym
+import matplotlib.pyplot as plt
+import torch
+import numpy as np
+from continuum import ClassIncremental
 from continuum.datasets import *
 from continuum.datasets import _ContinuumDataset
 from continuum.scenarios.base import _BaseCLLoader
-from settings.base import Results
-from settings.base.environment import ObservationType, RewardType
-from settings.passive.environment import PassiveEnvironment
-from utils import dict_union, get_logger
-from utils.utils import constant
+from continuum.tasks import split_train_val
+from gym import spaces
+from pytorch_lightning import LightningModule, Trainer
+from simple_parsing import choice, list_field
+from torch import Tensor
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
-from ..environment import PassiveEnvironment
+from common import ClassificationMetrics, Metrics, get_metrics
+from common.config import Config
+from common.loss import Loss
+from common.transforms import Transforms, SplitBatch, Compose
+from settings.method_base import MethodABC
+from settings.base.results import Results
+from settings.base.environment import ObservationType, RewardType
+from utils import dict_union, get_logger, constant, mean, take
+
+from .class_incremental_results import ClassIncrementalResults
 from ..passive_setting import PassiveSetting
-from .results import ClassIncrementalResults
+from ..passive_environment import PassiveEnvironment, Actions, ActionType, Observations, Rewards
+
+from settings.assumptions.incremental import IncrementalSetting
 
 logger = get_logger(__file__)
 
 num_classes_in_dataset: Dict[str, int] = {
     "mnist": 10,
-    "fashion_mnist": 10,
+    "fashionmnist": 10,
     "kmnist": 10,
     "emnist": 10,
     "qmnist": 10,
-    "mnist_fellowship": 30,
+    "mnistfellowship": 30,
     "cifar10": 10,
     "cifar100": 100,
-    "cifar_fellowship": 110,
+    "cifarfellowship": 110,
     "imagenet100": 100,
     "imagenet1000": 1000,
-    "permuted_mnist": 10,
-    "rotated_mnist": 10,
+    "permutedmnist": 10,
+    "rotatedmnist": 10,
     "core50": 50,
     "core50-v2-79": 50,
     "core50-v2-196": 50,
@@ -75,18 +83,18 @@ num_classes_in_dataset: Dict[str, int] = {
 
 dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
     "mnist": (28, 28, 1),
-    "fashion_mnist": (28, 28, 1),
+    "fashionmnist": (28, 28, 1),
     "kmnist": (28, 28, 1),
     "emnist": (28, 28, 1),
     "qmnist": (28, 28, 1),
-    "mnist_fellowship": (28, 28, 1),
+    "mnistfellowship": (28, 28, 1),
     "cifar10": (32, 32, 3),
     "cifar100": (32, 32, 3),
-    "cifar_fellowship": (32, 32, 3),
+    "cifarfellowship": (32, 32, 3),
     "imagenet100": (224, 224, 3),
     "imagenet1000": (224, 224, 3),
-    "permuted_mnist": (28, 28, 1),
-    "rotated_mnist": (28, 28, 1),
+    "permutedmnist": (28, 28, 1),
+    "rotatedmnist": (28, 28, 1),
     "core50": (224, 224, 3),
     "core50-v2-79": (224, 224, 3),
     "core50-v2-196": (224, 224, 3),
@@ -95,47 +103,49 @@ dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
 
 
 @dataclass
-class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
-    """Settings where the data is non-stationary, and grouped into tasks.
+class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
+    """Supervised Setting where the data is a sequence of 'tasks'.
 
+    This class is basically is the supervised version of an Incremental Setting
+    
+    
     The current task can be set at the `current_task_id` attribute.
     """
-    results_class: ClassVar[Type[Results]] = ClassIncrementalResults
+    
+    Results: ClassVar[Type[Results]] = ClassIncrementalResults
 
-    # Class variable holding all the available datasets.
+    @dataclass(frozen=True)
+    class Observations(IncrementalSetting.Observations,
+                       PassiveSetting.Observations):
+        """Incremental Observations, in a supervised context.""" 
+        pass
+
+    # Class variable holding a dict of the names and types of all available
+    # datasets.
     available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = {
         c.__name__.lower(): c
         for c in [
-            CORe50, CORe50v2_79, CORe50v2_196, CORe50v2_391,
-            CIFARFellowship, Fellowship, MNISTFellowship,
-            ImageNet100, ImageNet1000,
-            MultiNLI,
-            CIFAR10, CIFAR100, EMNIST, KMNIST, MNIST, QMNIST, FashionMNIST,
-            PermutedMNIST, RotatedMNIST,
+            CIFARFellowship, Fellowship, MNISTFellowship, ImageNet100,
+            ImageNet1000, MultiNLI, CIFAR10, CIFAR100, EMNIST, KMNIST, MNIST,
+            QMNIST, FashionMNIST,
         ]
     }
     # A continual dataset to use. (Should be taken from the continuum package).
     dataset: str = choice(available_datasets.keys(), default="mnist")
-
-    # Wether the current task id can be read from outside this class.
-    # NOTE: Loosely enforced, could be bypassed if people want to 'cheat'.
-    # TODO: Adding a mechanism for making task label only available at train time?
-    task_label_is_readable: bool = True
-    # Wether the current task id can be set from outside this class.
-    task_label_is_writable: bool = True
-
-    # Transformations to use. See the Transforms enum for the available values.
-    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.fix_channels, to_dict=False)
     
-    # Wether task labels are available at train time.
-    # NOTE: Forced to True at the moment.
-    task_labels_at_train_time: bool = constant(True)
-    # Wether task labels are available at test time.
-    task_labels_at_test_time: bool = False
+    # Transformations to use. See the Transforms enum for the available values.
+    transforms: List[Transforms] = list_field(
+        Transforms.to_tensor,
+        # BUG: The input_shape given to the Model doesn't have the right number
+        # of channels, even if we 'fixed' them here. However the images are fine
+        # after.
+        Transforms.three_channels,
+        Transforms.channels_first_if_needed,
+    )
 
     # Either number of classes per task, or a list specifying for
     # every task the amount of new classes.
-    increment: Union[List[int], int] = list_field(2, type=int, nargs="*", alias="n_classes_per_task")
+    increment: Union[int, List[int]] = list_field(2, type=int, nargs="*", alias="n_classes_per_task")
     # The scenario number of tasks.
     # If zero, defaults to the number of classes divied by the increment.
     nb_tasks: int = 0
@@ -157,220 +167,118 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
     test_class_order: Optional[List[int]] = None
 
     def __post_init__(self):
-        """Creates a new CL environment / setup.
-
-        Args:
-            options (Options): Dataclass used for configuration.
+        """Initializes the fields of the Setting (and LightningDataModule),
+        including the transforms, shapes, etc.
         """
-        assert self.dataset in dims_for_dataset, f"{self.dataset}, {dims_for_dataset.keys()}"
-        self.num_classes: int = num_classes_in_dataset[self.dataset]
-        image_shape: Tuple[int, int, int] = dims_for_dataset[self.dataset]
-
-        super().__post_init__(
-            obs_shape=image_shape,
-            action_shape=self.num_classes,
-            reward_shape=self.num_classes,
-        )
-
-        self._current_task_id: int = 0
-
-        self.train_datasets: List[_ContinuumDataset] = []
-        self.val_datasets: List[_ContinuumDataset] = []
-        self.test_datasets: List[_ContinuumDataset] = []
-        self._setup = False
-        self._configured = False
-        self._prepared = False
-        self.data_dir: Optional[Path] = None
+        if not hasattr(self, "num_classes"):
+            # In some concrete LightningDataModule's like MnistDataModule,
+            # num_classes is a read-only property. Therefore we check if it
+            # is already defined. This is just in case something tries to
+            # inherit from both IIDSetting and MnistDataModule, for instance.
+            if self.dataset not in num_classes_in_dataset:
+                self.dataset = self.dataset.lower().replace("_", "")
+            self.num_classes: int = num_classes_in_dataset[self.dataset]
+        if hasattr(self, "dims"):
+            # NOTE This sould only happen if we subclass both a concrete
+            # LightningDataModule like MnistDataModule and a Setting (e.g.
+            # IIDSetting) like above.
+            image_shape = self.dims
+        else:
+            image_shape: Tuple[int, int, int] = dims_for_dataset[self.dataset]
 
         if isinstance(self.increment, list) and len(self.increment) == 1:
+            # This can happen when parsing a list from the command-line.
             self.increment = self.increment[0]
+
+        # Set the number of tasks depending on the increment, and vice-versa.
+        # (as only one of the two should be used).
         if self.nb_tasks == 0:
-            self.nb_tasks = num_classes_in_dataset[self.dataset] // self.increment
+            self.nb_tasks = self.num_classes // self.increment
         else:
-            self.increment = num_classes_in_dataset[self.dataset] // self.nb_tasks
+            self.increment = self.num_classes // self.nb_tasks
+
         if not self.class_order:
             self.class_order = list(range(self.num_classes))
+
         # Test values default to the same as train.
         self.test_increment = self.test_increment or self.increment
         self.test_initial_increment = self.test_initial_increment or self.test_increment
         self.test_class_order = self.test_class_order or self.class_order
 
-    def evaluate(self, method: "Method") -> ClassIncrementalResults:
-        """Tests the method and returns the Results.
+        # TODO: For now we assume a fixed, equal number of classes per task, for
+        # sake of simplicity. We could take out this assumption, but it might
+        # make things a bit more complicated.
+        assert isinstance(self.increment, int) and isinstance(self.test_increment, int)
+        self.n_classes_per_task: int = self.increment
 
-        Overwrite this to customize testing for your experimental setting.
+        observation_space = spaces.Tuple([
+            spaces.Box(low=0, high=1, shape=image_shape, dtype=np.float32),
+            spaces.Discrete(self.nb_tasks),
+        ])
+        # TODO: Change the actions from logits to predicted labels.
+        action_space = spaces.Discrete(self.n_classes_per_task)
+        # self.action_space = Box(low=-np.inf, high=np.inf, shape=(self.n_classes_per_task,))
+        # self.reward_space = spaces.Discrete(self.num_classes)
+        reward_space = spaces.Discrete(self.n_classes_per_task)
 
-        Returns:
-            Results: A Results object for this particular setting.
-        """
-        from methods import Method
-        from cl_trainer import CLTrainer
+        super().__post_init__(
+            observation_space=observation_space,
+            action_space=action_space,
+            reward_space=reward_space, # the labels have shape (1,) always.
+        )
+
+        self.train_datasets: List[_ContinuumDataset] = []
+        self.val_datasets: List[_ContinuumDataset] = []
+        self.test_datasets: List[_ContinuumDataset] = []
         
-        method: Method
-        trainer: CLTrainer = method.trainer
+        # This will be set by the Experiment, or passed to the `apply` method.
+        # TODO: This could be a bit cleaner.
+        self.config: Config
+        # Default path to which the datasets will be downloaded.
+        self.data_dir: Optional[Path] = None
 
-        assert isinstance(trainer, CLTrainer), (
-            "WIP: Experimenting with defining the evaluation procedure in the CLTrainer. "
-            "Please use a CLTrainer rather than a Trainer for now."
-        )
-        assert trainer.get_model() is method.model and method.model is not None
-        assert trainer.datamodule is self
-        task_losses: List[Loss] = trainer.test(
-            # method.model,
-            # datamodule=self,
-            # verbose=True,
-        )
-        return ClassIncrementalResults(
-            hparams=method.hparams,
-            test_loss=sum(task_losses),
-            task_losses=task_losses,
-        )
-        # Run the actual evaluation.
-        test_dataloaders = self.test_dataloaders()
-        # TODO: Here we are 'manually' evaluating on one test dataset at a time.
-        # However, in pytorch_lightning, if a LightningModule's
-        # `test_dataloaders` method returns more than a single dataloader, then
-        # the Trainer takes care of evaluating on each dataset in sequence.
-        # Here we basically do this manually, so that the trainer doesn't give
-        # the `dataloader_idx` keyword argument to the eval_step() method on the
-        # LightningModule.
-        task_losses: List[Loss] = []
-        for i, task_loader in enumerate(test_dataloaders):
-            logger.info(f"Starting evaluation on task {i}.")
-            self.current_task_id = i
+    def apply(self, method: MethodABC, config: Config) -> ClassIncrementalResults:
+        """Apply the given method on this setting to producing some results."""
+        # NOTE: (@lebrice) The test loop is written by hand here because I don't
+        # want to have to give the labels to the method at test-time. See the
+        # docstring of `test_loop` for more info.
 
-            if self.task_labels_at_test_time:
-                method.on_task_switch(i)
-
-            test_outputs = method.trainer.test(
-                test_dataloaders=task_loader,
-                # BUG: we don't want to use the best model checkpoint because
-                # that model might be s
-                ckpt_path=None,
-                verbose=False,
-            )
-            task_loss: Loss = self.extract_task_loss(test_outputs)
-            task_metrics = task_loss.losses["classification"].metric
-            assert task_metrics, task_loss
-            logger.info(f"Results: {task_metrics}")
-            task_losses.append(task_loss)
-
-        model = method.model
-        from methods.models import Model
-        if isinstance(model, Model):
-            hparams = model.hp
-        else:
-            hparams = model.hparams
-        return self.results_class(
-            hparams=hparams,
-            test_loss=sum(task_losses),
-            task_losses=task_losses,
-        )
-    
-    def extract_accuracy(self, test_outputs: Union[Dict, List[Dict]]) -> float:
-        task_loss = self.extract_task_loss(test_outputs)
-        task_metrics: ClassificationMetrics = self.extract_metric(task_loss)
-        return task_metrics.accuracy
-
-    def extract_metric(self, task_loss: Loss) -> Metrics:
-        return task_loss.all_metrics()["classification"]
-
-    def extract_task_loss(self, test_outputs: Union[Dict, List[Dict]]) -> Loss:
-        # TODO: Refactor this, we need to have a clearer way of getting the
-        # loss for each task.
-        if isinstance(test_outputs, list):
-            assert len(test_outputs) == 1
-            test_outputs = test_outputs[0]
+        self.config = config
+        method.config = config
+        self.configure(method)        
+        # TODO: At the moment, we're nice enough to do this, but this would
+        # maybe allow the method to "cheat"!
+        method.configure(setting=self)
+        # Run the Training loop (which is defined in IncrementalSetting).
+        self.train_loop(method)
         
-        if "loss_object" not in test_outputs:
-            # TODO: Design a cleaner API for the evaluation setup.
-            raise RuntimeError(
-                "At the moment, a Method's test step needs to return "
-                "a dict with a `Loss` object at key 'loss_object'. The "
-                "metrics that the setting cares about are taken from that "
-                "object in order to create the Results and determine the "
-                "value of the Setting's 'objective'."
-            )
-        task_loss: Loss = test_outputs["loss_object"]
-        return task_loss
+        results: ClassIncrementalResults = self.test_loop(method)
+        logger.info(f"Resulting objective of Test Loop: {results.objective}")
+        print(results.summary())
+        log_dict = results.to_log_dict()
 
-    def make_train_cl_loader(self, dataset: _ContinuumDataset) -> _BaseCLLoader:
-        """ Creates a train ClassIncremental object from continuum. """
-        # TODO: Should we pass the common_transforms and test_transforms to cl loader?
-        return ClassIncremental(
-            dataset,
-            nb_tasks=self.nb_tasks,
-            increment=self.increment,
-            initial_increment=self.initial_increment,
-            class_order=self.class_order,
-            common_transformations=self.transforms,
-            train_transformations=self.train_transforms,
-            # TODO: Learn how to use train_transformations and common_transformations of Continuum?
-            # train_transformations=self.train_transforms
-            train=True,  # a different loader for test
-        )
+        # TODO: Need to move this 'saving/logging the results' stuff into the
+        # Method. 
+        # results.save_to_dir(self.config.log_dir)
+        return results
 
-    def make_test_cl_loader(self, dataset: _ContinuumDataset) -> _BaseCLLoader:
-        """ Creates a test ClassIncremental object from continuum. """
-        return ClassIncremental(
-            dataset,
-            nb_tasks=self.nb_tasks,
-            increment=self.test_increment,
-            initial_increment=self.test_initial_increment,
-            class_order=self.test_class_order,
-            # TODO: Figure out what/how to pass in test transforms, if it
-            # makes any sense to do so.
-            common_transformations=self.transforms,
-            train=False  # a different loader for test
-        )
-
-    @property
-    def dataset_class(self) -> Type[_ContinuumDataset]:
-        return type(self).available_datasets[self.dataset]
-
-    def make_dataset(self,
-                     data_dir: Path,
-                     download: bool = True,
-                     train: bool = True,
-                     transform: Callable = None,
-                     **kwargs) -> _ContinuumDataset:
-        # TODO: #7 Use this method here to fix the errors that happen when trying
-        # to create every single dataset from continuum. 
-        return self.dataset_class(
-            data_path=data_dir,
-            download=download,
-            **kwargs
-        )
-
-    def prepare_data(self, data_dir: Path=None, **kwargs):
-        data_dir = data_dir or self.data_dir
-        assert data_dir, "One of self.data_dir or the data_dir keyword argument to setup() must be set!"
-        if self.data_dir is None:
-            self.data_dir = data_dir
+    def prepare_data(self, data_dir: Path = None, **kwargs):
+        data_dir = data_dir or self.data_dir or self.config.data_dir
         self.make_dataset(data_dir, download=True)
+        self.data_dir = data_dir
         super().prepare_data(**kwargs)
-        self._prepared = True
 
-    def setup(self, *args, **kwargs):
+    def setup(self, stage: Optional[str] = None, *args, **kwargs):
         """ Creates the datasets for each task.
         
         TODO: Figure out a way of setting data_dir elsewhere maybe?
         """
-        if not self._configured:
-            self.configure(config=self.config or Config())
-            self._configured = True
-        
-        # TODO: Data should be prepared..
-        if self.config.device.type == "cpu" and not self._prepared:
-            self.prepare_data()
-            self._prepared = True
-
-        assert self.data_dir, "One of self.data_dir or the data_dir keyword argument to setup() must be set!"
         logger.info(f"data_dir: {self.data_dir}, setup args: {args} kwargs: {kwargs}")
         
-        self.cl_dataset = self.make_dataset(self.data_dir, download=False)
-        self.train_cl_loader: _BaseCLLoader = self.make_train_cl_loader(self.cl_dataset)
-        self.test_cl_loader: _BaseCLLoader = self.make_test_cl_loader(self.cl_dataset)
+        self.train_cl_dataset = self.make_dataset(self.data_dir, download=False, train=True)
+        self.test_cl_dataset = self.make_dataset(self.data_dir, download=False, train=False)
+        self.train_cl_loader: _BaseCLLoader = self.make_train_cl_loader(self.train_cl_dataset)
+        self.test_cl_loader: _BaseCLLoader = self.make_test_cl_loader(self.test_cl_dataset)
 
         logger.info(f"Number of train tasks: {self.train_cl_loader.nb_tasks}.")
         logger.info(f"Number of test tasks: {self.train_cl_loader.nb_tasks}.")
@@ -387,102 +295,325 @@ class ClassIncrementalSetting(PassiveSetting[ObservationType, RewardType]):
         for task_id, test_dataset in enumerate(self.test_cl_loader):
             self.test_datasets.append(test_dataset)
 
-        super().setup(*args, **kwargs)
-        self._setup = True
+        super().setup(stage, *args, **kwargs)
 
     def train_dataloader(self, **kwargs) -> PassiveEnvironment:
-        """Returns a DataLoader for the train dataset of the current task.
-        
-        NOTE: The dataloader is passive for now (just a regular DataLoader).
-        """
-        # self.setup_if_needed()
-        dataset = self.train_datasets[self._current_task_id]
+        """Returns a DataLoader for the train dataset of the current task. """
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_fit:
+            self.setup("fit")
+        dataset = self.train_datasets[self.current_task_id]
+        # TODO: Add some kind of Wrapper around the dataset to make it
+        # semi-supervised.
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        env: DataLoader = PassiveEnvironment(dataset, **kwargs)
-        return env
+        
+        self.train_env = PassiveEnvironment(
+            dataset,
+            split_batch_fn=self.split_batch_function(training=True),
+            observation_space=self.observation_space,
+            action_space=self.action_space,
+            reward_space=self.reward_space,
+            pin_memory=True,
+            **kwargs,
+        )
+        # TODO: Do we want to update self.observation_space here?
+        # We want to keep the spaces 'un-batched', so we keep a slice across the
+        # first dimension.
+        assert all(isinstance(space, spaces.Tuple) for space in [
+            self.train_env.observation_space,
+            self.train_env.action_space,
+            self.train_env.reward_space,
+        ])
+        self.observation_space = self.train_env.observation_space[0]
+        self.action_space = self.train_env.action_space[0]
+        self.reward_space = self.train_env.reward_space[0]
+        return self.train_env
 
     def val_dataloader(self, **kwargs) -> PassiveEnvironment:
         """Returns a DataLoader for the validation dataset of the current task.
-        
-        NOTE: The dataloader is passive for now (just a regular DataLoader).
         """
-        self.setup_if_needed()
-        dataset = self.val_datasets[self._current_task_id]
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_fit:
+            self.setup("fit")
+        dataset = self.val_datasets[self.current_task_id]
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        env: DataLoader = PassiveEnvironment(dataset, **kwargs)
-        return env
-
-    def test_dataloader(self, **kwargs) -> PassiveEnvironment:
-        """Returns a DataLoader for the test dataset of the current task.
         
-        NOTE: The dataloader is passive for now (just a regular DataLoader).
-        """
-        self.setup_if_needed()
-        dataset = self.test_datasets[self._current_task_id]
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        env: DataLoader = PassiveEnvironment(dataset, **kwargs)
-        return env
-
-    # def train_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
-    #     """Returns the DataLoaders for all the train datasets. """
-    #     loaders: List[DataLoader] = []
-    #     for i, dataset in enumerate(self.train_datasets):
-    #         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-    #         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
-    #         loaders.append(env)
-    #     return loaders
-
-    # def test_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
-    #     """Returns the DataLoaders for all the test datasets. """
-    #     loaders: List[DataLoader] = []
-    #     for i, dataset in enumerate(self.test_datasets):
-    #         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-    #         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
-    #         loaders.append(env)
-    #     return loaders
-
-    # def val_dataloaders(self, **kwargs) -> List[PassiveEnvironment]:
-    #     """Returns the DataLoaders for all the validation datasets. """
-    #     loaders: List[DataLoader] = []
-    #     for i, dataset in enumerate(self.val_datasets):
-    #         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-    #         env: DataLoader = PassiveEnvironment(dataset, **kwargs)
-    #         loaders.append(env)
-    #     return loaders
-
-    @property
-    def current_task_id(self) -> Optional[int]:
-        """ Get the current task or None when it is not available. """
-        if self.task_label_is_readable:
-            return self._current_task_id
-        else:
-            return None
-    
-    @current_task_id.setter
-    def current_task_id(self, value: int) -> None:
-        """ Set the current task when it is writable else raises a warning. """
-        if self.task_label_is_writable:
-            self._current_task_id = value
-        else:
-            warnings.warn(UserWarning(
-                f"Trying to set task id but it is not writable! Doing nothing."
-            ))
-
-    def num_classes_in_task(self, task_id: int) -> Union[int, List[int]]:
-        if isinstance(self.increment, list):
-            return self.increment[task_id]
-        return self.increment
-
-    @property
-    def num_classes_in_current_task(self) -> int:
-        return self.num_classes_in_task(self._current_task_id)
-
-    def current_task_classes(self, train: bool=True) -> List[int]:
-        start_index = sum(
-            self.num_classes_in_task(i) for i in range(self._current_task_id)
+        # batch_transforms: List[Callable] = self.val_batch_transforms()
+        self.val_env = PassiveEnvironment(
+            dataset,
+            split_batch_fn=self.split_batch_function(training=True),
+            observation_space=self.observation_space,
+            action_space=self.action_space,
+            reward_space=self.reward_space,
+            **kwargs,
         )
-        end_index = start_index + self.num_classes_in_task(self._current_task_id)
+        return self.val_env
+
+    def test_dataloader(self, **kwargs) -> PassiveEnvironment["ClassIncrementalSetting.Observations", Actions, Rewards]:
+        """Returns a DataLoader for the test dataset of the current task.
+        """
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_test:
+            self.setup("test")
+        dataset = self.test_datasets[self.current_task_id]
+        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        
+        # batch_transforms: List[Callable] = self.test_batch_transforms()
+        # FIXME: the transform that splits the batch is actually changing the
+        # shape of the observation space of the environment!
+
+        self.test_env = PassiveEnvironment(
+            dataset,
+            split_batch_fn=self.split_batch_function(training=False),
+            observation_space=self.observation_space,
+            action_space=self.action_space,
+            reward_space=self.reward_space,
+            **kwargs,
+        )
+        return self.test_env
+
+    def split_batch_function(self, training: bool) -> Callable[[Tuple[Tensor, ...]], Tuple[Observations, Rewards]]:
+        """ Returns a callable that can be used to split a batch into observations and rewards.
+        """
+        def split_batch(batch: Tuple[Tensor, ...]) -> Tuple[Observations, Rewards]:
+            """Splits the batch into a tuple of Observations and Rewards.
+
+            Parameters
+            ----------
+            batch : Tuple[Tensor, ...]
+                A batch of data coming from the dataset.
+
+            Returns
+            -------
+            Tuple[Observations, Rewards]
+                A tuple of Observations and Rewards.
+            """
+            # In this context (class_incremental), we will always have 3 items per
+            # batch, because we use the ClassIncremental scenario from Continuum.
+            x, y, t = batch
+
+            # Relabel y so it is always in [0, n_classes_per_task) for each task.
+            task_labels_in_batch = torch.unique(t).tolist()
+
+            # Index using the task labels, to get the classes for each
+            # task label, and then relabel each y to its index within the labels
+            # of its corresponding task.
+            # TODO: Make sure that this is how we want to do this. This
+            # wouldn't make sense for example if successive tasks could use
+            # the same input image, but with a different label!
+
+            # NOTE: This supports relabeling data from multiple tasks.
+            
+            all_indices = np.arange(x.shape[0])
+            for task_label in task_labels_in_batch:
+                # Get the set of classes for the task at index `t`.
+                classes_in_task = self.task_classes(task_label, train=training)
+                # Relabel that portion of the labels.
+                indices = all_indices[t == task_label]
+                y[indices] = relabel(y[indices], task_classes=classes_in_task)
+
+            # Make sure that the labels are in [0, n_classes_per_task] range:
+            assert 0 <= y.min(), y
+            assert y.max() < self.n_classes_per_task, y
+            
+            # Re-arrange tensors: (x, y, t) -> ((x, t), y)
+            observations = (x, t)
+            rewards = y
+            
+            if ((training and not self.task_labels_at_train_time) or 
+                (not training and not self.task_labels_at_test_time)):
+                # Remove the task labels if we're not currently allowed to have
+                # them.
+                # TODO: Using None might cause some issues. Maybe set -1 instead?
+                observations = (x, None)
+
+            # Create the 'Observations' and 'Rewards' objects.
+            observations = self.Observations.from_inputs(observations)
+            rewards = self.Rewards.from_inputs(rewards)
+            return observations, rewards
+        return split_batch
+    
+    def configure(self, method: MethodABC):
+        """ Setup the data_dir and the dataloader kwargs using properties of the
+        Method or of self.Config.
+
+        Parameters
+        ----------
+        method : MethodABC
+            The Method that is being applied on this setting.
+        config : Config
+            [description]
+        """
+        assert self.config is not None
+        config = self.config
+        # Get the arguments that will be used to create the dataloaders.
+        
+        # TODO: Should the data_dir be in the Setting, or the Config?
+        self.data_dir = config.data_dir
+        
+        # Create the dataloader kwargs, if needed.
+        if not self.dataloader_kwargs:
+            batch_size = 32
+            if hasattr(method, "batch_size"):
+                batch_size = method.batch_size
+            elif hasattr(method, "model") and hasattr(method.model, "batch_size"):
+                batch_size = method.model.batch_size
+            elif hasattr(config, "batch_size"):
+                batch_size = config.batch_size
+
+            dataloader_kwargs = dict(
+                batch_size=batch_size,
+                num_workers=config.num_workers,
+                shuffle=False,
+            )
+        # Save the dataloader kwargs in `self` so that calling `train_dataloader()`
+        # from outside with no arguments (i.e. when fitting the model with self
+        # as the datamodule) will use the same args as passing the dataloaders
+        # manually.
+        self.dataloader_kwargs = dataloader_kwargs
+        logger.debug(f"Dataloader kwargs: {dataloader_kwargs}")
+
+        # Debugging: Run a quick check to see that what is returned by the
+        # dataloaders is of the right type and shape etc.
+        self._check_dataloaders_give_correct_types()
+
+    def make_train_cl_loader(self, train_dataset: _ContinuumDataset) -> _BaseCLLoader:
+        """ Creates a train ClassIncremental object from continuum. """
+        return ClassIncremental(
+            train_dataset,
+            nb_tasks=self.nb_tasks,
+            increment=self.increment,
+            initial_increment=self.initial_increment,
+            class_order=self.class_order,
+            transformations=self.train_transforms,
+        )
+
+    def make_test_cl_loader(self, test_dataset: _ContinuumDataset) -> _BaseCLLoader:
+        """ Creates a test ClassIncremental object from continuum. """
+        return ClassIncremental(
+            test_dataset,
+            nb_tasks=self.nb_tasks,
+            increment=self.test_increment,
+            initial_increment=self.test_initial_increment,
+            class_order=self.test_class_order,
+            transformations=self.test_transforms,
+        )
+
+    @property
+    def dataset_class(self) -> Type[_ContinuumDataset]:
+        return self.available_datasets[self.dataset]
+
+    def make_dataset(self,
+                     data_dir: Path,
+                     download: bool = True,
+                     train: bool = True,
+                     **kwargs) -> _ContinuumDataset:
+        # TODO: #7 Use this method here to fix the errors that happen when
+        # trying to create every single dataset from continuum. 
+        return self.dataset_class(
+            data_path=data_dir,
+            download=download,
+            train=train,
+            **kwargs
+        )
+
+    # These methods below are used by the ClassIncrementalModel, mostly when
+    # using a multihead model, to figure out how to relabel the batches, or how
+    # many classes there are in the current task (since we support a different
+    # number of classes per task).
+    # TODO: Remove this? Since I'm simplifying to a fixed number of classes per
+    # task for now... 
+
+    def num_classes_in_task(self, task_id: int, train: bool) -> Union[int, List[int]]:
+        """ Returns the number of classes in the given task. """
+        increment = self.increment if train else self.test_increment
+        if isinstance(increment, list):
+            return increment[task_id]
+        return increment
+
+    def num_classes_in_current_task(self, train: bool) -> int:
+        """ Returns the number of classes in the current task. """
+        return self.num_classes_in_task(self._current_task_id, train=train)
+
+    def task_classes(self, task_id: int, train: bool) -> List[int]:
+        """ Gives back the 'true' labels present in the given task. """
+        start_index = sum(
+            self.num_classes_in_task(i, train) for i in range(task_id)
+        )
+        end_index = start_index + self.num_classes_in_task(task_id, train)
         if train:
             return self.class_order[start_index:end_index]
         else:
             return self.test_class_order[start_index:end_index]
+
+    def current_task_classes(self, train: bool) -> List[int]:
+        """ Gives back the labels present in the current task. """
+        return self.task_classes(self._current_task_id, train)
+    
+    def _check_dataloaders_give_correct_types(self):
+        """ Do a quick check to make sure that the dataloaders give back the
+        right observations / reward types.
+        """
+        for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
+            logger.debug(f"Checking loader method {loader_method.__name__}")
+            env = loader_method()
+            obs = env.reset()
+            assert isinstance(obs, self.Observations)
+            # Convert the observation to numpy arrays, to make it easier to
+            # check if the elements are in the spaces.
+            obs = obs.numpy()
+            # take a slice of the first batch, to get sample tensors.
+            first_obs = obs[:, 0]
+            
+            # TODO: Here we'd like to be able to check that the first observation
+            # is inside the observation space, but we can't do that because the
+            # task label might be None, and so that would make it fail.
+            x, task_label = first_obs
+            if task_label is None:
+                assert x in self.observation_space[0]
+            else:
+                assert first_obs in self.observation_space
+            
+            assert len(first_obs) == len(self.size())
+            for sample_item, expected_shape in zip(first_obs, self.size()):
+                if isinstance(sample_item, (Tensor, np.ndarray)):
+                    assert sample_item.shape == expected_shape
+
+            for i in range(5):
+                actions = env.action_space.sample()
+                observations, rewards, done, info = env.step(actions)
+                assert isinstance(observations, self.Observations), type(observations)
+                assert isinstance(rewards, self.Rewards), type(rewards)
+                batch_size = observations.batch_size
+                actions = env.action_space.sample()
+                if done:
+                    observations = env.reset()
+            env.close()
+
+
+def relabel(y: Tensor, task_classes: List[int]) -> Tensor:
+    """ Relabel the elements of 'y' to their  index in the task classes.
+    
+    Example:
+    
+    >>> import torch
+    >>> y = torch.as_tensor([2, 3, 2, 3, 2, 2])
+    >>> task_classes = [2, 3]
+    >>> relabel(y, task_classes)
+    tensor([0, 1, 0, 1, 0, 0])
+    """
+    # TODO: Double-check that this never leaves any zeros where it shouldn't.
+    new_y = torch.zeros_like(y)
+    unique_y = set(torch.unique(y).tolist())
+    assert unique_y <= set(task_classes), (unique_y, task_classes)
+    for i, label in enumerate(task_classes):
+        new_y[y == label] = i
+    return new_y
+
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod()

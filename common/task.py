@@ -1,8 +1,13 @@
+""" NOTE: Unused at the moment.
+
+This defines a `Task` object that is just used to represent the 'information'
+related to a 'Task'.
+"""
 from dataclasses import dataclass, field
 from typing import List
 
 from simple_parsing import list_field
-from utils.json_utils import Serializable
+from utils.serialization import Serializable
 
 
 @dataclass

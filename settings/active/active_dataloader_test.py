@@ -9,6 +9,7 @@ from .active_dataloader import ActiveEnvironment
 import numpy as np
 from torchvision.datasets import MNIST
 from common.transforms import Transforms, Compose
+from conftest import DummyEnvironment
 
 
 class ActiveMnistEnvironment(ActiveEnvironment[Tensor, Tensor, Tensor]):
@@ -56,20 +57,6 @@ class ActiveMnistEnvironment(ActiveEnvironment[Tensor, Tensor, Tensor]):
         else:
             print("Prediction was wrong, staying on the same class.")
         return self.reward
-
-
-def test_dummy_environment():
-    # observations are Tensors, actions are ints (0, 1) and reward is a float.
-    # bob: GymDataset[Tensor, int, float] = GymDataset(env=env)
-    bob = DummyEnvironment()
-
-    for i, x in enumerate(bob):
-        assert x == i * 2
-
-        bob.send(1)
-        if i > 5:
-            break
-
 
 
 def test_active_mnist_environment():

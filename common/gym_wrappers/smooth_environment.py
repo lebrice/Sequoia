@@ -17,7 +17,11 @@ from utils.logging_utils import get_logger
 from .multi_task_environment import MultiTaskEnvironment
 
 logger = get_logger(__file__)
-    
+
+
+## TODO (@lebrice): Really cool idea!: Create a TaskSchedule class that inherits
+# from Dict and when you __getitem__ a missing key, returns an interpolation! 
+
 
 class SmoothTransitions(MultiTaskEnvironment):
     """ Extends MultiTaskEnvironment to support smooth task boudaries.

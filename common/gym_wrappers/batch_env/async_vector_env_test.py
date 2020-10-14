@@ -6,9 +6,23 @@ import pytest
 from common.gym_wrappers import MultiTaskEnvironment
 from gym import Env, Wrapper
 from gym.envs.classic_control import CartPoleEnv
+from gym import spaces
 
 from .async_vector_env import AsyncVectorEnv
 
+@pytest.mark.parametrize("batch_size", [1, 2, 5])
+def test_spaces(batch_size: int):
+    env_fns = [partial(gym.make, "CartPole-v0") for _ in range(batch_size)]
+    env: AsyncVectorEnv
+    with AsyncVectorEnv(env_fns=env_fns) as env:
+        assert isinstance(env.observation_space, spaces.Box)
+        assert env.observation_space.shape == (batch_size, 4)
+        
+        assert isinstance(env.action_space, spaces.Tuple)
+        assert len(env.action_space.spaces) == batch_size
+        for space in env.action_space.spaces:
+            assert isinstance(space, spaces.Discrete)
+            assert space.n == 2
 
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
 def test_apply(batch_size: int):

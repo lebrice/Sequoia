@@ -3,48 +3,54 @@
 Gives the accuracy, the class accuracy, and the confusion matrix for a given set
 of (raw/pre-activation) logits Tensor `y_pred` and the class labels `y`. 
 """
-from dataclasses import dataclass
-from typing import Dict, Optional, Union
+from dataclasses import dataclass, InitVar
+from functools import total_ordering
+from typing import Dict, Optional, Union, Any
 
 import numpy as np
 import torch
+import wandb
 from torch import Tensor
 
 from simple_parsing import field
-from utils.json_utils import detach, move
+from utils.serialization import detach, move
 
 from .metrics import Metrics
 from .metrics_utils import (get_accuracy, get_class_accuracy,
                             get_confusion_matrix)
 
+# Make sure that having actual Metrics objects won't cause issues with the 'order' option of dataclasses.
 
-@dataclass
+
+@dataclass(order=True)
 class ClassificationMetrics(Metrics):
-    confusion_matrix: Optional[Tensor] = field(default=None, repr=False)
-    # fields we generate from the confusion matrix (if provided)
+    # fields we generate from the confusion matrix (if provided) or from the
+    # forward pass tensors.
     accuracy: float = 0.
-    class_accuracy: Tensor = field(default=None, repr=False)  # type: ignore
+    confusion_matrix: Optional[Union[Tensor, np.ndarray]] = field(default=None, repr=False, compare=False)
+    class_accuracy: Optional[Union[Tensor, np.ndarray]] = field(default=None, repr=False, compare=False)
+    
+    x:      InitVar[Optional[Tensor]] = None
+    h_x:    InitVar[Optional[Tensor]] = None
+    y_pred: InitVar[Optional[Tensor]] = None
+    y:      InitVar[Optional[Tensor]] = None
     
     def __post_init__(self,
-                      x: Tensor=None,
-                      h_x: Tensor=None,
-                      y_pred: Tensor=None,
-                      y: Tensor=None):
-        # get the batch size:
-        for tensor in [x, h_x, y_pred, y]:
-            if tensor is not None:
-                self.n_samples = tensor.shape[0]
-                break
-        
+                      x: Tensor = None,
+                      h_x: Tensor = None,
+                      y_pred: Tensor = None,
+                      y: Tensor = None):
+
+        super().__post_init__(x=x, h_x=h_x, y_pred=y_pred, y=y)
+
         if self.confusion_matrix is None and y_pred is not None and y is not None:
             self.confusion_matrix = get_confusion_matrix(y_pred=y_pred, y=y)
 
         #TODO: add other useful metrics (potentially ones using x or h_x?)
         if self.confusion_matrix is not None:
-            if not isinstance(self.confusion_matrix, Tensor):
-                self.confusion_matrix = torch.as_tensor(self.confusion_matrix)
             self.accuracy = get_accuracy(self.confusion_matrix)
             self.class_accuracy = get_class_accuracy(self.confusion_matrix)
+
 
     def __add__(self, other: "ClassificationMetrics") -> "ClassificationMetrics":
         # TODO: Might be a good idea to add a `task` attribute to Metrics or
@@ -85,6 +91,15 @@ class ClassificationMetrics(Metrics):
         )
         return result
 
+    def to_log_dict(self, verbose=False):
+        log_dict = super().to_log_dict(verbose=verbose)
+        log_dict["accuracy"] = self.accuracy
+        if verbose:
+            # Maybe add those as plots, rather than tensors?
+            log_dict["class_accuracy"] = self.class_accuracy
+            log_dict["confusion_matrix"] = self.confusion_matrix
+        return log_dict
+    
     def __str__(self):
         s = super().__str__()
         s = s.replace(f"accuracy={self.accuracy}", f"accuracy={self.accuracy:.3%}")
@@ -111,3 +126,22 @@ class ClassificationMetrics(Metrics):
             class_accuracy=move(self.class_accuracy, device),
             confusion_matrix=move(self.confusion_matrix, device),
         )
+
+    @property
+    def objective(self) -> float:
+        return float(self.accuracy)
+
+    # def __lt__(self, other: Union["ClassificationMetrics", Any]) -> bool:
+    #     if isinstance(other, ClassificationMetrics):
+    #         return self.accuracy < other.accuracy
+    #     return NotImplemented
+
+    # def __ge__(self, other: Union["ClassificationMetrics", Any]) -> bool:
+    #     if isinstance(other, ClassificationMetrics):
+    #         return self.accuracy >= other.accuracy
+    #     return NotImplemented
+
+    # def __eq__(self, other: Union["ClassificationMetrics", Any]) -> bool:
+    #     if isinstance(other, ClassificationMetrics):
+    #         return self.accuracy == other.accuracy and self.n_samples == other.n_samples
+    #     return NotImplemented

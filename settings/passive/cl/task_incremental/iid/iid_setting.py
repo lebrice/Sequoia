@@ -2,22 +2,30 @@
 only one task.
 """
 from dataclasses import dataclass
-from typing import ClassVar, List, Optional, Type, TypeVar, Union
-
+from typing import (Callable, ClassVar, Dict, List, Optional, Tuple, Type,
+                    TypeVar, Union)
+import itertools
+import tqdm
+from torch import Tensor
+from common.loss import Loss
+from common.metrics import Metrics
+from common.config import Config
 from settings.base import Results
-from utils.utils import constant
+from utils.utils import constant, dict_union
 
 from .. import TaskIncrementalSetting
-from .results import IIDResults
+from .iid_results import IIDResults
 
+# TODO: Remove the task labels here.
 
 @dataclass
 class IIDSetting(TaskIncrementalSetting):
     """Your 'usual' learning Setting, where the samples are i.i.d.
     
     Implemented as a variant of Task-Incremental CL, but with only one task.
+    
     """
-    results_class: ClassVar[Type[Results]] = IIDResults
+    Results: ClassVar[Type[Results]] = IIDResults
 
     # Held constant, since this is an IID setting.
     nb_tasks: int = constant(1)

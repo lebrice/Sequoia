@@ -4,7 +4,6 @@ from typing import Callable, Dict, Iterable, List, Tuple
 import gym
 from pytorch_lightning import LightningModule
 
-from cl_trainer import CLTrainer
 from common.gym_wrappers import MultiTaskEnvironment, PixelStateWrapper
 from settings.active.rl import GymDataLoader
 from utils import constant, dict_union
@@ -141,12 +140,3 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
         else:
             dataloader.max_steps = self.max_steps
         return dataloader
-
-
-
-
-@CLTrainer.fit_setting.register
-def fit_class_incremental_rl(self, setting: ClassIncrementalRLSetting, model: LightningModule):
-    n_tasks = setting.nb_tasks
-    logger.info(f"Number of tasks: {n_tasks}")
-    raise NotImplementedError("TODO: Use this to customize the behaviour of Trainer.fit for this setting.")

@@ -5,14 +5,14 @@ import torch
 from torch import multiprocessing as mp
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 
-from settings.base.environment import (ActionType, EnvironmentBase,
+from settings.base.environment import (ActionType, Environment,
                                        ObservationType, RewardType)
 from utils.logging_utils import get_logger, log_calls
 
 logger = get_logger(__file__)
 
 
-class ActiveDataLoader(DataLoader, EnvironmentBase[ObservationType, ActionType, RewardType]):
+class ActiveDataLoader(DataLoader, Environment[ObservationType, ActionType, RewardType]):
     """Extends DataLoader to support sending back actions to the 'dataset'.
     
     TODO: Not really used at the moment besides as a base class for the
@@ -48,22 +48,11 @@ class ActiveDataLoader(DataLoader, EnvironmentBase[ObservationType, ActionType, 
     # def __next__(self) -> ObservationType:
     #     return self.observation
 
-    def __iter__(self):
-        return super().__iter__()
-        # # TODO: This is also an idea:
-        # for batch in super().__iter__():
-        #     if isinstance(batch, tuple):
-        #         *inputs, label = batch
-        #         self.observation = inputs
-        #         self.reward = label
-        #         yield self.observation
-        #     yield batch
-
     def send(self, action: ActionType) -> RewardType:
         """ Sends an action to the 'dataset'/'Environment'.
         
         Does nothing when the environment is a simple Dataset (when it isn't an
-        instance of EnvironmentBase).        
+        instance of EnvironmentBase). 
         
         TODO: Figure out the interactions with num_workers and send, if any.
         """

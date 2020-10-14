@@ -28,7 +28,7 @@ def check_only_right_classes_present(env: TaskIncrementalSetting):
         train_loader = env.train_dataloader(batch_size=1)
         
         # # Find out which classes are supposed to be within this task.
-        classes_of_task = env.current_task_classes()
+        classes_of_task = env.current_task_classes(train=True)
 
         for j, (x, y, t) in enumerate(itertools.islice(train_loader, 100)):
             print(i, j, y, t)

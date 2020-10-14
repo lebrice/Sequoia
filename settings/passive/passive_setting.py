@@ -1,21 +1,19 @@
 from dataclasses import dataclass
+from typing import ClassVar, Dict, Type, TypeVar
 
-from settings.base.environment import (ActionType, ObservationType,
-                                          RewardType)
-from settings.base.setting import Setting
-from settings.base.results import ResultsType
 from pl_bolts.datamodules import (CIFAR10DataModule, FashionMNISTDataModule,
                                   ImagenetDataModule, MNISTDataModule)
 from pytorch_lightning import LightningDataModule
-from .environment import PassiveEnvironment
-from typing import ClassVar, Dict, Type, TypeVar
+from settings.base.environment import ActionType, ObservationType, RewardType
+from settings.base.results import ResultsType
+from settings import Setting
 from simple_parsing import choice
-
 from torchvision.datasets import MNIST, FashionMNIST
 
+from .passive_environment import PassiveEnvironment
 
 @dataclass
-class PassiveSetting(Setting[PassiveEnvironment[ObservationType, RewardType]]):
+class PassiveSetting(Setting[PassiveEnvironment[ObservationType, ActionType, RewardType]]):
     """Setting where actions have no influence on future observations. 
 
     For example, supervised learning is a Passive setting, since predicting a
