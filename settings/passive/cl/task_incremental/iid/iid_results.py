@@ -52,6 +52,7 @@ class IIDResults(TaskIncrementalResults):
 
     def make_plots(self) -> Dict[str, plt.Figure]:
         plots_dict = super().make_plots()
+        # TODO: Could add a Confusion Matrix plot?
         plots_dict.update({
             "class_accuracies": self.class_accuracies_plot()
         })

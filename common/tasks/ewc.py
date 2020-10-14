@@ -49,25 +49,22 @@ class EWCTask(AuxiliaryTask):
         self.name = name or type(self.name)
         self.options: EWCTask.Options
         self.previous_task: int = None
-        # TODO: Figure out a way to get a buffer 'dict' so we can 
+        # TODO: Figure out a clean way to persist this dict into the state_dict.
         self.previous_model_weights: Dict[str, Tensor] = {}
-        # self.previous_model_weights: Dict[str, Tensor] = DictBuffer()
-        # self.old_weights: Tensor
         self._i: int = 0
         self.n_switches: int = 0
 
-    def state_dict(self, destination=None, prefix='', keep_vars=False) -> Dict:
-        state = super().state_dict(destination=destination, prefix=prefix, keep_vars=keep_vars)
+    def state_dict(self, *args, **kwargs) -> Dict:
+        state = super().state_dict(*args, **kwargs)
         for k, v in self.previous_model_weights.items():
             state[k] = v
         return state
 
     def load_state_dict(self, state_dict: Dict[str, Tensor], strict: bool = True):
         missing, unexpected = super().load_state_dict(state_dict=state_dict, strict=False)
-        # TODO: Should we create the 'previous model' ?
         for k, v in self.previous_model_weights.items():
             if k in unexpected:
-                self.previous_model_weights[k] = v
+                self.previous_model_weights[k] = state_dict[k]
 
     def disable(self):
         # save a little bit of memory by clearing the weights.
@@ -82,7 +79,6 @@ class EWCTask(AuxiliaryTask):
 
     def on_task_switch(self, task_id: int)-> None:
         """ Executed when the task switches (to either a new or known task).
-        TODO: Need to fix this method so it works with the SelfSupervisedModel.
         """
         if not self.enabled:
             return

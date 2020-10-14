@@ -21,7 +21,7 @@ logger = get_logger(__file__)
 
 @dataclass
 class IncrementalSetting(SettingABC):
-    """ Mixin that defines methods that are common to all 'incrmenal' settings,
+    """ Mixin that defines methods that are common to all 'incremental' settings,
     where the data is separated into tasks, and where you may not always get the
     task labels.
     """

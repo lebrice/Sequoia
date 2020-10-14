@@ -30,6 +30,7 @@ available_encoders: Dict[str, Type[nn.Module]] = {
     # TODO: Add the self-supervised pl modules here!
 }
 
+
 @dataclass
 class BaseHParams(Serializable, Parseable):
     """ Set of 'base' Hyperparameters for the 'base' LightningModule. """

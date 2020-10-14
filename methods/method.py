@@ -30,7 +30,7 @@ from .models.model import ForwardPass, Model
 
 logger = get_logger(__file__)
 
-# TODO: Rename this BaselineMethod.
+# TODO: Rename this to BaselineMethod.
 
 @dataclass
 class Method(MethodABC, Serializable, Parseable, ABC):
@@ -57,6 +57,9 @@ class Method(MethodABC, Serializable, Parseable, ABC):
         # type information for static type checking.
         self.trainer: Trainer
         self.model: LightningModule
+        # TODO: This will be set by the Experiment atm, but we should probably
+        # sort out which option should be set how and by whom.
+        self.config: Config
 
     def configure(self, setting: SettingType) -> None:
         """Configures the method for the given Setting.
@@ -210,6 +213,7 @@ class Method(MethodABC, Serializable, Parseable, ABC):
         Returns:
             Trainer: the Trainer object.
         """
+        # We use this here to create loggers!
         loggers = self.config.create_loggers()
         callbacks = self.create_callbacks(setting)
         trainer = self.trainer_options.make_trainer(

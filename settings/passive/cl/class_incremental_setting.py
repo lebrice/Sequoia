@@ -175,6 +175,8 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             # num_classes is a read-only property. Therefore we check if it
             # is already defined. This is just in case something tries to
             # inherit from both IIDSetting and MnistDataModule, for instance.
+            if self.dataset not in num_classes_in_dataset:
+                self.dataset = self.dataset.lower().replace("_", "")
             self.num_classes: int = num_classes_in_dataset[self.dataset]
         if hasattr(self, "dims"):
             # NOTE This sould only happen if we subclass both a concrete
@@ -245,10 +247,10 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
         self.config = config
         method.config = config
+        self.configure(method)        
         # TODO: At the moment, we're nice enough to do this, but this would
         # maybe allow the method to "cheat"!
         method.configure(setting=self)
-        self.configure(method)                
         # Run the Training loop (which is defined in IncrementalSetting).
         self.train_loop(method)
         
@@ -315,6 +317,13 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             **kwargs,
         )
         # TODO: Do we want to update self.observation_space here?
+        # We want to keep the spaces 'un-batched', so we keep a slice across the
+        # first dimension.
+        assert all(isinstance(space, spaces.Tuple) for space in [
+            self.train_env.observation_space,
+            self.train_env.action_space,
+            self.train_env.reward_space,
+        ])
         self.observation_space = self.train_env.observation_space[0]
         self.action_space = self.train_env.action_space[0]
         self.reward_space = self.train_env.reward_space[0]

@@ -1,10 +1,11 @@
+from typing import List
+
 import gym
 import pytest
 from gym.spaces import Discrete
 
 from conftest import DummyEnvironment
-
-from .policy_env import PolicyEnv
+from .policy_env import PolicyEnv, StateTransition
 
 
 def test_iterating_with_policy():
@@ -36,8 +37,8 @@ def test_iterating_with_policy():
 
     n_expected_transitions = len(actions)
     env.set_policy(custom_policy)
-    actual_transitions = []
-    
+    actual_transitions: List[StateTransition] = []
+
     i = 0
     for i, batch in enumerate(env):
         print(f"Step {i}: batch: {batch}")
