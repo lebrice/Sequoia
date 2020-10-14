@@ -6,7 +6,7 @@ from simple_parsing import (ArgumentParser, choice, field, mutable_field,
                             subparsers)
 
 from common.config import Config
-from methods import Method, all_methods
+from methods import MethodABC, all_methods
 from settings import (ClassIncrementalResults, Results, Setting, SettingType,
                       all_settings)
 from utils import Parseable, Serializable, get_logger
@@ -40,7 +40,7 @@ class Experiment(Parseable, Serializable):
     # class from the command-line) and there are multiple methods with the given
     # name, then the most specific method applicable for the given setting will
     # be used.
-    method: Optional[Union[str, Method, Type[Method]]] = choice(
+    method: Optional[Union[str, MethodABC, Type[MethodABC]]] = choice(
         set(method.get_name() for method in all_methods),
         default=None,
     )
@@ -102,7 +102,7 @@ class Experiment(Parseable, Serializable):
         if self.method and self.setting:
             if method_name is not None:
                 self.method = get_method_class_with_name(method_name, self.setting)
-            if issubclass(self.method, Method):
+            if issubclass(self.method, MethodABC):
                 self.method = self.method.from_args(argv)
             
             # Give the same Config to both the Setting and the Method.
@@ -114,7 +114,7 @@ class Experiment(Parseable, Serializable):
 
         elif self.setting is not None and self.method is None:
             # Evaluate all applicable methods on this setting.
-            all_results: Dict[Type[Method], Results] = {}
+            all_results: Dict[Type[MethodABC], Results] = {}
 
             for first_method in self.setting.get_applicable_methods():
                 method = first_method.from_args(argv)
@@ -150,11 +150,11 @@ class Experiment(Parseable, Serializable):
 
                 # Three possible cases: string, Method instance, or Method
                 # subclass:
-                assert isinstance(self.method, (str, Method)) or issubclass(self.method, Method)
+                assert isinstance(self.method, (str, Method)) or issubclass(self.method, MethodABC)
                 if method_name is not None:
                     # We previously stored the name of the method in method_name  
                     self.method = get_method_class_with_name(method_name, setting_type)
-                if isclass(self.method) and issubclass(self.method, Method):
+                if isclass(self.method) and issubclass(self.method, MethodABC):
                     self.method = self.method.from_args(argv)
 
                 setting = setting_type.from_args(argv)
@@ -168,11 +168,11 @@ class Experiment(Parseable, Serializable):
             return all_results
 
     @classmethod
-    def main(cls, argv: Union[str, List[str]] = None) -> Union[Results, Dict[Type[Setting], Results], Dict[Type[Method], Results]]:
+    def main(cls, argv: Union[str, List[str]] = None) -> Union[Results, Dict[Type[Setting], Results], Dict[Type[MethodABC], Results]]:
         """Launches an experiment using the given command-line arguments.
 
         First, we get the choice of method and setting using a first parser.
-        Then, we parse the Setting and Method objects using the remaining args
+        Then, we parse the Setting and MethodABC objects using the remaining args
         with two other parsers.
 
         Parameters
@@ -192,8 +192,8 @@ class Experiment(Parseable, Serializable):
 
 
 def get_method_class_with_name(method_name: str,
-                               setting: Type[Setting] = None) -> Type[Method]:
-    potential_methods: List[Type[Method]] = [
+                               setting: Type[Setting] = None) -> Type[MethodABC]:
+    potential_methods: List[Type[MethodABC]] = [
         method for method in all_methods
         if method.get_name() == method_name
     ]
@@ -240,11 +240,11 @@ def get_method_class_with_name(method_name: str,
         f"through inheritance! (potential methods: {potential_methods}"
     )
 
-def check_has_descendants(potential_methods: List[Type[Method]]) -> List[bool]:
+def check_has_descendants(potential_methods: List[Type[MethodABC]]) -> List[bool]:
     """Returns a list where for each method in the list, check if it has
     any descendants (subclasses of itself) also within the list.
     """
-    def _has_descendant(method: Type[Method]) -> bool:
+    def _has_descendant(method: Type[MethodABC]) -> bool:
         """ For a given method, check if it has any descendants within
         the list of potential methods.
         """

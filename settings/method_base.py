@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar, Generic, List, Optional, Type, TypeVar, Union
+from pathlib import Path
 
 import gym
 import numpy as np
@@ -7,7 +8,7 @@ from pytorch_lightning import LightningDataModule
 
 from settings.base.environment import Environment
 from settings.base.objects import Actions, Observations, Rewards
-
+from utils.utils import get_path_to_source_file
 
 SettingType = TypeVar("SettingType", bound="SettingABC")
 
@@ -18,7 +19,7 @@ class MethodABC(Generic[SettingType], ABC):
     # Class attribute that holds the setting this method was designed to target.
     # Needs to either be passed to the class statement or set as a class
     # attribute.
-    target_setting: ClassVar[Type["SettingABC"]]
+    target_setting: ClassVar[Type["SettingABC"]] = None
 
     @abstractmethod
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Union[Actions, Any]:
@@ -103,11 +104,9 @@ class MethodABC(Generic[SettingType], ABC):
                 Defaults to None, in which case the method will inherit the
                 target setting of it's parent class.
         """
-        
-
         if target_setting:
             cls.target_setting = target_setting
-        elif hasattr(cls, "target_setting"):
+        elif getattr(cls, "target_setting", None):
             target_setting = cls.target_setting
         else:
             raise RuntimeError(
@@ -119,13 +118,8 @@ class MethodABC(Generic[SettingType], ABC):
         target_setting.register_method(cls)
         return super().__init_subclass__(**kwargs)
 
-    # def __init_subclass__(cls, target_setting: Type["SettingABC"]=None):
-    #     """Called when creating a new subclass of Method.
+    
+    @classmethod
+    def get_path_to_source_file(cls: Type) -> Path:
+        return get_path_to_source_file(cls)
 
-    #     Args:
-    #         target_setting (Type[Setting], optional): The target setting.
-    #             Defaults to None, in which case the method will inherit the
-    #             target setting of it's parent class.
-    #     """
-    #     cls.target_setting = target_setting
-    #     return super().__init_subclass__()

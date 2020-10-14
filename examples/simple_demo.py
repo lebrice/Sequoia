@@ -14,8 +14,6 @@ from simple_parsing import ArgumentParser, Serializable
 from torch import Tensor, nn
 
 from common.config import Config
-from common.metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
-                            get_metrics)
 from methods import MethodABC as MethodBase
 from settings import (ClassIncrementalSetting, PassiveEnvironment, Results,
                       Setting)
@@ -35,7 +33,7 @@ class MyNewMethod(MethodBase, target_setting=ClassIncrementalSetting):
     @dataclass
     class HParams(Serializable):
         """ Example of HyperParameters of this method. """
-        learning_rate: float = 0.01
+        learning_rate: float = 0.001
 
     def __init__(self, hparams: HParams, config: Config):
         self.hparams = hparams
@@ -225,23 +223,23 @@ def demo(method_type = MyNewMethod) -> Dict[Type[Setting], Dict[str, Results]]:
             # Instantiate the Setting, using the default options for each
             # setting, for instance the number of tasks, etc.
             setting = SettingClass(dataset=dataset)
-            # # Apply the method on the setting.
-            # results: Results = setting.apply(method, config=config)
-            # all_results[SettingClass][dataset] = results
+            # Apply the method on the setting.
+            results: Results = setting.apply(method, config=config)
+            all_results[SettingClass][dataset] = results
             
-            # Use this (and comment out below) to debug just the tables below:
-            class FakeResult:
-                objective: float = 1.23
-            all_results[SettingClass][dataset] = FakeResult()
+            ## Use this (and comment out below) to debug just the tables below:
+            # class FakeResult:
+            #     objective: float = 1.23
+            # all_results[SettingClass][dataset] = FakeResult()
              
-            # print(f"Results for Method {method.get_name()} on setting {SettingClass}, dataset {dataset}:")
-            # print(results.summary())
-            # wandb.log(results.to_log_dict())
-            # wandb.log(results.make_plots())
-            # wandb.summary["method"] = method.get_name()
-            # wandb.summary["setting"] = setting.get_name()
-            # wandb.summary["dataset"] = dataset
-            # wandb.summary[results.objective_name] = results.objective
+            print(f"Results for Method {method.get_name()} on setting {SettingClass}, dataset {dataset}:")
+            print(results.summary())
+            wandb.log(results.to_log_dict())
+            wandb.log(results.make_plots())
+            wandb.summary["method"] = method.get_name()
+            wandb.summary["setting"] = setting.get_name()
+            wandb.summary["dataset"] = dataset
+            wandb.summary[results.objective_name] = results.objective
 
     print(f"----- All Results for method {method_type} -------")
     # Create a LaTeX table with all the results for all the settings.

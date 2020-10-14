@@ -228,5 +228,3 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
         # logger.debug(f"Receiving actions {action}")
         return self.env.send(action)
     
-    def __del__(self):
-        self.env.close()

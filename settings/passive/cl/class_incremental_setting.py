@@ -237,13 +237,11 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # Default path to which the datasets will be downloaded.
         self.data_dir: Optional[Path] = None
 
-    def apply(self, method: "Method", config: Config) -> ClassIncrementalResults:
+    def apply(self, method: MethodABC, config: Config) -> ClassIncrementalResults:
         """Apply the given method on this setting to producing some results."""
         # NOTE: (@lebrice) The test loop is written by hand here because I don't
         # want to have to give the labels to the method at test-time. See the
         # docstring of `test_loop` for more info.
-        from methods import Method
-        method: Method
 
         self.config = config
         method.config = config
@@ -258,7 +256,10 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         logger.info(f"Resulting objective of Test Loop: {results.objective}")
         print(results.summary())
         log_dict = results.to_log_dict()
-        results.save_to_dir(self.config.log_dir)
+
+        # TODO: Need to move this 'saving/logging the results' stuff into the
+        # Method. 
+        # results.save_to_dir(self.config.log_dir)
         return results
 
     def prepare_data(self, data_dir: Path = None, **kwargs):

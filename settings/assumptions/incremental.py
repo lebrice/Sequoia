@@ -185,13 +185,7 @@ class IncrementalSetting(SettingABC):
             just use the usual Trainer.fit() and Trainer.test() methods, so feel
             free to overwrite this method with your own implementation if that
             makes your life easier.
-        """
-        from methods import Method
-        method: Method
-
-        from settings.passive import PassiveEnvironment
-        from settings.active import ActiveEnvironment
- 
+        """ 
         # Create a list that will hold the test metrics encountered during each
         # task.
         test_metrics: List[List[Metrics]] = []

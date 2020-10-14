@@ -210,10 +210,8 @@ class BaselineMethod(AbstractMethod, Serializable, Parseable, target_setting=Set
             Trainer: the Trainer object.
         """
         # We use this here to create loggers!
-        loggers = self.config.create_loggers()
         callbacks = self.create_callbacks(setting)
         trainer = self.trainer_options.make_trainer(
-            loggers=loggers,
             callbacks=callbacks,
         )
         return trainer
@@ -295,10 +293,6 @@ class BaselineMethod(AbstractMethod, Serializable, Parseable, target_setting=Set
         logger.debug(f"Hparams for that type of model (from command-line): {new_hparams}")
         return new_hparams
     
-    @classmethod
-    def get_path_to_source_file(cls: Type) -> Path:
-        return get_path_to_source_file(cls)
-
     def split_batch(self, batch: Any) -> Tuple[Batch, Batch]:
         return self.model.split_batch(batch)
     

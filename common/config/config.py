@@ -34,7 +34,6 @@ class Config(Serializable, Parseable):
     Extend this class whenever you want to add some command-line arguments
     for your experiment.
     """
-    log_dir_root: Path = Path("results")
     data_dir: Path = Path("data")
     # Run in Debug mode: no wandb logging, extra output.
     debug: bool = flag(False)
@@ -53,22 +52,3 @@ class Config(Serializable, Parseable):
     def seed_everything(self) -> None:
         if self.seed is not None:
             seed_everything(self.seed)
-
-    # Options for wandb logging.
-    wandb: WandbLoggerConfig = mutable_field(WandbLoggerConfig)
-    def create_loggers(self) -> Optional[Union[LightningLoggerBase, List[LightningLoggerBase]]]:
-        if self.debug:
-            return None
-        elif "pytest" in sys.modules:
-            # Running inside a pytest session, not logging to wandb.
-            return None
-        return self.wandb.make_logger(wandb_parent_dir=self.log_dir_root)
-
-    @property
-    def log_dir(self):
-        return self.log_dir_root.joinpath(
-            (self.wandb.project or ""),
-            (self.wandb.group or ""),
-            (self.wandb.run_name or ""),
-            self.wandb.run_id,
-        )

@@ -26,12 +26,14 @@ logger = get_logger(__file__)
 class MyNewImprovedMethod(MyNewMethod):
     """ Improved version of the demo method, that adds an ewc-like regularizer.
     """
+    # Name of this method:
     name: ClassVar[str] = "demo_ewc"
+    
     @dataclass
-    class HParams(Serializable):
-        """ Example of HyperParameters of this method. """
-        learning_rate: float = 0.01
-        ewc_coefficient: float = 0.01
+    class HParams(MyNewMethod.HParams):
+        """ Hyperparameters of this new improved method. (Adds ewc params)."""
+        # Coefficient of the ewc-like loss.
+        ewc_coefficient: float = 1.0
 
     def create_model(self, setting: ClassIncrementalSetting):
         return MyImprovedModel(
