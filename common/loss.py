@@ -1,8 +1,6 @@
 """ Module that defines a `Loss` class that holds losses and associated metrics.
 
-This Loss object is used to bundle together the Loss and the Metrics. This is
-in essence similar to the `TrainResult` and `EvalResult` dict objects from
-pytorch_lightning.
+This Loss object is used to bundle together the Loss and the Metrics.
 
 Loss objects are used to simplify training with multiple "loss signals"
 (e.g. in Self-Supervised Learning) by keeping track of the contribution of each

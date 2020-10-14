@@ -12,8 +12,6 @@ from typing import Any, Callable, List, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
-from pl_bolts.models.self_supervised.simclr import (SimCLREvalDataTransform,
-                                                    SimCLRTrainDataTransform)
 from torch import Tensor
 from torchvision.transforms import Compose as ComposeBase
 from torchvision.transforms import RandomGrayscale
@@ -29,6 +27,8 @@ from .to_tensor import ToTensor
 from .transform import Transform
 # TODO: Add names to the dimensions in the transforms!
 
+# from pl_bolts.models.self_supervised.simclr import (SimCLREvalDataTransform,
+#                                                     SimCLRTrainDataTransform)
 class Transforms(Enum):
     """ Enum of possible transforms. 
 

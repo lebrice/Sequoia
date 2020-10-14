@@ -6,10 +6,9 @@ from multiprocessing.connection import Connection, wait
 from typing import Any, List, Union
 
 import gym
-from baselines.common.vec_env import CloudpickleWrapper, VecEnv
-from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from gym.vector.async_vector_env import write_to_shared_memory
 from gym.vector.async_vector_env import _worker, _worker_shared_memory
+from gym.vector.utils import CloudpickleWrapper
 
 # TODO: Find a way to turn off the logs coming from the workers. 
 # from utils.logging_utils import get_logger

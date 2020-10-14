@@ -1,18 +1,22 @@
-torch
-torchvision
-tqdm
-simple_parsing 
-wandb
-matplotlib
-plotly
-pytest-timeout
-pytorch-lightning
--e utils/pytorch-lightning-bolts
--e utils/continuum
-pytest-xdist
 gym
 gym[atari]
-scikit-image
-# (just for the openai/baselines repo below):
-tensorflow
-git+https://github.com/openai/baselines.git
+pytorch-lightning
+simple_parsing
+matplotlib
+torchvision
+scikit-learn
+tqdm
+continuum
+#Only required because of a bug in continuum:
+imageio
+# Only required for the current demo:
+wandb
+plotly
+pandas
+# Only for python < 3.8
+singledispatchmethod
+#
+pytorch-lightning-bolts
+# Requirements for running tests:
+pytest-timeout
+pytest-xdist

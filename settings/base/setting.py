@@ -188,6 +188,8 @@ class Setting(SettingABC,
     @abstractmethod
     def apply(self, method: MethodABC, config: Config) -> "Setting.Results":
         assert False, "this should never be called."
+        
+        
         method.fit(
             train_env=self.train_dataloader(),
             valid_env=self.val_dataloader(),

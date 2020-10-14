@@ -11,7 +11,6 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
-import pl_bolts
 from common.loss import Loss
 from methods.models import BaselineModel
 from methods.aux_tasks.reconstruction import AEReconstructionTask, VAEReconstructionTask
@@ -31,7 +30,7 @@ class SaveVaeSamplesCallback(Callback):
         self.reconstruction_task: Optional[AEReconstructionTask] = None
         self.generation_task: Optional[VAEReconstructionTask] = None
         self.latents_batch: Optional[Tensor] = None
-        self.model: Classifier
+        self.model: BaselineModel
         self.trainer: Trainer
     
     def setup(self, trainer, pl_module, stage: str):
@@ -42,7 +41,7 @@ class SaveVaeSamplesCallback(Callback):
         """Called when the train begins."""
         self.trainer = trainer
         self.model = pl_module
-        from methods.self_supervision import SelfSupervisedModel
+        from methods.models.baseline_model.self_supervised_model import SelfSupervisedModel        
         if isinstance(pl_module, SelfSupervisedModel):
             # if our model has auxiliary tasks (i.e., if it's a self-supervised model.)
             if VAEReconstructionTask.name in self.model.tasks:

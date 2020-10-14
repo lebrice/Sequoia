@@ -11,8 +11,7 @@ from typing import (Callable, Dict, Generic, List, Optional, Tuple, TypeVar,
 from gym.spaces import Discrete, Box
 import numpy as np
 import torch
-from pytorch_lightning import (EvalResult, LightningDataModule,
-                               LightningModule, TrainResult)
+from pytorch_lightning import LightningDataModule, LightningModule
 from torch import Tensor, nn
 
 from common.config import Config
@@ -149,19 +148,7 @@ class Agent(BaselineModel[SettingType]):
         result_dict = loss.to_pl_dict()
         result_dict["log"]["mean_reward"] = mean_reward
         return result_dict
-        # TODO: I don't really understand how the TrainResult and EvalResult
-        # objects are supposed to be used.
-        # if self.train:
-        #     result = TrainResult(loss)
-        # else:
-        #     result = EvalResult()
-        # result.log("n_steps", torch.as_tensor(float(batch_idx)), prog_bar=True)
-        # result.log("mean_reward", mean_reward, prog_bar=True)
-        # result.log("rewards", rewards.mean().detach(), prog_bar=True)
-        # # result.log("predicted rewards", predicted_rewards.mean().detach(), prog_bar=True)
-        # # result["loss_object"] = loss
-        # return result
-        # return loss.to_pl_dict()
+
 
     def training_step(self,
                       batch: Tensor,

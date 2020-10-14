@@ -87,7 +87,7 @@ class MyNewMethod(MethodBase, target_setting=ClassIncrementalSetting):
             Hybrid of DataLoader & gym.Env which you can use to train your method.
             By default None.
         valid_env : PassiveEnvironment, optional
-            Hybrid of DataLoader & gym.Env which you can use to train your method.
+            Hybrid of DataLoader & gym.Env which you can use to validate your method.
             By default None 
         """
         # configure() will have been called by the setting before we get here.
@@ -190,12 +190,9 @@ class MyModel(pl.LightningModule):
 
         predicted_labels = logits.argmax(-1)
         accuracy = (predicted_labels == image_labels).sum().float() / len(image_labels)
-
-        return {
-            "loss": loss,
-            "log": {"accuracy": accuracy},
-            "progress_bar": {"accuracy": accuracy}
-        }
+        self.log("accuracy", accuracy, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        
+        return loss
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)

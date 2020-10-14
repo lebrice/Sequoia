@@ -242,10 +242,11 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # NOTE: (@lebrice) The test loop is written by hand here because I don't
         # want to have to give the labels to the method at test-time. See the
         # docstring of `test_loop` for more info.
-
         self.config = config
         method.config = config
-        self.configure(method)        
+        
+        self.configure(method)
+        
         # TODO: At the moment, we're nice enough to do this, but this would
         # maybe allow the method to "cheat"!
         method.configure(setting=self)

@@ -71,13 +71,11 @@ class MyImprovedModel(MyModel):
         self.n_switches: int = 0
 
     def shared_step(self, batch: Tuple[Observations, Rewards], *args, **kwargs):
-        result = super().shared_step(batch, *args, **kwargs)
-        # Here we just add the following loss to the result of the base model. 
+        base_loss = super().shared_step(batch, *args, **kwargs)
         ewc_loss = self.ewc_coefficient * self.ewc_loss()
-        result["loss"] += ewc_loss
-        result["log"]["ewc_loss"] = ewc_loss
-        result["progress_bar"]["ewc_loss"] = ewc_loss
-        return result
+        new_loss = base_loss + ewc_loss
+        self.log("ewc_loss", ewc_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        return new_loss
 
     def on_task_switch(self, task_id: int)-> None:
         """ Executed when the task switches (to either a known or unknown task).
