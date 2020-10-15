@@ -236,9 +236,9 @@ def demo(method_type=DemoMethod):
     caption = f"Results for method {method_type.__name__} on all its applicable settings."
     
     csv_path.parent.mkdir(exist_ok=True, parents=True)
-    with open(csv_path, "w") as f:
-        result_df.to_csv(f)
+    result_df.to_csv(csv_path)
     print(f"Saved dataframe with results to path {csv_path}")
+    
     result_df.to_latex(
         buf=latex_table_path,
         caption=caption,

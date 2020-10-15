@@ -74,7 +74,7 @@ class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  
         TODO: Maybe add something to convert everything that is a Tensor or 
         numpy array to a given dtype?
         """
-        return type(self).from_dict({
+        return type(self)(**{
             name: move(item, device)
             for name, item in self.items()
         })

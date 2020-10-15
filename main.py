@@ -10,15 +10,10 @@ from experiment import Experiment
 
 logger = get_logger(__file__)
 
-if __name__ == "__main__":    
-    logger.debug("Registered Settings: \n")
-    for setting in all_settings:
-        name = setting.get_name()
-        source_file_path = setting.get_path_to_source_file()
-        logger.debug(
-        f"- {setting.get_name()}: {setting} ({setting.get_path_to_source_file()})"
-    )
-        
+if __name__ == "__main__":        
+    logger.debug("Registered Settings: \n" + "\n".join(
+        f"- {setting.get_name()}: {setting} ({setting.get_path_to_source_file()})" for setting in all_settings
+    ))
     logger.debug("Registered Methods: \n" + "\n".join(
         f"- {method.get_name()}: {method} ({method.get_path_to_source_file()})" for method in all_methods
     ))

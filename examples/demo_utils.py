@@ -6,39 +6,6 @@ from pathlib import Path
 
 import pandas as pd
 
-def demo(method_type: Type[MethodABC]) -> Dict[Type[Setting], Dict[str, Results]]:
-    parser = ArgumentParser(description=__doc__)
-    parser.add_arguments(Config, dest="config", default=Config())
-    parser.add_arguments(method_type.HParams, dest="hparams")
-
-    args = parser.parse_args()
-
-    config: Config = args.config
-    hparams: method_type.HParams = args.hparams
-    method = method_type(hparams=hparams, config=config)
-
-    all_results: Dict[Type[Setting], Dict[str, Results]] = {}
-    
-    for SettingClass in method.get_applicable_settings():
-        all_results[SettingClass] = {}
-        
-        # for dataset in SettingClass.available_datasets:
-        for dataset in ["mnist", "fashion_mnist"]:
-            # Instantiate the Setting, using the default options for each
-            # setting, for instance the number of tasks, etc.
-            setting = SettingClass(dataset=dataset)
-            # Apply the method on the setting.
-            results: Results = setting.apply(method, config=config)
-            all_results[SettingClass][dataset] = results
-            
-            ## Use this (and comment out below) to debug just the tables below:
-            # class FakeResult:
-            #     objective: float = 1.23
-            # all_results[SettingClass][dataset] = FakeResult()
-             
-            print(f"Results for Method {method.get_name()} on setting {SettingClass}, dataset {dataset}:")
-            print(results.summary())
-    return all_results
 
 
 def make_result_dataframe(all_results):

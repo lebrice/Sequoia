@@ -98,7 +98,10 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
         when training on a series of tasks.
         Overwrite this to customize training.
         """
-        assert self.model is not None, f"For now, Setting should have been nice enough to call method.configure(setting=self) before calling `fit`!"
+        assert self.model is not None, (
+            f"For now, Setting should have been nice enough to call "
+            "method.configure(setting=self) before calling `fit`!"
+        )
         return self.trainer.fit(
             model=self.model,
             train_dataloader=train_env,
@@ -111,12 +114,16 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
              ckpt_path: Optional[str] = 'best',
              verbose: bool = True,
              datamodule: Optional[LightningDataModule] = None) -> Metrics:
-        """ Test the method on the given test data and return the corresponding
+        """ Test the method on the given test dataloader and return the corresponding
         Metrics.
 
         TODO: It would be better if we had a more "closed" interface where we
         would just give the unlabeled samples and ask for predictions, and
         calculate the accuracy ourselves.
+        
+        NOTE: This isn't used atm. The idea is that some setting might be fine
+        with giving the full test dataloader to the method, rather than having
+        to step through it like a gym environment.
         """
         test_results = self.trainer.test(
             model=self.model,
@@ -128,7 +135,7 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
         assert len(test_results) == 1
         assert "loss_object" in test_results[0]
         total_loss: Loss = test_results[0]["loss_object"]
-    
+
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         """ Get a batch of predictions (actions) for a batch of observations.
         
@@ -140,8 +147,7 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
         # Simplified this for now, but we could add more flexibility later.
         assert isinstance(forward_pass, ForwardPass)
         return forward_pass.actions
-    
-    @singledispatchmethod
+
     def model_class(self, setting: SettingType) -> Type[BaselineModel]:
         """ Returns the type of model to use for the given setting.
         
@@ -153,11 +159,6 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
         really having anything in common.
         """
         return BaselineModel
-
-    # @model_class.register
-    # def _(self, setting: ContinualRLSetting) -> Type[Agent]:
-    # TODO: Need to debug this.
-    #     return ActorCritic
 
     def create_model(self, setting: SettingType) -> BaselineModel[SettingType]:
         """Creates the BaselineModel (a LightningModule) for the given Setting.
@@ -226,7 +227,7 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
         from common.callbacks.vae_callback import SaveVaeSamplesCallback
         return [
             self.knn_callback,
-            SaveVaeSamplesCallback(),
+            # SaveVaeSamplesCallback(),
         ]
 
     @classmethod

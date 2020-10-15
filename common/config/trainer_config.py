@@ -36,8 +36,8 @@ class TrainerConfig(Serializable):
     val_check_interval: Union[int, float] = 1.0
     auto_scale_batch_size: Optional[str] = None
     auto_lr_find: bool = False
+    # Floating point precision to use in the model. (See pl.Trainer)
     precision: int = choice(16, 32, default=32)
-    
     default_root_dir: Path = Path(os.getcwd()) / "results"
 
     # How much of training dataset to check (floats = percent, int = num_batches)
@@ -59,6 +59,7 @@ class TrainerConfig(Serializable):
         return self.wandb.make_logger(wandb_parent_dir=self.log_dir_root)
 
     # TODO: These two aren't really used at the moment.
+
     # Root of where to store the logs.
     log_dir_root: Path = Path("results")
     

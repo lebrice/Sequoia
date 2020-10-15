@@ -272,7 +272,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         
         TODO: Figure out a way of setting data_dir elsewhere maybe?
         """
-        logger.info(f"data_dir: {self.data_dir}, setup args: {args} kwargs: {kwargs}")
+        logger.debug(f"data_dir: {self.data_dir}, setup args: {args} kwargs: {kwargs}")
         
         self.train_cl_dataset = self.make_dataset(self.data_dir, download=False, train=True)
         self.test_cl_dataset = self.make_dataset(self.data_dir, download=False, train=False)

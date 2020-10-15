@@ -84,11 +84,6 @@ class Experiment(Parseable, Serializable):
             self.setting.config = self.config
         assert self.setting is None or isinstance(self.setting, Setting)
 
-        # if isclass(self.method) and issubclass(self.method, Method):
-        #     self.method = self.method.from_args(argv)
-
-        # assert self.method is None or isinstance(self.method, (Method, str))
-
         method_name: Optional[str] = None
         if isinstance(self.method, str):
             # Collisions in method names should be allowed. If it happens,
@@ -100,6 +95,7 @@ class Experiment(Parseable, Serializable):
             method_name = self.method
 
         if self.method and self.setting:
+            # Evaluate a given method on a given setting.
             if method_name is not None:
                 self.method = get_method_class_with_name(method_name, self.setting)
             if issubclass(self.method, MethodABC):
@@ -116,15 +112,15 @@ class Experiment(Parseable, Serializable):
             # Evaluate all applicable methods on this setting.
             all_results: Dict[Type[MethodABC], Results] = {}
 
-            for first_method in self.setting.get_applicable_methods():
-                method = first_method.from_args(argv)
+            for method_type in self.setting.get_applicable_methods():
+                method = method_type.from_args(argv)
                 results = self.setting.apply(method, config=self.config)
-                all_results[first_method] = results
+                all_results[method_type] = results
 
             logger.info(f"All results for setting of type {type(self)}:")
             logger.info({
-                first_method.get_name(): (results if results else "crashed")
-                for first_method, results in all_results.items()
+                method_type.get_name(): (results if results else "crashed")
+                for method_type, results in all_results.items()
             })
             return all_results
         
