@@ -246,7 +246,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     def apply(self, method: MethodABC, config: Config=None) -> ClassIncrementalResults:
         """Apply the given method on this setting to producing some results."""
         self.config = config or Config.from_args(self._argv)
-        method.config = config
+        method.config = self.config
 
         self.configure(method)
         method.configure(setting=self)

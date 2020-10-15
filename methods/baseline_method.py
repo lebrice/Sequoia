@@ -62,9 +62,13 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
     # Options for the Trainer object.
     trainer_options: TrainerConfig = None
     
-    def __init__(self, hparams: BaselineModel.HParams, config: Config):
+    def __init__(self,
+                 hparams: BaselineModel.HParams,
+                 config: Config = None,
+                 trainer_options: TrainerConfig = None):
         self.hparams = hparams
-        self.config = config
+        self.config = config or Config.from_args()
+        self.trainer_options = trainer_options or TrainerConfig.from_args()
         # The model and Trainer objects will be created in `self.configure`. 
         # NOTE: This right here doesn't create the fields, it just gives some
         # type information for static type checking.
@@ -90,12 +94,12 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
         setting_name: str = setting.get_name()
         dataset: str = getattr(setting, "dataset", "")        
         
-        wandb_options: WandbLoggerConfig = self.config.trainer_options.wandb
+        wandb_options: WandbLoggerConfig = self.trainer_options.wandb
         if wandb_options.run_name is None:
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
         
         self.trainer: Trainer = self.create_trainer(setting)
-        self.model: LightningModule = self.create_model(setting)
+        self.model: BaselineModel = self.create_model(setting)
         self.Observations: Type[Observations] = setting.Observations
         self.Actions: Type[Actions] = setting.Actions
         self.Rewards: Type[Rewards] = setting.Rewards
@@ -158,60 +162,25 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
         assert isinstance(forward_pass, ForwardPass)
         return forward_pass.actions
 
-    def model_class(self, setting: SettingType) -> Type[BaselineModel]:
-        """ Returns the type of model to use for the given setting.
-        
+    def create_model(self, setting: SettingType) -> BaselineModel[SettingType]:
+        """Creates the BaselineModel (a LightningModule) for the given Setting.
+
         You could extend this to customize which model is used depending on the
         setting.
         
         TODO: As @oleksost pointed out, this might allow the creation of weird
         'frankenstein' methods that are super-specific to each setting, without
         really having anything in common.
-        """
-        return BaselineModel
-
-    def create_model(self, setting: SettingType) -> BaselineModel[SettingType]:
-        """Creates the BaselineModel (a LightningModule) for the given Setting.
-
-        The model should ideally accept a Setting in its constructor.
-        
-        IDEA: Would it be better if we could instead pass some kind of 'spec' so
-        methods can't change things inside the Setting? 
 
         Args:
             setting (SettingType): An experimental setting.
 
         Returns:
-            BaselineModel[SettingType]: The BaselineModel that is to be applied to that setting.
+            BaselineModel[SettingType]: The BaselineModel that is to be applied
+            to that setting.
         """
-        # Get the type of model to use for that setting.
-        model_class: Type[BaselineModel] = self.model_class(setting)
-        hparams_class = model_class.HParams
-        logger.debug(f"model class for this setting: {model_class}")
-        logger.debug(f"hparam class for this setting: {hparams_class}")
-        logger.debug(f"hparam class on the method: {type(self.hparams)}")
-
-        if isinstance(self.hparams, hparams_class):
-            # Create the model, passing the setting and hparams.
-            return model_class(setting=setting, hparams=self.hparams, config=self.config)
-        else:
-            # Need to 'upgrade' the hparams on the method to match those on the
-            # model.
-            # TODO: @lebrice This is ugly.
-            logger.warning(UserWarning(
-                f"The hparams attribute on the {self.get_name()} Method are of "
-                f"type {type(self.hparams)}, while the HParams on the model "
-                f"class are of type {hparams_class}!\n"
-                f"This will try to 'upgrade' the hparams, using values "
-                f"from the command-line."
-            ))
-            self.hparams = self.upgrade_hparams(hparams_class)
-            logger.info(f"'Upgraded' hparams: {self.hparams}")
-
-        assert isinstance(self.hparams, model_class.HParams)
-        # TODO: Could it become a problem that pytorch-lightning uses 'datamodule'
-        # and we use 'setting' as a key?
-        return model_class(setting=setting, hparams=self.hparams, config=self.config)
+        # Create the model, passing the setting, hparams and config.
+        return BaselineModel(setting=setting, hparams=self.hparams, config=self.config)
 
     def create_trainer(self, setting: SettingType) -> Trainer:
         """Creates a Trainer object from pytorch-lightning for the given setting.
@@ -242,8 +211,8 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
             wandb.summary["setting"] = setting_name
             if dataset:
                 wandb.summary["dataset"] = dataset
-        wandb.log(results.to_log_dict())
-        wandb.log(results.make_plots())
+            wandb.log(results.to_log_dict())
+            wandb.log(results.make_plots())
         # Reset the run name so we create a new one next time we're applied on a
         # Setting.
         self.trainer_options.wandb.run_name = None
@@ -253,7 +222,7 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
         # in the model, once PL adds it.
         from common.callbacks.vae_callback import SaveVaeSamplesCallback
         return [
-            self.knn_callback,
+            # self.hparams.knn_callback,
             # SaveVaeSamplesCallback(),
         ]
 

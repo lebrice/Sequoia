@@ -27,7 +27,10 @@ HParamsType = TypeVar("HparamsType", bound="SelfSupervisedModel.HParams")
 
 class SelfSupervisedModel(BaseModel[SettingType]):
     """
-    Model 'mixin' that adds various configurable self-supervised losses.
+    Model 'mixin' that adds support for modular, configurable "auxiliary tasks".
+    
+    These auxiliary tasks are used to get a self-supervised loss to train on
+    when labels aren't available.
     """
     @dataclass
     class HParams(BaseModel.HParams):
@@ -61,14 +64,24 @@ class SelfSupervisedModel(BaseModel[SettingType]):
             if aux_task.enabled:
                 # TODO: Auxiliary tasks all share the same 'y' for now, but it
                 # might make more sense to organize this differently. 
-                aux_loss: Loss = aux_task.get_loss(forward_pass, y=rewards.y)
+                y = rewards.y if rewards else None
+                aux_loss: Loss = aux_task.get_loss(forward_pass, y=y)
                 # Scale the loss by the corresponding coefficient before adding
                 # it to the total loss.
-                loss += aux_task.coefficient * aux_loss
+                loss += aux_task.coefficient * aux_loss.to(self.device)
                 if self.config.debug and self.config.verbose:
                     logger.debug(f"{task_name} loss: {aux_loss.total_loss}")
                     
         return loss
+
+    def add_auxiliary_task(self, aux_task: AuxiliaryTask, key: str=None, coefficient: float = None) -> None:
+        """ Adds an auxiliary task to the self-supervised model. """
+        key = aux_task.name if key is None else key
+        if key in self.tasks:
+            raise RuntimeError(f"There is already an auxiliary task with name {key} in the model!")
+        self.tasks[key] = aux_task.to(self.device)
+        if coefficient is not None:
+            aux_task.coefficient = coefficient
 
     def create_auxiliary_tasks(self) -> Dict[str, AuxiliaryTask]:
         # Share the relevant parameters with all the auxiliary tasks.

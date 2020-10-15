@@ -1,7 +1,9 @@
 """ Dataclass that holds the options (command-line args) for the Trainer
 """
+import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable, List, Optional, Union
 
 import torch
@@ -10,14 +12,14 @@ from pytorch_lightning.loggers import LightningLoggerBase
 
 from simple_parsing import choice, field, mutable_field
 from utils.serialization import Serializable
+from utils.parseable import Parseable
+
 
 from .wandb_config import WandbLoggerConfig
-from pathlib import Path
-import os
 
 
 @dataclass
-class TrainerConfig(Serializable):
+class TrainerConfig(Serializable, Parseable):
     """ Configuration options for the pytorch-lightning Trainer.
     
     TODO: Pytorch Lightning already has a mechanism for adding argparse
@@ -46,7 +48,7 @@ class TrainerConfig(Serializable):
     limit_val_batches: Union[int, float] = 1.0
     # How much of test dataset to check (floats = percent, int = num_batches)
     limit_test_batches: Union[int, float] = 1.0
-    
+
     # Options for wandb logging.
     wandb: WandbLoggerConfig = mutable_field(WandbLoggerConfig)
 
@@ -62,7 +64,7 @@ class TrainerConfig(Serializable):
 
     # Root of where to store the logs.
     log_dir_root: Path = Path("results")
-    
+
     @property
     def log_dir(self):
         return self.log_dir_root.joinpath(
@@ -71,8 +73,7 @@ class TrainerConfig(Serializable):
             (self.wandb.run_name or ""),
             self.wandb.run_id,
         )
-    
-    
+
     def make_trainer(self,
                      callbacks: Optional[List[Callback]] = None,
                      loggers: Iterable[LightningLoggerBase] = None) -> Trainer:

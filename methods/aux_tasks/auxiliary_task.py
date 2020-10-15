@@ -40,7 +40,7 @@ class AuxiliaryTask(nn.Module):
         # Coefficient used to scale the task loss before adding it to the total.
         coefficient: float = 0.
 
-    def __init__(self, *args, options: Options = None, **kwargs):
+    def __init__(self, *args, options: Options = None, name: str = None, **kwargs):
         """Creates a new Auxiliary Task to further train the encoder.
 
         Can use the `encoder` and `classifier` components of the parent
@@ -66,11 +66,13 @@ class AuxiliaryTask(nn.Module):
         super().__init__()
         # If we are given the coefficient as a constructor argument, for
         # instance, then we create the Options for this auxiliary task.
+        self.name = name or type(self).name
         self.options = options or type(self).Options(*args, **kwargs)
         self.device: torch.device = torch.device("cuda" if cuda_available else "cpu")
+        self._disabled = False
 
     def encode(self, x: Tensor) -> Tensor:
-        x, _ = AuxiliaryTask.preprocessing(x, None)
+        # x, _ = AuxiliaryTask.preprocessing(x, None)
         return AuxiliaryTask.encoder(x)
 
     def logits(self, h_x: Tensor) -> Tensor:
@@ -123,24 +125,27 @@ class AuxiliaryTask(nn.Module):
         self.options.coefficient = value
 
     def enable(self) -> None: 
-        """ Enable this auxiliary task. 
+        """ Enable this auxiliary task.
         This could be used to create/allocate resources to this task.
+        
+        NOTE: The task will not work, even after being enabled, if its
+        coefficient is set to 0!
         """
-        pass
+        self._disabled = False
 
     def disable(self) -> None:
         """ Disable this auxiliary task and sets its coefficient to 0. 
         This could be used to delete/deallocate resources used by this task.
         """
-        self.options.coefficient = 0.
+        self._disabled = True
 
     @property
     def enabled(self) -> bool:
-        return self.coefficient != 0
-    
+        return not self._disabled
+
     @property
     def disabled(self) -> bool:
-        return not self.enabled
+        return self._disabled or self.coefficient == 0.
 
     def on_task_switch(self, task_id: int) -> None:
         """ Executed when the task switches (to either a new or known task). """
@@ -148,3 +153,7 @@ class AuxiliaryTask(nn.Module):
     @property
     def model(self) -> LightningModule:
         return type(self)._model
+
+    @staticmethod
+    def set_model(model: BaseModel) -> None:
+        AuxiliaryTask._model = model

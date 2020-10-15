@@ -41,8 +41,9 @@ class ClassIncrementalModel(BaseModel[SettingType]):
 
     def __init__(self, setting: ClassIncrementalSetting, hparams: HParams, config: Config):
         self._output_head: OutputHead = None
-
         super().__init__(setting=setting, hparams=hparams, config=config)
+        
+
         self.hp: ClassIncrementalModel.HParams
         self.setting: SettingType
 

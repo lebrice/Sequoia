@@ -45,11 +45,10 @@ class EWCTask(AuxiliaryTask):
 
     def __init__(self,
                  *args,
-                 name: str = "ewc",
+                 name: str = None,
                  options: "EWC.Options" = None,
                  **kwargs):
-        super().__init__(*args, name=name, options=options, **kwargs)
-        self.name = name or type(self.name)
+        super().__init__(*args, options=options, name=name, **kwargs)
         self.options: EWCTask.Options
         self.previous_task: int = None
         # TODO: Figure out a clean way to persist this dict into the state_dict.

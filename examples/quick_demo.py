@@ -164,30 +164,43 @@ class DemoMethod(Method, target_setting=ClassIncrementalSetting):
         return self.target_setting.Actions(y_pred)
 
 
-def demo(DemoMethod=DemoMethod):
+def demo(method_type = DemoMethod):
+    method = create_method(method_type)
+    all_results = evaluate_on_all_settings(method)
+    return all_results
+
+
+def create_method(DemoMethod = DemoMethod) -> DemoMethod:
+    from simple_parsing import ArgumentParser
+    
+    # Get the hparams of the method from the command-line.
+    parser = ArgumentParser(description=__doc__)
+    parser.add_arguments(DemoMethod.HParams, dest="hparams")
+    args = parser.parse_args()
+    hparams: DemoMethod.HParams = args.hparams
+
+    # Create the method and return it.
+    method = DemoMethod(hparams=hparams)
+    return method
+
+
+def evaluate_on_all_settings(method: DemoMethod, below: Type[Setting]=None):
     """ Applies the method to all its applicable settings and shows the results.
     """
     import pandas as pd
     from collections import defaultdict
     from pathlib import Path
 
-    from simple_parsing import ArgumentParser
-    
-    # 1. Get the hparams of the method from the command-line.
-    parser = ArgumentParser(description=__doc__)
-    parser.add_arguments(DemoMethod.HParams, dest="hparams")
-    args = parser.parse_args()
-    hparams: DemoMethod.HParams = args.hparams
-
-    # 2. Create the Method
-    method = DemoMethod(hparams=hparams)
-
-    # 3. Iterate over all the applicable evaluation settings, using the default
+    # Iterate over all the applicable evaluation settings, using the default
     # options for each setting, and store the results inside this dictionary.
     all_results: Dict[Type[Setting], Dict[str, Results]] = defaultdict(dict)
     
     setting: ClassIncrementalSetting
     for setting in method.all_evaluation_settings():
+        if below is not None:
+            if not isinstance(setting, below):
+                continue
+
         setting_type = type(setting)         
         dataset = setting.dataset
 
@@ -203,20 +216,20 @@ def demo(DemoMethod=DemoMethod):
         # Save the results.
         all_results[setting_type][dataset] = results
 
-    # 4. Aggregate all the results in a pandas DataFrame.
+    # Aggregate all the results in a pandas DataFrame.
 
     from .demo_utils import make_result_dataframe
     result_df: pd.DataFrame = make_result_dataframe(all_results)
 
-    csv_path = Path(f"examples/results/results_{DemoMethod.get_name()}.csv")
+    csv_path = Path(f"examples/results/results_{method.get_name()}.csv")
     csv_path.parent.mkdir(exist_ok=True, parents=True)
     result_df.to_csv(csv_path)
     print(f"Saved dataframe with results to path {csv_path}")
 
     # BONUS: Display the results in a LaTeX-formatted table!
 
-    latex_table_path = Path(f"examples/results/table_{DemoMethod.get_name()}.tex")
-    caption = f"Results for method {DemoMethod.__name__} settings."
+    latex_table_path = Path(f"examples/results/table_{method.get_name()}.tex")
+    caption = f"Results for method {type(method).__name__} settings."
     result_df.to_latex(
         buf=latex_table_path,
         caption=caption,

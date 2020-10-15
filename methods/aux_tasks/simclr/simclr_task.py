@@ -40,8 +40,8 @@ class SimCLRTask(AuxiliaryTask):
         # Hyperparameters from the falr submodule.
         simclr_options: SimclrHParams = mutable_field(SimclrHParams)
 
-    def __init__(self, name: str="simclr", options: "SimCLRTask.Options"=None):
-        super().__init__(name=name, options=options)
+    def __init__(self, name: str="simclr", options: "SimCLRTask.Options"=None, **kwargs):
+        super().__init__(name=name, options=options, **kwargs)
         self.options: SimCLRTask.Options
 
         # Set the same values for equivalent hyperparameters
@@ -69,4 +69,6 @@ class SimCLRTask(AuxiliaryTask):
         z = self.projector(h_t)  # [2*B, proj_dim]
         loss = self.loss(z, self.hparams.xent_temp)
         loss_object = Loss(name=self.name, loss=loss)
+
+        self.model.log("simclr_loss", loss_object.loss, prog_bar=True)        
         return loss_object

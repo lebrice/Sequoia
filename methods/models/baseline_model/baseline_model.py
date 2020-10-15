@@ -53,7 +53,7 @@ class BaselineModel(SemiSupervisedModel,
 
     @dataclass
     class HParams(
-        # SemiSupervisedModel.HParams,
+        SemiSupervisedModel.HParams,
         SelfSupervisedModel.HParams,
         ClassIncrementalModel.HParams,
     ):

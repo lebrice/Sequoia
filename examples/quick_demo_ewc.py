@@ -16,7 +16,7 @@ from simple_parsing import ArgumentParser, Serializable
 
 from settings import Setting, PassiveEnvironment, PassiveSetting, ClassIncrementalSetting, Results
 from common.config import Config
-from methods import MethodABC
+from methods import MethodABC as Method
 from utils.logging_utils import get_logger
 from utils import dict_intersection
 
@@ -40,20 +40,22 @@ class MyImprovedModel(MyModel):
         )
         self.ewc_coefficient = ewc_coefficient
         self.ewc_p_norm = ewc_p_norm
-        self._previous_task: Optional[int] = None
+
         self.previous_model_weights: Dict[str, Tensor] = {}
-        self.n_switches: int = 0
+
+        self._previous_task: Optional[int] = None
+        self._n_switches: int = 0
 
     def shared_step(self, batch: Tuple[Observations, Rewards], *args, **kwargs):
         base_loss, metrics = super().shared_step(batch, *args, **kwargs)
-        ewc_loss = self.hparams.ewc_coefficient * self.ewc_loss()
+        ewc_loss = self.ewc_coefficient * self.ewc_loss()
         metrics["ewc_loss"] = ewc_loss
         return base_loss + ewc_loss, metrics
 
     def on_task_switch(self, task_id: int)-> None:
         """ Executed when the task switches (to either a known or unknown task).
         """
-        if self._previous_task is None and self.n_switches == 0:
+        if self._previous_task is None and self._n_switches == 0:
             logger.debug("Starting the first task, no EWC update.")
         elif task_id is None or task_id != self._previous_task:
             # NOTE: We also switch between unknown tasks.
@@ -64,7 +66,7 @@ class MyImprovedModel(MyModel):
             self.previous_model_weights.update(deepcopy({
                 k: v.detach() for k, v in self.named_parameters()
             }))
-        self.n_switches += 1
+        self._n_switches += 1
 
     def ewc_loss(self) -> Tensor:
         """Gets an 'ewc-like' regularization loss.
@@ -112,20 +114,38 @@ class ImprovedDemoMethod(DemoMethod):
             ewc_coefficient=self.hparams.ewc_coefficient,
             ewc_p_norm = self.hparams.ewc_p_norm,
         )
-        self.optimizer = self.model.configure_optimizers()
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
 
     def on_task_switch(self, task_id: Optional[int]):
         self.model.on_task_switch(task_id)
 
 
-def compare_methods(methods: List[Type[MethodABC]]):
+from .quick_demo import evaluate_on_all_settings, create_method
+
+
+def demo():
+    base_method = create_method(DemoMethod)
+    base_results = evaluate_on_all_settings(base_method)
+    
+    improved_method = create_method(ImprovedDemoMethod)
+    improved_results = evaluate_on_all_settings(improved_method)
+
+    compare_results({
+        DemoMethod: base_results,
+        ImprovedDemoMethod: improved_results,
+    })
+
+
+def compare_results(all_results: Dict[Type[Method], Dict[Type[Setting], Dict[str, Results]]]):
+    """Compare the results of the different methods, arranging them in a table.
+
+    Parameters
+    ----------
+    methods : List[Method]
+        [description]
+    """
     # Make one huge dictionary that maps from:
     # <method, <setting, <dataset, result>>>
-    all_results: Dict[Type[MethodABC], Dict[Type[Setting], Dict[str, Results]]] = {}
-    
-    for method_class in methods:
-        all_results[method_class] = demo(method_class)
-
     from .demo_utils import make_comparison_dataframe
     comparison_df = make_comparison_dataframe(all_results)
     
@@ -149,4 +169,4 @@ def compare_methods(methods: List[Type[MethodABC]]):
 
 
 if __name__ == "__main__":
-    compare_methods([DemoMethod, ImprovedDemoMethod])
+    demo()

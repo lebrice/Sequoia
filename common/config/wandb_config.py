@@ -9,14 +9,15 @@ import wandb
 from pytorch_lightning.loggers import WandbLogger
 
 from simple_parsing import field, list_field
-from utils.serialization import Serializable
 from utils.logging_utils import get_logger
+from utils.parseable import Parseable
+from utils.serialization import Serializable
 
 logger = get_logger(__file__)
 
 
 @dataclass
-class WandbLoggerConfig(Serializable):
+class WandbLoggerConfig(Serializable, Parseable):
     """ Configuration options for the wandb logger of pytorch-lightning. """
     # Which user to use
     entity: str = ""
