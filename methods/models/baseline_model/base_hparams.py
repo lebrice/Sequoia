@@ -11,13 +11,13 @@ from utils import Parseable, Serializable
 
 from utils.pretrained_utils import get_pretrained_encoder
 
+from ..simple_convnet import SimpleConvNet
 
 available_optimizers: Dict[str, Type[Optimizer]] = {
     "sgd": optim.SGD,
     "adam": optim.Adam,
     "rmsprop": optim.RMSprop,
 }
-
 available_encoders: Dict[str, Type[nn.Module]] = {
     "vgg16": tv_models.vgg16,
     "resnet18": tv_models.resnet18,
@@ -28,6 +28,7 @@ available_encoders: Dict[str, Type[nn.Module]] = {
     "alexnet": tv_models.alexnet,
     "densenet": tv_models.densenet161,
     # TODO: Add the self-supervised pl modules here!
+    "simple_convnet": SimpleConvNet,
 }
 
 
@@ -56,7 +57,6 @@ class BaseHParams(Serializable, Parseable):
     # encoder in order to map from the pretrained encoder's output size H_e
     # to this new hidden size `new_hidden_size`.
     new_hidden_size: Optional[int] = None
-    
     # Retrain the encoder from scratch.
     train_from_scratch: bool = False
     # Wether we should keep the weights of the pretrained encoder frozen.

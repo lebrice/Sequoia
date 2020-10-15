@@ -22,7 +22,7 @@ from torch.nn.functional import one_hot
 from torch.utils.data import DataLoader, Dataset
 
 from common.loss import Loss
-from methods.models import BaselineModel
+# from methods.models.baseline_model.base_model import LightningModule
 from settings import Setting
 from settings.passive.cl.class_incremental_setting import ClassIncrementalSetting
 from simple_parsing import field, mutable_field
@@ -63,7 +63,7 @@ class KnnCallback(Callback):
     def __post_init__(self):
         self.max_num_batches: int = 0
 
-        self.model: BaselineModel
+        self.model: LightningModule
         self.trainer: Trainer
 
     def on_train_start(self, trainer, pl_module):
@@ -76,7 +76,7 @@ class KnnCallback(Callback):
         """Called when fit or test begins"""
         super().setup(trainer, pl_module, stage)
 
-    def on_epoch_end(self, trainer: Trainer, pl_module: BaselineModel):
+    def on_epoch_end(self, trainer: Trainer, pl_module: LightningModule):
         self.trainer = trainer
         self.model = pl_module
         self.setting = self.model.setting
@@ -240,7 +240,7 @@ class KnnCallback(Callback):
         return total_valid_loss, total_test_loss 
 
 
-def evaluate(model: BaselineModel,
+def evaluate(model: LightningModule,
              dataloader: DataLoader,
              loss_name: str,
              scaler: StandardScaler,
@@ -288,7 +288,7 @@ def evaluate(model: BaselineModel,
     return test_loss
 
 
-def get_hidden_codes_array(model: BaselineModel, dataloader: DataLoader, description: str="KNN") -> Tuple[np.ndarray, np.ndarray]:
+def get_hidden_codes_array(model: LightningModule, dataloader: DataLoader, description: str="KNN") -> Tuple[np.ndarray, np.ndarray]:
     """ Gets the hidden vectors and corresponding labels. """
     h_x_list: List[np.ndarray] = []
     y_list: List[np.ndarray] = []

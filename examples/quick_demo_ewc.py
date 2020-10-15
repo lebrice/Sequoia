@@ -24,47 +24,22 @@ from .quick_demo import MyModel, DemoMethod, demo, Observations, Actions, Reward
 logger = get_logger(__file__)
 
 
-class ImprovedDemoMethod(DemoMethod):
-    """ Improved version of the demo method, that adds an ewc-like regularizer.
-    """
-    # Name of this method:
-    name: ClassVar[str] = "demo_ewc"
-    
-    @dataclass
-    class HParams(DemoMethod.HParams):
-        """ Hyperparameters of this new improved method. (Adds ewc params)."""
-        # Coefficient of the ewc-like loss.
-        ewc_coefficient: float = 1.0
-        # Distance norm used in the ewc loss.
-        ewc_p_norm: int = 2
-
-    def configure(self, setting: ClassIncrementalSetting):
-        # Use the improved model, with the added EWC-like term.
-        self.model = MyImprovedModel(
-            observation_space=setting.observation_space,
-            action_space=setting.action_space,
-            reward_space=setting.reward_space,
-            hparams=self.hparams,
-        )
-        self.optimizer = self.model.configure_optimizers()
-
-    def on_task_switch(self, task_id: Optional[int]):
-        self.model.on_task_switch(task_id)
-
-
 class MyImprovedModel(MyModel):
+    """ Adds an ewc-like penalty to the demo model. """
     def __init__(self,
                  observation_space: gym.Space,
                  action_space: gym.Space,
                  reward_space: gym.Space,
-                 hparams: ImprovedDemoMethod.HParams,
+                 ewc_coefficient: float = 1.0,
+                 ewc_p_norm: int = 2,
                  ):
         super().__init__(
             observation_space,
             action_space,
             reward_space,
-            hparams=hparams,
         )
+        self.ewc_coefficient = ewc_coefficient
+        self.ewc_p_norm = ewc_p_norm
         self._previous_task: Optional[int] = None
         self.previous_model_weights: Dict[str, Tensor] = {}
         self.n_switches: int = 0
@@ -107,9 +82,40 @@ class MyImprovedModel(MyModel):
 
         loss = 0.
         for weight_name, (new_w, old_w) in dict_intersection(new_weights, old_weights):
-            loss += torch.dist(new_w, old_w.type_as(new_w), p=self.hparams.ewc_p_norm)
+            loss += torch.dist(new_w, old_w.type_as(new_w), p=self.ewc_p_norm)
         return loss
 
+
+class ImprovedDemoMethod(DemoMethod):
+    """ Improved version of the demo method, that adds an ewc-like regularizer.
+    """
+    # Name of this method:
+    name: ClassVar[str] = "demo_ewc"
+    
+    @dataclass
+    class HParams(DemoMethod.HParams):
+        """ Hyperparameters of this new improved method. (Adds ewc params)."""
+        # Coefficient of the ewc-like loss.
+        ewc_coefficient: float = 1.0
+        # Distance norm used in the ewc loss.
+        ewc_p_norm: int = 2
+
+    def __init__(self, hparams: HParams):
+        super().__init__(hparams=hparams)
+    
+    def configure(self, setting: ClassIncrementalSetting):
+        # Use the improved model, with the added EWC-like term.
+        self.model = MyImprovedModel(
+            observation_space=setting.observation_space,
+            action_space=setting.action_space,
+            reward_space=setting.reward_space,
+            ewc_coefficient=self.hparams.ewc_coefficient,
+            ewc_p_norm = self.hparams.ewc_p_norm,
+        )
+        self.optimizer = self.model.configure_optimizers()
+
+    def on_task_switch(self, task_id: Optional[int]):
+        self.model.on_task_switch(task_id)
 
 
 def compare_methods(methods: List[Type[MethodABC]]):

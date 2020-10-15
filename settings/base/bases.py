@@ -51,24 +51,24 @@ class SettingABC(LightningDataModule):
     Rewards: ClassVar[Type[Rewards]] = Rewards
 
     @abstractmethod
-    def apply(self, method: "MethodABC", config: Config) -> "SettingABC.Results":
+    def apply(self, method: "MethodABC", config: Config = None) -> "SettingABC.Results":
         """ Applies a Method on this experimental Setting to produce Results. 
  
         Defines the training/evaluation procedure specific to this Setting.
         
         The training/evaluation loop can be defined however you want, as long as
         it respects the following constraints:
-        
+
         1.  This method should always return either a float or a Results object
             that indicates the "performance" of this method on this setting.
-             
+
         2. More importantly: You **have** to make sure that you do not break
             compatibility with more general methods targetting a parent setting!
             It should always be the case that all methods designed for any of
             this Setting's parents should also be applicable via polymorphism,
             i.e., anything that is defined to work on the class `Animal` should
             also work on the class `Cat`!
-        
+
         3. While not enforced, it is strongly encourged that you define your
             training/evaluation routines at a pretty high level, so that Methods
             that get applied to your Setting can make use of pytorch-lightning's
@@ -78,9 +78,11 @@ class SettingABC(LightningDataModule):
         ----------
         method : Method
             A Method to apply on this Setting.
-        config : Config
-            Configuration object with things like the log dir, the data dir,
-            cuda, wandb config, etc.
+        
+        config : Optional[Config]
+            Optional configuration object with things like the log dir, the data
+            dir, cuda, wandb config, etc. When None, will be parsed from the
+            current command-line arguments. 
 
         Returns
         -------
@@ -89,8 +91,7 @@ class SettingABC(LightningDataModule):
             Method on this experimental Setting.
         """
         # For illustration purposes only:
-        self.config = config
-        method.config = config
+        self.config = config or Config.from_args()
         method.configure(self)
         # IDEA: Maybe instead of passing the train_dataloader or test_dataloader,
         # objects, we could instead pass the methods of the LightningDataModule
@@ -147,6 +148,11 @@ class SettingABC(LightningDataModule):
         """ Calculate the "metric" from the model predictions (actions) and the
         true labels (rewards).
         """
+
+    @classmethod
+    @abstractmethod
+    def get_available_datasets(cls) -> Iterable[str]:
+        """Returns an iterable of the names of available datasets. """
 
     ## Below this are some class attributes and methods related to the Tree.
 
@@ -336,6 +342,19 @@ class MethodABC(Generic[SettingType], ABC):
         # This would return ALL the setting:
         # return list([cls.target_setting, *cls.target_setting.all_children()])
 
+    @classmethod
+    def all_evaluation_settings(cls, **kwargs) -> Iterable[SettingType]:
+        """ Generator over all the combinations of Settings/datasets on which
+        this method is applicable.
+        
+        If keyword arguments are passed, they will be passed to the constructor
+        of each setting.
+        """
+        for setting_type in cls.get_applicable_settings():
+            for dataset in setting_type.get_available_datasets():
+                setting = setting_type(dataset=dataset, **kwargs)
+                yield setting
+    
     @classmethod
     def get_name(cls) -> str:
         """ Gets the name of this method class. """

@@ -8,8 +8,8 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+from simple_parsing import mutable_field
 from torch import Tensor
-
 from common.loss import Loss
 from common.batch import Batch
 from settings import SettingType, Observations, Actions, Rewards
@@ -19,8 +19,18 @@ from .base_model import BaseModel
 
 logger = get_logger(__file__)
 
+from common.callbacks import KnnCallback
 
 class SemiSupervisedModel(BaseModel[SettingType]):
+    @dataclass
+    class HParams(BaseModel.HParams):
+        """Hyperparameters of a Self-Supervised method. """
+        # Adds Options for a KNN classifier callback, which is used to evaluate
+        # the quality of the representations on each task after each training
+        # epoch.
+        # TODO: Debug/test this callback to make sure it still works fine.
+        knn_callback: KnnCallback = mutable_field(KnnCallback)
+
     def get_loss(self,
                  forward_pass: Dict[str, Tensor],
                  reward: Optional[Rewards] = None,

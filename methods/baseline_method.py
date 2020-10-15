@@ -33,7 +33,7 @@ from settings.base import MethodABC
 from utils import Parseable, Serializable, get_logger, singledispatchmethod
 from utils.utils import get_path_to_source_file
 
-from .models import ActorCritic, BaselineModel, ForwardPass
+from .models import BaselineModel, ForwardPass
 
 logger = get_logger(__file__)
 
@@ -52,27 +52,26 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
     - Multi-Head prediction (e.g. in task-incremental scenario);
     """
     # NOTE: these two fields are also used to create the command-line arguments.
-    
     # HyperParameters of the method.
-    hparams: BaselineModel.HParams = mutable_field(BaselineModel.HParams)
+    hparams: BaselineModel.HParams
+    # Configuration options.
+    config: Config
+
+    # TODO: Need to device where to put this.. Doesn't really make sense to have
+    # it inside the setting, imo.
     # Options for the Trainer object.
-    trainer_options: TrainerConfig = mutable_field(TrainerConfig)
-    config: Config = mutable_field(Config)
+    trainer_options: TrainerConfig = None
     
-    # Adds Options for a KNN classifier callback, which is used to evaluate
-    # the quality of the representations on each test and val task after each
-    # training epoch.
-    # TODO: Debug/test this callback to make sure it still works fine.
-    # TODO: Debug/test this callback to make sure it still works fine.
-    knn_callback: KnnCallback = mutable_field(KnnCallback)
-    
-    def __post_init__(self):
+    def __init__(self, hparams: BaselineModel.HParams, config: Config):
+        self.hparams = hparams
+        self.config = config
         # The model and Trainer objects will be created in `self.configure`. 
         # NOTE: This right here doesn't create the fields, it just gives some
         # type information for static type checking.
         self.trainer: Trainer
         self.model: LightningModule
-
+      
+    
     def configure(self, setting: SettingType) -> None:
         """Configures the method for the given Setting.
 
@@ -91,7 +90,7 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
         setting_name: str = setting.get_name()
         dataset: str = getattr(setting, "dataset", "")        
         
-        wandb_options: WandbLoggerConfig = self.trainer_options.wandb
+        wandb_options: WandbLoggerConfig = self.config.trainer_options.wandb
         if wandb_options.run_name is None:
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
         

@@ -5,22 +5,24 @@ from typing import Dict, List, Type
 from simple_parsing import ArgumentParser
 
 from methods import BaselineMethod
-from settings import ClassIncrementalSetting, MethodABC, Results, Setting
+from settings import ClassIncrementalSetting, MethodABC, Results, Setting, PassiveEnvironment
 
 from .demo_utils import make_result_dataframe
 
 
-@dataclass
-class MinimalDemoMethod(BaselineMethod, target_setting=ClassIncrementalSetting):
+
+class MinimalDemoMethod(BaselineMethod, target_setting=ClassIncrementalSetting):    
     pass
 
 
-
-def demo(method_type=MinimalDemoMethod):
+def demo(DemoMethod=MinimalDemoMethod):
     parser = ArgumentParser(description=__doc__)
-    parser.add_arguments(method_type, dest="method")
+    
+    
+    parser.add_arguments(DemoMethod, dest="method")
     args = parser.parse_args()
-    method = args.method
+    
+    method: MinimalDemoMethod = args.method
     
     all_results: Dict[Type[Setting], Dict[str, Results]] = {}
     for SettingClass in method.get_applicable_settings():
@@ -36,10 +38,10 @@ def demo(method_type=MinimalDemoMethod):
 
     result_df = make_result_dataframe(all_results)
     
-    csv_path = Path(f"examples/results/results_{method_type.get_name()}.csv")
-    latex_table_path = Path(f"examples/results/table_{method_type.get_name()}.tex")
+    csv_path = Path(f"examples/results/results_{DemoMethod.get_name()}.csv")
+    latex_table_path = Path(f"examples/results/table_{DemoMethod.get_name()}.tex")
 
-    caption = f"Results for method {method_type.__name__} on all its applicable settings."
+    caption = f"Results for method {DemoMethod.__name__} on all its applicable settings."
     
     csv_path.parent.mkdir(exist_ok=True, parents=True)
     result_df.to_csv(csv_path)

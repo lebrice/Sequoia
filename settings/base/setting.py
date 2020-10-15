@@ -38,7 +38,7 @@ from gym import spaces
 from pytorch_lightning import LightningDataModule
 from pytorch_lightning.core.datamodule import _DataModuleWrapper
 from simple_parsing import (ArgumentParser, Serializable, list_field,
-                            mutable_field, subparsers, field)
+                            mutable_field, subparsers, field, choice)
 from torch.utils.data import DataLoader
 
 from common.config import Config
@@ -103,9 +103,10 @@ class Setting(SettingABC,
     # a given type of setting. See the `Results` class for more info.
     Results: ClassVar[Type[Results]] = Results
     
+    available_datasets: ClassVar[Dict[str, Any]] = {}
+    
     ##
     ##   -------------
-    
     # Transforms to be used. When no value is given for 
     # `[train/val/test]_transforms`, this value is used as a default.
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
@@ -185,9 +186,11 @@ class Setting(SettingABC,
         self.config: Config = None
 
     @abstractmethod
-    def apply(self, method: MethodABC, config: Config) -> "Setting.Results":
-        assert False, "this should never be called."
-        
+    def apply(self, method: MethodABC, config: Config = None) -> "Setting.Results":
+        # NOTE: The actual train/test loop should be defined in a more specific
+        # setting. This is just here as an illustration of what that could look
+        # like. 
+        assert False, "this is just here for illustration purposes. "
         
         method.fit(
             train_env=self.train_dataloader(),
@@ -195,24 +198,25 @@ class Setting(SettingABC,
         )
 
         # Test loop:
-        test_metrics: List[Metrics] = []
         test_env = self.test_dataloader()
+        test_metrics = []
+        # Number of episodes to test on:
+        n_test_episodes = 1
 
-        # Get initial observations.
-        observations = test_env.reset()
-        # get actions for a batch of observations.
-        actions = method.get_actions(observations, test_env.action_space)
-
-        for i in itertools.count():
-            observations, rewards, done, info = test_env.step(actions)
-            # Get the predictions/actions:
-            actions = method.get_actions(observations, test_env.action_space)
-            # Calculate the 'metrics' (TODO: This should be done be in the env!)
-            batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
-            test_metrics.append(batch_metrics)
-
-            if done:
-                break
+        # Perform a set number of episodes in the test environment.
+        for episode in range(n_test_episodes):
+            # Get initial observations.
+            observations = test_env.reset()
+            
+            for i in itertools.count():
+                # Get the predictions/actions for a batch of observations.
+                actions = method.get_actions(observations, test_env.action_space)
+                observations, rewards, done, info = test_env.step(actions)
+                # Calculate the 'metrics' (TODO: This should be done be in the env!)
+                batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
+                test_metrics.append(batch_metrics)
+                if done:
+                    break
 
         return self.Results(test_metrics=test_metrics)
 
@@ -293,7 +297,12 @@ class Setting(SettingABC,
     @reward_space.setter
     def reward_space(self, value: gym.Space) -> None:
         self._reward_space = value
-            
+    
+    @classmethod
+    def get_available_datasets(cls) -> Iterable[str]:
+        """ Returns an iterable of strings which represent the names of datasets. """
+        return cls.available_datasets
+
     @classmethod
     def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
         from main import Experiment

@@ -15,7 +15,7 @@ from settings import ClassIncrementalSetting, Observations, Actions, Rewards
 from utils import dict_intersection, zip_dicts, prod
 from utils.logging_utils import get_logger
 
-from .semi_supervised_model import SemiSupervisedModel
+# from .semi_supervised_model import SemiSupervisedModel
 from .base_model import BaseModel
 from ..output_heads import OutputHead
 logger = get_logger(__file__)

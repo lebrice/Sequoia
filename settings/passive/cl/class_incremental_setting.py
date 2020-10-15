@@ -91,8 +91,8 @@ dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
     "cifarfellowship": (32, 32, 3),
     "imagenet100": (224, 224, 3),
     "imagenet1000": (224, 224, 3),
-    "permutedmnist": (28, 28, 1),
-    "rotatedmnist": (28, 28, 1),
+    # "permutedmnist": (28, 28, 1),
+    # "rotatedmnist": (28, 28, 1),
     "core50": (224, 224, 3),
     "core50-v2-79": (224, 224, 3),
     "core50-v2-196": (224, 224, 3),
@@ -123,8 +123,8 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = {
         c.__name__.lower(): c
         for c in [
-            CIFARFellowship, Fellowship, MNISTFellowship, ImageNet100,
-            ImageNet1000, MultiNLI, CIFAR10, CIFAR100, EMNIST, KMNIST, MNIST,
+            CIFARFellowship, MNISTFellowship, ImageNet100,
+            ImageNet1000, CIFAR10, CIFAR100, EMNIST, KMNIST, MNIST,
             QMNIST, FashionMNIST,
         ]
     }
@@ -168,13 +168,21 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         """Initializes the fields of the Setting (and LightningDataModule),
         including the transforms, shapes, etc.
         """
-        if not hasattr(self, "num_classes"):
+        if not hasattr(self, "num_classes") and not hasattr(self.dataset, "num_classes"):
             # In some concrete LightningDataModule's like MnistDataModule,
             # num_classes is a read-only property. Therefore we check if it
             # is already defined. This is just in case something tries to
             # inherit from both IIDSetting and MnistDataModule, for instance.
             if self.dataset not in num_classes_in_dataset:
                 self.dataset = self.dataset.lower().replace("_", "")
+            if self.dataset not in num_classes_in_dataset:
+                raise NotImplementedError(
+                    f"Can't tell how many classes there are in dataset "
+                    f"{self.dataset}, as it isn't in the "
+                    f"num_classes_in_dataset dict, and doesn't have a "
+                    f"'num_classes' attribute. (num_classes_in_dataset "
+                    f"keys: {num_classes_in_dataset.keys()}"
+                )
             self.num_classes: int = num_classes_in_dataset[self.dataset]
         if hasattr(self, "dims"):
             # NOTE This sould only happen if we subclass both a concrete
@@ -235,23 +243,19 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # Default path to which the datasets will be downloaded.
         self.data_dir: Optional[Path] = None
 
-    def apply(self, method: MethodABC, config: Config) -> ClassIncrementalResults:
+    def apply(self, method: MethodABC, config: Config=None) -> ClassIncrementalResults:
         """Apply the given method on this setting to producing some results."""
-        # NOTE: (@lebrice) The test loop is written by hand here because I don't
-        # want to have to give the labels to the method at test-time. See the
-        # docstring of `test_loop` for more info.
-        self.config = config
+        self.config = config or Config.from_args(self._argv)
         method.config = config
-        
+
         self.configure(method)
-        
-        # TODO: At the moment, we're nice enough to do this, but this would
-        # maybe allow the method to "cheat"!
         method.configure(setting=self)
+        
         # Run the Training loop (which is defined in IncrementalSetting).
         self.train_loop(method)
-        
+        # Run the Test loop (which is defined in IncrementalSetting).
         results: ClassIncrementalResults = self.test_loop(method)
+        
         logger.info(f"Resulting objective of Test Loop: {results.objective}")
         logger.info(results.summary())
         method.receive_results(self, results=results)
@@ -432,16 +436,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         return split_batch
     
     def configure(self, method: MethodABC):
-        """ Setup the data_dir and the dataloader kwargs using properties of the
-        Method or of self.Config.
-
-        Parameters
-        ----------
-        method : MethodABC
-            The Method that is being applied on this setting.
-        config : Config
-            [description]
-        """
+        # TODO: See the docstring of Setting.configure, we need to clean this up.
         assert self.config is not None
         config = self.config
         # Get the arguments that will be used to create the dataloaders.
@@ -607,6 +602,18 @@ def relabel(y: Tensor, task_classes: List[int]) -> Tensor:
     for i, label in enumerate(task_classes):
         new_y[y == label] = i
     return new_y
+
+# This is just meant as a cleaner way to import the Observations/Actions/Rewards
+# than particular setting.
+Observations = ClassIncrementalSetting.Observations
+Actions = ClassIncrementalSetting.Actions
+Rewards = ClassIncrementalSetting.Rewards
+
+# TODO: I wouldn't want these above to overwrite / interfere with the import of
+# the "base" versions of these objects from settings.bases.objects, which are
+# imported in settings/__init__.py. Will have to check that doing
+# `from .passive import *` over there doesn't actually import these here.
+
 
 
 if __name__ == "__main__":
