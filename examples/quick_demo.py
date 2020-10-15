@@ -22,7 +22,7 @@ from methods.models import BaseHParams
 from utils import dict_union
 
 import pandas as pd
-from .demo_utils import make_result_dataframe, save_results_table 
+from .demo_utils import make_result_dataframe
 
 Observations = ClassIncrementalSetting.Observations
 Actions = ClassIncrementalSetting.Actions
@@ -246,6 +246,8 @@ def demo(method_type=DemoMethod):
         multicolumn=True,
     )
     print(f"Saved LaTeX table with results to path {latex_table_path}")
+    
+    return all_results
    
 if __name__ == "__main__":
     demo(DemoMethod)
