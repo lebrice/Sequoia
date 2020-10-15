@@ -62,6 +62,10 @@ class BaselineModel(SemiSupervisedModel,
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
 
+        self.save_hyperparameters({
+            "hparams": self.hp.to_dict(),
+            "config": self.config.to_dict(),
+        })
         logger.debug(f"setting of type {type(self.setting)}")
         logger.debug(f"Observation space: {self.observation_space}")
         logger.debug(f"Action/Output space: {self.action_space}")

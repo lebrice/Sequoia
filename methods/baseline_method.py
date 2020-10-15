@@ -13,12 +13,15 @@ from typing import (Any, ClassVar, Dict, Generic, List, Optional, Sequence,
 
 import gym
 import torch
+import wandb
 from pytorch_lightning import (Callback, LightningDataModule, LightningModule,
                                Trainer)
+from pytorch_lightning.loggers import WandbLogger
 from simple_parsing import Serializable, mutable_field
 from torch import Tensor
 from torch.utils.data import DataLoader
 
+from common.config import WandbLoggerConfig
 from common import Batch, Config, Loss, Metrics, TrainerConfig
 from common.callbacks import KnnCallback
 from settings.active.rl import ContinualRLSetting
@@ -83,11 +86,21 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
         essentially giving the 'Setting' object
         directly to the method.. so I guess the object could maybe 
         """
+        # Note: this here is temporary, just tinkering with wandb atm.
+        method_name: str = self.get_name()
+        setting_name: str = setting.get_name()
+        dataset: str = getattr(setting, "dataset", "")        
+        
+        wandb_options: WandbLoggerConfig = self.trainer_options.wandb
+        if wandb_options.run_name is None:
+            wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
+        
         self.trainer: Trainer = self.create_trainer(setting)
         self.model: LightningModule = self.create_model(setting)
         self.Observations: Type[Observations] = setting.Observations
         self.Actions: Type[Actions] = setting.Actions
         self.Rewards: Type[Rewards] = setting.Rewards
+
 
     def fit(self,
             train_env: Environment[Observations, Actions, Rewards] = None,
@@ -99,7 +112,7 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
         Overwrite this to customize training.
         """
         assert self.model is not None, (
-            f"For now, Setting should have been nice enough to call "
+            "For now, Setting should have been nice enough to call "
             "method.configure(setting=self) before calling `fit`!"
         )
         return self.trainer.fit(
@@ -132,9 +145,7 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
             verbose=verbose,
             datamodule=datamodule,
         )
-        assert len(test_results) == 1
-        assert "loss_object" in test_results[0]
-        total_loss: Loss = test_results[0]["loss_object"]
+        # ...
 
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         """ Get a batch of predictions (actions) for a batch of observations.
@@ -220,6 +231,23 @@ class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting)
             callbacks=callbacks,
         )
         return trainer
+    
+    def receive_results(self, setting: Setting, results: Results):
+        # Note: this here is temporary, just tinkering with wandb atm.
+        
+        method_name: str = self.get_name()
+        setting_name: str = setting.get_name()
+        dataset: str = getattr(setting, "dataset", "")
+        if not (self.config.debug or self.trainer_options.fast_dev_run):
+            wandb.summary["method"] = method_name
+            wandb.summary["setting"] = setting_name
+            if dataset:
+                wandb.summary["dataset"] = dataset
+        wandb.log(results.to_log_dict())
+        wandb.log(results.make_plots())
+        # Reset the run name so we create a new one next time we're applied on a
+        # Setting.
+        self.trainer_options.wandb.run_name = None
     
     def create_callbacks(self, setting: SettingType) -> List[Callback]:
         # TODO: Move this to something like a `configure_callbacks` method 

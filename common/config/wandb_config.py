@@ -19,9 +19,9 @@ logger = get_logger(__file__)
 class WandbLoggerConfig(Serializable):
     """ Configuration options for the wandb logger of pytorch-lightning. """
     # Which user to use
-    entity: str = "lebrice"
+    entity: str = ""
     # The name of the project to which this run will belong.
-    project: str = "pl_testing" 
+    project: str = "demo" 
     # Name used to easily group runs together.
     # Used to create a parent folder that will contain the `run_name` directory.
     # A unique string shared by all runs in a given group
@@ -31,7 +31,7 @@ class WandbLoggerConfig(Serializable):
     # Identifier unique to each individual wandb run. When given, will try to
     # resume the corresponding run, generates a new ID each time.
     # TODO: Could also use a hash of the hparams, like @nitarshan did.     
-    run_id: str = field(default_factory=wandb.util.generate_id)
+    run_id: Optional[str] = None
     
     # Tags to add to this run with wandb.
     tags: List[str] = list_field()

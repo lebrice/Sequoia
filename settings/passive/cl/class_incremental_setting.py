@@ -253,12 +253,8 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         
         results: ClassIncrementalResults = self.test_loop(method)
         logger.info(f"Resulting objective of Test Loop: {results.objective}")
-        print(results.summary())
-        log_dict = results.to_log_dict()
-
-        # TODO: Need to move this 'saving/logging the results' stuff into the
-        # Method. 
-        # results.save_to_dir(self.config.log_dir)
+        logger.info(results.summary())
+        method.receive_results(self, results=results)
         return results
 
     def prepare_data(self, data_dir: Path = None, **kwargs):

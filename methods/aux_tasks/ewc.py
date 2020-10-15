@@ -1,8 +1,12 @@
 """Elastic Weight Consolidation as an Auxiliary Task.
 
-TODO: Refactor / Validate / test the EWC Auxiliary Task with the new setup.
+This is a simplified version of EWC, that only currently uses the L2 norm, rather
+than the Fisher Information Matrix.
 
+TODO: If it's worth it, we could re-add the 'real' EWC using the nngeometry
+package, (which I don't think we need to have as a submodule).
 """
+
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import (Dict, Iterable, Iterator, List, Mapping, MutableMapping,
@@ -55,20 +59,31 @@ class EWCTask(AuxiliaryTask):
 
     def state_dict(self, *args, **kwargs) -> Dict:
         state = super().state_dict(*args, **kwargs)
-        for k, v in self.previous_model_weights.items():
-            state[k] = v
+        state.update(self.previous_model_weights)
         return state
 
-    def load_state_dict(self, state_dict: Dict[str, Tensor], strict: bool = True):
+    def load_state_dict(self, state_dict: Dict[str, Tensor], strict: bool = True) -> Tuple[List[str], List[str]]:
+        missing: List[str]
+        unexpected: List[str]
         missing, unexpected = super().load_state_dict(state_dict=state_dict, strict=False)
-        for k, v in self.previous_model_weights.items():
-            if k in unexpected:
-                self.previous_model_weights[k] = state_dict[k]
+        if unexpected and not self.previous_model_weights:
+            # Create the previous model weights, if needed.
+            self.previous_model_weights.update(deepcopy({
+                k: v.detach() for k, v in self.model.named_parameters()
+            }))
+        # TODO: Make sure that the model itself (i.e. its output heads, etc) gets
+        # restored before this here.
+        for key in unexpected.copy():
+            if key in self.previous_model_weights:
+                # Update the value in the 'previous model weights' dict.
+                self.previous_model_weights[key] = state_dict[key]
+                unexpected.remove(key)
+        return missing, unexpected
 
     def disable(self):
+        """ Disable the EWC loss. """
         # save a little bit of memory by clearing the weights.
         self.previous_model_weights.clear()
-        # TODO: Should we also reset the 'previous_task' ?
         return super().disable()
 
     def enable(self):
@@ -81,10 +96,10 @@ class EWCTask(AuxiliaryTask):
         """
         if not self.enabled:
             return
-        if self.previous_task is None and task_id is not None and self.n_switches == 0:
+        if self.previous_task is None and self.n_switches == 0:
             logger.debug(f"Starting the first task, no EWC update.")
             pass
-        elif task_id != self.previous_task:
+        elif task_id is None or task_id != self.previous_task:
             logger.debug(f"Switching tasks: {self.previous_task} -> {task_id}: "
                          f"Updating the EWC 'anchor' weights.")
             self.previous_task = task_id
@@ -92,17 +107,16 @@ class EWCTask(AuxiliaryTask):
             self.previous_model_weights.update(deepcopy({
                 k: v.detach() for k, v in self.model.named_parameters()
             }))
-            # self.previous_model_weights.requires_grad_(False)
             # self.old_weights = parameters_to_vector(self.model.parameters())
         self.n_switches += 1
 
-    def get_loss(self, forward_pass: Dict[str, Tensor], y: Tensor = None) -> Loss:
+    def get_loss(self, *args, **kwargs) -> Loss:
         """Gets the 'EWC' loss. 
 
-        NOTE: This is a simplified version of EWC where the loss is the L2-norm
+        NOTE: This is a simplified version of EWC where the loss is the P-norm
         between the current weights and the weights as they were on the begining
         of the task.
-        
+
         This doesn't actually use any of the provided arguments.
         """
         if self.previous_task is None:
@@ -113,10 +127,8 @@ class EWCTask(AuxiliaryTask):
         new_weights: Dict[str, Tensor] = dict(self.model.named_parameters())
 
         loss = 0.
-        for k, (new_w, old_w) in dict_intersection(new_weights, old_weights):
-            # assert new_w.requires_grad
-            # TODO: Does the ordering matter, for L1, for example?
-            loss += torch.dist(new_w, old_w.type_as(new_w))
+        for weight_name, (new_w, old_w) in dict_intersection(new_weights, old_weights):
+            loss += torch.dist(new_w, old_w.type_as(new_w), p=self.options.distance_norm)
 
         self._i += 1
         ewc_loss = Loss(

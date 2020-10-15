@@ -74,11 +74,13 @@ class TrainerConfig(Serializable):
     
     
     def make_trainer(self,
-                     callbacks: Optional[List[Callback]] = None) -> Trainer:
+                     callbacks: Optional[List[Callback]] = None,
+                     loggers: Iterable[LightningLoggerBase] = None) -> Trainer:
         """ Create a Trainer object from the command-line args.
         Adds the given loggers and callbacks as well.
         """
-        loggers = self.create_loggers()
+        if loggers is None:
+            loggers = self.create_loggers()
         return Trainer(
             logger=loggers,
             callbacks=callbacks,
