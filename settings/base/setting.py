@@ -56,7 +56,8 @@ logger = get_logger(__file__)
 EnvironmentType = TypeVar("EnvironmentType", bound=Environment)
 SettingType = TypeVar("SettingType", bound="Setting")
 
-from  .bases import SettingABC, MethodABC
+from  .bases import SettingABC, Method
+
 
 @dataclass
 class Setting(SettingABC,
@@ -186,7 +187,7 @@ class Setting(SettingABC,
         self.config: Config = None
 
     @abstractmethod
-    def apply(self, method: MethodABC, config: Config = None) -> "Setting.Results":
+    def apply(self, method: Method, config: Config = None) -> "Setting.Results":
         # NOTE: The actual train/test loop should be defined in a more specific
         # setting. This is just here as an illustration of what that could look
         # like. 
@@ -356,7 +357,7 @@ class Setting(SettingABC,
         from utils.utils import get_path_to_source_file
         return get_path_to_source_file(cls)
 
-    def configure(self, method: MethodABC):
+    def configure(self, method: Method):
         """ Configure the setting before the method is applied to it.
         
         TODO: This is basically just here so we can figure out the batch size
@@ -366,7 +367,7 @@ class Setting(SettingABC,
         
         Parameters
         ----------
-        method : MethodABC
+        method : Method
             The Method that is being applied on this setting.
         config : Config
             [description]

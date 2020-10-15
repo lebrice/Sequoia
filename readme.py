@@ -7,7 +7,7 @@ from io import StringIO
 from pathlib import Path
 from typing import List, Type
 
-from methods import MethodABC, all_methods
+from methods import Method, all_methods
 from settings import Setting, all_settings
 
 

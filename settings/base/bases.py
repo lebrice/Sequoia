@@ -51,7 +51,7 @@ class SettingABC(LightningDataModule):
     Rewards: ClassVar[Type[Rewards]] = Rewards
 
     @abstractmethod
-    def apply(self, method: "MethodABC", config: Config = None) -> "SettingABC.Results":
+    def apply(self, method: "Method", config: Config = None) -> "SettingABC.Results":
         """ Applies a Method on this experimental Setting to produce Results. 
  
         Defines the training/evaluation procedure specific to this Setting.
@@ -162,7 +162,7 @@ class SettingABC(LightningDataModule):
     # A list of all the direct children of this setting.
     _children: ClassVar[Set[Type["SettingABC"]]] = set()
     # List of all methods that directly target this Setting.
-    _targeted_methods: ClassVar[Set[Type["MethodABC"]]] = set()
+    _targeted_methods: ClassVar[Set[Type["Method"]]] = set()
     
     def __init_subclass__(cls, **kwargs):
         """ Called whenever a new subclass of `Setting` is declared. """
@@ -179,16 +179,16 @@ class SettingABC(LightningDataModule):
         super().__init_subclass__(**kwargs)
 
     @classmethod
-    def get_applicable_methods(cls) -> List[Type["MethodABC"]]:
+    def get_applicable_methods(cls) -> List[Type["Method"]]:
         """ Returns all the Methods applicable on this Setting. """
-        applicable_methods: List[MethodABC] = []
+        applicable_methods: List[Method] = []
         applicable_methods.extend(cls._targeted_methods)
         if cls._parent:
             applicable_methods.extend(cls._parent.get_applicable_methods())
         return applicable_methods
 
     @classmethod
-    def register_method(cls, method: Type["MethodABC"]):
+    def register_method(cls, method: Type["Method"]):
         """ Register a method as being Applicable on this type of Setting. """
         cls._targeted_methods.add(method)
 
@@ -238,7 +238,7 @@ class SettingABC(LightningDataModule):
 SettingType = TypeVar("SettingType", bound=SettingABC)
 
 
-class MethodABC(Generic[SettingType], ABC):
+class Method(Generic[SettingType], ABC):
     """ ABC for a Method, which is a solution to a research problem (a Setting).
     """
     # Class attribute that holds the setting this method was designed to target.

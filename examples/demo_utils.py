@@ -1,7 +1,7 @@
 from simple_parsing import ArgumentParser
 from typing import Dict, Type, List
 from common.config import Config
-from settings import Setting, Results, MethodABC
+from settings import Setting, Results, Method
 from pathlib import Path
 
 import pandas as pd
@@ -40,8 +40,8 @@ def make_result_dataframe(all_results):
     return df
 
 
-def make_comparison_dataframe(all_results: Dict[Type[MethodABC], Dict[Type[Setting], Dict[str, Results]]]) -> pd.DataFrame:
-    all_methods: List[Type[MethodABC]] = list(all_results.keys())
+def make_comparison_dataframe(all_results: Dict[Type[Method], Dict[Type[Setting], Dict[str, Results]]]) -> pd.DataFrame:
+    all_methods: List[Type[Method]] = list(all_results.keys())
     all_method_names: List[str] = [m.get_name() for m in all_methods]
 
     all_settings: List[Type[Setting]] = []

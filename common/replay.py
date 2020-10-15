@@ -3,9 +3,8 @@
 TODO: Unused for now, but could be used in a LightningModule.
 """
 import random
-from abc import ABC, abstractmethod
 from collections import Counter, deque
-from dataclasses import InitVar, dataclass
+from dataclasses import dataclass
 from typing import *
 import json
 from pathlib import Path
@@ -22,8 +21,8 @@ from utils.logging_utils import get_logger
 logger = get_logger(__file__)
 T = TypeVar("T")
 
-@dataclass
-class ReplayBuffer(Deque[T], Pickleable):
+
+class ReplayBuffer(deque, Deque[T], Pickleable):
     """Simple implementation of a replay buffer.
 
     Uses a doubly-ended Queue, which unfortunately isn't registered as a buffer
@@ -33,7 +32,8 @@ class ReplayBuffer(Deque[T], Pickleable):
         super().__init__(maxlen=capacity)
         # self.extend("ABC")
         self.capacity: int = capacity
-        # self.register_buffer("memory", torch.zeros(1)) # TODO: figure out how to set it with a Tensor maybe?
+        # TODO: figure out how to persist the buffer with state_dict maybe?
+        # self.register_buffer("memory", torch.zeros(1))
         self.labeled: Optional[bool] = None
         self.current_size: int = 0
 
@@ -69,21 +69,20 @@ class ReplayBuffer(Deque[T], Pickleable):
     def full(self) -> bool:
         return len(self) == self.capacity 
 
-@dataclass
+
 class UnlabeledReplayBuffer(ReplayBuffer[Tensor]):
     def sample_batch(self, size: int) -> Tensor:
         batch = super()._sample(size)
         return torch.stack(batch)
 
-    def push(self, x_batch: Tensor, y_batch: Tensor=None) -> None:
-        super()._push(x_batch)
+    def push(self, x_batch: Tensor, y_batch: Tensor = None) -> None:
+        super().extend(x_batch)
 
-    def push_and_sample(self, x_batch: Tensor, y_batch: Tensor=None, size: int=None) -> Tensor:
+    def push_and_sample(self, x_batch: Tensor, y_batch: Tensor = None, size: int=None) -> Tensor:
         size = x_batch.shape[0] if size is None else size
         return torch.stack(super()._push_and_sample(x_batch, size=size))
 
 
-@dataclass
 class LabeledReplayBuffer(ReplayBuffer[Tuple[Tensor, Tensor]]):
     def sample(self, size: int) -> Tuple[Tensor, Tensor]:
         list_of_pairs = super()._sample(size)
@@ -91,7 +90,7 @@ class LabeledReplayBuffer(ReplayBuffer[Tuple[Tensor, Tensor]]):
         return torch.stack(data_list), torch.stack(target_list)
 
     def push(self, x_batch: Tensor, y_batch: Tensor) -> None:
-        super()._push(zip(x_batch, y_batch))
+        super().extend(zip(x_batch, y_batch))
 
     def push_and_sample(self, x_batch: Tensor, y_batch: Tensor, size: int=None) -> Tuple[Tensor, Tensor]:
         size = x_batch.shape[0] if size is None else size
@@ -105,7 +104,7 @@ class LabeledReplayBuffer(ReplayBuffer[Tuple[Tensor, Tensor]]):
         return Counter(int(y) for x, y in self)
 
 
-class CoolReplayBuffer(object):
+class SemiSupervisedReplayBuffer(object):
     def __init__(self, labeled_capacity: int, unlabeled_capacity: int=0):
         """Semi-Supervised (ish) version of a replay buffer.
         With the default parameters, acts just like a regular replay buffer.

@@ -16,7 +16,7 @@ from simple_parsing import ArgumentParser, Serializable
 
 from settings import Setting, PassiveEnvironment, PassiveSetting, ClassIncrementalSetting, Results
 from common.config import Config
-from methods import MethodABC as Method
+from methods import Method as Method
 from utils.logging_utils import get_logger
 from utils import dict_intersection
 

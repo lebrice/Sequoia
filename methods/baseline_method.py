@@ -29,7 +29,7 @@ from settings.base.environment import Environment
 from settings.base.objects import Actions, Observations, Rewards
 from settings.base.results import Results
 from settings.base.setting import Setting, SettingType
-from settings.base import MethodABC
+from settings.base import Method
 from utils import Parseable, Serializable, get_logger, singledispatchmethod
 from utils.utils import get_path_to_source_file
 
@@ -40,7 +40,7 @@ logger = get_logger(__file__)
 
 
 @dataclass
-class BaselineMethod(MethodABC, Serializable, Parseable, target_setting=Setting):
+class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
     """ Versatile Baseline method which targets all settings.
     
     Uses pytorch-lightning's Trainer for training and LightningModule as model. 

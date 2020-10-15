@@ -22,10 +22,10 @@ from utils import dict_union, get_logger, flag
 
 from ..active_setting import ActiveSetting
 from .gym_dataloader import GymDataLoader
-
+from common.gym_wrappers import MultiTaskEnvironment, SmoothTransitions
 
 from settings.assumptions.incremental import IncrementalSetting
-from settings.base import MethodABC, Observations, Rewards, Actions, Results
+from settings.base import Method, Observations, Rewards, Actions, Results
 logger = get_logger(__file__)
 
 from .rl_results import RLResults
@@ -166,7 +166,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         self.val_env: GymDataLoader = None
         self.test_env: GymDataLoader = None
 
-    def apply(self, method: MethodABC, config: Config):
+    def apply(self, method: Method, config: Config):
         self.config = config
         method.config = config
         method.configure(self)

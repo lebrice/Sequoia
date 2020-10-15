@@ -11,7 +11,7 @@ from common.loss import Loss
 from common.config import Config, TrainerConfig
 from methods import BaselineMethod
 from methods.models import BaselineModel
-from settings import ClassIncrementalSetting, MethodABC, Results, Setting, PassiveEnvironment
+from settings import ClassIncrementalSetting, Method, Results, Setting, PassiveEnvironment
 
 from .demo_utils import make_result_dataframe
 from methods.aux_tasks import EWCTask, SimCLRTask

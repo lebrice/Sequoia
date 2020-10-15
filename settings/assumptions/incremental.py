@@ -12,7 +12,7 @@ from common import Metrics, ClassificationMetrics, RegressionMetrics
 from utils import flag, constant, mean
 from utils.logging_utils import get_logger
 
-from settings.base import SettingABC, MethodABC, Actions, Environment, Observations, Results, Rewards
+from settings.base import SettingABC, Method, Actions, Environment, Observations, Results, Rewards
 
 logger = get_logger(__file__)
 
@@ -102,7 +102,7 @@ class IncrementalSetting(SettingABC):
         """ Sets the current task id. """
         self._current_task_id = value
 
-    def train_loop(self, method: MethodABC):
+    def train_loop(self, method: Method):
         """ (WIP): Runs an incremental training loop, wether in RL or CL."""
         for task_id in range(self.nb_tasks):
             logger.info(f"Starting training on task {task_id}")
@@ -145,7 +145,7 @@ class IncrementalSetting(SettingABC):
                 )
 
     
-    def test_loop(self, method: MethodABC) -> "IncrementalSetting.Results":
+    def test_loop(self, method: Method) -> "IncrementalSetting.Results":
         """ (WIP): Runs an incremental test loop and returns the Results.
 
         The idea is that this loop should be exactly the same, regardless of if
@@ -228,7 +228,7 @@ class IncrementalSetting(SettingABC):
         results = self.Results(test_metrics=test_metrics)
         return results
 
-    def run_episode(self, method: MethodABC, env: Environment) -> List[Metrics]:
+    def run_episode(self, method: Method, env: Environment) -> List[Metrics]:
         """ Apply the method on the env until it is done (one episode).
         Returns a list of the Metrics for each batch.
         

@@ -8,7 +8,7 @@ from .base.objects import (Actions, ActionType, Observations,
 from .base.results import Results
 from .base.environment import Environment
 from .base.setting import Setting, SettingType
-from .base.bases import SettingABC, MethodABC
+from .base.bases import SettingABC, Method
 from .active import *
 from .passive import *
 # all concrete settings:

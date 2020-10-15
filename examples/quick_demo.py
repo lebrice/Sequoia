@@ -7,7 +7,7 @@ import torch
 from gym import spaces
 from torch import Tensor, nn
 
-from settings import MethodABC as Method
+from settings import Method as Method
 from settings import Setting
 from settings.passive.cl import ClassIncrementalSetting
 from settings.passive.cl.objects import (Actions, Observations,

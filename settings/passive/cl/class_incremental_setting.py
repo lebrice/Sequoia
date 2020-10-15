@@ -48,7 +48,7 @@ from common import ClassificationMetrics, Metrics, get_metrics
 from common.config import Config
 from common.loss import Loss
 from common.transforms import Transforms, SplitBatch, Compose
-from settings.base import MethodABC, Results, ObservationType, RewardType
+from settings.base import Method, Results, ObservationType, RewardType
 from utils import dict_union, get_logger, constant, mean, take
 
 from .class_incremental_results import ClassIncrementalResults
@@ -243,7 +243,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # Default path to which the datasets will be downloaded.
         self.data_dir: Optional[Path] = None
 
-    def apply(self, method: MethodABC, config: Config=None) -> ClassIncrementalResults:
+    def apply(self, method: Method, config: Config=None) -> ClassIncrementalResults:
         """Apply the given method on this setting to producing some results."""
         self.config = config or Config.from_args(self._argv)
         method.config = self.config
@@ -435,7 +435,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             return observations, rewards
         return split_batch
     
-    def configure(self, method: MethodABC):
+    def configure(self, method: Method):
         # TODO: See the docstring of Setting.configure, we need to clean this up.
         assert self.config is not None
         config = self.config

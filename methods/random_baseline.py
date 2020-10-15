@@ -8,7 +8,7 @@ import gym
 from utils import get_logger, singledispatchmethod
 
 from common.metrics import ClassificationMetrics
-from settings.base import MethodABC, Actions, Observations, Environment
+from settings.base import Method, Actions, Observations, Environment
 
 from settings import ClassIncrementalSetting, Setting
 
@@ -16,7 +16,7 @@ logger = get_logger(__file__)
 
 
 @dataclass
-class RandomBaselineMethod(MethodABC, target_setting=Setting):
+class RandomBaselineMethod(Method, target_setting=Setting):
     """ Baseline method that gives random predictions for any given setting.
 
     This method doesn't have a model or any parameters. It just returns a random

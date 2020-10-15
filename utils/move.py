@@ -15,7 +15,7 @@ def move(x: T, device: Union[str, torch.device]) -> T:
     NOTE: This works for torch.Tensor.
     """
     if hasattr(x, "to") and callable(x.to):
-        return x.to(device)
+        return x.to(device=device)
     return x
 
 
