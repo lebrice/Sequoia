@@ -1,4 +1,4 @@
-# <repo name>
+# (placeholder repo name)
 Potential names:
 - (ResearchTree?) (something tree-related?)
 
@@ -7,21 +7,8 @@ Potential names:
 Requires python >= 3.7
 
 ```console
-git submodule init
-git submodule update
 pip install -r requirements.txt
 ```
-
-## TODOS:
-- [ ] Add more documentation.
-- [ ] Make sure Wandb logging works well and doesn't produce garbage.
-- [ ] Validate/Test out the RL branch.
-- [ ] ImageNet Training on the Mila cluster.
-- [ ] Test/debug Multi-GPU training on Mila cluster.
-- [ ] Test/debug Multi-node-Multi-GPU training on Mila cluster.
-- [ ] Add support for more of the datasets from Continuum
-- [ ] Add support for using 'native' iid datasets in the IID setting, or normal gym environments in the 'classical RL' setting. 
-
 
 ## Getting Started:
 - Take a look at Pytorch Lightning
