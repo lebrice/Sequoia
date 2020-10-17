@@ -1,3 +1,6 @@
+""" Tweaked version of the AsyncVectorEnv from openai gym that adds some methods
+to be able to interact with the remote workers at a distance.
+"""
 import multiprocessing as mp
 import operator
 import platform
@@ -215,8 +218,6 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         environments at the given indices.
         """
         apply_at_indices = partial(self.apply_at, index=index)
-        from operator import methodcaller
-
         from .batched_method import BatchedMethod
 
         class Proxy:
@@ -231,11 +232,10 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
                 """ Gets the attribute from the corresponding remote env, rather
                 than from this proxy object.
                 """
-                # If we wanted to be even weirer about this, we could try and
-                # detect whenever such an attribute would be a method, and then
-                # batch the methods!
                 results = apply_at_indices(attrgetter(name))
                 if isinstance(results, list) and all(map(ismethod, results)):
+                    # Detect when the requested attributes are methods, and then
+                    # batch the methods!
                     return BatchedMethod(results, apply_methods_fn=apply_at_indices)
                 return results
 
