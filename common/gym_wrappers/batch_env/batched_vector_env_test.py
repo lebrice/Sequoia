@@ -6,7 +6,7 @@ import gym
 import numpy as np
 import pytest
 
-from .batch_env import BatchEnv
+from .batched_vector_env import BatchedVectorEnv
 
 N_CPUS = cpu_count()
 
@@ -17,7 +17,7 @@ def test_right_shapes(batch_size: int, n_workers: Optional[int]):
     env_fn = partial(gym.make, "CartPole-v0")
     env_fns = [env_fn for _ in range(batch_size)]
 
-    env = BatchEnv(env_fns, n_workers=n_workers)
+    env = BatchedVectorEnv(env_fns, n_workers=n_workers)
     env.seed(123)
     assert env.observation_space.shape == (batch_size, 4)
     assert len(env.action_space) == batch_size
@@ -49,7 +49,7 @@ def test_ordering_of_env_fns_preserved(batch_size):
         partial(DummyEnvironment, start=i, target=target, max_value=100)
         for i in range(batch_size)
     ]
-    env = BatchEnv(env_fns, n_workers=4)
+    env = BatchedVectorEnv(env_fns, n_workers=4)
     env.seed(123)
     obs = env.reset()
     assert obs.tolist() == list(range(batch_size))
@@ -84,7 +84,7 @@ def test_done_reset_behaviour():
         partial(DummyEnvironment, start=start_i, target=target, max_value=target * 2)
         for start_i in starting_values
     ]
-    env = BatchEnv(env_fns, n_workers=n_workers)
+    env = BatchedVectorEnv(env_fns, n_workers=n_workers)
     env.seed(123)
     obs = env.reset()
     assert obs.tolist() == list(range(batch_size))

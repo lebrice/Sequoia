@@ -38,9 +38,7 @@ def test_apply(batch_size: int):
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
 def test_getitem_as_proxy(batch_size: int):
     env_fns = [partial(gym.make, "CartPole-v0") for _ in range(batch_size)]
-    env: AsyncVectorEnv[CartPoleEnv]
     with AsyncVectorEnv(env_fns=env_fns) as env:
-        env: AsyncVectorEnv[CartPoleEnv] = env
         # Set the pole length to 2.0 but only in the first environment.
         env[0].length = 2.0
         assert env[0].length == 2.0
@@ -90,7 +88,6 @@ def test_getattr_gets_it_from_envs(batch_size: int):
     env_fns = [partial(gym.make, "CartPole-v0") for _ in range(batch_size)]
     env: AsyncVectorEnv[CartPoleEnv]
     with AsyncVectorEnv(env_fns=env_fns) as env:
-        env: AsyncVectorEnv[CartPoleEnv] = env
         # Set the pole length to 2.0 but only in the first environment.
         env[0].length = 2.0
 
@@ -119,9 +116,7 @@ def test_setattr_sets_attr_on_first_wrapper_with_attribute(batch_size: int):
         default_task = temp_env.current_task
 
     env: AsyncVectorEnv[MultiTaskEnvironment]
-
     with AsyncVectorEnv(env_fns=env_fns) as env:
-        env: AsyncVectorEnv[CartPoleEnv] = env
         # Set the pole length to 2.0 but only in the first environment.
         env[0].task_schedule = {0: dict(length=2.0)}
         
@@ -146,8 +141,6 @@ def test_batched_method_call(batch_size: int):
     env_fns = [MyCartPoleEnv for _ in range(batch_size)]
     env: AsyncVectorEnv[MyCartPoleEnv]
     with AsyncVectorEnv(env_fns=env_fns) as env:
-        env: AsyncVectorEnv[MyCartPoleEnv] = env
-
         lengths = env.length
         assert lengths == [0.5 for i in range(batch_size)]
 
@@ -156,7 +149,6 @@ def test_batched_method_call(batch_size: int):
         assert new_lengths == [1.5, 1.5]
         lengths = env.length
         assert lengths == [1.5, 1.5] + [0.5 for i in range(2, batch_size)]
-
 
 
 @pytest.mark.parametrize("batch_size", [4])
@@ -164,8 +156,6 @@ def test_batched_nested_attribute_call(batch_size: int):
     env_fns = [MyCartPoleEnv for _ in range(batch_size)]
     env: AsyncVectorEnv[MyCartPoleEnv]
     with AsyncVectorEnv(env_fns=env_fns) as env:
-        env: AsyncVectorEnv[MyCartPoleEnv] = env
-
         lengths = env.length
         assert lengths == [0.5 for i in range(batch_size)]
 
@@ -173,5 +163,4 @@ def test_batched_nested_attribute_call(batch_size: int):
         assert new_lengths == [1.5, 1.5]
         lengths = env.length
         assert lengths == [1.5, 1.5] + [0.5 for i in range(2, batch_size)]
-
 
