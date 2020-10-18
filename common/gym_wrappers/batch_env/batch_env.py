@@ -15,9 +15,43 @@ from gym.vector.sync_vector_env import SyncVectorEnv
 from .async_vector_env import AsyncVectorEnv
 from utils.utils import n_consecutive
 
-from ..utils import space_with_new_shape
+from ..utils import StepResult, space_with_new_shape
 
 T = TypeVar("T")
+
+
+def distribute(values: Sequence[T], n_groups: int) -> List[Sequence[T]]:
+    """ Distribute the values 'values' as evenly as possible into n_groups.
+
+    >>> distribute(list(range(14)), 5)
+    [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11], [12, 13]]
+    >>> distribute(list(range(9)), 4)
+    [[0, 1, 2], [3, 4], [5, 6], [7, 8]]
+    >>> import numpy as np
+    >>> distribute(np.arange(9), 4)
+    [array([0, 1, 2]), array([3, 4]), array([5, 6]), array([7, 8])]
+    """
+    n_values = len(values)
+    # Determine the final lengths of each group.
+    min_values_per_group = math.floor(n_values / n_groups)
+    max_values_per_group = math.ceil(n_values / n_groups)
+    remainder = n_values % n_groups
+    group_lengths = [
+        max_values_per_group if i < remainder else min_values_per_group
+        for i in range(n_groups)
+    ]
+    # Equivalent, but maybe a tiny bit slower:
+    # group_lengths: List[int] = [0 for _ in range(n_groups)]
+    # for i in range(len(values)):
+    #     group_lengths[i % n_groups] += 1
+    groups: List[List[T]] = [[] for _ in range(n_groups)]
+
+    start_index = 0
+    for i, group_length in enumerate(group_lengths):
+        end_index = start_index + group_length
+        groups[i] = values[start_index:end_index]
+        start_index += group_length
+    return groups
 
 
 class BatchEnv(gym.Env):
@@ -25,8 +59,10 @@ class BatchEnv(gym.Env):
 
     Adds the following features, compared to using the vectorized environments
     from gym.vector:
+
     -   Chunking: Running more than one environment per worker. This is done by
-        passing `SyncVectorEnv`s to the AsyncVectorEnv.
+        passing `SyncVectorEnv`s as the env_fns to the `AsyncVectorEnv`.
+
     -   Flexible batch size: Supports any number of environments, irrespective
         of the number of workers or of CPUs. The number of environments will be
         spread out as equally as possible between the workers.
@@ -45,9 +81,8 @@ class BatchEnv(gym.Env):
     The observations/actions/rewards are reshaped to be (n_envs, *shape), i.e.
     they don't have an extra 'chunk' dimension.
 
-    NOTE: The observation at index i in the batch isn't from the env env_fns[i].
     NOTE: In order to get this to work, I had to modify the `if done:` statement
-    in the work to be `if done if isinstance(done, bool) else all(done)`.
+    in the worker to be `if done if isinstance(done, bool) else all(done):`.
     """
     def __init__(self,
                  env_fns,
@@ -64,11 +99,20 @@ class BatchEnv(gym.Env):
             self.n_workers = self.batch_size
 
         # Divide the env_fns as evenly as possible between the workers.
-        groups: List[List[Callable[[], gym.Env]]] = [[] for _ in range(self.n_workers)]
-        for i, env_fn in enumerate(env_fns):
-            groups[i % self.n_workers].append(env_fn)
-        start_index_b = (i % self.n_workers) + 1
+        groups = distribute(env_fns, self.n_workers)
 
+        # Find the first index where the group has a different length.
+        self.chunk_a = len(groups[0])
+        self.chunk_b = 0
+        # First, assume there is no need for another environment, as all the
+        # groups have the same length.
+        start_index_b = self.n_workers
+        for i, group in enumerate(groups):
+            if len(group) != self.chunk_a:
+                start_index_b = i
+                self.chunk_b = len(group)
+                break
+        # Total number of envs in each environment.
         self.n_a = sum(map(len, groups[:start_index_b]))
         self.n_b = sum(map(len, groups[start_index_b:]))
 
@@ -76,19 +120,13 @@ class BatchEnv(gym.Env):
         chunk_env_fns: List[Callable[[], gym.Env]] = [
             partial(SyncVectorEnv, env_fns_group) for env_fns_group in groups
         ]
-
         env_a_fns = chunk_env_fns[:start_index_b]
         env_b_fns = chunk_env_fns[start_index_b:]
         
         # Create the AsyncVectorEnvs.
-        self.chunk_a = math.ceil(self.batch_size / self.n_workers)
         self.env_a = AsyncVectorEnv(env_fns=env_a_fns, **kwargs)
-
-        self.chunk_b = 0
         self.env_b: Optional[AsyncVectorEnv] = None
-
         if env_b_fns:
-            self.chunk_b = math.floor(self.batch_size / self.n_workers)
             self.env_b = AsyncVectorEnv(env_fns=env_b_fns, **kwargs)
 
         self.observation_space: gym.Space
@@ -113,10 +151,10 @@ class BatchEnv(gym.Env):
         obs_a = self.env_a.reset()
         if self.env_b:
             obs_b = self.env_b.reset()
-            return self.concat_and_unchunk(obs_a, obs_b)
+            return self.unchunk(obs_a, obs_b)
         return self.unchunk(obs_a)
 
-    def step(self, action: Sequence):
+    def step(self, action: Sequence) -> StepResult:
         if self.env_b:
             flat_actions_a, flat_actions_b = action[:self.n_a], action[self.n_a:]
             actions_a = self.chunk(flat_actions_a, self.chunk_a)
@@ -129,15 +167,15 @@ class BatchEnv(gym.Env):
             rewards = self.unchunk(rew_a, rew_b)
             done = self.unchunk(done_a, done_b)
             info = self.unchunk(info_a, info_b)
-            return observations, rewards, done, info
+        else:
+            action = self.chunk(action, self.chunk_a)
+            observations, rewards, done, info = self.env_a.step(action)
 
-        action = self.chunk(action, self.chunk_a)
-        observations, rewards, done, info = self.env_a.step(action)
-        observations = self.unchunk(observations)
-        rewards = self.unchunk(rewards)
-        done = self.unchunk(done)
-        info = self.unchunk(info)
-        return observations, rewards, done, info
+            observations = self.unchunk(observations)
+            rewards = self.unchunk(rewards)
+            done = self.unchunk(done)
+            info = self.unchunk(info)
+        return StepResult(observations, rewards, done, info)
 
     def seed(self, seeds: Sequence[int]=None):
         if seeds is None:
@@ -206,7 +244,7 @@ def concat_spaces(space_a: gym.Space, space_b: gym.Space) -> gym.Space:
 def remove_extra_batch_dim_from_space(space: gym.Space):
     if isinstance(space, spaces.Box):
         dims = space.shape
-        assert len(space.shape) >= 3
+        assert len(space.shape) >= 2, space
         new_shape = tuple([dims[0] * dims[1], *dims[2:]])
         new_low = space.low.reshape(new_shape)
         new_high = space.high.reshape(new_shape)
@@ -226,3 +264,8 @@ def remove_extra_batch_dim_from_space(space: gym.Space):
         })
 
     raise NotImplementedError(f"Unsupported space {space}")
+
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod()

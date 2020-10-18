@@ -28,4 +28,15 @@ def test_spaces_have_right_shape(batch_size: int):
         assert len(done) == batch_size
         assert len(info) == batch_size
 
+from conftest import DummyEnvironment
 
+def test_ordering_of_env_fns_preserved():
+    batch_size = 12
+    env_fns = [
+        partial(DummyEnvironment, start=i, max_value=100)
+        for i in range(batch_size)
+    ]
+    env = BatchEnv(env_fns, n_workers=4)
+    env.seed(123)
+    obs = env.reset()
+    assert obs.tolist() == list(range(batch_size))
