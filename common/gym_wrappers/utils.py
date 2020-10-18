@@ -1,6 +1,7 @@
 from abc import ABC
 from typing import (Dict, Generic, Iterator, List, NamedTuple, Tuple, Type,
                     TypeVar)
+from collections.abc import Sized
 
 import gym
 import numpy as np

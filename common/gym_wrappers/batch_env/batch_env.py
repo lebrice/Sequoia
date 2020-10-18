@@ -10,8 +10,8 @@ from typing import Any, Callable, Iterable, List, Sequence, Tuple, TypeVar, Unio
 import gym
 import numpy as np
 from gym import spaces
-from gym.vector.sync_vector_env import SyncVectorEnv
 
+from .sync_vector_env import SyncVectorEnv
 from .async_vector_env import AsyncVectorEnv
 from utils.utils import n_consecutive
 
@@ -106,22 +106,22 @@ class BatchEnv(gym.Env):
         self.chunk_b = 0
         # First, assume there is no need for another environment, as all the
         # groups have the same length.
-        start_index_b = self.n_workers
+        self.start_index_b = self.n_workers
         for i, group in enumerate(groups):
             if len(group) != self.chunk_a:
-                start_index_b = i
+                self.start_index_b = i
                 self.chunk_b = len(group)
                 break
         # Total number of envs in each environment.
-        self.n_a = sum(map(len, groups[:start_index_b]))
-        self.n_b = sum(map(len, groups[start_index_b:]))
+        self.n_a = sum(map(len, groups[:self.start_index_b]))
+        self.n_b = sum(map(len, groups[self.start_index_b:]))
 
         # Create a SyncVectorEnv per group.
         chunk_env_fns: List[Callable[[], gym.Env]] = [
             partial(SyncVectorEnv, env_fns_group) for env_fns_group in groups
         ]
-        env_a_fns = chunk_env_fns[:start_index_b]
-        env_b_fns = chunk_env_fns[start_index_b:]
+        env_a_fns = chunk_env_fns[:self.start_index_b]
+        env_b_fns = chunk_env_fns[self.start_index_b:]
         
         # Create the AsyncVectorEnvs.
         self.env_a = AsyncVectorEnv(env_fns=env_a_fns, **kwargs)
@@ -154,7 +154,7 @@ class BatchEnv(gym.Env):
             return self.unchunk(obs_a, obs_b)
         return self.unchunk(obs_a)
 
-    def step(self, action: Sequence) -> StepResult:
+    def step(self, action: Sequence):
         if self.env_b:
             flat_actions_a, flat_actions_b = action[:self.n_a], action[self.n_a:]
             actions_a = self.chunk(flat_actions_a, self.chunk_a)
@@ -177,7 +177,7 @@ class BatchEnv(gym.Env):
             info = self.unchunk(info)
         return StepResult(observations, rewards, done, info)
 
-    def seed(self, seeds: Sequence[int]=None):
+    def seed(self, seeds: Union[int, Sequence[int]] = None):
         if seeds is None:
             seeds = [None for _ in range(self.batch_size)]
         if isinstance(seeds, int):
@@ -189,7 +189,6 @@ class BatchEnv(gym.Env):
         self.env_a.seed(seeds_a)
         if self.env_b:
             self.env_b.seed(seeds_b)       
-        self.env_a.render
 
     def close(self):
         self.env_a.close()
