@@ -1,5 +1,5 @@
-"""TODO: Mix of AsyncVectorEnv and SyncVectorEnv, where we have a series of
-environments on each worker.
+""" Mix of AsyncVectorEnv and SyncVectorEnv, with support for 'chunking' and for
+where we have a series of environments on each worker.
 """
 import math
 import multiprocessing as mp
@@ -27,8 +27,8 @@ class BatchEnv(gym.Env):
     from gym.vector:
     -   Chunking: Running more than one environment per worker. This is done by
         passing `SyncVectorEnv`s to the AsyncVectorEnv.
-    -   Flexible batch size: Supports any number of environments, irrespective of
-        the number of workers or of CPUs. The number of environments will be
+    -   Flexible batch size: Supports any number of environments, irrespective
+        of the number of workers or of CPUs. The number of environments will be
         spread out as equally as possible between the workers.
       
         For example, if you want to have a batch_size of 17, and n_workers is 6,
@@ -36,7 +36,7 @@ class BatchEnv(gym.Env):
 
         Internally, this works by creating up to two AsyncVectorEnvs, env_a and
         env_b. If the number of envs (batch_size) isn't a multiple of the number
-        of workers, then we create a second AsyncVectorEnv (env_b).
+        of workers, then we create the second AsyncVectorEnv (env_b).
 
         In the first environment (env_a), each env will contain
         ceil(n_envs / n_workers) each. If env_b is needed, then each of its envs
@@ -46,7 +46,8 @@ class BatchEnv(gym.Env):
     they don't have an extra 'chunk' dimension.
 
     NOTE: The observation at index i in the batch isn't from the env env_fns[i].
-
+    NOTE: In order to get this to work, I had to modify the `if done:` statement
+    in the work to be `if done if isinstance(done, bool) else all(done)`.
     """
     def __init__(self,
                  env_fns,
@@ -71,7 +72,6 @@ class BatchEnv(gym.Env):
         self.n_a = sum(map(len, groups[:start_index_b]))
         self.n_b = sum(map(len, groups[start_index_b:]))
 
-        print(self.n_a, self.n_b, start_index_b)
         # Create a SyncVectorEnv per group.
         chunk_env_fns: List[Callable[[], gym.Env]] = [
             partial(SyncVectorEnv, env_fns_group) for env_fns_group in groups
@@ -177,9 +177,8 @@ class BatchEnv(gym.Env):
         return groups
 
 
-
-
 def concat_spaces(space_a: gym.Space, space_b: gym.Space) -> gym.Space:
+    """ Concatenate two gym spaces of the same types. """
     if type(space_a) != type(space_b):
         raise RuntimeError(f"Can only concat spaces of the same type: {space_a} {space_b}")
     
