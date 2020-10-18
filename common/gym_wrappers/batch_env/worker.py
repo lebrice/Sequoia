@@ -79,7 +79,7 @@ def _custom_worker_shared_memory(index: int,
                 pipe.send((None, True))
             elif command == Commands.step:
                 observation, reward, done, info = env.step(data)
-                if done:
+                if done if isinstance(done, bool) else any(done):
                     if isinstance(info, dict):
                         info["final_state"] = observation
                     observation = env.reset()
@@ -170,7 +170,7 @@ def _worker_shared_memory(index, env_fn, pipe, parent_pipe, shared_memory, error
                 pipe.send((None, True))
             elif command == 'step':
                 observation, reward, done, info = env.step(data)
-                if done:
+                if done if isinstance(done, bool) else any(done):
                     observation = env.reset()
                 write_to_shared_memory(index, observation, shared_memory,
                                        observation_space)
