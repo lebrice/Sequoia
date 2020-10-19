@@ -66,9 +66,10 @@ def space_with_new_shape(space: gym.Space, new_shape: Tuple[int, ...]) -> gym.Sp
     if isinstance(space, spaces.Box):
         assert isinstance(new_shape, (tuple, list))
         space: spaces.Box
-        new_low =  space.low.reshape(new_shape)
-        new_high = space.high.reshape(new_shape)
-        return spaces.Box(low=new_low, high=new_high, dtype=space.dtype)
+        # TODO: For now just assume that all the bounds are the same value.
+        low = space.low if np.isscalar(space.low) else next(space.low.flat)
+        high = space.high if np.isscalar(space.high) else next(space.high.flat)
+        return spaces.Box(low=low, high=high, shape=new_shape)
 
     if isinstance(space, spaces.Discrete):
         # Can't change the shape of a Discrete space, return a new one anyway.

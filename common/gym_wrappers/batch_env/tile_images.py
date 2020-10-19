@@ -13,7 +13,13 @@ def tile_images(img_nhwc):
         bigim_HWc, ndarray with ndim=3
     """
     img_nhwc = np.asarray(img_nhwc)
+    
     N, h, w, c = img_nhwc.shape
+    if c not in {1, 3}:
+        img_nhwc = img_nhwc.transpose([0, 2, 3, 1])
+        N, h, w, c = img_nhwc.shape
+    assert c in {1, 3}
+    
     H = int(np.ceil(np.sqrt(N)))
     W = int(np.ceil(float(N)/H))
     img_nhwc = np.array(list(img_nhwc) + [img_nhwc[0]*0 for _ in range(N, H*W)])

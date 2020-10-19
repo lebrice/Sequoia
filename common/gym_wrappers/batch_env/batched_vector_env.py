@@ -177,7 +177,6 @@ class BatchedVectorEnv(VectorEnv):
             info = unchunk(info)
         return observations, rewards, done, info
 
-
     def seed(self, seeds: Union[int, Sequence[Optional[int]]] = None):
         if seeds is None:
             seeds = [None for _ in range(self.batch_size)]
