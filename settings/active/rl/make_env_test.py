@@ -32,7 +32,7 @@ def test_make_env_with_wrapper(env_name: str, batch_size: int):
     env = make_batched_env(
         base_env=env_name,
         batch_size=batch_size,
-        wrappers=[PixelStateWrapper]
+        wrappers=[PixelObservationWrapper]
     )
     start_state = env.reset()
     expected_state_shape = (batch_size, 400, 600, 3)
@@ -45,7 +45,7 @@ def test_make_env_with_wrapper(env_name: str, batch_size: int):
         assert obs.shape == expected_state_shape
         assert reward.shape == (batch_size,)
 
-from common.gym_wrappers import PixelStateWrapper, MultiTaskEnvironment
+from common.gym_wrappers import PixelObservationWrapper, MultiTaskEnvironment
 
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
 @pytest.mark.parametrize("batch_size", [1, 5, 10, 32])
@@ -54,7 +54,7 @@ def test_make_env_with_wrapper_and_kwargs(env_name: str, batch_size: int):
         base_env=env_name,
         batch_size=batch_size,
         wrappers=[
-            PixelStateWrapper,
+            PixelObservationWrapper,
             (MultiTaskEnvironment, dict(task_schedule={0: dict(length=2.0)})),
         ]
     )

@@ -11,7 +11,7 @@ from gym import Env, Wrapper, spaces
 from simple_parsing import choice, list_field, mutable_field
 from torch import Tensor
 
-from common.gym_wrappers import (MultiTaskEnvironment, PixelStateWrapper,
+from common.gym_wrappers import (MultiTaskEnvironment, PixelObservationWrapper,
                                  SmoothTransitions, TransformObservation,
                                  has_wrapper)
 from common.gym_wrappers.env_dataset import StepResult
@@ -73,7 +73,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # input instead (harder).
     # TODO: Setting this to True for the moment.
     # BUG: Seems like the image isn't changing very much over time! Need to test
-    # this in the PixelStateWrapper.
+    # this in the PixelObservationWrapper.
     observe_state_directly: bool = flag(default=True)
     
     # Max number of steps ("length" of the training and test "datasets").
@@ -297,7 +297,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         """
         env = gym.make(env_name)
         if observe_pixels:
-            env = PixelStateWrapper(env)
+            env = PixelObservationWrapper(env)
             if image_transforms:
                 env = TransformObservation(env, Compose(image_transforms))
         other_wrappers = other_wrappers or []
@@ -322,7 +322,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     def env_wrappers(self) -> List[Union[Callable, Tuple[Callable, Dict]]]:
         wrappers = []
         if not self.observe_state_directly:
-            wrappers.append(PixelStateWrapper)
+            wrappers.append(PixelObservationWrapper)
         if self.smooth_task_boundaries:
             wrappers.append(partial(SmoothTransitions, task_schedule=self.task_schedule))
         else:

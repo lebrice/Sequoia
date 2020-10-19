@@ -11,7 +11,7 @@ from utils.logging_utils import get_logger
 
 from .batch_env import AsyncVectorEnv
 from .utils import ActionType, ObservationType, RewardType, StepResult
-from settings.base.objects import Observations, Rewards, Actions
+# from settings.base.objects import Observations, Rewards, Actions
 logger = get_logger(__file__)
 
 
@@ -177,7 +177,7 @@ class EnvDataset(gym.Wrapper,
         else:
             return self.iterator_with_send()
 
-    def iterator_with_send(self) -> Iterable[Observations]:
+    def iterator_with_send(self) -> Iterable[ObservationType]:
         """Iterator for an episode in the environment, which uses the 'active
         dataset' style with __iter__ and send.
 

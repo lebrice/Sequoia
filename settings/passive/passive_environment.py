@@ -200,6 +200,28 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         del self._iterator
         self._closed = True
 
+    def render(self, mode: str = "rgb_array") -> np.ndarray:
+        observations = self._current_batch[0]
+        assert isinstance(observations, Observations)
+        image_batch = observations[0]
+        if isinstance(image_batch, Tensor):
+            image_batch = image_batch.cpu().numpy()
+        
+        if mode == "rgb_array":
+            return image_batch
+        from common.gym_wrappers.batch_env.tile_images import tile_images
+        if mode == "human":
+            tiled_version = tile_images(image_batch)
+            import matplotlib.pyplot as plt
+            return plt.imshow(tiled_version)
+            # if self.viewer is None:
+            #     from gym.envs.classic_control import rendering
+            # self.viewer.imshow(tiled_version)
+            # return self.viewer.isopen
+
+        raise NotImplementedError(f"Unsuported mode {mode}")
+        
+    
     def get_next_batch(self) -> Tuple[ObservationType, RewardType]:
         """Gets the next batch from the underlying dataset.
 
@@ -321,8 +343,6 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         """
         return {}
 
-    def render(self, mode="rgb_array") -> np.ndarray:
-        return self._current_batch.cpu().numpy()        
     
     def __iter__(self) -> Iterable[Tuple[ObservationType, Optional[RewardType]]]:
         """Iterate over the dataset, yielding batches of Observations and

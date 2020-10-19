@@ -36,6 +36,14 @@ def mean(values: Iterable[T]) -> T:
 
 
 def n_consecutive(items: Iterable[T], n: int=2, yield_last_batch=True) -> Iterable[Tuple[T, ...]]:
+    """Collect data into chunks of up to `n` elements.
+    
+    When `yield_last_batch` is True, the final chunk (which might have fewer
+    than `n` items) will also be yielded.
+    
+    >>> list(n_consecutive("ABCDEFG", 3))
+    [["A", "B", "C"], ["D", "E", "F"], ["G"]]
+    """
     values: List[T] = []
     for item in items:
         values.append(item)

@@ -1,6 +1,7 @@
 from abc import ABC
 from typing import (Dict, Generic, Iterator, List, NamedTuple, Tuple, Type,
                     TypeVar)
+from collections.abc import Sized
 
 import gym
 import numpy as np
@@ -65,6 +66,7 @@ def space_with_new_shape(space: gym.Space, new_shape: Tuple[int, ...]) -> gym.Sp
     if isinstance(space, spaces.Box):
         assert isinstance(new_shape, (tuple, list))
         space: spaces.Box
+        # TODO: For now just assume that all the bounds are the same value.
         low = space.low if np.isscalar(space.low) else next(space.low.flat)
         high = space.high if np.isscalar(space.high) else next(space.high.flat)
         return spaces.Box(low=low, high=high, shape=new_shape)

@@ -203,6 +203,7 @@ class DummyEnvironment(gym.Env):
     def __init__(self, start: int = 0, max_value: int = 10, target: int = 5):
         self.max_value = max_value
         self.i = start
+        self.start = start
         self.reward_range = (0, max_value)
         self.action_space = gym.spaces.Discrete(n=3)
         self.observation_space = gym.spaces.Discrete(n=max_value)
@@ -230,5 +231,5 @@ class DummyEnvironment(gym.Env):
 
     def reset(self):
         self._reset = True
-        self.i = 0
+        self.i = self.start
         return self.i

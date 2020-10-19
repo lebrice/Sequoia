@@ -1,6 +1,7 @@
 """Creates an IterableDataset from a gym env by applying different wrappers.
 """
 import copy
+import multiprocessing as mp
 from functools import partial
 from typing import Callable, Dict, Iterable, List, Tuple, Type, TypeVar, Union
 
@@ -8,11 +9,10 @@ import gym
 from gym import Wrapper
 from gym.envs.classic_control import CartPoleEnv
 from gym.vector import SyncVectorEnv, VectorEnv
-
-from common.gym_wrappers import *
-from common.gym_wrappers import AsyncVectorEnv
 from utils.logging_utils import get_logger
 
+from common.gym_wrappers.batch_env import AsyncVectorEnv, BatchedVectorEnv
+from common.gym_wrappers import ConvertToFromTensors
 logger = get_logger(__file__)
 
 W = TypeVar("W", bound=Union[gym.Env, gym.Wrapper])
@@ -109,10 +109,12 @@ def make_batched_env(base_env: Union[str, Callable],
         return env
 
     env_fns = [pre_batch_env_factory for _ in range(batch_size)]
+
     if asynchronous:
+        if len(env_fns) > mp.cpu_count():
+            return BatchedVectorEnv(env_fns)
         return AsyncVectorEnv(env_fns)
-    else:
-        return SyncVectorEnv(env_fns)
+    return SyncVectorEnv(env_fns)
 
 def wrap(env: gym.Env,
          wrappers: Iterable[Union[Type[Wrapper], WrapperAndKwargs]]) -> Wrapper:

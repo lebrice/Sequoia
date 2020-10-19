@@ -6,12 +6,18 @@ from multiprocessing.connection import Connection, wait
 from typing import Any, List, Union
 
 import gym
+import numpy as np
+from gym.vector import VectorEnv
 from gym.vector.async_vector_env import write_to_shared_memory
 from gym.vector.async_vector_env import _worker, _worker_shared_memory
 from gym.vector.utils import CloudpickleWrapper
 
 # TODO: Find a way to turn off the logs coming from the workers. 
 # from utils.logging_utils import get_logger
+
+# Key in the info dict where the 'final state' will be saved, when the
+# environment is reset.
+FINAL_STATE_KEY = "final_state"
 
 
 class Commands:
@@ -51,23 +57,33 @@ def _custom_worker_shared_memory(index: int,
         parent_pipe ([type]): [description]
         shared_memory ([type]): [description]
         error_queue ([type]): [description]
-        **new**: (TODO:)
-        in_series: (int, optional): When passed, we create `in_series`
-        environments in series in this worker.
     Raises:
         RuntimeError: [description]
     """
     process_name = mp.current_process().name
     # print(f"Current process name: {process_name}")
-
+    
     assert shared_memory is not None
-    # if in_series is not None:
-    #     # TODO: Would need to un-flatten the chunks in the class that uses this.
-    #     env = gym.vector.SyncVectorEnv([env_fn for i in range(in_series)])
-    # else:
     env = env_fn()
     observation_space = env.observation_space
     parent_pipe.close()
+
+    def step_fn(actions):
+        observation, reward, done, info = env.step(actions)
+        if isinstance(env, VectorEnv):
+            # Do nothing: Since the env is a VectorEnv, it will automatically
+            # reset the env if needed in 'step' and return the initial
+            # observation instead of the final observation.
+            return observation, reward, done, info
+
+        if done:
+            if info is None:
+                info = {}
+            assert isinstance(info, dict)
+            info[FINAL_STATE_KEY] = observation
+            observation = env.reset()
+        return observation, reward, done, info
+
     try:
         while True:
             command, data = pipe.recv()
@@ -78,11 +94,7 @@ def _custom_worker_shared_memory(index: int,
                                        observation_space)
                 pipe.send((None, True))
             elif command == Commands.step:
-                observation, reward, done, info = env.step(data)
-                if done:
-                    if isinstance(info, dict):
-                        info["final_state"] = observation
-                    observation = env.reset()
+                observation, reward, done, info = step_fn(data)
                 write_to_shared_memory(index, observation, shared_memory,
                                        observation_space)
                 pipe.send(((None, reward, done, info), True))
@@ -102,6 +114,9 @@ def _custom_worker_shared_memory(index: int,
                 results = function(env)
                 pipe.send((results, True))
 
+            elif command == Commands.render:
+                pipe.send(env.render(mode="rgb_array"))
+
             else:
                 raise RuntimeError('Received unknown command `{0}`. Must '
                     'be one of {`reset`, `step`, `seed`, `close`, '
@@ -117,6 +132,23 @@ def _custom_worker(index, env_fn, pipe, parent_pipe, shared_memory, error_queue)
     assert shared_memory is None
     env = env_fn()
     parent_pipe.close()
+
+    def step_fn(actions):
+        observation, reward, done, info = env.step(actions)
+        if isinstance(env, VectorEnv):
+            # Do nothing: Since the env is a VectorEnv, it will automatically
+            # reset the env if needed in 'step' and return the initial
+            # observation instead of the final observation.
+            return observation, reward, done, info
+
+        if done:
+            if info is None:
+                info = {}
+            assert isinstance(info, dict)
+            info[FINAL_STATE_KEY] = observation
+            observation = env.reset()
+        return observation, reward, done, info
+
     try:
         while True:
             command, data = pipe.recv()
@@ -124,9 +156,7 @@ def _custom_worker(index, env_fn, pipe, parent_pipe, shared_memory, error_queue)
                 observation = env.reset()
                 pipe.send((observation, True))
             elif command == 'step':
-                observation, reward, done, info = env.step(data)
-                if done:
-                    observation = env.reset()
+                observation, reward, done, info = step_fn(data)
                 pipe.send(((observation, reward, done, info), True))
             elif command == 'seed':
                 env.seed(data)
@@ -142,8 +172,11 @@ def _custom_worker(index, env_fn, pipe, parent_pipe, shared_memory, error_queue)
                 assert callable(data)
                 function = data
                 results = function(env)
+                
                 pipe.send((results, True))
-            
+            elif command == Commands.render:
+                pipe.send(env.render(mode="rgb_array"))
+
             else:
                 raise RuntimeError('Received unknown command `{0}`. Must '
                     'be one of {`reset`, `step`, `seed`, `close`, '
@@ -170,7 +203,7 @@ def _worker_shared_memory(index, env_fn, pipe, parent_pipe, shared_memory, error
                 pipe.send((None, True))
             elif command == 'step':
                 observation, reward, done, info = env.step(data)
-                if done:
+                if done if isinstance(done, bool) else any(done):
                     observation = env.reset()
                 write_to_shared_memory(index, observation, shared_memory,
                                        observation_space)

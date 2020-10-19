@@ -1,3 +1,6 @@
+""" Tweaked version of the AsyncVectorEnv from openai gym that adds some methods
+to be able to interact with the remote workers at a distance.
+"""
 import multiprocessing as mp
 import operator
 import platform
@@ -19,7 +22,7 @@ from utils.logging_utils import get_logger
 
 from .worker import (CloudpickleWrapper, Commands, _custom_worker,
                      _custom_worker_shared_memory)
-
+import os; os.environ['MKL_THREADING_LAYER'] = 'GNU'
 logger = get_logger(__file__)
 T = TypeVar("T")
 
@@ -45,8 +48,11 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
                 # context = "fork"
                 # context = "spawn"
                 # NOTE: For now 'forkserver`, seems to have resolved the bug
-                # above for now:
+                # above for now, but is still super slow compared to fork.
+                # If we you don't intend to ever call 'render' on the env, then
+                # you should *definitely* be using 'fork'. 
                 context = "forkserver"
+                # context = "fork"
             else:
                 logger.warning(RuntimeWarning(
                     f"Using the 'spawn' multiprocessing context since we're on "
@@ -81,6 +87,19 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
 
     def __len__(self) -> int:
         return self.num_envs
+
+    def render(self, mode: str = "rgb_array") -> np.ndarray:
+        if mode != "rgb_array":
+            raise NotImplementedError
+        self._assert_is_running()
+        for pipe in self.parent_pipes:
+            pipe.send(('render', None))
+        return np.stack([pipe.recv() for pipe in self.parent_pipes])
+        # NOTE: @lebrice This used to be working, and would have been an example
+        # use-case for all the fancy stuff written below, which I should
+        # probably remove at some point if we don't end up needing access to the
+        # envs. 
+        return np.asarray(self[:].render(mode="rgb_array"))
 
     @overload
     def apply(self, functions: Callable[[Env], T]) -> List[T]:
@@ -179,8 +198,8 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
             # If we wanted a proxy for a single item, then we return a
             # single result, instead of a list with one item.
             return results[index]
-        
         return [result for i, result in enumerate(results) if i in indices]
+
 
     def __getattr__(self, name: str):
         logger.debug(f"Attempting to get missing attribute {name}.")
@@ -215,8 +234,6 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         environments at the given indices.
         """
         apply_at_indices = partial(self.apply_at, index=index)
-        from operator import methodcaller
-
         from .batched_method import BatchedMethod
 
         class Proxy:
@@ -231,11 +248,10 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
                 """ Gets the attribute from the corresponding remote env, rather
                 than from this proxy object.
                 """
-                # If we wanted to be even weirer about this, we could try and
-                # detect whenever such an attribute would be a method, and then
-                # batch the methods!
                 results = apply_at_indices(attrgetter(name))
                 if isinstance(results, list) and all(map(ismethod, results)):
+                    # Detect when the requested attributes are methods, and then
+                    # batch the methods!
                     return BatchedMethod(results, apply_methods_fn=apply_at_indices)
                 return results
 

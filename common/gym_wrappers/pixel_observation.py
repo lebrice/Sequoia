@@ -6,14 +6,14 @@ import numpy as np
 from common.transforms import to_tensor
 from gym.envs.classic_control import CartPoleEnv
 from gym.envs.classic_control.rendering import Viewer
-from gym.wrappers.pixel_observation import PixelObservationWrapper
+from gym.wrappers.pixel_observation import PixelObservationWrapper as PixelObservationWrapper_
 from torch import Tensor
 
 
-class PixelStateWrapper(PixelObservationWrapper):
+class PixelObservationWrapper(PixelObservationWrapper_):
     """ Less annoying version of `PixelObservationWrapper`:
 
-    - Resets the environment before calling the constructor.
+    - Resets the environment before calling the constructor (fixes crash).
     - Makes the popup window non-visible when rendering with mode="rgb_array".
     - State is always pixels instead of dict with pixels at key 'pixels'
     - `reset()` returns the pixels.
