@@ -111,3 +111,13 @@ def test_done_reset_behaviour():
     assert info[last_index]["final_state"] == target
     assert all("final_state" not in info_i for info_i in info[:last_index])
     env.close()
+
+
+def test_render():
+    batch_size = 4
+    env = BatchedVectorEnv([
+        partial(gym.make, "CartPole-v0") for i in range(batch_size)
+    ])
+    env.reset()
+    obs = env.render(mode="rgb_array")
+    assert False, obs.shape

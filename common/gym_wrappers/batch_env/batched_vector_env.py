@@ -16,7 +16,7 @@ from gym.vector.vector_env import VectorEnv
 from .sync_vector_env import SyncVectorEnv
 from .async_vector_env import AsyncVectorEnv
 from utils.utils import n_consecutive
-
+from .tile_images import tile_images
 T = TypeVar("T")
 
 
@@ -123,7 +123,20 @@ class BatchedVectorEnv(VectorEnv):
             obs_b = self.env_b.reset_wait(timeout=timeout)
             return unchunk(obs_a, obs_b)
         return unchunk(obs_a)
-    
+
+    def render(self, mode: str = "rgb_array"):
+        images_a: List[np.ndarray] = self.env_a.render(mode="rgb_array")
+        images_list: List[np.ndarray] = unchunk(images_a)
+        if self.env_b:
+            images_b = self.env_b[:].render(mode="rgb_array")
+            images_list.extend(unchunk(images_b))
+        image_batch = np.array(images_list)
+        if mode == "rgb_array":
+            return image_batch
+        elif mode == "human":
+            tiled_version = tile_images(image_batch)
+            assert False, tiled_version.shape
+
     def step_async(self, action: Sequence):
         if self.env_b:
             flat_actions_a, flat_actions_b = action[:self.n_a], action[self.n_a:]

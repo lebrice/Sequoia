@@ -33,3 +33,9 @@ class SyncVectorEnv(SyncVectorEnv_):
 
         return (deepcopy(self.observations) if self.copy else self.observations,
             np.copy(self._rewards), np.copy(self._dones), infos)
+
+
+    def render(self, mode: str = "rgb_array"):
+        images = []
+        images.extend(env.render(mode=mode) for env in self.envs)
+        return np.stack(images)

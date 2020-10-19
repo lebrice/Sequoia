@@ -49,6 +49,17 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
                 # context = "spawn"
                 # NOTE: For now 'forkserver`, seems to have resolved the bug
                 # above for now:
+                # from ..utils import has_wrapper
+                # from ..pixel_observation import PixelObservationWrapper
+                # from gym.vector.sync_vector_env import SyncVectorEnv
+                # temp_env = env_fns[0]()
+                # is_pixel_obs = False
+                # if isinstance(temp_env, SyncVectorEnv):
+                #     is_pixel_obs = has_wrapper(temp_env.envs[0], PixelObservationWrapper)
+                # else:
+                #     is_pixel_obs = has_wrapper(temp_env, PixelObservationWrapper)
+                # temp_env.close()
+                # del temp_env
                 context = "forkserver"
             else:
                 logger.warning(RuntimeWarning(
@@ -184,6 +195,11 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
             return results[index]
         
         return [result for i, result in enumerate(results) if i in indices]
+
+    def render(self, mode: str = "rgb_array") -> np.ndarray:
+        if mode != "rgb_array":
+            raise NotImplementedError
+        return np.asarray(self[:].render(mode="rgb_array"))
 
     def __getattr__(self, name: str):
         logger.debug(f"Attempting to get missing attribute {name}.")
