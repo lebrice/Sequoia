@@ -11,7 +11,7 @@ from utils.logging_utils import get_logger
 
 from .batch_env import AsyncVectorEnv
 from .utils import ActionType, ObservationType, RewardType, StepResult
-from settings.base.objects import Observations, Rewards, Actions
+# from settings.base.objects import Observations, Rewards, Actions
 logger = get_logger(__file__)
 
 

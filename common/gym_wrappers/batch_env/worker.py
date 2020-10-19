@@ -6,6 +6,7 @@ from multiprocessing.connection import Connection, wait
 from typing import Any, List, Union
 
 import gym
+import numpy as np
 from gym.vector import VectorEnv
 from gym.vector.async_vector_env import write_to_shared_memory
 from gym.vector.async_vector_env import _worker, _worker_shared_memory
@@ -113,6 +114,9 @@ def _custom_worker_shared_memory(index: int,
                 results = function(env)
                 pipe.send((results, True))
 
+            elif command == Commands.render:
+                pipe.send(env.render(mode="rgb_array"))
+
             else:
                 raise RuntimeError('Received unknown command `{0}`. Must '
                     'be one of {`reset`, `step`, `seed`, `close`, '
@@ -168,8 +172,11 @@ def _custom_worker(index, env_fn, pipe, parent_pipe, shared_memory, error_queue)
                 assert callable(data)
                 function = data
                 results = function(env)
+                
                 pipe.send((results, True))
-            
+            elif command == Commands.render:
+                pipe.send(env.render(mode="rgb_array"))
+
             else:
                 raise RuntimeError('Received unknown command `{0}`. Must '
                     'be one of {`reset`, `step`, `seed`, `close`, '

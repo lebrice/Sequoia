@@ -1,6 +1,7 @@
+import time
 from functools import partial
 from multiprocessing import cpu_count
-from typing import Optional
+from typing import Callable, List, Optional
 
 import gym
 import numpy as np
@@ -8,11 +9,9 @@ import pytest
 
 from .batched_vector_env import BatchedVectorEnv
 
-N_CPUS = cpu_count()
 
-
-@pytest.mark.parametrize("batch_size", [1, 5, N_CPUS, 11, 24])
-@pytest.mark.parametrize("n_workers", [1, 3, N_CPUS])
+@pytest.mark.parametrize("batch_size", [1, 5, 11, 24])
+@pytest.mark.parametrize("n_workers", [1, 3, None])
 def test_right_shapes(batch_size: int, n_workers: Optional[int]):
     env_fn = partial(gym.make, "CartPole-v0")
     env_fns = [env_fn for _ in range(batch_size)]
@@ -39,7 +38,7 @@ def test_right_shapes(batch_size: int, n_workers: Optional[int]):
 from conftest import DummyEnvironment
 
 
-@pytest.mark.parametrize("batch_size", [1, 2, 5, N_CPUS, 10, 24])
+@pytest.mark.parametrize("batch_size", [1, 2, 5, 10, 24])
 def test_ordering_of_env_fns_preserved(batch_size):
     """ Test that the order of the env_fns is also reproduced in the order of
     the observations, and that the actions are sent to the right environments.
@@ -113,11 +112,75 @@ def test_done_reset_behaviour():
     env.close()
 
 
-def test_render():
+def test_render_rgb_array():
     batch_size = 4
     env = BatchedVectorEnv([
         partial(gym.make, "CartPole-v0") for i in range(batch_size)
     ])
     env.reset()
     obs = env.render(mode="rgb_array")
-    assert False, obs.shape
+    assert obs.shape == (batch_size, 400, 600, 3)
+    env.close()
+
+
+def test_render_human():
+    batch_size = 4
+    env = BatchedVectorEnv([
+        partial(gym.make, "CartPole-v0") for i in range(batch_size)
+    ])
+    env.reset()
+    with env:
+        for i in range(100):
+            actions = env.action_space.sample()
+            obs, reward, done, info = env.step(actions)
+            env.render(mode="human")
+            env.viewer.window
+
+
+def test_with_pixelobservationwrapper_before_batch():
+    """ Test out what happens if we put the PixelObservationWrapper before the 
+    batching, i.e. in each of the environments.
+    """
+    batch_size = 32
+    n_steps = 100
+    n_workers = None
+    
+    from ..pixel_observation import PixelObservationWrapper
+    
+    def make_env():
+        return PixelObservationWrapper(gym.make("CartPole-v0"))
+    setup_time, time_per_step = benchmark(batch_size, n_workers, make_env)
+    print(f"Setup time: {setup_time}, time_per_step: {time_per_step}")
+    
+
+
+def benchmark(batch_size: int,
+              n_workers: int,
+              env_fn: Callable,
+              wrappers: List[Callable]=None,
+              n_steps: int = 100):
+    batch_size = 32
+    n_steps = 100
+    n_workers = None
+    
+    start_time = time.time()
+    env = BatchedVectorEnv([env_fn for i in range(batch_size)],
+                           n_workers=n_workers)
+
+    wrappers = wrappers or []
+    for wrapper in wrappers:
+        env = wrapper(env)
+    
+    setup_time = time.time() - start_time
+
+    run_start = time.time()
+    env.reset()
+    with env:
+        for i in range(n_steps):
+            actions = env.action_space.sample()
+            obs, reward, done, info = env.step(actions)
+            # env.render(mode="human")
+            
+    time_per_step = (time.time() - run_start) / n_steps
+    return setup_time, time_per_step
+

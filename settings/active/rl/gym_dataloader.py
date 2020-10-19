@@ -30,18 +30,18 @@ from gym import Env, Wrapper, spaces
 from gym.vector import VectorEnv
 from torch import Tensor
 
-from common.gym_wrappers import AsyncVectorEnv, EnvDataset
+from common.batch import Batch
+from common.gym_wrappers.utils import StepResult
+from common.gym_wrappers import AsyncVectorEnv
 from common.gym_wrappers.utils import has_wrapper
 from settings.active.active_dataloader import ActiveDataLoader
 from utils.logging_utils import get_logger
 
 from .make_env import make_batched_env
-from common.batch import Batch
 
 logger = get_logger(__file__)
 T = TypeVar("T")
 
-from common.gym_wrappers.env_dataset import StepResult
 from settings.base.environment import Observations, Actions, Rewards
 
 

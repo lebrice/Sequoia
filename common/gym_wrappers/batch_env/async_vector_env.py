@@ -22,7 +22,7 @@ from utils.logging_utils import get_logger
 
 from .worker import (CloudpickleWrapper, Commands, _custom_worker,
                      _custom_worker_shared_memory)
-
+import os; os.environ['MKL_THREADING_LAYER'] = 'GNU'
 logger = get_logger(__file__)
 T = TypeVar("T")
 
@@ -48,19 +48,11 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
                 # context = "fork"
                 # context = "spawn"
                 # NOTE: For now 'forkserver`, seems to have resolved the bug
-                # above for now:
-                # from ..utils import has_wrapper
-                # from ..pixel_observation import PixelObservationWrapper
-                # from gym.vector.sync_vector_env import SyncVectorEnv
-                # temp_env = env_fns[0]()
-                # is_pixel_obs = False
-                # if isinstance(temp_env, SyncVectorEnv):
-                #     is_pixel_obs = has_wrapper(temp_env.envs[0], PixelObservationWrapper)
-                # else:
-                #     is_pixel_obs = has_wrapper(temp_env, PixelObservationWrapper)
-                # temp_env.close()
-                # del temp_env
+                # above for now, but is still super slow compared to fork.
+                # If we you don't intend to ever call 'render' on the env, then
+                # you should *definitely* be using 'fork'. 
                 context = "forkserver"
+                # context = "fork"
             else:
                 logger.warning(RuntimeWarning(
                     f"Using the 'spawn' multiprocessing context since we're on "
@@ -95,6 +87,19 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
 
     def __len__(self) -> int:
         return self.num_envs
+
+    def render(self, mode: str = "rgb_array") -> np.ndarray:
+        if mode != "rgb_array":
+            raise NotImplementedError
+        self._assert_is_running()
+        for pipe in self.parent_pipes:
+            pipe.send(('render', None))
+        return np.stack([pipe.recv() for pipe in self.parent_pipes])
+        # NOTE: @lebrice This used to be working, and would have been an example
+        # use-case for all the fancy stuff written below, which I should
+        # probably remove at some point if we don't end up needing access to the
+        # envs. 
+        return np.asarray(self[:].render(mode="rgb_array"))
 
     @overload
     def apply(self, functions: Callable[[Env], T]) -> List[T]:
@@ -193,13 +198,8 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
             # If we wanted a proxy for a single item, then we return a
             # single result, instead of a list with one item.
             return results[index]
-        
         return [result for i, result in enumerate(results) if i in indices]
 
-    def render(self, mode: str = "rgb_array") -> np.ndarray:
-        if mode != "rgb_array":
-            raise NotImplementedError
-        return np.asarray(self[:].render(mode="rgb_array"))
 
     def __getattr__(self, name: str):
         logger.debug(f"Attempting to get missing attribute {name}.")

@@ -36,6 +36,6 @@ class SyncVectorEnv(SyncVectorEnv_):
 
 
     def render(self, mode: str = "rgb_array"):
-        images = []
-        images.extend(env.render(mode=mode) for env in self.envs)
-        return np.stack(images)
+        if mode != "rgb_array":
+            raise NotImplementedError("TODO: maybe display a grid?")
+        return np.stack([env.render(mode=mode) for env in self.envs])

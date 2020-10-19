@@ -24,20 +24,20 @@ class BatchedMethod(List[Callable]):
         super().__init__(*args)
         # self.method_name: str = method_name
         self.apply_methods_fn = apply_methods_fn
-    
+
     @property
     def method_name(self) -> str:
         return self[0].__name__ if len(self) > 1 else None
 
     def __call__(self, *args, split_args: bool = False, **kwargs):
-        print(f"args: {args}, kwargs: {kwargs}")
+        logger.debug(f"method name {self.method_name}, args: {args}, kwargs: {kwargs}")
         if not self.method_name:
             return []
         if self.apply_methods_fn:
             results = self.apply_methods_fn(methodcaller(self.method_name, *args, **kwargs))
         else:
             results = [method(*args, **kwargs) for method in self]
-        logger.debug(f"Results: {results}")
+        logger.debug(f"Type of Results: {[type(result) for result in results]}")
         if isinstance(results, list) and all(map(ismethod, results)):
             logger.debug("Recurse?! :DD")
             # TODO: Need to get the method name from `self`..

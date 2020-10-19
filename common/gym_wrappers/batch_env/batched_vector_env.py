@@ -103,7 +103,7 @@ class BatchedVectorEnv(VectorEnv):
         ]
         env_a_fns = chunk_env_fns[:self.start_index_b]
         env_b_fns = chunk_env_fns[self.start_index_b:]
-        
+
         # Create the AsyncVectorEnvs.
         self.env_a = AsyncVectorEnv(env_fns=env_a_fns, **kwargs)
         self.env_b: Optional[AsyncVectorEnv] = None
@@ -125,19 +125,29 @@ class BatchedVectorEnv(VectorEnv):
         return unchunk(obs_a)
 
     def render(self, mode: str = "rgb_array"):
-        images_a: List[np.ndarray] = self.env_a.render(mode="rgb_array")
-        images_list: List[np.ndarray] = unchunk(images_a)
+        images_a: np.ndarray = self.env_a.render(mode="rgb_array")
+        images_a = np.asarray(unchunk(images_a))
         if self.env_b:
-            images_b = self.env_b[:].render(mode="rgb_array")
-            images_list.extend(unchunk(images_b))
-        image_batch = np.array(images_list)
+            images_b = self.env_b.render(mode="rgb_array")
+            images_b = np.asarray(unchunk(images_b))
+            image_batch = np.concatenate([images_a, images_b])
+        else:
+            image_batch = images_a
+        
         if mode == "rgb_array":
             return image_batch
-        elif mode == "human":
+        
+        if mode == "human":
             tiled_version = tile_images(image_batch)
-            assert False, tiled_version.shape
+            if self.viewer is None:
+                from gym.envs.classic_control import rendering
+                self.viewer = rendering.SimpleImageViewer()
+            self.viewer.imshow(tiled_version)
+            return self.viewer.isopen
+        
+        raise NotImplementedError(f"Unsupported mode {mode}")
 
-    def step_async(self, action: Sequence):
+    def step_async(self, action: Sequence) -> None:
         if self.env_b:
             flat_actions_a, flat_actions_b = action[:self.n_a], action[self.n_a:]
             actions_a = chunk(flat_actions_a, self.chunk_length_a)
@@ -181,13 +191,12 @@ class BatchedVectorEnv(VectorEnv):
         if self.env_b:
             self.env_b.seed(seeds_b)       
 
-
     def close_extras(self, **kwargs):
         r"""Clean up the extra resources e.g. beyond what's in this base class. """
         self.env_a.close_extras(**kwargs)
         if self.env_b:
             self.env_b.close_extras(**kwargs)
-
+        
 
 
 def distribute(values: Sequence[T], n_groups: int) -> List[Sequence[T]]:
