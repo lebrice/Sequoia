@@ -22,19 +22,20 @@ from utils.utils import dict_union
 
 from .rl_results import RLResults
 from .make_env import make_batched_env
-        
+
+       
 logger = get_logger(__file__)
 
 
 task_params: Dict[Union[Type[gym.Env], str], List[str]] = {
-    "CartPole-v0": {
+    "CartPole-v0": [
         "gravity", #: 9.8,
         "masscart", #: 1.0,
         "masspole", #: 0.1,
         "length", #: 0.5,
         "force_mag", #: 10.0,
         "tau", #: 0.02,
-    },
+    ],
     # TODO: Add more of the classic control envs here.
     # TODO: Need to get the attributes to modify in each environment type and
     # add them here.
@@ -147,7 +148,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         batch_size = kwargs["batch_size"]
 
         env = self.make_env(batch_size, wrappers=self.train_wrappers())
-        
+
         # TODO: Create a dataset from the env using EnvDataset (needs cleanup)
         from common.gym_wrappers.env_dataset import EnvDataset
         dataset = EnvDataset(env)
@@ -155,19 +156,26 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # TODO: Create a GymDataLoader for the EnvDataset (needs cleanup)
         from .gym_dataloader import GymDataLoader
         dataloader = GymDataLoader(dataset)
-        
+
         self.train_env = dataloader
         return self.train_env
 
     def train_wrappers(self) -> List[Callable]:
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised?
-        return [
+        wrappers = []
+        # TODO: When using something like CartPole or Pendulum, we'd need to add
+        # a PixelObservations wrapper.
+        if self.env_name.startswith("CartPole"):
+            from common.gym_wrappers.pixel_observation import PixelObservationWrapper
+            wrappers.append(PixelObservationWrapper)
+        wrappers.extend([
             # Apply the image transforms to the env.
             partial(TransformObservation, f=self.train_transforms),
             # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
             partial(SmoothTransitions, task_schedule=self.train_task_schedule),
-        ]
+        ])
+        return wrappers
 
     def val_dataloader(self, *args, **kwargs):
         if not self.has_prepared_data:
@@ -176,16 +184,33 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             self.setup("fit")
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         batch_size = kwargs["batch_size"]
-        self.val_env = self.make_env(batch_size, wrappers=self.val_wrappers())
+        env = self.make_env(batch_size, wrappers=self.val_wrappers())
+
+        # Create a dataset from the env using EnvDataset (needs cleanup)
+        from common.gym_wrappers.env_dataset import EnvDataset
+        dataset = EnvDataset(env)
+                
+        # Create a GymDataLoader for the EnvDataset (needs cleanup)
+        from .gym_dataloader import GymDataLoader
+        dataloader = GymDataLoader(dataset)
+
+        self.val_env = dataloader
         return self.val_env
 
     def val_wrappers(self) -> List[Callable]:
-        # Apply the image transforms to the env.
-        # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
-        return [
+        wrappers = []
+        # When using something like CartPole, we'd need to add a
+        # PixelObservations wrapper.
+        if self.env_name.startswith("CartPole"):
+            from common.gym_wrappers.pixel_observation import PixelObservationWrapper
+            wrappers.append(PixelObservationWrapper)
+        wrappers.extend([
+            # Apply the image transforms to the env.
             partial(TransformObservation, f=self.val_transforms),
-            partial(SmoothTransitions, task_schedule=self.valid_task_schedule),
-        ]
+            # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
+            partial(SmoothTransitions, task_schedule=self.val_task_schedule),
+        ])
+        return wrappers
 
     def test_dataloader(self, *args, **kwargs):
         if not self.has_prepared_data:
@@ -194,8 +219,19 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             self.setup("test")
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         batch_size = kwargs["batch_size"]
-        self.test_env = self.make_env(batch_size, wrappers=self.test_wrappers())
+        env = self.make_env(batch_size, wrappers=self.test_wrappers())
+        
+        # Create a dataset from the env using EnvDataset (needs cleanup)
+        from common.gym_wrappers.env_dataset import EnvDataset
+        dataset = EnvDataset(env)
+                
+        # Create a GymDataLoader for the EnvDataset (needs cleanup)
+        from .gym_dataloader import GymDataLoader
+        dataloader = GymDataLoader(dataset)
+
+        self.test_env = dataloader
         return self.test_env
+
 
     def test_wrappers(self) -> List[Callable]:
         # Apply the image transforms to the env.

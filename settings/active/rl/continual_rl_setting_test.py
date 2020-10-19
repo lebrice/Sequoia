@@ -39,14 +39,17 @@ def test_basic(config: Config):
 @pytest.mark.parametrize("batch_size", [1, 3])
 @pytest.mark.parametrize(
     "dataset, expected_obs_shape", [
-        ("CartPole-v0",  (4,)),
+        ("CartPole-v0",  (400, 600, 3)),
     ],
 )
-def test_observe_state_directly(dataset: str,
+def test_check_iterate_and_step(dataset: str,
                                 expected_obs_shape: Tuple[int, ...],
                                 batch_size: int):
+    """ Test that the observations are of the right type and shape, regardless
+    of wether we iterate on the env by calling 'step' or by using it as a
+    DataLoader.
+    """
     setting = ContinualRLSetting(dataset=dataset)
-    assert setting.obs_shape == expected_obs_shape
     
     expected_obs_batch_shape = (batch_size, *expected_obs_shape)
 
@@ -58,14 +61,19 @@ def test_observe_state_directly(dataset: str,
     ]
     for dataloader_method in dataloader_methods:
         dataloader = dataloader_method(batch_size=batch_size)
+        
         reset_obs = dataloader.reset()
+        assert isinstance(reset_obs, ContinualRLSetting.Observations)
+        assert reset_obs.x.shape == expected_obs_batch_shape
         
-        assert reset_obs.shape == expected_obs_batch_shape
         step_obs, *_ = dataloader.step(dataloader.random_actions())
-        assert step_obs.shape == expected_obs_batch_shape
+        assert isinstance(step_obs, ContinualRLSetting.Observations)
+        assert step_obs.x.shape == expected_obs_batch_shape
         
-        for iter_obs, *_ in take(dataloader, 3):
-            assert iter_obs.shape == expected_obs_batch_shape 
+        # TODO: this is still not the right type
+        for (iter_obs, _) in take(dataloader, 3):
+            assert isinstance(iter_obs, ContinualRLSetting.Observations)
+            assert iter_obs.shape == expected_obs_batch_shape
             reward = dataloader.send(dataloader.random_actions())
 
 
