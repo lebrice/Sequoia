@@ -1,34 +1,50 @@
-from collections import OrderedDict
-from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable, ClassVar, Dict, List, Sequence, Tuple, Union, Optional, Type
+from typing import ClassVar, Dict, List, Type, Callable, Union
 
 import gym
 import numpy as np
-import torch
-from gym import Env, Wrapper, spaces
-from simple_parsing import choice, list_field, mutable_field
+from gym import spaces
+from gym.envs.classic_control import CartPoleEnv
+from gym.envs.atari import AtariEnv
+from simple_parsing import choice
 from torch import Tensor
 
-from common.gym_wrappers import (MultiTaskEnvironment, PixelObservationWrapper,
-                                 SmoothTransitions, TransformObservation,
-                                 has_wrapper)
-from common.gym_wrappers.env_dataset import StepResult
-from common.config import Config
-from common.transforms import ChannelsFirstIfNeeded, Compose, Transforms
-from common.metrics import Metrics, RegressionMetrics
-from utils import dict_union, get_logger, flag
-
-from ..active_setting import ActiveSetting
-from .gym_dataloader import GymDataLoader
-from common.gym_wrappers import MultiTaskEnvironment, SmoothTransitions
-
+from common import Batch
+from common.gym_wrappers import (SmoothTransitions, TransformAction,
+                                 TransformObservation, TransformReward)
+from common.gym_wrappers.batch_env import BatchedVectorEnv
+from utils.logging_utils import get_logger
+from settings.active import ActiveSetting
 from settings.assumptions.incremental import IncrementalSetting
-from settings.base import Method, Observations, Rewards, Actions, Results
-logger = get_logger(__file__)
+from settings.base.results import Results
+from utils.utils import dict_union
 
 from .rl_results import RLResults
+from .make_env import make_batched_env
+        
+logger = get_logger(__file__)
+
+
+task_params: Dict[Union[Type[gym.Env], str], List[str]] = {
+    "CartPole-v0": {
+        "gravity", #: 9.8,
+        "masscart", #: 1.0,
+        "masspole", #: 0.1,
+        "length", #: 0.5,
+        "force_mag", #: 10.0,
+        "tau", #: 0.02,
+    },
+    # TODO: Add more of the classic control envs here.
+    # TODO: Need to get the attributes to modify in each environment type and
+    # add them here.
+    AtariEnv: [
+        # TODO: Maybe have something like the difficulty as the CL 'task' ?
+        # difficulties = temp_env.ale.getAvailableDifficulties()
+        # "game_difficulty",
+    ],      
+}
+
 
 @dataclass
 class ContinualRLSetting(ActiveSetting, IncrementalSetting):
@@ -41,347 +57,177 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     the environment.
     """
     Results: ClassVar[Type[Results]] = RLResults
-    def __new__(cls, *args, **kwargs):
-        return super().__new__(cls, *args, **kwargs)
+    
     @dataclass(frozen=True)
     class Observations(IncrementalSetting.Observations,
                        ActiveSetting.Observations):
-        """ Observations in an RL Setting. """
+        """ Observations in a continual RL Setting. """
         # Just as a reminder, these are the fields defined in the base classes:
         # x: Tensor
         # task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
-        
-        @classmethod
-        def from_inputs(cls, inputs: Tuple[Tensor, bool, Dict]):
-            """ We customize this class method for the RL setting. """
-            if isinstance(inputs, (list, tuple)) and len(inputs) == 3:
-                obs, done, info = inputs
-                x = obs
-                task_labels = None
-                # TODO: Add an "Observations transform" which adds the task labels
-                # to the observations.
-                return cls(x=x, task_labels=task_labels)
-            return super().from_inputs(inputs)
 
     available_datasets: ClassVar[Dict[str, str]] = {
-        "cartpole": "CartPole-v0"
+        "breakout": "Breakout-v0",
+        "duckietown": "Duckietown-straight_road-v0"
     }
     # Which environment to learn on.
-    dataset: str = choice(available_datasets, default="cartpole")
-    
-    # Wether we observe the internal state (angle of joints, etc) or get a pixel
-    # input instead (harder).
-    # TODO: Setting this to True for the moment.
-    # BUG: Seems like the image isn't changing very much over time! Need to test
-    # this in the PixelObservationWrapper.
-    observe_state_directly: bool = flag(default=True)
-    
+    dataset: str = choice(available_datasets, default="breakout")
     # Max number of steps ("length" of the training and test "datasets").
     max_steps: int = 10_000
     # Number of steps per task.
     steps_per_task: int = 5_000
-
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
 
-    # Set of default transforms. Not parsed through the command-line, since it's
-    # marked as a class variable.
-    default_transforms: ClassVar[List[Transforms]] = [
-        Transforms.to_tensor,
-        Transforms.channels_first_if_needed,
-    ]
-
-    # Transforms used for all of train/val/test.
-    # We use the channels_first transform when viewing the state as pixels.
-    # BUG: @lebrice Added this image copy because I'm getting some weird bugs
-    # because of negative strides.
-    transforms: List[Transforms] = list_field(ChannelsFirstIfNeeded())
-
-    def __post_init__(self):
-        self.task_schedule: Dict[int, Dict[str, float]] = OrderedDict()
-        # TODO: Test out using the `Compose` as the type annotation above. If it
-        # works and still allows us to parse the transforms from command line,
-        # then we wouldn't need to do this here.
-        logger.debug(f"self.transforms (before compose): {self.transforms}")
-        self.transforms: Compose = Compose(self.transforms)
-        logger.debug(f"self.transforms (after compose): {self.transforms}")
-
+    def __post_init__(self, *args, **kwargs):
+        super().__post_init__(*args, **kwargs)
+          
+        # Set the number of tasks depending on the increment, and vice-versa.
+        # (as only one of the two should be used).
         if self.nb_tasks == 0:
             self.nb_tasks = self.max_steps // self.steps_per_task
-        # TODO: There is this design problem here, where we "need" to inform
-        # the parent of the shape of our observations, actions, and rewards,
-        # but in order to create a temporary environment, we need access to
-        # some things that are usually set in the parent (like the transforms).
-        # Update: Currently side-stepping this issue, by creating a 'temp' env
-        # using as little state as possible (only the env name, the )
-        temp_env = ContinualRLSetting.create_temp_env(
-            env_name=self.env_name,
-            observe_pixels=(not self.observe_state_directly),
-            image_transforms=self.transforms,
-        )
-        temp_env.reset()
+        else:
+            self.steps_per_task = int(self.max_steps / self.nb_tasks)
         
-        observation_space = spaces.Tuple([
-            temp_env.observation_space,
-            spaces.Discrete(self.nb_tasks),
+        self.train_task_schedule: Dict[int, Dict] = {}
+        self.valid_task_schedule: Dict[int, Dict] = {}
+        self.test_task_schedule: Dict[int, Dict] = {}
+
+        temp_env = gym.make(self.env_name)
+        # Apply the image transforms to the env.
+        temp_env = TransformObservation(temp_env, f=self.train_transforms)
+        # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
+        cl_task_params = task_params.get(type(temp_env.unwrapped), [])
+        temp_env = SmoothTransitions(temp_env, task_params=cl_task_params)
+
+        # Start with the default task, and then add a new task boundary at
+        # intervals of self.steps_per_task
+        for task_step in range(self.steps_per_task, self.max_steps):
+            self.train_task_schedule[task_step] = temp_env.random_task()
+        # For now, set the validation and test tasks as the same sequence as the
+        # train tasks.
+        self.valid_task_schedule = self.train_task_schedule.copy() 
+        self.test_task_schedule = self.train_task_schedule.copy()
+        
+        # Set the spaces using the temp env.
+        # TODO: Should we add the task labels in the MultiTaskEnv wrapper?
+        self.observation_space = spaces.Tuple([
+            temp_env.observation_space, # images
+            spaces.Discrete(self.nb_tasks), # task labels.
         ])
-        # TODO: We could probably add the 'next state' in the action space! 
-        action_space = temp_env.action_space
-        reward_space = getattr(temp_env, "reward_space", None)
-        if reward_space is None:
-            # The reward is always a scalar in gym environments, as far as I can
-            # tell.
-            reward_range = temp_env.reward_range
-            reward_space = spaces.Box(low=reward_range[0], high=reward_range[1], shape=())
-        
-        logger.debug(f"Observation space: {observation_space}")
-        logger.debug(f"Action space: {action_space}")
-        logger.debug(f"Reward space: {reward_space}")
-
-        super().__post_init__(
-            observation_space=observation_space,
-            action_space=action_space,
-            reward_space=reward_space,
-        )
-        # Create a task schedule. This uses the temp env just to get the
-        # properties that can be set for each task.
-        self.task_schedule = self.create_task_schedule_for_env(temp_env)
-
-        # close the temporary environment, as we're done using it.
+        self.action_space = temp_env.action_space
+        self.reward_range = temp_env.reward_range
+        self.reward_space = getattr(temp_env, "reward_space",
+                                    spaces.Box(low=self.reward_range[0],
+                                               high=self.reward_range[1],
+                                               shape=()))
         temp_env.close()
-        # TODO: Do we also need to delete it? Would that mess up the
-        # observation_space or action_space variables?
-        # del temp_env
+        del temp_env
+        
+    @property
+    def env_name(self) -> str:
+        if self.dataset in self.available_datasets.values():
+            return self.dataset
+        if self.dataset in self.available_datasets.keys():
+            return self.available_datasets[self.dataset]
+        return self.dataset                        
 
-        # NOTE: Here we could use a different task schedule during testing than
-        # during training, if we wanted to! However for now we will use the same
-        # tasks for training, validation and for testing.
-        self.train_task_schedule = deepcopy(self.task_schedule)
-        self.val_task_schedule = deepcopy(self.task_schedule)
-        self.test_task_schedule = deepcopy(self.task_schedule)
+    def setup(self, stage=None):
+        return super().setup(stage=stage)
 
-        # These will be created when the `[train/val/test]_dataloader` methods
-        # get called. We add them here just for type-hinting purposes.
-        self.train_env: GymDataLoader = None
-        self.val_env: GymDataLoader = None
-        self.test_env: GymDataLoader = None
+    def prepare_data(self, *args, **kwargs):
+        return super().prepare_data(*args, **kwargs)
 
-    def apply(self, method: Method, config: Config):
-        self.config = config
-        method.config = config
-        method.configure(self)
-        self.configure(method)
-        self.train_loop(method)
-        results = self.test_loop(method)
-        # method.validate_results(self, results)
-        return results
-  
-    def train_dataloader(self, *args, **kwargs) -> GymDataLoader[Observations, Actions, Rewards]:
+    def train_dataloader(self, *args, **kwargs):
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_fit:
             self.setup("fit")
-        
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        # Get the train wrappers.
-        wrappers = self.train_wrappers()
-        if self.train_env:
-            self.train_env.close()
-            del self.train_env
-        self.train_env = self.make_env_dataloader(wrappers, *args, **kwargs)
-        # Update the observation/action/reward spaces to actually reflet that of
-        # the dataloader.
-        self.observation_space = self.train_env.observation_space[0]
-        self.action_space = self.train_env.action_space[0]
-        self.reward_space = self.train_env.reward_space[0]
+        batch_size = kwargs["batch_size"]
+
+        env = self.make_env(batch_size, wrappers=self.train_wrappers())
+        
+        # TODO: Create a dataset from the env using EnvDataset (needs cleanup)
+        from common.gym_wrappers.env_dataset import EnvDataset
+        dataset = EnvDataset(env)
+        
+        # TODO: Create a GymDataLoader for the EnvDataset (needs cleanup)
+        from .gym_dataloader import GymDataLoader
+        dataloader = GymDataLoader(dataset)
+        
+        self.train_env = dataloader
         return self.train_env
 
-    def val_dataloader(self, *args, **kwargs) -> GymDataLoader[Observations, Actions, Rewards]:
+    def train_wrappers(self) -> List[Callable]:
+        # TODO: Add some kind of Wrapper around the dataset to make it
+        # semi-supervised?
+        return [
+            # Apply the image transforms to the env.
+            partial(TransformObservation, f=self.train_transforms),
+            # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
+            partial(SmoothTransitions, task_schedule=self.train_task_schedule),
+        ]
+
+    def val_dataloader(self, *args, **kwargs):
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_fit:
             self.setup("fit")
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        wrappers = self.val_wrappers()
-        if self.val_env:
-            self.val_env.close()
-            del self.val_env
-        self.val_env = self.make_env_dataloader(wrappers, *args, **kwargs)
+        batch_size = kwargs["batch_size"]
+        self.val_env = self.make_env(batch_size, wrappers=self.val_wrappers())
         return self.val_env
-        
-    def test_dataloader(self, *args, **kwargs) -> GymDataLoader[Observations, Actions, Rewards]:
+
+    def val_wrappers(self) -> List[Callable]:
+        # Apply the image transforms to the env.
+        # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
+        return [
+            partial(TransformObservation, f=self.val_transforms),
+            partial(SmoothTransitions, task_schedule=self.valid_task_schedule),
+        ]
+
+    def test_dataloader(self, *args, **kwargs):
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_test:
             self.setup("test")
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        wrappers = self.test_wrappers()
-        if self.test_env:
-            self.test_env.close()
-            del self.test_env
-        self.test_env = self.make_env_dataloader(wrappers, *args, **kwargs)
+        batch_size = kwargs["batch_size"]
+        self.test_env = self.make_env(batch_size, wrappers=self.test_wrappers())
         return self.test_env
 
-    def make_env_dataloader(self, wrappers, *args, **kwargs):
-        max_steps = self.max_steps
-        env: GymDataLoader = GymDataLoader(
-            env=self.env_name,
-            pre_batch_wrappers=wrappers,
-            max_steps=max_steps,
-            # TODO: Having a lot of trouble trying to get the GymDataLoader to
-            # return Observations objects..
-            # use_multiprocessing=False,
-            observations_type=self.Observations,
-            **kwargs,
+    def test_wrappers(self) -> List[Callable]:
+        # Apply the image transforms to the env.
+        # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
+        return [
+            partial(TransformObservation, f=self.test_transforms),
+            partial(SmoothTransitions, task_schedule=self.test_task_schedule),
+        ]
+    
+    def make_env(self, batch_size: int, wrappers: List[Callable]=None) -> BatchedVectorEnv:
+        env = make_batched_env(
+            self.env_name,
+            batch_size=batch_size,
+            wrappers=wrappers,
         )
+        # Add wrappers that convert to Observations/Rewards
+        # and from Actions objects to npdarray/tensors.
+        env = TransformObservation(env, f=self.Observations)
+        env = TransformReward(env, f=self.Rewards)
+        env = TransformAction(env, f=self.convert_action_to_ndarray)
         return env
-        
     
-
-    def create_task_schedule_for_env(self, env: MultiTaskEnvironment) -> Dict[int, Dict[str, float]]:
-        """Create a task schedule for the given environment.
-
-        A 'Task', in this case, consists in a dictionary mapping from attribute
-        names to values to be set at a given step.
-
-        The task schedule is then a dict, mapping from steps to the
-        corresponding attributes to be set and their values.
-
-        Args:
-            env (MultiTaskEnvironment, optional): The environment whose
-            `random_task()` method will be used to create a task schedule.
-            Defaults to None, in which case we construct a temporary
-            environment.
-
-        Returns:
-            Dict[int, Dict[str, Any]: A task schedule (a dict mapping from
-            step to attributes to be set on the wrapped environment).
-        """
-        if not has_wrapper(env, MultiTaskEnvironment):
-            # We basically just want to get access to the `random_task()` method
-            # of a `MultiTaskEnvironment` wrapper for the chosen environment.
-            env = MultiTaskEnvironment(env)
-
-        task_schedule: Dict[int, Dict[str, float]] = OrderedDict()
-        # TODO: Do we start off with the usual, normal task?
-        for step in range(0, self.max_steps, self.steps_per_task):
-            task = env.random_task()
-            logger.debug(f"Task at step={step}: {task}")
-            task_schedule[step] = task
-        return task_schedule
     
-    def create_gym_env(self):
-        env = gym.make(self.env_name)
-        for wrapper in self.env_wrappers():
-            env = wrapper(env)
-        return env
-
-    @staticmethod
-    def create_temp_env(env_name: str,
-                        observe_pixels: bool,
-                        image_transforms: List[Callable] = None,
-                        other_wrappers: List[Callable] = None):
-        """
-        IDEA: To try and solve the problem above (requiring the observation
-        space, action space and reward shape before super().__post_init__()),
-        we could have this method be different than the create_gym_env, since
-        this one would only create a minimal environment which would have the 
-        bare minimum wrappers needed to determine the shapes, and so it wouldn't
-        depend on as many properties being set on `self`.
-
-        NOTE: The image transforms are only added if `observe_pixels` is True.
-
-        NOTE: Making this a static method just to highlight the intention that
-        this method should depend on as few parameters as possible. Not
-        allowing the `self` argument helps for that.
-        """
-        env = gym.make(env_name)
-        if observe_pixels:
-            env = PixelObservationWrapper(env)
-            if image_transforms:
-                env = TransformObservation(env, Compose(image_transforms))
-        other_wrappers = other_wrappers or []
-        return env
-
-
-    @property
-    def env_name(self) -> str:
-        """Formatted name of the dataset/environment to be passed to `gym.make`.
-        """
-        if self.dataset in self.available_datasets:
-            return self.available_datasets[self.dataset]
-        elif self.dataset in self.available_datasets.values():
-            return self.dataset
-        else:
-            logger.warning(UserWarning(
-                f"dataset {self.dataset} isn't supported atm! This will try to "
-                f"use it nonetheless, but you do this at your own risk!"
-            ))
-            return self.dataset
-
-    def env_wrappers(self) -> List[Union[Callable, Tuple[Callable, Dict]]]:
-        wrappers = []
-        if not self.observe_state_directly:
-            wrappers.append(PixelObservationWrapper)
-        if self.smooth_task_boundaries:
-            wrappers.append(partial(SmoothTransitions, task_schedule=self.task_schedule))
-        else:
-            wrappers.append(partial(MultiTaskEnvironment, task_schedule=self.task_schedule))
-        return wrappers
-
-    # TODO: Could overwrite those to use different wrappers for train/val/test.
-    def train_wrappers(self)-> List[Union[Callable, Tuple[Callable, Dict]]]:
-        wrappers = self.env_wrappers()
-        if not self.observe_state_directly:
-            wrappers.append(partial(TransformObservation, f=self.train_transforms))
-        return wrappers
-
-    def val_wrappers(self) -> List[Union[Callable, Tuple[Callable, Dict]]]:
-        wrappers = self.env_wrappers()
-        if not self.observe_state_directly:
-            wrappers.append(partial(TransformObservation, f=self.test_transforms))
-        return wrappers
-
-    def test_wrappers(self) -> List[Union[Callable, Tuple[Callable, Dict]]]:
-        wrappers = self.env_wrappers()
-        if not self.observe_state_directly:
-            wrappers.append(partial(TransformObservation, f=self.test_transforms))
-        return wrappers
-
-    def get_metrics(self,
-                    actions: Actions,
-                    rewards: Rewards) -> Union[float, Metrics]:
-        # We customize this here so that the 'Metrics' is the right kind.
-        # actions = self.Actions.from_inputs(actions)
-        # rewards = self.Rewards.from_inputs(rewards)
-        # The metrics here is the mean reward. We do this with:
-        return rewards.mean()
-        return RegressionMetrics(mse=rewards.mean())
-        assert False, (actions, rewards)
-
-    def _check_dataloaders_give_correct_types(self):
-        """ Do a quick check to make sure that the dataloaders give back the
-        right observations / reward types.
-        """
-        return
-        # TODO: This method is duplicated in a few places just for debugging atm:
-        # (ClassIncrementalSetting, Setting, and here).
-        for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
-            env = loader_method()
-            state = env.reset()
-            from settings.passive import PassiveEnvironment
-            from settings.active import ActiveEnvironment
-            from utils.utils import take
-            
-            # This works fine:
-            for i in range(5):
-                obs, reward, done, info = env.step(env.action_space.sample())
-                assert isinstance(obs, self.Observations)
-                assert isinstance(reward, self.Rewards)
-
-            # TODO: Check the interaction when using the env as a dataloader!
-            
-            env.close()
+    def convert_action_to_ndarray(self, action: Union["ContinualRLSetting.Actions", Tensor, np.ndarray]) -> np.ndarray:
+        if isinstance(action, Batch):
+            action = action[0]
+        if isinstance(action, Tensor):
+            action = action.cpu().numpy()
+        if isinstance(self.action_space, spaces.Tuple):
+            if isinstance(action, np.ndarray):
+                action = action.tolist()
+        return action
 
 if __name__ == "__main__":
     ContinualRLSetting.main()

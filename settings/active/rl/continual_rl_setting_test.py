@@ -11,33 +11,41 @@ from utils.utils import take
 from .continual_rl_setting import ContinualRLSetting
 
 def test_basic(config: Config):
-    setting = ContinualRLSetting(observe_state_directly=False)
+    setting = ContinualRLSetting(dataset="breakout")
     batch_size = 4
     env = setting.train_dataloader(batch_size=batch_size)
-    
-    for observations in take(env, 5):
-        assert isinstance(observations, ContinualRLSetting.Observations)
-        assert observations.shapes == ((4, 400, 1200, 3), (4))
+    observations = env.reset()
+
+    for i in range(5):
         actions = env.action_space.sample()
-        rewards = env.send(actions)
-        break
-    else:
-        assert False, f"Couldn't even iterate on the env!"
+        observations, rewards, done, info = env.step(actions)
+
+        assert isinstance(observations, ContinualRLSetting.Observations)
+        assert observations.x.shape == (batch_size, 210, 160, 3)
+        assert observations.task_labels is None
+
+        # TODO: Is this what we want? Could the reward or actions ever change?
+        assert isinstance(rewards, ContinualRLSetting.Rewards)
+        assert rewards.y.shape == (batch_size,)
         
+        env.render("human")
         
+        if all(done):
+            break
+    env.close()
 
 
 
 @pytest.mark.parametrize("batch_size", [1, 3])
 @pytest.mark.parametrize(
     "dataset, expected_obs_shape", [
-        ("cartpole",  (4,)),
+        ("CartPole-v0",  (4,)),
     ],
 )
 def test_observe_state_directly(dataset: str,
                                 expected_obs_shape: Tuple[int, ...],
                                 batch_size: int):
-    setting = ContinualRLSetting(dataset=dataset, observe_state_directly=True)
+    setting = ContinualRLSetting(dataset=dataset)
     assert setting.obs_shape == expected_obs_shape
     
     expected_obs_batch_shape = (batch_size, *expected_obs_shape)
@@ -51,9 +59,11 @@ def test_observe_state_directly(dataset: str,
     for dataloader_method in dataloader_methods:
         dataloader = dataloader_method(batch_size=batch_size)
         reset_obs = dataloader.reset()
+        
         assert reset_obs.shape == expected_obs_batch_shape
         step_obs, *_ = dataloader.step(dataloader.random_actions())
         assert step_obs.shape == expected_obs_batch_shape
+        
         for iter_obs, *_ in take(dataloader, 3):
             assert iter_obs.shape == expected_obs_batch_shape 
             reward = dataloader.send(dataloader.random_actions())

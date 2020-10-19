@@ -445,3 +445,7 @@ class Setting(SettingABC,
                     logger.error(f"There's a problem with the method {loader_method} (env {env})")
                     raise e
     
+    # Just to make type hinters stop throwing errors when using the constructor
+    # to create a Setting.
+    def __new__(cls, *args, **kwargs):
+        return super().__new__(cls, *args, **kwargs)
