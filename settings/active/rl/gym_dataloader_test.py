@@ -8,7 +8,7 @@ import pytest
 import torch
 
 from common.gym_wrappers import (AsyncVectorEnv, ConvertToFromTensors,
-                                 EnvDataset, PixelStateWrapper)
+                                 EnvDataset, PixelObservationWrapper)
 from common.transforms import ChannelsFirstIfNeeded
 from conftest import DummyEnvironment, xfail
 from gym import spaces
@@ -143,7 +143,7 @@ def test_batched_cartpole_state(env_name: str, batch_size: int):
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
 @pytest.mark.parametrize("batch_size", [1, 2, 5, 10])
 def test_batched_cartpole_pixels(env_name: str, batch_size: int):
-    wrappers = default_wrappers_for_env[env_name] + [PixelStateWrapper]
+    wrappers = default_wrappers_for_env[env_name] + [PixelObservationWrapper]
     env: GymDataLoader = GymDataLoader(
         env_name,
         pre_batch_wrappers=wrappers,
@@ -179,7 +179,7 @@ def test_batched_cartpole_pixels(env_name: str, batch_size: int):
 @pytest.mark.parametrize("batch_size", [1, 2, 5, 10])
 def test_channels_first_wrapper(env_name: str, batch_size: int):
     wrappers = default_wrappers_for_env[env_name] + [
-        PixelStateWrapper,
+        PixelObservationWrapper,
         partial(TransformObservation, f=ChannelsFirstIfNeeded())
     ]
     env: GymDataLoader = GymDataLoader(
@@ -218,7 +218,7 @@ def test_channels_first_wrapper(env_name: str, batch_size: int):
 @pytest.mark.parametrize("batch_size", [1, 2, 5, 10])
 def test_channels_post_batch_wrapper(env_name: str, batch_size: int):
     pre_batch_wrappers = default_wrappers_for_env[env_name] + [
-        PixelStateWrapper,
+        PixelObservationWrapper,
     ]
     post_batch_wrappers = [
         partial(TransformObservation, f=ChannelsFirstIfNeeded())

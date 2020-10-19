@@ -1,5 +1,5 @@
 """ Contains some potentially useful gym wrappers. """
-from .pixel_state import PixelStateWrapper
+from .pixel_observation import PixelObservationWrapper
 from .utils import has_wrapper
 from .multi_task_environment import MultiTaskEnvironment
 from .smooth_environment import SmoothTransitions

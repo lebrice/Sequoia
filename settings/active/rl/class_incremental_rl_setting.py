@@ -4,7 +4,7 @@ from typing import Callable, Dict, Iterable, List, Tuple
 import gym
 from pytorch_lightning import LightningModule
 
-from common.gym_wrappers import MultiTaskEnvironment, PixelStateWrapper
+from common.gym_wrappers import MultiTaskEnvironment, PixelObservationWrapper
 from settings.active.rl import GymDataLoader
 from utils import constant, dict_union
 from utils.logging_utils import get_logger
@@ -106,7 +106,7 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
     def create_gym_env(self) -> MultiTaskEnvironment:
         env = gym.make(self.env_name)
         if not self.observe_state_directly:
-            env = PixelStateWrapper(env)
+            env = PixelObservationWrapper(env)
         return MultiTaskEnvironment(env)
 
     def train_dataloader(self, *args, **kwargs) -> GymDataLoader:
