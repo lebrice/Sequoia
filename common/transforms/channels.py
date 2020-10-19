@@ -1,11 +1,14 @@
 from dataclasses import dataclass
 from typing import Callable, Iterable, Tuple, Union
 
+import gym
 import numpy as np
 import torch
+from gym import spaces
 from torch import Tensor
 # from torchvision.transforms import Lambda
 
+from .transform import Transform
 from .to_tensor import to_tensor
 
 
@@ -14,7 +17,7 @@ def add_names_to_dims(t: Tensor) -> Tensor:
     pass
 
 
-class NamedDimensions(Callable[[Tensor], Tensor]):
+class NamedDimensions(Transform[Tensor, Tensor]):
     """'Transform' that gives names to the dimensions of input tensors.
     Overwrites existing named dimensions, if any.
     """
@@ -26,7 +29,7 @@ class NamedDimensions(Callable[[Tensor], Tensor]):
 
 
 @dataclass
-class ThreeChannels(Callable[[Tensor], Tensor]):
+class ThreeChannels(Transform[Tensor, Tensor]):
     """ Transform that makes the input images have three tensors.
     
     * New: Also adds names to each dimension, when possible.
@@ -82,7 +85,7 @@ class ThreeChannels(Callable[[Tensor], Tensor]):
 
 
 @dataclass
-class ChannelsFirst(Callable[[Union[np.ndarray, Tensor]], Tensor]):
+class ChannelsFirst(Transform[Union[np.ndarray, Tensor], Tensor]):
     """ Re-orders the dimensions of the tensor from ((n), H, W, C) to ((n), C, H, W).
     If the tensor doesn't have named dimensions, this will ALWAYS re-order the
     dimensions, regarless of the length of the last dimension.
@@ -90,8 +93,9 @@ class ChannelsFirst(Callable[[Union[np.ndarray, Tensor]], Tensor]):
     Also converts non-Tensor inputs to tensors using `to_tensor`.
     """
     def __call__(self, x: Tensor) -> Tensor:
-        if not isinstance(x, Tensor):
-            x = to_tensor(x)
+        # TODO: Might wanna turn this off.
+        # if not isinstance(x, Tensor):
+        #     x = to_tensor(x)
         if x.ndim == 3:
             if any(x.names):
                 return x.align_to("C", "H", "W")
@@ -128,7 +132,7 @@ class ChannelsFirstIfNeeded(ChannelsFirst):
 
 
 @dataclass
-class ChannelsLast(Callable[[Tensor], Tensor]):
+class ChannelsLast(Transform[Tensor, Tensor]):
     def __call__(self, x: Tensor) -> Tensor:
         if not isinstance(x, Tensor):
             x = to_tensor(x)

@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, List, Tuple, TypeVar, Union
 
+import gym
 import numpy as np
 import torch
+from gym import spaces
 from torch import Tensor
 from torchvision.transforms import Compose as ComposeBase
 from torchvision.transforms import RandomGrayscale
@@ -76,6 +78,9 @@ class Transforms(Enum):
         end = self.value(temp)
         return end.shape
 
+    def space_change(self, input_space: gym.Space) -> gym.Space:
+        return self.value.space_change(input_space)
+    
 # TODO: Add the SimCLR transforms.
 # class SimCLRTrainTransform(SimCLRTrainDataTransform):
 #     def __call

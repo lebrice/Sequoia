@@ -7,11 +7,14 @@ using `ToTensor` from torchvision.
 from dataclasses import dataclass
 from typing import Callable, Tuple, Union, TypeVar
 
+import gym
 import numpy as np
 import torch
+from gym import spaces
 from PIL.Image import Image
 from torch import Tensor
 from torchvision.transforms import ToTensor as ToTensor_
+from .transform import Transform
 
 T = TypeVar("T", bound=Union[Image, np.ndarray, Tensor])
 
@@ -53,7 +56,7 @@ def to_tensor(pic) -> Tensor:
 
 
 @dataclass
-class ToTensor(ToTensor_):
+class ToTensor(ToTensor_, Transform):
     def __call__(self, pic):
         """
         Args:
@@ -69,3 +72,12 @@ class ToTensor(ToTensor_):
 
     def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
         return input_shape
+
+    def space_change(self, input_space: gym.Space) -> gym.Space:
+        return spaces.Box(
+            low=0.,
+            high=1.,
+            shape=input_space.shape,
+            dtype=np.float32,
+        )
+        
