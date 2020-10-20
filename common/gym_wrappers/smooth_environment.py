@@ -81,6 +81,25 @@ class SmoothTransitions(MultiTaskEnvironment):
         super().__init__(env, *args, **kwargs)
         self.only_update_on_episode_end: bool = only_update_on_episode_end
 
+    def step(self, *args, **kwargs):
+        if not self.only_update_on_episode_end:
+            self.smooth_update()
+        return super().step(*args, **kwargs)
+
+    def reset(self, **kwargs):
+        # TODO: test this out.
+        if self.only_update_on_episode_end:
+            self.smooth_update()
+        return super().reset(**kwargs)
+
+    @property
+    def current_task_id(self) -> Optional[int]:
+        """ Returns the 'index' of the current task within the task schedule.
+        
+        In this case, we return None, since there aren't clear task boundaries. 
+        """
+        return None
+
     def task_array(self, task: Dict[str, float]) -> np.ndarray:
         return np.array([
             task.get(k, self.default_task[k]) for k in self.task_params
@@ -111,13 +130,3 @@ class SmoothTransitions(MultiTaskEnvironment):
         # logger.debug(f"Updating task at step {self.step}: {current_task}")
         self.current_task = current_task
 
-    def step(self, *args, **kwargs):
-        if not self.only_update_on_episode_end:
-            self.smooth_update()
-        return super().step(*args, **kwargs)
-
-    def reset(self, **kwargs):
-        # TODO: test this out.
-        if self.only_update_on_episode_end:
-            self.smooth_update()
-        return super().reset(**kwargs)

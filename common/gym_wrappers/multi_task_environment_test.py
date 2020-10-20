@@ -1,10 +1,11 @@
 from typing import Dict, List
-
 import gym
 import matplotlib.pyplot as plt
 import pytest
-
+from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
+
+from utils.utils import dict_union
 from .multi_task_environment import MultiTaskEnvironment
 supported_environments: List[str] = ["CartPole-v0"]
 
@@ -112,4 +113,100 @@ def test_update_task():
     env.update_task(gravity=20.0)
     assert env.length == 1.0
     assert env.current_task["gravity"] == env.gravity == 20.0
+    env.close()
+    
+
+def test_add_task_dict_to_info():
+    """ Test that the 'info' dict contains the task dict. """
+    original: CartPoleEnv = gym.make("CartPole-v0")
+    starting_length = original.length
+    starting_gravity = original.gravity
+
+    task_schedule = {
+        10: dict(length=0.1),
+        20: dict(length=0.2, gravity=-12.0),
+        30: dict(gravity=0.9),
+    }
+    env = MultiTaskEnvironment(
+        original,
+        task_schedule=task_schedule,
+        add_task_dict_to_info=True,
+    )
+    env.seed(123)
+    env.reset()
+    for step in range(100):
+        _, _, done, info = env.step(env.action_space.sample())
+        env.render()
+        if done:
+            env.reset()
+
+        if 0 <= step < 10:
+            assert env.length == starting_length and env.gravity == starting_gravity
+            assert info == env.default_task
+        elif 10 <= step < 20:
+            assert env.length == 0.1
+            assert info == dict_union(env.default_task, task_schedule[10])
+        elif 20 <= step < 30:
+            assert env.length == 0.2 and env.gravity == -12.0
+            assert info == dict_union(env.default_task, task_schedule[20])
+        elif step >= 30:
+            assert env.length == starting_length and env.gravity == 0.9
+            assert info == dict_union(env.default_task, task_schedule[30])
+
+    env.close()
+
+
+
+def test_add_task_id_to_obs():
+    """ Test that the 'info' dict contains the task dict. """
+    original: CartPoleEnv = gym.make("CartPole-v0")
+    starting_length = original.length
+    starting_gravity = original.gravity
+
+    task_schedule = {
+        10: dict(length=0.1),
+        20: dict(length=0.2, gravity=-12.0),
+        30: dict(gravity=0.9),
+    }
+    env = MultiTaskEnvironment(
+        original,
+        task_schedule=task_schedule,
+        add_task_id_to_obs=True,
+    )
+    env.seed(123)
+    env.reset()
+    
+    assert env.observation_space == spaces.Tuple([
+        original.observation_space,
+        spaces.Discrete(4),   
+    ])
+    
+    
+    for step in range(100):
+        obs, _, done, info = env.step(env.action_space.sample())
+        env.render()
+
+        x, task_id = obs
+        
+        if 0 <= step < 10:
+            assert env.length == starting_length and env.gravity == starting_gravity
+            assert task_id == 0, step
+
+        elif 10 <= step < 20:
+            assert env.length == 0.1
+            assert task_id == 1, step
+            
+        elif 20 <= step < 30:
+            assert env.length == 0.2 and env.gravity == -12.0
+            assert task_id == 2, step
+            
+        elif step >= 30:
+            assert env.length == starting_length and env.gravity == 0.9
+            assert task_id == 3, step
+
+        if done:
+            obs = env.reset()
+            assert isinstance(obs, tuple)
+
+
     env.close()
