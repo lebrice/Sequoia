@@ -72,10 +72,7 @@ class Transforms(Enum):
         if isinstance(self.value, Transform):
             return self.value.space_change(input_space)
         raise NotImplementedError(f"TODO: add space_change to {self}")
-    
-# TODO: Add the SimCLR transforms.
-# class SimCLRTrainTransform(SimCLRTrainDataTransform):
-#     def __call
+
 
 T = TypeVar("T", bound=Callable)
 
@@ -97,11 +94,10 @@ class Compose(List[T], ComposeBase):
         ComposeBase.__init__(self, transforms=self)
 
     def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
-        logger.debug(f"shape_change on Compose: input shape: {input_shape}")
-        # TODO: Give the impact of this transform on a given input shape.
         for transform in self:
-            logger.debug(f"Shape before transform {transform}: {input_shape}")
-            if hasattr(transform, "shape_change") and callable(transform.shape_change):
+            if isinstance(transform, Transforms):
+                transform = transform.value
+            if isinstance(transform, Transform) or hasattr(transform, "shape_change"):
                 input_shape = transform.shape_change(input_shape)
             else:
                 logger.debug(

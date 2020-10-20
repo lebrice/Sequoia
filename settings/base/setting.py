@@ -257,6 +257,19 @@ class Setting(SettingABC,
                 actions = fake_logits
 
         return get_metrics(y_pred=actions, y=rewards)
+    
+    @property
+    def image_space(self) -> Optional[gym.Space]:
+        if isinstance(self.observation_space, spaces.Box):
+            return self.observation_space
+        if isinstance(self.observation_space, spaces.Tuple):
+            assert isinstance(self.observation_space[0], spaces.Box)
+            return self.observation_space[0]
+        if isinstance(self.observation_space, spaces.Dict):
+            return self.observation_space.spaces["x"]
+        logger.warning(f"Don't know what the image space is. "
+                       f"(self.observation_space={self.observation_space})")
+        return None
 
     @property
     def observation_space(self) -> gym.Space:
@@ -403,49 +416,106 @@ class Setting(SettingABC,
 
         # Debugging: Run a quick check to see that what is returned by the
         # dataloaders is of the right type and shape etc.
-        self._check_dataloaders_give_correct_types()
+        self._check_environments()
 
-    def _check_dataloaders_give_correct_types(self):
-        """ Do a quick check to make sure that the dataloaders give back the
-        right observations / reward types.
+
+    def _check_environments(self):
+        """ Do a quick check to make sure that interacting with the envs/dataloaders
+        works correctly.
         """
+        batch_size: int = self.dataloader_kwargs.get("batch_size", 16)
+        
         for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
             print(f"\n\nChecking loader method {loader_method.__name__}\n\n")
-            env = loader_method()
+            env = loader_method(batch_size=batch_size)
+            
             from settings.passive import PassiveEnvironment
             from settings.active import ActiveEnvironment
-            if isinstance(env, PassiveEnvironment):
-                print(f"Result of {loader_method.__name__} is a PassiveEnvironment!")
-            else:
-                print(f"Result of {loader_method.__name__} is an ActiveEnvironment!")
+            
+            # Check that the env's spaces are batched versions of the settings'.
+            from gym.vector.utils import batch_space
+            # We could compare the spaces directly, but that's a bit messy, and
+            # would be depends on the type of spaces for each. Instead, we could
+            # check samples from such spaces on how the spaces are batched. 
+            
+            expected_observation_space = batch_space(self.observation_space, n=batch_size)
+            expected_action_space = batch_space(self.action_space, batch_size)
+            expected_reward_space = batch_space(self.reward_space, batch_size)
+            
+            assert env.observation_space == expected_observation_space, (env.observation_space, expected_observation_space)
+            assert env.action_space == expected_action_space, (env.action_space, expected_action_space)
+            assert env.reward_space == expected_reward_space, (env.reward_space, expected_reward_space)
+
+            # Check that the 'gym API' interaction is working correctly.
+            reset_obs: Observations = env.reset()
+            self._check_observation(reset_obs)
+
+            for i in range(5):
+                actions = env.action_space.sample()
+                self._check_actions(actions)
+                step_observations, step_rewards, done, info = env.step(actions)
+                self._check_observations(step_observations)
+                self._check_rewards(step_rewards)
+                assert not (done if isinstance(done, bool) else any(done))
 
             for batch in take(env, 5):
                 if isinstance(env, PassiveEnvironment):
                     observations, rewards = batch
                 else:
-                    assert False, observations
+                    # in RL atm, the 'dataset' gives back only the observations.
+                    # Coul
                     observations, rewards = batch, None
-                try:
-                    assert isinstance(observations, self.Observations), type(observations)
-                    observations: Observations
-                    batch_size = observations.batch_size
-                    rewards: Optional[Rewards] = rewards[0] if rewards else None
-                    if rewards is not None:
-                        assert isinstance(rewards, self.Rewards), type(rewards)
-                    # TODO: If we add gym spaces to all environments, then check
-                    # that the observations are in the observation space, sample
-                    # a random action from the action space, check that it is
-                    # contained within that space, and then get a reward by
-                    # sending it to the dataloader. Check that the reward
-                    # received is in the reward space.
-                    actions = self.action_space.sample()
-                    assert actions.shape[0] == batch_size
-                    actions = self.Actions(torch.as_tensor(actions))
-                    rewards = env.send(actions)
+
+                batch_size = observations.batch_size
+
+                assert isinstance(observations, self.Observations), type(observations)
+                observations: Observations
+                image = observations.x[0]
+                assert isinstance(image, torch.Tensor)
+                assert image.cpu().numpy() in image_space
+                
+                batch_size = observations.batch_size
+                rewards: Optional[Rewards] = rewards[0] if rewards else None
+                if rewards is not None:
                     assert isinstance(rewards, self.Rewards), type(rewards)
-                except Exception as e:
-                    logger.error(f"There's a problem with the method {loader_method} (env {env})")
-                    raise e
+                
+                actions = tuple(
+                    self.action_space.sample() for _ in range(batch_size)
+                )
+                actions = self.Actions(torch.as_tensor(actions))
+                rewards = env.send(actions)
+                
+                assert isinstance(rewards, self.Rewards), type(rewards)
+                reward = rewards.y
+                assert len(reward) == batch_size
+                assert reward[0] in self.reward_space
+    
+    def _check_observations(self, env: Environment, observations: Any):
+        assert isinstance(observations, self.Observations)
+        images = observations.x
+        assert isinstance(images, torch.Tensor)
+        images_np = images.cpu().numpy()
+        assert images_np in env.observation_space
+
+        # Assume that the image space is here (which is the case so far)
+        assert images_np[0] in image_space
+    
+    def _check_actions(self, env: Environment, actions: Any):
+        assert isinstance(actions, self.Actions)
+        y_pred = actions.y_pred
+        assert isinstance(y_pred, torch.Tensor)
+        y_pred_np = y_pred.cpu().numpy()
+        assert y_pred_np in env.action_space
+        assert y_pred_np[0] in self.action_space
+    
+    def _check_rewards(self, env: Environment, rewards: Any):
+        assert isinstance(rewards, self.Rewards)
+        y = rewards.y
+        assert isinstance(y, torch.Tensor)
+        y_np = y.cpu().numpy()
+        assert y_np in env.action_space
+        assert y_np[0] in self.action_space
+
     
     # Just to make type hinters stop throwing errors when using the constructor
     # to create a Setting.

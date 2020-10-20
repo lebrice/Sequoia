@@ -46,5 +46,5 @@ class Transform(Generic[InputType, OutputType]):
         input_shape = _get_shape(input_space)
         output_shape = self.shape_change(input_shape)
 
-        from common.gym_wrappers.utils import space_with_new_shape
-        return space_with_new_shape(input_space, output_shape)
+        from common.gym_wrappers.utils import reshape_space
+        return reshape_space(input_space, output_shape)

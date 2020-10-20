@@ -6,7 +6,7 @@ from gym.wrappers import TransformReward as TransformReward_
 
 from utils.logging_utils import get_logger
 
-from .utils import IterableWrapper, space_with_new_shape
+from .utils import IterableWrapper, reshape_space
 
 logger = get_logger(__file__)
 
@@ -24,9 +24,9 @@ class TransformObservation(TransformObservation_, IterableWrapper):
         if isinstance(self.f, Transform) or hasattr(self.f, "space_change"):
             self.space_change = self.f.space_change
             self.observation_space = self.f.space_change(self.observation_space)
-            logger.debug(f"New observation space after transform: {self.observation_space}")
+            # logger.debug(f"New observation space after transform: {self.observation_space}")
         else:
-            logger.warning(UserWarning(f"Don't know how the transform {self.f} will impact the space!"))
+            logger.warning(UserWarning(f"Don't know how the transform {self.f} will impact the observation space!"))
 
     
 class TransformReward(TransformReward_, IterableWrapper):
@@ -42,7 +42,7 @@ class TransformReward(TransformReward_, IterableWrapper):
                 self.reward_space = self.f.space_change(self.reward_space)
                 logger.debug(f"New reward space after transform: {self.reward_space}")
             else:
-                logger.warning(UserWarning(f"Don't know how the transform {self.f} will impact the space!"))
+                logger.warning(UserWarning(f"Don't know how the transform {self.f} will impact the reward space!"))
 
 
 class TransformAction(IterableWrapper):
@@ -57,7 +57,7 @@ class TransformAction(IterableWrapper):
             self.action_space = self.f.space_change(self.action_space)
             logger.debug(f"New action space after transform: {self.action_space}")
         else:
-            logger.warning(UserWarning(f"Don't know how the transform {self.f} will impact the space!"))
+            logger.warning(UserWarning(f"Don't know how the transform {self.f} will impact the action space!"))
 
     def step(self, action):
         return self.env.step(self.action(action))

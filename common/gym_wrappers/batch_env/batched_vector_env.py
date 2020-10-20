@@ -1,22 +1,24 @@
 """ Mix of AsyncVectorEnv and SyncVectorEnv, with support for 'chunking' and for
 where we have a series of environments on each worker.
 """
+import itertools
 import math
 import multiprocessing as mp
-import itertools
 from functools import partial
-from typing import Any, Callable, Iterable, List, Sequence, Tuple, TypeVar, Union, Optional
+from typing import (Any, Callable, Iterable, List, Optional, Sequence, Tuple,
+                    TypeVar, Union)
 
 import gym
 import numpy as np
 from gym import spaces
-
+from gym.vector.utils import batch_space
 from gym.vector.vector_env import VectorEnv
 
-from .sync_vector_env import SyncVectorEnv
-from .async_vector_env import AsyncVectorEnv
 from utils.utils import n_consecutive
+from .async_vector_env import AsyncVectorEnv
+from .sync_vector_env import SyncVectorEnv
 from .tile_images import tile_images
+
 T = TypeVar("T")
 
 

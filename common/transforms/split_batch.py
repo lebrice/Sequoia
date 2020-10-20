@@ -1,6 +1,7 @@
 import dataclasses
 import functools
-from typing import Any, Tuple, Type, TypeVar, Callable
+from typing import Any, Callable, Optional, Tuple, Type, TypeVar
+
 import numpy as np
 from torch import Tensor
 

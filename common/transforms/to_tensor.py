@@ -84,7 +84,9 @@ def to_tensor(pic: Union[Img, Sequence[Img]]) -> Tensor:
             assert pic.shape[0] in {1, 3}, pic.shape
             pic = pic.transpose(1, 2, 0)
         # pic = channels_last(pic)
-    return F.to_tensor(pic)
+    pic = F.to_tensor(pic)
+    assert isinstance(pic, Tensor), pic.shape
+    return pic
 
 
 @dataclass

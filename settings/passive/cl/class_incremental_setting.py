@@ -468,7 +468,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
         # Debugging: Run a quick check to see that what is returned by the
         # dataloaders is of the right type and shape etc.
-        self._check_dataloaders_give_correct_types()
+        self._check_environments()
 
     def make_train_cl_loader(self, train_dataset: _ContinuumDataset) -> _BaseCLLoader:
         """ Creates a train ClassIncremental object from continuum. """
@@ -543,7 +543,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         """ Gives back the labels present in the current task. """
         return self.task_classes(self._current_task_id, train)
     
-    def _check_dataloaders_give_correct_types(self):
+    def _check_environments(self):
         """ Do a quick check to make sure that the dataloaders give back the
         right observations / reward types.
         """

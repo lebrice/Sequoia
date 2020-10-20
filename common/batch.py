@@ -270,8 +270,10 @@ class Batch(Sequence[Item], ABC):
         """ Converts a batch of items into a 'Batch' object. """
         if isinstance(inputs, cls):
             return inputs
-        if isinstance(inputs, (Tensor, np.ndarray)):
+        if isinstance(inputs, Tensor):
             return cls(inputs)
+        if isinstance(inputs, np.ndarray):
+            return cls(torch.as_tensor(inputs))
         if isinstance(inputs, dict):
             return cls(**inputs)
         if isinstance(inputs, (tuple, list)):

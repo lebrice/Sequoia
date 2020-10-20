@@ -68,7 +68,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # x: Tensor
         # task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
 
-    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.channels_last_if_needed)
+    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.channels_first_if_needed)
 
     available_datasets: ClassVar[Dict[str, str]] = {
         "breakout": "Breakout-v0",
