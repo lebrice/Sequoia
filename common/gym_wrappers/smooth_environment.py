@@ -5,17 +5,17 @@ the task, rather than setting a brand new random task.
 There could also be some kind of 'task_duration' parameter, and the model does
 linear or smoothed-out transitions between them depending on the step number?
 """
-import bisect
 from collections import OrderedDict
 from typing import Dict, List, Optional
 
 import gym
 import numpy as np
+from gym import spaces
 
 from utils.logging_utils import get_logger
 
 from .multi_task_environment import MultiTaskEnvironment
-
+from .sparse_space import Sparse
 logger = get_logger(__file__)
 
 
@@ -80,6 +80,13 @@ class SmoothTransitions(MultiTaskEnvironment):
         """
         super().__init__(env, *args, **kwargs)
         self.only_update_on_episode_end: bool = only_update_on_episode_end
+
+        if self.add_task_id_to_obs:
+            n_tasks = len(self.task_schedule)
+            self.observation_space = spaces.Tuple([
+                self.env.observation_space,
+                Sparse(spaces.Discrete(n=n_tasks), none_prob=1.0)
+            ])
 
     def step(self, *args, **kwargs):
         if not self.only_update_on_episode_end:

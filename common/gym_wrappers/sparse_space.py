@@ -5,7 +5,7 @@ from the 'wrapped' space, and recognizes 'None' as being in the space.
 import gym
 from gym import spaces
 import numpy as np
-from typing import Generic, TypeVar, Optional
+from typing import Generic, TypeVar, Optional, Any
 
 T = TypeVar("T")
 
@@ -26,9 +26,7 @@ class Sparse(gym.Space, Generic[T]):
         if self.none_prob == 1.:
             return None
         p = self.np_random.random()
-        print(f"p = {p}, none_prob={self.none_prob}")
         if p <= self.none_prob:
-            print(f"Returning None.")
             return None
         else:
             return self.base.sample()
@@ -42,6 +40,11 @@ class Sparse(gym.Space, Generic[T]):
 
     def __repr__(self):
         return f"Sparse({self.base}, none_prob={self.none_prob})"
+    
+    def __eq__(self, other: Any):
+        if not isinstance(other, Sparse):
+            return NotImplemented
+        return other.base == self.base and other.none_prob == self.none_prob
 
 import gym.vector.utils
 from gym.vector.utils import batch_space, concatenate, create_empty_array, create_shared_memory, create_empty_array

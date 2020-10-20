@@ -47,6 +47,7 @@ def test_contains(base_space: gym.Space, none_prob: float):
     samples = [space.sample() for i in range(100)]
     assert all(sample in space for sample in samples)
 
+
 from gym.vector.utils import batch_space, concatenate
 
 
@@ -122,8 +123,6 @@ def equals(value, expected) -> bool:
                 return False
         return True
     return value == expected
-        
-    
 
 
 @pytest.mark.parametrize("base_space", base_spaces)
@@ -151,3 +150,15 @@ def test_flatten(base_space: gym.Space):
     flattened_sparse_sample = flatten(sparse_space, sparse_sample)
     
     assert equals(flattened_base_sample, flattened_sparse_sample)
+
+@pytest.mark.parametrize("base_space", base_spaces)
+def test_equality(base_space: gym.Space):
+    sparse_space = Sparse(base_space, none_prob=0.)
+    other_space = Sparse(base_space, none_prob=0.)    
+    assert sparse_space == other_space
+
+    sparse_space = Sparse(base_space, none_prob=0.2)
+    assert sparse_space != other_space
+    
+    sparse_space = Sparse(spaces.Tuple([base_space, base_space]), none_prob=0.)
+    assert sparse_space != other_space
