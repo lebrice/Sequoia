@@ -50,6 +50,8 @@ class SplitBatch(Transform[Any, Tuple[ObservationType, RewardType]]):
     def __init__(self,
                  observation_type: Type[ObservationType],
                  reward_type: Type[RewardType]):
+        self.Observations = observation_type
+        self.Rewards = reward_type
         self.func = split_batch(observation_type=observation_type,
                                 reward_type=reward_type)
 
@@ -58,16 +60,17 @@ class SplitBatch(Transform[Any, Tuple[ObservationType, RewardType]]):
 
 
 def split_batch(observation_type: Type[ObservationType],
-                reward_type: Type[RewardType]) -> Callable[[Any], Tuple[ObservationType, RewardType]]:
+                reward_type: Type[RewardType]) -> Callable[[Any], Tuple[ObservationType,
+                                                                        Optional[RewardType]]]:
     """Makes a callable that will split batches into Observations and Rewards.
     
     The provided observation and reward types (which have to be subclasses of
     the `Batch` class) will be used to construct the observation and reward
     objects, respectively.
     
-    To make this simpler, this callable will always return an Observation and a
-    Reward object, even when the batch is unlabeled. In that case, the Reward
-    object will have a 'None' passed for any of its required arguments.
+    To make this simpler, this callable will always return a tuple with an
+    Observation and an optional Reward object, even when the batch is unlabeled.
+    In that case, the Reward will be None.
 
     Parameters
     ----------
@@ -130,6 +133,9 @@ def split_batch(observation_type: Type[ObservationType],
             }
             reward = reward_type(**reward_kwargs)
             return obs, reward
+
+        if isinstance(batch, observation_type):
+            return batch, None
 
         if not isinstance(batch, (tuple, list)):
             # TODO: Add support for more types maybe? Or just wrap it in a tuple

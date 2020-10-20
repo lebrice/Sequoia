@@ -9,12 +9,6 @@ from torch import Tensor
 # from torchvision.transforms import Lambda
 
 from .transform import Transform
-from .to_tensor import to_tensor
-
-
-def add_names_to_dims(t: Tensor) -> Tensor:
-    # IDEA: Add names to the dimension of the tensor.
-    pass
 
 
 class NamedDimensions(Transform[Tensor, Tensor]):
@@ -66,8 +60,9 @@ class ThreeChannels(Transform[Tensor, Tensor]):
         #     # Cool new pytorch feature!
         #     x.rename(*names)
         return x
-    
-    def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
+
+    @classmethod
+    def shape_change(cls, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
         dims = len(input_shape)
         if dims == 2:
             return (3, *input_shape)
@@ -93,9 +88,6 @@ class ChannelsFirst(Transform[Union[np.ndarray, Tensor], Tensor]):
     Also converts non-Tensor inputs to tensors using `to_tensor`.
     """
     def __call__(self, x: Tensor) -> Tensor:
-        # TODO: Might wanna turn this off?
-        # if not isinstance(x, Tensor):
-        #     x = to_tensor(x)
         if x.ndim == 3:
             if any(x.names):
                 return x.align_to("C", "H", "W")
@@ -118,13 +110,11 @@ class ChannelsFirst(Transform[Union[np.ndarray, Tensor], Tensor]):
 @dataclass
 class ChannelsFirstIfNeeded(ChannelsFirst):
     def __call__(self, x: Tensor) -> Tensor:
-        if not isinstance(x, Tensor):
-            x = to_tensor(x)
         if x.shape[-1] in {1, 3}:
             return super().__call__(x)
         return x
-
-    def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
+    @classmethod
+    def shape_change(cls, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
         if input_shape[-1] in {1, 3}:
             return super().shape_change(input_shape)
         else:
@@ -134,18 +124,16 @@ class ChannelsFirstIfNeeded(ChannelsFirst):
 @dataclass
 class ChannelsLast(Transform[Tensor, Tensor]):
     def __call__(self, x: Tensor) -> Tensor:
-        if not isinstance(x, Tensor):
-            x = to_tensor(x)
-        if x.ndimension() == 3:
+        if len(x.shape) == 3:
             if not x.names:
                 x.rename("C", "H", "W")
                 return x.align_to("H", "W", "C")
             return x.permute(1, 2, 0)
-        if x.ndimension() == 4:
+        if len(x.shape) == 4:
             return x.permute(0, 2, 3, 1)
         return x
-    
-    def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
+    @classmethod
+    def shape_change(cls, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
         ndim = len(input_shape)
         if ndim == 3:
             new_shape = tuple(input_shape[i] for i in (1, 2, 0))
@@ -156,15 +144,13 @@ class ChannelsLast(Transform[Tensor, Tensor]):
 @dataclass
 class ChannelsLastIfNeeded(ChannelsLast):
     def __call__(self, x: Tensor) -> Tensor:
-        if not isinstance(x, Tensor):
-            x = to_tensor(x)
-        if x.ndimension() == 4 and x.shape[1] in {1, 3}:
+        if len(x.shape) == 4 and x.shape[1] in {1, 3}:
             return super().__call__(x)
-        if x.ndimension() == 3 and x.shape[0] in {1, 3}:
+        if len(x.shape) == 3 and x.shape[0] in {1, 3}:
             return super().__call__(x)
         return x
-    
-    def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
+    @classmethod
+    def shape_change(cls, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
         ndims = len(input_shape)
         if ndims == 4 and input_shape[1] in {1, 3}:
             return super().shape_change(input_shape)
