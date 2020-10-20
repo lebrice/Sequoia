@@ -75,7 +75,7 @@ def test_check_iterate_and_step(dataset: str,
         # receives `None` as a second item in the batch ?
         for iter_obs in take(dataloader, 3):
             assert isinstance(iter_obs, ContinualRLSetting.Observations)
-            assert iter_obs.shape == expected_obs_batch_shape
+            assert iter_obs.x.shape == expected_obs_batch_shape
             reward = dataloader.send(dataloader.action_space.sample())
 
 

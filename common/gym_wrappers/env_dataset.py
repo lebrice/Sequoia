@@ -204,7 +204,8 @@ class EnvDataset(gym.Wrapper,
         
         logger.debug(f"episode {self._n_episodes}/{self.max_episodes}")
 
-        while not self._done and not self.reached_step_limit:
+        while (not (self._done if isinstance(self._done, bool) else all(self._done))
+               and not self.reached_step_limit):
             logger.debug(f"step {self._n_steps}/{self.max_steps}, ")
             
             # Set those to None to force the user to call .send()

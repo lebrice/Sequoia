@@ -68,12 +68,16 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # x: Tensor
         # task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
 
+    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.channels_last_if_needed)
+
     available_datasets: ClassVar[Dict[str, str]] = {
         "breakout": "Breakout-v0",
         "duckietown": "Duckietown-straight_road-v0"
     }
     # Which environment to learn on.
     dataset: str = choice(available_datasets, default="breakout")
+
+
     # Max number of steps ("length" of the training and test "datasets").
     max_steps: int = 10_000
     # Number of steps per task.
@@ -266,17 +270,22 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # Apply the image transforms to the env.
             partial(TransformObservation, f=self.val_transforms),
             # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
-            partial(SmoothTransitions, task_schedule=self.val_task_schedule),
+            partial(SmoothTransitions, task_schedule=self.valid_task_schedule),
         ])
         return wrappers
 
     def test_wrappers(self) -> List[Callable]:
-        # Apply the image transforms to the env.
-        # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
-        return [
+        wrappers: List[Callable] = []
+        if self.env_name.startswith("CartPole"):
+            from common.gym_wrappers.pixel_observation import PixelObservationWrapper
+            wrappers.append(PixelObservationWrapper)
+        wrappers.extend([
+            # Apply the image transforms to the env.
             partial(TransformObservation, f=self.test_transforms),
+            # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
             partial(SmoothTransitions, task_schedule=self.test_task_schedule),
-        ]
+        ])
+        return wrappers
     
     def make_env(self, batch_size: int, wrappers: List[Callable]=None) -> BatchedVectorEnv:
         if batch_size > 1:

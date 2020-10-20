@@ -140,7 +140,8 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
         # return self.env
         # This gives back the single-process dataloader iterator over the 'dataset'
         # which in this case is the environment:
-        return super().__iter__()
+        return iter(self.env)
+        # return super().__iter__()
         
 
     def set_policy(self, policy: Callable[[ObservationType], ActionType]) -> None:
