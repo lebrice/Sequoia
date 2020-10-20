@@ -35,7 +35,7 @@ from torch.utils.data import IterableDataset
 from common.batch import Batch
 from common.gym_wrappers.utils import StepResult
 from common.gym_wrappers import AsyncVectorEnv
-from common.gym_wrappers.utils import has_wrapper
+from common.gym_wrappers.utils import has_wrapper, batch_space
 from settings.active.active_dataloader import ActiveDataLoader
 from utils.logging_utils import get_logger
 
@@ -110,7 +110,14 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
 
         self.observation_space: gym.Space = self.env.observation_space
         self.action_space: gym.Space = self.env.action_space        
-        
+
+        if isinstance(env.unwrapped, VectorEnv):
+            env: VectorEnv
+            batch_size = env.num_envs
+            # TODO: Overwriting the action space to be the 'batched' version of
+            # the single action space, rather than a Tuple(Discrete, ...).
+            self.action_space = batch_space(env.single_action_space, batch_size)
+
         if not hasattr(self.env, "reward_space"):
             self.reward_space = spaces.Box(
                 low=self.env.reward_range[0],
@@ -119,13 +126,14 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
             )
             # Determine wether the env is a vectored env
             if isinstance(self.env.unwrapped, VectorEnv):                
-                self.reward_space = spaces.Tuple([
-                    self.reward_space
-                    for _ in range(self.env.num_envs)
-                ])
-        
+                # TODO: Same here, we use a 'batched' space rather than Tuple.
+                self.reward_space = batch_space(self.reward_space, batch_size)
+                # self.reward_space = spaces.Tuple([
+                #     self.reward_space
+                #     for _ in range(self.env.num_envs)
+                # ])
         self._iterator: Iterator = None
-        
+
     # def __next__(self) -> EnvDatasetItem:
     #     if self._iterator is None:
     #         self._iterator = self.__iter__()

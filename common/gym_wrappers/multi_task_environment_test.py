@@ -274,3 +274,34 @@ def test_starting_step_and_max_step():
             assert isinstance(obs, tuple)
 
     env.close()
+
+
+
+def test_task_id_is_added_even_when_no_known_task_schedule():
+    """ Test that even when the env is unknown or there are no task params, the
+    task_id is still added correctly and is zero at all times.
+    """
+    # Breakout doesn't have default task params.
+    original: CartPoleEnv = gym.make("Breakout-v0")
+    env = MultiTaskEnvironment(
+        original,
+        add_task_id_to_obs=True,
+    )
+    env.seed(123)
+    env.reset()
+    
+    assert env.observation_space == spaces.Tuple([
+        original.observation_space,
+        spaces.Discrete(1),
+    ])
+    for step in range(0, 100):
+        obs, _, done, info = env.step(env.action_space.sample())
+        env.render()
+
+        x, task_id = obs
+        assert task_id == 0
+
+        if done:
+            x, task_id = env.reset()
+            assert task_id == 0
+    env.close()

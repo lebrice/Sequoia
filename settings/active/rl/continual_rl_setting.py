@@ -11,8 +11,9 @@ from simple_parsing import choice, list_field
 from torch import Tensor
 
 from common import Batch, Config
-from common.gym_wrappers import (SmoothTransitions, TransformAction,
-                                 TransformObservation, TransformReward)
+from common.gym_wrappers import (MultiTaskEnvironment, SmoothTransitions,
+                                 TransformAction, TransformObservation,
+                                 TransformReward)
 from common.gym_wrappers.batch_env import BatchedVectorEnv
 from common.transforms import Transforms
 from utils.logging_utils import get_logger
@@ -95,39 +96,48 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         else:
             self.steps_per_task = int(self.max_steps / self.nb_tasks)
         
+        if self.smooth_task_boundaries:
+            # If we're operating in the 'Online/smooth task transitions' "regime",
+            # then there is only one "task", and we don't have task labels.
+            self.known_task_boundaries_at_train_time = False
+            self.known_task_boundaries_at_test_time = False
+            self.nb_tasks = 1
+            self.steps_per_task = self.max_steps
+            
+        
+        
         self.train_task_schedule: Dict[int, Dict] = {}
         self.valid_task_schedule: Dict[int, Dict] = {}
         self.test_task_schedule: Dict[int, Dict] = {}
 
-        temp_env = gym.make(self.env_name)
-        # Apply the image transforms to the env.
-        temp_env = TransformObservation(temp_env, f=self.train_transforms)
-        # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
-        cl_task_params = task_params.get(type(temp_env.unwrapped), [])
-        temp_env = SmoothTransitions(temp_env, task_params=cl_task_params)
+        # Create a temporary environment so we can extract the spaces.
+        with gym.make(self.env_name) as temp_env:
+            # Apply the image transforms to the env.
+            temp_env = TransformObservation(temp_env, f=self.train_transforms)
+            # Add a wrapper that creates the 'tasks' (non-stationarity in the env).
+            # First, get the set of parameters that will be changed over time. 
+            cl_task_params = task_params.get(type(temp_env.unwrapped), [])         
+            temp_env = SmoothTransitions(temp_env, task_params=cl_task_params, add_task_id_to_obs=True)
 
-        # Start with the default task, and then add a new task boundary at
-        # intervals of self.steps_per_task
-        for task_step in range(self.steps_per_task, self.max_steps):
-            self.train_task_schedule[task_step] = temp_env.random_task()
-        # For now, set the validation and test tasks as the same sequence as the
-        # train tasks.
-        self.valid_task_schedule = self.train_task_schedule.copy() 
-        self.test_task_schedule = self.train_task_schedule.copy()
-        
-        # Set the spaces using the temp env.
-        # TODO: Should we add the task labels in the MultiTaskEnv wrapper?
-        self.observation_space = spaces.Tuple([
-            temp_env.observation_space, # images
-            spaces.Discrete(self.nb_tasks), # task labels.
-        ])
-        self.action_space = temp_env.action_space
-        self.reward_range = temp_env.reward_range
-        self.reward_space = getattr(temp_env, "reward_space",
-                                    spaces.Box(low=self.reward_range[0],
-                                               high=self.reward_range[1],
-                                               shape=()))
-        temp_env.close()
+            # Start with the default task (step 0) and then add a new task
+            # at intervals of `self.steps_per_task`
+            for task_step in range(self.steps_per_task, self.max_steps):
+                self.train_task_schedule[task_step] = temp_env.random_task()
+            assert len(self.train_task_schedule) == self.nb_tasks - 1
+            
+            # For now, set the validation and test tasks as the same sequence as the
+            # train tasks.
+            self.valid_task_schedule = self.train_task_schedule.copy() 
+            self.test_task_schedule = self.train_task_schedule.copy()
+
+            # Set the spaces using the temp env.
+            self.observation_space = temp_env.observation_space
+            self.action_space = temp_env.action_space
+            self.reward_range = temp_env.reward_range
+            self.reward_space = getattr(temp_env, "reward_space",
+                                        spaces.Box(low=self.reward_range[0],
+                                                high=self.reward_range[1],
+                                                shape=()))
         del temp_env
 
     def apply(self, method: Method, config: Config=None) -> "ContinualRLSetting.Results":
@@ -248,45 +258,65 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         wrappers = []
         # TODO: When using something like CartPole or Pendulum, we'd need to add
         # a PixelObservations wrapper.
-        if self.env_name.startswith(("CartPole", "Pendulum")):
-            from common.gym_wrappers.pixel_observation import PixelObservationWrapper
-            wrappers.append(PixelObservationWrapper)
-        wrappers.extend([
-            # Apply the image transforms to the env.
-            partial(TransformObservation, f=self.train_transforms),
-            # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
-            partial(SmoothTransitions, task_schedule=self.train_task_schedule),
-        ])
-        return wrappers
-
-    def val_wrappers(self) -> List[Callable]:
         wrappers = []
         # When using something like CartPole, we'd need to add a
         # PixelObservations wrapper.
         if self.env_name.startswith("CartPole"):
             from common.gym_wrappers.pixel_observation import PixelObservationWrapper
             wrappers.append(PixelObservationWrapper)
-        wrappers.extend([
-            # Apply the image transforms to the env.
-            partial(TransformObservation, f=self.val_transforms),
-            # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
-            partial(SmoothTransitions, task_schedule=self.valid_task_schedule),
-        ])
+
+        # Add a wrapper to apply the image transforms to the env.
+        wrappers.append(partial(TransformObservation, f=self.train_transforms))
+
+        if self.smooth_task_boundaries:
+            # Add a wrapper that creates smooth 'tasks' (changes in the env).
+            # We allow iteration over the entire stream
+            # (no start_step and max_step)
+            assert not self.known_task_boundaries_at_train_time
+            wrappers.append(partial(
+                SmoothTransitions,
+                    task_schedule=self.train_task_schedule,
+                    # Add 'None' as a task_id to the observations.
+                    add_task_id_to_obs=True,
+                    # Add the 'task dict' to the 'info' dict.
+                    add_task_dict_to_info=True,
+                ),
+            )
+        elif self.known_task_boundaries_at_train_time:
+            assert self.nb_tasks >= 1
+            # Add a wrapper that creates sharp 'tasks'.
+            # We add a restriction to prevent users from getting data from
+            # previous or future tasks.
+            assert False, self.current_task_id
+            wrappers.append(partial(
+                MultiTaskEnvironment,
+                    task_schedule=self.train_task_schedule,
+                    # Add the task id to the observation.
+                    add_task_id_to_obs=True,
+                    # Add the 'task dict' to the 'info' dict.
+                    add_task_dict_to_info=True,
+                ),
+            )
+            # NOTE: Since we want a 'None' task label when not available,
+            # instead of not adding the task labels above, we instead set
+            # them to None with another wrapper here.
+            if not self.task_labels_at_train_time:
+                wrappers.append(partial(RemoveTaskLabelsWrapper))
+    
         return wrappers
 
+    def val_wrappers(self) -> List[Callable]:
+        # FIXME: Just doing this for now since I'm modifying `train_wrappers`
+        # quite a bit, but we should instead use the wrappers/task schedule/
+        # transforms specific to validation.
+        return self.train_wrappers()
+        
     def test_wrappers(self) -> List[Callable]:
-        wrappers: List[Callable] = []
-        if self.env_name.startswith("CartPole"):
-            from common.gym_wrappers.pixel_observation import PixelObservationWrapper
-            wrappers.append(PixelObservationWrapper)
-        wrappers.extend([
-            # Apply the image transforms to the env.
-            partial(TransformObservation, f=self.test_transforms),
-            # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
-            partial(SmoothTransitions, task_schedule=self.test_task_schedule),
-        ])
-        return wrappers
-    
+        # FIXME: Just doing this for now since I'm modifying `train_wrappers`
+        # quite a bit, but we should instead use the wrappers/task schedule/
+        # transforms specific to testing.
+        return self.train_wrappers()
+
     def make_env(self, batch_size: int, wrappers: List[Callable]=None) -> BatchedVectorEnv:
         if batch_size > 1:
             env = make_batched_env(
@@ -299,8 +329,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             env = gym.make(self.env_name)
             for wrapper in wrappers:
                 env = wrapper(env)
-        # Add wrappers that convert to Observations/Rewards
-        # and from Actions objects to npdarray/tensors.
+        # Add wrappers that converts numpy arrays / etc to Observations/Rewards
+        # and from Actions objects to numpy arrays.
         env = TransformObservation(env, f=self.Observations)
         env = TransformReward(env, f=self.Rewards)
         env = TransformAction(env, f=self.convert_action_to_ndarray)
@@ -315,6 +345,28 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             if isinstance(action, np.ndarray):
                 action = action.tolist()
         return action
+
+
+from common.gym_wrappers import TransformObservation
+from typing import TypeVar, Tuple, Optional
+T = TypeVar("T")
+
+def remove_task_labels(observation: Tuple[T, int]) -> Tuple[T, Optional[int]]:
+    assert len(observation) == 2
+    return observation[0], None
+
+class RemoveTaskLabelsWrapper(TransformObservation):
+    def __init__(self, env: gym.Env, f=remove_task_labels):
+        super().__init__(env, f=f)
+    @classmethod
+    def space_change(cls, input_space: gym.Space) -> gym.Space:
+        assert isinstance(input_space), spaces.Tuple
+        # TODO: If we create something like an OptionalSpace, we
+        # would replace the second part of the tuple with it. We
+        # leave it the same here for now.
+        return input_space
+
+
 
 if __name__ == "__main__":
     ContinualRLSetting.main()
