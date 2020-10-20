@@ -410,18 +410,20 @@ class Setting(SettingABC,
         right observations / reward types.
         """
         for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
+            print(f"\n\nChecking loader method {loader_method.__name__}\n\n")
             env = loader_method()
             from settings.passive import PassiveEnvironment
             from settings.active import ActiveEnvironment
             if isinstance(env, PassiveEnvironment):
-                print(f"{env} is a PassiveEnvironment!")
+                print(f"Result of {loader_method.__name__} is a PassiveEnvironment!")
             else:
-                print(f"{env} is an ActiveEnvironment!")
+                print(f"Result of {loader_method.__name__} is an ActiveEnvironment!")
 
             for batch in take(env, 5):
                 if isinstance(env, PassiveEnvironment):
-                    observations, *rewards = batch
+                    observations, rewards = batch
                 else:
+                    assert False, observations
                     observations, rewards = batch, None
                 try:
                     assert isinstance(observations, self.Observations), type(observations)

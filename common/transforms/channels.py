@@ -93,7 +93,7 @@ class ChannelsFirst(Transform[Union[np.ndarray, Tensor], Tensor]):
     Also converts non-Tensor inputs to tensors using `to_tensor`.
     """
     def __call__(self, x: Tensor) -> Tensor:
-        # TODO: Might wanna turn this off.
+        # TODO: Might wanna turn this off?
         # if not isinstance(x, Tensor):
         #     x = to_tensor(x)
         if x.ndim == 3:

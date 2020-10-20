@@ -166,7 +166,7 @@ class SettingABC(LightningDataModule):
     
     def __init_subclass__(cls, **kwargs):
         """ Called whenever a new subclass of `Setting` is declared. """
-        logger.debug(f"Registering a new setting: {cls.get_name()}")
+        # logger.debug(f"Registering a new setting: {cls.get_name()}")
 
         # Exceptionally, create this new empty list that will hold all the
         # forthcoming subclasses of this particular new setting.

@@ -8,10 +8,10 @@ from typing import Callable, Dict, Iterable, List, Tuple, Type, TypeVar, Union
 import gym
 from gym import Wrapper
 from gym.envs.classic_control import CartPoleEnv
-from gym.vector import SyncVectorEnv, VectorEnv
+from gym.vector import VectorEnv
 from utils.logging_utils import get_logger
 
-from common.gym_wrappers.batch_env import AsyncVectorEnv, BatchedVectorEnv
+from common.gym_wrappers.batch_env import AsyncVectorEnv, BatchedVectorEnv, SyncVectorEnv
 from common.gym_wrappers import ConvertToFromTensors
 logger = get_logger(__file__)
 

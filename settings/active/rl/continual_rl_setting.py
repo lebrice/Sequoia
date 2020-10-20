@@ -7,22 +7,23 @@ import numpy as np
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
 from gym.envs.atari import AtariEnv
-from simple_parsing import choice
+from simple_parsing import choice, list_field
 from torch import Tensor
 
-from common import Batch
+from common import Batch, Config
 from common.gym_wrappers import (SmoothTransitions, TransformAction,
                                  TransformObservation, TransformReward)
 from common.gym_wrappers.batch_env import BatchedVectorEnv
+from common.transforms import Transforms
 from utils.logging_utils import get_logger
 from settings.active import ActiveSetting
 from settings.assumptions.incremental import IncrementalSetting
 from settings.base.results import Results
+from settings.base import Method
 from utils.utils import dict_union
 
 from .rl_results import RLResults
 from .make_env import make_batched_env
-
        
 logger = get_logger(__file__)
 
@@ -48,7 +49,7 @@ task_params: Dict[Union[Type[gym.Env], str], List[str]] = {
 
 
 @dataclass
-class ContinualRLSetting(ActiveSetting, IncrementalSetting):
+class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     """ Reinforcement Learning Setting where the environment changes over time.
 
     This is an Active setting which uses gym environments as sources of data.
@@ -124,7 +125,25 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                                                shape=()))
         temp_env.close()
         del temp_env
+
+    def apply(self, method: Method, config: Config=None) -> "ContinualRLSetting.Results":
+        """Apply the given method on this setting to producing some results."""
+        self.config = config or Config.from_args(self._argv)
+        method.config = self.config
+
+        self.configure(method)
+        method.configure(setting=self)
         
+        # Run the Training loop (which is defined in IncrementalSetting).
+        self.train_loop(method)
+        # Run the Test loop (which is defined in IncrementalSetting).
+        results: RlResults = self.test_loop(method)
+        
+        logger.info(f"Resulting objective of Test Loop: {results.objective}")
+        logger.info(results.summary())
+        method.receive_results(self, results=results)
+        return results
+
     @property
     def env_name(self) -> str:
         if self.dataset in self.available_datasets.values():
@@ -159,24 +178,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
         self.train_env = dataloader
         return self.train_env
-
-    def train_wrappers(self) -> List[Callable]:
-        # TODO: Add some kind of Wrapper around the dataset to make it
-        # semi-supervised?
-        wrappers = []
-        # TODO: When using something like CartPole or Pendulum, we'd need to add
-        # a PixelObservations wrapper.
-        if self.env_name.startswith("CartPole"):
-            from common.gym_wrappers.pixel_observation import PixelObservationWrapper
-            wrappers.append(PixelObservationWrapper)
-        wrappers.extend([
-            # Apply the image transforms to the env.
-            partial(TransformObservation, f=self.train_transforms),
-            # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
-            partial(SmoothTransitions, task_schedule=self.train_task_schedule),
-        ])
-        return wrappers
-
+    
     def val_dataloader(self, *args, **kwargs):
         if not self.has_prepared_data:
             self.prepare_data()
@@ -197,6 +199,62 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         self.val_env = dataloader
         return self.val_env
 
+    def test_dataloader(self, *args, **kwargs):
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_test:
+            self.setup("test")
+        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        batch_size = kwargs["batch_size"]
+        
+        env = self.make_env(batch_size, wrappers=self.test_wrappers())
+        
+        # Create a dataset from the env using EnvDataset (needs cleanup)
+        from common.gym_wrappers.env_dataset import EnvDataset
+        dataset = EnvDataset(env)
+                
+        # Create a GymDataLoader for the EnvDataset (needs cleanup)
+        from .gym_dataloader import GymDataLoader
+        dataloader = GymDataLoader(dataset)
+
+        self.test_env = dataloader
+        return self.test_env
+
+    def make_train_env(self) -> gym.Env:
+        env = gym.make(self.env_name)
+        for wrapper in self.train_wrappers():
+            env = wrapper(env)
+        return env
+    
+    def make_val_env(self) -> gym.Env:
+        env = gym.make(self.env_name)
+        for wrapper in self.valid_wrappers():
+            env = wrapper(env)
+        return env
+    
+    def make_test_env(self) -> gym.Env:
+        env = gym.make(self.env_name)
+        for wrapper in self.test_wrappers():
+            env = wrapper(env)
+        return env
+    
+    def train_wrappers(self) -> List[Callable]:
+        # TODO: Add some kind of Wrapper around the dataset to make it
+        # semi-supervised?
+        wrappers = []
+        # TODO: When using something like CartPole or Pendulum, we'd need to add
+        # a PixelObservations wrapper.
+        if self.env_name.startswith(("CartPole", "Pendulum")):
+            from common.gym_wrappers.pixel_observation import PixelObservationWrapper
+            wrappers.append(PixelObservationWrapper)
+        wrappers.extend([
+            # Apply the image transforms to the env.
+            partial(TransformObservation, f=self.train_transforms),
+            # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
+            partial(SmoothTransitions, task_schedule=self.train_task_schedule),
+        ])
+        return wrappers
+
     def val_wrappers(self) -> List[Callable]:
         wrappers = []
         # When using something like CartPole, we'd need to add a
@@ -212,27 +270,6 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         ])
         return wrappers
 
-    def test_dataloader(self, *args, **kwargs):
-        if not self.has_prepared_data:
-            self.prepare_data()
-        if not self.has_setup_test:
-            self.setup("test")
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        batch_size = kwargs["batch_size"]
-        env = self.make_env(batch_size, wrappers=self.test_wrappers())
-        
-        # Create a dataset from the env using EnvDataset (needs cleanup)
-        from common.gym_wrappers.env_dataset import EnvDataset
-        dataset = EnvDataset(env)
-                
-        # Create a GymDataLoader for the EnvDataset (needs cleanup)
-        from .gym_dataloader import GymDataLoader
-        dataloader = GymDataLoader(dataset)
-
-        self.test_env = dataloader
-        return self.test_env
-
-
     def test_wrappers(self) -> List[Callable]:
         # Apply the image transforms to the env.
         # Add a wrapper that creates the 'tasks' (non-stationarity in the env).  
@@ -242,18 +279,23 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         ]
     
     def make_env(self, batch_size: int, wrappers: List[Callable]=None) -> BatchedVectorEnv:
-        env = make_batched_env(
-            self.env_name,
-            batch_size=batch_size,
-            wrappers=wrappers,
-        )
+        if batch_size > 1:
+            env = make_batched_env(
+                self.env_name,
+                batch_size=batch_size,
+                wrappers=wrappers,
+                asynchronous=False, # TODO: Just debugging atm.
+            )
+        else:
+            env = gym.make(self.env_name)
+            for wrapper in wrappers:
+                env = wrapper(env)
         # Add wrappers that convert to Observations/Rewards
         # and from Actions objects to npdarray/tensors.
         env = TransformObservation(env, f=self.Observations)
         env = TransformReward(env, f=self.Rewards)
         env = TransformAction(env, f=self.convert_action_to_ndarray)
         return env
-    
     
     def convert_action_to_ndarray(self, action: Union["ContinualRLSetting.Actions", Tensor, np.ndarray]) -> np.ndarray:
         if isinstance(action, Batch):

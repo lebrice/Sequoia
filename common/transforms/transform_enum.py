@@ -64,22 +64,14 @@ class Transforms(Enum):
         return super()._missing_(value)
     
     def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
-        logger.debug(f"shape_change on the Transforms enum: self.value {self.value}, input shape: {input_shape}")
-        # TODO: Give the impact of this transform on a given input shape.
-        if hasattr(self.value, "shape_change"):
-            output_shape = self.value.shape_change(input_shape)
-            logger.debug(f"Output shape: {output_shape}")
-            return output_shape
-        # TODO: Maybe we could give it a random input of shape 'input_shape'
-        # and check what kind of shape comes out of it? (This wouldn't work)
-        # with things like PIL image transforms though.
-        raise NotImplementedError("TODO")
-        temp = torch.rand(input_shape)
-        end = self.value(temp)
-        return end.shape
+        if isinstance(self.value, Transform):
+            return self.value.shape_change(input_shape)
+        raise NotImplementedError(f"TODO: add shape_change to {self}")
 
     def space_change(self, input_space: gym.Space) -> gym.Space:
-        return self.value.space_change(input_space)
+        if isinstance(self.value, Transform):
+            return self.value.space_change(input_space)
+        raise NotImplementedError(f"TODO: add space_change to {self}")
     
 # TODO: Add the SimCLR transforms.
 # class SimCLRTrainTransform(SimCLRTrainDataTransform):

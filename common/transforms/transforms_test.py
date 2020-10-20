@@ -1,3 +1,5 @@
+import gym
+from gym import spaces
 import pytest
 import torch
 
@@ -61,6 +63,13 @@ def test_transform(transform: Transforms, input_shape, output_shape):
     y = transform(x)
     assert y.shape == output_shape
     assert y.shape == transform.shape_change(input_shape)
+    
+    input_space = spaces.Box(low=0, high=1, shape=input_shape)
+    output_space = spaces.Box(low=0, high=1, shape=output_shape)
+    
+    actual_output_space = transform.space_change(input_space)
+    assert actual_output_space == output_space
+    
 
 
 def test_compose_shape_change_same_as_result_shape():

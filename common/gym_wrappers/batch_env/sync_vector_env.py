@@ -37,7 +37,7 @@ class SyncVectorEnv(SyncVectorEnv_):
 
 
     def render(self, mode: str = "rgb_array"):        
-        image_batch = np.stack([env.render(mode=mode) for env in self.envs])
+        image_batch = np.stack([env.render(mode="rgb_array") for env in self.envs])
         if mode == "rgb_array":
             return image_batch
         

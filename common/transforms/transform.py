@@ -45,5 +45,6 @@ class Transform(Generic[InputType, OutputType]):
             raise NotImplementedError(f"Dont know how to get the shape of space {space}.")
         input_shape = _get_shape(input_space)
         output_shape = self.shape_change(input_shape)
+
         from common.gym_wrappers.utils import space_with_new_shape
         return space_with_new_shape(input_space, output_shape)

@@ -84,8 +84,8 @@ class IncrementalSetting(SettingABC):
     _current_task_id: int = field(default=0, init=False)
 
     def __post_init__(self, *args, **kwargs):
-        assert False, "This Shouldn't ever be called!"
-        # super().__post_init__(self, *args, **kwargs)
+        super().__post_init__(self, *args, **kwargs)
+        # assert False, "This Shouldn't ever be called!"
 
     @property
     def current_task_id(self) -> Optional[int]:

@@ -90,8 +90,6 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
         states, reward, done, info = env.step(action)
         loss = loss_function(...)
     ```
-    
-    TODO: Clean up this constructor, it has way too many arguments.
     """
     def __init__(self,
                  env: Union[IterableDataset, gym.Env],
@@ -109,19 +107,23 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
             **kwargs,
         )
         Wrapper.__init__(self, env=self.env)
-    
-        self.observation_space: gym.Space = self.env.observation_space
-        self.action_space: gym.Space = self.env.action_space
-        assert isinstance(self.action_space, spaces.Tuple)
 
-        self.reward_space: gym.Space = getattr(self.env, "reward_space", spaces.Tuple([
-            spaces.Box(
+        self.observation_space: gym.Space = self.env.observation_space
+        self.action_space: gym.Space = self.env.action_space        
+        
+        if not hasattr(self.env, "reward_space"):
+            self.reward_space = spaces.Box(
                 low=self.env.reward_range[0],
                 high=self.env.reward_range[1],
-                shape=())
-            for _ in range(len(self.action_space))
-        ])
-        )
+                shape=(),
+            )
+            # Determine wether the env is a vectored env
+            if isinstance(self.env.unwrapped, VectorEnv):                
+                self.reward_space = spaces.Tuple([
+                    self.reward_space
+                    for _ in range(self.env.num_envs)
+                ])
+        
         self._iterator: Iterator = None
         
     # def __next__(self) -> EnvDatasetItem:
