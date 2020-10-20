@@ -59,7 +59,8 @@ class MultiTaskEnvironment(gym.Wrapper):
                  noise_std: float = 0.2,
                  add_task_dict_to_info: bool = False,
                  add_task_id_to_obs: bool = False,
-                 starting_step: int = 0):
+                 starting_step: int = 0,
+                 max_steps: int = None):
         """ Wraps an environment, allowing it to be 'multi-task'.
 
         NOTE: Assumes that all the attributes in 'task_param_names' are floats
@@ -93,9 +94,13 @@ class MultiTaskEnvironment(gym.Wrapper):
                 #     f"({unwrapped_type}), so we can't make it multi-task with "
                 #     f"this wrapper."
                 # ))
+
+        self._max_steps: Optional[int] = max_steps
+        self._starting_step: int = starting_step
+        self._steps: int = self._starting_step
+
         self._current_task: Dict = {}
         self._task_schedule: Dict[int, Dict[str, Any]] = OrderedDict()
-        self._steps: int = starting_step
         
         self.task_params: List[str] = task_params or []
         self.default_task: np.ndarray = self.current_task.copy()
@@ -117,6 +122,8 @@ class MultiTaskEnvironment(gym.Wrapper):
                 self.env.observation_space,
                 spaces.Discrete(n=n_tasks)
             ])
+        
+        self._closed = False
 
     @property
     def current_task_id(self) -> int:
@@ -136,6 +143,9 @@ class MultiTaskEnvironment(gym.Wrapper):
     def step(self, *args, **kwargs):
         # If we reach a step in the task schedule, then we change the task to
         # that given step.
+        if self._closed:
+            raise gym.error.ClosedEnvironmentError("Can't step in closed env.")
+        
         if self.steps in self.task_schedule:
             self.current_task = self.task_schedule[self.steps]
         observation, rewards, done, info = super().step(*args, **kwargs)
@@ -143,9 +153,14 @@ class MultiTaskEnvironment(gym.Wrapper):
             observation = (observation, self.current_task_id)
         if self.add_task_dict_to_info:
             info.update(self.current_task)
-        self.steps += 1
+
+        self.steps += 1       
         return observation, rewards, done, info
 
+    def close(self, **kwargs) -> None:
+        self.env.close(**kwargs)
+        self._closed = True
+    
     def reset(self, new_random_task: bool = False, **kwargs):
         """ Resets the wrapped environment.
         
@@ -156,6 +171,8 @@ class MultiTaskEnvironment(gym.Wrapper):
         taken, hence the 'task' progression according to the task_schedule
         doesn't change.
         """
+        if self._closed:
+            raise gym.error.ClosedEnvironmentError("Can't reset closed env.")
         if new_random_task:
             self.current_task = self.random_task()
         observation = self.env.reset(**kwargs)
@@ -169,6 +186,16 @@ class MultiTaskEnvironment(gym.Wrapper):
 
     @steps.setter
     def steps(self, value: int) -> None:
+        if value < self._starting_step:
+            value = self._starting_step 
+        if self._max_steps is not None and value > self._max_steps:
+            # Reached the maximum number of steps, stagnate.
+            # TODO: What exactly should we do in this case? Should we close
+            # the env? Or just stay at the same 'step' in the task schedule
+            # forever?
+            # TODO: Is this the "correct" way to limit the number of steps in
+            # an environment?
+            value = self._max_steps
         self._steps = value
 
     @property
