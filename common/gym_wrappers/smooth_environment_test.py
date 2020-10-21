@@ -89,3 +89,42 @@ def test_update_only_on_reset():
             _ = env.reset()
             expected_length = start_length + ((i+1) / total_steps) * (end_length - start_length)
         assert np.isclose(env.length, expected_length)
+
+
+def test_task_id_is_always_None():
+    total_steps = 100
+    original = gym.make("CartPole-v0")
+    start_length = original.length
+    end_length = 10.0
+    task_schedule = {
+        total_steps: dict(length=end_length)
+    }
+    env = SmoothTransitions(
+        original,
+        task_schedule=task_schedule,
+        only_update_on_episode_end=True,
+        add_task_id_to_obs=True,
+        add_task_dict_to_info=True,
+    )
+
+    for x, task_id in (env.observation_space.sample() for i in range(100)):
+        assert task_id is None
+
+    env.reset()
+    env.seed(123)
+    expected_length = start_length
+    for i in range(total_steps):
+        assert env.steps == i
+        obs, _, done, _ = env.step(env.action_space.sample())
+        
+        x, task_id = obs
+        assert task_id is None
+                
+        assert env.steps == i + 1
+        if done:
+            obs = env.reset()
+            x, task_id = obs
+            assert task_id is None
+            
+            expected_length = start_length + ((i+1) / total_steps) * (end_length - start_length)
+        assert np.isclose(env.length, expected_length)

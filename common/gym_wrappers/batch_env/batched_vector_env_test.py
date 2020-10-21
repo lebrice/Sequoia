@@ -137,7 +137,8 @@ def test_render_human():
             env.viewer.window
 
 
-def test_with_pixelobservationwrapper_before_batch():
+@pytest.mark.parametrize("env_name", ["CartPole-v0", "Pendulum-v0"])
+def test_with_pixelobservationwrapper_before_batch(env_name: str):
     """ Test out what happens if we put the PixelObservationWrapper before the 
     batching, i.e. in each of the environments.
     """
@@ -148,10 +149,34 @@ def test_with_pixelobservationwrapper_before_batch():
     from ..pixel_observation import PixelObservationWrapper
     
     def make_env():
-        return PixelObservationWrapper(gym.make("CartPole-v0"))
+        return PixelObservationWrapper(gym.make(env_name))
     setup_time, time_per_step = benchmark(batch_size, n_workers, make_env)
     print(f"Setup time: {setup_time}, time_per_step: {time_per_step}")
     
+
+
+@pytest.mark.parametrize("env_name", ["CartPole-v0", "Pendulum-v0"])
+def test_with_pixelobservationwrapper_after_batch(env_name: str):
+    """ Test out what happens if we put the PixelObservationWrapper *after* the 
+    batching, i.e. wrapping the batched environment.
+    """
+    batch_size = 32
+    n_steps = 100
+    n_workers = None
+    
+    from ..pixel_observation import PixelObservationWrapper
+    
+    def make_env():
+        return gym.make(env_name)
+    setup_time, time_per_step = benchmark(
+        batch_size,
+        n_workers,
+        make_env,
+        wrappers=[PixelObservationWrapper]
+    )
+    print(f"Setup time: {setup_time}, time_per_step: {time_per_step}")
+    
+
 
 
 def benchmark(batch_size: int,

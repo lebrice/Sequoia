@@ -11,6 +11,15 @@ from torch.utils.data import IterableDataset
 
 from utils.logging_utils import get_logger
 
+
+from gym.envs.classic_control import AcrobotEnv, CartPoleEnv, PendulumEnv, MountainCarEnv, Continuous_MountainCarEnv
+classic_control_envs = (AcrobotEnv, CartPoleEnv, PendulumEnv, MountainCarEnv, Continuous_MountainCarEnv)
+
+classic_control_env_prefixes: Tuple[str, ...] = (
+    "CartPole", "Pendulum", "Acrobot", "MountainCar", "MountainCarContinuous"
+)
+
+
 logger = get_logger(__file__)
 
 ObservationType = TypeVar("ObservationType")

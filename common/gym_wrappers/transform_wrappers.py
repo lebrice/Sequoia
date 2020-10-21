@@ -18,7 +18,7 @@ class TransformObservation(TransformObservation_, IterableWrapper):
         if isinstance(f, list) and not callable(f):
             f = Compose(f)
         super().__init__(env, f=f)
-        self.f: Compose
+        self.f: Transform
         # Modify the observation space, using the 'space_change' method of Transform.
         self.observation_space = self.env.observation_space
         if isinstance(self.f, Transform) or hasattr(self.f, "space_change"):
