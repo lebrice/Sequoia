@@ -9,8 +9,8 @@ from functools import lru_cache, partial, wraps
 from inspect import ismethod
 from multiprocessing.connection import Connection
 from operator import attrgetter, itemgetter, methodcaller
-from typing import (Any, Callable, Dict, Generic, Iterable, List, Optional,
-                    Sequence, Tuple, Type, TypeVar, Union, overload)
+from typing import (Any, Callable, ClassVar, Dict, Generic, Iterable, List,
+                    Optional, Sequence, Tuple, Type, TypeVar, Union, overload)
 
 import gym
 import numpy as np
@@ -37,6 +37,16 @@ class ExtendedAsyncState(Enum):
 EnvType = TypeVar("EnvType", bound=gym.Env)
 
 class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
+    
+    # Whenever calling __getattr__ (when we're missing an attribute on the
+    # VectorEnv), try to fetch the missing attribute from the remote workers.
+    # If the attribute is a method, then this returns a BatchedMethod, which
+    # when called with arguments, will execute the corresponding method on all
+    # the remote environments. This could be particularly useful for doing
+    # things like changing the task or seeding the remote workers, however it
+    # adds some complexity, so I'm setting it to False by default. 
+    allow_getattr_to_reach_remote: ClassVar[bool] = False
+    
     def __init__(self,
                  env_fns: Sequence[Callable[[], EnvType]],
                  context=None,
@@ -222,6 +232,10 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         logger.debug(f"Attempting to get missing attribute {name}.")
         if name in {"closed", "_state"}:
             return
+
+        if not type(self).allow_getattr_to_reach_remote:
+            raise AttributeError(name)
+        
         assert isinstance(name, str)
         env_has_attribute = self.apply(partial(hasattr_, name=name))
         if all(env_has_attribute):
