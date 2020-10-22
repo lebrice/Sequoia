@@ -218,11 +218,11 @@ if not _is_singledispatch(gym.vector.utils.concatenate):
 #     gym.vector.utils.concatenate = concatenate
 
 
-# @batch_space.register
-# def batch_sparse_spaces(space: Sparse, n: int=1) -> gym.Space:
-#     assert False, "WOOT WOOT!!"
+@gym.vector.utils.batch_space.register
+def batch_sparse_spaces(space: Sparse, n: int=1) -> gym.Space:
+    assert False, f"WOOT WOOT!: {space}, {n}"
 
-# @concatenate.register
-# def concatenate_sparse_spaces(space: Sparse, n: int=1) -> gym.Space:
-#     assert False, "WOOT WOOT!!"
+@gym.vector.utils.concatenate.register
+def concatenate_sparse_spaces(space: Sparse, n: int=1) -> gym.Space:
+    assert False, "WOOT WOOT!!"
 

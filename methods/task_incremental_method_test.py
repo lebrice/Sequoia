@@ -5,27 +5,25 @@ from common.metrics import ClassificationMetrics
 from settings import TaskIncrementalResults, TaskIncrementalSetting
 from simple_parsing import ParsingError
 
-from .class_incremental_method import ClassIncrementalMethod
-from .models.task_incremental_model import TaskIncrementalModel
 
 
-def test_parsing_hparams_multihead():
-    """Test that parsing the multihead field works as expected. """
-    hp = TaskIncrementalModel.HParams.from_args("")
-    assert hp.multihead
+# def test_parsing_hparams_multihead():
+#     """Test that parsing the multihead field works as expected. """
+#     hp = TaskIncrementalModel.HParams.from_args("")
+#     assert hp.multihead
 
-    with pytest.raises(ParsingError):
-        hp = TaskIncrementalModel.HParams.from_args("--multihead")
-        assert hp.multihead
+#     with pytest.raises(ParsingError):
+#         hp = TaskIncrementalModel.HParams.from_args("--multihead")
+#         assert hp.multihead
 
-    hp = TaskIncrementalModel.HParams.from_args("--multihead=False")
-    assert not hp.multihead
+#     hp = TaskIncrementalModel.HParams.from_args("--multihead=False")
+#     assert not hp.multihead
 
-    hp = TaskIncrementalModel.HParams.from_args("--multihead True")
-    assert hp.multihead
+#     hp = TaskIncrementalModel.HParams.from_args("--multihead True")
+#     assert hp.multihead
 
-    hp = TaskIncrementalModel.HParams.from_args("--multihead False")
-    assert not hp.multihead
+#     hp = TaskIncrementalModel.HParams.from_args("--multihead False")
+#     assert not hp.multihead
 
 
 @pytest.mark.skip(reason="This doesn't really belong here anymore")

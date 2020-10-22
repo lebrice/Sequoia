@@ -141,7 +141,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
             # Start with the default task (step 0) and then add a new task
             # at intervals of `self.steps_per_task`
-            for task_step in range(self.steps_per_task, self.max_steps):
+            for task_step in range(self.steps_per_task, self.max_steps, self.steps_per_task):
                 self.train_task_schedule[task_step] = temp_env.random_task()
             assert len(self.train_task_schedule) == self.nb_tasks - 1
             
@@ -214,6 +214,9 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             asynchronous=use_mp,
             shared_memory=False,
         )
+        # Apply the "post-batch" wrappers:
+        if not self.task_labels_at_train_time:
+            env = RemoveTaskLabelsWrapper(env)
         # Add wrappers that converts numpy arrays / etc to Observations/Rewards
         # and from Actions objects to numpy arrays.
         env = TypedObjectsWrapper(
@@ -245,7 +248,15 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             batch_size=batch_size,
             asynchronous=use_mp,
             shared_memory=False,
-        )
+        )   
+        # Apply the "post-batch" wrappers:
+        # TODO: See below, should the validation environment have task labels if
+        # the train env does but not the test env? 
+        if not self.task_labels_at_test_time:
+            # TODO: The RemoveTaskLabelsWrapper makes the 'task label' space
+            # Sparse with none_prob=1., but it still allows the user to see the
+            # number of tasks.
+            env = RemoveTaskLabelsWrapper(env)
         env = TypedObjectsWrapper(
             env,
             observations_type=self.Observations,
@@ -277,6 +288,13 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             asynchronous=use_mp,
             shared_memory=False,
         )
+        # Apply the "post-batch" wrappers:
+        if not self.task_labels_at_test_time:
+            # TODO: The RemoveTaskLabelsWrapper makes the 'task label' space
+            # Sparse with none_prob=1., but it still allows the user to see the
+            # number of tasks.
+            env = RemoveTaskLabelsWrapper(env)
+            
         env = TypedObjectsWrapper(
             env,
             observations_type=self.Observations,
@@ -295,6 +313,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         env = gym.make(self.env_name)
         for wrapper in self.train_wrappers():
             env = wrapper(env)
+        if not self.task_labels_at_train_time:
+            # TODO: Hide or remove the task labels?
+            env = RemoveTaskLabelsWrapper(env)
+            # env = HideTaskLabelsWrapper(env)
         return env
 
     def train_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
@@ -348,8 +370,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # Add a wrapper that creates sharp 'tasks'.
             # We add a restriction to prevent users from getting data from
             # previous or future tasks.
-            assert False, self.current_task_id
-            raise NotImplementedError(f"TODO: Finish setting this up, with start_step and max_steps based on the task_id.")
             starting_step = self.current_task_id * self.steps_per_task
             max_steps = (self.current_task_id + 1) * self.steps_per_task - 1
 
@@ -367,8 +387,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # them to None with another wrapper here.
             # We could also add an argument to the MultiTaskEnvironment, but it 
             # already has enough responsability as it is imo.
-            if not self.task_labels_at_train_time:
-                wrappers.append(RemoveTaskLabelsWrapper)
         return wrappers
     
     def make_val_env(self) -> gym.Env:
@@ -376,6 +394,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         env = gym.make(self.env_name)
         for wrapper in self.val_wrappers():
             env = wrapper(env)
+        if not self.task_labels_at_test_time:
+            env = RemoveTaskLabelsWrapper(env)
         return env
     
     def val_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
@@ -414,8 +434,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 starting_step=starting_step,
                 max_steps=max_steps,
             ))
-            if not self.task_labels_at_train_time:
-                wrappers.append(RemoveTaskLabelsWrapper)
         return wrappers
 
     def make_test_env(self) -> gym.Env:
@@ -423,6 +441,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         env = gym.make(self.env_name)
         for wrapper in self.test_wrappers():
             env = wrapper(env)
+        if not self.task_labels_at_test_time:
+            env = RemoveTaskLabelsWrapper(env)
         return env
 
     def test_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
@@ -460,8 +480,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 starting_step=starting_step,
                 max_steps=max_steps,
             ))
-            if not self.task_labels_at_test_time:
-                wrappers.append(RemoveTaskLabelsWrapper)
         return wrappers
 
 
@@ -487,8 +505,8 @@ class TypedObjectsWrapper(IterableWrapper):
             if isinstance(action, Tensor):
                 action = action.cpu().numpy()
             return action
+
         convert_action_object_to_sample_from_action_space.space_change = lambda x: x
-        
         
         env = TransformAction(env, f=convert_action_object_to_sample_from_action_space)
         super().__init__(env=env)
@@ -498,16 +516,35 @@ from typing import TypeVar, Tuple, Optional
 T = TypeVar("T")
 
 
-def remove_task_labels(observation: Tuple[T, int]) -> Tuple[T, Optional[int]]:
+def remove_task_labels(observation: Tuple[T, int]) -> T:
     assert len(observation) == 2
-    print(f"original observation had task labels: {observation[1]}")
-    return observation[0], None
+    return observation[0]
 
 
 class RemoveTaskLabelsWrapper(TransformObservation):
     def __init__(self, env: gym.Env, f=remove_task_labels):
         super().__init__(env, f=f)
-        assert False, (env.observation_space, self.observation_space)
+        self.observation_space = self.space_change(self.env.observation_space)
+
+    @classmethod
+    def space_change(cls, input_space: gym.Space) -> gym.Space:
+        assert isinstance(input_space, spaces.Tuple), input_space
+        assert len(input_space) == 2
+        return input_space[0]
+
+
+def hide_task_labels(observation: Tuple[T, int]) -> Tuple[T, Optional[int]]:
+    assert len(observation) == 2
+    if isinstance(observation, Batch):
+        return type(observation).from_inputs((observation[0], None))
+    return observation[0], None
+
+
+class HideTaskLabelsWrapper(TransformObservation):
+    def __init__(self, env: gym.Env, f=hide_task_labels):
+        super().__init__(env, f=f)
+        self.observation_space = self.space_change(self.env.observation_space)
+        
     
     @classmethod
     def space_change(cls, input_space: gym.Space) -> gym.Space:
@@ -516,10 +553,19 @@ class RemoveTaskLabelsWrapper(TransformObservation):
         # would replace the second part of the tuple with it. We
         # leave it the same here for now.
         assert len(input_space) == 2
-        return spaces.Tuple(
+        
+        task_label_space = input_space.spaces[1]
+        if isinstance(task_label_space, Sparse):
+            # Replace the existing 'Sparse' space with another one with the same
+            # base but with none_prob = 1.0
+            task_label_space = task_label_space.base
+        assert not isinstance(task_label_space, Sparse)
+        # Do we set the task label space as sparse? or do we just remote that
+        # space?
+        return spaces.Tuple([
             input_space[0],
-            Sparse(input_space[1], none_prob=1.)
-        )
+            Sparse(task_label_space, none_prob=1.)
+        ])
 
 
 

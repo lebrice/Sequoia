@@ -160,7 +160,6 @@ class Setting(SettingABC,
         self._observation_space = observation_space
         self._action_space = action_space
         self._reward_space = reward_space
-
         
         # # Transform that will split batches into Observations and Rewards.
         # self.split_batch_transform = SplitBatch(

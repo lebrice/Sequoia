@@ -14,6 +14,7 @@ from typing import (Any, Callable, ClassVar, Dict, Generic, Iterable, List,
 
 import gym
 import numpy as np
+
 from gym import Env, Wrapper
 from gym.vector import AsyncVectorEnv as AsyncVectorEnv_
 from gym.vector.async_vector_env import (AlreadyPendingCallError, AsyncState,
@@ -45,7 +46,7 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
     # the remote environments. This could be particularly useful for doing
     # things like changing the task or seeding the remote workers, however it
     # adds some complexity, so I'm setting it to False by default. 
-    allow_getattr_to_reach_remote: ClassVar[bool] = False
+    allow_remote_getattr: ClassVar[bool] = False
     
     def __init__(self,
                  env_fns: Sequence[Callable[[], EnvType]],
@@ -88,6 +89,11 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         # List that stores wether a function is being applied on an env and we
         # should expect a result response for that env.
         self.expects_result: List[bool] = []
+        
+                
+        # Important, this must be done before the call to super().__init__
+        from common.gym_wrappers.sparse_space import Sparse
+        
         super().__init__(
             env_fns=env_fns,
             context=context,
@@ -229,12 +235,13 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
 
 
     def __getattr__(self, name: str):
-        logger.debug(f"Attempting to get missing attribute {name}.")
         if name in {"closed", "_state"}:
             return
 
-        if not type(self).allow_getattr_to_reach_remote:
+        if not type(self).allow_remote_getattr:
             raise AttributeError(name)
+        
+        logger.debug(f"Attempting to get missing attribute {name}.")
         
         assert isinstance(name, str)
         env_has_attribute = self.apply(partial(hasattr_, name=name))

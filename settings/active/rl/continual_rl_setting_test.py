@@ -1,35 +1,50 @@
+from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
 import gym
+import numpy as np
 import pytest
+from gym import spaces
 
 from common.config import Config
+from common.gym_wrappers.sparse_space import Sparse
 from common.transforms import ChannelsFirstIfNeeded, ToTensor, Transforms
 from conftest import xfail_param
 from utils.utils import take
 
 from .continual_rl_setting import ContinualRLSetting
 
-def test_basic(config: Config):
+
+def test_basic():
     setting = ContinualRLSetting(dataset="breakout")
     batch_size = 4
     env = setting.train_dataloader(batch_size=batch_size)
     observations = env.reset()
-        
+
+    assert setting.smooth_task_boundaries
+    assert setting.nb_tasks == 1
+    assert not setting.task_labels_at_train_time
+    assert not setting.task_labels_at_test_time
+    
+    # TODO: Should we have the task label space in this case?
+    
+    with setting.train_dataloader(batch_size=batch_size) as train_env:
+        assert train_env.observation_space == spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32)
+
+    with setting.val_dataloader(batch_size=batch_size) as valid_env:
+        assert valid_env.observation_space == spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32)
+    
+    with setting.test_dataloader(batch_size=batch_size) as test_env:
+        assert test_env.observation_space == spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32)
+
     for i in range(5):
         actions = env.action_space.sample()
         observations, rewards, done, info = env.step(actions)
         
         assert isinstance(observations, ContinualRLSetting.Observations)
         assert observations.x.shape == (batch_size, 3, 210, 160)
-        
-        if setting.smooth_task_boundaries:
-            assert observations.task_labels is None or all(label is None for label in observations.task_labels)
-        elif setting.task_labels_at_train_time:
-            assert observations.task_labels is not None and all(label is not None for label in observations.task_labels)
-            assert all(task_id == 0 for task_id in observations.task_labels)
+        assert observations.task_labels is None or all(label is None for label in observations.task_labels)
 
-            
         # TODO: Is this what we want? Could the reward or actions ever change?
         assert isinstance(rewards, ContinualRLSetting.Rewards)
         assert rewards.y.shape == (batch_size,)
@@ -66,28 +81,33 @@ def test_check_iterate_and_step(dataset: str,
         setting.val_dataloader,
         setting.test_dataloader
     ]
-    for dataloader_method in dataloader_methods:
-        print(f"Testing dataloader method {dataloader_method.__name__}")
-        dataloader = dataloader_method(batch_size=batch_size)
-        
-        reset_obs = dataloader.reset()
-        assert isinstance(reset_obs, ContinualRLSetting.Observations)
-        assert reset_obs.x.shape == expected_obs_batch_shape
-        
-        step_obs, *_ = dataloader.step(dataloader.action_space.sample())
-        assert isinstance(step_obs, ContinualRLSetting.Observations)
-        assert step_obs.x.shape == expected_obs_batch_shape
-        
-        # TODO: this is still not the right type, and for some reason it
-        # receives `None` as a second item in the batch ?
-        for iter_obs in take(dataloader, 3):
-            assert isinstance(iter_obs, ContinualRLSetting.Observations)
-            assert iter_obs.x.shape == expected_obs_batch_shape
-            reward = dataloader.send(dataloader.action_space.sample())
+    
+
+    for task_id in range(setting.nb_tasks):
+        setting.current_task_id = task_id
+            
+        for dataloader_method in dataloader_methods:
+            print(f"Testing dataloader method {dataloader_method.__name__}")
+            dataloader = dataloader_method(batch_size=batch_size)
+            
+            reset_obs = dataloader.reset()
+            assert isinstance(reset_obs, ContinualRLSetting.Observations)
+            assert reset_obs.x.shape == expected_obs_batch_shape
+            
+            step_obs, *_ = dataloader.step(dataloader.action_space.sample())
+            assert isinstance(step_obs, ContinualRLSetting.Observations)
+            assert step_obs.x.shape == expected_obs_batch_shape
+            
+            for iter_obs in take(dataloader, 3):
+                assert isinstance(iter_obs, ContinualRLSetting.Observations)
+                assert iter_obs.x.shape == expected_obs_batch_shape
+                
+                assert iter_obs.task_labels is None or all(task_label is None for task_label in iter_obs.task_labels)
+                reward = dataloader.send(dataloader.action_space.sample())
 
 
 @pytest.mark.xfail(reason=f"TODO: DQN model only accepts string environment names...")
-def test_dqn_on_env():
+def test_dqn_on_env(tmp_path: Path):
     """ TODO: Would be nice if we could have the models work directly on the
     gym envs..
     """
@@ -95,7 +115,6 @@ def test_dqn_on_env():
     from pytorch_lightning import Trainer
     setting = ContinualRLSetting(observe_state_directly=False)
     env = setting.train_dataloader(batch_size=5)
-    model = DQN("PongNoFrameskip-v4")
-    trainer = Trainer(fast_dev_run=True)
+    model = DQN(env)
+    trainer = Trainer(fast_dev_run=True, default_root_dir=tmp_path)
     trainer.fit(model)
-    assert False

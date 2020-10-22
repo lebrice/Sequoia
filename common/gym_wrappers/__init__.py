@@ -1,4 +1,5 @@
 """ Contains some potentially useful gym wrappers. """
+from .sparse_space import Sparse
 from .pixel_observation import PixelObservationWrapper
 from .utils import has_wrapper
 from .multi_task_environment import MultiTaskEnvironment

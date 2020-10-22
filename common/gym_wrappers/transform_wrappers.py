@@ -21,12 +21,15 @@ class TransformObservation(TransformObservation_, IterableWrapper):
         self.f: Transform
         # Modify the observation space, using the 'space_change' method of Transform.
         self.observation_space = self.env.observation_space
+        
         if isinstance(self.f, Transform) or hasattr(self.f, "space_change"):
             self.space_change = self.f.space_change
-            self.observation_space = self.f.space_change(self.observation_space)
-            # logger.debug(f"New observation space after transform: {self.observation_space}")
-        else:
-            logger.warning(UserWarning(f"Don't know how the transform {self.f} will impact the observation space!"))
+            self.observation_space = self.space_change(self.env.observation_space)
+        # else:
+        #     logger.warning(UserWarning(
+        #         f"Assuming that the transform {self.f} will have no impact on "
+        #         f"the observation space."
+        #     ))
 
     
 class TransformReward(TransformReward_, IterableWrapper):
@@ -53,11 +56,12 @@ class TransformAction(IterableWrapper):
         self.f: Compose = f
         # Modify the action space, using the 'space_change' method of Transform.
         self.action_space = self.env.action_space
+
         if isinstance(self.f, Transform) or hasattr(self.f, "space_change"):
-            self.action_space = self.f.space_change(self.action_space)
-            logger.debug(f"New action space after transform: {self.action_space}")
-        else:
-            logger.warning(UserWarning(f"Don't know how the transform {self.f} will impact the action space!"))
+            self.space_change = self.f.space_change
+            self.action_space = self.space_change(self.env.action_space)
+            # logger.debug(f"New action space after transform: {self.observation_space}")
+        
 
     def step(self, action):
         return self.env.step(self.action(action))

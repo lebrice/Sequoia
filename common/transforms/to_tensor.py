@@ -117,7 +117,7 @@ class ToTensor(ToTensor_, Transform):
 
     @classmethod
     def space_change(cls, input_space: gym.Space) -> gym.Space:
-        assert isinstance(input_space, spaces.Box), "Only applies to Box spaces"
+        assert isinstance(input_space, spaces.Box), f"Only applies to Box spaces, not {input_space}"
         return spaces.Box(
             low=0.,
             high=1.,

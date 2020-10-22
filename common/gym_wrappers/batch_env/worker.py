@@ -185,8 +185,8 @@ def _custom_worker(index, env_fn, pipe, parent_pipe, shared_memory, error_queue)
     except (KeyboardInterrupt, Exception):
         import traceback
         traceback.print_exc()
-        import pdb
-        pdb.set_trace()
+        # import pdb
+        # pdb.set_trace()
         error_queue.put((index,) + sys.exc_info()[:2])
         pipe.send((None, False))
     finally:

@@ -11,9 +11,9 @@ from gym import spaces
 from .async_vector_env import AsyncVectorEnv
 
 @pytest.fixture()
-def allow_getattr_through_to_workers(monkeypatch):
-    assert hasattr(AsyncVectorEnv, "allow_getattr_to_reach_remote")
-    monkeypatch.setattr(AsyncVectorEnv, "allow_getattr_to_reach_remote", True)
+def allow_remote_getattr(monkeypatch):
+    assert hasattr(AsyncVectorEnv, "allow_remote_getattr")
+    monkeypatch.setattr(AsyncVectorEnv, "allow_remote_getattr", True)
 
 
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
@@ -110,7 +110,7 @@ def test_getattr_fails_by_default(batch_size: int):
 
 
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
-def test_getattr_gets_it_from_envs(batch_size: int, allow_getattr_through_to_workers):
+def test_getattr_gets_it_from_envs(batch_size: int, allow_remote_getattr):
     env_fns = [partial(gym.make, "CartPole-v0") for _ in range(batch_size)]
     env: AsyncVectorEnv[CartPoleEnv]
     with AsyncVectorEnv(env_fns=env_fns) as env:
@@ -163,7 +163,7 @@ class MyCartPoleEnv(CartPoleEnv):
         return self.length
 
 @pytest.mark.parametrize("batch_size", [4])
-def test_batched_method_call(batch_size: int, allow_getattr_through_to_workers):
+def test_batched_method_call(batch_size: int, allow_remote_getattr):
     env_fns = [MyCartPoleEnv for _ in range(batch_size)]
     env: AsyncVectorEnv[MyCartPoleEnv]
     with AsyncVectorEnv(env_fns=env_fns) as env:
