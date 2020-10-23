@@ -59,20 +59,22 @@ class Batch(Sequence[Item], ABC):
     device(type='cuda', index=0)
     """
     field_names: ClassVar[Tuple[str, ...]]
-    
+
     # TODO: Would it make sense to add a gym Space classvar here? 
     # space: ClassVar[Optional[gym.Space]] = None
 
-    def __post_init__(self):
-        type(self).field_names = [f.name for f in dataclasses.fields(self)]
-    
     def __init_subclass__(cls, *args, **kwargs):
         # IDEA: By not marking 'Batch' a dataclass, we would let the subclass
         # decide it if wants to be frozen or not!
+        
+        
         if not dataclasses.is_dataclass(cls):
             raise RuntimeError(f"{__class__} subclass {cls} must be a dataclass!")
         # Subclasses of `Batch` should be dataclasses!
         super().__init_subclass__(*args, **kwargs)
+
+    def __post_init__(self):
+        type(self).field_names = [f.name for f in dataclasses.fields(self)]
 
     def __iter__(self) -> Iterator[Item]:
         # for name in self.field_names:
@@ -270,16 +272,22 @@ class Batch(Sequence[Item], ABC):
         """ Converts a batch of items into a 'Batch' object. """
         if isinstance(inputs, cls):
             return inputs
+        if isinstance(inputs, (tuple, list)):
+            if len(inputs) == 1 and isinstance(inputs[0], (list, tuple)):
+                assert False, inputs
+                inputs = inputs[0]
+            return cls(*inputs)
+
         if isinstance(inputs, Tensor):
             return cls(inputs)
         if isinstance(inputs, np.ndarray):
             return cls(torch.as_tensor(inputs))
         if isinstance(inputs, dict):
             return cls(**inputs)
-        if isinstance(inputs, (tuple, list)):
-            if len(inputs) == 1 and isinstance(inputs[0], (list, tuple)):
-                inputs = inputs[0]
-            return cls(*inputs)
+        # TODO: Do we want to allow Batch objects to contain single "items" in
+        # addition to batches of items?
+        if isinstance(inputs, (int, float)):
+            return cls(torch.as_tensor(inputs))
         raise RuntimeError(
             f"Don't know how to turn inputs {inputs} (type {type(inputs)}) "
             f"into a Batch object of type {cls}!"

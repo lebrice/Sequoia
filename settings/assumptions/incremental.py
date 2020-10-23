@@ -128,6 +128,7 @@ class IncrementalSetting(SettingABC):
             # Creating the dataloaders ourselves (rather than passing 'self' as
             # the datamodule):
             # success = trainer.fit(model, datamodule=self)
+            # TODO: Pass the train_dataloader and val_dataloader methods, rather than the envs.
             task_train_loader = self.train_dataloader()
             task_valid_loader = self.val_dataloader()
             

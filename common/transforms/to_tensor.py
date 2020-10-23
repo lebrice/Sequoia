@@ -108,7 +108,9 @@ class ToTensor(ToTensor_, Transform):
             if the PIL Image belongs to one of the modes (L, LA, P, I, F, RGB, YCbCr, RGBA, CMYK, 1)
             or if the numpy.ndarray has dtype = np.uint8
         """
-        return to_tensor(pic)
+        t = to_tensor(pic)
+        assert isinstance(t, Tensor), type(t)
+        return t
 
     @classmethod
     def shape_change(cls, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:

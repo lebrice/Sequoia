@@ -43,8 +43,6 @@ def test_basic(config: Config):
 
     for task_id in range(setting.nb_tasks):
         setting.current_task_id = task_id
-        
-        
         env = setting.train_dataloader(batch_size=batch_size)
         
         assert env.observation_space == spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32)

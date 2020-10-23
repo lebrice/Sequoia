@@ -341,6 +341,7 @@ class EnvDataset(gym.Wrapper,
         super().close()
 
     def __len__(self) -> Optional[int]:
+        assert self.max_steps is not None, self.max_steps
         return self.max_steps
 
 # from common.transforms import Compose

@@ -14,8 +14,6 @@ class RLSetting(TaskIncrementalRLSetting):
     """
     nb_tasks: int = constant(1)
 
-    
-    
     def train_dataloader(self, *args, **kwargs):
         env = super().train_dataloader(*args, **kwargs)
         return RemoveTaskLabelsWrapper(env)

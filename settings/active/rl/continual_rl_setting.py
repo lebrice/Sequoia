@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import partial
-from typing import ClassVar, Dict, List, Type, Callable, Union
+from typing import ClassVar, Dict, List, Type, Callable, Union, Optional
 
 import gym
 import numpy as np
@@ -29,6 +29,7 @@ from utils import dict_union, get_logger
 from .gym_dataloader import GymDataLoader
 from .make_env import make_batched_env
 from .rl_results import RLResults
+from .wrappers import HideTaskLabelsWrapper, RemoveTaskLabelsWrapper, TypedObjectsWrapper, NoTypedObjectsWrapper
 from .. import ActiveEnvironment
 
 logger = get_logger(__file__)
@@ -54,6 +55,10 @@ task_params: Dict[Union[Type[gym.Env], str], List[str]] = {
 }
 
 
+Environment = ActiveEnvironment["ContinualRLSetting.Observations",
+                                "ContinualRLSetting.Observations",
+                                "ContinualRLSetting.Rewards"]
+
 @dataclass
 class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     """ Reinforcement Learning Setting where the environment changes over time.
@@ -77,6 +82,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.channels_first_if_needed)
 
     available_datasets: ClassVar[Dict[str, str]] = {
+        "cartpole": "CartPole-v0",
+        "pendulum": "Pendulum-v0",
         "breakout": "Breakout-v0",
         "duckietown": "Duckietown-straight_road-v0"
     }
@@ -87,7 +94,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # Max number of steps ("length" of the training and test "datasets").
     max_steps: int = 10_000
     # Number of steps per task.
-    steps_per_task: int = 5_000
+    steps_per_task: Optional[int] = None
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
 
@@ -96,9 +103,14 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
           
         # Set the number of tasks depending on the increment, and vice-versa.
         # (as only one of the two should be used).
-        if self.nb_tasks == 0:
-            self.nb_tasks = self.max_steps // self.steps_per_task
-        else:
+        assert self.max_steps
+        if not self.nb_tasks:
+            if self.steps_per_task:
+                self.nb_tasks = self.max_steps // self.steps_per_task
+            else:
+                self.nb_tasks = 1
+                self.steps_per_task = self.max_steps
+        elif not self.steps_per_task:
             self.steps_per_task = int(self.max_steps / self.nb_tasks)
         
         if self.smooth_task_boundaries:
@@ -120,9 +132,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # Apply the image transforms to the env.
             temp_env = TransformObservation(temp_env, f=self.train_transforms)
             # Add a wrapper that creates the 'tasks' (non-stationarity in the env).
-            # First, get the set of parameters that will be changed over time. 
-            cl_task_params = task_params.get(type(temp_env.unwrapped), [])
-
+            # First, get the set of parameters that will be changed over time.
+            cl_task_params = task_params.get(self.env_name, task_params.get(type(temp_env.unwrapped), []))
             if self.smooth_task_boundaries:
                 temp_env = SmoothTransitions(
                     temp_env,
@@ -141,9 +152,9 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
             # Start with the default task (step 0) and then add a new task
             # at intervals of `self.steps_per_task`
-            for task_step in range(self.steps_per_task, self.max_steps, self.steps_per_task):
+            for task_step in range(self.steps_per_task, self.max_steps + 1, self.steps_per_task):
                 self.train_task_schedule[task_step] = temp_env.random_task()
-            assert len(self.train_task_schedule) == self.nb_tasks - 1
+            assert len(self.train_task_schedule) == self.nb_tasks, (self.train_task_schedule, self.nb_tasks)
             
             # For now, set the validation and test tasks as the same sequence as the
             # train tasks.
@@ -192,31 +203,31 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     def prepare_data(self, *args, **kwargs):
         return super().prepare_data(*args, **kwargs)
 
-    def train_dataloader(self, *args, **kwargs):
+    def train_dataloader(self, batch_size: int = None) -> ActiveEnvironment:
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_fit:
             self.setup("fit")
 
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        batch_size: int = kwargs["batch_size"]
+        batch_size = batch_size or self.train_batch_size or self.batch_size
 
         # NOTE: Setting this to False when debugging can be very helpful,
         # especially when trying to solve problems related to the env wrappers
         # or the input preprocessing. Beware though, if the batch size isn't
         # small (< 32)  this will makes things incredibly slow.
-        use_mp = batch_size is not None and batch_size > 1 # and not self.config.debug
-
-        env = make_batched_env(
-            self.env_name,
-            wrappers=self.train_wrappers(),
-            batch_size=batch_size,
-            asynchronous=use_mp,
-            shared_memory=False,
-        )
+        if batch_size is None:
+            env = self.make_train_env()
+        else:
+            use_mp = batch_size is not None and batch_size > 1 # and not self.config.debug
+            env = make_batched_env(
+                self.env_name,
+                wrappers=self.train_wrappers(),
+                batch_size=batch_size,
+                asynchronous=use_mp,
+                shared_memory=False,
+            )
         # Apply the "post-batch" wrappers:
-        if not self.task_labels_at_train_time:
-            env = RemoveTaskLabelsWrapper(env)
+
         # Add wrappers that converts numpy arrays / etc to Observations/Rewards
         # and from Actions objects to numpy arrays.
         env = TypedObjectsWrapper(
@@ -227,96 +238,18 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         )
 
         # Create an IterableDataset from the env using the EnvDataset wrapper.
-        dataset = EnvDataset(env)
+        dataset = EnvDataset(env, max_steps=self.steps_per_task)
         # Create a GymDataLoader for the EnvDataset.
         dataloader = GymDataLoader(dataset)
 
         self.train_env = dataloader
         return self.train_env
 
-    def val_dataloader(self, batch_size: int = None) -> ActiveEnvironment:
-        if not self.has_prepared_data:
-            self.prepare_data()
-        if not self.has_setup_fit:
-            self.setup("fit")
-        batch_size = batch_size or self.dataloader_kwargs["batch_size"]
-        use_mp = batch_size is not None and batch_size > 1 # and not self.config.debug
-
-        env = make_batched_env(
-            self.env_name,
-            wrappers=self.val_wrappers(),
-            batch_size=batch_size,
-            asynchronous=use_mp,
-            shared_memory=False,
-        )   
-        # Apply the "post-batch" wrappers:
-        # TODO: See below, should the validation environment have task labels if
-        # the train env does but not the test env? 
-        if not self.task_labels_at_test_time:
-            # TODO: The RemoveTaskLabelsWrapper makes the 'task label' space
-            # Sparse with none_prob=1., but it still allows the user to see the
-            # number of tasks.
-            env = RemoveTaskLabelsWrapper(env)
-        env = TypedObjectsWrapper(
-            env,
-            observations_type=self.Observations,
-            actions_type=self.Actions,
-            rewards_type=self.Rewards,
-        )
-       
-        dataset = EnvDataset(env)
-        dataloader = GymDataLoader(dataset)
-
-        self.val_env = dataloader
-        return self.val_env
-
-    def test_dataloader(self, *args, **kwargs):
-        if not self.has_prepared_data:
-            self.prepare_data()
-        if not self.has_setup_test:
-            self.setup("test")
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        batch_size = kwargs["batch_size"]
-        
-        use_mp = batch_size is not None and batch_size > 1 # and not self.config.debug
-        # BUG: Turn shared_memory back to True once the bugs with shared memory
-        # and Sparse spaces are fixed.
-        env = make_batched_env(
-            self.env_name,
-            wrappers=self.test_wrappers(),
-            batch_size=batch_size,
-            asynchronous=use_mp,
-            shared_memory=False,
-        )
-        # Apply the "post-batch" wrappers:
-        if not self.task_labels_at_test_time:
-            # TODO: The RemoveTaskLabelsWrapper makes the 'task label' space
-            # Sparse with none_prob=1., but it still allows the user to see the
-            # number of tasks.
-            env = RemoveTaskLabelsWrapper(env)
-            
-        env = TypedObjectsWrapper(
-            env,
-            observations_type=self.Observations,
-            rewards_type=self.Rewards,
-            actions_type=self.Actions,
-        )
-        
-        dataset = EnvDataset(env)
-        dataloader = GymDataLoader(dataset)
-
-        self.test_env = dataloader
-        return self.test_env
-
     def make_train_env(self) -> gym.Env:
         """ Make a single (not-batched) training environment. """
         env = gym.make(self.env_name)
         for wrapper in self.train_wrappers():
             env = wrapper(env)
-        if not self.task_labels_at_train_time:
-            # TODO: Hide or remove the task labels?
-            env = RemoveTaskLabelsWrapper(env)
-            # env = HideTaskLabelsWrapper(env)
         return env
 
     def train_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
@@ -387,15 +320,51 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # them to None with another wrapper here.
             # We could also add an argument to the MultiTaskEnvironment, but it 
             # already has enough responsability as it is imo.
+        
+        # Apply the "post-batch" wrappers:
+        if not self.task_labels_at_train_time:
+            # TODO: Hide or remove the task labels?
+            # wrappers.append(RemoveTaskLabelsWrapper)
+            wrappers.append(HideTaskLabelsWrapper)
         return wrappers
     
+    def val_dataloader(self, batch_size: int = None) -> Environment:
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_fit:
+            self.setup("fit")
+        
+        batch_size = batch_size or self.train_batch_size or self.batch_size
+
+        if batch_size is None:
+            env = self.make_val_env()
+        else:
+            use_mp = batch_size is not None and batch_size > 1 # and not self.config.debug
+            env = make_batched_env(
+                self.env_name,
+                wrappers=self.val_wrappers(),
+                batch_size=batch_size,
+                asynchronous=use_mp,
+                shared_memory=False,
+            )
+        # Apply the "post-batch" wrappers:
+        env = TypedObjectsWrapper(
+            env,
+            observations_type=self.Observations,
+            actions_type=self.Actions,
+            rewards_type=self.Rewards,
+        )
+        dataset = EnvDataset(env, max_steps=self.steps_per_task)
+        dataloader = GymDataLoader(dataset)
+
+        self.val_env = dataloader
+        return self.val_env
+
     def make_val_env(self) -> gym.Env:
         """ Create a single (non-batched) validation environment. """
         env = gym.make(self.env_name)
         for wrapper in self.val_wrappers():
             env = wrapper(env)
-        if not self.task_labels_at_test_time:
-            env = RemoveTaskLabelsWrapper(env)
         return env
     
     def val_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
@@ -434,15 +403,57 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 starting_step=starting_step,
                 max_steps=max_steps,
             ))
+
+        # TODO: See below, should the validation environment have task labels if
+        # the train env does but not the test env? 
+        if not self.task_labels_at_test_time:
+            # TODO: The RemoveTaskLabelsWrapper makes the 'task label' space
+            # Sparse with none_prob=1., but it still allows the user to see the
+            # number of tasks.
+            # TODO: Hide or remove the task labels?
+            # wrappers.append(RemoveTaskLabelsWrapper)
+            wrappers.append(HideTaskLabelsWrapper)
         return wrappers
+
+    def test_dataloader(self, batch_size: int = None) -> Environment:
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_test:
+            self.setup("test")
+
+        batch_size = batch_size or self.test_batch_size or self.batch_size
+
+        use_mp = batch_size is not None and batch_size > 1 # and not self.config.debug
+        # BUG: Turn shared_memory back to True once the bugs with shared memory
+        # and Sparse spaces are fixed.
+        if batch_size is None:
+            env = self.make_test_env()
+        else:
+            env = make_batched_env(
+                self.env_name,
+                wrappers=self.test_wrappers(),
+                batch_size=batch_size,
+                asynchronous=use_mp,
+                shared_memory=False,
+            )
+            
+        env = TypedObjectsWrapper(
+            env,
+            observations_type=self.Observations,
+            rewards_type=self.Rewards,
+            actions_type=self.Actions,
+        )
+        dataset = EnvDataset(env, max_steps=self.steps_per_task)
+        dataloader = GymDataLoader(dataset)
+
+        self.test_env = dataloader
+        return self.test_env
 
     def make_test_env(self) -> gym.Env:
         """ Make a single (not-batched) testing environment. """
         env = gym.make(self.env_name)
         for wrapper in self.test_wrappers():
             env = wrapper(env)
-        if not self.task_labels_at_test_time:
-            env = RemoveTaskLabelsWrapper(env)
         return env
 
     def test_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
@@ -480,92 +491,11 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 starting_step=starting_step,
                 max_steps=max_steps,
             ))
+        if not self.task_labels_at_test_time:
+            # TODO: Hide or remove the task labels?
+            # wrappers.append(RemoveTaskLabelsWrapper)
+            wrappers.append(HideTaskLabelsWrapper)
         return wrappers
-
-
-class TypedObjectsWrapper(IterableWrapper):
-    """ Wrapper that converts the observations and rewards coming from the env
-    to the types of Observations and Rewards, respectively, and 
-    """ 
-    def __init__(self,
-                 env: gym.Env,
-                 observations_type: Type[ContinualRLSetting.Observations],
-                 rewards_type: Type[ContinualRLSetting.Rewards],
-                 actions_type: Type[ContinualRLSetting.Actions]):
-        self.Observations = observations_type
-        self.Rewards = rewards_type
-        self.Actions = actions_type
-        env = TransformObservation(env, f=self.Observations.from_inputs)
-        env = TransformReward(env, f=self.Rewards.from_inputs)
-        
-        def convert_action_object_to_sample_from_action_space(action: ContinualRLSetting.Actions):
-            if isinstance(action, Batch):
-                assert len(action) == 1
-                action = action[0]
-            if isinstance(action, Tensor):
-                action = action.cpu().numpy()
-            return action
-
-        convert_action_object_to_sample_from_action_space.space_change = lambda x: x
-        
-        env = TransformAction(env, f=convert_action_object_to_sample_from_action_space)
-        super().__init__(env=env)
-
-from common.gym_wrappers import TransformObservation
-from typing import TypeVar, Tuple, Optional
-T = TypeVar("T")
-
-
-def remove_task_labels(observation: Tuple[T, int]) -> T:
-    assert len(observation) == 2
-    return observation[0]
-
-
-class RemoveTaskLabelsWrapper(TransformObservation):
-    def __init__(self, env: gym.Env, f=remove_task_labels):
-        super().__init__(env, f=f)
-        self.observation_space = self.space_change(self.env.observation_space)
-
-    @classmethod
-    def space_change(cls, input_space: gym.Space) -> gym.Space:
-        assert isinstance(input_space, spaces.Tuple), input_space
-        assert len(input_space) == 2
-        return input_space[0]
-
-
-def hide_task_labels(observation: Tuple[T, int]) -> Tuple[T, Optional[int]]:
-    assert len(observation) == 2
-    if isinstance(observation, Batch):
-        return type(observation).from_inputs((observation[0], None))
-    return observation[0], None
-
-
-class HideTaskLabelsWrapper(TransformObservation):
-    def __init__(self, env: gym.Env, f=hide_task_labels):
-        super().__init__(env, f=f)
-        self.observation_space = self.space_change(self.env.observation_space)
-        
-    
-    @classmethod
-    def space_change(cls, input_space: gym.Space) -> gym.Space:
-        assert isinstance(input_space, spaces.Tuple)
-        # TODO: If we create something like an OptionalSpace, we
-        # would replace the second part of the tuple with it. We
-        # leave it the same here for now.
-        assert len(input_space) == 2
-        
-        task_label_space = input_space.spaces[1]
-        if isinstance(task_label_space, Sparse):
-            # Replace the existing 'Sparse' space with another one with the same
-            # base but with none_prob = 1.0
-            task_label_space = task_label_space.base
-        assert not isinstance(task_label_space, Sparse)
-        # Do we set the task label space as sparse? or do we just remote that
-        # space?
-        return spaces.Tuple([
-            input_space[0],
-            Sparse(task_label_space, none_prob=1.)
-        ])
 
 
 

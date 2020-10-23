@@ -39,6 +39,7 @@ from pytorch_lightning import LightningDataModule
 from pytorch_lightning.core.datamodule import _DataModuleWrapper
 from simple_parsing import (ArgumentParser, Serializable, list_field,
                             mutable_field, subparsers, field, choice)
+from torch import Tensor
 from torch.utils.data import DataLoader
 
 from common.config import Config
@@ -177,7 +178,9 @@ class Setting(SettingABC,
         # self.observation_space = x_shape
 
         self.dataloader_kwargs: Dict[str, Any] = {}
-
+        self.batch_size: Optional[int] = None
+        self.train_batch_size: Optional[int] = None
+        self.test_batch_size: Optional[int] = None
         # TODO: We have to set the 'dims' property from LightningDataModule so
         # that models know the input dimensions.
         # This should probably be set on `self` inside of `apply` call.
@@ -441,23 +444,27 @@ class Setting(SettingABC,
             expected_action_space = batch_space(self.action_space, batch_size)
             expected_reward_space = batch_space(self.reward_space, batch_size)
             
-            assert env.observation_space == expected_observation_space, (env.observation_space, expected_observation_space)
+            # TODO: Batching the 'Sparse' makes it really ugly.
+            assert env.observation_space[0] == expected_observation_space[0], (env.observation_space[0], expected_observation_space[0])
             assert env.action_space == expected_action_space, (env.action_space, expected_action_space)
             assert env.reward_space == expected_reward_space, (env.reward_space, expected_reward_space)
 
             # Check that the 'gym API' interaction is working correctly.
             reset_obs: Observations = env.reset()
-            self._check_observation(reset_obs)
+            self._check_observations(env, reset_obs)
 
             for i in range(5):
                 actions = env.action_space.sample()
-                self._check_actions(actions)
+                self._check_actions(env, actions)
                 step_observations, step_rewards, done, info = env.step(actions)
-                self._check_observations(step_observations)
-                self._check_rewards(step_rewards)
+                self._check_observations(env, step_observations)
+                self._check_rewards(env, step_rewards)
                 assert not (done if isinstance(done, bool) else any(done))
 
             for batch in take(env, 5):
+                observations: Observations
+                rewards: Optional[Rewards]
+                
                 if isinstance(env, PassiveEnvironment):
                     observations, rewards = batch
                 else:
@@ -465,29 +472,18 @@ class Setting(SettingABC,
                     # Coul
                     observations, rewards = batch, None
 
-                batch_size = observations.batch_size
-
-                assert isinstance(observations, self.Observations), type(observations)
-                observations: Observations
-                image = observations.x[0]
-                assert isinstance(image, torch.Tensor)
-                assert image.cpu().numpy() in image_space
-                
-                batch_size = observations.batch_size
-                rewards: Optional[Rewards] = rewards[0] if rewards else None
+                self._check_observations(env, observations)
                 if rewards is not None:
-                    assert isinstance(rewards, self.Rewards), type(rewards)
+                    self._check_rewards(env, rewards)
                 
+                batch_size = observations.batch_size
                 actions = tuple(
                     self.action_space.sample() for _ in range(batch_size)
                 )
                 actions = self.Actions(torch.as_tensor(actions))
-                rewards = env.send(actions)
                 
-                assert isinstance(rewards, self.Rewards), type(rewards)
-                reward = rewards.y
-                assert len(reward) == batch_size
-                assert reward[0] in self.reward_space
+                rewards = env.send(actions)
+                self._check_rewards(env, rewards)
     
     def _check_observations(self, env: Environment, observations: Any):
         assert isinstance(observations, self.Observations)

@@ -48,3 +48,4 @@ class Transform(Generic[InputType, OutputType]):
 
         from common.gym_wrappers.utils import reshape_space
         return reshape_space(input_space, output_shape)
+

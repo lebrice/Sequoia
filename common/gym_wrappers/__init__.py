@@ -1,7 +1,7 @@
 """ Contains some potentially useful gym wrappers. """
 from .sparse_space import Sparse
 from .pixel_observation import PixelObservationWrapper
-from .utils import has_wrapper
+from .utils import has_wrapper, IterableWrapper
 from .multi_task_environment import MultiTaskEnvironment
 from .smooth_environment import SmoothTransitions
 from .step_callback_wrapper import StepCallbackWrapper, StepCallback, PeriodicCallback

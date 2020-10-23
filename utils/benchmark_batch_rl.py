@@ -1,16 +1,23 @@
 """ Utility script used to benchmark the speed of the BatchedVectorEnv,
 depending on the environment, the batch size and the number of workers.  """
 import time
-from common.gym_wrappers.batch_env import BatchedVectorEnv
-from typing import Callable, List, Dict, Tuple
+from functools import partial
+from typing import Callable, Dict, List, Tuple, Union
+
 import gym
 
-def benchmark(batch_size: int,
+from common.gym_wrappers.batch_env import BatchedVectorEnv
+
+
+def benchmark(env_fn: Union[str, Callable],
+              batch_size: int,
               n_workers: int,
-              env_fn: Callable,
               wrappers: List[Callable]=None,
               n_steps: int = 100.,
               **kwargs):
+    if isinstance(env_fn, str):
+        env_fn = partial(gym.make, env_fn)
+      
     start_time = time.time()
     env = BatchedVectorEnv([env_fn for i in range(batch_size)],
                            n_workers=n_workers, **kwargs)
@@ -37,9 +44,8 @@ def main():
     n_steps = 100
     n_workers = None
     # from common.gym_wrappers.pixel_observation import PixelObservationWrapper
+    env = "Breakout-v0"
     
-    def make_env():
-        return gym.make("Breakout-v0")
     results: Dict[Tuple[int, int], float] = {}
     for batch_size in [1, 4, 8, 32, 64, 128]:
         for n_workers in [1, 2, 4, 8, None, batch_size]:
@@ -47,9 +53,9 @@ def main():
                 n_workers = max(n_workers, 4)
 
             setup_time, time_per_step = benchmark(
+                env,
                 batch_size,
                 n_workers,
-                make_env,
                 n_steps=n_steps,
                 context="fork",
             )

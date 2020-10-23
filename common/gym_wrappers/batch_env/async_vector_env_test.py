@@ -1,5 +1,6 @@
 from functools import partial
 from operator import attrgetter
+from typing import Tuple
 
 import gym
 import pytest
@@ -16,19 +17,34 @@ def allow_remote_getattr(monkeypatch):
     monkeypatch.setattr(AsyncVectorEnv, "allow_remote_getattr", True)
 
 
+@pytest.mark.parametrize("env_name, expected_obs_shape", [
+    ("CartPole-v0", (4,)),    
+    ("Breakout-v0", (210, 160, 3)),    
+])
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
-def test_spaces(batch_size: int):
-    env_fns = [partial(gym.make, "CartPole-v0") for _ in range(batch_size)]
+def test_spaces(batch_size: int, env_name: str, expected_obs_shape: Tuple[int, ...]):
+    env_fns = [partial(gym.make, env_name) for _ in range(batch_size)]
     env: AsyncVectorEnv
+    
+    expected_obs_batch_shape = (batch_size, *expected_obs_shape)
+        
     with AsyncVectorEnv(env_fns=env_fns) as env:
         assert isinstance(env.observation_space, spaces.Box)
-        assert env.observation_space.shape == (batch_size, 4)
+        assert env.observation_space.shape == expected_obs_batch_shape
         
         assert isinstance(env.action_space, spaces.Tuple)
         assert len(env.action_space.spaces) == batch_size
         for space in env.action_space.spaces:
             assert isinstance(space, spaces.Discrete)
-            assert space.n == 2
+
+        
+        reset_obs = env.reset()
+        assert reset_obs.shape == expected_obs_batch_shape
+        
+        for i in range(5):
+            obs, reward, done, info = env.step(env.action_space.sample())
+            assert obs.shape == expected_obs_batch_shape
+            assert reward.shape == (batch_size,)
 
 
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
