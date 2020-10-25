@@ -1,3 +1,4 @@
+import bisect
 import random
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Sequence, Type, Union
@@ -131,14 +132,16 @@ class MultiTaskEnvironment(gym.Wrapper):
         """
         current_step = self._steps
         assert current_step >= 0
-        
         task_steps: List[int] = sorted(self.task_schedule.keys())
-        if 0 not in task_steps:
-            task_steps.insert(0, 0)
-        for i, task_step in enumerate(task_steps):
-            if current_step < task_step:
-                return i - 1
-        return len(task_steps) - 1
+        assert 0 in task_steps
+        insertion_index = bisect.bisect_right(task_steps, current_step)
+        # The current task id is the insertion index - 1
+        current_task_index = insertion_index - 1
+        return current_task_index
+
+    def on_task_switch(self, task_id: int):
+        logger.debug(f"Switching from {self.current_task_id} -> {task_id}.")
+        pass
 
     def step(self, *args, **kwargs):
         # If we reach a step in the task schedule, then we change the task to
@@ -148,6 +151,11 @@ class MultiTaskEnvironment(gym.Wrapper):
         
         if self.steps in self.task_schedule:
             self.current_task = self.task_schedule[self.steps]
+            # Adding this on_task_switch, since it could maybe be easier than
+            # having to add a callback wrapper to use.
+            task_id = sorted(self.task_schedule.keys()).index(self.steps)
+            self.on_task_switch(task_id)
+            
         observation, rewards, done, info = super().step(*args, **kwargs)
         if self.add_task_id_to_obs:
             observation = (observation, self.current_task_id)

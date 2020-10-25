@@ -40,10 +40,10 @@ def test_check_iterate_and_step(dataset: str,
         expected_obs_batch_shape = (batch_size, *expected_obs_shape)
     
     with setting.train_dataloader(batch_size=batch_size) as temp_env:
-        assert str(temp_env.observation_space) == str(spaces.Tuple([
+        assert temp_env.observation_space == spaces.Tuple([
             spaces.Box(0., 1., expected_obs_batch_shape, dtype=np.float32),
-            spaces.MultiDiscrete([5] * batch_size),
-        ]))
+            (spaces.MultiDiscrete([5] * batch_size) if batch_size else spaces.Discrete(5)),
+        ])
 
     with setting.val_dataloader(batch_size=batch_size) as temp_env:
         assert temp_env.observation_space == spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32)

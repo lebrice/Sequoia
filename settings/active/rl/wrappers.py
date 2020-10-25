@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, TypeVar, Type, Union
+from typing import Optional, Tuple, TypeVar, Type, Union, Dict
 
 import gym
 import numpy as np
@@ -20,8 +20,21 @@ T = TypeVar("T")
 
 class TypedObjectsWrapper(IterableWrapper):
     """ Wrapper that converts the observations and rewards coming from the env
-    to the types of Observations and Rewards, respectively, and 
-    """ 
+    to `Batch` objects.
+    
+    NOTE: Not super necessary atm, but this would perhaps be useful if methods
+    are built and expect to have a given 'type' of observations to work with,
+    then any new setting that inherits from their target setting should have
+    observations that subclass/inherit from the observations of their parent, so
+    as not to break compatibility.
+    
+    For example, if a Method targets the ClassIncrementalSetting, then it
+    expects to receive "observations" of the type described by
+    ClassIncrementalSetting.Observations, and if it were to be applied on a
+    TaskIncrementalSetting (which inherits from ClassIncrementalSetting), then
+    the observations from that setting should be isinstances (or subclasses of)
+    the Observations class that this method was designed to receive!   
+    """
     def __init__(self,
                  env: gym.Env,
                  observations_type: Type[Observations],
@@ -30,48 +43,67 @@ class TypedObjectsWrapper(IterableWrapper):
         self.Observations = observations_type
         self.Rewards = rewards_type
         self.Actions = actions_type
-        env = TransformObservation(env, f=self.Observations.from_inputs)
-        env = TransformReward(env, f=self.Rewards.from_inputs)
-        
-        def convert_action_object_to_sample_from_action_space(action: Actions):
-            if isinstance(action, Batch):
-                assert len(action) == 1
-                action = action[0]
-            if isinstance(action, Tensor):
-                action = action.cpu().numpy()
-            return action
-
-        convert_action_object_to_sample_from_action_space.space_change = lambda x: x
-        
-        env = TransformAction(env, f=convert_action_object_to_sample_from_action_space)
         super().__init__(env=env)
 
+    def step(self, action: Actions) -> Tuple[Observations, Rewards, bool, Dict]:
+        action = unwrap_actions(action)
+        observation, reward, done, info = self.env.step(action)
+        observation = self.Observations.from_inputs(observation)
+        reward = self.Rewards.from_inputs(reward)
+        return observation, reward, done, info
+    
+    def reset(self, **kwargs) -> Observations:
+        observation = self.env.reset(**kwargs)
+        return self.Observations.from_inputs(observation)
 
 
-def unwrap_actions(actions: Actions) -> Union[Tensor, np.ndarray]:
+def unwrap_actions(actions: Actions) -> np.ndarray:
     if isinstance(actions, Actions):
-        return actions[0]
+        # This assumes that the actions object has only one field (which is fine for now).
+        actions = actions[0]
+    assert not isinstance(actions, Actions)
     return actions
 
 def unwrap_rewards(rewards: Rewards) -> Union[Tensor, np.ndarray]:
     if isinstance(rewards, Rewards):
+        # This assumes that the actions object has only one field (which is fine for now).
         assert len(rewards) != 0, (rewards, rewards.field_names)
-        return rewards[0]
+        rewards = rewards[0]
+    assert not isinstance(rewards, Rewards)
     return rewards
 
 def unwrap_observations(observations: Observations) -> Union[Tensor, np.ndarray]:
     if isinstance(observations, Observations):
-        # TODO: Keep the task labels? or no?
-        return observations.as_tuple()
+        # TODO: Keep the task labels? or no? For now, yes.        
+        observations = observations.as_tuple()
+    assert not isinstance(observations, Observations)
     return observations
 
 
 class NoTypedObjectsWrapper(IterableWrapper):
+    """ Does the opposite of the 'TypedObjects' wrapper.
+    
+    Can be added on top of that wrapper to strip off the typed objects it
+    returns and just returns tensors/np.ndarrays instead.
+
+    Parameters
+    ----------
+    IterableWrapper : [type]
+        [description]
+    """
     def __init__(self, env: gym.Env):
-        env = TransformObservation(env, f=unwrap_observations)
-        env = TransformAction(env, f=unwrap_actions)
-        env = TransformReward(env, f=unwrap_rewards)
         super().__init__(env)
+    
+    def step(self, action):
+        action = unwrap_actions(action)
+        observation, reward, done, info = self.env.step(action)
+        observation = unwrap_observations(observation)
+        reward = unwrap_rewards(reward)
+        return observation, reward, done, info
+
+    def reset(self, **kwargs):
+        observation = self.env.reset(**kwargs)
+        return unwrap_observations(observation)
 
 
 def remove_task_labels(observation: Tuple[T, int]) -> T:
@@ -79,7 +111,9 @@ def remove_task_labels(observation: Tuple[T, int]) -> T:
     return observation[0]
 
 
-class RemoveTaskLabelsWrapper(TransformObservation, IterableWrapper):
+class RemoveTaskLabelsWrapper(TransformObservation):
+    """ Removes the task labels from the observations and the observation space.
+    """
     def __init__(self, env: gym.Env, f=remove_task_labels):
         super().__init__(env, f=f)
         self.observation_space = self.space_change(self.env.observation_space)
@@ -98,7 +132,14 @@ def hide_task_labels(observation: Tuple[T, int]) -> Tuple[T, Optional[int]]:
     return observation[0], None
 
 
-class HideTaskLabelsWrapper(TransformObservation, IterableWrapper):
+class HideTaskLabelsWrapper(TransformObservation):
+    """ Hides the task labels by setting them to None, rather than removing them
+    entirely.
+    
+    This might be useful in order not to break the inheritance 'contract' when
+    going from contexts where you don't have the task labels to contexts where
+    you do have them.
+    """
     def __init__(self, env: gym.Env, f=hide_task_labels):
         super().__init__(env, f=f)
         self.observation_space = self.space_change(self.env.observation_space)
@@ -107,9 +148,6 @@ class HideTaskLabelsWrapper(TransformObservation, IterableWrapper):
     @classmethod
     def space_change(cls, input_space: gym.Space) -> gym.Space:
         assert isinstance(input_space, spaces.Tuple)
-        # TODO: If we create something like an OptionalSpace, we
-        # would replace the second part of the tuple with it. We
-        # leave it the same here for now.
         assert len(input_space) == 2
         
         task_label_space = input_space.spaces[1]

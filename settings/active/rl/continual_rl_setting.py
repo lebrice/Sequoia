@@ -1,6 +1,8 @@
+import itertools
 from dataclasses import dataclass
 from functools import partial
 from typing import ClassVar, Dict, List, Type, Callable, Union, Optional
+from pathlib import Path
 
 import gym
 import numpy as np
@@ -17,11 +19,12 @@ from common.gym_wrappers import (MultiTaskEnvironment, SmoothTransitions,
 from common.gym_wrappers.batch_env import BatchedVectorEnv
 from common.gym_wrappers.env_dataset import EnvDataset
 from common.gym_wrappers.pixel_observation import PixelObservationWrapper
-from common.gym_wrappers.utils import classic_control_env_prefixes, IterableWrapper
+from common.gym_wrappers.utils import classic_control_env_prefixes, IterableWrapper, has_wrapper
 from common.gym_wrappers.sparse_space import Sparse
+from common.metrics import RegressionMetrics
 from common.transforms import Transforms
 from settings.active import ActiveSetting
-from settings.assumptions.incremental import IncrementalSetting
+from settings.assumptions.incremental import IncrementalSetting, TestEnvironment
 from settings.base.results import Results
 from settings.base import Method
 from utils import dict_union, get_logger
@@ -33,6 +36,8 @@ from .wrappers import HideTaskLabelsWrapper, RemoveTaskLabelsWrapper, TypedObjec
 from .. import ActiveEnvironment
 
 logger = get_logger(__file__)
+
+# TODO: Implement a get_metrics (ish) in the Environment, not on the Setting!
 
 
 task_params: Dict[Union[Type[gym.Env], str], List[str]] = {
@@ -58,6 +63,7 @@ task_params: Dict[Union[Type[gym.Env], str], List[str]] = {
 Environment = ActiveEnvironment["ContinualRLSetting.Observations",
                                 "ContinualRLSetting.Observations",
                                 "ContinualRLSetting.Rewards"]
+
 
 @dataclass
 class ContinualRLSetting(IncrementalSetting, ActiveSetting):
@@ -90,7 +96,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # Which environment to learn on.
     dataset: str = choice(available_datasets, default="breakout")
 
-
     # Max number of steps ("length" of the training and test "datasets").
     max_steps: int = 10_000
     # Number of steps per task.
@@ -98,6 +103,12 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
 
+    # Number of episodes to perform through the test environment in the test
+    # loop. Depending on what an 'episode' might represent in your setting, this
+    # could be as low as 1 (for example, supervised learning, episode == epoch).
+    test_loop_episodes: int = 100
+    
+    
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
           
@@ -123,6 +134,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             self.nb_tasks = 1
             self.steps_per_task = self.max_steps
 
+        # Task schedules for training / validation and testing.
         self.train_task_schedule: Dict[int, Dict] = {}
         self.valid_task_schedule: Dict[int, Dict] = {}
         self.test_task_schedule: Dict[int, Dict] = {}
@@ -415,14 +427,15 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             wrappers.append(HideTaskLabelsWrapper)
         return wrappers
 
-    def test_dataloader(self, batch_size: int = None) -> Environment:
+    def test_dataloader(self, batch_size: int = None) -> TestEnvironment:
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_test:
             self.setup("test")
 
         batch_size = batch_size or self.test_batch_size or self.batch_size
-
+        # TODO: The test environment shouldn't be just for the current task, it
+        # should be the sequence of all tasks.
         use_mp = batch_size is not None and batch_size > 1 # and not self.config.debug
         # BUG: Turn shared_memory back to True once the bugs with shared memory
         # and Sparse spaces are fixed.
@@ -445,8 +458,16 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         )
         dataset = EnvDataset(env, max_steps=self.steps_per_task)
         dataloader = GymDataLoader(dataset)
-
-        self.test_env = dataloader
+        test_dir = "results"
+        # TODO: We should probably change the max_steps depending on the
+        # batch size of the env.
+        test_loop_max_steps = self.max_steps
+        self.test_env = ContinualRLTestEnvironment(
+            dataloader,
+            directory=test_dir,
+            step_limit=self.max_steps,
+            force=True,
+        )
         return self.test_env
 
     def make_test_env(self) -> gym.Env:
@@ -497,6 +518,44 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             wrappers.append(HideTaskLabelsWrapper)
         return wrappers
 
+    def get_metrics(self, actions, rewards):
+        assert False, rewards
+        return super().get_metrics(actions, rewards)
+
+
+class ContinualRLTestEnvironment(TestEnvironment):
+    def get_results(self) -> RLResults:
+        rewards = self.get_episode_rewards()
+        lengths = self.get_episode_lengths()
+        total_steps = self.get_total_steps()
+        
+        assert has_wrapper(self.env, MultiTaskEnvironment), self.env
+        task_steps = sorted(self.task_schedule.keys())
+        
+        assert 0 in task_steps, task_steps        
+        import bisect
+        # Since 0 is in the task steps, the number of tasks is actually 1 less
+        # than the number of "task dicts" in the task schedule.
+        nb_tasks = len(task_steps) - 1
+        assert nb_tasks >= 1
+        episode_rewards: List[float] = [[] for _ in range(nb_tasks)]
+        episode_lengths: List[int] = [[] for _ in range(nb_tasks)]
+        episode_metrics: List[Metrics] = [[] for _ in range(nb_tasks)]
+
+        for step, episode_reward, episode_length in zip(itertools.accumulate(lengths), rewards, lengths):
+            # Given the step, find the task id.
+            task_id = bisect.bisect_right(task_steps, step) - 1
+
+            episode_rewards[task_id].append(episode_reward)
+            episode_lengths[task_id].append(episode_length)
+            episode_metric = RegressionMetrics(mse=episode_reward / episode_length)
+            episode_metrics[task_id].append(episode_metric)
+
+        return RLResults(
+            episode_lengths=episode_lengths,
+            episode_rewards=episode_rewards,
+            test_metrics=episode_metrics,
+        )
 
 
 if __name__ == "__main__":

@@ -266,15 +266,28 @@ class Method(Generic[SettingType], ABC):
     @abstractmethod
     def fit(self,
             train_env: Environment[Observations, Actions, Rewards] = None,
-            valid_env: Environment[Observations, Actions, Rewards] = None,
-            datamodule: LightningDataModule = None):
+            valid_env: Environment[Observations, Actions, Rewards] = None):
         """Called by the Setting to give the method data to train with.
 
         Might be called more than once before training is 'complete'.
         """
 
+    def test(self, test_env: Environment[Observations, Actions, Optional[Rewards]]):
+        """ (WIP) Optional method which could be called by the setting to give
+        your Method more flexibility about how it wants to arrange the test env.
+
+        Parameters
+        ----------
+        test_env : Environment[Observations, Actions, Optional[Rewards]]
+            Test environment which monitors your actions, and in which you are
+            only allowed a limited number of steps.
+        """
+        raise NotImplementedError
+    
     def receive_results(self, setting: SettingType, results: Results) -> None:
         """ Receive the Results of applying this method on the given Setting.
+        
+        This method is optional.
         
         This will be called after the method has been successfully applied to
         a Setting, and could be used to log or persist the results somehow.

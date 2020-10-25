@@ -418,7 +418,7 @@ class Setting(SettingABC,
 
         # Debugging: Run a quick check to see that what is returned by the
         # dataloaders is of the right type and shape etc.
-        self._check_environments()
+        # self._check_environments()
 
 
     def _check_environments(self):

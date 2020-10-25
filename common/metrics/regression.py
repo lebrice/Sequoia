@@ -46,6 +46,9 @@ class RegressionMetrics(Metrics):
                 self.mse = functional.mse_loss(y_pred, y)
                 self.l1_loss = functional.l1_loss(y_pred, y)
 
+        self.mse = torch.as_tensor(self.mse)
+        self.l1_error = torch.as_tensor(self.l1_error)
+
     @property
     def objective(self) -> float:
         return float(self.mse)

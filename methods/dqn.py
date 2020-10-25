@@ -1,8 +1,9 @@
-from typing import Dict, Union
+from typing import Dict, Union, ClassVar, Type
 from collections import deque
 
 import gym
 import torch
+
 import pl_bolts.models.rl.common.gym_wrappers
 from pl_bolts.models.rl import DQN, Reinforce, DoubleDQN, VanillaPolicyGradient
 from pl_bolts.models.rl.common.gym_wrappers import (BufferWrapper,
@@ -12,9 +13,11 @@ from pl_bolts.models.rl.common.gym_wrappers import (BufferWrapper,
                                                     ProcessFrame84,
                                                     ScaledFloatFrame)
 from pytorch_lightning import Trainer
+from pytorch_lightning.core.decorators import auto_move_data
 from simple_parsing import ArgumentParser
 
 from common.config import Config, TrainerConfig
+from common.transforms import Transforms
 from settings import ContinualRLSetting, Method
 from settings.active.rl import ContinualRLSetting
 from settings.active.rl.wrappers import RemoveTaskLabelsWrapper, NoTypedObjectsWrapper
@@ -62,25 +65,18 @@ BUG: pl_bolts/models/rl/common/agents.py:109
 
 from pl_bolts.models.rl import DQN, Reinforce, DoubleDQN, VanillaPolicyGradient, DuelingDQN, PERDQN, NoisyDQN
 
-# DQN, DoubleDQN, work atm.
-class CustomModel(NoisyDQN):
-    def __init__(self, env, **kwargs):
-        super().__init__(env, **kwargs)
-        self._hparams.pop("env")
-    
-    @classmethod
-    def add_model_specific_args(cls, arg_parser: ArgumentParser):
-        super().add_model_specific_args(arg_parser)
-        # Remove the '--env' argument:
-        from argparse import Action
-        action: Action
-        env_action_index = [i for i, action in enumerate(arg_parser._actions)
-                            if "--env" in action.option_strings][0]
-        arg_parser._handle_conflict_resolve(None, [("--env", arg_parser._actions[env_action_index])])
+# # DQN, DoubleDQN, work atm.
+# class CustomModel(NoisyDQN):
+#     def __init__(self, env, **kwargs):
+#         super().__init__(env, **kwargs)
+#         self._hparams.pop("env")
 
 
 
 class DQNMethod(Method, target_setting=ContinualRLSetting):
+    
+    Model: ClassVar[Type[DQN]] = DQN
+    
     def __init__(self, trainer_config: TrainerConfig, dqn_params: Dict = None):
         super().__init__()
         self.dqn_params = dqn_params or {}
@@ -90,6 +86,9 @@ class DQNMethod(Method, target_setting=ContinualRLSetting):
         self.trainer: Trainer
 
     def configure(self, setting: ContinualRLSetting):
+        
+        
+        
         self.trainer = self.trainer_config.make_trainer()
         # Ask the setting not to batch observations during training, since the
         # DQN model needs to add its own hacks on top of the env.
@@ -99,13 +98,16 @@ class DQNMethod(Method, target_setting=ContinualRLSetting):
         self.test_buffer = deque(maxlen=4)
 
     def fit(self, train_env: gym.Env = None, valid_env: gym.Env = None):
+        from stable_baselines3 import A2C
+        
         train_env = RemoveTaskLabelsWrapper(train_env)
-        train_env = NoTypedObjectsWrapper(train_env)
         valid_env = RemoveTaskLabelsWrapper(valid_env)
+        train_env = NoTypedObjectsWrapper(train_env)
         valid_env = NoTypedObjectsWrapper(valid_env)
 
         if self.model is None:
-            self.model = CustomModel(train_env, **self.dqn_params)
+            self.model = self.Model(train_env, **self.dqn_params)
+            self.model._hparams.pop("env")
         else:
             assert False, f"Should only be called once atm."
             # Not sure how we could 'update' the env, given that the model
@@ -120,9 +122,6 @@ class DQNMethod(Method, target_setting=ContinualRLSetting):
         # TODO: Don't The model can't handle testing below yet.
         test_results = self.trainer.test(verbose=True)
         print(f"test results: {test_results}")
-        print(f"Exiting early because the rest is TODO.")
-        exit()
-        
     
     def get_actions(self, observations: ContinualRLSetting.Observations, action_space: gym.Space) -> ContinualRLSetting.Actions:
         state = observations.x
@@ -134,19 +133,38 @@ class DQNMethod(Method, target_setting=ContinualRLSetting):
         # observations. 
         
         # Not sure in which order the DQN expects the sequence to be.
+        state = ProcessFrame84.process(state)
+        state = Transforms.to_tensor(state)
+        state = Transforms.channels_first_if_needed(state)
         self.test_buffer.append(state)
         if len(self.test_buffer) < 4:
             print(f"Returning random action since we don't yet have 4 observations in the buffer.")
             return action_space.sample()
-        
-        fake_batches = torch.as_tensor(self.test_buffer)
-        assert fake_batches.shape[0] == 4
-        assert fake_batches.shape[1] == self.test_batch_size
-        fake_batch = fake_batches.reshape((-1, *fake_batches.shape[2:]))
+        # TODO: Fix the rest.
+        # return action_space.sample()
 
-        values = self.model(fake_batch)
-        assert False, values.shape
+        fake_batch = torch.stack(tuple(self.test_buffer))
+        assert fake_batch.shape[0] == 4
+        fake_batch = fake_batch.reshape([-1, 4, *fake_batch.shape[2:]])
+        # fake_batch = fake_batches.reshape((-1, *fake_batches.shape[2:]))
+        with torch.no_grad():
+            fake_batch = fake_batch.to(self.model.device)
+            values = self.model(fake_batch)
+        
+        chosen_actions = values.argmax(dim=-1)
+        return chosen_actions.cpu().numpy()
         # return super().fit(train_env=train_env, valid_env=valid_env,)
+    
+    @classmethod
+    def add_model_specific_args(cls, arg_parser: ArgumentParser):
+        cls.Model.add_model_specific_args(arg_parser)
+        # Remove the '--env' argument:
+        from argparse import Action
+        action: Action
+        env_action_index = [i for i, action in enumerate(arg_parser._actions)
+                            if "--env" in action.option_strings][0]
+        arg_parser._handle_conflict_resolve(None, [("--env", arg_parser._actions[env_action_index])])
+
 
 
 if __name__ == "__main__":    
@@ -156,7 +174,7 @@ if __name__ == "__main__":
     # parser.add_arguments(Config, "config")
 
     parser.add_arguments(TrainerConfig, "trainer_config")
-    CustomModel.add_model_specific_args(parser)
+    DQNMethod.add_model_specific_args(parser)
 
     args = parser.parse_args()
     setting: ContinualRLSetting = args.setting
@@ -175,3 +193,9 @@ if __name__ == "__main__":
     results = setting.apply(method, config=config)
     print("Results:")
     print(results.summary())
+
+    for setting in DQNMethod.all_evaluation_settings():
+        method = DQNMethod(trainer_config=trainer_config, dqn_params=dqn_params)    
+        results = setting.apply(method)
+        print(results.summary())
+        print(f"Results for dataset {setting.dataset}: {results.objective}")

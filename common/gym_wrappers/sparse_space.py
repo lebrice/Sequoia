@@ -1,6 +1,13 @@
-""" TODO: Idea, create a new OptionalSpace class, (along with OptionalTuple,
-OptionalDiscrete, etc) that adds has a probability of sampling `None` rather than
-from the 'wrapped' space, and recognizes 'None' as being in the space. 
+""" 'wrapper' around a gym.Space that adds has a probability of sampling `None`
+instead of a sample from the 'base' space.
+
+As a result, `None` is always a valid sample from any Sparse space.
+
+
+TODO: Totally optional, but if we wanted to use the `shared_memory=True`
+argument to the AsyncVectorEnv or BatchedVectorEnv wrappers, we'd need to
+test/debug some bugs with shared memory functions below. In the interest of time
+though, I just set that `shared_memory=False`, and it works great.  
 """
 from typing import Any, Dict, Generic, Optional, Tuple, TypeVar, Union
 
@@ -12,6 +19,8 @@ T = TypeVar("T")
 
 
 class Sparse(gym.Space, Generic[T]):
+    
+    # TODO: Rename 'none_prob' to 'sparsity', because it sounds fancier.
     def __init__(self, base: gym.Space, none_prob: float = 0.):
         self.base = base
         self.none_prob = none_prob
