@@ -87,38 +87,54 @@ import gym.spaces.utils
 import gym.vector.utils
 from gym.vector.utils import (batch_space, concatenate, create_empty_array,
                               create_shared_memory)
-
+import gym.vector.utils.numpy_utils
 # Customize how these functions handle `Sparse` spaces by making them
 # singledispatch callables and registering a new callable.
 
 def _is_singledispatch(module_function):
     return hasattr(module_function, "registry")
 
-if not _is_singledispatch(gym.spaces.utils.flatdim):
-    gym.spaces.utils.flatdim = singledispatch(gym.spaces.utils.flatdim)
 
-if not _is_singledispatch(gym.spaces.utils.flatten):
-    gym.spaces.utils.flatten = singledispatch(gym.spaces.utils.flatten)
+def register_sparse_variant(module, module_fn_name: str):
+    """ Converts a function from the given module to a singledispatch callable,
+    and registers the wrapped function as the callable to use for Sparse spaces.
+    
+    The module function must have the space as the first argument for this to
+    work.
+    """
+    module_function = getattr(module, module_fn_name)
+    
+    # Convert the function to a singledispatch callable.
+    if not _is_singledispatch(module_function):
+        module_function = singledispatch(module_function)
+        setattr(module, module_fn_name, module_function)
+    # Register the function as the callable to use when the first arg is a
+    # Sparse object.
+    def wrapper(function):
+        module_function.register(Sparse, function)
+        return function
+    return wrapper
 
-if not _is_singledispatch(gym.spaces.utils.unflatten):
-    gym.spaces.utils.unflatten = singledispatch(gym.spaces.utils.unflatten)
 
-
-@gym.spaces.utils.flatdim.register
+@register_sparse_variant(gym.spaces.utils, "flatdim")
 def flatdim_sparse(space: Sparse) -> int:
-    print(f"flat dim of sparse {space}: {gym.spaces.utils.flatdim(space.base)}")
     return gym.spaces.utils.flatdim(space.base)
 
-@gym.spaces.utils.flatten.register(Sparse)
+@register_sparse_variant(gym.spaces.utils, "flatten")
 def flatten_sparse(space: Sparse[T], x: Optional[T]) -> Optional[np.ndarray]:
     return np.array([None]) if x is None else gym.spaces.utils.flatten(space.base, x)
 
-@gym.spaces.utils.unflatten.register(Sparse)
+@register_sparse_variant(gym.spaces.utils, "unflatten")
 def unflatten_sparse(space: Sparse[T], x: np.ndarray) -> Optional[T]:
     if len(x) == 1 and x[0] is None:
         return None
     else:
         return gym.spaces.utils.unflatten(space.base, x)
+
+
+@register_sparse_variant(gym.vector.utils.numpy_utils, "create_empty_array")
+def create_empty_array_sparse(space: Sparse, n=1, fn=np.zeros) -> np.ndarray:
+    return fn([n], dtype=np.object_)
 
 import multiprocessing as mp
 from multiprocessing import Array, Value
@@ -126,15 +142,11 @@ from multiprocessing.context import BaseContext
 
 import gym.vector.utils.shared_memory
 
-if not _is_singledispatch(gym.vector.utils.shared_memory.create_shared_memory):
-    gym.vector.utils.shared_memory.create_shared_memory = singledispatch(
-        gym.vector.utils.shared_memory.create_shared_memory
-    )
-
 from gym.vector.utils.shared_memory import write_base_to_shared_memory
 from ctypes import c_bool
 
-@gym.vector.utils.shared_memory.create_shared_memory.register(Sparse)
+
+@register_sparse_variant(gym.vector.utils.shared_memory, "create_shared_memory")
 def create_shared_memory_for_sparse_space(space: Sparse, n: int = 1, ctx: BaseContext = mp):
     # The shared memory should be something that can accomodate either 'None'
     # or a sample from the space. Therefore we should probably just create the
@@ -148,12 +160,8 @@ def create_shared_memory_for_sparse_space(space: Sparse, n: int = 1, ctx: BaseCo
         "value": gym.vector.utils.shared_memory.create_shared_memory(space.base, n, ctx)
     }
 
-# Writing to shared memory:
 
-from gym.vector.utils.shared_memory import \
-    write_to_shared_memory as write_to_shared_memory_
-
-
+@register_sparse_variant(gym.vector.utils.shared_memory, "write_to_shared_memory")
 def write_to_shared_memory(index: int,
                            value: Optional[T],
                            shared_memory: Union[Dict, Tuple, BaseContext.Array],
@@ -175,15 +183,14 @@ def write_to_shared_memory(index: int,
         # regular space like Tuple that contains some Sparse spaces, then would
         # calling this "old" function here prevent this "new" function from
         # being used on the children?
-        return write_to_shared_memory_(index, value, shared_memory, space)
+        return gym.vector.utils.shared_memory(index, value, shared_memory, space)
 
-gym.vector.utils.shared_memory.write_to_shared_memory = write_to_shared_memory
-
-# Reading from shared memory:
 
 from gym.vector.utils.shared_memory import \
     read_from_shared_memory as read_from_shared_memory_
 
+
+@register_sparse_variant(gym.vector.utils.shared_memory, "read_from_shared_memory")
 def read_from_shared_memory(shared_memory: Union[Dict, Tuple, BaseContext.Array],
                             space: Sparse,
                             n: int = 1):
@@ -209,29 +216,44 @@ def read_from_shared_memory(shared_memory: Union[Dict, Tuple, BaseContext.Array]
         return read_from_shared_memory_(shared_memory, space.base, n)
     return read_from_shared_memory_(shared_memory, space, n)
 
-gym.vector.utils.shared_memory.read_from_shared_memory = read_from_shared_memory
+    
+
+@register_sparse_variant(gym.vector.utils, "batch_space")
+def batch_sparse_space(space: Sparse, n: int=1) -> gym.Space:
+    # NOTE: This means we do something different depending on the sparsity.
+    # Could that become an issue?
+    assert _is_singledispatch(batch_space)
+    
+    sparsity = space.none_prob
+    if sparsity == 0.:
+        # If the space has 0 sparsity, then batch it just like you would its
+        # base space.
+        # TODO: This is convenient, but not very consistent, as the length of
+        # the batches changes depending on the sparsity of the space..
+        return Sparse(batch_space(space.base, n), none_prob=0.)
+
+    # Sticking to the default behaviour from gym for now, which is to just
+    # return a tuple of length n with n copies of the space.
+    return spaces.Tuple(tuple(space for _ in range(n)))
+
+    # We could also do this, where we make the sub-spaces sparse:
+    # batch_space(Sparse<Tuple<A, B>>) -> Tuple<batch_space(Sparse<A>), batch_space(Sparse<B>)>
+
+    if isinstance(space.base, spaces.Tuple):
+        return spaces.Tuple([
+            spaces.Tuple([Sparse(sub_space, sparsity) for _ in range(n)])
+            for sub_space in space.base.spaces
+        ])
+    if isinstance(space.base, spaces.Dict):
+        return spaces.Dict({
+            name: Sparse(batch_space(sub_space, n), sparsity)
+            for name, sub_space in space.base.spaces.items()
+        })
+
+    return batch_space(space.base, n)
 
 
-assert _is_singledispatch(gym.spaces.utils.flatdim)
-
-# These two aren't causing problems as they are.
-if not _is_singledispatch(gym.vector.utils.batch_space):
-    gym.vector.utils.batch_space = singledispatch(gym.vector.utils.batch_space)
-
-if not _is_singledispatch(gym.vector.utils.concatenate):
-    gym.vector.utils.concatenate = singledispatch(gym.vector.utils.concatenate)
-
-
-# if not hasattr(gym.vector.utils.concatenate, "registry"):
-#     concatenate = singledispatch(concatenate)
-#     gym.vector.utils.concatenate = concatenate
-
-
-@gym.vector.utils.batch_space.register
-def batch_sparse_spaces(space: Sparse, n: int=1) -> gym.Space:
-    assert False, f"WOOT WOOT!: {space}, {n}"
-
-@gym.vector.utils.concatenate.register
+@register_sparse_variant(gym.vector.utils, "concatenate")
 def concatenate_sparse_spaces(space: Sparse, n: int=1) -> gym.Space:
-    assert False, "WOOT WOOT!!"
-
+    assert False, f"Debugging: {space}, {n}"
+    return concatenate(space.base, n)

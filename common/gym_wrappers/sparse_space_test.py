@@ -1,4 +1,5 @@
 from .sparse_space import Sparse
+from typing import Iterable
 
 import gym
 from gym import spaces
@@ -23,6 +24,45 @@ base_spaces = [
 ]
 
 
+def equals(value, expected) -> bool:
+    assert type(value) == type(expected)
+    if isinstance(value, (int, float, bool)):
+        return value == expected
+    if isinstance(value, np.ndarray):
+        return value.tolist() == expected.tolist()
+    if isinstance(value, (tuple, list)):
+        assert len(value) == len(expected)
+        return all(equals(a_v, e_v) for a_v, e_v in zip(value, expected))
+    if isinstance(value, dict):
+        assert len(value) == len(expected)
+        for k in expected.keys():
+            if k not in value:
+                return False
+            if not equals(value[k], expected[k]):
+                return False
+        return True
+    return value == expected
+
+
+def is_sparse(iterable: Iterable[bool]) -> bool:
+    """ Returns wether some (but not all) values in the iterable are None. """
+    none_values: int = 0
+    non_none_values: int = 0
+    for value in iterable:
+        if value is None:
+            none_values += 1
+            if non_none_values:
+                return True
+        else:
+            non_none_values += 1
+            if none_values:
+                return True
+    return False
+    # Equivalent, but with a copy:
+    values = list(values)
+    return any(v is None for v in values) and not all(v is None for v in values)
+
+
 @pytest.mark.parametrize("base_space", base_spaces)
 def test_sample(base_space: gym.Space):
     space = Sparse(base_space, none_prob=0.)
@@ -32,13 +72,13 @@ def test_sample(base_space: gym.Space):
 
     space = Sparse(base_space, none_prob=0.5)
     samples = [space.sample() for i in range(100)]
-    assert not all([sample is None for sample in samples])
-    assert not all([sample is not None for sample in samples])
+    assert is_sparse(samples)
     assert all([sample in base_space for sample in samples if sample is not None])
 
     space = Sparse(base_space, none_prob=1.0)
     samples = [space.sample() for i in range(100)]
     assert all(sample is None for sample in samples)
+
 
 @pytest.mark.parametrize("none_prob", [0., 0.5, 1.])
 @pytest.mark.parametrize("base_space", base_spaces)
@@ -63,23 +103,51 @@ def test_batching_works(base_space: gym.Space, n: int = 3):
     sparse_batch = batched_sparse_space.sample()
     assert len(base_batch) == len(sparse_batch)
 
-
+# @pytest.mark.xfail(reason="TODO: Need to decide how we want the sparsity to "
+#                           "affect the batching of Tuple or Dict spaces.")
 @pytest.mark.parametrize("base_space", base_spaces)
-def test_batching_works(base_space: gym.Space, n: int = 3):
+@pytest.mark.parametrize("sparsity", [0., 0.5, 1.0])
+def test_batching_works(base_space: gym.Space, sparsity: float, n: int = 10):
     batched_base_space = batch_space(base_space, n)
-    sparse_space = Sparse(base_space)
-
+    
+    sparse_space = Sparse(base_space, none_prob=sparsity)
     batched_sparse_space = batch_space(sparse_space, n)
+    
+    batched_base_space.seed(123)
     base_batch = batched_base_space.sample()
+    
+    batched_sparse_space.seed(123)
     sparse_batch = batched_sparse_space.sample()
 
+    if sparsity == 0:
+        # When there is no sparsity, the batching is the same as batching the
+        # same space.
+        assert equals(base_batch, sparse_batch)
+    elif sparsity == 1:
+        assert len(sparse_batch) == n
+        assert sparse_batch == tuple([None] * n)
+    else:
+        assert len(sparse_batch) == n
+        assert isinstance(sparse_batch, tuple)
+        
+        for i, value in enumerate(sparse_batch):
+            if value is not None:
+                assert value in base_space
 
-def test_change_persists_after_import():    
+        # There should be some sparsity.
+        assert (any(v is None for v in sparse_batch) and not
+                all(v is None for v in sparse_batch)), sparse_batch
+
+
+from gym.spaces.utils import flatten_space, flatdim, flatten
+
+
+def test_change_persists_after_import():
     from gym.vector.utils import concatenate
     from .sparse_space import Sparse
     assert hasattr(gym.vector.utils.concatenate, "registry")
+    assert hasattr(gym.vector.utils.batch_space, "registry")
 
-from gym.spaces.utils import flatten_space, flatdim, flatten
 
 
 @pytest.mark.parametrize("base_space", base_spaces)
@@ -104,25 +172,6 @@ def test_flatdim(base_space: gym.Space):
     sparse_space = Sparse(base_space, none_prob=1.)
     sparse_flat_dims = flatdim(sparse_space)
     assert base_flat_dims == sparse_flat_dims
-
-def equals(value, expected) -> bool:
-    assert type(value) == type(expected)
-    if isinstance(value, (int, float, bool)):
-        return value == expected
-    if isinstance(value, np.ndarray):
-        return value.tolist() == expected.tolist()
-    if isinstance(value, (tuple, list)):
-        assert len(value) == len(expected)
-        return all(equals(a_v, e_v) for a_v, e_v in zip(value, expected))
-    if isinstance(value, dict):
-        assert len(value) == len(expected)
-        for k in expected.keys():
-            if k not in value:
-                return False
-            if not equals(value[k], expected[k]):
-                return False
-        return True
-    return value == expected
 
 
 @pytest.mark.parametrize("base_space", base_spaces)
