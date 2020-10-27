@@ -140,34 +140,15 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         self.test_task_schedule: Dict[int, Dict] = {}
 
         # Create a temporary environment so we can extract the spaces.
-        with gym.make(self.env_name) as temp_env:
-            # Apply the image transforms to the env.
-            temp_env = TransformObservation(temp_env, f=self.train_transforms)
-            # Add a wrapper that creates the 'tasks' (non-stationarity in the env).
-            # First, get the set of parameters that will be changed over time.
-            cl_task_params = task_params.get(self.env_name, task_params.get(type(temp_env.unwrapped), []))
-            if self.smooth_task_boundaries:
-                temp_env = SmoothTransitions(
-                    temp_env,
-                    task_params=cl_task_params,
-                    # We want to have a 'task-label' space, but it will be
-                    # filled with None values. 
-                    add_task_id_to_obs=True,
-                )
-            else:
-                add_task_id_to_obs = (self.task_labels_at_train_time or self.task_labels_at_test_time)
-                temp_env = MultiTaskEnvironment(
-                    temp_env,
-                    task_params=cl_task_params,
-                    add_task_id_to_obs=add_task_id_to_obs,
-                )
-
-            # Start with the default task (step 0) and then add a new task
-            # at intervals of `self.steps_per_task`
-            for task_step in range(self.steps_per_task, self.max_steps + 1, self.steps_per_task):
-                self.train_task_schedule[task_step] = temp_env.random_task()
-            assert len(self.train_task_schedule) == self.nb_tasks, (self.train_task_schedule, self.nb_tasks)
-            
+        with self.make_temp_env() as temp_env:
+            # Start with the default task (step 0) and then add a new task at
+            # intervals of `self.steps_per_task`      
+            for task_step in range(0, self.max_steps, self.steps_per_task):
+                if task_step == 0:
+                    self.train_task_schedule[task_step] = temp_env.default_task
+                else:
+                    self.train_task_schedule[task_step] = temp_env.random_task()
+            assert len(self.train_task_schedule) == self.nb_tasks
             # For now, set the validation and test tasks as the same sequence as the
             # train tasks.
             self.valid_task_schedule = self.train_task_schedule.copy() 
@@ -183,6 +164,34 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                                                 shape=()))
         del temp_env
 
+    def make_temp_env(self) -> gym.Env:
+        """ Creates a temporary environment.
+        Will be called in the 'constructor' (__post_init__), so this should
+        ideally depend on as little state as possible.
+        """
+        temp_env = gym.make(self.env_name)
+        # Apply the image transforms to the env.
+        temp_env = TransformObservation(temp_env, f=self.train_transforms)
+        # Add a wrapper that creates the 'tasks' (non-stationarity in the env).
+        # First, get the set of parameters that will be changed over time.
+        cl_task_params = task_params.get(self.env_name, task_params.get(type(temp_env.unwrapped), []))            
+        
+        if self.smooth_task_boundaries:
+            cl_wrapper = SmoothTransitions
+        else:
+            cl_wrapper = MultiTaskEnvironment
+
+        # We want to have a 'task-label' space, but it will be filled with
+        # None values when task boundaries are smooth.
+        temp_env = cl_wrapper(
+            temp_env,
+            task_params=cl_task_params,
+            add_task_id_to_obs=True,
+        )
+        return temp_env
+    
+    
+    
     def apply(self, method: Method, config: Config=None) -> "ContinualRLSetting.Results":
         """Apply the given method on this setting to producing some results."""
         self.config = config or Config.from_args(self._argv)
@@ -332,7 +341,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # them to None with another wrapper here.
             # We could also add an argument to the MultiTaskEnvironment, but it 
             # already has enough responsability as it is imo.
-        
+
         # Apply the "post-batch" wrappers:
         if not self.task_labels_at_train_time:
             # TODO: Hide or remove the task labels?

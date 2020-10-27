@@ -28,16 +28,16 @@ import multiprocessing as mp
 import gym
 from gym import Env, Wrapper, spaces
 from gym.vector import VectorEnv
+from gym.vector.utils import batch_space
 from torch import Tensor
 from torch.utils.data import IterableDataset
 
 
 from common.batch import Batch
-from common.gym_wrappers.utils import StepResult
-from common.gym_wrappers import AsyncVectorEnv
-from common.gym_wrappers.utils import has_wrapper, batch_space
+from common.gym_wrappers.utils import StepResult, has_wrapper
 from settings.active.active_dataloader import ActiveDataLoader
 from utils.logging_utils import get_logger
+from common.gym_wrappers import EnvDataset
 
 from .make_env import make_batched_env
 
@@ -57,7 +57,6 @@ ActionType = TypeVar("ActionType")
 RewardType = TypeVar("RewardType")
 
 
-# class GymDataLoader(ActiveDataLoader[Tensor, Tensor, Tensor], gym.Wrapper):
 class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], gym.Wrapper, Iterable):
     """[WIP] ActiveDataLoader for batched Gym envs.
     
@@ -92,30 +91,54 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
     ```
     """
     def __init__(self,
-                 env: Union[IterableDataset, gym.Env],
+                 env: Union[EnvDataset, "PolicyEnv"] = None,
+                 dataset: Union[EnvDataset, "PolicyEnv"] = None,
                  batch_size: int = None,
+                 num_workers: int = None,
                  **kwargs):
-        # We set this to 0 because we are using workers internally in the
-        # VecEnv instead of the usual dataloadering workers.
-        kwargs["num_workers"] = 0
+        assert not (env is None and dataset is None), "One of the `dataset` or `env` arguments must be passed."
+        assert not (env is not None and dataset is not None), "Only one of the `dataset` and `env` arguments can be used."
+        
+        if not isinstance(env, IterableDataset):
+            raise RuntimeError(
+                f"The env {env} isn't an interable dataset! (You can use the "
+                f"EnvDataset or PolicyEnv wrappers to convert a gym environment "
+                "to an IterableDataset)."
+            )
+
+        if batch_size:
+            assert batch_size > 0, "Batch size should be positive."
+            if not isinstance(env.unwrapped, VectorEnv):
+                raise RuntimeError(f"The environment should already be a vectorized environment if batch_size is given.")
+            if batch_size != env.unwrapped.num_envs:    
+                logger.warning(UserWarning(
+                    f"The provided batch size {batch_size} will be ignored, since "
+                    f"the provided env is vectorized with a batch_size of "
+                    f"{env.unwrapped.num_envs}."
+                ))
         self.env = env
         super().__init__(
             dataset=self.env,
             # The batch size is None, because the VecEnv takes care of
             # doing the batching for us.
             batch_size=None,
+            num_workers=0,
+            collate_fn=None,
             **kwargs,
         )
         Wrapper.__init__(self, env=self.env)
-
+        
+        # self.max_epochs: int = max_epochs
         self.observation_space: gym.Space = self.env.observation_space
         self.action_space: gym.Space = self.env.action_space        
+        self.reward_space: gym.Space
 
         if isinstance(env.unwrapped, VectorEnv):
             env: VectorEnv
             batch_size = env.num_envs
             # TODO: Overwriting the action space to be the 'batched' version of
-            # the single action space, rather than a Tuple(Discrete, ...).
+            # the single action space, rather than a Tuple(Discrete, ...) as is
+            # done in the gym.vector.VectorEnv.
             self.action_space = batch_space(env.single_action_space, batch_size)
 
         if not hasattr(self.env, "reward_space"):
@@ -124,36 +147,37 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
                 high=self.env.reward_range[1],
                 shape=(),
             )
-            # Determine wether the env is a vectored env
             if isinstance(self.env.unwrapped, VectorEnv):                
-                # TODO: Same here, we use a 'batched' space rather than Tuple.
+                # Same here, we use a 'batched' space rather than Tuple.
                 self.reward_space = batch_space(self.reward_space, batch_size)
-                # self.reward_space = spaces.Tuple([
-                #     self.reward_space
-                #     for _ in range(self.env.num_envs)
-                # ])
         self._iterator: Iterator = None
+        self._epochs: int = 0
 
     # def __next__(self) -> EnvDatasetItem:
     #     if self._iterator is None:
     #         self._iterator = self.__iter__()
     #     return next(self._iterator)
 
+    def __len__(self):
+        if isinstance(self.env.unwrapped, VectorEnv) and self.max_steps_per_epoch:
+            return self.max_steps_per_epoch
+        else:
+            raise NotImplementedError(f"TODO: Can't tell the length of the env {self.env}.")
+    
+
     def __iter__(self) -> Iterable[ObservationType]:
-        # logger.debug(f"Resetting the env")
-        # self.reset()
-        # logger.debug(f"Done resetting the env.")
-        # self.env.reset()
+        
         assert self.num_workers == 0, "Shouldn't be using multiple DataLoader workers!"
-        # return self.env
         # This gives back the single-process dataloader iterator over the 'dataset'
         # which in this case is the environment:
-        return iter(self.env)
-        # return super().__iter__()
-        
+        # self._iterator = iter(self.env)
+        return super().__iter__()
+        # yield from self._iterator
 
-    def set_policy(self, policy: Callable[[ObservationType], ActionType]) -> None:
-        self.env.set_policy(policy)
+        self._epochs += 1
+        # if self._epochs >= self.max_epochs:
+        #     self.close()
+        # return super().__iter__()
 
     def random_actions(self):
         return self.env.random_actions()
@@ -168,3 +192,37 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
         # logger.debug(f"Receiving actions {action}")
         return self.env.send(action)
     
+    
+    
+    @classmethod
+    def for_env_id(cls,
+                   env: str,
+                   batch_size: Optional[int],
+                   num_workers: int = None,
+                   max_epochs: int = None,
+                   **kwargs) -> "GymDataLoader":
+        """ TODO: The constructor was getting really ugly, because it had to
+        have the arguments needed to make the batched environment, as well as
+        the EnvDataset, etc. Therefore I'm moving the stuff required for
+        creating a Batched EnvDataset here.
+        """ 
+        assert isinstance(env, str), "Can only call this on environment ids (strings)"
+    
+        policy: Optional[Callable] = kwargs.pop("policy", None)
+        if num_workers is None:
+            num_workers = mp.cpu_count()
+        logger.info(f"Creating a vectorized version of {env} with batch size of {batch_size} and {num_workers} processes.")
+        
+        # Make the env / VectorEnv.
+        if batch_size:
+            env = make_batched_env(base_env=env, batch_size=batch_size, n_workers=num_workers, **kwargs)
+        else:
+            env = gym.make(env, **kwargs)
+
+        # Make the env iterable.
+        if policy:
+            from common.gym_wrappers.policy_env import PolicyEnv
+            env = PolicyEnv(env, policy=policy)
+        else:
+            env = EnvDataset(env, max_episodes=max_epochs)
+        return cls(env, **kwargs)

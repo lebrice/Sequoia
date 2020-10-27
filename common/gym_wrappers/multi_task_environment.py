@@ -141,6 +141,8 @@ class MultiTaskEnvironment(gym.Wrapper):
 
     def on_task_switch(self, task_id: int):
         logger.debug(f"Switching from {self.current_task_id} -> {task_id}.")
+        # TODO: We could maybe use this to call the method's 'on_task_switch'
+        # callback?
         pass
 
     def step(self, *args, **kwargs):

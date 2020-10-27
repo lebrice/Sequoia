@@ -137,7 +137,7 @@ def test_render_human():
             env.viewer.window
 
 
-@pytest.mark.parametrize("env_name", ["CartPole-v0", "Pendulum-v0"])
+@pytest.mark.parametrize("env_name", ["CartPole-v0", "Pendulum-v0", "Breakout-v0"])
 def test_with_pixelobservationwrapper_before_batch(env_name: str):
     """ Test out what happens if we put the PixelObservationWrapper before the 
     batching, i.e. in each of the environments.

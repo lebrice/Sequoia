@@ -37,43 +37,6 @@ def test_step_normally_works_fine():
     obs, reward, done, info = env.step(0)
     assert (obs, reward, done, info) == (0, 5, False, {})
 
-from .env_dataset import random_policy
-
-
-def test_iterating_with_policy():
-    env = DummyEnvironment()
-    env = EnvDataset(env, max_episodes=1)
-    env.seed(123)
-
-    actions = [0, 1, 1, 2, 1, 1, 1, 1, 0, 0, 0]
-    expected_obs = [0, 0, 1, 2, 1, 2, 3, 4, 5]
-    expected_rewards = [5, 4, 3, 4, 3, 2, 1, 0]
-    expected_dones = [False, False, False, False, False, False, False, True]
-
-    reset_obs = 0
-    # obs = env.reset()
-    # assert obs == reset_obs
-    n_calls = 0
-    
-    def custom_policy(observations, action_space):
-        nonlocal n_calls
-        action = actions[n_calls]
-        n_calls += 1
-        return action
-    
-    env.set_policy(custom_policy)
-
-    for i, batch in enumerate(env):
-        print(f"Step {i}: batch: {batch}")
-        (observation, action, next_observation), reward = batch
-        assert observation == expected_obs[i]
-        assert next_observation == expected_obs[i+1]
-        assert action == actions[i]
-        assert reward == expected_rewards[i]
-
-        if i == len(actions):
-            break
-
 
 def test_iterating_with_send():
     env = DummyEnvironment(target=5)
@@ -145,7 +108,6 @@ def test_max_episodes():
     with pytest.raises(gym.error.ClosedEnvironmentError):
         for i, observation in enumerate(env):
             print(f"step {i} {observation}")
-            action = 0
             env.send(env.action_space.sample())
 
 
@@ -159,7 +121,6 @@ def test_max_steps():
     all_rewards = []
     all_observations = []
     with env:
-        env.reset()
         # TODO: Should we could what is given back by 'reset' as an observation?
         all_observations.append(env.reset())
         
@@ -179,3 +140,29 @@ def test_max_steps():
     
     assert len(all_rewards) == max_steps
 
+
+def test_max_steps_per_episode():
+    n_episodes = 4
+    max_steps_per_episode = 5
+    env = EnvDataset(
+        env=gym.make("CartPole-v0"),
+        max_steps_per_episode=max_steps_per_episode,
+    )
+    all_observations = []
+    with env:
+        for episode in range(n_episodes):
+            env.reset()
+            for i, batch in enumerate(env):
+                assert i < max_steps_per_episode, f"Max steps per episode should have been respected: {i}"
+                rewards = env.send(env.action_space.sample())
+            assert i == max_steps_per_episode - 1
+
+@pytest.mark.parametrize("env_name", ["CartPole-v0"])
+@pytest.mark.parametrize("batch_size", [1, 2, 5, 10])
+def test_not_setting_max_steps_per_episode_with_vector_env_raises_warning(env_name: str, batch_size: int):
+    from gym.vector import SyncVectorEnv
+    from functools import partial
+
+    env = SyncVectorEnv([partial(gym.make, env_name) for i in range(batch_size)])
+    with pytest.warns(UserWarning):
+        dataset = EnvDataset(env)

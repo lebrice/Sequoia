@@ -9,3 +9,4 @@ from .batch_env import AsyncVectorEnv, BatchedVectorEnv, SyncVectorEnv
 from .env_dataset import EnvDataset
 from .convert_tensors import ConvertToFromTensors
 from .transform_wrappers import TransformObservation, TransformAction, TransformReward
+from .policy_env import PolicyEnv

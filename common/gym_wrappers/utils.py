@@ -6,7 +6,7 @@ from functools import singledispatch
 import gym
 import numpy as np
 from gym import spaces
-from gym.vector.utils import batch_space as batch_space_
+from gym.vector.utils import batch_space
 from torch.utils.data import IterableDataset
 
 from utils.logging_utils import get_logger
@@ -109,11 +109,3 @@ def reshape_dict(space: spaces.Dict, new_shape: Tuple[int, ...]) -> spaces.Dict:
         for i, (k, v) in enumerate(space.spaces.items())
     })
 
-
-@singledispatch
-def batch_space(input_space: gym.Space, n: int):
-    """ todo: use this if we wanted to extend the behaviour of the 'batch_space'
-    function from gym.vector.utils, for example if we add the 'Optional' space,
-    or somethign like that.
-    """
-    return batch_space_(input_space, n)
