@@ -58,6 +58,14 @@ from . import (ChannelsFirst, ChannelsFirstIfNeeded, ChannelsLast, Compose,
     (Transforms.three_channels, (7, 12, 13), (7, 12, 13)),
     (Transforms.three_channels, (1, 28, 28), (3, 28, 28)),
     (Transforms.three_channels, (28, 28, 1), (28, 28, 3)),
+
+    # Test out the 'Resize' transforms
+    (Transforms.resize_64x64, (3, 128, 128), (3, 64, 64)),
+    (Transforms.resize_64x64, (128, 128, 3), (64, 64, 3)),
+    (Transforms.resize_64x64, (3, 64, 64), (3, 64, 64)),
+    (Transforms.resize_64x64, (64, 64, 3), (64, 64, 3)),
+    (Transforms.resize_64x64, (3, 111, 128), (3, 64, 64)),
+    (Transforms.resize_64x64, (111, 128, 3), (64, 64, 3)),    
 ])
 def test_transform(transform: Transforms, input_shape, output_shape):
     x = torch.rand(input_shape)

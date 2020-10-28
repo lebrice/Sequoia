@@ -19,14 +19,13 @@ from torchvision.transforms import functional as F
 from utils.logging_utils import get_logger
 
 from .channels import ChannelsFirstIfNeeded, ChannelsLastIfNeeded
-from .transform import Transform
+from .transform import Transform, Img
 
 logger = get_logger(__file__)
 
 channels_first = ChannelsFirstIfNeeded()
 channels_last = ChannelsLastIfNeeded()
 
-Img = TypeVar("T", bound=Union[Image, np.ndarray, Tensor])
 
 
 def copy_if_negative_strides(image: Img) -> Img:

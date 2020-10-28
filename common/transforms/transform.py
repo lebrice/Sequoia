@@ -4,12 +4,16 @@ from typing import (Any, Callable, Generic, Sized, Tuple, TypeVar, Union,
                     overload)
 
 import gym
+import numpy as np
 from gym import spaces
 from torch import Tensor
+from PIL.Image import Image
 
 InputType = TypeVar("InputType", bound=Sized)
 OutputType = TypeVar("OutputType", bound=Sized)
 
+
+Img = TypeVar("T", bound=Union[Image, np.ndarray, Tensor])
 
 class Transform(Generic[InputType, OutputType]):
     """ Callable that can also tell you its impact on the shape of inputs. """

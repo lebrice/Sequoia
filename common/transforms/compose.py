@@ -51,6 +51,6 @@ class Compose(List[T], ComposeBase, Transform[InputType, OutputType]):
         for transform in self:
             if isinstance(transform, Transforms):
                 transform = transform.value
-            assert hasattr(transform, "space_change"), transform
-            input_space = transform.space_change(input_space)
+            if hasattr(transform, "space_change"):
+                input_space = transform.space_change(input_space)
         return input_space
