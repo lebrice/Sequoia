@@ -15,7 +15,7 @@ from torch import Tensor
 from common.gym_wrappers import (AsyncVectorEnv, ConvertToFromTensors,
                                  EnvDataset, PixelObservationWrapper,
                                  TransformObservation)
-from common.transforms import ChannelsFirstIfNeeded
+from common.transforms import ChannelsFirstIfNeeded, Transforms
 from .gym_dataloader import GymDataLoader
 from .make_env import default_wrappers_for_env, make_batched_env
 from utils import take
@@ -44,7 +44,9 @@ def test_spaces(env_name: str, batch_size: int):
 
     dataloader_env.reset()
     for observation_batch in take(dataloader_env, 3):
-        assert observation_batch.cpu().numpy() in batched_obs_space
+        if isinstance(observation_batch, Tensor):
+            observation_batch = observation_batch.cpu().numpy()
+        assert observation_batch in batched_obs_space
         
         actions = dataloader_env.action_space.sample()
         assert len(actions) == batch_size
@@ -143,7 +145,7 @@ def test_reward_isnt_always_one(env_name: str, batch_size: int):
 
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
 @pytest.mark.parametrize("batch_size", [1, 2, 5, 10])
-def test_batched_cartpole_state(env_name: str, batch_size: int):
+def test_batched_state(env_name: str, batch_size: int):
     max_steps_per_episode = 10
     
     env = make_batched_env(env_name, batch_size=batch_size)
@@ -181,7 +183,7 @@ def test_batched_cartpole_state(env_name: str, batch_size: int):
 
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
 @pytest.mark.parametrize("batch_size", [1, 2, 5, 10])
-def test_batched_cartpole_pixels(env_name: str, batch_size: int):
+def test_batched_pixels(env_name: str, batch_size: int):
     max_steps_per_episode = 10
     
     wrappers = [PixelObservationWrapper]
@@ -210,12 +212,16 @@ def test_batched_cartpole_pixels(env_name: str, batch_size: int):
     env.seed(1234)
     for i, batch in enumerate(env):
         assert len(batch) == batch_size
-        assert batch.numpy() in env.observation_space
         
+        if isinstance(batch, Tensor):
+            batch = batch.cpu().numpy()
+        assert batch in env.observation_space
+
         random_actions = env.action_space.sample()
         assert torch.as_tensor(random_actions).shape == action_shape
         assert temp_env.action_space.contains(random_actions[0])
 
         reward = env.send(random_actions)
         assert reward.shape == reward_shape
+
 

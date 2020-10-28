@@ -1,9 +1,13 @@
 import gym
+import numpy as np
 import pytest
+import torch
+from gym import spaces
 from gym.spaces import Discrete
 
 from conftest import DummyEnvironment
-
+from common.transforms import Transforms
+from .transform_wrappers import TransformObservation
 from .env_dataset import EnvDataset
 
 
@@ -167,3 +171,71 @@ def test_not_setting_max_steps_per_episode_with_vector_env_raises_warning(env_na
     env = SyncVectorEnv([partial(gym.make, env_name) for i in range(batch_size)])
     with pytest.warns(UserWarning):
         dataset = EnvDataset(env)
+    
+    env.close()
+
+
+class DummyWrapper(TransformObservation):
+    def __init__(self, env, f=None):
+        f = [torch.from_numpy, Transforms.channels_first, lambda t: t.numpy()]
+        super().__init__(env, f=f)
+
+    def observation(self, observation):
+        print(f"Modifying an observation with shape {observation.shape}")
+        result = super().observation(observation)
+        print(f"Result shape: {result.shape}, max: {result.max()}")
+        return result
+
+
+def test_observation_wrapper_applies_to_yielded_objects():
+    """ Test that when an TransformObservation wrapper (or any wrapper that
+    changes the Observations) is applied on the env, the observations that are
+    yielded by the GymDataLoader are also transformed, in the same way as those
+    returned by step() or reset().
+    """
+    env_name = "Breakout-v0"
+    batch_size = 10
+    num_workers = 4
+    max_steps_per_episode = 100
+    from settings.active.rl.make_env import make_batched_env
+
+    vector_env = make_batched_env(env_name, batch_size=batch_size, num_workers=num_workers)
+    env = EnvDataset(vector_env, max_steps_per_episode=max_steps_per_episode)
+
+    assert env.observation_space == spaces.Box(0, 255, (10, 210, 160, 3), np.uint8) 
+
+    env = DummyWrapper(env)
+    # env = TransformObservation(env, f=[torch.from_numpy, Transforms.channels_first, lambda t: t.numpy()])
+    assert env.observation_space == spaces.Box(0, 255, (10, 3, 210, 160), np.uint8)
+
+    # env = DummyWrapper(env)
+    # assert env.observation_space == spaces.Box(0, 255 // 2, (10, 210, 160, 3), np.uint8) 
+    
+    print("Before reset")
+    reset_obs = env.reset()
+    assert reset_obs in env.observation_space
+
+    print("Before step")
+    step_obs, _, _, _ = env.step(env.action_space.sample())
+    assert step_obs in env.observation_space
+
+    # We need to send an action before we can do this.
+    action = env.action_space.sample()
+    print(f"Before send")
+    reward = env.send(action)
+    
+    print("Before __next__")
+    next_obs = next(env)
+    assert next_obs in env.observation_space
+    
+    print(f"Before iterating")
+    # TODO: This still doesn't call the right .observation() method!
+    
+    for i, iter_obs in zip(range(3), env):
+        assert iter_obs.shape == env.observation_space.shape
+        assert iter_obs in env.observation_space
+
+        action = env.action_space.sample()
+        reward = env.send(action)
+
+    env.close()
