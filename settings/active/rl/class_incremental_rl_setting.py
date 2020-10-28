@@ -5,7 +5,7 @@ import gym
 from pytorch_lightning import LightningModule
 
 from common.gym_wrappers import MultiTaskEnvironment, PixelObservationWrapper
-from settings.active.rl import GymDataLoader
+from .gym_dataloader import GymDataLoader
 from utils import constant, dict_union
 from utils.logging_utils import get_logger
 

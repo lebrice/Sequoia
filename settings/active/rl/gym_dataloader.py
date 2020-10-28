@@ -185,7 +185,8 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
         # This, on the other hand, completely bypasses the dataloader iterator,
         # and instead just yields the samples from the dataset directly, which
         # is actually what we want!
-        return iter(self.env)
+        # BUG: Somehow this doesn't batch the samples correctly..
+        return self.env.__iter__()
         
         # TODO: BUG: Wrappers applied on top of the GymDataLoader won't have an
         # effect on the values yielded by this iterator. Currently trying to fix

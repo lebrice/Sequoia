@@ -32,7 +32,7 @@ def test_make_env_with_wrapper(env_name: str, batch_size: int):
     env = make_batched_env(
         base_env=env_name,
         batch_size=batch_size,
-        wrappers=[PixelObservationWrapper]
+        wrappers=[PixelObservationWrapper],
     )
     start_state = env.reset()
     expected_state_shape = (batch_size, 400, 600, 3)

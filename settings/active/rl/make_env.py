@@ -33,7 +33,7 @@ def make_batched_env(base_env: Union[str, Callable],
                      use_default_wrappers_for_env: bool = True,
                      asynchronous: bool = True,
                      shared_memory: bool = True,
-                     n_workers: int = None,
+                     num_workers: int = None,
                      **kwargs) -> VectorEnv:
     """Create a vectorized environment from multiple copies of an environment.
 
@@ -121,10 +121,10 @@ def make_batched_env(base_env: Union[str, Callable],
     env_fns = [pre_batch_env_factory for _ in range(batch_size)]
 
     if asynchronous:
-        if n_workers is None:
-            n_workers = mp.cpu_count()
-        if batch_size != n_workers:
-            return BatchedVectorEnv(env_fns, shared_memory=shared_memory)
+        if num_workers is None:
+            num_workers = mp.cpu_count()
+        if batch_size != num_workers:
+            return BatchedVectorEnv(env_fns, shared_memory=shared_memory, n_workers=num_workers)
         return AsyncVectorEnv(env_fns, shared_memory=shared_memory)
     return SyncVectorEnv(env_fns)
 
