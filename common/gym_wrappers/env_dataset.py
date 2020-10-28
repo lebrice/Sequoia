@@ -98,13 +98,11 @@ class EnvDataset(gym.Wrapper,
                 raise gym.error.ClosedEnvironmentError(f"Env has already reached step limit ({self.max_steps}) and is closed.")
             else:
                 raise gym.error.ClosedEnvironmentError("Can't call step on closed env.")
-        # Here we add calls to the (potentially overwritten) 'observation', 'action', 'reward' methods.
-        logger.debug(f"Calling {self.action} on action.")
+        # Here we add calls to the (potentially overwritten) 'observation',
+        # 'action' and 'reward' methods.
         action = self.action(action)
         observation, reward, done, info = self.env.step(action)
-        logger.debug(f"Calling {self.observation} on observation.")
         observation = self.observation(observation)
-        logger.debug(f"Calling {self.reward} on reward.")
         reward = self.reward(reward)
         self.n_steps_ += 1
         self.n_steps_in_episode_ += 1
@@ -179,10 +177,14 @@ class EnvDataset(gym.Wrapper,
         """Iterator for an episode in the environment, which uses the 'active
         dataset' style with __iter__ and send.
 
+        TODO: BUG: Wrappers applied on top of the EnvDataset won't have an
+        effect on the values yielded by this iterator. Currently trying to fix
+        this inside the IterableWrapper base class, but it's not that simple.      
+        
         TODO: To allow wrappers to also be iterable, we need to rename all the
-        "private" attributes to public names, so that they can call something
+        "private" attributes to "public" names, so that they can call something
         like:
-        type(self.env).__iter__(self) (from within the wrapper).        
+        type(self.env).__iter__(self) (from within the wrapper).  
         
         Yields
         -------

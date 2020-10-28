@@ -30,7 +30,6 @@ class TransformObservation(TransformObservation_, IterableWrapper):
         #         f"Assuming that the transform {self.f} will have no impact on "
         #         f"the observation space."
         #     ))
-
     
 class TransformReward(TransformReward_, IterableWrapper):
     def __init__(self, env: gym.Env, f: Union[Callable, Compose]):

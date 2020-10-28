@@ -57,17 +57,113 @@ def remove_wrapper(env: gym.Wrapper, wrapper_type: Type[gym.Wrapper]) -> gym.Wra
     """ IDEA: remove a given wrapper. """
     raise NotImplementedError
 
+from .env_dataset import EnvDataset
+from .policy_env import PolicyEnv
 
 class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
     """ ABC that allows iterating over the wrapped env, if it is iterable.
     
     This allows us to wrap dataloader-based Environments and still use the gym
     wrapper conventions.
+    
+        # Maybe detect if we're applying 
     """
+
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+    
     def __next__(self):
-        return self.env.__next__()
+        # TODO: This is tricky. We want the wrapped env to use *our* step,
+        # reset(), action(), observation(), reward() methods, instead of its own!
+        # Otherwise if we are transforming observations for example, those won't
+        # be affected. 
+        # logger.debug(f"Wrapped env {self.env} isnt a PolicyEnv or an EnvDataset")
+        # return type(self.env).__next__(self)
+    
+        if has_wrapper(self.env, EnvDataset):
+            logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__.")
+            return EnvDataset.__next__(self)
+        # return self.observation(obs)
+
+    def observation(self, observation):
+        logger.debug(f"Observation won't be transformed.")
+        return observation
+    
+    def action(self, action):
+        return action
+    
+    def reward(self, reward):
+        return reward
+    
+    def send(self, action):
+        # (Option 1 below)
+        # return self.env.send(action)
+        
+        # (Option 2 below)
+        # return self.env.send(self.action(action))
+        
+        # (Option 3 below)
+        # return type(self.env).send(self, action)
+        
+        # (Following option 4 below)
+        if has_wrapper(self.env, EnvDataset):
+            logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.send.")
+            return EnvDataset.send(self, action)
+
     def __iter__(self) -> Iterator:
+        # Option 1: Return the iterator from the wrapped env. This ignores
+        # everything in the wrapper.
+        # return self.env.__iter__()
+        
+        # Option 2: apply the transformations on the items yielded by the
+        # iterator of the wrapped env (this doesn't use the self.observaion(), self.action())
+        # from .transform_wrappers import TransformObservation, TransformAction, TransformReward
+        # return map(self.observation, self.env.__iter__())
+        
+        
+        # Option 3: Calling the method on the wrapped env, but with `self` being
+        # the wrapper, rather than the wrapped env:
+        # return type(self.env).__iter__(self)
+
+        # Option 4: Slight variation on option 3: We cut straight to the
+        # EnvDataset iterator.
+        if has_wrapper(self.env, EnvDataset):
+            logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__ with the wrapper as `self`.")
+            return EnvDataset.__iter__(self)
+        
+        if has_wrapper(self.env, PolicyEnv):
+            logger.debug(f"Wrapped env is a PolicyEnv, will use PolicyEnv.__iter__ with the wrapper as `self`.")
+            return PolicyEnv.__iter__(self)
+        
+        # NOTE: This works even though IterableDataset isn't a gym.Wrapper.
+        if not has_wrapper(self.env, IterableDataset):
+            logger.warning(UserWarning(
+                f"Will try to iterate on a wrapper for env {self.env} which "
+                f"doesn't have the EnvDataset or PolicyEnv wrappers and isn't "
+                f"an IterableDataset."
+            ))
         return self.env.__iter__()
+
+    def __setattr__(self, attr, value):
+        """ Redirect the __setattr__ of attributes 'owned' by the EnvDataset to
+        the EnvDataset.
+        
+        We need to do this because we change the value of `self` and call
+        EnvDataset.__iter__(self), which might get and set attributes to/from
+        `self`, which is what you'd expect normally. However when `self` is a
+        wrapper over the env, rather than the env itself, then when attributes
+        are set on `self` inside __iter__ or __next__ or send, etc, they are
+        actually set on the wrapper, rather than on the env.
+        
+        We solve this by detecting when an attribute with a name ending with "_"
+        and part of a given list of attributes is set.
+        """
+        if attr.endswith("_") and has_wrapper(self.env, EnvDataset):
+            if attr in {"observation_", "action_", "reward_", "done_", "info_", "n_sends_"}:
+                logger.debug(f"Attribute {attr} will be set on the wrapped env rather than on the wrapper itself.")
+                setattr(self.env, attr, value)
+        else:
+            object.__setattr__(self, attr, value)
 
 
 @singledispatch
