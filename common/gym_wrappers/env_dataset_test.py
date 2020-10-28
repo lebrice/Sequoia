@@ -157,6 +157,7 @@ def test_max_steps_per_episode():
                 rewards = env.send(env.action_space.sample())
             assert i == max_steps_per_episode - 1
 
+
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
 @pytest.mark.parametrize("batch_size", [1, 2, 5, 10])
 def test_not_setting_max_steps_per_episode_with_vector_env_raises_warning(env_name: str, batch_size: int):

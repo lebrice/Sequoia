@@ -58,19 +58,19 @@ class EnvDataset(gym.Wrapper,
         # Total number of steps performed so far.
         self._n_steps: int = 0
         # Number of episodes performed in the environment.
-        # Starts at -1 so the initial _reset doesn't count as the end of an episode.
+        # Starts at -1 so the initial was_reset doesn't count as the end of an episode.
         self._n_episodes: int =  0
         # Number of times the `send` method was called.
         self._n_sends: int = 0
         
-        self._observation: Optional[ObservationType] = None
-        self._action: Optional[ActionType] = None
-        self._reward: Optional[RewardType] = None
-        self._done: Optional[Union[bool, Sequence[bool]]] = None
-        self._info: Optional[Union[Dict, Sequence[Dict]]] = None
+        self.observation_: Optional[ObservationType] = None
+        self.action_: Optional[ActionType] = None
+        self.reward_: Optional[RewardType] = None
+        self.done: Optional[Union[bool, Sequence[bool]]] = None
+        self.info: Optional[Union[Dict, Sequence[Dict]]] = None
 
-        self._closed: bool = False
-        self._reset: bool = False
+        self.closed: bool = False
+        self.was_reset: bool = False
         
         self._current_step_result: StepResult = None
         self._previous_step_result: StepResult = None
@@ -81,17 +81,33 @@ class EnvDataset(gym.Wrapper,
         self._n_sends = 0
         self._n_steps_in_episode = 0
 
+    def observation(self, observation):
+        return observation
+    
+    def action(self, action):
+        return action
+    
+    def reward(self, reward):
+        return reward
+
     def step(self, action) -> StepResult:
-        if self._closed:
+        if self.closed:
             if self.reached_episode_limit:
                 raise gym.error.ClosedEnvironmentError(f"Env has already reached episode limit ({self.max_episodes}) and is closed.")
             elif self.reached_step_limit:
                 raise gym.error.ClosedEnvironmentError(f"Env has already reached step limit ({self.max_steps}) and is closed.")
             else:
                 raise gym.error.ClosedEnvironmentError("Can't call step on closed env.")
-        result = StepResult(*self.env.step(action))
+        # Here we add calls to the (potentially overwritten) 'observation', 'action', 'reward' methods.
+        action = self.action(action)
+        observation, reward, done, info = self.env.step(action)
+        
+        observation = self.observation(observation)
+        reward = self.reward(reward)
         self._n_steps += 1
         self._n_steps_in_episode += 1
+        
+        result = StepResult(observation, reward, done, info)
         return result
 
     def __next__(self) -> Tuple[ObservationType,
@@ -120,7 +136,7 @@ class EnvDataset(gym.Wrapper,
         """
         logger.debug(f"__next__ is being called at step {self._n_steps}.")
         
-        if self._closed:
+        if self.closed:
             raise gym.error.ClosedEnvironmentError("Env is closed.")
         
         if self.reached_episode_limit:
@@ -131,47 +147,39 @@ class EnvDataset(gym.Wrapper,
             raise StopIteration
         if self.reached_episode_length_limit:
             logger.debug("Reached episode length limit, raising StopIteration.")
+            raise StopIteration
 
-        if not self._reset:
+        if not self.was_reset:
             raise gym.error.ResetNeeded("Need to reset the env before you can call __next__")
         
-        if self._action is None:
+        if self.action_ is None:
             raise RuntimeError(
                 "You have to send an action using send() between every "
-                "observation."
+                "observation_."
             )
-        self._observation, self._reward, self._done, self._info = self.step(self._action)
-        return self._observation
+        self.observation_, self.reward_, self.done, self.info = self.step(self.action_)
+        return self.observation_
 
     def send(self, action: ActionType) -> RewardType:
         """ Sends an action to the environment, returning a reward.
-        This will raise an error when if not called without
+        This can raise the same errors as calling __next__, namely,
+        StopIteration, ResetNeeded,  raise an error when if not called without
         """
         assert action is not None, "Don't send a None action!"
-        self._action = action
-        self._observation = self.__next__()
+        self.action_ = action
+        self.observation_ = self.__next__()
         self._n_sends += 1
-        return self._reward
+        return self.reward_
 
-    def __iter__(self) -> Iterable[Tuple[ObservationType,
-                                         Union[bool, Sequence[bool]],
-                                         Union[Dict, Sequence[Dict]]]]:
-        """Iterator for an episode of a gym environment.
-        """
-        
-        if self._closed:
-            if self.reached_episode_limit:
-                raise gym.error.ClosedEnvironmentError(f"Env has already reached episode limit ({self.max_episodes}) and is closed.")
-            elif self.reached_step_limit:
-                raise gym.error.ClosedEnvironmentError(f"Env has already reached step limit ({self.max_steps}) and is closed.")
-            else:
-                raise gym.error.ClosedEnvironmentError(f"Env is closed, can't iterate over it.")
-        return self.iterator_with_send()
-
-    def iterator_with_send(self) -> Iterable[ObservationType]:
+    def __iter__(self) -> Iterable[ObservationType]:
         """Iterator for an episode in the environment, which uses the 'active
         dataset' style with __iter__ and send.
 
+        TODO: To allow wrappers to also be iterable, we need to rename all the
+        "private" attributes to public names, so that they can call something
+        like:
+        type(self.env).__iter__(self) (from within the wrapper).        
+        
         Yields
         -------
         Observations
@@ -182,16 +190,26 @@ class EnvDataset(gym.Wrapper,
         RuntimeError
             [description]
         """
-        # First step:
-        if not self._reset:
-            self._observation = self.reset()
-        self._done = False
-        self._action = None
-        self._reward = None
-        assert self._observation is not None
-        # Yield the first observation.
+        if self.closed:
+            if self.reached_episode_limit:
+                raise gym.error.ClosedEnvironmentError(f"Env has already reached episode limit ({self.max_episodes}) and is closed.")
+            elif self.reached_step_limit:
+                raise gym.error.ClosedEnvironmentError(f"Env has already reached step limit ({self.max_steps}) and is closed.")
+            else:
+                raise gym.error.ClosedEnvironmentError(f"Env is closed, can't iterate over it.")
+        
+        # First step reset automatically before iterating, if needed.
+        if not self.was_reset:
+            self.observation_ = self.reset()
+
+        self.done = False
+        self.action_ = None
+        self.reward_ = None
+        
+        assert self.observation_ is not None
+        # Yield the first observation_.
         # TODO: What do we want to yield, actually? Just observations?
-        yield self._observation
+        yield self.observation_
 
         logger.debug(f"episode {self._n_episodes}/{self.max_episodes}")
 
@@ -201,19 +219,18 @@ class EnvDataset(gym.Wrapper,
             logger.debug(f"step {self._n_steps}/{self.max_steps}, ")
             
             # Set those to None to force the user to call .send()
-            self._action = None
-            self._reward = None
-            yield self._observation
+            self.action_ = None
+            self.reward_ = None
+            yield self.observation_
 
-            if self._action is None:
+            if self.action_ is None:
                 raise RuntimeError(
                     "You have to send an action using send() between every "
-                    "observation."
+                    "observation_."
                 )
-
                 
         # Force the user to call reset() between episodes.
-        self._reset = False
+        self.was_reset = False
         self._n_episodes += 1
 
         logger.debug(f"self.n_steps: {self._n_steps} self.n_episodes: {self._n_episodes}")
@@ -245,45 +262,46 @@ class EnvDataset(gym.Wrapper,
 
     @property
     def _done_is_true(self) -> bool:
-        """Returns wether self._done is True.
+        """Returns wether self.done is True.
         
         This will always return False if the wrapped env is a VectorEnv,
-        regardless of if the some of the values in the self._done array are
+        regardless of if the some of the values in the self.done array are
         true. This is because the VectorEnvs already reset the underlying envs
         when they have done=True.
 
         Returns
         -------
         bool
-            Wether the episode is considered "done" based on self._done. 
+            Wether the episode is considered "done" based on self.done. 
         """
-        if isinstance(self._done, bool):
-            return self._done
+        if isinstance(self.done, bool):
+            return self.done
         if isinstance(self.env.unwrapped, VectorEnv):
             # VectorEnvs reset themselves, so we consider the "_done" as False,
             # regarless
             return False
-        if isinstance(self._done, Tensor) and not self._done.shape:
-            return bool(self._done)
+        if isinstance(self.done, Tensor) and not self.done.shape:
+            return bool(self.done)
         raise RuntimeError(f"'done' should be a single boolean, but got "
-                           f"{self._done} of type {type(self._done)})")
+                           f"{self.done} of type {type(self.done)})")
 
-        raise RuntimeError(f"Can't tell if we're done: self._done={self._done}")
+        raise RuntimeError(f"Can't tell if we're done: self.done={self.done}")
 
     def reset(self, **kwargs) -> ObservationType:
-        self._observation = self.env.reset(**kwargs)
-        self._reset = True
+        observation = self.env.reset(**kwargs)
+        self.observation_ = self.observation(observation)
+        self.was_reset = True
         self._n_steps_in_episode = 0
         # self._n_episodes += 1
-        return self._observation
+        return self.observation_
 
     def close(self) -> None:
         # This will stop the iterator on the next step.
         # self.max_steps = 0
-        self._closed = True
-        self._action = None
-        self._observation = None
-        self._reward = None
+        self.closed = True
+        self.action_ = None
+        self.observation_ = None
+        self.reward_ = None
         super().close()
 
     def __len__(self) -> Optional[int]:

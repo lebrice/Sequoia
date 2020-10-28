@@ -23,7 +23,6 @@ task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
     ]
     # TODO: Add more of the classic control envs here.
 }
-
 logger = get_logger(__file__)
 
 

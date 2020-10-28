@@ -53,6 +53,11 @@ def has_wrapper(env: gym.Wrapper, wrapper_type: Type[gym.Wrapper]) -> bool:
     return False
 
 
+def remove_wrapper(env: gym.Wrapper, wrapper_type: Type[gym.Wrapper]) -> gym.Wrapper:
+    """ IDEA: remove a given wrapper. """
+    raise NotImplementedError
+
+
 class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
     """ ABC that allows iterating over the wrapped env, if it is iterable.
     

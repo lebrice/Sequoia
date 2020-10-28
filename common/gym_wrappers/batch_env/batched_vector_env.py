@@ -51,6 +51,8 @@ class BatchedVectorEnv(VectorEnv):
 
     NOTE: In order to get this to work, I had to modify the `if done:` statement
     in the worker to be `if done if isinstance(done, bool) else all(done):`.
+    
+    TODO: Batch the 'info' dicts maybe? 
     """
     def __init__(self,
                  env_fns,

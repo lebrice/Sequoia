@@ -14,7 +14,6 @@ from typing import (Any, Callable, ClassVar, Dict, Generic, Iterable, List,
 
 import gym
 import numpy as np
-
 from gym import Env, Wrapper
 from gym.vector import AsyncVectorEnv as AsyncVectorEnv_
 from gym.vector.async_vector_env import (AlreadyPendingCallError, AsyncState,
@@ -24,7 +23,8 @@ from utils.logging_utils import get_logger
 from .tile_images import tile_images
 from .worker import (CloudpickleWrapper, Commands, _custom_worker,
                      _custom_worker_shared_memory)
-
+# NOTE: Seems to fix some kind of pytorch-related bug. I can try to find a link
+# to the post about this if needed.
 import os; os.environ['MKL_THREADING_LAYER'] = 'GNU'
 
 
@@ -57,17 +57,7 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         if context is None:
             system: str = platform.system()
             if system == "Linux":
-                # TODO: Debugging an error from the pyglet package when using
-                # 'fork' with classic control envs like CartPole.
-                # python3.7/site-packages/pyglet/gl/xlib.py", line 218, in __init__
-                # raise gl.ContextException('Could not create GL context')
-                
-                # NOTE: For now 'forkserver`, seems to have resolved the bug
-                # above for now, but is still super slow compared to fork.
-                # If we you don't intend to ever call 'render' on the env, then
-                # you should *definitely* be using 'fork'.
                 context = "forkserver"
-                # context = "fork"
             else:
                 logger.warning(RuntimeWarning(
                     f"Using the 'spawn' multiprocessing context since we're on "
