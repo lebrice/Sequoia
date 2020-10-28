@@ -1,7 +1,7 @@
 import bisect
 import random
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional, Sequence, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Type, Union
 
 import gym
 import matplotlib.pyplot as plt
@@ -125,6 +125,8 @@ class MultiTaskEnvironment(gym.Wrapper):
             ])
         
         self._closed = False
+        
+        self._on_task_switch_callback: Optional[Callable[[int], None]] = None
 
     @property
     def current_task_id(self) -> int:
@@ -139,11 +141,16 @@ class MultiTaskEnvironment(gym.Wrapper):
         current_task_index = insertion_index - 1
         return current_task_index
 
+    def set_on_task_switch_callback(self, callback: Callable[[int], None]) -> None:
+        self._on_task_switch_callback = callback
+    
     def on_task_switch(self, task_id: int):
         logger.debug(f"Switching from {self.current_task_id} -> {task_id}.")
         # TODO: We could maybe use this to call the method's 'on_task_switch'
         # callback?
-        pass
+        if self._on_task_switch_callback:
+            self._on_task_switch_callback(task_id)
+    
 
     def step(self, *args, **kwargs):
         # If we reach a step in the task schedule, then we change the task to

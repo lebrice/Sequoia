@@ -151,7 +151,6 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
                 # Same here, we use a 'batched' space rather than Tuple.
                 self.reward_space = batch_space(self.reward_space, batch_size)
         self._iterator: Iterator = None
-        self._epochs: int = 0
 
     # def __next__(self) -> EnvDatasetItem:
     #     if self._iterator is None:
@@ -168,16 +167,15 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
     def __iter__(self) -> Iterable[ObservationType]:
         
         assert self.num_workers == 0, "Shouldn't be using multiple DataLoader workers!"
-        # This gives back the single-process dataloader iterator over the 'dataset'
-        # which in this case is the environment:
-        # self._iterator = iter(self.env)
-        return super().__iter__()
-        # yield from self._iterator
-
-        self._epochs += 1
-        # if self._epochs >= self.max_epochs:
-        #     self.close()
+        # This would give back a single-process dataloader iterator over the
+        # 'dataset' which in this case is the environment:
         # return super().__iter__()
+        
+        # This, on the other hand, completely bypasses the dataloader iterator,
+        # and instead just yields the samples from the dataset directly, which
+        # is actually what we want! 
+        self._iterator = iter(self.env)
+        yield from self._iterator
 
     def random_actions(self):
         return self.env.random_actions()

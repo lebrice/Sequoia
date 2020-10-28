@@ -226,7 +226,7 @@ class DummyEnvironment(gym.Env):
         self.i %= self.max_value
         done = (self.i == self.target)
         reward = abs(self.i - self.target)
-        print(self.i, reward, done, action)
+        # print(self.i, reward, done, action)
         return self.i, reward, done, {}
 
     def reset(self):

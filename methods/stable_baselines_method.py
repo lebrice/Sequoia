@@ -16,12 +16,11 @@ from settings.active.rl.continual_rl_setting import ContinualRLSetting
 
 from stable_baselines3.common.base_class import is_image_space, VecEnv, DummyVecEnv, VecTransposeImage 
 
-
 class WrapEnvPatch:
     # Patch for the _wrap_env function of the BaseAlgorithm class of
     # stable_baselines, to make it recognize the VectorEnv from gym.vector as a
     # vectorized environment.
-    def _wrap_env(self: BaseAlgorithm, env):
+    def _wrap_env(self: BaseAlgorithm, env: gym.Env):
         # NOTE: We just want to change this single line here:
         # if not isinstance(env, VecEnv):
         if not (isinstance(env, (VecEnv, VectorEnv)) or isinstance(env.unwrapped, (VecEnv, VectorEnv))):
@@ -55,6 +54,7 @@ class StableBaselines3Method(Method, target_setting=ContinualRLSetting):
         # additional batch dimension if we do.
         # TODO: Still need to debug the batching stuff with stablebaselines
         setting.train_batch_size = None
+        setting.valid_batch_size = None
         setting.test_batch_size = None
         # Only one "epoch" of training for now. 
         self.total_timesteps = setting.max_steps
@@ -80,11 +80,12 @@ class StableBaselines3Method(Method, target_setting=ContinualRLSetting):
 
 
 class A2CMethod(StableBaselines3Method):
+    name: ClassVar[str] = "a2c"
     Model: ClassVar[Type[BaseAlgorithm]] = A2CModel
 
 
 class PPOMethod(StableBaselines3Method):
-    Model: ClassVar[Type[BaseAlgorithm]] = A2CModel
+    Model: ClassVar[Type[BaseAlgorithm]] = PPOModel
 
 
 if __name__ == "__main__":

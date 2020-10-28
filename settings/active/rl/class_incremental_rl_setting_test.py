@@ -103,6 +103,7 @@ class DummyMethod(Method, target_setting=ClassIncrementalRLSetting):
         self.received_task_ids: List[Optional[int]] = []
     
     def fit(self, train_env: gym.Env = None, valid_env: gym.Env = None):
+        obs = train_env.reset()
         for i in range(100):
             obs, reward, done, info = train_env.step(train_env.action_space.sample())
             if done:
@@ -128,14 +129,17 @@ from conftest import DummyEnvironment
 def test_on_task_switch_is_called():
     dataset = "Breakout-v0"
     setting = ClassIncrementalRLSetting(
-        dataset=DummyEnvironment(),
+        dataset=DummyEnvironment,
         nb_tasks=5,
         n_steps_per_task=10,
         max_steps=50,
+        train_transforms=[],
+        test_transforms=[],
+        val_transforms=[],
     )
     method = DummyMethod()
     results = setting.apply(method)
     
     assert method.n_task_switches == 5
     assert method.received_task_ids == list(range(5))
-   
+    

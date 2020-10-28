@@ -7,15 +7,14 @@ from .baseline_method import BaselineMethod
 from .random_baseline import RandomBaselineMethod
 # from .pl_bolts_methods.cpcv2 import CPCV2Method
 # TODO: We could also 'register' the methods as they are declared!
-
+from .stable_baselines_method import A2CMethod, PPOMethod
 
 all_methods: List[Type[Method]] = [
     BaselineMethod,
     RandomBaselineMethod,
     # CPCV2Method, TODO: (#17): Add Pl Bolts Models as Methods on IID Setting.
-    # ClassIncrementalMethod,
-    # TaskIncrementalMethod,
-    # SelfSupervision,
+    A2CMethod,
+    PPOMethod,
 ]
 
 # print(" All methods: ", all_methods)

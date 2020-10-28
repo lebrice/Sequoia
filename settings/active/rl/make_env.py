@@ -33,9 +33,9 @@ def make_batched_env(base_env: Union[str, Callable],
                      use_default_wrappers_for_env: bool = True,
                      asynchronous: bool = True,
                      shared_memory: bool = True,
+                     n_workers: int = None,
                      **kwargs) -> VectorEnv:
-    """Create a vectorized environment from multiple copies of an environment,
-    from its id
+    """Create a vectorized environment from multiple copies of an environment.
 
     NOTE: This function does pretty much the same as `gym.vector.make`, but with
     a bit more flexibility:
@@ -115,11 +115,15 @@ def make_batched_env(base_env: Union[str, Callable],
             env = wrapper(env)
         return env
 
+    if batch_size is None:
+        return pre_batch_env_factory()
+    
     env_fns = [pre_batch_env_factory for _ in range(batch_size)]
 
-    
     if asynchronous:
-        if len(env_fns) > mp.cpu_count():
+        if n_workers is None:
+            n_workers = mp.cpu_count()
+        if batch_size != n_workers:
             return BatchedVectorEnv(env_fns, shared_memory=shared_memory)
         return AsyncVectorEnv(env_fns, shared_memory=shared_memory)
     return SyncVectorEnv(env_fns)

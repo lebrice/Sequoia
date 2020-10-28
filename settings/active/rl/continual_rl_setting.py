@@ -38,6 +38,10 @@ from .. import ActiveEnvironment
 logger = get_logger(__file__)
 
 # TODO: Implement a get_metrics (ish) in the Environment, not on the Setting!
+# TODO: The validation environment will also call the on_task_switch when it
+# reaches a task boundary, and there isn't currently a way to distinguish if
+# that method is being called because of the training or because of the
+# validation environment.
 
 
 task_params: Dict[Union[Type[gym.Env], str], List[str]] = {
@@ -87,6 +91,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.channels_first_if_needed)
 
+    # Class variable that holds the dict of available environments.
     available_datasets: ClassVar[Dict[str, str]] = {
         "cartpole": "CartPole-v0",
         "pendulum": "Pendulum-v0",
@@ -169,7 +174,11 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         Will be called in the 'constructor' (__post_init__), so this should
         ideally depend on as little state as possible.
         """
-        temp_env = gym.make(self.env_name)
+        if self.env_name:
+            temp_env = gym.make(self.env_name)
+        else:
+            assert callable(self.dataset), f"dataset should either be a string or a callable, got {self.dataset}"
+            temp_env = self.dataset()
         # Apply the image transforms to the env.
         temp_env = TransformObservation(temp_env, f=self.train_transforms)
         # Add a wrapper that creates the 'tasks' (non-stationarity in the env).
@@ -212,11 +221,24 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
     @property
     def env_name(self) -> str:
+        """Returns the gym 'id' associated with the selected dataset/env, or an
+        empty string if the env doesn't have a spec. 
+
+        Returns
+        -------
+        str
+            The env's spec.id, or an empty string if the env doesn't have one.
+        """
         if self.dataset in self.available_datasets.values():
             return self.dataset
         if self.dataset in self.available_datasets.keys():
             return self.available_datasets[self.dataset]
-        return self.dataset                        
+        if isinstance(self.dataset, str):
+            return self.dataset
+        elif self.dataset.spec:
+            return self.dataset.spec.id
+        return "" # No idea what the dataset name is, return None.
+        # return self.dataset
 
     def setup(self, stage=None):
         return super().setup(stage=stage)
@@ -245,6 +267,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 wrappers=self.train_wrappers(),
                 batch_size=batch_size,
                 asynchronous=use_mp,
+                # asynchronous=False,
                 shared_memory=False,
             )
         # Apply the "post-batch" wrappers:
@@ -268,7 +291,12 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
     def make_train_env(self) -> gym.Env:
         """ Make a single (not-batched) training environment. """
-        env = gym.make(self.env_name)
+        if self.env_name:
+            env = gym.make(self.env_name)
+        else:
+            assert callable(self.dataset), f"dataset should either be a string or a callable, got {self.dataset}"
+            env = self.dataset()
+
         for wrapper in self.train_wrappers():
             env = wrapper(env)
         return env
@@ -355,7 +383,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         if not self.has_setup_fit:
             self.setup("fit")
         
-        batch_size = batch_size or self.train_batch_size or self.batch_size
+        batch_size = batch_size or self.valid_batch_size or self.batch_size
 
         if batch_size is None:
             env = self.make_val_env()
@@ -366,6 +394,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 wrappers=self.val_wrappers(),
                 batch_size=batch_size,
                 asynchronous=use_mp,
+                # asynchronous=False,
                 shared_memory=False,
             )
         # Apply the "post-batch" wrappers:
@@ -383,7 +412,11 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
     def make_val_env(self) -> gym.Env:
         """ Create a single (non-batched) validation environment. """
-        env = gym.make(self.env_name)
+        if self.env_name:
+            env = gym.make(self.env_name)
+        else:
+            assert callable(self.dataset), f"dataset should either be a string or a callable, got {self.dataset}"
+            env = self.dataset()
         for wrapper in self.val_wrappers():
             env = wrapper(env)
         return env
@@ -456,6 +489,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 wrappers=self.test_wrappers(),
                 batch_size=batch_size,
                 asynchronous=use_mp,
+                # asynchronous=False,
                 shared_memory=False,
             )
             
@@ -481,7 +515,12 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
     def make_test_env(self) -> gym.Env:
         """ Make a single (not-batched) testing environment. """
-        env = gym.make(self.env_name)
+        if self.env_name:
+            env = gym.make(self.env_name)
+        else:
+            assert callable(self.dataset), f"dataset should either be a string or a callable, got {self.dataset}"
+            env = self.dataset()
+
         for wrapper in self.test_wrappers():
             env = wrapper(env)
         return env
@@ -541,11 +580,9 @@ class ContinualRLTestEnvironment(TestEnvironment):
         assert has_wrapper(self.env, MultiTaskEnvironment), self.env
         task_steps = sorted(self.task_schedule.keys())
         
-        assert 0 in task_steps, task_steps        
+        assert 0 in task_steps, task_steps
         import bisect
-        # Since 0 is in the task steps, the number of tasks is actually 1 less
-        # than the number of "task dicts" in the task schedule.
-        nb_tasks = len(task_steps) - 1
+        nb_tasks = len(task_steps)
         assert nb_tasks >= 1
         episode_rewards: List[float] = [[] for _ in range(nb_tasks)]
         episode_lengths: List[int] = [[] for _ in range(nb_tasks)]

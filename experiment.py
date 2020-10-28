@@ -98,9 +98,19 @@ class Experiment(Parseable, Serializable):
             # Evaluate a given method on a given setting.
             if method_name is not None:
                 self.method = get_method_class_with_name(method_name, self.setting)
-            if issubclass(self.method, Method):
+            if issubclass(self.method, Parseable):
                 self.method = self.method.from_args(argv)
-            
+            else:
+                # Hey, how are we supposed to create this method?
+                try:
+                    # Try creating the method with its constructor directly.
+                    self.method = self.method()
+                except TypeError as e:
+                    raise RuntimeError(
+                        f"Wasn't able to create the method {self.method} with "
+                        f"its constructor: {e}"
+                    ) from e
+
             # Give the same Config to both the Setting and the Method.
             # TODO: Decide who should be holding what options from the config.
             self.method.config = self.config

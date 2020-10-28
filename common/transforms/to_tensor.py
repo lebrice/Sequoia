@@ -16,9 +16,12 @@ from torch import Tensor
 from torchvision.transforms import ToTensor as ToTensor_
 from torchvision.transforms import functional as F
 
+from utils.logging_utils import get_logger
 
 from .channels import ChannelsFirstIfNeeded, ChannelsLastIfNeeded
 from .transform import Transform
+
+logger = get_logger(__file__)
 
 channels_first = ChannelsFirstIfNeeded()
 channels_last = ChannelsLastIfNeeded()
@@ -119,7 +122,9 @@ class ToTensor(ToTensor_, Transform):
 
     @classmethod
     def space_change(cls, input_space: gym.Space) -> gym.Space:
-        assert isinstance(input_space, spaces.Box), f"Only applies to Box spaces, not {input_space}"
+        if not isinstance(input_space, spaces.Box):
+            logger.warning(UserWarning(f"Transform {cls} is only meant for Box spaces, not {input_space}"))
+            return input_space
         return spaces.Box(
             low=0.,
             high=1.,

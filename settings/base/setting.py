@@ -109,18 +109,13 @@ class Setting(SettingABC,
     
     ##
     ##   -------------
-    # Transforms to be used. When no value is given for 
-    # `[train/val/test]_transforms`, this value is used as a default.
-    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
-    # Transforms to be applied to the training datasets. When unset, the value
-    # of `transforms` is used.
-    train_transforms: List[Transforms] = list_field()
-    # Transforms to be applied to the validation datasets. When unset, the value
-    # of `transforms` is used.
-    val_transforms: List[Transforms] = list_field()
-    # Transforms to be applied to the testing datasets. When unset, the value
-    # of `transforms` is used.
-    test_transforms: List[Transforms] = list_field()
+    
+    # Transforms to be applied to the training datasets.
+    train_transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
+    # Transforms to be applied to the validation datasets. 
+    val_transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
+    # Transforms to be applied to the testing datasets.
+    test_transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
 
     # Fraction of training data to use to create the validation set.
     val_fraction: float = 0.2
@@ -147,10 +142,9 @@ class Setting(SettingABC,
         logger.debug(f"__post_init__ of Setting")
         
         # Actually compose the list of Transforms or callables into a single transform.
-        self.transforms: Compose = Compose(self.transforms)
-        self.train_transforms: Compose = Compose(self.train_transforms or self.transforms)
-        self.val_transforms: Compose = Compose(self.val_transforms or self.transforms)
-        self.test_transforms: Compose = Compose(self.test_transforms or self.transforms)
+        self.train_transforms: Compose = Compose(self.train_transforms)
+        self.val_transforms: Compose = Compose(self.val_transforms)
+        self.test_transforms: Compose = Compose(self.test_transforms)
 
         LightningDataModule.__init__(self,
             train_transforms=self.train_transforms,
@@ -180,6 +174,7 @@ class Setting(SettingABC,
         self.dataloader_kwargs: Dict[str, Any] = {}
         self.batch_size: Optional[int] = None
         self.train_batch_size: Optional[int] = None
+        self.valid_batch_size: Optional[int] = None
         self.test_batch_size: Optional[int] = None
         # TODO: We have to set the 'dims' property from LightningDataModule so
         # that models know the input dimensions.

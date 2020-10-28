@@ -1,7 +1,7 @@
 import itertools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Union, Sequence, Optional
+from typing import List, Union, Sequence, Optional, Tuple
 from pathlib import Path
 
 import gym
@@ -134,7 +134,6 @@ class IncrementalSetting(SettingABC):
             # TODO: Pass the train_dataloader and val_dataloader methods, rather than the envs.
             task_train_loader = self.train_dataloader()
             task_valid_loader = self.val_dataloader()
-            
             success = method.fit(
                 train_env=task_train_loader,
                 valid_env=task_valid_loader,
@@ -199,23 +198,19 @@ class IncrementalSetting(SettingABC):
         
         if self.known_task_boundaries_at_test_time:
             # TODO: Add a 'callback' wrapper that calls the 'on_task_switch' of the method.
-            def on_task_switch_callback(step: int, env: gym.Env, step_results: Tuple):
-                if step in self.test_task_schedule.keys():
-                    task_id = sorted(self.test_task_schedule.keys()).index(step)
-                    if not hasattr(method, "on_task_switch"):
-                        logger.warning(UserWarning(
-                            f"On a task boundary, but since your method doesn't "
-                            f"have an `on_task_switch` method, it won't know about "
-                            f"it! "
-                        ))
-                    elif not self.task_labels_at_test_time:
-                        method.on_task_switch(None)
-                    else:
-                        method.on_task_switch(task_id)
-
-            test_env = StepCallbackWrapper(test_env, callbacks=[on_task_switch_callback])
-            assert False, test_env
-            raise NotImplementedError()
+            def on_task_switch_callback(task_id: int):
+                if not hasattr(method, "on_task_switch"):
+                    logger.warning(UserWarning(
+                        f"On a task boundary, but since your method doesn't "
+                        f"have an `on_task_switch` method, it won't know about "
+                        f"it! "
+                    ))
+                elif not self.task_labels_at_test_time:
+                    method.on_task_switch(None)
+                else:
+                    method.on_task_switch(task_id)
+            
+            test_env.set_on_task_switch_callback(on_task_switch_callback)
         
         try:
             # If the Method has `test` defined, use it. 
@@ -315,6 +310,10 @@ class TestEnvironment(gym.wrappers.Monitor, ABC):
         observation, reward, done, info = self.env.step(action)
         observation_for_stats = unwrap_observations(observation)
         reward_for_stats = unwrap_rewards(reward)
+        
+        # TODO: Maybe render the env with human mode when debugging.
+        # if debug
+        # self.render("human")
 
         done = self._after_step(observation_for_stats, reward_for_stats, done, info)
     
