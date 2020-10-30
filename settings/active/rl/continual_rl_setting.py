@@ -97,14 +97,15 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         "cartpole": "CartPole-v0",
         "pendulum": "Pendulum-v0",
         "breakout": "Breakout-v0",
-        "duckietown": "Duckietown-straight_road-v0"
+        # "duckietown": "Duckietown-straight_road-v0"
     }
     # Which environment to learn on.
     dataset: str = choice(available_datasets, default="breakout")
 
     # Max number of steps ("length" of the training and test "datasets").
     max_steps: int = 10_000
-    # Number of steps per task.
+    # Number of steps per task. When left unset, takes the value of `max_steps`
+    # divided by `nb_tasks`.
     steps_per_task: Optional[int] = None
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
@@ -217,8 +218,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # Run the Training loop (which is defined in IncrementalSetting).
         self.train_loop(method)
         
-        
-        # FIXME: Since we want to be pass a reference to the method's
+        # NOTE: Since we want to be pass a reference to the method's
         # 'on_task_switch' callback, we have to store it here.
         if self.known_task_boundaries_at_test_time:
             self.on_task_switch_callback = getattr(method, "on_task_switch", None)
@@ -514,17 +514,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # test environment might cover multiple tasks, while if the task labels
         # are available at train time, then each train/valid environment is for
         # a single task.
-        if self.known_task_boundaries_at_test_time and self.on_task_switch_callback:
-            def _on_task_switch(step: int, *arg) -> None:
-                if step not in self.test_task_schedule:
-                    return
-                if self.task_labels_at_test_time:
-                    task_steps = sorted(self.test_task_schedule.keys())
-                    task_id = task_steps.index(step)
-                    self.on_task_switch_callback(task_id)
-                else:
-                    self.on_task_switch_callback(None)
-            env = StepCallbackWrapper(env, callbacks=[_on_task_switch])
 
         env = TypedObjectsWrapper(
             env,
@@ -633,7 +622,7 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
 
             episode_rewards[task_id].append(episode_reward)
             episode_lengths[task_id].append(episode_length)
-            episode_metric = RegressionMetrics(mse=episode_reward / episode_length)
+            episode_metric = RegressionMetrics(n_samples=episode_length, mse=episode_reward / episode_length)
             episode_metrics[task_id].append(episode_metric)
 
         return RLResults(
@@ -641,6 +630,17 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
             episode_rewards=episode_rewards,
             test_metrics=episode_metrics,
         )
+
+    def render(self, mode='human', **kwargs):
+        from common.gym_wrappers.batch_env.tile_images import tile_images
+        image_batch = super().render(mode=mode, **kwargs)
+        if mode == "rgb_array":
+            return tile_images(image_batch)
+        return image_batch
+        
+    def _after_reset(self, observation):
+        # Is this going to work fine when the observations are batched though?
+        return super()._after_reset(observation)
 
 
 if __name__ == "__main__":

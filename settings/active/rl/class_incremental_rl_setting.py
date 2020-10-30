@@ -26,11 +26,6 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
     implement a custom `fit` procedure in the CLTrainer class, that loops over
     the tasks and calls the `on_task_switch` when needed.
     """
-    # Total number of steps (including all tasks).
-    max_steps: int = 1_000_000
-    # Number of steps per task. When left unset, takes the value of `max_steps`
-    # divided by `nb_tasks`.
-    steps_per_task: int = 0
     # Number of tasks.
     nb_tasks: int = 10
 
@@ -53,8 +48,10 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
                 self.train_task_schedule[task_step] = temp_env.default_task
             else:
                 self.train_task_schedule[task_step] = temp_env.random_task()
+
         assert len(self.train_task_schedule) == self.nb_tasks
         # For now, set the validation and test tasks as the same sequence as the
         # train tasks.
         self.valid_task_schedule = self.train_task_schedule.copy()
         self.test_task_schedule = self.train_task_schedule.copy()
+

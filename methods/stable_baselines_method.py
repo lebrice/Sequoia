@@ -56,8 +56,8 @@ class StableBaselines3Method(Method, target_setting=ContinualRLSetting):
         setting.train_batch_size = None
         setting.valid_batch_size = None
         setting.test_batch_size = None
-        # Only one "epoch" of training for now. 
-        self.total_timesteps = setting.max_steps
+        # Only one "epoch" of training for now.
+        self.total_timesteps = setting.steps_per_task
 
     def fit(self, train_env: gym.Env = None, valid_env: gym.Env = None):
         train_env = RemoveTaskLabelsWrapper(train_env)
@@ -65,9 +65,11 @@ class StableBaselines3Method(Method, target_setting=ContinualRLSetting):
         
         valid_env = RemoveTaskLabelsWrapper(valid_env)
         valid_env = NoTypedObjectsWrapper(valid_env)
-        
+        # TODO: Need to find a way to train the model on a new environment, besides re-creatign the model, obviously.
         if self.model is None:
             self.model = self.Model('MlpPolicy', train_env, verbose=1)
+        else:
+            self.model.set_env(train_env)
 
         # TODO: Actually setup/customize the parametrers of the model.
         self.model.learn(total_timesteps=self.total_timesteps, eval_env=valid_env)
@@ -88,15 +90,24 @@ class PPOMethod(StableBaselines3Method):
     Model: ClassVar[Type[BaseAlgorithm]] = PPOModel
 
 
+from settings import all_settings
 if __name__ == "__main__":
-    setting = ContinualRLSetting.from_args()
-    method = A2CMethod()
     
+    method = A2CMethod()
+    # Evaluate on a single setting:
+    # setting = ContinualRLSetting.from_args()
+    # results = setting.apply(method)
+    # print(results.summary())
+    # print(f"objective: {results.objective}")
+    
+    # Evaluate on all settings for the given datasets:
+    
+    from examples.quick_demo import evaluate_on_all_settings
+    all_results = evaluate_on_all_settings(method, datasets=["breakout"])
+    print(f"All results: {all_results}")
     # # TODO: Check out the wandb output.
     # import wandb
     # wandb.gym.monitor()
-    results = setting.apply(method)
-    print(results.summary())
-    print(f"objective: {results.objective}")
-    
+
+        
         

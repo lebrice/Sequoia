@@ -207,9 +207,11 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         if isinstance(image_batch, Tensor):
             image_batch = image_batch.cpu().numpy()
         
-        if mode == "rgb_array":
-            return image_batch
         from common.gym_wrappers.batch_env.tile_images import tile_images
+        
+        if mode == "rgb_array":
+            return tile_images(image_batch)
+        
         if mode == "human":
             tiled_version = tile_images(image_batch)
             import matplotlib.pyplot as plt
@@ -220,7 +222,6 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             # return self.viewer.isopen
 
         raise NotImplementedError(f"Unsuported mode {mode}")
-        
     
     def get_next_batch(self) -> Tuple[ObservationType, RewardType]:
         """Gets the next batch from the underlying dataset.

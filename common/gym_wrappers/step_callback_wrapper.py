@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from typing import Callable, Dict, List, Tuple, Union
-
+from .utils import IterableWrapper
 import gym
 
 
@@ -38,7 +38,7 @@ class PeriodicCallback(Callback):
         raise NotImplementedError("Create your own callback or pass a func to use.")
 
 
-class StepCallbackWrapper(gym.Wrapper):
+class StepCallbackWrapper(IterableWrapper):
     """ Wrapper that will execute some callbacks when certain steps are reached.
     """
     def __init__(self,

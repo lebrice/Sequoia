@@ -150,7 +150,6 @@ class MultiTaskEnvironment(gym.Wrapper):
             # callback?
             if self._on_task_switch_callback:
                 self._on_task_switch_callback(task_id)
-        
 
     def step(self, *args, **kwargs):
         # If we reach a step in the task schedule, then we change the task to

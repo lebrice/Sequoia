@@ -1,6 +1,6 @@
 """ Demo: Creates a simple new method and applies it to various CL settings. """
 from dataclasses import dataclass
-from typing import Dict, Tuple, Type
+from typing import Dict, Tuple, Type, List
 
 import gym
 import torch
@@ -188,7 +188,7 @@ def create_method(DemoMethod = DemoMethod) -> DemoMethod:
     return method
 
 
-def evaluate_on_all_settings(method: DemoMethod, below: Type[Setting]=None):
+def evaluate_on_all_settings(method: DemoMethod, below: Type[Setting]=None, datasets: List[str] = ["mnist", "fashionmnist"]):
     """ Applies the method to all its applicable settings and shows the results.
     """
     import pandas as pd
@@ -209,8 +209,8 @@ def evaluate_on_all_settings(method: DemoMethod, below: Type[Setting]=None):
         dataset = setting.dataset
 
         # Limiting this demo to just mnist/fashion_mnist datasets.
-        if setting.dataset not in ["mnist", "fashionmnist"]:
-            # print(f"Skipping {setting_type} / {setting.dataset} for now.")
+        if setting.dataset not in datasets:
+            print(f"Skipping {setting_type} / {setting.dataset} for now.")
             continue
 
         # Apply the method on the setting.

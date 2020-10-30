@@ -197,21 +197,29 @@ class IncrementalSetting(SettingABC):
         test_env: TestEnvironment
         
         if self.known_task_boundaries_at_test_time:
-            # TODO: Add a 'callback' wrapper that calls the 'on_task_switch' of the method.
-            def on_task_switch_callback(task_id: int):
+            def _on_task_switch(step: int, *arg) -> None:
+                if step not in self.test_task_schedule:
+                    return
                 if not hasattr(method, "on_task_switch"):
                     logger.warning(UserWarning(
                         f"On a task boundary, but since your method doesn't "
                         f"have an `on_task_switch` method, it won't know about "
                         f"it! "
                     ))
-                elif not self.task_labels_at_test_time:
-                    method.on_task_switch(None)
-                else:
+                    return
+                if self.task_labels_at_test_time:
+                    task_steps = sorted(self.test_task_schedule.keys())
+                    task_id = task_steps.index(step)
+                    logger.debug(f"Calling `method.on_task_switch({task_id})` "
+                                 f"since task labels are available at test-time.")
                     method.on_task_switch(task_id)
-            
-            test_env.set_on_task_switch_callback(on_task_switch_callback)
-        
+                else:
+                    logger.debug(f"Calling `method.on_task_switch({task_id})` "
+                                 f"since task labels aren't available at "
+                                 f"test-time, but task boundaries are known.")
+                    method.on_task_switch(None)
+            test_env = StepCallbackWrapper(test_env, callbacks=[_on_task_switch])
+
         try:
             # If the Method has `test` defined, use it. 
             method.test(test_env)
@@ -226,11 +234,11 @@ class IncrementalSetting(SettingABC):
                         f"since it doesn't implement a `test` method.")
 
         obs = test_env.reset()
-        
+
         # TODO: Do we always have a maximum number of steps? or of episodes?
         # Will it work the same for Supervised and Reinforcement learning?
-        max_steps: int = test_env.step_limit
-        
+        max_steps: int = getattr(test_env, "step_limit", None)
+
         # Reset on the last step is causing trouble, since the env is closed.
         pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
         for step in pbar:
@@ -266,8 +274,9 @@ class IncrementalSetting(SettingABC):
         """ Returns the DataLoader/Environment for the current test task. """  
         return super().test_dataloader(*args, **kwargs)
 
+from common.gym_wrappers.utils import IterableWrapper
 
-class TestEnvironment(gym.wrappers.Monitor, ABC):
+class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
     """ Wrapper around a 'test' environment, which limits the number of steps
     and keeps tracks of the performance.
     """
