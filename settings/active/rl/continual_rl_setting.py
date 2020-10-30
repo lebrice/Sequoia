@@ -20,6 +20,7 @@ from common.gym_wrappers.batch_env import BatchedVectorEnv
 from common.gym_wrappers.env_dataset import EnvDataset
 from common.gym_wrappers.pixel_observation import PixelObservationWrapper
 from common.gym_wrappers.utils import classic_control_env_prefixes, IterableWrapper, has_wrapper
+from common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
 from common.gym_wrappers.sparse_space import Sparse
 from common.metrics import RegressionMetrics
 from common.transforms import Transforms
@@ -146,19 +147,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
         # Create a temporary environment so we can extract the spaces.
         with self.make_temp_env() as temp_env:
-            # Start with the default task (step 0) and then add a new task at
-            # intervals of `self.steps_per_task`      
-            for task_step in range(0, self.max_steps, self.steps_per_task):
-                if task_step == 0:
-                    self.train_task_schedule[task_step] = temp_env.default_task
-                else:
-                    self.train_task_schedule[task_step] = temp_env.random_task()
-            assert len(self.train_task_schedule) == self.nb_tasks
-            # For now, set the validation and test tasks as the same sequence as the
-            # train tasks.
-            self.valid_task_schedule = self.train_task_schedule.copy() 
-            self.test_task_schedule = self.train_task_schedule.copy()
-
+            # Populate the task schedules created above.
+            self.create_task_schedules(temp_env)
+            
+            
             # Set the spaces using the temp env.
             self.observation_space = temp_env.observation_space
             self.action_space = temp_env.action_space
@@ -168,7 +160,20 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                                                 high=self.reward_range[1],
                                                 shape=()))
         del temp_env
+        # This attribute will hold a reference to the `on_task_switch` method of
+        # the Method being currently applied on this setting.
+        self.on_task_switch_callback: Callable[[Optional[int]], None] = None
 
+    def create_task_schedules(self, temp_env: MultiTaskEnvironment) -> None:
+        assert self.nb_tasks == 1
+        self.train_task_schedule[0] = temp_env.default_task
+        self.train_task_schedule[self.max_steps] = temp_env.random_task()
+        
+        # For now, set the validation and test tasks as the same sequence as the
+        # train tasks.
+        self.valid_task_schedule = self.train_task_schedule.copy() 
+        self.test_task_schedule = self.train_task_schedule.copy()
+    
     def make_temp_env(self) -> gym.Env:
         """ Creates a temporary environment.
         Will be called in the 'constructor' (__post_init__), so this should
@@ -211,10 +216,21 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         
         # Run the Training loop (which is defined in IncrementalSetting).
         self.train_loop(method)
+        
+        
+        # FIXME: Since we want to be pass a reference to the method's
+        # 'on_task_switch' callback, we have to store it here.
+        if self.known_task_boundaries_at_test_time:
+            self.on_task_switch_callback = getattr(method, "on_task_switch", None)
+            if self.on_task_switch_callback is None:
+                logger.warning(UserWarning(
+                    f"Task boundaries are available at test time, but the "
+                    f"method doesn't have an 'on_task_switch' callback."
+                ))
+        
         # Run the Test loop (which is defined in IncrementalSetting).
         results: RlResults = self.test_loop(method)
-        
-        logger.info(f"Resulting objective of Test Loop: {results.objective}")
+        logger.info("Results summary:")
         logger.info(results.summary())
         method.receive_results(self, results=results)
         return results
@@ -271,8 +287,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 shared_memory=False,
             )
         # Apply the "post-batch" wrappers:
-
-        # Add wrappers that converts numpy arrays / etc to Observations/Rewards
+        # Add a wrapper that converts numpy arrays / etc to Observations/Rewards
         # and from Actions objects to numpy arrays.
         env = TypedObjectsWrapper(
             env,
@@ -280,12 +295,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             rewards_type=self.Rewards,
             actions_type=self.Actions,
         )
-
         # Create an IterableDataset from the env using the EnvDataset wrapper.
         dataset = EnvDataset(env, max_steps=self.steps_per_task)
         # Create a GymDataLoader for the EnvDataset.
         dataloader = GymDataLoader(dataset)
-
         self.train_env = dataloader
         return self.train_env
 
@@ -492,7 +505,27 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 # asynchronous=False,
                 shared_memory=False,
             )
-            
+        
+        # If we know the task boundaries at test time, and the method has the
+        # callback for it, then we add a callback wrapper that will invoke the
+        # method's on_task_switch and pass it the task label if required when on
+        # a task boundary.
+        # This is different than the train or validation environments, since the
+        # test environment might cover multiple tasks, while if the task labels
+        # are available at train time, then each train/valid environment is for
+        # a single task.
+        if self.known_task_boundaries_at_test_time and self.on_task_switch_callback:
+            def _on_task_switch(step: int, *arg) -> None:
+                if step not in self.test_task_schedule:
+                    return
+                if self.task_labels_at_test_time:
+                    task_steps = sorted(self.test_task_schedule.keys())
+                    task_id = task_steps.index(step)
+                    self.on_task_switch_callback(task_id)
+                else:
+                    self.on_task_switch_callback(None)
+            env = StepCallbackWrapper(env, callbacks=[_on_task_switch])
+
         env = TypedObjectsWrapper(
             env,
             observations_type=self.Observations,
@@ -537,7 +570,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             [description]
         """
         wrappers: List[Callable[[gym.Env], gym.Env]] = []
-        
+
         if self.env_name.startswith(classic_control_env_prefixes):
             wrappers.append(PixelObservationWrapper)
 
@@ -547,12 +580,18 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             wrappers.append(partial(SmoothTransitions,
                 task_schedule=self.test_task_schedule,
                 add_task_id_to_obs=True,
-                add_task_dict_to_info=True,
+                # TODO: Figure this out, the info dicts have the env attributes atm.
+                add_task_dict_to_info=self.task_labels_at_test_time,
             ))
 
         elif self.known_task_boundaries_at_test_time:
-            starting_step = self.current_task_id * self.steps_per_task
-            max_steps = (self.current_task_id + 1) * self.steps_per_task - 1
+            # TODO: We maybe don't actually want to get an env for just one task, but instead get an environment spanning all tasks.
+            # rather we want a test env that covers the whole 'stream'.
+            starting_step = 0
+            # TODO: Is the limit on the number of test steps the same as for training steps?
+            max_steps = self.max_steps
+            # starting_step = self.current_task_id * self.steps_per_task
+            # max_steps = (self.current_task_id + 1) * self.steps_per_task - 1
             wrappers.append(partial(MultiTaskEnvironment,
                 task_schedule=self.test_task_schedule,
                 add_task_id_to_obs=True,
@@ -571,7 +610,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         return super().get_metrics(actions, rewards)
 
 
-class ContinualRLTestEnvironment(TestEnvironment):
+class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
     def get_results(self) -> RLResults:
         rewards = self.get_episode_rewards()
         lengths = self.get_episode_lengths()

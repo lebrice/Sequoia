@@ -35,6 +35,7 @@ class RLResults(IncrementalSetting.Results, Results):
                     for episode_total_reward, episode_length in zip(task_episode_rewards, task_episode_lengths)
                 ]
                 self.test_metrics.append(task_metrics)
+        self.test_metrics = list(filter(len, self.test_metrics))
     
     @property
     def objective(self) -> float:

@@ -14,14 +14,14 @@ class RLSetting(TaskIncrementalRLSetting):
     """
     nb_tasks: int = constant(1)
 
-    def train_dataloader(self, *args, **kwargs):
-        env = super().train_dataloader(*args, **kwargs)
-        return RemoveTaskLabelsWrapper(env)
+    # def train_dataloader(self, *args, **kwargs):
+    #     env = super().train_dataloader(*args, **kwargs)
+    #     return RemoveTaskLabelsWrapper(env)
     
-    def val_dataloader(self, batch_size=None):
-        env = super().val_dataloader(batch_size=batch_size)
-        return RemoveTaskLabelsWrapper(env)
+    # def val_dataloader(self, batch_size=None):
+    #     env = super().val_dataloader(batch_size=batch_size)
+    #     return RemoveTaskLabelsWrapper(env)
 
-    def test_dataloader(self, batch_size=None):
-        env = super().test_dataloader(batch_size=batch_size)
-        return RemoveTaskLabelsWrapper(env)
+    # def test_dataloader(self, batch_size=None):
+    #     env = super().test_dataloader(batch_size=batch_size)
+    #     return RemoveTaskLabelsWrapper(env)

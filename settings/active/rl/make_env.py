@@ -112,6 +112,9 @@ def make_batched_env(base_env: Union[str, Callable],
     def pre_batch_env_factory():
         env = base_env_factory(**kwargs)
         for wrapper in wrappers:
+            if isinstance(wrapper, tuple):
+                assert len(wrapper) == 2 and isinstance(wrapper[1], dict)
+                wrapper = partial(wrapper[0], **wrapper[1])
             env = wrapper(env)
         return env
 

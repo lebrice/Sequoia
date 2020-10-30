@@ -27,13 +27,13 @@ def test_basic(config: Config):
     assert setting.task_labels_at_test_time
     
     with setting.train_dataloader(batch_size=batch_size) as temp_env:
-        assert temp_env.observation_space == spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32)
+        assert temp_env.observation_space[0] == spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32)
 
     with setting.val_dataloader(batch_size=batch_size) as temp_env:
-        assert temp_env.observation_space == spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32)
+        assert temp_env.observation_space[0] == spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32)
 
     with setting.test_dataloader(batch_size=batch_size) as temp_env:
-        assert temp_env.observation_space == spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32)
+        assert temp_env.observation_space[0] == spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32)
         
     # with setting.val_dataloader(batch_size=batch_size) as valid_env:
     #     assert str(valid_env.observation_space) == str(spaces.Tuple([
@@ -45,7 +45,7 @@ def test_basic(config: Config):
         setting.current_task_id = task_id
         env = setting.train_dataloader(batch_size=batch_size)
         
-        assert env.observation_space == spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32)
+        assert env.observation_space[0] == spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32)
         
         observations: RLSetting.Observations = env.reset()
         if setting.task_labels_at_train_time:
@@ -56,21 +56,21 @@ def test_basic(config: Config):
         for i in range(5):
             actions = env.action_space.sample()
             observations, rewards, done, info = env.step(actions)
-            
+
             assert isinstance(observations, RLSetting.Observations)
             assert observations.x.shape == (batch_size, 3, 210, 160)
-            
+
             if setting.task_labels_at_train_time:
                 assert all(obs_task_id == task_id for obs_task_id in observations.task_labels)
             else:
                 assert observations.task_labels is None or all(obs_task_id is None for obs_task_id in observations.task_labels)
-                
+
             # TODO: Is this what we want? Could the reward or actions ever change?
             assert isinstance(rewards, RLSetting.Rewards)
             assert rewards.y.shape == (batch_size,)
-            
+
             env.render("human")
-            
+
             if all(done):
                 break
         env.close()

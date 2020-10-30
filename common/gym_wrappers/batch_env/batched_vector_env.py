@@ -297,7 +297,7 @@ def fuse_and_batch(item_space: spaces.Space, *sequences: Sequence[Sequence[T]], 
         joined_sequence = sum(sequences, [])
     
     # out = create_empty_array(item_space, n=n_items)
-    return np.concatenate([v.reshape([-1, *item_space.shape]) for v in joined_sequence])
+    return np.concatenate([np.asarray(v).reshape([-1, *item_space.shape]) for v in joined_sequence])
     
     # return concatenate(joined_sequence, out, item_space)
 

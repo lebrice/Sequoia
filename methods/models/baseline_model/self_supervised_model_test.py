@@ -6,18 +6,19 @@ from typing import Any, Callable, Dict, List, Tuple, Type
 import pytest
 
 from common import ClassificationMetrics, Loss
-from common.tasks import (AE, EWC, SIMCLR, VAE, AEReconstructionTask, EWCTask,
+from methods.aux_tasks import (AE, EWC, SIMCLR, VAE, AEReconstructionTask, EWCTask,
                           SimCLRTask, VAEReconstructionTask)
 from conftest import get_dataset_params, id_fn, parametrize, slow, xfail_param
 from settings import (ClassIncrementalResults, ClassIncrementalSetting,
                       IIDResults, IIDSetting, Results, Setting,
                       TaskIncrementalResults, TaskIncrementalSetting)
 
-from .self_supervision import SelfSupervision
+from .self_supervised_model import SelfSupervisedModel
+from methods.baseline_method import BaselineMethod
 
+Method = BaselineMethod
 # Use 'Method' as an alias for the actual Method subclass under test. (since at
 # the moment quite a few tests share some code.
-Method = SelfSupervision
 # List of datasets that are currently supported for this method.
 supported_datasets: List[str] = [
     "mnist", "fashion_mnist", "cifar10", "cifar100", "kmnist",
@@ -69,7 +70,7 @@ def method_and_coefficients(request, tmp_path_factory: Callable[[str], Path]):
 @slow
 @parametrize("setting_type", Method.get_applicable_settings())
 def test_fast_dev_run(
-        method_and_coefficients: Tuple[SelfSupervision, Dict[str, float]],
+        method_and_coefficients: Tuple[Method, Dict[str, float]],
         setting_type: Type[Setting],
         test_dataset: str
         ):

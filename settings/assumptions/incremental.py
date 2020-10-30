@@ -218,6 +218,7 @@ class IncrementalSetting(SettingABC):
             test_env: TestEnvironment
             # Get the metrics from the test environment
             test_results: Results = test_env.get_results()
+            print(f"Test results: {test_results}")
             return test_results
  
         except NotImplementedError:
@@ -242,6 +243,7 @@ class IncrementalSetting(SettingABC):
                 obs = test_env.reset()
 
         test_results = test_env.get_results()
+        
         return test_results
         # if not self.task_labels_at_test_time:
         #     # TODO: move this wrapper to common/wrappers.
@@ -314,6 +316,8 @@ class TestEnvironment(gym.wrappers.Monitor, ABC):
         # TODO: Maybe render the env with human mode when debugging.
         # if debug
         # self.render("human")
+        if not isinstance(done, bool):
+            done = all(done)
 
         done = self._after_step(observation_for_stats, reward_for_stats, done, info)
     

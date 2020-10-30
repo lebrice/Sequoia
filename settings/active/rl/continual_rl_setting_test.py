@@ -20,7 +20,7 @@ def test_task_schedule_is_used():
     # TODO: Figure out a way to test that the tasks are switching over time.
     setting = ContinualRLSetting(dataset="CartPole-v0", max_steps = 100, steps_per_task=10, nb_tasks=10)
     env = setting.train_dataloader(batch_size=None)
-    assert False, setting.train_task_schedule
+
     
     starting_length = env.length
     assert starting_length == 0.5
@@ -76,7 +76,7 @@ def test_check_iterate_and_step(dataset: str,
 
     def check_obs(obs):
         assert isinstance(obs, ContinualRLSetting.Observations), obs[0].shape
-        assert obs.x.shape == expected_obs_shape
+        assert obs.x.shape == expected_obs_batch_shape
         assert obs.task_labels is None or all(task_label is None for task_label in obs.task_labels)
 
     for dataloader_method in dataloader_methods:

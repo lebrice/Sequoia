@@ -36,15 +36,25 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
 
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = constant(False)
-    # Wether you have access to task labels at train time.
+    # Wether to give access to the task labels at train time.
     task_labels_at_train_time: bool = True
-    # Wether you have access to task labels at test time.
+    # Wether to give access to the task labels at test time.
     task_labels_at_test_time: bool = False
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
         assert not self.smooth_task_boundaries
-    
-    # def train_dataloader(self, *args, **kwargs):
-    #     env = super().train_dataloader(*args, **kwargs)
-    #     return HideTaskLabelsWrapper(env)
+
+    def create_task_schedules(self, temp_env: MultiTaskEnvironment) -> None:
+        # Start with the default task (step 0) and then add a new task at
+        # intervals of `self.steps_per_task`
+        for task_step in range(0, self.max_steps, self.steps_per_task):
+            if task_step == 0:
+                self.train_task_schedule[task_step] = temp_env.default_task
+            else:
+                self.train_task_schedule[task_step] = temp_env.random_task()
+        assert len(self.train_task_schedule) == self.nb_tasks
+        # For now, set the validation and test tasks as the same sequence as the
+        # train tasks.
+        self.valid_task_schedule = self.train_task_schedule.copy()
+        self.test_task_schedule = self.train_task_schedule.copy()

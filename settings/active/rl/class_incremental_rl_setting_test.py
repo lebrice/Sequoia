@@ -119,27 +119,48 @@ class DummyMethod(Method, target_setting=ClassIncrementalRLSetting):
                 obs, _, done, info = test_env.step(actions)
 
     def get_actions(self, observations: ClassIncrementalRLSetting.Observations, action_space: gym.Space):
-        return action_space.sample()
+        return np.ones(action_space.shape)
 
     def on_task_switch(self, task_id: int=None):
         self.n_task_switches += 1
         self.received_task_ids.append(task_id)
 
 from conftest import DummyEnvironment
+
+
+
+
 def test_on_task_switch_is_called():
     dataset = "Breakout-v0"
     setting = ClassIncrementalRLSetting(
         dataset=DummyEnvironment,
         nb_tasks=5,
-        n_steps_per_task=10,
-        max_steps=50,
+        n_steps_per_task=100,
+        max_steps=500,
         train_transforms=[],
         test_transforms=[],
         val_transforms=[],
     )
     method = DummyMethod()
     results = setting.apply(method)
+    # 5 during training, 5 during testing!
+    assert method.n_task_switches == 10
+    assert method.received_task_ids == list(range(5)) + [None for _ in range(5)]
     
-    assert method.n_task_switches == 5
-    assert method.received_task_ids == list(range(5))
-    
+
+    setting = ClassIncrementalRLSetting(
+        dataset=DummyEnvironment,
+        nb_tasks=5,
+        n_steps_per_task=100,
+        max_steps=500,
+        train_transforms=[],
+        test_transforms=[],
+        val_transforms=[],
+        task_labels_at_test_time=True,
+        known_task_boundaries_at_test_time=True,
+    )
+    method = DummyMethod()
+    results = setting.apply(method)
+    # 5 during training, 5 during testing!
+    assert method.n_task_switches == 10
+    assert method.received_task_ids == list(range(5)) + list(range(5))
