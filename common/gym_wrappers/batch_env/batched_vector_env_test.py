@@ -2,12 +2,57 @@ import time
 from functools import partial
 from multiprocessing import cpu_count
 from typing import Callable, List, Optional
-
+from gym import spaces
+import torch
 import gym
 import numpy as np
 import pytest
 
 from .batched_vector_env import BatchedVectorEnv
+
+    
+from conftest import DummyEnvironment
+
+
+from common.gym_wrappers.multi_task_environment import MultiTaskEnvironment
+
+@pytest.mark.parametrize("batch_size", [1, 5, 11, 24])
+@pytest.mark.parametrize("n_workers", [1, 3, None])
+def test_space_with_tuple_observations(batch_size: int, n_workers: Optional[int]):
+    def make_env():
+        env = gym.make("Breakout-v0")
+        env = MultiTaskEnvironment(env, add_task_id_to_obs=True, add_task_dict_to_info=True)
+        return env
+    
+    env_fn = make_env
+    env_fns = [env_fn for _ in range(batch_size)]
+    from .async_vector_env import AsyncVectorEnv
+    env = BatchedVectorEnv(env_fns, n_workers=n_workers)
+    # env = AsyncVectorEnv(env_fns)
+    env.seed(123)
+    
+    assert str(env.observation_space) == str(spaces.Tuple([
+        spaces.Box(0, 255, (batch_size, 210, 160, 3), np.uint8),
+        spaces.MultiDiscrete(np.ones(batch_size)),
+    ]))
+    
+    assert env.single_observation_space == spaces.Tuple([
+        spaces.Box(0, 255, (210, 160, 3), np.uint8),
+        spaces.Discrete(1),
+    ])
+    
+    obs = env.reset()
+    assert obs[0].shape == env.observation_space[0].shape 
+    assert obs[1].shape == env.observation_space[1].shape 
+    assert obs in env.observation_space
+    
+    actions = env.action_space.sample()
+    step_obs, rewards, done, info = env.step(actions)
+    assert step_obs in env.observation_space
+    
+    assert len(rewards) == batch_size
+    assert len(done) == batch_size
+    assert len(info) == batch_size
 
 
 @pytest.mark.parametrize("batch_size", [1, 5, 11, 24])
@@ -35,7 +80,6 @@ def test_right_shapes(batch_size: int, n_workers: Optional[int]):
 
     env.close()
 
-from conftest import DummyEnvironment
 
 
 @pytest.mark.parametrize("batch_size", [1, 2, 5, 10, 24])

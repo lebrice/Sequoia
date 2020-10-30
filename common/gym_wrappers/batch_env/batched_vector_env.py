@@ -6,21 +6,23 @@ import math
 import multiprocessing as mp
 from functools import partial
 from typing import (Any, Callable, Iterable, List, Optional, Sequence, Tuple,
-                    TypeVar, Union)
-
+                    TypeVar, Union, Dict)
 import gym
 import numpy as np
 from gym import spaces
 from gym.vector.utils import batch_space
 from gym.vector.vector_env import VectorEnv
 
-from utils.utils import n_consecutive
+from utils.utils import n_consecutive, zip_dicts
 from .async_vector_env import AsyncVectorEnv
 from .sync_vector_env import SyncVectorEnv
 from .tile_images import tile_images
 
 T = TypeVar("T")
-
+K = TypeVar("K")
+V = TypeVar("V")
+from gym.vector.utils import concatenate, create_empty_array, batch_space
+from gym.spaces.utils import flatten, unflatten
 
 class BatchedVectorEnv(VectorEnv):
     """ Batched environment.
@@ -107,7 +109,6 @@ class BatchedVectorEnv(VectorEnv):
         ]
         env_a_fns = chunk_env_fns[:self.start_index_b]
         env_b_fns = chunk_env_fns[self.start_index_b:]
-
         # Create the AsyncVectorEnvs.
         self.env_a = AsyncVectorEnv(env_fns=env_a_fns, **kwargs)
         self.env_b: Optional[AsyncVectorEnv] = None
@@ -123,33 +124,15 @@ class BatchedVectorEnv(VectorEnv):
 
     def reset_wait(self, timeout=None, **kwargs):
         obs_a = self.env_a.reset_wait(timeout=timeout)
+        obs_a = unroll(obs_a, item_space=self.single_observation_space)
+        obs_b = []
         if self.env_b:
             obs_b = self.env_b.reset_wait(timeout=timeout)
-            return unchunk(obs_a, obs_b)
-        return unchunk(obs_a)
-
-    def render(self, mode: str = "rgb_array"):
-        images_a: np.ndarray = self.env_a.render(mode="rgb_array")
-        images_a = np.asarray(unchunk(images_a))
-        if self.env_b:
-            images_b = self.env_b.render(mode="rgb_array")
-            images_b = np.asarray(unchunk(images_b))
-            image_batch = np.concatenate([images_a, images_b])
-        else:
-            image_batch = images_a
-        
-        if mode == "rgb_array":
-            return image_batch
-        
-        if mode == "human":
-            tiled_version = tile_images(image_batch)
-            if self.viewer is None:
-                from gym.envs.classic_control import rendering
-                self.viewer = rendering.SimpleImageViewer()
-            self.viewer.imshow(tiled_version)
-            return self.viewer.isopen
-        
-        raise NotImplementedError(f"Unsupported mode {mode}")
+            obs_b = unroll(obs_b, item_space=self.single_observation_space)
+        print(f"n_a: {self.n_a}, n_b: {self.n_b}")
+        print(f"self.env_a.observation_space: {self.env_a.observation_space}")
+        observations = fuse_and_batch(self.single_observation_space, obs_a, obs_b, n_items = self.n_a + self.n_b)
+        return observations
 
     def step_async(self, action: Sequence) -> None:
         if self.env_b:
@@ -164,21 +147,27 @@ class BatchedVectorEnv(VectorEnv):
             self.env_a.step_async(action)
 
     def step_wait(self, timeout: Union[int, float]=None):
+        obs_a, rew_a, done_a, info_a = self.env_a.step_wait(timeout)
+        obs_a = unroll(obs_a, item_space=self.single_observation_space)
+        rew_a = unroll(rew_a)
+        done_a = unroll(done_a)
+        info_a = unroll(info_a)
+        obs_b = []
+        rew_b = []
+        done_b = []
+        info_b = []
         if self.env_b:
-            obs_a, rew_a, done_a, info_a = self.env_a.step_wait(timeout)
             obs_b, rew_b, done_b, info_b = self.env_b.step_wait(timeout)
-
-            observations = unchunk(obs_a, obs_b)
-            rewards = unchunk(rew_a, rew_b)
-            done = unchunk(done_a, done_b)
-            info = unchunk(info_a, info_b)
-        else:
-            observations, rewards, done, info = self.env_a.step_wait(timeout)
-
-            observations = unchunk(observations)
-            rewards = unchunk(rewards)
-            done = unchunk(done)
-            info = unchunk(info)
+            obs_b = unroll(obs_b, item_space=self.single_observation_space)
+            rew_b = unroll(rew_b)
+            done_b = unroll(done_b)
+            info_b = unroll(info_b)
+        observations = fuse_and_batch(self.single_observation_space, obs_a, obs_b, n_items = self.n_a + self.n_b)
+        rewards = np.array(rew_a + rew_b)
+        done = np.array(done_a + done_b)
+        # TODO: Should we batch the info dict? or just give back the list of
+        # 'info' dicts for each env, like so?
+        info = info_a + info_b
         return observations, rewards, done, info
 
     def seed(self, seeds: Union[int, Sequence[Optional[int]]] = None):
@@ -199,7 +188,30 @@ class BatchedVectorEnv(VectorEnv):
         self.env_a.close_extras(**kwargs)
         if self.env_b:
             self.env_b.close_extras(**kwargs)
+
+    def render(self, mode: str = "rgb_array"):
+        chunked_images_a = self.env_a.render(mode="rgb_array")
+        images_a: List[np.ndarray] = unroll(chunked_images_a)
+        images_b: List[np.ndarray] = []
         
+        if self.env_b:
+            chunked_images_b = self.env_b.render(mode="rgb_array")
+            images_b = unroll(chunked_images_b)
+        
+        image_batch = np.stack(images_a + images_b)
+        
+        if mode == "rgb_array":
+            return image_batch
+        
+        if mode == "human":
+            tiled_version = tile_images(image_batch)
+            if self.viewer is None:
+                from gym.envs.classic_control import rendering
+                self.viewer = rendering.SimpleImageViewer()
+            self.viewer.imshow(tiled_version)
+            return self.viewer.isopen
+        
+        raise NotImplementedError(f"Unsupported mode {mode}")
 
 
 def distribute(values: Sequence[T], n_groups: int) -> List[Sequence[T]]:
@@ -236,25 +248,122 @@ def distribute(values: Sequence[T], n_groups: int) -> List[Sequence[T]]:
     return groups
 
 
-def unchunk(*values: Sequence[Sequence[T]]) -> Sequence[T]:
-    """ Combine 'chunked' results coming from the envs into a single
-    batch.
-    """
-    all_values: List[T] = []
-    for sequence in values:
-        all_values.extend(itertools.chain.from_iterable(sequence))
-    if isinstance(values[0], np.ndarray):
-        return np.array(all_values)
-    return all_values
-
 
 def chunk(values: Sequence[T], chunk_length: int) -> Sequence[Sequence[T]]:
-    """ Add the 'chunk'/second batch dimension to the list of items. """
+    """ Add the 'chunk'/second batch dimension to the list of items.
+    
+    NOTE: I don't think this would work with tuples as inputs, but it hasn't
+    been a problem yet because the action/reward spaces haven't been tuples yet.
+    """
     groups = list(n_consecutive(values, chunk_length))
     if isinstance(values, np.ndarray):
         groups = np.array(groups)
     return groups
 
+
+def unroll(chunks: Sequence[Sequence[T]], item_space: gym.Space = None) -> List[T]:
+    """ Unroll the given chunks, to get a list of individual items.
+
+    This is the inverse operation of 'chunk' above.
+    """
+    # print(f"Unrolling chunks from space {item_space}")
+    if isinstance(item_space, spaces.Tuple):
+        # 'flatten out' the chunks for each index. The returned value will be a
+        # tuple of lists of samples. 
+        chunked_items = list(zip(chunks))
+        return tuple([
+            unroll(chunk, item_space=chunk_item_space)
+            for chunk, chunk_item_space in zip(chunked_items, item_space.spaces)  
+        ])
+    if isinstance(chunks, np.ndarray):
+        # print(f"Unrolling chunks with shape {chunks.shape} (item space {item_space})")
+        return list(chunks.reshape([-1, *chunks.shape[2:]]))
+    
+    return list(itertools.chain.from_iterable(chunks))
+
+from functools import singledispatch
+
+
+@singledispatch
+def fuse_and_batch(item_space: spaces.Space, *sequences: Sequence[Sequence[T]], n_items: int) -> Sequence[T]:
+    # fuse the lists
+    print(f"Fusing {n_items} items from space {item_space}")
+    # sequence_a, sequence_b = sequences
+    assert all(isinstance(sequence, list) for sequence in sequences)
+    
+    if len(sequences) == 1:
+        joined_sequence = sequences[0]
+    else:
+        joined_sequence = sum(sequences, [])
+    
+    # out = create_empty_array(item_space, n=n_items)
+    return np.concatenate([v.reshape([-1, *item_space.shape]) for v in joined_sequence])
+    
+    # return concatenate(joined_sequence, out, item_space)
+
+    # TODO: This works temporarily. Also might not work with Sparse spaces.
+    return np.concatenate([
+        np.concatenate(sequence) if sequence.shape else np.stack(sequence)
+        for sequence in joined_sequence if len(sequence)
+    ])
+    # out = create_empty_array(item_space, n_items)
+    # item_batch = concatenate(all_items, empty_array, item_space)
+    
+    all_items = list(itertools.chain(*sequences))
+
+    if len(all_items) != n_items:
+        raise RuntimeError(
+            f"Expected to have {n_items} items in the batch, but we "
+            f"instead have {len(all_items)}! (items={sequences}, "
+            f"item_space={item_space})."
+        )
+    if item_space is None:
+        return all_items
+
+    empty_array = create_empty_array(item_space, n=n_items)
+    item_batch = concatenate(all_items, empty_array, item_space)
+    return item_batch
+
+
+@fuse_and_batch.register
+def fuse_and_batch_dicts(item_space: spaces.Dict, *sequences: Sequence[Dict[K, V]], n_items: int) -> Dict[K, Sequence[T]]:
+    values = {
+        k: [] for k in item_space.spaces.keys()
+    }
+    for sequence in sequences:
+        for item in sequence:
+            for k, v in item.items():
+                values[k].append(v)
+    return {
+        k: fuse_and_batch(item_space.spaces[k], values[k], n_items=n_items)
+        for k in values
+    }
+
+
+@fuse_and_batch.register
+def fuse_and_batch_tuples(item_space: spaces.Tuple, *sequences: Sequence[Tuple[T, ...]], n_items: int) -> Tuple[Sequence[T], ...]:
+    # First, just get rid of any empty lists or tuples (which in our case is
+    # the obs_b which might be [] if env_b is None)
+    # print(f"Fusing tuples! Item space: {item_space}, sequences: {sequences}")
+    # Add the non-empty sequences up to form a single sequence
+    obs_a, obs_b = sequences        
+    values = [
+        [] for _ in item_space.spaces
+    ]
+    assert all(isinstance(value, list) for value in obs_a)
+    assert all(isinstance(value, list) for value in obs_b)
+    
+    joined_sequences = [
+        sum(items, []) for items in itertools.zip_longest(*sequences, fillvalue=[])
+    ]
+    # return tuple(
+    #     np.concatenate(sequence) for sequence in joined_sequences
+    # )
+    return tuple(
+        fuse_and_batch(space, sequence, n_items=n_items)
+        for space, sequence in zip(item_space.spaces, joined_sequences)
+        # np.concatenate(sequence) for sequence in joined_sequences
+    )
 
 if __name__ == "__main__":
     import doctest
