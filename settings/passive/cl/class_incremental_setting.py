@@ -19,6 +19,7 @@ TODO: I'm not sure this fits the "Class-Incremental" definition from
         bounded, or at least grow very slowly, with respect to the number of classes
         seen so far."
 """
+import itertools
 import dataclasses
 import warnings
 from abc import abstractmethod
@@ -41,7 +42,7 @@ from gym import spaces
 from pytorch_lightning import LightningModule, Trainer
 from simple_parsing import choice, list_field
 from torch import Tensor
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 from tqdm import tqdm
 
 from common import ClassificationMetrics, Metrics, get_metrics
@@ -55,7 +56,7 @@ from .class_incremental_results import ClassIncrementalResults
 from ..passive_setting import PassiveSetting
 from ..passive_environment import PassiveEnvironment, Actions, ActionType, Observations, Rewards
 
-from settings.assumptions.incremental import IncrementalSetting
+from settings.assumptions.incremental import IncrementalSetting, TestEnvironment
 
 logger = get_logger(__file__)
 
@@ -357,20 +358,37 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             self.prepare_data()
         if not self.has_setup_test:
             self.setup("test")
-        dataset = self.test_datasets[self.current_task_id]
+        # Testing this out, we're gonna have a "test schedule" like this!
+        transition_steps = [0] + list(itertools.accumulate(map(len, self.test_datasets)))[:-1]
+        
+        dataset = ConcatDataset(self.test_datasets)        
         kwargs = dict_union(self.dataloader_kwargs, kwargs)
         
         # batch_transforms: List[Callable] = self.test_batch_transforms()
         # FIXME: the transform that splits the batch is actually changing the
         # shape of the observation space of the environment!
 
-        self.test_env = PassiveEnvironment(
+        dataloader = PassiveEnvironment(
             dataset,
             split_batch_fn=self.split_batch_function(training=False),
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
             **kwargs,
+        )
+        self.test_task_schedule = dict.fromkeys([step // dataloader.batch_size for step in transition_steps], range(len(transition_steps)))
+        # a bit hacky, but it works.
+        dataloader.task_schedule = self.test_task_schedule
+        dataloader.max_steps = self.max_steps = len(dataset) // dataloader.batch_size
+        
+        # TODO: Configure the 'monitoring' dir properly.
+        test_dir = "results"
+        test_loop_max_steps = len(dataset) // dataloader.batch_size
+        self.test_env = ClassIncrementalTestEnvironment(
+            dataloader,
+            directory=test_dir,
+            step_limit=test_loop_max_steps,
+            force=True,
         )
         return self.test_env
 
@@ -468,7 +486,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
         # Debugging: Run a quick check to see that what is returned by the
         # dataloaders is of the right type and shape etc.
-        self._check_dataloaders_give_correct_types()
+        self._check_environments()
 
     def make_train_cl_loader(self, train_dataset: _ContinuumDataset) -> _BaseCLLoader:
         """ Creates a train ClassIncremental object from continuum. """
@@ -543,7 +561,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         """ Gives back the labels present in the current task. """
         return self.task_classes(self._current_task_id, train)
     
-    def _check_dataloaders_give_correct_types(self):
+    def _check_environments(self):
         """ Do a quick check to make sure that the dataloaders give back the
         right observations / reward types.
         """
@@ -614,6 +632,70 @@ Rewards = ClassIncrementalSetting.Rewards
 # imported in settings/__init__.py. Will have to check that doing
 # `from .passive import *` over there doesn't actually import these here.
 
+
+class ClassIncrementalTestEnvironment(TestEnvironment):
+    def __init__(self, env: gym.Env, *args, **kwargs):
+        super().__init__(env, *args, **kwargs)
+        self._steps = 0
+        self.task_steps = sorted(self.env.task_schedule.keys())
+        self.metrics: List[ClassificationMetrics] = [[] for step in self.task_steps]
+        
+
+    def get_results(self) -> ClassIncrementalResults:
+        rewards = self.get_episode_rewards()
+        lengths = self.get_episode_lengths()
+        total_steps = self.get_total_steps()
+        n_metrics_per_task = [len(task_metrics) for task_metrics in self.metrics]
+        assert all(n_metrics_per_task), n_metrics_per_task
+        return ClassIncrementalResults(
+            test_metrics=self.metrics
+        )
+    
+    def _before_step(self, action):
+        self.action = action
+        return super()._before_step(action)
+    
+    def _after_step(self, observation, reward, done, info):
+        
+        assert isinstance(reward, Tensor)
+        actions = torch.as_tensor(self.action)
+        
+        batch_size = reward.shape[0]
+        fake_logits = torch.zeros([batch_size, self.action_space[0].n], dtype=int)
+        # FIXME: There must be a smarter way to do this indexing.
+        for i, action in enumerate(actions):
+            fake_logits[i, action] = 1
+        actions = fake_logits
+        
+        metric = ClassificationMetrics(y=reward, y_pred=actions)
+        reward = metric.accuracy
+        
+        task_steps = sorted(self.task_schedule.keys())
+        assert 0 in task_steps, task_steps
+        import bisect
+        nb_tasks = len(task_steps)
+        assert nb_tasks >= 1
+
+        import bisect
+        # Given the step, find the task id.
+        task_id = bisect.bisect_right(task_steps, self._steps) - 1
+        self.metrics[task_id].append(metric)
+        self._steps += 1
+        return super()._after_step(observation, reward, done, info)
+
+    def _after_reset(self, observation: ClassIncrementalSetting.Observations):
+        image_batch = observation.numpy().x
+        from common.gym_wrappers.batch_env.tile_images import tile_images
+        big_image = tile_images(image_batch)
+        return super()._after_reset(big_image)
+
+    def render(self, mode='human', **kwargs):
+        from common.gym_wrappers.batch_env.tile_images import tile_images
+        image_batch = super().render(mode=mode, **kwargs)
+        if mode == "rgb_array":
+            return tile_images(image_batch)
+        return image_batch
+        
 
 
 if __name__ == "__main__":

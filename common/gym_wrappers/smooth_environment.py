@@ -5,17 +5,17 @@ the task, rather than setting a brand new random task.
 There could also be some kind of 'task_duration' parameter, and the model does
 linear or smoothed-out transitions between them depending on the step number?
 """
-import bisect
 from collections import OrderedDict
 from typing import Dict, List, Optional
 
 import gym
 import numpy as np
+from gym import spaces
 
 from utils.logging_utils import get_logger
 
 from .multi_task_environment import MultiTaskEnvironment
-
+from .sparse_space import Sparse
 logger = get_logger(__file__)
 
 
@@ -50,6 +50,8 @@ class SmoothTransitions(MultiTaskEnvironment):
     def __init__(self,
                  env: gym.Env,
                  *args,
+                 add_task_dict_to_info: bool = False,
+                 add_task_id_to_obs: bool = False,
                  only_update_on_episode_end: bool = False,
                  **kwargs):
         """ Wraps the environment, allowing for smooth task transitions.
@@ -78,8 +80,39 @@ class SmoothTransitions(MultiTaskEnvironment):
                 step. When `True`, only update at the end of episodes (when
                 `reset()` is called).
         """
-        super().__init__(env, *args, **kwargs)
+        super().__init__(env, *args, add_task_dict_to_info=add_task_dict_to_info,
+                         add_task_id_to_obs=add_task_id_to_obs, **kwargs)
         self.only_update_on_episode_end: bool = only_update_on_episode_end
+        if self._max_steps is None and len(self.task_schedule) > 1:
+            # TODO: DO we want to prevent going past the 'task step' in the task schedule?
+            pass
+        
+        if self.add_task_id_to_obs:
+            n_tasks = len(self.task_schedule)
+            self.observation_space = spaces.Tuple([
+                self.env.observation_space,
+                Sparse(spaces.Discrete(n=n_tasks), none_prob=1.0),
+            ])
+
+    def step(self, *args, **kwargs):
+        if not self.only_update_on_episode_end:
+            self.smooth_update()
+        results = super().step(*args, **kwargs)
+        return results
+
+    def reset(self, **kwargs):
+        # TODO: test this out.
+        if self.only_update_on_episode_end:
+            self.smooth_update()
+        return super().reset(**kwargs)
+
+    @property
+    def current_task_id(self) -> Optional[int]:
+        """ Returns the 'index' of the current task within the task schedule.
+        
+        In this case, we return None, since there aren't clear task boundaries. 
+        """
+        return None
 
     def task_array(self, task: Dict[str, float]) -> np.ndarray:
         return np.array([
@@ -111,13 +144,3 @@ class SmoothTransitions(MultiTaskEnvironment):
         # logger.debug(f"Updating task at step {self.step}: {current_task}")
         self.current_task = current_task
 
-    def step(self, *args, **kwargs):
-        if not self.only_update_on_episode_end:
-            self.smooth_update()
-        return super().step(*args, **kwargs)
-
-    def reset(self, **kwargs):
-        # TODO: test this out.
-        if self.only_update_on_episode_end:
-            self.smooth_update()
-        return super().reset(**kwargs)

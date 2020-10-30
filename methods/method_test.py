@@ -4,7 +4,7 @@ import pytest
 
 from settings import Setting
 
-from .method import Method
+from settings.base import Method
 
 @dataclass
 class NewSetting(Setting):

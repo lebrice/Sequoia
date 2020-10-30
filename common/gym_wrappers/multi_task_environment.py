@@ -1,10 +1,12 @@
+import bisect
 import random
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional, Sequence, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Type, Union
 
 import gym
 import matplotlib.pyplot as plt
 import numpy as np
+from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
 from gym.envs.registration import register
 
@@ -21,7 +23,6 @@ task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
     ]
     # TODO: Add more of the classic control envs here.
 }
-
 logger = get_logger(__file__)
 
 
@@ -55,11 +56,17 @@ class MultiTaskEnvironment(gym.Wrapper):
                  env: gym.Env,
                  task_schedule: Dict[int, Dict[str, float]] = None,
                  task_params: List[str] = None,
-                 noise_std: float = 0.2):
+                 noise_std: float = 0.2,
+                 add_task_dict_to_info: bool = False,
+                 add_task_id_to_obs: bool = False,
+                 starting_step: int = 0,
+                 max_steps: int = None):
         """ Wraps an environment, allowing it to be 'multi-task'.
 
         NOTE: Assumes that all the attributes in 'task_param_names' are floats
         for now.
+
+        TODO: Do we want to add the task labels as a dictionary? or just an 'index'? 
 
         Args:
             env (gym.Env): The environment to wrap.
@@ -73,33 +80,121 @@ class MultiTaskEnvironment(gym.Wrapper):
         """
         super().__init__(env=env)
         self.env: gym.Env
-        self._current_task: Dict = OrderedDict()
-        self._task_schedule: Dict[int, Dict[str, Any]] = OrderedDict()
-        self._steps: int = 0
+        
         self.noise_std = noise_std
         if not task_params:
             unwrapped_type = type(env.unwrapped)
             if unwrapped_type in task_param_names:
                 task_params = task_param_names[unwrapped_type]
             else:
-                logger.warning(UserWarning(
-                    f"You didn't pass any 'task params', and the task "
-                    f"parameters aren't known for this type of environment "
-                    f"({unwrapped_type}), so we can't make it multi-task with "
-                    f"this wrapper."
-                ))
+                pass
+                # logger.warning(UserWarning(
+                #     f"You didn't pass any 'task params', and the task "
+                #     f"parameters aren't known for this type of environment "
+                #     f"({unwrapped_type}), so we can't make it multi-task with "
+                #     f"this wrapper."
+                # ))
+
+        self._max_steps: Optional[int] = max_steps
+        self._starting_step: int = starting_step
+        self._steps: int = self._starting_step
+
+        self._current_task: Dict = {}
+        self._task_schedule: Dict[int, Dict[str, Any]] = OrderedDict()
+        
         self.task_params: List[str] = task_params or []
         self.default_task: np.ndarray = self.current_task.copy()
         self.task_schedule = task_schedule or {}
+        
+        # Wether we will add a task id to the observation.
+        self.add_task_id_to_obs = add_task_id_to_obs
+        # Wether we will add the task dict (the values of the attributes) to the
+        # 'info' dict.
+        self.add_task_dict_to_info = add_task_dict_to_info
+        
+        if 0 not in self.task_schedule:
+            self.task_schedule[0] = self.default_task
+        
+        n_tasks = len(self.task_schedule)
+        
+        if self.add_task_id_to_obs:
+            self.observation_space = spaces.Tuple([
+                self.env.observation_space,
+                spaces.Discrete(n=n_tasks)
+            ])
+        
+        self._closed = False
+        
+        self._on_task_switch_callback: Optional[Callable[[int], None]] = None
+
+    @property
+    def current_task_id(self) -> int:
+        """ Returns the 'index' of the current task within the task schedule.
+        """
+        current_step = self._steps
+        assert current_step >= 0
+        task_steps: List[int] = sorted(self.task_schedule.keys())
+        assert 0 in task_steps
+        insertion_index = bisect.bisect_right(task_steps, current_step)
+        # The current task id is the insertion index - 1
+        current_task_index = insertion_index - 1
+        return current_task_index
+
+    def set_on_task_switch_callback(self, callback: Callable[[int], None]) -> None:
+        self._on_task_switch_callback = callback
+    
+    def on_task_switch(self, task_id: int):
+        if task_id != self.current_task_id:
+            logger.debug(f"Switching from {self.current_task_id} -> {task_id}.")
+            # TODO: We could maybe use this to call the method's 'on_task_switch'
+            # callback?
+            if self._on_task_switch_callback:
+                self._on_task_switch_callback(task_id)
 
     def step(self, *args, **kwargs):
         # If we reach a step in the task schedule, then we change the task to
         # that given step.
+        if self._closed:
+            raise gym.error.ClosedEnvironmentError("Can't step in closed env.")
+        
         if self.steps in self.task_schedule:
             self.current_task = self.task_schedule[self.steps]
-        results = super().step(*args, **kwargs)
-        self.steps += 1
-        return results
+            # Adding this on_task_switch, since it could maybe be easier than
+            # having to add a callback wrapper to use.
+            task_id = sorted(self.task_schedule.keys()).index(self.steps)
+            self.on_task_switch(task_id)
+            
+        observation, rewards, done, info = super().step(*args, **kwargs)
+        if self.add_task_id_to_obs:
+            observation = (observation, self.current_task_id)
+        if self.add_task_dict_to_info:
+            info.update(self.current_task)
+
+        self.steps += 1       
+        return observation, rewards, done, info
+
+    def close(self, **kwargs) -> None:
+        self.env.close(**kwargs)
+        self._closed = True
+    
+    def reset(self, new_random_task: bool = False, **kwargs):
+        """ Resets the wrapped environment.
+        
+        If `new_random_task` is True, this also sets a new random task as the
+        current task.
+        
+        NOTE: This resets the wrapped env, but doesn't reset the number of steps
+        taken, hence the 'task' progression according to the task_schedule
+        doesn't change.
+        """
+        if self._closed:
+            raise gym.error.ClosedEnvironmentError("Can't reset closed env.")
+        if new_random_task:
+            self.current_task = self.random_task()
+        observation = self.env.reset(**kwargs)
+        if self.add_task_id_to_obs:
+            observation = (observation, self.current_task_id)
+        return observation
 
     @property
     def steps(self) -> int:
@@ -107,10 +202,20 @@ class MultiTaskEnvironment(gym.Wrapper):
 
     @steps.setter
     def steps(self, value: int) -> None:
+        if value < self._starting_step:
+            value = self._starting_step 
+        if self._max_steps is not None and value > self._max_steps:
+            # Reached the maximum number of steps, stagnate.
+            # TODO: What exactly should we do in this case? Should we close
+            # the env? Or just stay at the same 'step' in the task schedule
+            # forever?
+            # TODO: Is this the "correct" way to limit the number of steps in
+            # an environment?
+            value = self._max_steps
         self._steps = value
 
     @property
-    def current_task(self) -> Dict:
+    def current_task(self) -> Dict[str, Any]:
         # NOTE: This caching mechanism assumes that we are the only source
         # of potential change for these attributes.
         # At the moment, We're not really concerned with performance, so we
@@ -221,11 +326,6 @@ class MultiTaskEnvironment(gym.Wrapper):
         if kwargs:
             current_task.update(kwargs)
         self.current_task = current_task
-
-    def reset(self, new_random_task: bool = False, **kwargs):
-        if new_random_task:
-            self.current_task = self.random_task()
-        return self.env.reset(**kwargs)
 
     def seed(self, seed: Optional[int] = None) -> None:
         if seed is not None:

@@ -4,12 +4,16 @@ from typing import (Any, Callable, Generic, Sized, Tuple, TypeVar, Union,
                     overload)
 
 import gym
+import numpy as np
 from gym import spaces
 from torch import Tensor
+from PIL.Image import Image
 
 InputType = TypeVar("InputType", bound=Sized)
 OutputType = TypeVar("OutputType", bound=Sized)
 
+
+Img = TypeVar("T", bound=Union[Image, np.ndarray, Tensor])
 
 class Transform(Generic[InputType, OutputType]):
     """ Callable that can also tell you its impact on the shape of inputs. """
@@ -45,5 +49,7 @@ class Transform(Generic[InputType, OutputType]):
             raise NotImplementedError(f"Dont know how to get the shape of space {space}.")
         input_shape = _get_shape(input_space)
         output_shape = self.shape_change(input_shape)
-        from common.gym_wrappers.utils import space_with_new_shape
-        return space_with_new_shape(input_space, output_shape)
+
+        from common.gym_wrappers.utils import reshape_space
+        return reshape_space(input_space, output_shape)
+

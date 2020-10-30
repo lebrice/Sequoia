@@ -10,16 +10,28 @@ import gym
 from torch.utils.data import IterableDataset
 
 from common.batch import Batch
-from settings.base.environment import Environment
-from settings.base.objects import (Actions, ActionType, Observations,
-                                   ObservationType, Rewards, RewardType)
+
 
 from utils.logging_utils import get_logger
 
 from .utils import StepResult
 
 logger = get_logger(__file__)
+# from settings.base.environment import Environment
+# from settings.base.objects import (ActionType, ObservationType, RewardType)
+ObservationType = TypeVar("ObservationType")
+ActionType = TypeVar("ActionType")
+RewardType = TypeVar("RewardType")
 
+# Just for type hinting purposes.
+
+
+class Environment(gym.Env, Generic[ObservationType, ActionType, RewardType]):
+    def step(self, action: ActionType) -> Tuple[ObservationType, RewardType, bool, Dict]:
+        raise NotImplementedError
+
+    def reset(self) -> ObservationType:
+        raise NotImplementedError
 
 
 DatasetItem = TypeVar("DatasetItem")
@@ -47,7 +59,6 @@ class StateTransition(Batch, Generic[ObservationType, ActionType]):
     # IDEA: Instead of creating extra properties like this, we could have fields
     # like 'field(aliases="bob")', and getattr and setattr would get/set the
     # corresponding attribute when an alias is used instead of the actual name.
-
     @property
     def state(self) -> ObservationType:
         return self.observation
@@ -57,12 +68,15 @@ class StateTransition(Batch, Generic[ObservationType, ActionType]):
         return self.next_observation
 
 
-def default_dataset_item_creator(observations: Observations,
-                                 actions: Actions,
-                                 next_observations: Observations,
-                                 rewards: Rewards,
+# By default, the PolicyEnv will yield this kind of item:
+DefaultDatasetItem = Tuple[StateTransition, RewardType]
+
+def default_dataset_item_creator(observations: ObservationType,
+                                 actions: ActionType,
+                                 next_observations: ObservationType,
+                                 rewards: RewardType,
                                  done: bool,
-                                 info: Dict = None) -> Tuple[StateTransition, Rewards]:
+                                 info: Dict = None) -> DefaultDatasetItem:
     """Create an item of the IterableDataset below, given the current 'context'.
 
     Parameters
@@ -124,7 +138,7 @@ class PolicyEnv(gym.Wrapper, IterableDataset, Iterable[DatasetItem]):
         self._observation: Optional[Observations] = None
         self._action: Optional[Actions] = None
 
-    def set_policy(self, policy: Callable[[Observations, gym.Space], Actions]) -> None:
+    def set_policy(self, policy: Callable[[ObservationType, gym.Space], ActionType]) -> None:
         """ Sets a new policy to be used to generate missing actions. """
         self.policy = policy
 

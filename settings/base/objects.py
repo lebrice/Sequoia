@@ -47,6 +47,10 @@ class Rewards(Batch):
     @property
     def labels(self) -> Tensor:
         return self.y
+    
+    @property
+    def reward(self) -> Tensor:
+        return self.y
 
 ObservationType = TypeVar("ObservationType", bound=Observations)
 ActionType = TypeVar("ActionType", bound=Actions)

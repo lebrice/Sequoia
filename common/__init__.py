@@ -3,3 +3,4 @@ from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
                       get_metrics)
 from .config import Config, TrainerConfig
 from .batch import Batch
+from .gym_wrappers import Sparse

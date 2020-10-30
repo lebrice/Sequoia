@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, List, Tuple, TypeVar, Union
 
+import gym
 import numpy as np
 import torch
+from gym import spaces
 from torch import Tensor
 from torchvision.transforms import Compose as ComposeBase
 from torchvision.transforms import RandomGrayscale
@@ -25,6 +27,7 @@ from .channels import (ChannelsFirst, ChannelsFirstIfNeeded, ChannelsLast,
                        ChannelsLastIfNeeded, ThreeChannels)
 from .to_tensor import ToTensor
 from .transform import Transform
+from .resize import Resize
 # TODO: Add names to the dimensions in the transforms!
 
 # from pl_bolts.models.self_supervised.simclr import (SimCLREvalDataTransform,
@@ -47,6 +50,8 @@ class Transforms(Enum):
     channels_first_if_needed = ChannelsFirstIfNeeded()
     channels_last = ChannelsLast()
     channels_last_if_needed = ChannelsLastIfNeeded()
+    resize_64x64 = Resize((64, 64))
+    resize_32x32 = Resize((32, 32))
     # simclr = Simclr
 
     def __call__(self, x):
@@ -62,23 +67,15 @@ class Transforms(Enum):
         return super()._missing_(value)
     
     def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
-        logger.debug(f"shape_change on the Transforms enum: self.value {self.value}, input shape: {input_shape}")
-        # TODO: Give the impact of this transform on a given input shape.
-        if hasattr(self.value, "shape_change"):
-            output_shape = self.value.shape_change(input_shape)
-            logger.debug(f"Output shape: {output_shape}")
-            return output_shape
-        # TODO: Maybe we could give it a random input of shape 'input_shape'
-        # and check what kind of shape comes out of it? (This wouldn't work)
-        # with things like PIL image transforms though.
-        raise NotImplementedError("TODO")
-        temp = torch.rand(input_shape)
-        end = self.value(temp)
-        return end.shape
+        if isinstance(self.value, Transform):
+            return self.value.shape_change(input_shape)
+        raise NotImplementedError(f"TODO: add shape_change to {self}")
 
-# TODO: Add the SimCLR transforms.
-# class SimCLRTrainTransform(SimCLRTrainDataTransform):
-#     def __call
+    def space_change(self, input_space: gym.Space) -> gym.Space:
+        if isinstance(self.value, Transform):
+            return self.value.space_change(input_space)
+        raise NotImplementedError(f"TODO: add space_change to {self}")
+
 
 T = TypeVar("T", bound=Callable)
 
@@ -100,11 +97,10 @@ class Compose(List[T], ComposeBase):
         ComposeBase.__init__(self, transforms=self)
 
     def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
-        logger.debug(f"shape_change on Compose: input shape: {input_shape}")
-        # TODO: Give the impact of this transform on a given input shape.
         for transform in self:
-            logger.debug(f"Shape before transform {transform}: {input_shape}")
-            if hasattr(transform, "shape_change") and callable(transform.shape_change):
+            if isinstance(transform, Transforms):
+                transform = transform.value
+            if isinstance(transform, Transform) or hasattr(transform, "shape_change"):
                 input_shape = transform.shape_change(input_shape)
             else:
                 logger.debug(

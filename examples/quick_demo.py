@@ -1,6 +1,6 @@
 """ Demo: Creates a simple new method and applies it to various CL settings. """
 from dataclasses import dataclass
-from typing import Dict, Tuple, Type
+from typing import Dict, Tuple, Type, List
 
 import gym
 import torch
@@ -128,25 +128,29 @@ class DemoMethod(Method, target_setting=ClassIncrementalSetting):
             print(f"Starting epoch {epoch}")
             # Training loop:
             with tqdm.tqdm(train_env) as train_pbar:
+                postfix = {}
                 train_pbar.set_description(f"Training Epoch {epoch}")
                 for i, batch in enumerate(train_pbar):
                     loss, metrics_dict = self.model.training_step(batch)
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
-                    train_pbar.set_postfix(**metrics_dict)
+                    postfix.update(metrics_dict)
+                    train_pbar.set_postfix(postfix)
 
             # Validation loop:
             self.model.eval()
             torch.set_grad_enabled(False)
             with tqdm.tqdm(valid_env) as val_pbar:
+                postfix = {}
                 val_pbar.set_description(f"Validation Epoch {epoch}")
                 epoch_val_loss = 0.
 
                 for i, batch in enumerate(val_pbar):
                     batch_val_loss, metrics_dict = self.model.validation_step(batch)
                     epoch_val_loss += batch_val_loss
-                    val_pbar.set_postfix(**metrics_dict, val_loss=epoch_val_loss)
+                    postfix.update(metrics_dict, val_loss=epoch_val_loss)
+                    val_pbar.set_postfix(postfix)
             torch.set_grad_enabled(True)
 
             if epoch_val_loss < best_val_loss:
@@ -184,7 +188,7 @@ def create_method(DemoMethod = DemoMethod) -> DemoMethod:
     return method
 
 
-def evaluate_on_all_settings(method: DemoMethod, below: Type[Setting]=None):
+def evaluate_on_all_settings(method: DemoMethod, below: Type[Setting]=None, datasets: List[str] = ["mnist", "fashionmnist"]):
     """ Applies the method to all its applicable settings and shows the results.
     """
     import pandas as pd
@@ -205,8 +209,8 @@ def evaluate_on_all_settings(method: DemoMethod, below: Type[Setting]=None):
         dataset = setting.dataset
 
         # Limiting this demo to just mnist/fashion_mnist datasets.
-        if setting.dataset not in ["mnist", "fashion_mnist"]:
-            # print(f"Skipping {setting_type} / {setting.dataset} for now.")
+        if setting.dataset not in datasets:
+            print(f"Skipping {setting_type} / {setting.dataset} for now.")
             continue
 
         # Apply the method on the setting.

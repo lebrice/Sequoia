@@ -19,7 +19,7 @@ from ..base.environment import (Actions, ActionType, Environment, Observations,
 from torch.utils.data.dataloader import _BaseDataLoaderIter
 logger = get_logger(__file__)
 from common.batch import Batch
-from common.gym_wrappers.utils import space_with_new_shape
+from common.gym_wrappers.utils import reshape_space
 
 class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
                                                        Optional[ActionType]],
@@ -137,7 +137,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         else:
             # Adjust the obs space to match the shape of the real observations.
             # BUG: When a tensor is None, then what do we do?
-            observation_space = space_with_new_shape(
+            observation_space = reshape_space(
                 observation_space,
                 observations[0].shape if len(observations) == 1 else
                 tuple(tensor.shape[1:] if hasattr(tensor, "shape") else None 
@@ -160,7 +160,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
                                    "reward_space isn't given.")
         else:
             # Adjust the reward space to match the shape of the actual rewards.
-            reward_space = space_with_new_shape(
+            reward_space = reshape_space(
                 reward_space,
                 reward.shape if len(rewards) == 1 else
                 tuple(tensor.shape[1:] for tensor in rewards)
@@ -207,9 +207,11 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         if isinstance(image_batch, Tensor):
             image_batch = image_batch.cpu().numpy()
         
-        if mode == "rgb_array":
-            return image_batch
         from common.gym_wrappers.batch_env.tile_images import tile_images
+        
+        if mode == "rgb_array":
+            return tile_images(image_batch)
+        
         if mode == "human":
             tiled_version = tile_images(image_batch)
             import matplotlib.pyplot as plt
@@ -220,7 +222,6 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             # return self.viewer.isopen
 
         raise NotImplementedError(f"Unsuported mode {mode}")
-        
     
     def get_next_batch(self) -> Tuple[ObservationType, RewardType]:
         """Gets the next batch from the underlying dataset.

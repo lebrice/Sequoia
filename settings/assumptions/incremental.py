@@ -1,10 +1,13 @@
 import itertools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Union, Sequence, Optional
+from typing import List, Union, Sequence, Optional, Tuple
+from pathlib import Path
 
+import gym
 import torch
 import tqdm
+from gym import spaces
 from simple_parsing import field
 from torch import Tensor
 
@@ -84,8 +87,8 @@ class IncrementalSetting(SettingABC):
     _current_task_id: int = field(default=0, init=False)
 
     def __post_init__(self, *args, **kwargs):
-        assert False, "This Shouldn't ever be called!"
-        # super().__post_init__(self, *args, **kwargs)
+        super().__post_init__(self, *args, **kwargs)
+        # assert False, "This Shouldn't ever be called!"
 
     @property
     def current_task_id(self) -> Optional[int]:
@@ -128,9 +131,9 @@ class IncrementalSetting(SettingABC):
             # Creating the dataloaders ourselves (rather than passing 'self' as
             # the datamodule):
             # success = trainer.fit(model, datamodule=self)
+            # TODO: Pass the train_dataloader and val_dataloader methods, rather than the envs.
             task_train_loader = self.train_dataloader()
             task_valid_loader = self.val_dataloader()
-            
             success = method.fit(
                 train_env=task_train_loader,
                 valid_env=task_valid_loader,
@@ -144,7 +147,6 @@ class IncrementalSetting(SettingABC):
                     f"method.fit() returned {success}"
                 )
 
-    
     def test_loop(self, method: Method) -> "IncrementalSetting.Results":
         """ (WIP): Runs an incremental test loop and returns the Results.
 
@@ -186,83 +188,74 @@ class IncrementalSetting(SettingABC):
         """ 
         # Create a list that will hold the test metrics encountered during each
         # task.
-        test_metrics: List[List[Metrics]] = []
-        for task_id in range(self.nb_tasks):
-            logger.info(f"Starting testing on task {task_id}")
-            self.current_task_id = task_id
-            # assert not self.smooth_task_boundaries, "TODO: (#18) Make another 'Continual' setting that supports smooth task boundaries."
-            
-            # Inform the model of a task boundary. If the task labels are
-            # available, then also give the id of the new task.
-            # TODO: Should we also inform the method of wether or not the task
-            # switch is occuring during training or testing?
-            if self.known_task_boundaries_at_test_time:
+        # TODO: Instead of doing the loop manually here, we'd need to create a
+        # single environment, which would have everything we need.
+        from common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper, StepCallback, Callback
+        from settings.active.rl.wrappers import NoTypedObjectsWrapper, RemoveTaskLabelsWrapper, HideTaskLabelsWrapper
+        
+        test_env = self.test_dataloader()
+        test_env: TestEnvironment
+        
+        if self.known_task_boundaries_at_test_time:
+            def _on_task_switch(step: int, *arg) -> None:
+                if step not in self.test_task_schedule:
+                    return
                 if not hasattr(method, "on_task_switch"):
                     logger.warning(UserWarning(
                         f"On a task boundary, but since your method doesn't "
                         f"have an `on_task_switch` method, it won't know about "
                         f"it! "
                     ))
-                elif not self.task_labels_at_test_time:
-                    method.on_task_switch(None)
-                else:
+                    return
+                if self.task_labels_at_test_time:
+                    task_steps = sorted(self.test_task_schedule.keys())
+                    task_id = task_steps.index(step)
+                    logger.debug(f"Calling `method.on_task_switch({task_id})` "
+                                 f"since task labels are available at test-time.")
                     method.on_task_switch(task_id)
-
-            # Test loop:
-            test_task_env = self.test_dataloader()
-            task_metrics = []
-            for episode in range(self.test_loop_episodes):
-                episode_metrics = self.run_episode(
-                    method=method,
-                    env=test_task_env,
-                )
-                task_metrics.extend(episode_metrics)
-            test_task_env.close()
-            
-            # Add the metrics for this task to the list of all metrics.
-            test_metrics.append(task_metrics)
-
-            average_task_metrics = mean(task_metrics)
-            logger.info(f"Test Results on task {task_id}: {average_task_metrics}")
-
-        results = self.Results(test_metrics=test_metrics)
-        return results
-
-    def run_episode(self, method: Method, env: Environment) -> List[Metrics]:
-        """ Apply the method on the env until it is done (one episode).
-        Returns a list of the Metrics for each batch.
-        
-        In the CL/Supervised Learning context, one epoch might be one epoch.
-        NOTE: This doesn't close the environment.
-        """
-        episode_metrics: List[Metrics] = []
-
-        # Reset the environment, which gives the first batch of observations.
-        observations: Observations = env.reset()
-
-        # Create a nice progress bar.
-        # NOTE: The env might now always have a length attribte, actually.
-        total_batches = len(env)
-        pbar = tqdm.tqdm(itertools.count(), total=total_batches-1)
-
-        # Close the pbar before exiting.
-        with pbar:
-            for i in pbar:
-                actions = method.get_actions(observations, env.action_space)
-                observations, rewards, done, info = env.step(actions)
-                
-                batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
-                episode_metrics.append(batch_metrics)
-
-                if isinstance(batch_metrics, Metrics):
-                    # display metrics in the progress bar.
-                    pbar.set_postfix(batch_metrics.to_pbar_message())
                 else:
-                    pbar.set_postfix({"batch metrics": batch_metrics})
+                    logger.debug(f"Calling `method.on_task_switch(None)` "
+                                 f"since task labels aren't available at "
+                                 f"test-time, but task boundaries are known.")
+                    method.on_task_switch(None)
+            test_env = StepCallbackWrapper(test_env, callbacks=[_on_task_switch])
 
-                if done:
-                    break
-        return episode_metrics
+        try:
+            # If the Method has `test` defined, use it. 
+            method.test(test_env)
+            test_env: TestEnvironment
+            # Get the metrics from the test environment
+            test_results: Results = test_env.get_results()
+            print(f"Test results: {test_results}")
+            return test_results
+ 
+        except NotImplementedError:
+            logger.info(f"Will query the method for actions at each step, "
+                        f"since it doesn't implement a `test` method.")
+
+        obs = test_env.reset()
+
+        # TODO: Do we always have a maximum number of steps? or of episodes?
+        # Will it work the same for Supervised and Reinforcement learning?
+        max_steps: int = getattr(test_env, "step_limit", None)
+
+        # Reset on the last step is causing trouble, since the env is closed.
+        pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
+        for step in pbar:
+            action = method.get_actions(obs, test_env.action_space)
+            obs, reward, done, info = test_env.step(action)
+            
+            if test_env.is_closed():
+                break
+            if done:
+                obs = test_env.reset()
+
+        test_results = test_env.get_results()
+        
+        return test_results
+        # if not self.task_labels_at_test_time:
+        #     # TODO: move this wrapper to common/wrappers.
+        #     test_env = RemoveTaskLabelsWrapper(test_env)
     
     @abstractmethod
     def train_dataloader(self, *args, **kwargs) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
@@ -280,3 +273,73 @@ class IncrementalSetting(SettingABC):
     def test_dataloader(self, *args, **kwargs) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
         """ Returns the DataLoader/Environment for the current test task. """  
         return super().test_dataloader(*args, **kwargs)
+
+from common.gym_wrappers.utils import IterableWrapper
+
+class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
+    """ Wrapper around a 'test' environment, which limits the number of steps
+    and keeps tracks of the performance.
+    """
+    def __init__(self, env: gym.Env, directory: Path, step_limit: int = 1_000, no_rewards: bool = False, *args, **kwargs):
+        super().__init__(env, directory, *args, **kwargs)
+        self.step_limit = step_limit
+        self.no_rewards = no_rewards
+        self._closed = False
+    
+    def is_closed(self):
+        return self._closed
+    
+    @abstractmethod
+    def get_results(self) -> Results:
+        """ Return how well the Method was applied on this environment.
+        
+        In RL, this would be based on the mean rewards, while in supervised
+        learning it could be the average accuracy, for instance.
+
+        Returns
+        -------
+        Results
+            [description]
+        """
+        # TODO: In the case of the ClassIncremental Setting, we'd have to modify
+        # this so we can set the 'Reward' to be stored (and averaged out, etc)
+        # to be the accuracy? a Metrics object? idk.
+        # TODO: Total reward over a number of steps? Over a number of episodes?
+        # Average reward? What's the metric we care about in RL?
+        rewards = self.get_episode_rewards()
+        lengths = self.get_episode_lengths()
+        total_steps = self.get_total_steps()
+        return sum(rewards) / total_steps
+
+    def step(self, action):
+        # TODO: Its A bit uncomfortable that we have to 'unwrap' these here.. 
+        from settings.active.rl.wrappers import unwrap_rewards, unwrap_actions, unwrap_observations
+        action_for_stats = unwrap_actions(action)
+
+        self._before_step(action_for_stats)
+        
+        observation, reward, done, info = self.env.step(action)
+        observation_for_stats = unwrap_observations(observation)
+        reward_for_stats = unwrap_rewards(reward)
+        
+        # TODO: Maybe render the env with human mode when debugging.
+        # if debug
+        # self.render("human")
+        if not isinstance(done, bool):
+            done = all(done)
+
+        done = self._after_step(observation_for_stats, reward_for_stats, done, info)
+    
+        if self.get_total_steps() >= self.step_limit:
+            done = True
+            self.close()
+
+        # Remove the rewards if they aren't allowed.
+        if self.no_rewards:
+            reward = None
+
+        return observation, reward, done, info
+
+    def close(self):
+        self._closed = True
+        return super().close()

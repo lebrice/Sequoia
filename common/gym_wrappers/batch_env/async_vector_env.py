@@ -9,8 +9,8 @@ from functools import lru_cache, partial, wraps
 from inspect import ismethod
 from multiprocessing.connection import Connection
 from operator import attrgetter, itemgetter, methodcaller
-from typing import (Any, Callable, Dict, Generic, Iterable, List, Optional,
-                    Sequence, Tuple, Type, TypeVar, Union, overload)
+from typing import (Any, Callable, ClassVar, Dict, Generic, Iterable, List,
+                    Optional, Sequence, Tuple, Type, TypeVar, Union, overload)
 
 import gym
 import numpy as np
@@ -20,9 +20,14 @@ from gym.vector.async_vector_env import (AlreadyPendingCallError, AsyncState,
                                          NoAsyncCallError)
 from utils.logging_utils import get_logger
 
+from .tile_images import tile_images
 from .worker import (CloudpickleWrapper, Commands, _custom_worker,
                      _custom_worker_shared_memory)
+# NOTE: Seems to fix some kind of pytorch-related bug. I can try to find a link
+# to the post about this if needed.
 import os; os.environ['MKL_THREADING_LAYER'] = 'GNU'
+
+
 logger = get_logger(__file__)
 T = TypeVar("T")
 
@@ -33,6 +38,16 @@ class ExtendedAsyncState(Enum):
 EnvType = TypeVar("EnvType", bound=gym.Env)
 
 class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
+    
+    # Whenever calling __getattr__ (when we're missing an attribute on the
+    # VectorEnv), try to fetch the missing attribute from the remote workers.
+    # If the attribute is a method, then this returns a BatchedMethod, which
+    # when called with arguments, will execute the corresponding method on all
+    # the remote environments. This could be particularly useful for doing
+    # things like changing the task or seeding the remote workers, however it
+    # adds some complexity, so I'm setting it to False by default. 
+    allow_remote_getattr: ClassVar[bool] = False
+    
     def __init__(self,
                  env_fns: Sequence[Callable[[], EnvType]],
                  context=None,
@@ -42,17 +57,7 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         if context is None:
             system: str = platform.system()
             if system == "Linux":
-                # TODO: Debugging an error from the pyglet package when using 'fork'.
-                # python3.7/site-packages/pyglet/gl/xlib.py", line 218, in __init__
-                # raise gl.ContextException('Could not create GL context')
-                # context = "fork"
-                # context = "spawn"
-                # NOTE: For now 'forkserver`, seems to have resolved the bug
-                # above for now, but is still super slow compared to fork.
-                # If we you don't intend to ever call 'render' on the env, then
-                # you should *definitely* be using 'fork'. 
                 context = "forkserver"
-                # context = "fork"
             else:
                 logger.warning(RuntimeWarning(
                     f"Using the 'spawn' multiprocessing context since we're on "
@@ -74,6 +79,11 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         # List that stores wether a function is being applied on an env and we
         # should expect a result response for that env.
         self.expects_result: List[bool] = []
+        
+                
+        # Important, this must be done before the call to super().__init__
+        from common.gym_wrappers.sparse_space import Sparse
+        
         super().__init__(
             env_fns=env_fns,
             context=context,
@@ -89,12 +99,25 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         return self.num_envs
 
     def render(self, mode: str = "rgb_array") -> np.ndarray:
-        if mode != "rgb_array":
-            raise NotImplementedError
         self._assert_is_running()
         for pipe in self.parent_pipes:
             pipe.send(('render', None))
-        return np.stack([pipe.recv() for pipe in self.parent_pipes])
+        
+        image_batch = np.stack([pipe.recv() for pipe in self.parent_pipes])
+        if mode == "rgb_array":
+            return image_batch
+        
+        if mode == "human":
+            tiled_version = tile_images(image_batch)
+            if self.viewer is None:
+                from gym.envs.classic_control import rendering
+                self.viewer = rendering.SimpleImageViewer()
+            self.viewer.imshow(tiled_version)
+            return self.viewer.isopen
+        
+        raise NotImplementedError(f"Unsupported mode {mode}")
+        
+        
         # NOTE: @lebrice This used to be working, and would have been an example
         # use-case for all the fancy stuff written below, which I should
         # probably remove at some point if we don't end up needing access to the
@@ -202,9 +225,14 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
 
 
     def __getattr__(self, name: str):
-        logger.debug(f"Attempting to get missing attribute {name}.")
         if name in {"closed", "_state"}:
             return
+
+        if not type(self).allow_remote_getattr:
+            raise AttributeError(name)
+        
+        logger.debug(f"Attempting to get missing attribute {name}.")
+        
         assert isinstance(name, str)
         env_has_attribute = self.apply(partial(hasattr_, name=name))
         if all(env_has_attribute):

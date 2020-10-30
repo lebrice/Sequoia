@@ -11,6 +11,7 @@ from gym.vector.vector_env import VectorEnv
 from gym.vector.sync_vector_env import SyncVectorEnv as SyncVectorEnv_
 from gym.vector.sync_vector_env import concatenate
 
+from .tile_images import tile_images
 from .worker import FINAL_STATE_KEY
 
 
@@ -35,7 +36,18 @@ class SyncVectorEnv(SyncVectorEnv_):
             np.copy(self._rewards), np.copy(self._dones), infos)
 
 
-    def render(self, mode: str = "rgb_array"):
-        if mode != "rgb_array":
-            raise NotImplementedError("TODO: maybe display a grid?")
-        return np.stack([env.render(mode=mode) for env in self.envs])
+    def render(self, mode: str = "rgb_array"):        
+        image_batch = np.stack([env.render(mode="rgb_array") for env in self.envs])
+        if mode == "rgb_array":
+            return image_batch
+        
+        if mode == "human":
+            tiled_version = tile_images(image_batch)
+            if self.viewer is None:
+                from gym.envs.classic_control import rendering
+                self.viewer = rendering.SimpleImageViewer()
+            self.viewer.imshow(tiled_version)
+            return self.viewer.isopen
+        
+        raise NotImplementedError(f"Unsupported mode {mode}")
+

@@ -1,6 +1,8 @@
 from typing import Callable, List, TypeVar, Union, Tuple, Optional, Sequence
 
+import gym
 import torch
+from gym import spaces
 from torch import Tensor
 from torchvision.transforms import Compose as ComposeBase
 from utils.logging_utils import get_logger
@@ -43,3 +45,12 @@ class Compose(List[T], ComposeBase, Transform[InputType, OutputType]):
                 )
         logger.debug(f"Final shape: {input_shape}")
         return input_shape
+
+    def space_change(self, input_space: gym.Space) -> gym.Space:
+        from .transform_enum import Transforms
+        for transform in self:
+            if isinstance(transform, Transforms):
+                transform = transform.value
+            if hasattr(transform, "space_change"):
+                input_space = transform.space_change(input_space)
+        return input_space
