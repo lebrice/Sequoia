@@ -161,7 +161,11 @@ class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
         if attr.endswith("_") and has_wrapper(self.env, EnvDataset):
             if attr in {"observation_", "action_", "reward_", "done_", "info_", "n_sends_"}:
                 logger.debug(f"Attribute {attr} will be set on the wrapped env rather than on the wrapper itself.")
-                setattr(self.env, attr, value)
+                env = self.env
+                while not isinstance(env, EnvDataset) and env.env is not env:
+                    env = env.env
+                assert isinstance(env, EnvDataset)
+                setattr(env, attr, value)
         else:
             object.__setattr__(self, attr, value)
 

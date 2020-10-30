@@ -13,7 +13,6 @@ from .batched_vector_env import BatchedVectorEnv
     
 from conftest import DummyEnvironment
 
-
 from common.gym_wrappers.multi_task_environment import MultiTaskEnvironment
 
 @pytest.mark.parametrize("batch_size", [1, 5, 11, 24])
@@ -52,6 +51,7 @@ def test_space_with_tuple_observations(batch_size: int, n_workers: Optional[int]
     
     assert len(rewards) == batch_size
     assert len(done) == batch_size
+    assert all([isinstance(v, bool) for v in done.tolist()]), [type(v) for v in done]
     assert len(info) == batch_size
 
 
@@ -76,6 +76,7 @@ def test_right_shapes(batch_size: int, n_workers: Optional[int]):
         assert obs.shape == (batch_size, 4)
         assert len(rewards) == batch_size
         assert len(done) == batch_size
+        assert all([isinstance(v, bool) for v in done.tolist()]), [type(v) for v in done]
         assert len(info) == batch_size
 
     env.close()

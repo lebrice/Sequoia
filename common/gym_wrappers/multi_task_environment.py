@@ -144,12 +144,13 @@ class MultiTaskEnvironment(gym.Wrapper):
         self._on_task_switch_callback = callback
     
     def on_task_switch(self, task_id: int):
-        logger.debug(f"Switching from {self.current_task_id} -> {task_id}.")
-        # TODO: We could maybe use this to call the method's 'on_task_switch'
-        # callback?
-        if self._on_task_switch_callback:
-            self._on_task_switch_callback(task_id)
-    
+        if task_id != self.current_task_id:
+            logger.debug(f"Switching from {self.current_task_id} -> {task_id}.")
+            # TODO: We could maybe use this to call the method's 'on_task_switch'
+            # callback?
+            if self._on_task_switch_callback:
+                self._on_task_switch_callback(task_id)
+        
 
     def step(self, *args, **kwargs):
         # If we reach a step in the task schedule, then we change the task to

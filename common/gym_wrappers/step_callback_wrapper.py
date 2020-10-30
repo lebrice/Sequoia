@@ -39,6 +39,8 @@ class PeriodicCallback(Callback):
 
 
 class StepCallbackWrapper(gym.Wrapper):
+    """ Wrapper that will execute some callbacks when certain steps are reached.
+    """
     def __init__(self,
                  env: gym.Env,
                  callbacks: List[Callback] = None,

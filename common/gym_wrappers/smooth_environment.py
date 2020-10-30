@@ -83,7 +83,10 @@ class SmoothTransitions(MultiTaskEnvironment):
         super().__init__(env, *args, add_task_dict_to_info=add_task_dict_to_info,
                          add_task_id_to_obs=add_task_id_to_obs, **kwargs)
         self.only_update_on_episode_end: bool = only_update_on_episode_end
-
+        if self._max_steps is None and len(self.task_schedule) > 1:
+            # TODO: DO we want to prevent going past the 'task step' in the task schedule?
+            pass
+        
         if self.add_task_id_to_obs:
             n_tasks = len(self.task_schedule)
             self.observation_space = spaces.Tuple([
