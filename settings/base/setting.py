@@ -243,6 +243,14 @@ class Setting(SettingABC,
         # TODO: At the moment there's this problem, ClassificationMetrics wants
         # to create a confusion matrix, which requires 'logits' (so it knows how
         # many classes.
+        if isinstance(actions, Tensor):
+            actions = actions.cpu().numpy()
+        if isinstance(rewards, Tensor):
+            rewards = rewards.cpu().numpy()
+        
+        # assert actions in self.action_space, f"Invalid actions {actions} (space = {self.action_space})"
+        # assert rewards in self.reward_space, f"Invalid rewards? {rewards} (space = {self.reward_space})"
+        
         if isinstance(self.action_space, spaces.Discrete):
             batch_size = rewards.shape[0]
             actions = torch.as_tensor(actions)

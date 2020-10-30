@@ -214,7 +214,7 @@ class IncrementalSetting(SettingABC):
                                  f"since task labels are available at test-time.")
                     method.on_task_switch(task_id)
                 else:
-                    logger.debug(f"Calling `method.on_task_switch({task_id})` "
+                    logger.debug(f"Calling `method.on_task_switch(None)` "
                                  f"since task labels aren't available at "
                                  f"test-time, but task boundaries are known.")
                     method.on_task_switch(None)
