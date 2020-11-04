@@ -11,11 +11,12 @@ from methods.models.output_heads.rl.reinforce_head import (
 
 def main():
     env = gym.make('CartPole-v0')
+    env.seed(123)
     policy_net = ReinforceHead(
         input_size=4,
         action_space=env.action_space,
         reward_space=spaces.Box(0, 1, shape=())
-    ).cuda()
+    )#.cuda()
     max_episode_num = 5000
     max_steps = 10000
     numsteps = []
@@ -31,10 +32,10 @@ def main():
         optimizer = torch.optim.Adam(policy_net.parameters(), lr=3e-4)
 
         for steps in range(max_steps):
-            env.render()
+            # env.render()
 
             observations = None
-            representations = torch.as_tensor(state).cuda()
+            representations = torch.as_tensor(state, dtype=torch.float32).unsqueeze(0)#.cuda()
 
             actions: ClassificationOutput = policy_net(observations, representations)
             # NOTE: Index of 0 since there is no batching.
@@ -45,7 +46,9 @@ def main():
 
             if done:
                 optimizer.zero_grad()
-                policy_gradient = policy_net.get_policy_gradient_for_episode(rewards, log_probs)
+                policy_gradient = policy_net.policy_gradient_from_blogpost(rewards, log_probs)
+                # policy_gradient = policy_net.policy_gradient_from_blogpost_improved(rewards, log_probs)
+                # policy_gradient = policy_net.policy_gradient_optimized(rewards, log_probs)
                 policy_gradient.backward()
                 optimizer.step()
 

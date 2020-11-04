@@ -302,7 +302,7 @@ def fuse_and_batch(item_space: spaces.Space, *sequences: Sequence[Sequence[T]], 
     return concatenate(items, out, item_space)
 
 
-@fuse_and_batch.register
+@fuse_and_batch.register(spaces.Dict)
 def fuse_and_batch_dicts(item_space: spaces.Dict, *sequences: Sequence[Dict[K, V]], n_items: int) -> Dict[K, Sequence[T]]:
     values = {
         k: [] for k in item_space.spaces.keys()
@@ -317,7 +317,7 @@ def fuse_and_batch_dicts(item_space: spaces.Dict, *sequences: Sequence[Dict[K, V
     }
 
 
-@fuse_and_batch.register
+@fuse_and_batch.register(spaces.Tuple)
 def fuse_and_batch_tuples(item_space: spaces.Tuple, *sequences: Sequence[Tuple[T, ...]], n_items: int) -> Tuple[Sequence[T], ...]:
     # First, just get rid of any empty lists or tuples (which in our case is
     # the obs_b which might be [] if env_b is None)

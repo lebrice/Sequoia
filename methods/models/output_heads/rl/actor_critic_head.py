@@ -6,15 +6,18 @@ remember about actor-critic from my RL classes.
 """
 from dataclasses import dataclass
 from typing import Dict, Tuple, Union
+
 import gym
-from gym import spaces
-import torch
 import numpy as np
+import torch
+from gym import spaces
+from torch import LongTensor, Tensor, nn
+
 from common.layers import Lambda
-from torch import Tensor, nn, LongTensor
+from common import Loss
+from settings.base.objects import Actions, Observations, Rewards
 from utils.utils import prod
-from settings.base.objects import Observations, Actions, Rewards
-from .policy_head import PolicyHead, ClassificationOutput
+from .policy_head import ClassificationOutput, PolicyHead
 
 # TODO: Refactor this to use a RegressionHead for the predicted reward and a
 # ClassificationHead for the choice of action?
@@ -65,6 +68,10 @@ class ActorCriticHead(PolicyHead):
             "action": action,
             "predicted_reward": predicted_reward,
         }
+    
+    def get_loss(self, forward_pass, y) -> Loss:
+        raise NotImplementedError("TODO")
+        return super().get_loss(forward_pass, y)
 
 
 def concat_obs_and_action(observation_action: Tuple[Tensor, Tensor]) -> Tensor:

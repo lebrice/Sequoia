@@ -78,7 +78,6 @@ class PolicyHead(ClassificationHead):
         # Choose the actions according to their probabilities, rather than just
         # taking the action with highest probability, as is done in the
         # ClassificationHead.
-        assert False, representations.shape
         logits = self.dense(representations)
 
         density = Categorical(logits=logits)
@@ -89,7 +88,7 @@ class PolicyHead(ClassificationHead):
         output = PolicyHeadOutput(
             logits=logits,
             y_pred=actions,
-            density=density
+            action_pdf=density
         )
         return output
 
