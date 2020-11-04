@@ -23,7 +23,7 @@ WrapperAndKwargs = Tuple[Type[gym.Wrapper], Dict]
 # we could use a dict like this to save the 'default' wrappers to use before and
 # after batching for each env name or type of env.
 # TODO: Figure out the right ordering to use for the wrappers.
-default_wrappers_for_env: Dict[str, Iterable[WrapperAndKwargs]] = {
+default_wrappers_for_env: Dict[str, List[Type[gym.Wrapper]]] = {
     "CartPole-v0": [ConvertToFromTensors],
 }
 

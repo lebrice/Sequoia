@@ -14,6 +14,7 @@ from collections import abc as collections_abc
 from typing import (Any, ClassVar, Dict, Generic, List, NamedTuple, Optional,
                     Sequence, Tuple, Type, TypeVar, Union)
 
+import numpy as np
 import torch
 from gym import spaces
 from pytorch_lightning import LightningDataModule, LightningModule
@@ -27,6 +28,7 @@ from common.loss import Loss
 from common.transforms import SplitBatch, Transforms
 from common.batch import Batch
 from settings.base.setting import Setting, SettingType, Observations, Actions, Rewards
+from settings.assumptions.incremental import IncrementalSetting
 from utils.logging_utils import get_logger
 from settings import Environment, Observations, Actions, Rewards
 
@@ -95,13 +97,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.output_head = self.create_output_head()
 
     @auto_move_data
-    def forward(self, input_batch: Any) -> ForwardPass:
+    def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
         """ Forward pass of the Model.
         
         Returns a ForwardPass object (or a dict)
-        """
-        observations: Observations = self.Observations.from_inputs(input_batch)
-        
+        """        
         # Encode the observation to get representations.
         representations = self.encode(observations)
         # Pass the observations and representations to the output head to get
@@ -235,12 +235,18 @@ class BaseModel(LightningModule, Generic[SettingType]):
             assert isinstance(dataloader_idx, int)
             loss_name += f"/{dataloader_idx}"
 
+        # Split the batch into observations and rewards.
+        # NOTE: Only in the case of the Supervised settings do we ever get the
+        # Rewards at the same time as the Observations.
+        # TODO: It would be nice if we could actually do the same things for
+        # both sides of the tree here..
         observations, rewards = self.split_batch(batch)
 
         # Get the forward pass results, containing:
         # - "observation": the augmented/transformed/processed observation.
         # - "representations": the representations for the observations.
         # - "actions": The actions (predictions)
+        
         forward_pass: ForwardPass = self(observations)
         
         # get the actions from the forward pass:
@@ -268,7 +274,10 @@ class BaseModel(LightningModule, Generic[SettingType]):
         """ Splits the batch into the observations and the rewards. 
         
         Uses the types defined on the setting that this model is being applied
-        on (which were copied to `self.Observations` and `self.Actions`).
+        on (which were copied to `self.Observations` and `self.Actions`) to
+        figure out how many fields each type requires.
+
+        TODO: This is slightly confusing, should probably get rid of this.
         """
         if isinstance(batch, (tuple, list)) and len(batch) == 2:
             observations, rewards = batch
@@ -277,16 +286,31 @@ class BaseModel(LightningModule, Generic[SettingType]):
                 return observations, rewards
         return self.split_batch_transform(batch)
 
-    def get_loss(self, forward_pass: Dict[str, Batch], rewards: Rewards = None, loss_name: str = "") -> Loss:
-        """Returns a Loss object containing the total loss and metrics. 
+    def get_loss(self,
+                 forward_pass: Dict[str, Tensor],
+                 rewards: Rewards = None,
+                 loss_name: str = "") -> Loss:
+        """Gets a Loss given the results of the forward pass and the reward.
 
         Args:
-            x (Tensor): The input examples.
-            y (Tensor, optional): The associated labels. Defaults to None.
-            name (str, optional): Name to give to the resulting loss object. Defaults to "".
+            forward_pass (Dict[str, Tensor]): Results of the forward pass.
+            reward (Tensor, optional): The reward that resulted from the action
+                chosen in the forward pass. Defaults to None.
+            loss_name (str, optional): The name for the resulting Loss.
+                Defaults to "".
 
         Returns:
-            Loss: An object containing everything needed for logging/progressbar/metrics/etc.
+            Loss: a Loss object containing the loss tensor, associated metrics
+            and sublosses.
+        
+        This could look a bit like this, for example:
+        ```
+        action = forward_pass["action"]
+        predicted_reward = forward_pass["predicted_reward"]
+        nce = self.loss_fn(predicted_reward, reward)
+        loss = Loss(loss_name, loss=nce)
+        return loss
+        ```
         """
         assert loss_name
         # Create an 'empty' Loss object with the given name, so that we always
@@ -301,6 +325,14 @@ class BaseModel(LightningModule, Generic[SettingType]):
         return total_loss
 
     def preprocess_observations(self, observations: Observations) -> Observations:
+        arrays_or_tensors = [
+            np.asarray(v) if not isinstance(v, Tensor) else v for v in observations
+        ]
+        observations = self.Observations.from_inputs([
+            torch.as_tensor(item, device=self.device) if item.dtype != np.object_
+            else [v_i.item() if isinstance(v_i, np.ndarray) else v_i for v_i in item]
+            for item in arrays_or_tensors
+        ])
         return observations
     
     def preprocess_rewards(self, reward: Rewards) -> Rewards:

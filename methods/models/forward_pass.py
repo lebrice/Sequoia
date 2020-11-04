@@ -14,11 +14,11 @@ from settings.base.objects import Observations, Actions
 class ForwardPass(Batch, FlattenedAccess):
     """ Typed version of the result of a forward pass through a model.
 
-    FlattenedAccess is really sweet. We can get/set any attributes in the
-    children by getting/setting them directly on the parent. So if the
-    `observation` has an `x` attribute, we can get on this object directly with
-    `self.x`, and it will fetch the attribute from the observation. Same goes
-    for setting the attribute.
+    FlattenedAccess is pretty cool, but potentially confusing. We can get/set
+    any attributes in the children by getting/setting them directly on the
+    parent. So if the `observation` has an `x` attribute, we can get on this
+    object directly with `self.x`, and it will fetch the attribute from the
+    observation. Same goes for setting the attribute.
     """
     observations: Observations
     representations: Tensor

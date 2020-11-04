@@ -5,7 +5,7 @@ import gym
 import torch
 from common import Batch, ClassificationMetrics, Loss
 from gym import spaces
-from torch import Tensor, nn
+from torch import Tensor, nn, LongTensor
 
 from .output_head import OutputHead
 from ..forward_pass import ForwardPass
@@ -13,9 +13,30 @@ from settings import Observations, Actions, Rewards
 
 
 @dataclass(frozen=True)
-class ClassificationActions(Actions):
-    y_pred: Tensor
+class ClassificationOutput(Actions):
+    """ Typed dict-like class that represents the 'forward pass'/output of a
+    classification head, which correspond to the 'actions' to be sent to the
+    environment, in the general formulation.
+    """
+    y_pred: LongTensor
     logits: Tensor
+
+    @property
+    def y_pred_log_prob(self) -> Tensor:
+        """ returns the log probabilities for the chosen actions/predictions. """
+        return self.logits[:, self.y_pred]
+
+    @property
+    def y_pred_prob(self) -> Tensor:
+        """ returns the log probabilities for the chosen actions/predictions. """
+        return self.probabilities[self.y_pred]
+
+    @property
+    def probabilities(self) -> Tensor:
+        """ Returns the normalized probabilies for each class, i.e. the
+        softmax-ed version of `self.logits`.
+        """
+        return self.logits.softmax(-1)
 
 
 class ClassificationHead(OutputHead):
@@ -53,7 +74,7 @@ class ClassificationHead(OutputHead):
         #     self.loss_fn = nn.BCEWithLogitsLoss()
         self.loss_fn = nn.CrossEntropyLoss()
 
-    def forward(self, observations: Observations, representations: Tensor) -> Actions:
+    def forward(self, observations: Observations, representations: Tensor) -> ClassificationOutput:
         # TODO: This should probably take in a dict and return a dict, or something like that?
         # TODO: We should maybe convert this to also return a dict instead
         # of a Tensor, just to be consistent with everything else. This could
@@ -62,13 +83,13 @@ class ClassificationHead(OutputHead):
         # forward pass tensors (if needed) and predictions?
         logits = self.dense(representations)
         y_pred = logits.argmax(dim=-1)
-        return ClassificationActions(
+        return ClassificationOutput(
             logits=logits,
             y_pred=y_pred,
         )
 
     def get_loss(self, forward_pass: ForwardPass, y: Tensor) -> Loss:
-        actions: ClassificationActions = forward_pass.actions
+        actions: ClassificationOutput = forward_pass.actions
         logits: Tensor = actions.logits
         y_pred: Tensor = actions.y_pred
 

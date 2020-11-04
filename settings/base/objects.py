@@ -2,8 +2,9 @@ from dataclasses import dataclass
 from typing import Optional, TypeVar, Any
 
 from simple_parsing.helpers.flatten import FlattenedAccess
-from torch import Tensor
+from torch import Tensor, LongTensor
 
+import numpy as np
 from common import Batch
 
 
@@ -28,10 +29,18 @@ class Actions(Batch):
     y_pred: Tensor
     
     @property
-    def action(self) -> Tensor:
+    def actions(self) -> Tensor:
         return self.y_pred
+
     @property
-    def prediction(self) -> Tensor:
+    def actions_np(self) -> np.ndarray:
+        """ Returns the prediction/action as a numpy array. """
+        if isinstance(self.y_pred, Tensor):
+            return self.y_pred.detach().cpu().numpy()
+        return np.asarray(self.y_pred)
+
+    @property
+    def predictions(self) -> Tensor:
         return self.y_pred
 
 

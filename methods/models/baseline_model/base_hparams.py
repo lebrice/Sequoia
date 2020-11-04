@@ -49,6 +49,8 @@ class BaseHParams(Serializable, Parseable):
     # Use an encoder architecture from the torchvision.models package.
     encoder: str = choice(available_encoders.keys(), default="resnet18")
     
+    # Batch size to use during training and evaluation.
+    batch_size: int = 32
 
     # Number of hidden units (before the output head).
     # When left to None (default), the hidden size from the pretrained

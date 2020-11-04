@@ -1,9 +1,11 @@
-from typing import List, Type
-from importlib import import_module
 import glob
-from os.path import dirname, basename, isfile, join
+import warnings
+from importlib import import_module
+from os.path import basename, dirname, isfile, join
+from typing import List, Type
 
 from settings.base import Method
+
 AbstractMethod = Method
 
 all_methods: List[Type[Method]] = []
@@ -25,7 +27,6 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
 from .baseline_method import BaselineMethod
 from .random_baseline import RandomBaselineMethod
 
-
 ## Pretty hacky: Dynamically import all the modules defined in this folder:
 modules = glob.glob(join(dirname(__file__), "*"))
 
@@ -35,9 +36,12 @@ all_modules: List[str] = [
     not f.endswith('__init__.py') and
     not f.endswith("_test.py"))
     ]
-__all__ = all_modules
+
 for module in all_modules:
-    import_module("methods." + module)
+    try:
+        import_module("methods." + module)
+    except ImportError as e:
+        warnings.warn(RuntimeWarning(f"Couldn't import Method from module methods/{module}: {e}"))
 
 # # TODO: We could also 'register' the methods as they are declared!
 # from .stable_baselines_method import A2CMethod, PPOMethod
@@ -46,3 +50,4 @@ for module in all_modules:
 # from .pl_bolts_methods.cpcv2 import CPCV2Method
 
 # print(" All methods: ", all_methods)
+assert False, all_methods

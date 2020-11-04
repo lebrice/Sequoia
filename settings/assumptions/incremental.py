@@ -271,7 +271,7 @@ class IncrementalSetting(SettingABC):
     
     @abstractmethod
     def test_dataloader(self, *args, **kwargs) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
-        """ Returns the DataLoader/Environment for the current test task. """  
+        """ Returns the Test Environment (for all the tasks). """  
         return super().test_dataloader(*args, **kwargs)
 
 from common.gym_wrappers.utils import IterableWrapper

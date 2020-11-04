@@ -163,18 +163,16 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
             if isinstance(self.env.unwrapped, VectorEnv):                
                 # Same here, we use a 'batched' space rather than Tuple.
                 self.reward_space = batch_space(self.reward_space, batch_size)
-        self._iterator: Iterator = None
 
     # def __next__(self) -> EnvDatasetItem:
     #     if self._iterator is None:
     #         self._iterator = self.__iter__()
     #     return next(self._iterator)
 
-    def __len__(self):
-        if isinstance(self.env.unwrapped, VectorEnv) and self.max_steps_per_epoch:
-            return self.max_steps_per_epoch
-        else:
-            raise NotImplementedError(f"TODO: Can't tell the length of the env {self.env}.")
+    # def __len__(self):
+    #     if isinstance(self.env, EnvDataset):
+    #         return self.env.max_steps
+    #     raise NotImplementedError(f"TODO: Can't tell the length of the env {self.env}.")
     
 
     def __iter__(self) -> Iterable[ObservationType]:

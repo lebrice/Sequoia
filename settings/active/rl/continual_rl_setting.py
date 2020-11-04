@@ -185,6 +185,14 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         else:
             assert callable(self.dataset), f"dataset should either be a string or a callable, got {self.dataset}"
             temp_env = self.dataset()
+
+        if self.env_name.startswith(classic_control_env_prefixes):
+            # TODO: Perhaps we could add an option for viewing the state directly here?
+            # The only problem with that is that the encoders we use are all
+            # convnet-based. We'd have to have some fully-connected encoders or
+            # something instead.
+            temp_env = PixelObservationWrapper(temp_env)
+
         # Apply the image transforms to the env.
         temp_env = TransformObservation(temp_env, f=self.train_transforms)
         # Add a wrapper that creates the 'tasks' (non-stationarity in the env).
@@ -269,7 +277,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             self.setup("fit")
 
         batch_size = batch_size or self.train_batch_size or self.batch_size
-
+        logger.info(f"Training batch size: {batch_size}")
         # NOTE: Setting this to False when debugging can be very helpful,
         # especially when trying to solve problems related to the env wrappers
         # or the input preprocessing. Beware though, if the batch size isn't
@@ -324,11 +332,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         -------
         List[Callable[[gym.Env], gym.Env]]
             [description]
-
-        Raises
-        ------
-        NotImplementedError
-            [description]
         """
         wrappers: List[Callable[[gym.Env], gym.Env]] = []
         # TODO: Add some kind of Wrapper around the dataset to make it
@@ -338,6 +341,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # When using something like CartPole, we'd need to add a
         # PixelObservations wrapper.
         if self.env_name.startswith(classic_control_env_prefixes):
+            # TODO: Perhaps we could add an option for viewing the state directly here?
+            # The only problem with that is that the encoders we use are all
+            # convnet-based. We'd have to have some fully-connected encoders or
+            # something instead.
             wrappers.append(PixelObservationWrapper)
 
         # Wrapper to apply the image transforms to the env.

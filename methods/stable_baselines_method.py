@@ -6,15 +6,24 @@ from abc import ABC
 from typing import Optional, ClassVar, Type
 import gym
 from gym import spaces
-from stable_baselines3 import A2C, PPO
-from stable_baselines3.common.base_class import BaseAlgorithm
+
 
 from common.gym_wrappers.batch_env.batched_vector_env import VectorEnv
 from settings import ContinualRLSetting, Method
 from settings.active.rl.wrappers import RemoveTaskLabelsWrapper, NoTypedObjectsWrapper
 from settings.active.rl.continual_rl_setting import ContinualRLSetting
+from utils.logging_utils import get_logger
 
-from stable_baselines3.common.base_class import is_image_space, VecEnv, DummyVecEnv, VecTransposeImage 
+logger = get_logger(__file__)
+
+try:
+    from stable_baselines3 import A2C, PPO
+    from stable_baselines3.common.base_class import BaseAlgorithm
+    from stable_baselines3.common.base_class import is_image_space, VecEnv, DummyVecEnv, VecTransposeImage 
+except ImportError as e:
+    raise ImportError(f"The stable_baselines3 package needs to be in order to "
+                      f"these Methods: {e} \n (you can install it with "
+                      f"`pip install stable-baselines3[extra]`).")
 
 class WrapEnvPatch:
     # Patch for the _wrap_env function of the BaseAlgorithm class of

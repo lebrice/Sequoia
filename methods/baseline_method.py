@@ -37,7 +37,7 @@ from .models import BaselineModel, ForwardPass
 
 logger = get_logger(__file__)
 
-from . import register_method
+from methods import register_method
 
 @register_method
 @dataclass
@@ -92,10 +92,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # NOTE: This right here doesn't create the fields, it just gives some
         # type information for static type checking.
         self.trainer: Trainer
-        self.model: LightningModule
+        self.model: BaselineModel
 
-      
-    
     def configure(self, setting: SettingType) -> None:
         """Configures the method for the given Setting.
 
@@ -121,12 +119,13 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         if wandb_options.run_name is None:
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
         
-        self.trainer: Trainer = self.create_trainer(setting)
-        self.model: BaselineModel = self.create_model(setting)
+        self.trainer = self.create_trainer(setting)
+        self.model = self.create_model(setting)
         self.Observations: Type[Observations] = setting.Observations
         self.Actions: Type[Actions] = setting.Actions
         self.Rewards: Type[Rewards] = setting.Rewards
 
+        setting.batch_size = self.hparams.batch_size
 
     def fit(self,
             train_env: Environment[Observations, Actions, Rewards] = None,

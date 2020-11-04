@@ -12,6 +12,8 @@ from common.config import Config
 from common.batch import Batch
 
 from settings import ClassIncrementalSetting, Observations, Actions, Rewards
+from settings.assumptions.incremental import IncrementalSetting
+
 from utils import dict_intersection, zip_dicts, prod
 from utils.logging_utils import get_logger
 
@@ -103,15 +105,14 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # logger.debug(f"Setting output head to {value}")
         self._output_head = value
 
-    # @auto_move_data
-    def forward(self, input_batch: Any) -> Dict[str, Tensor]:
+    @auto_move_data
+    def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
         """ Forward pass of the Model. Returns a dict."""
         # Just testing things out here.
-        observation: Observations = self.Observations.from_inputs(input_batch)
-        assert isinstance(observation, self.Observations)
+        assert isinstance(observations, self.Observations)
         
         # Get the task labels from the observation.
-        task_labels = observation.task_labels
+        task_labels = observations.task_labels
         
         # IDEA: This would basically call super.forward() on the slices of the
         # batch, and then re-combine the forward pass dicts before returning
@@ -121,20 +122,24 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         if task_labels is None or not len(task_labels):
             # Default back to the behaviour of the parent class, which will use
             # the current output head (at attribute `self.output_head`).
-            return super().forward(observation)
+            return super().forward(observations)
 
         if isinstance(task_labels, (Tensor, np.ndarray)):
             unique_task_labels = torch.unique(task_labels).tolist()
         else:
+            # In case task_labels is a list of numpy arrays, convert it to a
+            # list of elements (optional ints).
+            task_labels = [int(label) if label != None else None for label in task_labels]
             unique_task_labels = list(set(task_labels))
+
 
         if len(unique_task_labels) == 1:
             # If everything is in the same task, no need to split/merge.
             task_id = unique_task_labels[0]
             with self.temporarily_in_task(task_id):
-                return super().forward(observation)
+                return super().forward(observations)
 
-        batch_size = observation.batch_size
+        batch_size = observations.batch_size
 
         # The 'merged' forward pass result dict.
         merged_results: Dict = {}
@@ -176,7 +181,8 @@ class ClassIncrementalModel(BaseModel[SettingType]):
                 # Make a partial observation without the task labels, so that
                 # super().forward will use the current output head.
                 tensor_slices = {
-                    name: tensor[task_indices] for name, tensor in observation.items()
+                    name: torch.as_tensor(tensor[task_indices], device=self.device)
+                    for name, tensor in observations.items()
                     if name != "task_labels"
                 }
                 partial_observation = self.Observations(**tensor_slices)

@@ -276,6 +276,15 @@ class Batch(Sequence[Item], ABC):
             if len(inputs) == 1 and isinstance(inputs[0], (list, tuple)):
                 assert False, inputs
                 inputs = inputs[0]
+            inputs = [
+                np.asarray(v) if not isinstance(v, Tensor) else v for v in inputs
+            ]
+            # Ndarray with 'object' dtype isn't supported by pytorch, so we
+            # convert any of those to lists.
+            inputs = [
+                [v_i.item() if isinstance(v_i, np.ndarray) else v_i for v_i in v]
+                if v.dtype == np.object_ else v for v in inputs
+            ]
             return cls(*inputs)
 
         if isinstance(inputs, Tensor):

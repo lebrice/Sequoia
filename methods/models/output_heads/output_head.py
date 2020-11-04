@@ -66,8 +66,8 @@ class OutputHead(nn.Module):
                  name: str = ""):
         super().__init__()
         self.input_size = input_size
-        self.action_space: gym.Space = action_space
-        self.reward_space: gym.Space = reward_space or action_space
+        self.action_space = action_space
+        self.reward_space = reward_space or action_space
         self.hparams = hparams or self.HParams()
         self.name = name or type(self).name
 
