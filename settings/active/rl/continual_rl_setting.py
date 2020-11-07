@@ -1,7 +1,7 @@
 import itertools
 from dataclasses import dataclass
 from functools import partial
-from typing import ClassVar, Dict, List, Type, Callable, Union, Optional
+from typing import ClassVar, Dict, List, Type, Callable, Union, Optional, Sequence
 from pathlib import Path
 
 import gym
@@ -89,6 +89,15 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # Just as a reminder, these are the fields defined in the base classes:
         # x: Tensor
         # task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
+
+    @dataclass(frozen=True)
+    class Rewards(IncrementalSetting.Rewards,
+                  #ActiveSetting.Rewards
+                 ):
+        """ Rewards in a continual RL Setting. """
+        # Just as a reminder, these are the fields defined in the base classes:
+        # y: Optional[Tensor]
+        done: Optional[Sequence[bool]] = None
 
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.channels_first_if_needed)
 

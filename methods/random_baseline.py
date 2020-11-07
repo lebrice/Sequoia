@@ -2,7 +2,6 @@
 
 Should be applicable to any Setting.
 """
-from dataclasses import dataclass
 
 import gym
 from utils import get_logger, singledispatchmethod
@@ -16,7 +15,6 @@ from methods import register_method
 logger = get_logger(__file__)
 
 @register_method
-@dataclass
 class RandomBaselineMethod(Method, target_setting=Setting):
     """ Baseline method that gives random predictions for any given setting.
 
@@ -36,10 +34,8 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         return action_space.sample()
 
-    def configure(self, setting: Setting):
-        self.action_space = setting.action_space
-        super().configure(setting)
-
+    ## Methods below are just here for testing purposes.
+        
     @singledispatchmethod
     def validate_results(self, setting: Setting, results: Setting.Results):
         """Called during testing. Use this to assert that the results you get

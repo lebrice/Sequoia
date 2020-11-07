@@ -428,17 +428,18 @@ class Setting(SettingABC,
         """ Do a quick check to make sure that interacting with the envs/dataloaders
         works correctly.
         """
+        from settings.passive import PassiveEnvironment
+        from settings.active import ActiveEnvironment
+        
+        # Check that the env's spaces are batched versions of the settings'.
+        from gym.vector.utils import batch_space
+
         batch_size = 5
         for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
             print(f"\n\nChecking loader method {loader_method.__name__}\n\n")
             env = loader_method(batch_size=batch_size)
             batch_size = env.batch_size
 
-            from settings.passive import PassiveEnvironment
-            from settings.active import ActiveEnvironment
-            
-            # Check that the env's spaces are batched versions of the settings'.
-            from gym.vector.utils import batch_space
             # We could compare the spaces directly, but that's a bit messy, and
             # would be depends on the type of spaces for each. Instead, we could
             # check samples from such spaces on how the spaces are batched. 

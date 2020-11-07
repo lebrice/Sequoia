@@ -39,7 +39,7 @@ class BaseHParams(Serializable, Parseable):
     # NOTE: These don't get parsed from the command-line.
     available_optimizers: ClassVar[Dict[str, Type[Optimizer]]] = available_optimizers.copy()
     available_encoders: ClassVar[Dict[str, Type[nn.Module]]] = available_encoders.copy()
-    
+
     # Learning rate of the optimizer.
     learning_rate: float = 0.001
     # L2 regularization term for the model weights.

@@ -253,9 +253,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
         actions = forward_pass.actions
         
         if rewards is None:
-            assert False, "not using this API atm."
             # Get the reward from the environment (the dataloader).
-            rewards = environment.send(actions)
+            rewards = environment.send(actions.detach())
             assert rewards is not None
 
         loss: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)

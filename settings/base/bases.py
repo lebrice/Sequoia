@@ -310,8 +310,23 @@ class Method(Generic[SettingType], Parseable, ABC):
             [description]
         """
 
-    ## Below this are some class attributes and methods related to the Tree.
+    ## Below this are some class attributes and methods related to the Tree
+    ## structure and for launching Experiments using this method.
 
+    @classmethod
+    def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
+        from main import Experiment
+        experiment: Experiment
+        # Create the Method object from the command-line:
+        method = cls.from_args(argv)
+        # Then create the 'Experiment' from the command-line, which makes it
+        # possible to choose between all the settings.
+        experiment = Experiment.from_args(argv)
+        # Set the method attribute to be the one parsed above.
+        experiment.method = method
+        results: Results = experiment.launch(argv)
+        return results
+    
     @classmethod
     def is_applicable(cls, setting: Union[SettingType, Type[SettingType]]) -> bool:
         """Returns wether this Method is applicable to the given setting.

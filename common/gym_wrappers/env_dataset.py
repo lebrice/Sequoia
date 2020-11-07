@@ -101,6 +101,8 @@ class EnvDataset(gym.Wrapper,
         # Here we add calls to the (potentially overwritten) 'observation',
         # 'action' and 'reward' methods.
         action = self.action(action)
+        if isinstance(action, Tensor) and action.requires_grad:
+            action = action.detach()
         observation, reward, done, info = self.env.step(action)
         observation = self.observation(observation)
         reward = self.reward(reward)
@@ -159,6 +161,8 @@ class EnvDataset(gym.Wrapper,
                 "You have to send an action using send() between every "
                 "observation_."
             )
+        if hasattr(self.action_, "detach"):
+            self.action_ = self.action_.detach()
         self.observation_, self.reward_, self.done_, self.info_ = self.step(self.action_)
         return self.observation_
 

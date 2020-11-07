@@ -47,6 +47,8 @@ class TypedObjectsWrapper(IterableWrapper):
 
     def step(self, action: Actions) -> Tuple[Observations, Rewards, bool, Dict]:
         action = unwrap_actions(action)
+        if hasattr(action, "detach"):
+            action = action.detach()
         observation, reward, done, info = self.env.step(action)
         observation = self.Observations.from_inputs(observation)
         reward = self.Rewards.from_inputs(reward)
@@ -57,17 +59,18 @@ class TypedObjectsWrapper(IterableWrapper):
         return self.Observations.from_inputs(observation)
 
 
-def unwrap_actions(actions: Actions) -> np.ndarray:
+def unwrap_actions(actions: Actions) -> Union[Tensor, np.ndarray]:
     if isinstance(actions, Actions):
-        # This assumes that the actions object has only one field (which is fine for now).
+        actions = actions.as_tuple()
+    if len(actions) == 1:
         actions = actions[0]
-    assert not isinstance(actions, Actions)
     return actions
 
 def unwrap_rewards(rewards: Rewards) -> Union[Tensor, np.ndarray]:
     if isinstance(rewards, Rewards):
         # This assumes that the actions object has only one field (which is fine for now).
-        assert len(rewards) != 0, (rewards, rewards.field_names)
+        rewards = rewards.as_tuple()
+    if len(rewards) == 1 or (len(rewards) == 2 and rewards[1] is None):
         rewards = rewards[0]
     assert not isinstance(rewards, Rewards)
     return rewards
@@ -96,6 +99,8 @@ class NoTypedObjectsWrapper(IterableWrapper):
     
     def step(self, action):
         action = unwrap_actions(action)
+        if hasattr(action, "detach"):
+            action = action.detach()
         observation, reward, done, info = self.env.step(action)
         observation = unwrap_observations(observation)
         reward = unwrap_rewards(reward)

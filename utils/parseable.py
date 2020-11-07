@@ -1,11 +1,11 @@
+import dataclasses
 import shlex
 import sys
-from abc import abstractmethod, ABC
 from argparse import Namespace
-from dataclasses import dataclass, field, is_dataclass
-from typing import List, Optional, Tuple, Type, TypeVar, Union
+from dataclasses import Field, dataclass, field, is_dataclass
+from typing import Dict, List, Optional, Tuple, Type, TypeVar, Union
 
-from simple_parsing import ArgumentParser, ParsingError
+from simple_parsing import ArgumentParser
 
 from .logging_utils import get_logger
 
@@ -83,3 +83,7 @@ class Parseable:
         instance, unused_args = from_args(cls, argv=argv, reorder=reorder)
         instance._argv = argv or sys.argv
         return instance, unused_args
+
+    @classmethod
+    def fields(cls) -> Dict[str, Field]:
+        return {f.name: f for f in dataclasses.fields(cls)}

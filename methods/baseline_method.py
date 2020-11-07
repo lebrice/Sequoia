@@ -223,20 +223,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             # SaveVaeSamplesCallback(),
         ]
 
-    @classmethod
-    def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
-        from main import Experiment
-        experiment: Experiment
-        # Create the Method object from the command-line:
-        method = cls.from_args(argv)
-        # Then create the 'Experiment' from the command-line, which makes it
-        # possible to choose between all the settings.
-        experiment = Experiment.from_args(argv)
-        # Set the method attribute to be the one parsed above.
-        experiment.method = method
-        results: Results = experiment.launch(argv)
-        return results
-
     def apply_all(self, argv: Union[str, List[str]] = None) -> Dict[Type["Method"], Results]:
         applicable_settings = self.get_applicable_settings()
 
