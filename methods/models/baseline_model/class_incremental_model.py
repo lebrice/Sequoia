@@ -179,7 +179,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
                     name: tensor[task_indices] for name, tensor in observation.items()
                     if name != "task_labels"
                 }
-                partial_observation = self.Observation(**tensor_slices)
+                partial_observation = self.Observations(**tensor_slices)
                 task_forward_pass = super().forward(partial_observation)
 
             if not merged_results:
@@ -210,7 +210,8 @@ class ClassIncrementalModel(BaseModel[SettingType]):
                             assert isinstance(full_tensor, Tensor)
                             assert isinstance(partial_tensor, Tensor)
                             full_tensor[task_indices] = partial_tensor
-
+        # Return an object of the same type as the results from each task.
+        return type(task_forward_pass)(**merged_results)
         return merged_results
 
     @contextmanager

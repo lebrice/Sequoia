@@ -376,7 +376,10 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             reward_space=self.reward_space,
             **kwargs,
         )
-        self.test_task_schedule = dict.fromkeys([step // dataloader.batch_size for step in transition_steps], range(len(transition_steps)))
+        self.test_task_schedule = dict.fromkeys(
+            [step // dataloader.batch_size for step in transition_steps],
+            range(len(transition_steps)),
+        )
         # a bit hacky, but it works.
         dataloader.task_schedule = self.test_task_schedule
         dataloader.max_steps = self.max_steps = len(dataset) // dataloader.batch_size
@@ -646,7 +649,6 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         lengths = self.get_episode_lengths()
         total_steps = self.get_total_steps()
         n_metrics_per_task = [len(task_metrics) for task_metrics in self.metrics]
-        assert all(n_metrics_per_task), n_metrics_per_task
         return ClassIncrementalResults(
             test_metrics=self.metrics
         )

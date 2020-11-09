@@ -49,14 +49,12 @@ class TrainerConfig(Serializable, Parseable):
     # How much of test dataset to check (floats = percent, int = num_batches)
     limit_test_batches: Union[int, float] = 1.0
 
+    no_wandb: bool = False
     # Options for wandb logging.
     wandb: WandbLoggerConfig = mutable_field(WandbLoggerConfig)
 
     def create_loggers(self) -> Optional[Union[LightningLoggerBase, List[LightningLoggerBase]]]:
-        if self.fast_dev_run:
-            return None
-        elif "pytest" in sys.modules:
-            # Running inside a pytest session, not logging to wandb.
+        if self.fast_dev_run or self.no_wandb or "pytest" in sys.modules:
             return None
         return self.wandb.make_logger(wandb_parent_dir=self.log_dir_root)
 

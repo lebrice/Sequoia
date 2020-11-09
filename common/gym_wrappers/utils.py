@@ -7,7 +7,7 @@ import gym
 import numpy as np
 from gym import spaces
 from gym.vector.utils import batch_space
-from torch.utils.data import IterableDataset
+from torch.utils.data import IterableDataset, DataLoader
 
 from utils.logging_utils import get_logger
 
@@ -136,7 +136,7 @@ class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
             return PolicyEnv.__iter__(self)
         
         # NOTE: This works even though IterableDataset isn't a gym.Wrapper.
-        if not has_wrapper(self.env, IterableDataset):
+        if not has_wrapper(self.env, IterableDataset) and not isinstance(self.env, DataLoader):
             logger.warning(UserWarning(
                 f"Will try to iterate on a wrapper for env {self.env} which "
                 f"doesn't have the EnvDataset or PolicyEnv wrappers and isn't "

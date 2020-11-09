@@ -125,31 +125,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             datamodule=datamodule,
         )
 
-    def test(self,
-             test_dataloaders: Optional[Union[DataLoader, List[DataLoader]]] = None,
-             ckpt_path: Optional[str] = 'best',
-             verbose: bool = True,
-             datamodule: Optional[LightningDataModule] = None) -> Metrics:
-        """ Test the method on the given test dataloader and return the corresponding
-        Metrics.
-
-        TODO: It would be better if we had a more "closed" interface where we
-        would just give the unlabeled samples and ask for predictions, and
-        calculate the accuracy ourselves.
-        
-        NOTE: This isn't used atm. The idea is that some setting might be fine
-        with giving the full test dataloader to the method, rather than having
-        to step through it like a gym environment.
-        """
-        test_results = self.trainer.test(
-            model=self.model,
-            test_dataloaders=test_dataloaders,
-            ckpt_path=ckpt_path,
-            verbose=verbose,
-            datamodule=datamodule,
-        )
-        # ...
-
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         """ Get a batch of predictions (actions) for a batch of observations.
         
