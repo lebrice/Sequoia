@@ -1,16 +1,15 @@
 import itertools
 from dataclasses import dataclass
 from functools import partial
-from typing import ClassVar, Dict, List, Type, Callable, Union, Optional, Sequence
 from pathlib import Path
+from typing import (Callable, ClassVar, Dict, List, Optional, Sequence, Type,
+                    Union)
 
 import gym
 import numpy as np
 from gym import spaces
-from gym.envs.classic_control import CartPoleEnv
 from gym.envs.atari import AtariEnv
-from simple_parsing import choice, list_field
-from torch import Tensor
+from gym.envs.classic_control import CartPoleEnv
 
 from common import Batch, Config
 from common.gym_wrappers import (MultiTaskEnvironment, SmoothTransitions,
@@ -19,22 +18,29 @@ from common.gym_wrappers import (MultiTaskEnvironment, SmoothTransitions,
 from common.gym_wrappers.batch_env import BatchedVectorEnv
 from common.gym_wrappers.env_dataset import EnvDataset
 from common.gym_wrappers.pixel_observation import PixelObservationWrapper
-from common.gym_wrappers.utils import classic_control_env_prefixes, IterableWrapper, has_wrapper
-from common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
 from common.gym_wrappers.sparse_space import Sparse
+from common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
+from common.gym_wrappers.utils import (IterableWrapper,
+                                       classic_control_env_prefixes,
+                                       has_wrapper)
 from common.metrics import RegressionMetrics
 from common.transforms import Transforms
 from settings.active import ActiveSetting
-from settings.assumptions.incremental import IncrementalSetting, TestEnvironment
-from settings.base.results import Results
+from settings.assumptions.incremental import (IncrementalSetting,
+                                              TestEnvironment)
 from settings.base import Method
+from settings.base.results import Results
+from simple_parsing import choice, list_field
+from torch import Tensor
 from utils import dict_union, get_logger
 
+from .. import ActiveEnvironment
 from .gym_dataloader import GymDataLoader
 from .make_env import make_batched_env
 from .rl_results import RLResults
-from .wrappers import HideTaskLabelsWrapper, RemoveTaskLabelsWrapper, TypedObjectsWrapper, NoTypedObjectsWrapper
-from .. import ActiveEnvironment
+from .wrappers import (AddDoneToObservation, HideTaskLabelsWrapper,
+                       NoTypedObjectsWrapper, RemoveTaskLabelsWrapper,
+                       TypedObjectsWrapper)
 
 logger = get_logger(__file__)
 
@@ -89,14 +95,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # Just as a reminder, these are the fields defined in the base classes:
         # x: Tensor
         # task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
-
-    @dataclass(frozen=True)
-    class Rewards(IncrementalSetting.Rewards,
-                  #ActiveSetting.Rewards
-                 ):
-        """ Rewards in a continual RL Setting. """
-        # Just as a reminder, these are the fields defined in the base classes:
-        # y: Optional[Tensor]
         done: Optional[Sequence[bool]] = None
 
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.channels_first_if_needed)
@@ -123,8 +121,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # loop. Depending on what an 'episode' might represent in your setting, this
     # could be as low as 1 (for example, supervised learning, episode == epoch).
     test_loop_episodes: int = 100
-    
-    
+
+    # Wether we should add the 'done' vector as being part of the observations.
+    add_done_to_observations: bool = True
+
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
           
@@ -186,7 +186,9 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     
     def make_temp_env(self) -> gym.Env:
         """ Creates a temporary environment.
-        Will be called in the 'constructor' (__post_init__), so this should
+        
+        Will be called in the 'constructor' (__post_init__) to get the
+        observation/action/reward spaces, so this should
         ideally depend on as little state as possible.
         """
         if self.env_name:
@@ -212,7 +214,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             cl_wrapper = SmoothTransitions
         else:
             cl_wrapper = MultiTaskEnvironment
-
         # We want to have a 'task-label' space, but it will be filled with
         # None values when task boundaries are smooth.
         temp_env = cl_wrapper(
@@ -220,6 +221,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             task_params=cl_task_params,
             add_task_id_to_obs=True,
         )
+        if self.add_done_to_observations:
+            temp_env = AddDoneToObservation(temp_env)
         return temp_env
     
     
@@ -316,6 +319,11 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         dataset = EnvDataset(env, max_steps=self.steps_per_task)
         # Create a GymDataLoader for the EnvDataset.
         dataloader = GymDataLoader(dataset)
+        if self.config.seed:
+            dataloader.seed([self.config.seed + i for i in range(dataloader.batch_size)])
+        else:
+            dataloader.seed(None)
+
         self.train_env = dataloader
         return self.train_env
 
@@ -404,6 +412,11 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # TODO: Hide or remove the task labels?
             # wrappers.append(RemoveTaskLabelsWrapper)
             wrappers.append(HideTaskLabelsWrapper)
+        
+        # Add the 'done' vector as part of the observation.
+        if self.add_done_to_observations:
+            wrappers.append(AddDoneToObservation)
+        
         return wrappers
     
     def val_dataloader(self, batch_size: int = None) -> Environment:
@@ -435,7 +448,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         )
         dataset = EnvDataset(env, max_steps=self.steps_per_task)
         dataloader = GymDataLoader(dataset)
-
+        if self.config.seed:
+            dataloader.seed([self.config.seed + i for i in range(dataloader.batch_size)])
+        else:
+            dataloader.seed(None)
         self.val_env = dataloader
         return self.val_env
 
@@ -496,6 +512,11 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # TODO: Hide or remove the task labels?
             # wrappers.append(RemoveTaskLabelsWrapper)
             wrappers.append(HideTaskLabelsWrapper)
+        
+        # Add the 'done' vector as part of the observation.
+        if self.add_done_to_observations:
+            wrappers.append(AddDoneToObservation)
+        
         return wrappers
 
     def test_dataloader(self, batch_size: int = None) -> TestEnvironment:
@@ -539,6 +560,12 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         )
         dataset = EnvDataset(env, max_steps=self.steps_per_task)
         dataloader = GymDataLoader(dataset)
+        
+        if self.config.seed:
+            dataloader.seed([self.config.seed + i for i in range(dataloader.batch_size)])
+        else:
+            dataloader.seed(None)
+
         test_dir = "results"
         # TODO: We should probably change the max_steps depending on the
         # batch size of the env.
@@ -608,15 +635,17 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # TODO: Hide or remove the task labels?
             # wrappers.append(RemoveTaskLabelsWrapper)
             wrappers.append(HideTaskLabelsWrapper)
-        return wrappers
 
-    def get_metrics(self, actions, rewards):
-        assert False, rewards
-        return super().get_metrics(actions, rewards)
+        # Add the 'done' vector as part of the observation.
+        if self.add_done_to_observations:
+            wrappers.append(AddDoneToObservation)
+        
+        return wrappers
 
 
 class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
     def get_results(self) -> RLResults:
+        # TODO: Create a RLMetrics object?
         rewards = self.get_episode_rewards()
         lengths = self.get_episode_lengths()
         total_steps = self.get_total_steps()

@@ -314,7 +314,8 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
     def step(self, action):
         # TODO: Its A bit uncomfortable that we have to 'unwrap' these here.. 
         from settings.active.rl.wrappers import unwrap_rewards, unwrap_actions, unwrap_observations
-        action_for_stats = unwrap_actions(action)
+        
+        action_for_stats = action.y_pred if isinstance(action, Actions) else action
 
         self._before_step(action_for_stats)
         

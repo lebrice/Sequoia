@@ -201,7 +201,7 @@ class Batch(ABC):
     def as_namedtuple(self) -> Tuple[Item, ...]:
         return self._namedtuple(**self.as_dict())
     
-    def as_tuples(self) -> Iterable[Tuple[Item, ...]]:
+    def as_list_of_tuples(self) -> Iterable[Tuple[Item, ...]]:
         """Returns an iterable of the items in the 'batch', each item as a
         namedtuple (list of tuples).
         """

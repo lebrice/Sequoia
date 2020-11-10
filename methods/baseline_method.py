@@ -118,7 +118,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         wandb_options: WandbLoggerConfig = self.trainer_options.wandb
         if wandb_options.run_name is None:
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
-        
+
         self.trainer = self.create_trainer(setting)
         self.model = self.create_model(setting)
         self.Observations: Type[Observations] = setting.Observations
@@ -140,6 +140,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             "For now, Setting should have been nice enough to call "
             "method.configure(setting=self) before calling `fit`!"
         )
+        
         return self.trainer.fit(
             model=self.model,
             train_dataloader=train_env,

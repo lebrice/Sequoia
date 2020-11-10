@@ -46,34 +46,30 @@ class TypedObjectsWrapper(IterableWrapper):
         super().__init__(env=env)
 
     def step(self, action: Actions) -> Tuple[Observations, Rewards, bool, Dict]:
-        action = unwrap_actions(action)
-        if hasattr(action, "detach"):
-            action = action.detach()
+        # "unwrap" the actions before passing it to the wrapped environment.
+        if isinstance(action, Actions):
+            action = unwrap_actions(action)
+        
         observation, reward, done, info = self.env.step(action)
         observation = self.Observations.from_inputs(observation)
+
         reward = self.Rewards.from_inputs(reward)
         return observation, reward, done, info
-    
+
     def reset(self, **kwargs) -> Observations:
         observation = self.env.reset(**kwargs)
         return self.Observations.from_inputs(observation)
 
 
 def unwrap_actions(actions: Actions) -> Union[Tensor, np.ndarray]:
-    if isinstance(actions, Actions):
-        actions = actions.as_tuple()
-    if len(actions) == 1:
-        actions = actions[0]
-    return actions
+    assert isinstance(actions, Actions), actions
+    return actions.y_pred
+
 
 def unwrap_rewards(rewards: Rewards) -> Union[Tensor, np.ndarray]:
-    if isinstance(rewards, Rewards):
-        # This assumes that the actions object has only one field (which is fine for now).
-        rewards = rewards.as_tuple()
-    if len(rewards) == 1 or (len(rewards) == 2 and rewards[1] is None):
-        rewards = rewards[0]
-    assert not isinstance(rewards, Rewards)
-    return rewards
+    assert isinstance(rewards, Rewards), rewards
+    return rewards.y
+
 
 def unwrap_observations(observations: Observations) -> Union[Tensor, np.ndarray]:
     if isinstance(observations, Observations):
@@ -168,3 +164,48 @@ class HideTaskLabelsWrapper(TransformObservation):
             Sparse(task_label_space, none_prob=1.)
         ])
 
+
+
+def add_done(observation, done: bool):
+    if isinstance(observation, tuple):
+        observation =  observation + (done,)
+    elif isinstance(observation, dict):
+        observation["done"] = done
+    else:
+        observation = (observation, done)
+    return observation
+
+
+class AddDoneToObservation(gym.ObservationWrapper):
+    # FIXME: Need to add the 'done' vector to the observation, so we can
+    # get access to the 'end of episode' signal in the shared_step, since
+    # when iterating over the env like a dataloader, the yielded items only
+    # have the observations, and dont have the 'done' vector. (so as to be
+    # consistent with supervised learning).
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        if isinstance(env.observation_space, spaces.Tuple):
+            new_spaces = list(env.observation_space.spaces)
+            new_spaces.append(spaces.Discrete(2))
+            self.observation_space = spaces.Tuple(new_spaces)
+        elif isinstance(env.observation_space, spaces.Dict):
+            new_spaces = env.observation_space.spaces.copy()
+            assert "done" not in spaces, f"space shouldn't already have a 'done' key."
+            new_spaces["done"] = spaces.Discrete(2)
+            self.observation_space = spaces.Dict(new_spaces)
+        else:
+            self.observation_space = spaces.Tuple([
+                self.env.observation_space,
+                spaces.Discrete(2) # boolean value. (0 or 1)
+            ])
+
+    def reset(self, **kwargs):
+        observation = self.env.reset()
+        done = 0
+        return add_done(observation, done)
+    
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        observation = add_done(observation, done)
+        return observation, reward, done, info 
+    

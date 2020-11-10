@@ -159,9 +159,9 @@ class PolicyHead(ClassificationHead):
             ]
 
         # Go from "tuples of lists" to "list of tuples":
-        per_env_observation = observations.as_tuples()
-        per_env_action = actions.as_tuples()
-        per_env_reward = rewards.as_tuples()
+        per_env_observation = observations.as_list_of_tuples()
+        per_env_action = actions.as_list_of_tuples()
+        per_env_reward = rewards.as_list_of_tuples()
 
         per_env_items = zip(per_env_observation, per_env_action, per_env_reward)
 
@@ -169,35 +169,44 @@ class PolicyHead(ClassificationHead):
             # Extract the actions/observations, etc for each environment.
             self.episode_buffers[i].append(env_items)
 
-        total_loss = torch.zeros(1)
-        for env_index, episode_ended in enumerate(rewards.done):
-            if episode_ended:
-                # If the episode in that environment is ended, then perform an
-                # update with the REINFORCE algorithm.
-                # TODO: Maybe unpack those and convert them into a 'batch' object?
-                observations, actions, rewards = zip(*self.episode_buffers[env_index])
-                
-                
-                loss = self.get_episode_loss(observations, actions, rewards)
-                total_loss += loss
-        assert False, total_loss
+        total_loss = Loss(self.name)
+        for env_index, episode_ended in enumerate(done):
+            # If the episode in that environment is ended, then perform an
+            # update with the REINFORCE algorithm.
+            # TODO: Maybe unpack those and convert them into a 'batch' object?
+            observations, actions, rewards = zip(*self.episode_buffers[env_index])
+            loss = self.get_episode_loss(observations, actions, rewards, episode_ended)
+            total_loss += loss
+
+        return total_loss
         # rewards = y
         # m = actions.policy
         # loss =  - actions.y_pred_log_prob * rewards
         # return Loss(self.name, loss)
 
-    def get_episode_loss(self, episode_observations: ContinualRLSetting.Observations,
-                               episode_actions: ContinualRLSetting.Observations,
-                               episode_rewards: ContinualRLSetting.Rewards) -> Loss:
-        """ NOTE: While the Batch Observations/Actions/Rewards are from
+    def get_episode_loss(self, observations: ContinualRLSetting.Observations,
+                               actions: ContinualRLSetting.Observations,
+                               rewards: ContinualRLSetting.Rewards,
+                               episode_ended: bool) -> Loss:
+        """ Gets a loss, given  
+        
+        
+        
+        NOTE: While the Batch Observations/Actions/Rewards are from
         the different environments, now they are actually a sequence from a
         single environment. 
         """
+        if episode_ended:
+            assert False, "HEYHEY!"
+        
         log_probabilities = torch.stack(
             [action.policy.log_prob(action.y_pred) for action in actions]
         )
         rewards = torch.stack([reward[0] for reward in rewards])
-        return self.policy_gradient_optimized(rewards=rewards, log_probs=log_probabilities)
+        loss = self.policy_gradient_optimized(rewards=rewards, log_probs=log_probabilities)
+        
+        # TODO: Add 'Metrics' for each episode?
+        return Loss("policy_gradient", loss)
 
     def policy_gradient_optimized(self, rewards: List[float], log_probs: List[Tensor]):
         """Implementation of the REINFORCE algorithm.

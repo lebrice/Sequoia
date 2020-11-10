@@ -50,6 +50,9 @@ class Rewards(Batch):
 
     For example, in a supervised setting, this would be the true labels, while
     in an RL setting, this would be the 'reward' for a state-action pair.
+    
+    TODO: Maybe add the task labels as a part of the 'Reward', to help with the
+    training of task-inference methods later on when we add those.
     """
     y: Optional[Tensor]
 
