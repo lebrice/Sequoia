@@ -57,9 +57,10 @@ class RegressionHead(OutputHead):
         y_pred = self.dense(representations)
         return Actions(y_pred)
 
-    def get_loss(self, forward_pass: ForwardPass, y: Tensor) -> Loss:
+    def get_loss(self, forward_pass: ForwardPass, actions: Actions, rewards: Rewards) -> Loss:
         actions: Actions = forward_pass.actions
         y_pred: Tensor = actions.y_pred
+        y: Tensor = rewards.y
 
         loss = self.loss_fn(y_pred, y)
         metrics = RegressionMetrics(y_pred=y_pred, y=y)

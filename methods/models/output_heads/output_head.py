@@ -90,9 +90,10 @@ class OutputHead(nn.Module):
         """
 
     @abstractmethod
-    def get_loss(self, forward_pass: ForwardPass, y: Tensor) -> Loss:
-        """ Given the forward pass (including the actions produced by this
-        output head), and the corresponding rewards, get a Loss to use for
-        training.
+    def get_loss(self, forward_pass: ForwardPass, actions: Actions, rewards: Rewards) -> Loss:
+        """ Given the forward pass,(a dict-like object that includes the
+        observations, representations and actions, the actions produced by this
+        output head and the resulting rewards, returns a Loss to use.
         """
+        
         

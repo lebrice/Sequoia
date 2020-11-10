@@ -89,7 +89,7 @@ class PolicyHead(ClassificationHead):
         self.episode_buffers: List[deque] = []
 
 
-    def forward(self, observations: Observations, representations: Tensor) -> PolicyHeadOutput:
+    def forward(self, observations: ContinualRLSetting.Observations, representations: Tensor) -> PolicyHeadOutput:
         """ Forward pass of a Policy head.
         
         NOTE: (@lebrice) This is identical to the forward pass of the
@@ -124,11 +124,10 @@ class PolicyHead(ClassificationHead):
             y_pred=actions,
         )
         return output
-
-    def get_loss(self, forward_pass: ForwardPass, y: Tensor) -> Loss:
-        """ Given the forward pass (including the actions produced by this
-        output head), and the corresponding rewards, get a Loss to use for
-        training.
+    
+    def get_loss(self, forward_pass: ForwardPass, actions: Actions, rewards: Rewards) -> Loss:
+        """ Given the forward pass, the actions produced by this output head and
+        the corresponding rewards, get a Loss to use for training.
         
         NOTE: The training procedure is fundamentally on-policy atm, i.e. the
         observation is a single state, not a rollout, and the reward is the
@@ -146,16 +145,11 @@ class PolicyHead(ClassificationHead):
         # have more than one 'action' inside the forward pass object.
         actions: PolicyHeadOutput = forward_pass.actions
         rewards: ContinualRLSetting.Rewards
-
-        if isinstance(y, Tensor):
-            done = torch.zeros(batch_size, dtype=torch.bool)
-            # TODO: Remove this.
-            done[0] = True
-            rewards = ContinualRLSetting.Rewards(y=y, done=done)
-        else:
-            rewards = y
-        assert isinstance(rewards, ContinualRLSetting.Rewards), rewards
-
+        
+        assert isinstance(observations, ContinualRLSetting.Observations)
+        # Note: we need to have a loss for each, here.
+        done: Sequence[bool] = observations.done
+        
         if not self.episode_buffers:
             # Setup the buffers, which will hold the observations / actions /
             # rewards for an episode for each environment.

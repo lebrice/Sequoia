@@ -22,6 +22,7 @@ from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
 from simple_parsing import list_field
 from torch import nn, Tensor
+from torch.optim.optimizer import Optimizer
 
 from common.config import Config
 from common.loss import Loss
@@ -254,7 +255,12 @@ class BaseModel(LightningModule, Generic[SettingType]):
         
         if rewards is None:
             # Get the reward from the environment (the dataloader).
-            rewards = environment.send(actions.detach())
+            if self.config.debug:
+                environment.render()
+                # import matplotlib.pyplot as plt
+                # plt.waitforbuttonpress(10)
+            
+            rewards = environment.send(actions)
             assert rewards is not None
 
         loss: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)
@@ -318,8 +324,20 @@ class BaseModel(LightningModule, Generic[SettingType]):
         total_loss = Loss(name=loss_name)
         if rewards:
             assert rewards.y is not None
+
+            # TODO: If we decide to re-organize the forward pass object to also
+            # contain the predictions of the self-supervised tasks, (atm they
+            # perform their 'forward pass' in their get_loss functions)
+            # then we could change 'actions' to be a dict, and index the
+            # dict with the 'name' of each output head, like so:
+            # actions_of_head = forward_pass.actions[self.output_head.name]
+            # rewards_of_heawd = forward_pass.rewards[self.output_head.name]
+
+            # For now though, we only have one "prediction" in the actions:
+            actions = forward_pass.actions
+
             # So far we only use 'y' from the rewards in the output head.
-            supervised_loss = self.output_head.get_loss(forward_pass, y=rewards.y)
+            supervised_loss = self.output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
             total_loss += supervised_loss
         return total_loss
 
@@ -352,6 +370,29 @@ class BaseModel(LightningModule, Generic[SettingType]):
     def learning_rate(self) -> float:
         return self.hp.learning_rate
     
+    
+    def backward(self, loss: Tensor, optimizer: Optimizer, optimizer_idx: int, *args, **kwargs) -> None:
+        """
+        Override backward with your own implementation if you need to.
+
+        Args:
+            loss: Loss is already scaled by accumulated grads
+            optimizer: Current optimizer being used
+            optimizer_idx: Index of the current optimizer being used
+
+        Called to perform backward step.
+        Feel free to override as needed.
+        The loss passed in has already been scaled for accumulated gradients if requested.
+
+        Example::
+
+            def backward(self, loss, optimizer, optimizer_idx):
+                loss.backward()
+
+        """
+        loss.backward(retain_graph=True)
+        
+        
     @learning_rate.setter
     def learning_rate(self, value: float) -> None:
         self.hp.learning_rate = value
