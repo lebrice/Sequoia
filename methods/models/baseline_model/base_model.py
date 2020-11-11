@@ -264,6 +264,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             assert rewards is not None
 
         loss: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)
+        
         return {
             "loss": loss.loss,
             "log": loss.to_log_dict(),
@@ -324,14 +325,13 @@ class BaseModel(LightningModule, Generic[SettingType]):
         total_loss = Loss(name=loss_name)
         if rewards:
             assert rewards.y is not None
-
             # TODO: If we decide to re-organize the forward pass object to also
             # contain the predictions of the self-supervised tasks, (atm they
             # perform their 'forward pass' in their get_loss functions)
             # then we could change 'actions' to be a dict, and index the
             # dict with the 'name' of each output head, like so:
             # actions_of_head = forward_pass.actions[self.output_head.name]
-            # rewards_of_heawd = forward_pass.rewards[self.output_head.name]
+            # rewards_of_head = forward_pass.rewards[self.output_head.name]
 
             # For now though, we only have one "prediction" in the actions:
             actions = forward_pass.actions
@@ -390,7 +390,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
                 loss.backward()
 
         """
-        loss.backward(retain_graph=True)
+        # TODO: There might be no loss at some steps, because for instance
+        # we haven't reached the end of an episode yet. Need to figure out
+        # how to do backprop then.
+        if loss != 0.:
+            return loss.backward(retain_graph=True)
         
         
     @learning_rate.setter

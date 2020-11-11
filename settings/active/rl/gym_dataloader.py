@@ -214,6 +214,9 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
         # if self.actions_type and not isinstance(action, self.actions_type):
         #     raise RuntimeError(f"Expected to receive an action of type {self.actions_type}?")
         # logger.debug(f"Receiving actions {action}")
+        if isinstance(action, Actions):
+            action = action.y_pred.cpu().detach().numpy().tolist()
+        assert action in self.env.action_space, (action, self.env.action_space)
         return self.env.send(action)
 
     @classmethod

@@ -87,7 +87,7 @@ class ClassificationHead(OutputHead):
             logits=logits,
             y_pred=y_pred,
         )
-        
+
     def get_loss(self, forward_pass: ForwardPass, actions: ClassificationOutput, rewards: Rewards) -> Loss:
         logits: Tensor = actions.logits
         y_pred: Tensor = actions.y_pred

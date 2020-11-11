@@ -1,9 +1,10 @@
 import dataclasses
 import itertools
 from dataclasses import dataclass
-from typing import Dict, Tuple, Union, List
+from typing import Dict, Tuple, Union, List, Optional, TypeVar
 from abc import abstractmethod, ABC
 from collections import deque
+
 import gym
 import numpy as np
 import torch
@@ -53,7 +54,7 @@ class PolicyHead(ClassificationHead):
         # The maximum length of the buffer that will hold the most recent
         # states/actions/rewards of the current episode. When a batched
         # environment is used
-        max_episode_window_length: int = 50
+        max_episode_window_length: int = 10
     
     def __init__(self,
                  input_size: int,
@@ -115,26 +116,43 @@ class PolicyHead(ClassificationHead):
         # The policy is the distribution over actions given the current state.
         policy = Categorical(logits=logits)
         actions = policy.sample()
-
-        # NOTE: Since the action space is discrete(n), the index chosen also
-        # corresponds to the chosen action.
         output = PolicyHeadOutput(
-            policy=policy,
-            logits=logits,
             y_pred=actions,
+            logits=logits,
+            policy=policy,
         )
         return output
     
-    def get_loss(self, forward_pass: ForwardPass, actions: Actions, rewards: Rewards) -> Loss:
+    def get_loss(self,
+                 forward_pass: ForwardPass,
+                 actions: PolicyHeadOutput,
+                 rewards: ContinualRLSetting.Rewards) -> Loss:
         """ Given the forward pass, the actions produced by this output head and
-        the corresponding rewards, get a Loss to use for training.
+        the corresponding rewards for the current step, get a Loss to use for
+        training.
         
         NOTE: The training procedure is fundamentally on-policy atm, i.e. the
         observation is a single state, not a rollout, and the reward is the
-        immediate reward at the current step. Therefore, this should be taken
-        into consideration when implementing an RL output head.
+        immediate reward at the current step.
         
-        TODO: Change the second argument to be `reward: Rewards` instead of `y`?
+        Therefore, what we do here is to first split things up and push the
+        observations/actions/rewards into a per-environment buffer, of max
+        length `self.hparams.max_episode_window_length`. These buffers get
+        cleared when starting a new episode in their corresponding environment.
+        
+        The contents of this buffer are then rearranged and presented to the
+        `get_episode_loss` method in order to get a loss for the given episode.
+        The `get_episode_loss` method is also given the environment index, and
+        is passed a boolean `episode_ended` that indicates wether the last
+        items in the sequences it received mark the end of the episode.
+        
+        TODO: My hope is that this will allow us to implement RL methods that
+        need a complete episode in order to give a loss to train with, as well
+        as methods (like A2C, I think) which can give a Loss even when the
+        episode isn't over yet.
+        
+        Also, standard supervised learning could possibly be recovered if you
+        set the maximum length of the 'episode buffer' to 1.
         """
         observations: ContinualRLSetting.Observations = forward_pass.observations
         batch_size = observations.batch_size or 1
@@ -145,60 +163,99 @@ class PolicyHead(ClassificationHead):
         # have more than one 'action' inside the forward pass object.
         actions: PolicyHeadOutput = forward_pass.actions
         rewards: ContinualRLSetting.Rewards
-        
         assert isinstance(observations, ContinualRLSetting.Observations)
         # Note: we need to have a loss for each, here.
         done: Sequence[bool] = observations.done
         
+        # Setup the buffers, which will hold the most recent observations,
+        # actions and rewards within the current episode for each environment.
         if not self.episode_buffers:
-            # Setup the buffers, which will hold the observations / actions /
-            # rewards for an episode for each environment.
             self.episode_buffers = [
                 deque(maxlen=self.hparams.max_episode_window_length)
                 for _ in range(batch_size)
             ]
 
+        # Push stuff to the buffers for each environment.
         # Go from "tuples of lists" to "list of tuples":
         per_env_observation = observations.as_list_of_tuples()
         per_env_action = actions.as_list_of_tuples()
         per_env_reward = rewards.as_list_of_tuples()
-
         per_env_items = zip(per_env_observation, per_env_action, per_env_reward)
 
         for i, env_items in enumerate(per_env_items):
-            # Extract the actions/observations, etc for each environment.
+            # Append the most recent elements into the buffer for that environment.
             self.episode_buffers[i].append(env_items)
 
+        # Get a loss per environment:
+        # NOTE: The buffers for each environment will most likely have different
+        # lengths!
+
         total_loss = Loss(self.name)
-        for env_index, episode_ended in enumerate(done):
-            # If the episode in that environment is ended, then perform an
-            # update with the REINFORCE algorithm.
-            # TODO: Maybe unpack those and convert them into a 'batch' object?
-            observations, actions, rewards = zip(*self.episode_buffers[env_index])
-            loss = self.get_episode_loss(observations, actions, rewards, episode_ended)
-            total_loss += loss
+        for env_index, (episode_buffer, episode_ended) in enumerate(zip(self.episode_buffers, done)):
+            ## Retrieve and re-arrange the items from the buffer before they get
+            ## passed to the get_episode_loss method. 
+            # The buffer is a list of tuples, so we first 'split' those into a
+            n_steps = len(episode_buffer)
+            # tuple of lists.
+            items: Tuple[List] = tuple_of_lists(episode_buffer)
+            # We stored three items at each step, so we get three lists of tuples
+            env_observations_list, env_actions_list, env_rewards_list = items
+            
+            # Re-package the items into their original 'Batch' objects, but now
+            # the 'batch' will be a sequence of items from the same environment.
+            env_observations = tuple_of_lists(env_observations_list)
+            env_actions = tuple_of_lists(env_actions_list)
+            env_rewards = tuple_of_lists(env_rewards_list)
+            
+            
+            # 'stack' the items back into their original 'Batch' types
+            env_observervations: ContinualRLSetting.Observations = type(observations).from_inputs(env_observations)             
+            env_actions: ContinualRLSetting.Actions = type(actions).from_inputs(env_actions)             
+            env_rewards: ContinualRLSetting.Rewards = type(rewards).from_inputs(env_rewards)
+                        
+            loss = self.get_episode_loss(
+                environment_index=env_index,
+                observations=observations,
+                actions=actions,
+                rewards=rewards,
+                episode_ended=episode_ended
+            )
 
+            # If we are able to get a loss for this set of observations/actions/
+            # rewards, then add it to the total loss.
+            if loss is not None:
+                total_loss += loss
+            
+            if episode_ended:
+                # Clear the buffer if the episode ended.
+                episode_buffer.clear()
+        
+        if not isinstance(total_loss.loss, Tensor):
+            assert total_loss.loss == 0.
+            total_loss.loss = torch.zeros(1, requires_grad=True)
         return total_loss
-        # rewards = y
-        # m = actions.policy
-        # loss =  - actions.y_pred_log_prob * rewards
-        # return Loss(self.name, loss)
 
-    def get_episode_loss(self, observations: ContinualRLSetting.Observations,
-                               actions: ContinualRLSetting.Observations,
-                               rewards: ContinualRLSetting.Rewards,
-                               episode_ended: bool) -> Loss:
-        """ Gets a loss, given  
-        
-        
-        
-        NOTE: While the Batch Observations/Actions/Rewards are from
-        the different environments, now they are actually a sequence from a
-        single environment. 
+    def get_episode_loss(self,
+                         environment_index: int,
+                         observations: ContinualRLSetting.Observations,
+                         actions: ContinualRLSetting.Observations,
+                         rewards: ContinualRLSetting.Rewards,
+                         episode_ended: bool) -> Optional[Loss]:
+        """Calculate a loss to train with, given the last (up to
+        max_episode_window_length) observations/actions/rewards of the current
+        episode in the environment at the given index in the batch.
+
+        NOTE: While the Batch Observations/Actions/Rewards objects usually
+        contain the "batches" of data coming from the N different environments,
+        now they are actually a sequence of items coming from this single
+        environment. For more info on how this is done, see the  
         """
-        if episode_ended:
-            assert False, "HEYHEY!"
+        if not episode_ended:
+            # This particular algorithm (REINFORCE) can't give a loss until the
+            # end of the episode is reached.
+            return None
         
+        assert False, (actions, rewards)
         log_probabilities = torch.stack(
             [action.policy.log_prob(action.y_pred) for action in actions]
         )
@@ -265,3 +322,11 @@ def make_gamma_matrix(gamma: float, T: int, device=None) -> Tensor:
 
 def normalize(x: Tensor):
     return (x - x.mean()) / (x.std() + 1e-9)
+
+T = TypeVar("T")
+
+def tuple_of_lists(list_of_tuples: List[Tuple[T, ...]]) -> Tuple[List[T], ...]:
+    return tuple(map(list, zip(*list_of_tuples)))
+
+def list_of_tuples(tuple_of_lists: Tuple[List[T], ...]) -> List[Tuple[T, ...]]:
+    return list(zip(*tuple_of_lists))

@@ -11,7 +11,7 @@ from pytorch_lightning.core.decorators import auto_move_data
 from common.config import Config
 from common.batch import Batch
 
-from settings import ClassIncrementalSetting, Observations, Actions, Rewards
+from settings import ClassIncrementalSetting, Environment, Observations, Actions, Rewards
 from settings.assumptions.incremental import IncrementalSetting
 
 from utils import dict_intersection, zip_dicts, prod
@@ -231,12 +231,13 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         yield
         self.current_task = start_task_id
     
-    def _shared_step(self, batch: Tuple[Tensor, Optional[Tensor]],
-                           batch_idx: int,
-                           dataloader_idx: int = None,
-                           loss_name: str = "",
-                           training: bool = True,
-                    ) -> Dict:
+    def shared_step(self,
+                    batch: Tuple[Observations, Rewards],
+                    batch_idx: int,
+                    environment: Environment,
+                    loss_name: str,
+                    dataloader_idx: int = None,
+                    optimizer_idx: int = None) -> Dict:
         assert loss_name
         if dataloader_idx is not None:
             logger.debug(
@@ -246,8 +247,8 @@ class ClassIncrementalModel(BaseModel[SettingType]):
                 "anyway). "
             )
             dataloader_idx = None
-        elif ((training and self.setting.task_labels_at_train_time) or
-              (not training and self.setting.task_labels_at_test_time)):
+        elif ((self.training and self.setting.task_labels_at_train_time) or
+              (not self.training and self.setting.task_labels_at_test_time)):
             # If we're not told the dataloader idx, but we have access to the
             # task labels, then switch to the current task if it's not the same
             # as the previous task.
@@ -263,6 +264,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         return super().shared_step(
             batch=batch,
             batch_idx=batch_idx,
+            environment=environment,
             dataloader_idx=dataloader_idx,
             loss_name=loss_name,
         )

@@ -85,6 +85,14 @@ class Batch(ABC):
         if "_named_tuple" not in cls.__dict__:
             type(self)._namedtuple = namedtuple(type(self).__name__ + "Tuple", self.field_names)
 
+    def unwrap(self) -> Union[Item, Tuple[Item, ...]]:
+        """ Returns the 'unwrapped' contents of this object, which will be a
+        tuple of batched tensors if there is more than one field, or a single
+        batched tensor is there is only one field.
+        """
+        tensors = self.as_namedtuple()
+        return tensors[0] if len(tensors) == 1 else tensors 
+
     # def __iter__(self) -> Iterable[Tuple[Item, ...]]:
     #     # return itertools.starmap(self._namedtuple, zip(*self.as_tuple()))
     #     return iter(self.as_tuple())
@@ -211,6 +219,7 @@ class Batch(ABC):
         """Returns a namedtuple containing the 'batched' attributes of this
         object (tuple of lists).
         """
+        # TODO: Turning on the namedtuple return value by default.
         return self.as_namedtuple()
         return tuple(
             getattr(self, f.name) for f in dataclasses.fields(self) 
@@ -304,18 +313,34 @@ class Batch(ABC):
         if isinstance(inputs, cls):
             return inputs
         if isinstance(inputs, (tuple, list)):
-            if len(inputs) == 1 and isinstance(inputs[0], (list, tuple)):
-                assert False, inputs
-                inputs = inputs[0]
+            # inputs = [
+            #     np.asarray(items) if any(item is None for item in items) else
+            #     torch.as_tensor(items) 
+            #     for items in inputs
+            # ]
+            
+            # Convert things that aren't tensors to numpy arrays.
+            # Stack tensors (to preserve their 'grad' attributes, if present).
             inputs = [
-                np.asarray(v) if not isinstance(v, Tensor) else v for v in inputs
+                items if isinstance(items, Tensor) else
+                torch.stack(items) if isinstance(items[0], Tensor) else
+                np.asarray(items)
+                for items in inputs
             ]
-            # Ndarray with 'object' dtype isn't supported by pytorch, so we
-            # convert any of those to lists.
+            
+            # Ndarrays with 'object' dtype aren't supported in pytorch.
+            # TODO: We convert arrays with None to lists, but is this the best
+            # thing to do?
             inputs = [
-                [v_i.item() if isinstance(v_i, np.ndarray) else v_i for v_i in v]
-                if v.dtype == np.object_ else v for v in inputs
+                array if isinstance(array, Tensor) else
+                torch.as_tensor(array) if array.dtype != np.object_ else
+                array.tolist()
+                for array in inputs
             ]
+            # inputs = [
+            #     [v_i.item() if isinstance(v_i, np.ndarray) else v_i for v_i in v]
+            #     if v.dtype == np.object_ else v for v in inputs
+            # ]
             return cls(*inputs)
 
         if isinstance(inputs, Tensor):

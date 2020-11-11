@@ -358,6 +358,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             self.prepare_data()
         if not self.has_setup_test:
             self.setup("test")
+
         # Testing this out, we're gonna have a "test schedule" like this!
         transition_steps = [0] + list(itertools.accumulate(map(len, self.test_datasets)))[:-1]
         

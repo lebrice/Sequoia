@@ -115,6 +115,6 @@ class BaselineModel(SemiSupervisedModel,
             f"No output head available for action space {self.action_space}"
         )
 
-    @auto_move_data
+    # @auto_move_data
     def forward(self, observations: IncrementalSetting.Observations) -> Dict[str, Tensor]:
         return super().forward(observations)
