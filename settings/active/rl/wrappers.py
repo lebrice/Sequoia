@@ -182,6 +182,9 @@ class AddDoneToObservation(gym.ObservationWrapper):
     # when iterating over the env like a dataloader, the yielded items only
     # have the observations, and dont have the 'done' vector. (so as to be
     # consistent with supervised learning).
+    
+    # TODO: Should we also add the 'final state' to the observations as well?
+
     def __init__(self, env: gym.Env):
         super().__init__(env)
         if isinstance(env.observation_space, spaces.Tuple):

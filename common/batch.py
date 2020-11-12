@@ -213,7 +213,13 @@ class Batch(ABC):
         """Returns an iterable of the items in the 'batch', each item as a
         namedtuple (list of tuples).
         """
-        return itertools.starmap(self._namedtuple, zip(*self.as_tuple()))
+        # If one of the fields is None, then we convert it into a list of Nones,
+        # so we can zip all the fields to create a list of tuples.
+        field_items = [
+            [None for _ in range(self.batch_size)] if items is None else items
+            for items in self.as_tuple()
+        ]
+        return itertools.starmap(self._namedtuple, zip(*field_items))
 
     def as_tuple(self) -> Tuple[Item, ...]:
         """Returns a namedtuple containing the 'batched' attributes of this
@@ -313,12 +319,6 @@ class Batch(ABC):
         if isinstance(inputs, cls):
             return inputs
         if isinstance(inputs, (tuple, list)):
-            # inputs = [
-            #     np.asarray(items) if any(item is None for item in items) else
-            #     torch.as_tensor(items) 
-            #     for items in inputs
-            # ]
-            
             # Convert things that aren't tensors to numpy arrays.
             # Stack tensors (to preserve their 'grad' attributes, if present).
             inputs = [
@@ -337,10 +337,6 @@ class Batch(ABC):
                 array.tolist()
                 for array in inputs
             ]
-            # inputs = [
-            #     [v_i.item() if isinstance(v_i, np.ndarray) else v_i for v_i in v]
-            #     if v.dtype == np.object_ else v for v in inputs
-            # ]
             return cls(*inputs)
 
         if isinstance(inputs, Tensor):

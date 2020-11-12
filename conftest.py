@@ -200,10 +200,12 @@ class DummyEnvironment(gym.Env):
     1:  Increment the counter.
     2:  Decrement the counter.
     """
-    def __init__(self, start: int = 0, max_value: int = 10, target: int = 5):
-        self.max_value = max_value
+    def __init__(self, start: int = 0, target: int = 5, max_value: int = None):
         self.i = start
         self.start = start
+        max_value = max_value if max_value is not None else target * 2
+        assert 0 <= target <= max_value
+        self.max_value = max_value
         self.reward_range = (0, max_value)
         self.action_space = gym.spaces.Discrete(n=3)
         self.observation_space = gym.spaces.Discrete(n=max_value)

@@ -339,6 +339,9 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # So far we only use 'y' from the rewards in the output head.
             supervised_loss = self.output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
             total_loss += supervised_loss
+            
+            
+            
         return total_loss
 
     def preprocess_observations(self, observations: Observations) -> Observations:

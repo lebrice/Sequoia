@@ -1,7 +1,7 @@
 import dataclasses
 import itertools
 from dataclasses import dataclass
-from typing import Dict, Tuple, Union, List, Optional, TypeVar
+from typing import Dict, Tuple, Union, List, Optional, TypeVar, Iterable
 from abc import abstractmethod, ABC
 from collections import deque
 
@@ -25,9 +25,13 @@ from ..output_head import OutputHead
 logger = get_logger(__file__)
 
 class Categorical(Categorical_):
-    def __getitem__(self, index: int) -> Distribution:
+    def __getitem__(self, index: int) -> "Categorical":
         return Categorical(logits=self.logits[index])
         # return Categorical(probs=self.probs[index])
+
+    def __iter__(self) -> Iterable["Categorical"]:
+        for index in range(self.logits.shape[0]):
+            yield self[index]
 
 @dataclass(frozen=True)
 class PolicyHeadOutput(ClassificationOutput):
@@ -198,6 +202,7 @@ class PolicyHead(ClassificationHead):
             n_steps = len(episode_buffer)
             # tuple of lists.
             items: Tuple[List] = tuple_of_lists(episode_buffer)
+            
             # We stored three items at each step, so we get three lists of tuples
             env_observations_list, env_actions_list, env_rewards_list = items
             
@@ -207,17 +212,16 @@ class PolicyHead(ClassificationHead):
             env_actions = tuple_of_lists(env_actions_list)
             env_rewards = tuple_of_lists(env_rewards_list)
             
-            
-            # 'stack' the items back into their original 'Batch' types
-            env_observervations: ContinualRLSetting.Observations = type(observations).from_inputs(env_observations)             
+            # 'Stack' the items back into their original 'Batch' types.
+            env_observations: ContinualRLSetting.Observations = type(observations).from_inputs(env_observations)             
             env_actions: ContinualRLSetting.Actions = type(actions).from_inputs(env_actions)             
             env_rewards: ContinualRLSetting.Rewards = type(rewards).from_inputs(env_rewards)
-                        
+            
             loss = self.get_episode_loss(
-                environment_index=env_index,
-                observations=observations,
-                actions=actions,
-                rewards=rewards,
+                env_index=env_index,
+                observations=env_observations,
+                actions=env_actions,
+                rewards=env_rewards,
                 episode_ended=episode_ended
             )
 
@@ -236,7 +240,7 @@ class PolicyHead(ClassificationHead):
         return total_loss
 
     def get_episode_loss(self,
-                         environment_index: int,
+                         env_index: int,
                          observations: ContinualRLSetting.Observations,
                          actions: ContinualRLSetting.Observations,
                          rewards: ContinualRLSetting.Rewards,
