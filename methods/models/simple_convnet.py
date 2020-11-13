@@ -1,4 +1,5 @@
 from torch import nn, Tensor
+from torch.nn import Flatten
 
 class SimpleConvNet(nn.Module):
     def __init__(self, in_channels=3, n_classes: int = 10):
@@ -10,9 +11,9 @@ class SimpleConvNet(nn.Module):
             nn.Conv2d(6, 16, 5),
             nn.ReLU(),
             nn.MaxPool2d(2),
+            nn.Flatten(),
         )
         self.fc = nn.Sequential(
-            nn.Flatten(),
             nn.Linear(256, 120),
             nn.ReLU(),
             nn.Linear(120, 84),

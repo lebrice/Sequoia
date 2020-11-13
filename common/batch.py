@@ -216,10 +216,12 @@ class Batch(ABC):
         # If one of the fields is None, then we convert it into a list of Nones,
         # so we can zip all the fields to create a list of tuples.
         field_items = [
-            [None for _ in range(self.batch_size)] if items is None else items
+            [items for _ in range(self.batch_size)] if items is None or items is {} else
+            [item for item in items]
             for items in self.as_tuple()
         ]
-        return itertools.starmap(self._namedtuple, zip(*field_items))
+        assert all([len(items) == self.batch_size for items in field_items])
+        return list(itertools.starmap(self._namedtuple, zip(*field_items)))
 
     def as_tuple(self) -> Tuple[Item, ...]:
         """Returns a namedtuple containing the 'batched' attributes of this

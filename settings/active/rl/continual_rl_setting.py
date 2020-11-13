@@ -227,8 +227,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             task_params=cl_task_params,
             add_task_id_to_obs=True,
         )
-        if self.add_done_to_observations:
-            temp_env = AddDoneToObservation(temp_env)
+        temp_env = AddDoneToObservation(temp_env)
+        temp_env = AddInfoToObservation(temp_env)
         return temp_env
     
     
@@ -324,6 +324,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # TODO: Have to make sure wrappers being applied on top aren't adding
         # things to info or changing the 'done' value, because such changes
         # wouldn't be reflected in the Observations object.
+        env = AddDoneToObservation(env)
         env = AddInfoToObservation(env)
         
         # Create an IterableDataset from the env using the EnvDataset wrapper.
@@ -337,18 +338,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
         self.train_env = dataloader
         return self.train_env
-
-    def make_train_env(self) -> gym.Env:
-        """ Make a single (not-batched) training environment. """
-        if self.env_name:
-            env = gym.make(self.env_name)
-        else:
-            assert callable(self.dataset), f"dataset should either be a string or a callable, got {self.dataset}"
-            env = self.dataset()
-
-        for wrapper in self.train_wrappers():
-            env = wrapper(env)
-        return env
 
     def train_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to each training environment.
@@ -423,11 +412,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # TODO: Hide or remove the task labels?
             # wrappers.append(RemoveTaskLabelsWrapper)
             wrappers.append(HideTaskLabelsWrapper)
-        
-        # Add the 'done' vector as part of the observation.
-        if self.add_done_to_observations:
-            wrappers.append(AddDoneToObservation)
-        
         return wrappers
     
     def val_dataloader(self, batch_size: int = None) -> Environment:
@@ -457,6 +441,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             actions_type=self.Actions,
             rewards_type=self.Rewards,
         )
+        env = AddDoneToObservation(env)
         env = AddInfoToObservation(env)
         
         dataset = EnvDataset(env, max_steps=self.steps_per_task)
@@ -467,17 +452,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             dataloader.seed(None)
         self.val_env = dataloader
         return self.val_env
-
-    def make_val_env(self) -> gym.Env:
-        """ Create a single (non-batched) validation environment. """
-        if self.env_name:
-            env = gym.make(self.env_name)
-        else:
-            assert callable(self.dataset), f"dataset should either be a string or a callable, got {self.dataset}"
-            env = self.dataset()
-        for wrapper in self.val_wrappers():
-            env = wrapper(env)
-        return env
     
     def val_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to each validation environment.
@@ -525,11 +499,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # TODO: Hide or remove the task labels?
             # wrappers.append(RemoveTaskLabelsWrapper)
             wrappers.append(HideTaskLabelsWrapper)
-        
-        # Add the 'done' vector as part of the observation.
-        if self.add_done_to_observations:
-            wrappers.append(AddDoneToObservation)
-        
         return wrappers
 
     def test_dataloader(self, batch_size: int = None) -> TestEnvironment:
@@ -571,6 +540,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             rewards_type=self.Rewards,
             actions_type=self.Actions,
         )
+        env = AddDoneToObservation(env)
         env = AddInfoToObservation(env)
         
         dataset = EnvDataset(env, max_steps=self.steps_per_task)
@@ -592,18 +562,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             force=True,
         )
         return self.test_env
-
-    def make_test_env(self) -> gym.Env:
-        """ Make a single (not-batched) testing environment. """
-        if self.env_name:
-            env = gym.make(self.env_name)
-        else:
-            assert callable(self.dataset), f"dataset should either be a string or a callable, got {self.dataset}"
-            env = self.dataset()
-
-        for wrapper in self.test_wrappers():
-            env = wrapper(env)
-        return env
 
     def test_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to a single test environment.
@@ -650,11 +608,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # TODO: Hide or remove the task labels?
             # wrappers.append(RemoveTaskLabelsWrapper)
             wrappers.append(HideTaskLabelsWrapper)
-
-        # Add the 'done' vector as part of the observation.
-        if self.add_done_to_observations:
-            wrappers.append(AddDoneToObservation)
-        
         return wrappers
 
 

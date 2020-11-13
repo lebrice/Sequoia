@@ -345,6 +345,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
         return total_loss
 
     def preprocess_observations(self, observations: Observations) -> Observations:
+        if isinstance(observations, Observations):
+            return observations
+        
+        assert False, f"TODO: This is weird.. why aren't the observations instances of Observations? (observations = {observations}) "
+        
         arrays_or_tensors = [
             np.asarray(v) if not isinstance(v, Tensor) else v for v in observations
         ]

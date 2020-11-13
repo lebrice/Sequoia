@@ -140,3 +140,35 @@ def test_buffers_are_stacked_correctly(monkeypatch):
                 
     # assert False, (obs, rewards, done, info)
     # loss: Loss = output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
+
+
+
+
+def test_sanity_check_cartpole_done_vector(monkeypatch):
+    """TODO: Sanity check, make sure that cartpole has done=True at some point
+    when using a BatchedEnv.
+    """
+    batch_size = 5
+    
+    starting_values = [i for i in range(batch_size)]
+    targets = [10 for i in range(batch_size)]
+    from settings.active.rl.make_env import make_batched_env
+    from common.gym_wrappers import PixelObservationWrapper
+    from settings.active.rl.wrappers import AddDoneToObservation, AddInfoToObservation
+    env = make_batched_env("CartPole-v0", batch_size=5, wrappers=[PixelObservationWrapper])
+    env = AddDoneToObservation(env)
+    env = AddInfoToObservation(env)
+    
+    # env = BatchedVectorEnv([
+    #     partial(gym.make, "CartPole-v0") for i in range(batch_size)
+    # ])
+    obs = env.reset()
+    
+    for i in range(100):
+        obs, rewards, done, info = env.step(env.action_space.sample())
+        assert all(obs[1] == done), i
+        if any(done):
+            
+            break
+    else:
+        assert False, "Should have had at least one done=True, over the 100 steps!"

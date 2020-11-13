@@ -494,7 +494,7 @@ class Setting(SettingABC,
         TODO: This should probably not be in this file here. It's more used for
         testing than anything else.
         """
-        assert isinstance(observations, self.Observations)
+        assert isinstance(observations, self.Observations), observations
         images = observations.x
         assert isinstance(images, (torch.Tensor, np.ndarray))
         if isinstance(images, Tensor):

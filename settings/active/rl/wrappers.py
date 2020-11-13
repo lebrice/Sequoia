@@ -168,44 +168,54 @@ class HideTaskLabelsWrapper(TransformObservation):
 
 
 def add_done(observation, done: bool):
+    if is_dataclass(observation):
+        return replace(observation, done=done)
     if isinstance(observation, tuple):
-        observation =  observation + (done,)
+        return observation + (done,)
     elif isinstance(observation, dict):
+        assert "done" not in observation
         observation["done"] = done
-    else:
-        observation = (observation, done)
-    return observation
+        return observation    
+    return (observation, done)
 
 
 class AddDoneToObservation(gym.ObservationWrapper):
-    # FIXME: Need to add the 'done' vector to the observation, so we can
-    # get access to the 'end of episode' signal in the shared_step, since
-    # when iterating over the env like a dataloader, the yielded items only
-    # have the observations, and dont have the 'done' vector. (so as to be
-    # consistent with supervised learning).
-    
-    # TODO: Should we also add the 'final state' to the observations as well?
-
+    """
+    Need to add the 'done' vector to the observation, so we can
+    get access to the 'end of episode' signal in the shared_step, since
+    when iterating over the env like a dataloader, the yielded items only
+    have the observations, and dont have the 'done' vector. (so as to be
+    consistent with supervised learning).
+    """
     def __init__(self, env: gym.Env):
         super().__init__(env)
+        self.is_vectorized = has_wrapper(env, VectorEnv)
+        # boolean value. (0 or 1)
+        done_space = spaces.Box(0, 1, (), dtype=np.bool)
+        if self.is_vectorized:
+            done_space = spaces.MultiBinary(env.num_envs)
+        
         if isinstance(env.observation_space, spaces.Tuple):
             new_spaces = list(env.observation_space.spaces)
-            new_spaces.append(spaces.Discrete(2))
+            new_spaces.append(done_space)
             self.observation_space = spaces.Tuple(new_spaces)
         elif isinstance(env.observation_space, spaces.Dict):
             new_spaces = env.observation_space.spaces.copy()
             assert "done" not in spaces, f"space shouldn't already have a 'done' key."
-            new_spaces["done"] = spaces.Discrete(2)
+            new_spaces["done"] = done_space
             self.observation_space = spaces.Dict(new_spaces)
         else:
             self.observation_space = spaces.Tuple([
                 self.env.observation_space,
-                spaces.Discrete(2) # boolean value. (0 or 1)
+                done_space,
             ])
 
     def reset(self, **kwargs):
         observation = self.env.reset()
-        done = 0
+        if self.is_vectorized:
+            done = np.zeros(self.env.num_envs, dtype=bool)
+        else:
+            done = False
         return add_done(observation, done)
     
     def step(self, action):
@@ -221,7 +231,15 @@ from common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
 def add_info(observation: Observations, info: List[Dict]):
     if is_dataclass(observation):
         return replace(observation, info=info)
-    assert False, observation
+    if isinstance(observation, tuple):
+        return observation + (info,)
+    if isinstance(observation, list):
+        return observation + [info]
+    if isinstance(observation, dict):
+        assert "info" not in observation
+        observation["info"] = info
+        return observation
+    return (observation, info)
 
 class AddInfoToObservation(gym.ObservationWrapper):
     # TODO: Need to add the 'info' dict to the Observation, so we can have
@@ -231,15 +249,23 @@ class AddInfoToObservation(gym.ObservationWrapper):
     # TODO: Should we also add the 'final state' to the observations as well?
 
     def __init__(self, env: gym.Env):
-        assert has_wrapper(env, VectorEnv), "Should only be used on vectorized environments."
         super().__init__(env)
+        self.is_vectorized = has_wrapper(env, VectorEnv)
         info_space = spaces.Dict({
             # What sparsity should we set here though?
-            FINAL_STATE_KEY: spaces.Tuple([
-                Sparse(env.single_observation_space)
-                for _ in range(env.batch_size)
-            ])
+            # TODO: Truth is, we can't guarantee that the observation space will
+            # actually be replicated in this 'info' dict though, because some
+            # wrappers might have changed the observation space after the
+            # batching, and this info dict is populated in the worker
+            # (pre-batch).
+            FINAL_STATE_KEY: Sparse(env.observation_space)
         })
+        if self.is_vectorized:
+            info_space = spaces.Tuple([
+                spaces.Dict({
+                    FINAL_STATE_KEY: Sparse(env.single_observation_space)
+                }) for _ in range(env.num_envs)
+            ])
                 
         if isinstance(env.observation_space, spaces.Tuple):
             new_spaces = list(env.observation_space.spaces)
@@ -257,11 +283,11 @@ class AddInfoToObservation(gym.ObservationWrapper):
                 info_space,
             ])
 
-        assert False, self.observation_space
-
     def reset(self, **kwargs):
         observation = self.env.reset()
         info = {}
+        if self.is_vectorized:
+            info = [{} for _ in range(self.env.num_envs)]
         return add_info(observation, info)
     
     def step(self, action):

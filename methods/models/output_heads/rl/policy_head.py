@@ -208,6 +208,7 @@ class PolicyHead(ClassificationHead):
         per_env_observation = observations.as_list_of_tuples()
         per_env_action = actions.as_list_of_tuples()
         per_env_reward = rewards.as_list_of_tuples()
+
         per_env_items = zip(per_env_observation, per_env_action, per_env_reward)
 
         # Append the most recent elements into the buffer for that environment.
@@ -215,10 +216,9 @@ class PolicyHead(ClassificationHead):
             env_observation, env_action, env_reward = env_items
             
             env_episode_buffer: deque = self.episode_buffers[env_index]
-            # TODO: When the 'initial' observation becomes older than the
-            # length of the buffer, what should we do with it?
-            
             if len(env_episode_buffer) == env_episode_buffer.maxlen:
+                # TODO: When the 'initial' observation becomes older than the
+                # length of the buffer, what should we do with it?
                 # Possibly update the 'initial' observation?
                 old_initial_obs = self.initial_observations[env_index]
                 new_initial_obs = self.update_initial_observation(
@@ -247,7 +247,7 @@ class PolicyHead(ClassificationHead):
             # The buffer is a list of tuples, so we first 'split' those into a
             # tuple of lists.
             items: Tuple[List] = tuple_of_lists(episode_buffer)
-            
+
             # We stored three items at each step, so we get three lists of tuples.
             env_observations_list: List[namedtuple] = items[0]
             env_actions_list: List[namedtuple] = items[1]
@@ -335,8 +335,6 @@ class PolicyHead(ClassificationHead):
             # This particular algorithm (REINFORCE) can't give a loss until the
             # end of the episode is reached.
             return None
-        
-        assert False, (actions, rewards)
         log_probabilities = torch.stack(
             [action.policy.log_prob(action.y_pred) for action in actions]
         )

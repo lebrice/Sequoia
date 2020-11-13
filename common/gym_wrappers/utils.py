@@ -50,7 +50,7 @@ def has_wrapper(env: gym.Wrapper, wrapper_type: Type[gym.Wrapper]) -> bool:
         if isinstance(env, wrapper_type):
             return True
         env = env.env
-    return False
+    return isinstance(env, wrapper_type)
 
 
 def remove_wrapper(env: gym.Wrapper, wrapper_type: Type[gym.Wrapper]) -> gym.Wrapper:
