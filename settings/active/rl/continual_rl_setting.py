@@ -40,7 +40,7 @@ from .make_env import make_batched_env
 from .rl_results import RLResults
 from .wrappers import (AddDoneToObservation, HideTaskLabelsWrapper,
                        NoTypedObjectsWrapper, RemoveTaskLabelsWrapper,
-                       TypedObjectsWrapper)
+                       TypedObjectsWrapper, AddInfoToObservation)
 
 logger = get_logger(__file__)
 
@@ -95,7 +95,13 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # Just as a reminder, these are the fields defined in the base classes:
         # x: Tensor
         # task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
+        
+        # The 'done' part of the 'step' method. We add these two here in case a
+        # method were to iterate on the environments in the dataloader-style so
+        # they also have access to those.
         done: Optional[Sequence[bool]] = None
+        # Same, for the 'info' portion of the result of 'step'.
+        info: Optional[Sequence[Dict]] = None
 
     transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.channels_first_if_needed)
 
@@ -315,6 +321,11 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             rewards_type=self.Rewards,
             actions_type=self.Actions,
         )
+        # TODO: Have to make sure wrappers being applied on top aren't adding
+        # things to info or changing the 'done' value, because such changes
+        # wouldn't be reflected in the Observations object.
+        env = AddInfoToObservation(env)
+        
         # Create an IterableDataset from the env using the EnvDataset wrapper.
         dataset = EnvDataset(env, max_steps=self.steps_per_task)
         # Create a GymDataLoader for the EnvDataset.
@@ -446,6 +457,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             actions_type=self.Actions,
             rewards_type=self.Rewards,
         )
+        env = AddInfoToObservation(env)
+        
         dataset = EnvDataset(env, max_steps=self.steps_per_task)
         dataloader = GymDataLoader(dataset)
         if self.config.seed:
@@ -558,6 +571,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             rewards_type=self.Rewards,
             actions_type=self.Actions,
         )
+        env = AddInfoToObservation(env)
+        
         dataset = EnvDataset(env, max_steps=self.steps_per_task)
         dataloader = GymDataLoader(dataset)
         

@@ -15,6 +15,7 @@ from settings.active.rl.continual_rl_setting import ContinualRLSetting
 
 from .policy_head import PolicyHead
 
+from common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
 
 def test_buffers_are_stacked_correctly(monkeypatch):
     """TODO: Test that when "de-synced" episodes, when fed to the output head,
@@ -32,15 +33,9 @@ def test_buffers_are_stacked_correctly(monkeypatch):
     obs = env.reset()
     assert obs.tolist() == list(range(batch_size))
     
-    # for i in range(10):
-    #     obs, rewards, done, info = env.step(np.ones(batch_size))
-    #     if any(done):
-    #         assert False, (i, obs, rewards, done, info)
-    #     else:
-    #         assert obs.tolist() == (np.arange(batch_size) + i + 1).tolist()
     reward_space = spaces.Box(*env.reward_range, shape=())
-    output_head = PolicyHead(1, action_space=env.single_action_space, reward_space=reward_space)
     
+    output_head = PolicyHead(1, action_space=env.single_action_space, reward_space=reward_space)
     # Set the max window length, for testing.
     output_head.hparams.max_episode_window_length = 100
     
@@ -50,7 +45,6 @@ def test_buffers_are_stacked_correctly(monkeypatch):
     obs = torch.from_numpy(obs)
     done = torch.from_numpy(done)
     
-    
     def mock_get_episode_loss(self: PolicyHead,
                               env_index: int,
                               observations: ContinualRLSetting.Observations,
@@ -59,30 +53,32 @@ def test_buffers_are_stacked_correctly(monkeypatch):
                               episode_ended: bool) -> Optional[Loss]:
         print(f"Environment at index {env_index}, episode ended: {episode_ended}")
         if episode_ended:
-            print(f"Full episode: {observations.x}")
+            print(f"Full episode: {observations}")
         else:
-            print(f"Episode so far: {observations.x}")
-        episode_length = observations.batch_size
-        assert len(observations.x) == episode_length
-        assert len(actions.y_pred) == episode_length
-        assert len(rewards.y) == episode_length
+            print(f"Episode so far: {observations}")
+        
+        n_observations = len(observations.x)
+        # assert len(actions.y_pred) == n_observations if not episode_ended else n_observations - 1, (episode_ended, observations, actions, rewards)
+        # assert len(rewards.y) == n_observations if not episode_ended else n_observations - 1, (episode_ended, observations, actions, rewards)
 
-        assert observations.x.tolist() == (env_index + np.arange(episode_length)).tolist()
+        assert observations.x.tolist() == (env_index + np.arange(n_observations)).tolist()
         if episode_ended:
-            assert observations.x[-1] == env_index
+            # Unfortunately, we don't get the final state, because of how
+            # VectorEnv works atm.
+            assert observations.x[-1] == targets[env_index] - 1
         
     monkeypatch.setattr(PolicyHead, "get_episode_loss", mock_get_episode_loss)
 
     # perform 10 iterations, incrementing each DummyEnvironment's counter at
     # each step (action of 1).
     # Therefore, at first, the counters should be [0, 1, 2, ... batch-size-1].
+    info = [{} for _ in range(batch_size)]
     
-    
-    for i in range(10):
-        print(f"Step {i}.")
+    for step in range(10):
+        print(f"Step {step}.")
         # Wrap up the obs to pretend that this is the data coming from a
         # ContinualRLSetting.
-        observations = ContinualRLSetting.Observations(x=obs, done=done)
+        observations = ContinualRLSetting.Observations(x=obs, done=done, info=info)
         # We don't use an encoder for testing, so the representations is just x.
         representations = obs.reshape([batch_size, 1])
         assert observations.task_labels is None
@@ -116,30 +112,31 @@ def test_buffers_are_stacked_correctly(monkeypatch):
 
         assert len(output_head.episode_buffers) == batch_size
         for env_index, env_episode_buffer in enumerate(output_head.episode_buffers):
-            assert len(env_episode_buffer) == i + 1
+            if step >= batch_size:
+                if step + env_index == targets[env_index]:
+                    assert not env_episode_buffer
+                # if env_index == step - batch_size:
+                continue
+            assert len(env_episode_buffer) == step + 1
             # Check to see that the last entry in the episode buffer for this
             # environment corresponds to the slice of the most recent
             # observations/actions/rewards at the index corresponding to this
             # environment.
             observation_tuple, action_tuple, reward_tuple = env_episode_buffer[-1]
-            
+
             assert observation_tuple.x == observations.x[env_index]
             assert observation_tuple.task_labels is None
             assert observation_tuple.done == observations.done[env_index]
-            
+
             assert action_tuple.y_pred == actions.y_pred[env_index]
-            
+
             assert reward_tuple.y == rewards.y[env_index]
 
-        if i < 5:
-            assert obs.tolist() == (np.arange(batch_size) + i + 1).tolist()
-        elif i == 5:
-            assert bool(done[i-1])
-        elif i == 6:
-            assert False, done
-
-        
-    
-    
-    assert False, (obs, rewards, done, info)
-    loss: Loss = output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
+        if step < batch_size:
+            assert obs.tolist() == (np.arange(batch_size) + step + 1).tolist()
+        # if step >= batch_size:
+        #     if step + env_index == targets[env_index]:
+        #         assert done
+                
+    # assert False, (obs, rewards, done, info)
+    # loss: Loss = output_head.get_loss(forward_pass, actions=actions, rewards=rewards)

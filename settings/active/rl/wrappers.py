@@ -1,19 +1,20 @@
-from typing import Optional, Tuple, TypeVar, Type, Union, Dict
+from typing import Dict, List, Optional, Tuple, Type, TypeVar, Union
 
 import gym
 import numpy as np
 from gym import spaces
+from torch import Tensor
 
 from common import Batch, batch
-from common.gym_wrappers import Sparse
-from common.gym_wrappers import IterableWrapper, TransformObservation
+from common.gym_wrappers import IterableWrapper, Sparse, TransformObservation
+from common.gym_wrappers.batch_env import VectorEnv
 from common.gym_wrappers.transform_wrappers import (TransformAction,
                                                     TransformObservation,
                                                     TransformReward)
+from common.gym_wrappers.utils import has_wrapper
 from settings.base import Environment
 from settings.base.objects import (Actions, ActionType, Observations,
                                    ObservationType, Rewards, RewardType)
-from torch import Tensor
 
 T = TypeVar("T")
 
@@ -210,5 +211,61 @@ class AddDoneToObservation(gym.ObservationWrapper):
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
         observation = add_done(observation, done)
+        return observation, reward, done, info 
+
+from dataclasses import replace, is_dataclass
+
+from common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
+
+
+def add_info(observation: Observations, info: List[Dict]):
+    if is_dataclass(observation):
+        return replace(observation, info=info)
+    assert False, observation
+
+class AddInfoToObservation(gym.ObservationWrapper):
+    # TODO: Need to add the 'info' dict to the Observation, so we can have
+    # access to the final observation (which gets stored in the info dict at key
+    # 'final_state'.
+    
+    # TODO: Should we also add the 'final state' to the observations as well?
+
+    def __init__(self, env: gym.Env):
+        assert has_wrapper(env, VectorEnv), "Should only be used on vectorized environments."
+        super().__init__(env)
+        info_space = spaces.Dict({
+            # What sparsity should we set here though?
+            FINAL_STATE_KEY: spaces.Tuple([
+                Sparse(env.single_observation_space)
+                for _ in range(env.batch_size)
+            ])
+        })
+                
+        if isinstance(env.observation_space, spaces.Tuple):
+            new_spaces = list(env.observation_space.spaces)
+            new_spaces.append(info_space)
+            self.observation_space = spaces.Tuple(new_spaces)
+
+        elif isinstance(env.observation_space, spaces.Dict):
+            new_spaces = env.observation_space.spaces.copy()
+            assert "info" not in spaces, f"space shouldn't already have an 'info' key."
+            new_spaces[info] = info_space
+            self.observation_space = spaces.Dict(new_spaces)
+        else:
+            self.observation_space = spaces.Tuple([
+                self.env.observation_space,
+                info_space,
+            ])
+
+        assert False, self.observation_space
+
+    def reset(self, **kwargs):
+        observation = self.env.reset()
+        info = {}
+        return add_info(observation, info)
+    
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        observation = add_info(observation, info)
         return observation, reward, done, info 
     

@@ -11,7 +11,7 @@ from typing import (Any, Dict, Iterable, List, Optional, Tuple, Type, Union,
 import gym
 import pytest
 
-import sys; sys.path.extend([".", ".."])
+import sys; sys.path.extend(["."])
 from common.config import Config, TrainerConfig
 from settings import Method, Setting
 from simple_parsing import Serializable
