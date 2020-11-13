@@ -1,3 +1,6 @@
+""" Defines a (hopefully general enough) Output Head class to be used by the
+BaselineMethod when applied on an RL setting.
+"""
 import dataclasses
 import itertools
 from dataclasses import dataclass
@@ -26,7 +29,12 @@ from ..output_head import OutputHead
 logger = get_logger(__file__)
 from collections import namedtuple
 
+
 class Categorical(Categorical_):
+    """ Simple little addition to the Categorical class, allowing it to be 'split'
+    into a sequence of distributions (to help with the splitting in the output
+    head below)
+    """ 
     def __getitem__(self, index: int) -> "Categorical":
         return Categorical(logits=self.logits[index])
         # return Categorical(probs=self.probs[index])
@@ -35,19 +43,34 @@ class Categorical(Categorical_):
         for index in range(self.logits.shape[0]):
             yield self[index]
 
+
 @dataclass(frozen=True)
 class PolicyHeadOutput(ClassificationOutput):
     """ WIP: Adds the action pdf to ClassificationOutput. """
-    policy: Distribution
+    
+    # The Policy, as a distribution over the actions, either as a single
+    # (batched) distribution or as a list of distributions, one for each
+    # environment in the batch. 
+    policy: Union[Distribution, List[Distribution]]
 
     @property
     def y_pred_log_prob(self) -> Tensor:
         """ returns the log probabilities for the chosen actions/predictions. """
+        if isinstance(self.policy, list):
+            return torch.stack([
+                policy.log_prob(y_pred)
+                for policy, y_pred in zip(self.policy, self.y_pred)
+            ])
         return self.policy.log_prob(self.y_pred)
 
     @property
     def y_pred_prob(self) -> Tensor:
         """ returns the log probabilities for the chosen actions/predictions. """
+        if isinstance(self.policy, list):
+            return torch.stack([
+                policy.probs(y_pred)
+                for policy, y_pred in zip(self.policy, self.y_pred)
+            ])
         return self.policy.probs(self.y_pred)
 
 # BUG: Since its too complicated to try and get the final state
@@ -335,12 +358,15 @@ class PolicyHead(ClassificationHead):
             # This particular algorithm (REINFORCE) can't give a loss until the
             # end of the episode is reached.
             return None
-        log_probabilities = torch.stack(
-            [action.policy.log_prob(action.y_pred) for action in actions]
-        )
-        rewards = torch.stack([reward[0] for reward in rewards])
+
+        log_probabilities = actions.y_pred_log_prob
+        rewards = rewards.y
+        # torch.stack(
+        #     [action.policy.log_prob(action.y_pred) for action in actions]
+        # )
+        # rewards = torch.stack([reward[0] for reward in rewards])
         loss = self.policy_gradient_optimized(rewards=rewards, log_probs=log_probabilities)
-        
+
         # TODO: Add 'Metrics' for each episode?
         return Loss("policy_gradient", loss)
 
