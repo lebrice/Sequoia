@@ -17,7 +17,7 @@ from utils.logging_utils import get_logger
 logger = get_logger(__file__)
 
 try:
-    from stable_baselines3 import A2C, PPO
+    from stable_baselines3 import A2C, PPO, DDPG, DQN, SAC, TD3
     from stable_baselines3.common.base_class import BaseAlgorithm
     from stable_baselines3.common.base_class import is_image_space, VecEnv, DummyVecEnv, VecTransposeImage 
 except ImportError as e:
@@ -47,7 +47,24 @@ class WrapEnvPatch:
 class A2CModel(WrapEnvPatch, A2C):
     pass
 
+
 class PPOModel(WrapEnvPatch, PPO):
+    pass
+
+
+class DQNModel(WrapEnvPatch, DQN):
+    pass
+
+
+class DDPGModel(WrapEnvPatch, DDPG):
+    pass
+
+
+class TD3Model(WrapEnvPatch, TD3):
+    pass
+
+
+class SACModel(WrapEnvPatch, SAC):
     pass
 
 
@@ -91,7 +108,9 @@ class StableBaselines3Method(Method, target_setting=ContinualRLSetting):
 
 
 class A2CMethod(StableBaselines3Method):
-    name: ClassVar[str] = "a2c"
+    # changing the 'name' in this case here, because the default name would be
+    # 'a_2_c'.
+    name: ClassVar[str] = "a2c" 
     Model: ClassVar[Type[BaseAlgorithm]] = A2CModel
 
 
@@ -99,20 +118,37 @@ class PPOMethod(StableBaselines3Method):
     Model: ClassVar[Type[BaseAlgorithm]] = PPOModel
 
 
+class DQNMethod(StableBaselines3Method):
+    Model: ClassVar[Type[BaseAlgorithm]] = DQNModel
+
+
+class DDPGMethod(StableBaselines3Method):
+    Model: ClassVar[Type[BaseAlgorithm]] = DDPGModel
+
+
+class SACMethod(StableBaselines3Method):
+    Model: ClassVar[Type[BaseAlgorithm]] = SACModel
+
+
+class TD3Method(StableBaselines3Method):
+    Model: ClassVar[Type[BaseAlgorithm]] = TD3Model
+
+
 from settings import all_settings
+
+
 if __name__ == "__main__":
-    
-    method = A2CMethod()
+    method = DQNMethod()
     # Evaluate on a single setting:
-    # setting = ContinualRLSetting.from_args()
-    # results = setting.apply(method)
-    # print(results.summary())
-    # print(f"objective: {results.objective}")
-    
+    setting = ContinualRLSetting.from_args()
+    results = setting.apply(method)
+    print(results.summary())
+    print(f"objective: {results.objective}")
+    exit()
     # Evaluate on all settings for the given datasets:
     
     from examples.quick_demo import evaluate_on_all_settings
-    all_results = evaluate_on_all_settings(method, datasets=["breakout"])
+    all_results = evaluate_on_all_settings(method, datasets=["CartPole-v0"])
     print(f"All results: {all_results}")
     # # TODO: Check out the wandb output.
     # import wandb

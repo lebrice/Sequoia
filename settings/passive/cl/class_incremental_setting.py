@@ -460,34 +460,12 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     def configure(self, method: Method):
         # TODO: See the docstring of Setting.configure, we need to clean this up.
         assert self.config is not None
-        config = self.config
-        # Get the arguments that will be used to create the dataloaders.
         
         # TODO: Should the data_dir be in the Setting, or the Config?
-        self.data_dir = config.data_dir
+        self.data_dir = self.config.data_dir
         
-        # Create the dataloader kwargs, if needed.
-        if not self.dataloader_kwargs:
-            batch_size = 32
-            if hasattr(method, "batch_size"):
-                batch_size = method.batch_size
-            elif hasattr(method, "model") and hasattr(method.model, "batch_size"):
-                batch_size = method.model.batch_size
-            elif hasattr(config, "batch_size"):
-                batch_size = config.batch_size
-
-            # Save the dataloader kwargs in `self` so that calling `train_dataloader()`
-            # from outside with no arguments (i.e. when fitting the model with self
-            # as the datamodule) will use the same args as passing the dataloaders
-            # manually.
-            self.dataloader_kwargs = dict(
-                batch_size=batch_size,
-                num_workers=config.num_workers,
-                shuffle=False,
-            )
-
-        logger.debug(f"Dataloader kwargs: {self.dataloader_kwargs}")
-
+        # Set the dataloader kwargs, if needed.
+        self.num_workers = self.num_workers or self.config.num_workers
         # Debugging: Run a quick check to see that what is returned by the
         # dataloaders is of the right type and shape etc.
         self._check_environments()

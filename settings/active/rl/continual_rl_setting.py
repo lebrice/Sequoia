@@ -1,4 +1,5 @@
 import itertools
+import warnings
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -10,18 +11,20 @@ import numpy as np
 from gym import spaces
 from gym.envs.atari import AtariEnv
 from gym.envs.classic_control import CartPoleEnv
+from gym.wrappers import AtariPreprocessing
 
 from common import Batch, Config
 from common.gym_wrappers import (MultiTaskEnvironment, SmoothTransitions,
                                  TransformAction, TransformObservation,
                                  TransformReward)
-from common.gym_wrappers.batch_env import BatchedVectorEnv
+from common.gym_wrappers.batch_env import BatchedVectorEnv, SyncVectorEnv, VectorEnv
 from common.gym_wrappers.env_dataset import EnvDataset
 from common.gym_wrappers.pixel_observation import PixelObservationWrapper
 from common.gym_wrappers.sparse_space import Sparse
 from common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
 from common.gym_wrappers.utils import (IterableWrapper,
-                                       classic_control_env_prefixes,
+                                       classic_control_envs,
+                                       classic_control_env_prefixes, 
                                        has_wrapper)
 from common.metrics import RegressionMetrics
 from common.transforms import Transforms
@@ -112,7 +115,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         "breakout": "Breakout-v0",
         # "duckietown": "Duckietown-straight_road-v0"
     }
-    # Which environment to learn on.
+    # Which environment (a.k.a. "dataset") to learn on.
+    # The dataset could be either a string (env id or a key from the
+    # available_datasets dict), a gym.Env, or a callable that returns a single environment.
+    # If self.dataset isn't one of those, an error will be raised.
     dataset: str = choice(available_datasets, default="breakout")
 
     # Max number of steps ("length" of the training and test "datasets").
@@ -128,12 +134,47 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # could be as low as 1 (for example, supervised learning, episode == epoch).
     test_loop_episodes: int = 100
 
-    # Wether we should add the 'done' vector as being part of the observations.
-    add_done_to_observations: bool = True
+    # Wether we want to bypass the encoder entirely and use the observation
+    # coming from the environment as our 'representation'. This can be useful to
+    # debug environments like CartPole, for instance.
+    observe_state_directly: bool = False
+
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
-          
+        
+        # Post processing of the 'dataset' field, so that it is a proper env id
+        # if the name from the dict of available_dataset above was used, so for
+        # instance: "breakout" -> "Breakout-v0".
+        if self.dataset in self.available_datasets.keys():
+            # the environment name was passed, rather than an id
+            # (e.g. 'cartpole' -> 'CartPole-v0").
+            self.dataset = self.available_datasets[self.dataset]
+        
+        if self.dataset in self.available_datasets.values():
+            # dataset is already a dataset 'id' from the dict of available
+            # dataset, all good, do nothing.
+            pass
+        
+        elif isinstance(self.dataset, str):
+            # The passed dataset is assumed to be an environment ID, but it
+            # wasn't in the dict of available datasets! We issue a warning, but
+            # proceed to let the user use whatever environment they want to.
+            logger.warning(UserWarning(
+                f"The chosen dataset/environment ({self.dataset}) isn't in the "
+                f"available_datasets dict, so we can't garantee this will work!"
+            ))
+        elif isinstance(self.dataset, gym.Env):
+            # A gym.Env object was passed as the 'dataset'.
+            pass
+        elif callable(self.dataset):
+            # self.dataset is a callable (an env factory function).
+            pass
+        
+        if not isinstance(self.dataset, (str, gym.Env)) and not callable(self.dataset):
+            raise RuntimeError(f"`dataset` must be either a string, a gym.Env, "
+                               f"or a callable. (got {self.dataset})")
+
         # Set the number of tasks depending on the increment, and vice-versa.
         # (as only one of the two should be used).
         assert self.max_steps
@@ -161,12 +202,11 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         self.valid_task_schedule: Dict[int, Dict] = {}
         self.test_task_schedule: Dict[int, Dict] = {}
 
+        
         # Create a temporary environment so we can extract the spaces.
-        with self.make_temp_env() as temp_env:
+        with self.make_env(self.dataset, self.temp_wrappers()) as temp_env:
             # Populate the task schedules created above.
             self.create_task_schedules(temp_env)
-            
-            
             # Set the spaces using the temp env.
             self.observation_space = temp_env.observation_space
             self.action_space = temp_env.action_space
@@ -189,50 +229,75 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # train tasks.
         self.valid_task_schedule = self.train_task_schedule.copy() 
         self.test_task_schedule = self.train_task_schedule.copy()
-    
-    def make_temp_env(self) -> gym.Env:
-        """ Creates a temporary environment.
+
+    @staticmethod
+    def make_env(base_env: Union[str, gym.Env, Callable[[], gym.Env]],
+                 wrappers: List[Callable[[gym.Env], gym.Env]]=None) -> gym.Env:
+        """ Make a single (not-batched) environment.
         
-        Will be called in the 'constructor' (__post_init__) to get the
-        observation/action/reward spaces, so this should
-        ideally depend on as little state as possible.
+        Would be nice if we could just pass this as the env_fn to the batched
+        environments, but this unfortunately can't work, because we have
+        references to `self` here. 
         """
-        if self.env_name:
-            temp_env = gym.make(self.env_name)
+        env: gym.Env
+        if isinstance(base_env, str):
+            env = gym.make(base_env)
+        elif isinstance(base_env, gym.Env):
+            env = base_env
+        elif callable(base_env):
+            env = base_env()
         else:
-            assert callable(self.dataset), f"dataset should either be a string or a callable, got {self.dataset}"
-            temp_env = self.dataset()
+            raise RuntimeError(
+                f"base_env should either be a string, a callable, or a gym "
+                f"env. (got {base_env})."
+            )
+        for wrapper in wrappers:
+            env = wrapper(env)
+        return env
+    
+    def temp_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
+        """ Gets the minimal wrappers needed to figure out the Spaces of the
+        train_env.
+        
+        This is called in the 'constructor' (__post_init__) to set the Setting's
+        observation/action/reward spaces, so this should depend on as little
+        state from `self` as possible, since not all attributes have been
+        defined at the point where this is called. 
+        """
+        wrappers: List[Callable[[gym.Env], gym.Env]] = []
+        if not self.observe_state_directly:
+            # If we are in a classic control env, and we dont want the state to
+            # be fully-observable (i.e. we want pixel observations rather than
+            # getting the pole angle, velocity, etc.), then add the
+            # PixelObservation wrapper to the list of wrappers.
+            
+            # TODO: Change the BaselineMethod so that it uses an nn.Identity()
+            # or the like in the case where setting.observe_state_directly is True.
+            if ((isinstance(self.dataset, str) and
+                 self.dataset.startswith(classic_control_env_prefixes))
+                or isinstance(self.dataset, classic_control_envs)):
+                wrappers.append(PixelObservationWrapper)
+                            
+        if self.dataset.startswith("Breakout") or isinstance(self.dataset, AtariEnv):
+            # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
+            wrappers.append(AtariPreprocessing)    
+        
+        if not self.observe_state_directly:
+            # Apply the image transforms to the env.
+            wrappers.append(partial(TransformObservation, f=self.train_transforms))
 
-        if self.env_name.startswith(classic_control_env_prefixes):
-            # TODO: Perhaps we could add an option for viewing the state directly here?
-            # The only problem with that is that the encoders we use are all
-            # convnet-based. We'd have to have some fully-connected encoders or
-            # something instead.
-            temp_env = PixelObservationWrapper(temp_env)
-
-        # Apply the image transforms to the env.
-        temp_env = TransformObservation(temp_env, f=self.train_transforms)
         # Add a wrapper that creates the 'tasks' (non-stationarity in the env).
         # First, get the set of parameters that will be changed over time.
-        cl_task_params = task_params.get(self.env_name, task_params.get(type(temp_env.unwrapped), []))            
-        
+        cl_task_params = task_params.get(self.dataset, [])
         if self.smooth_task_boundaries:
             cl_wrapper = SmoothTransitions
         else:
             cl_wrapper = MultiTaskEnvironment
         # We want to have a 'task-label' space, but it will be filled with
         # None values when task boundaries are smooth.
-        temp_env = cl_wrapper(
-            temp_env,
-            task_params=cl_task_params,
-            add_task_id_to_obs=True,
-        )
-        temp_env = AddDoneToObservation(temp_env)
-        temp_env = AddInfoToObservation(temp_env)
-        return temp_env
-    
-    
-    
+        wrappers.append(partial(cl_wrapper, task_params=cl_task_params, add_task_id_to_obs=True))
+        return wrappers
+
     def apply(self, method: Method, config: Config=None) -> "ContinualRLSetting.Results":
         """Apply the given method on this setting to producing some results."""
         self.config = config or Config.from_args(self._argv)
@@ -262,7 +327,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         return results
 
     @property
-    def env_name(self) -> str:
+    def env_name(self) -> Optional[str]:
         """Returns the gym 'id' associated with the selected dataset/env, or an
         empty string if the env doesn't have a spec. 
 
@@ -277,41 +342,62 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             return self.available_datasets[self.dataset]
         if isinstance(self.dataset, str):
             return self.dataset
-        elif self.dataset.spec:
+        if self.dataset.spec:
             return self.dataset.spec.id
-        return "" # No idea what the dataset name is, return None.
-        # return self.dataset
+        logger.warning(RuntimeWarning(
+            f"Can't tell what the selected env's name/id is, returning None. "
+            f"(dataset is {self.dataset})"
+        ))
+        return None
 
     def setup(self, stage=None):
+        # Not really doing anything here.
         return super().setup(stage=stage)
 
     def prepare_data(self, *args, **kwargs):
+        # We don't really download anything atm.
         return super().prepare_data(*args, **kwargs)
 
-    def train_dataloader(self, batch_size: int = None) -> ActiveEnvironment:
+    def train_dataloader(self, batch_size: int = None, num_workers: int = None) -> ActiveEnvironment:
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_fit:
             self.setup("fit")
 
         batch_size = batch_size or self.train_batch_size or self.batch_size
-        logger.info(f"Training batch size: {batch_size}")
-        # NOTE: Setting this to False when debugging can be very helpful,
-        # especially when trying to solve problems related to the env wrappers
-        # or the input preprocessing. Beware though, if the batch size isn't
-        # small (< 32)  this will makes things incredibly slow.
+        num_workers = num_workers or self.num_workers
+        logger.debug(f"batch_size: {batch_size}, num_workers: {num_workers}")
+
         if batch_size is None:
-            env = self.make_train_env()
+            env = self.make_env(self.dataset, wrappers=self.train_wrappers())
+        elif num_workers is None:
+            warnings.warn(UserWarning(
+                f"Running {batch_size} environments in series (very slow!) "
+                f"since the num_workers is None."
+            ))
+            env = SyncVectorEnv([
+                partial(self.make_env, base_env=self.dataset, wrappers=self.train_wrappers())
+                for _ in range(batch_size)
+            ])
         else:
-            use_mp = batch_size is not None and batch_size > 1 # and not self.config.debug
-            env = make_batched_env(
-                self.env_name,
-                wrappers=self.train_wrappers(),
-                batch_size=batch_size,
-                asynchronous=use_mp,
-                # asynchronous=False,
+            env = BatchedVectorEnv(
+                [partial(self.make_env, base_env=self.dataset, wrappers=self.train_wrappers())
+                    for _ in range(batch_size) 
+                ],
+                n_workers=num_workers,
+                # TODO: Still debugging shared memory + Sparse spaces.
                 shared_memory=False,
             )
+
+        if self.config and self.config.seed:
+            if batch_size:
+                # Seed each environment differently, but based on the base seed.
+                env.seed([self.config.seed + i for i in range(dataloader.num_envs)])
+            else:
+                env.seed(self.config.seed)
+        else:
+            env.seed(None)
+
         # Apply the "post-batch" wrappers:
         # Add a wrapper that converts numpy arrays / etc to Observations/Rewards
         # and from Actions objects to numpy arrays.
@@ -320,22 +406,13 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             observations_type=self.Observations,
             rewards_type=self.Rewards,
             actions_type=self.Actions,
-        )
-        # TODO: Have to make sure wrappers being applied on top aren't adding
-        # things to info or changing the 'done' value, because such changes
-        # wouldn't be reflected in the Observations object.
-        env = AddDoneToObservation(env)
-        env = AddInfoToObservation(env)
-        
+        )        
         # Create an IterableDataset from the env using the EnvDataset wrapper.
         dataset = EnvDataset(env, max_steps=self.steps_per_task)
+        
         # Create a GymDataLoader for the EnvDataset.
         dataloader = GymDataLoader(dataset)
-        if self.config.seed:
-            dataloader.seed([self.config.seed + i for i in range(dataloader.batch_size)])
-        else:
-            dataloader.seed(None)
-
+        
         self.train_env = dataloader
         return self.train_env
 
@@ -353,19 +430,25 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         wrappers: List[Callable[[gym.Env], gym.Env]] = []
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised?
-        # When using something like CartPole or Pendulum, we'd need to add
-        # a PixelObservations wrapper so we can get the 'observation'
-        # When using something like CartPole, we'd need to add a
-        # PixelObservations wrapper.
-        if self.env_name.startswith(classic_control_env_prefixes):
-            # TODO: Perhaps we could add an option for viewing the state directly here?
-            # The only problem with that is that the encoders we use are all
-            # convnet-based. We'd have to have some fully-connected encoders or
-            # something instead.
-            wrappers.append(PixelObservationWrapper)
-
-        # Wrapper to apply the image transforms to the env.
-        wrappers.append(partial(TransformObservation, f=self.train_transforms))
+        if not self.observe_state_directly:
+            # If we are in a classic control env, and we dont want the state to
+            # be fully-observable (i.e. we want pixel observations rather than
+            # getting the pole angle, velocity, etc.), then add the
+            # PixelObservation wrapper to the list of wrappers.
+            # TODO: Change the BaselineMethod so that it uses an nn.Identity()
+            # or the like in the case where setting.observe_state_directly is True.
+            if ((isinstance(self.dataset, str) and
+                 self.dataset.startswith(classic_control_env_prefixes))
+                or isinstance(self.dataset, classic_control_envs)):
+                wrappers.append(PixelObservationWrapper)
+                
+        if self.dataset.startswith("Breakout") or isinstance(self.dataset, AtariEnv):
+            # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
+            wrappers.append(AtariPreprocessing)    
+        
+        if not self.observe_state_directly:
+            # Wrapper to apply the image transforms to the env.
+            wrappers.append(partial(TransformObservation, f=self.train_transforms))
 
         if self.smooth_task_boundaries:
             # Add a wrapper that creates smooth 'tasks' (changes in the env).
@@ -414,26 +497,46 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             wrappers.append(HideTaskLabelsWrapper)
         return wrappers
     
-    def val_dataloader(self, batch_size: int = None) -> Environment:
+    def val_dataloader(self, batch_size: int = None, num_workers: int = None) -> Environment:
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_fit:
             self.setup("fit")
         
         batch_size = batch_size or self.valid_batch_size or self.batch_size
-
+        num_workers = num_workers or self.num_workers
+        logger.debug(f"batch_size: {batch_size}, num_workers: {num_workers}")
+        
         if batch_size is None:
-            env = self.make_val_env()
+            env = self.make_env(self.dataset, wrappers=self.train_wrappers())
+        elif num_workers is None:
+            warnings.warn(UserWarning(
+                f"Running {batch_size} environments in series (very slow!) "
+                f"since the num_workers is None."
+            ))
+            env = SyncVectorEnv([
+                partial(self.make_env, base_env=self.dataset, wrappers=self.train_wrappers())
+                for _ in range(batch_size)
+            ])
         else:
-            use_mp = batch_size is not None and batch_size > 1 # and not self.config.debug
-            env = make_batched_env(
-                self.env_name,
-                wrappers=self.val_wrappers(),
-                batch_size=batch_size,
-                asynchronous=use_mp,
-                # asynchronous=False,
+            env = BatchedVectorEnv(
+                [partial(self.make_env, base_env=self.dataset, wrappers=self.train_wrappers())
+                    for _ in range(batch_size) 
+                ],
+                n_workers=num_workers,
+                # TODO: Still debugging shared memory + Sparse spaces.
                 shared_memory=False,
             )
+        
+        if self.config.seed:
+            if batch_size:
+                # Seed each environment differently, but based on the base seed.
+                env.seed([self.config.seed + i for i in range(dataloader.num_envs)])
+            else:
+                env.seed(self.config.seed)
+        else:
+            env.seed(None)
+
         # Apply the "post-batch" wrappers:
         env = TypedObjectsWrapper(
             env,
@@ -441,15 +544,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             actions_type=self.Actions,
             rewards_type=self.Rewards,
         )
-        env = AddDoneToObservation(env)
-        env = AddInfoToObservation(env)
-        
         dataset = EnvDataset(env, max_steps=self.steps_per_task)
         dataloader = GymDataLoader(dataset)
-        if self.config.seed:
-            dataloader.seed([self.config.seed + i for i in range(dataloader.batch_size)])
-        else:
-            dataloader.seed(None)
         self.val_env = dataloader
         return self.val_env
     
@@ -465,18 +561,18 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             [description]
         """
         wrappers: List[Callable[[gym.Env], gym.Env]] = []
-
-        if self.env_name.startswith(classic_control_env_prefixes):
-            wrappers.append(PixelObservationWrapper)
-
-        wrappers.append(partial(TransformObservation, f=self.val_transforms))
-
-        if self.smooth_task_boundaries:
-            wrappers.append(partial(SmoothTransitions,
-                task_schedule=self.valid_task_schedule,
-                add_task_id_to_obs=True,
-                add_task_dict_to_info=True,
-            ))
+        if not self.observe_state_directly:
+            if ((isinstance(self.dataset, str) and
+                 self.dataset.startswith(classic_control_env_prefixes))
+                or isinstance(self.dataset, classic_control_envs)):
+                wrappers.append(PixelObservationWrapper)
+                
+        if self.dataset.startswith("Breakout") or isinstance(self.dataset, AtariEnv):
+            wrappers.append(AtariPreprocessing)    
+        
+        if not self.observe_state_directly:
+            wrappers.append(partial(TransformObservation, f=self.val_transforms))
+        
         # TODO: Should the validation environment have task labels if the train
         # env does but not the test env? 
         elif self.known_task_boundaries_at_train_time:
@@ -501,30 +597,47 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             wrappers.append(HideTaskLabelsWrapper)
         return wrappers
 
-    def test_dataloader(self, batch_size: int = None) -> TestEnvironment:
+    def test_dataloader(self, batch_size: int = None, num_workers: int = None) -> TestEnvironment:
+        # NOTE: The test environment isn't just for the current task, it
+        # contains the sequence of all tasks.
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_test:
             self.setup("test")
 
         batch_size = batch_size or self.test_batch_size or self.batch_size
-        # TODO: The test environment shouldn't be just for the current task, it
-        # should be the sequence of all tasks.
-        use_mp = batch_size is not None and batch_size > 1 # and not self.config.debug
-        # BUG: Turn shared_memory back to True once the bugs with shared memory
-        # and Sparse spaces are fixed.
+        num_workers = num_workers or self.num_workers
+
         if batch_size is None:
-            env = self.make_test_env()
+            env = self.make_env(self.dataset, wrappers=self.train_wrappers())
+        elif num_workers is None:
+            warnings.warn(UserWarning(
+                f"Running {batch_size} environments in series (very slow!) "
+                f"since the num_workers is None."
+            ))
+            env = SyncVectorEnv([
+                partial(self.make_env, base_env=self.dataset, wrappers=self.train_wrappers())
+                for _ in range(batch_size)
+            ])
         else:
-            env = make_batched_env(
-                self.env_name,
-                wrappers=self.test_wrappers(),
-                batch_size=batch_size,
-                asynchronous=use_mp,
-                # asynchronous=False,
+            env = BatchedVectorEnv(
+                [partial(self.make_env, base_env=self.dataset, wrappers=self.train_wrappers())
+                    for _ in range(batch_size) 
+                ],
+                n_workers=num_workers,
+                # TODO: Still debugging shared memory + Sparse spaces.
                 shared_memory=False,
             )
-        
+
+        if self.config.seed:
+            if batch_size:
+                # Seed each environment differently, but based on the base seed.
+                env.seed([self.config.seed + i for i in range(dataloader.num_envs)])
+            else:
+                env.seed(self.config.seed)
+        else:
+            env.seed(None)
+
         # If we know the task boundaries at test time, and the method has the
         # callback for it, then we add a callback wrapper that will invoke the
         # method's on_task_switch and pass it the task label if required when on
@@ -540,21 +653,15 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             rewards_type=self.Rewards,
             actions_type=self.Actions,
         )
-        env = AddDoneToObservation(env)
-        env = AddInfoToObservation(env)
-        
         dataset = EnvDataset(env, max_steps=self.steps_per_task)
         dataloader = GymDataLoader(dataset)
-        
-        if self.config.seed:
-            dataloader.seed([self.config.seed + i for i in range(dataloader.batch_size)])
-        else:
-            dataloader.seed(None)
 
-        test_dir = "results"
         # TODO: We should probably change the max_steps depending on the
         # batch size of the env.
         test_loop_max_steps = self.max_steps
+        # TODO: Find where to configure this 'test directory' for the outputs of
+        # the Monitor.
+        test_dir = "results"
         self.test_env = ContinualRLTestEnvironment(
             dataloader,
             directory=test_dir,
@@ -575,11 +682,17 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             [description]
         """
         wrappers: List[Callable[[gym.Env], gym.Env]] = []
-
-        if self.env_name.startswith(classic_control_env_prefixes):
-            wrappers.append(PixelObservationWrapper)
-
-        wrappers.append(partial(TransformObservation, f=self.test_transforms))
+        if not self.observe_state_directly:
+            if ((isinstance(self.dataset, str) and
+                 self.dataset.startswith(classic_control_env_prefixes))
+                or isinstance(self.dataset, classic_control_envs)):
+                wrappers.append(PixelObservationWrapper)
+                
+        if self.dataset.startswith("Breakout") or isinstance(self.dataset, AtariEnv):
+            wrappers.append(AtariPreprocessing)    
+        
+        if not self.observe_state_directly:
+            wrappers.append(partial(TransformObservation, f=self.test_transforms))
 
         if self.smooth_task_boundaries:
             wrappers.append(partial(SmoothTransitions,

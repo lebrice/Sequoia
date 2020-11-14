@@ -8,7 +8,7 @@ methods.
 from collections import OrderedDict
 from dataclasses import dataclass, is_dataclass
 from pathlib import Path
-from typing import (Any, ClassVar, Dict, Generic, List, Optional, Sequence,
+from typing import (Any, ClassVar, Callable, Dict, Generic, List, Optional, Sequence,
                     Set, Tuple, Type, TypeVar, Union)
 
 import gym
@@ -93,7 +93,11 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # type information for static type checking.
         self.trainer: Trainer
         self.model: BaselineModel
-
+        
+        self.additional_train_wrappers: List[Callable] = []
+        self.additional_valid_wrappers: List[Callable] = []
+      
+    
     def configure(self, setting: SettingType) -> None:
         """Configures the method for the given Setting.
 
@@ -127,6 +131,19 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         setting.batch_size = self.hparams.batch_size
 
+        if isinstance(setting, ContinualRLSetting):
+            from settings.active.rl.wrappers import AddDoneToObservation, AddInfoToObservation
+            # Configure specifically for a Continual RL setting.
+            self.additional_train_wrappers.extend([
+                AddDoneToObservation,
+                AddInfoToObservation,
+            ])
+            self.additional_valid_wrappers.extend([
+                AddDoneToObservation,
+                AddInfoToObservation,
+            ])
+            
+
     def fit(self,
             train_env: Environment[Observations, Actions, Rewards] = None,
             valid_env: Environment[Observations, Actions, Rewards] = None,
@@ -140,7 +157,12 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             "For now, Setting should have been nice enough to call "
             "method.configure(setting=self) before calling `fit`!"
         )
-        
+
+        for wrapper in self.additional_train_wrappers:
+            train_env = wrapper(train_env)
+        for wrapper in self.additional_valid_wrappers:
+            valid_env = wrapper(valid_env)
+
         return self.trainer.fit(
             model=self.model,
             train_dataloader=train_env,

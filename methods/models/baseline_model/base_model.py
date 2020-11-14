@@ -131,11 +131,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # If there's any additional 'input preprocessing' to do, do it here.
         # NOTE (@lebrice): This is currently done this way so that we don't have
         # to pass transforms to the settings from the method side.
-        """
-        TODOS:
-        - Mark the transforms fields on the Setting as ClassVars.
-        - Add those fields on the Method/models' HParam!                        
-        """
         preprocessed_observations = self.preprocess_observations(observations)
         # Here in this base model the encoder only takes the 'x' from the observations.
         h_x = self.encoder(preprocessed_observations.x)
@@ -144,6 +139,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             h_x = h_x[0]
         return h_x
 
+    
     def get_actions(self, observations: Observations, representations: Tensor) -> Actions:
         """ Pass the required inputs to the output head and get predictions.
         

@@ -109,8 +109,20 @@ class NoTypedObjectsWrapper(IterableWrapper):
 
 
 def remove_task_labels(observation: Tuple[T, int]) -> T:
-    assert len(observation) == 2
-    return observation[0]
+    if is_dataclass(observation):
+        return replace(observation, task_labels=None)
+    if isinstance(observation, (tuple, list)):
+        # try:
+        #     # If observation is a namedtuple:
+        #     return observation._replace(task_labels=None)
+        # except:
+        #     pass
+        assert len(observation) == 2
+        return observation[0]
+    if isinstance(observation, dict):
+        observation.pop("task_labels")
+        return observation
+    raise NotImplementedError
 
 
 class RemoveTaskLabelsWrapper(TransformObservation):

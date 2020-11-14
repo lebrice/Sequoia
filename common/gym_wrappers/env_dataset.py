@@ -138,7 +138,7 @@ class EnvDataset(gym.Wrapper,
             When an action wasn't passed through 'send', and a default policy
             isn't set.
         """
-        logger.debug(f"__next__ is being called at step {self.n_steps_}.")
+        # logger.debug(f"__next__ is being called at step {self.n_steps_}.")
         
         if self.closed_:
             raise gym.error.ClosedEnvironmentError("Env is closed.")
@@ -226,7 +226,7 @@ class EnvDataset(gym.Wrapper,
         while not any([self.done_is_true(),
                        self.reached_step_limit,
                        self.reached_episode_length_limit]):
-            logger.debug(f"step {self.n_steps_}/{self.max_steps},  (episode {self.n_episodes_})")
+            # logger.debug(f"step {self.n_steps_}/{self.max_steps},  (episode {self.n_episodes_})")
             
             # Set those to None to force the user to call .send()
             self.action_ = None

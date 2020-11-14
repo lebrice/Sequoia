@@ -171,8 +171,8 @@ class Setting(SettingABC,
         #     logger.debug(f"x shape after transforms: {x_shape}")
         # self.observation_space = x_shape
 
-        self.dataloader_kwargs: Dict[str, Any] = {}
         self.batch_size: Optional[int] = None
+        self.num_workers: Optional[int] = None
         self.train_batch_size: Optional[int] = None
         self.valid_batch_size: Optional[int] = None
         self.test_batch_size: Optional[int] = None
@@ -397,26 +397,8 @@ class Setting(SettingABC,
         self.data_dir = self.config.data_dir
         
         # Create the dataloader kwargs, if needed.
-        if not self.dataloader_kwargs:
-            batch_size = 32
-            if hasattr(method, "batch_size"):
-                batch_size = method.batch_size
-            elif hasattr(method, "model") and hasattr(method.model, "batch_size"):
-                batch_size = method.model.batch_size
-            elif hasattr(self.config, "batch_size"):
-                batch_size = self.config.batch_size
-
-            dataloader_kwargs = dict(
-                batch_size=batch_size,
-                num_workers=self.config.num_workers,
-                shuffle=False,
-            )
-        # Save the dataloader kwargs in `self` so that calling `train_dataloader()`
-        # from outside with no arguments (i.e. when fitting the model with self
-        # as the datamodule) will use the same args as passing the dataloaders
-        # manually.
-        self.dataloader_kwargs = dataloader_kwargs
-        logger.debug(f"Dataloader kwargs: {dataloader_kwargs}")
+        self.batch_size = self.batch_size or getattr(self.config, "batch_size", None)
+        self.num_workers = self.num_workers or self.config.num_workers
 
         # Debugging: Run a quick check to see that what is returned by the
         # dataloaders is of the right type and shape etc.
@@ -445,11 +427,18 @@ class Setting(SettingABC,
             # check samples from such spaces on how the spaces are batched. 
             
             expected_observation_space = batch_space(self.observation_space, n=batch_size)
-            expected_action_space = batch_space(self.action_space, batch_size)
-            expected_reward_space = batch_space(self.reward_space, batch_size)
-            
-            # TODO: Batching the 'Sparse' makes it really ugly.
-            assert env.observation_space[0] == expected_observation_space[0], (env.observation_space[0], expected_observation_space[0])
+            expected_action_space = batch_space(self.action_space, n=batch_size)
+            expected_reward_space = batch_space(self.reward_space, n=batch_size)
+
+            # TODO: Batching the 'Sparse' makes it really ugly, so just
+            # comparing the 'image' portion of the space for now.
+            assert env.observation_space[0].shape == expected_observation_space[0].shape, (env.observation_space[0], expected_observation_space[0])
+            # assert env.observation_space[0] == expected_observation_space[0], (env.observation_space[0], expected_observation_space[0])
+            # assert env.observation_space[1] == expected_observation_space[1], (
+            #     f"env obs space: {env.observation_space[1]}, \n"
+            #     f"expected obs space: {expected_observation_space[1]}"
+            # )
+
             assert env.action_space == expected_action_space, (env.action_space, expected_action_space)
             assert env.reward_space == expected_reward_space, (env.reward_space, expected_reward_space)
 

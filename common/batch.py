@@ -321,9 +321,18 @@ class Batch(ABC):
         if isinstance(inputs, cls):
             return inputs
         if isinstance(inputs, (tuple, list)):
+            from collections.abc import Sized
+            if not all(isinstance(item, Sized) for item in inputs):
+                # FIXME: This could either mean that this method is being passed
+                # a tuple or a list of non-Batched items, or that an individual
+                # field has None as a value. Hard to distinguish these two..
+                inputs = [
+                    [item] for item in inputs
+                ]
+
             # Convert things that aren't tensors to numpy arrays.
             # Stack tensors (to preserve their 'grad' attributes, if present).
-            inputs = [
+            inputs: List[Union[np.ndarray, Tensor]] = [
                 items if isinstance(items, Tensor) else
                 torch.stack(items) if isinstance(items[0], Tensor) else
                 np.asarray(items)
