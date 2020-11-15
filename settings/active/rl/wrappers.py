@@ -73,11 +73,10 @@ def unwrap_rewards(rewards: Rewards) -> Union[Tensor, np.ndarray]:
 
 
 def unwrap_observations(observations: Observations) -> Union[Tensor, np.ndarray]:
-    if isinstance(observations, Observations):
-        # TODO: Keep the task labels? or no? For now, yes.        
-        observations = observations.as_tuple()
-    assert not isinstance(observations, Observations)
-    return observations
+    # This gets rid of everything except just the image.
+    assert isinstance(observations, Observations)
+    # TODO: Keep the task labels? or no? For now, yes.        
+    return observations.x
 
 
 class NoTypedObjectsWrapper(IterableWrapper):
@@ -95,9 +94,11 @@ class NoTypedObjectsWrapper(IterableWrapper):
         super().__init__(env)
     
     def step(self, action):
-        action = unwrap_actions(action)
+        if isinstance(action, Actions):
+            action = unwrap_actions(action)
         if hasattr(action, "detach"):
             action = action.detach()
+        assert action in self.action_space, (action, type(action), self.action_space)        
         observation, reward, done, info = self.env.step(action)
         observation = unwrap_observations(observation)
         reward = unwrap_rewards(reward)
