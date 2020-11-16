@@ -1,10 +1,14 @@
-""" TODO: Same as the 'simple demo', but with addition of an EWC-like loss.
+""" Example script: Defines a new Method based on the DemoMethod from the
+quick_demo.py script, adding an EWC-like loss to prevent the weights from
+changing too much between tasks.
 """
 from abc import ABC
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Dict, Tuple, ClassVar, Optional, List, Dict, Type
 from pathlib import Path
+import sys
+sys.path.extend([".", ".."])
 
 import gym
 import pytorch_lightning as pl
@@ -20,9 +24,10 @@ from methods import Method as Method
 from utils.logging_utils import get_logger
 from utils import dict_intersection
 
-from .quick_demo import MyModel, DemoMethod, demo, Observations, Actions, Rewards
-logger = get_logger(__file__)
+from examples.quick_demo import MyModel, DemoMethod, Observations, Actions, Rewards
+from settings.passive.cl.objects import (Actions, Observations, Results, Rewards)
 
+logger = get_logger(__file__)
 
 class MyImprovedModel(MyModel):
     """ Adds an ewc-like penalty to the demo model. """
@@ -102,8 +107,8 @@ class ImprovedDemoMethod(DemoMethod):
         # Distance norm used in the ewc loss.
         ewc_p_norm: int = 2
 
-    def __init__(self, hparams: HParams):
-        super().__init__(hparams=hparams)
+    def __init__(self, hparams: HParams = None):
+        super().__init__(hparams=hparams or self.HParams.from_args())
     
     def configure(self, setting: ClassIncrementalSetting):
         # Use the improved model, with the added EWC-like term.
@@ -119,54 +124,43 @@ class ImprovedDemoMethod(DemoMethod):
     def on_task_switch(self, task_id: Optional[int]):
         self.model.on_task_switch(task_id)
 
-
-from .quick_demo import evaluate_on_all_settings, create_method
-
-
-def demo():
-    base_method = create_method(DemoMethod)
-    base_results = evaluate_on_all_settings(base_method)
     
-    improved_method = create_method(ImprovedDemoMethod)
-    improved_results = evaluate_on_all_settings(improved_method)
+
+
+if __name__ == "__main__":
+    from settings import TaskIncrementalSetting
+    # Example: Comparing two methods on the same setting:
+    
+    ## 1. Create the Setting (same as in quick_demo.py)
+    setting = TaskIncrementalSetting(dataset="fashionmnist", nb_tasks=5)
+    # setting = TaskIncrementalSetting.from_args()
+    
+    # Get the results for the base method:
+    base_method = DemoMethod()
+    base_results = setting.apply(base_method)
+    
+    # Get the results for the 'improved' method:
+    new_method = ImprovedDemoMethod()
+    new_results = setting.apply(new_method)
+    
+    print(f"\n\nComparison: DemoMethod vs ImprovedDemoMethod - (TaskIncrementalSetting, dataset=fashionmnist):")
+    print(base_results.summary())
+    print(new_results.summary())
+    
+    exit()
+    
+    # Optionally, second part of the demo: Compare the performances of the two
+    # methods on all their applicable settings:
+
+    base_method = DemoMethod()
+    from examples.demo_utils import compare_results, demo_all_settings
+    
+    base_results = demo_all_settings(base_method, datasets=["mnist", "fashionmnist"])
+    
+    new_method = ImprovedDemoMethod()
+    improved_results = demo_all_settings(new_method, datasets=["mnist", "fashionmnist"])
 
     compare_results({
         DemoMethod: base_results,
         ImprovedDemoMethod: improved_results,
     })
-
-
-def compare_results(all_results: Dict[Type[Method], Dict[Type[Setting], Dict[str, Results]]]):
-    """Compare the results of the different methods, arranging them in a table.
-
-    Parameters
-    ----------
-    methods : List[Method]
-        [description]
-    """
-    # Make one huge dictionary that maps from:
-    # <method, <setting, <dataset, result>>>
-    from .demo_utils import make_comparison_dataframe
-    comparison_df = make_comparison_dataframe(all_results)
-    
-    print("----- All Results -------")
-    print(comparison_df)
-
-    csv_path = Path("examples/results/comparison.csv")
-    latex_path = Path("examples/results/table_comparison.tex")
-    
-    comparison_df.to_csv(csv_path)
-    print(f"Saved dataframe with results to path {csv_path}")
-    
-    caption = f"Comparison of different methods on their applicable settings."
-    comparison_df.to_latex(
-        latex_path,
-        caption=caption,
-        multicolumn=False,
-        multirow=False
-    )
-    print(f"Saved LaTeX table with results to path {latex_path}")
-
-
-if __name__ == "__main__":
-    demo()

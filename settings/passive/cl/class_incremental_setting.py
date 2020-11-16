@@ -475,17 +475,17 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             elif hasattr(config, "batch_size"):
                 batch_size = config.batch_size
 
-            dataloader_kwargs = dict(
+            # Save the dataloader kwargs in `self` so that calling `train_dataloader()`
+            # from outside with no arguments (i.e. when fitting the model with self
+            # as the datamodule) will use the same args as passing the dataloaders
+            # manually.
+            self.dataloader_kwargs = dict(
                 batch_size=batch_size,
                 num_workers=config.num_workers,
                 shuffle=False,
             )
-        # Save the dataloader kwargs in `self` so that calling `train_dataloader()`
-        # from outside with no arguments (i.e. when fitting the model with self
-        # as the datamodule) will use the same args as passing the dataloaders
-        # manually.
-        self.dataloader_kwargs = dataloader_kwargs
-        logger.debug(f"Dataloader kwargs: {dataloader_kwargs}")
+
+        logger.debug(f"Dataloader kwargs: {self.dataloader_kwargs}")
 
         # Debugging: Run a quick check to see that what is returned by the
         # dataloaders is of the right type and shape etc.
