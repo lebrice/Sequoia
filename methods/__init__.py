@@ -34,6 +34,7 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
 
 from .baseline_method import BaselineMethod
 from .random_baseline import RandomBaselineMethod
+from .experience_replay import ExperienceReplayMethod
 
 
 ## Pretty hacky: Dynamically import all the modules/packages defined in this
@@ -45,7 +46,7 @@ all_modules: List[str] = [
     if (#(isfile(f) and
     not f.endswith('__init__.py') and
     not f.endswith("_test.py"))
-]
+
 
 for module in all_modules:
     try:
