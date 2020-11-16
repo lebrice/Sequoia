@@ -278,9 +278,9 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 or isinstance(self.dataset, classic_control_envs)):
                 wrappers.append(PixelObservationWrapper)
                             
+        # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
         if self.dataset.startswith("Breakout") or isinstance(self.dataset, AtariEnv):
-            # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
-            wrappers.append(AtariPreprocessing)    
+            wrappers.append(AtariPreprocessing)
         
         if not self.observe_state_directly:
             # Apply the image transforms to the env.
@@ -442,9 +442,9 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 or isinstance(self.dataset, classic_control_envs)):
                 wrappers.append(PixelObservationWrapper)
                 
+        # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
         if self.dataset.startswith("Breakout") or isinstance(self.dataset, AtariEnv):
-            # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
-            wrappers.append(AtariPreprocessing)    
+            wrappers.append(AtariPreprocessing)
         
         if not self.observe_state_directly:
             # Wrapper to apply the image transforms to the env.

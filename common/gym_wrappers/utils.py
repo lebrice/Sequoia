@@ -107,7 +107,7 @@ class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
         
         # (Following option 4 below)
         if has_wrapper(self.env, EnvDataset):
-            logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.send.")
+            # logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.send.")
             return EnvDataset.send(self, action)
 
     def __iter__(self) -> Iterator:
@@ -128,11 +128,11 @@ class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
         # Option 4: Slight variation on option 3: We cut straight to the
         # EnvDataset iterator.
         if has_wrapper(self.env, EnvDataset):
-            logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__ with the wrapper as `self`.")
+            # logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__ with the wrapper as `self`.")
             return EnvDataset.__iter__(self)
         
         if has_wrapper(self.env, PolicyEnv):
-            logger.debug(f"Wrapped env is a PolicyEnv, will use PolicyEnv.__iter__ with the wrapper as `self`.")
+            # logger.debug(f"Wrapped env is a PolicyEnv, will use PolicyEnv.__iter__ with the wrapper as `self`.")
             return PolicyEnv.__iter__(self)
         
         # NOTE: This works even though IterableDataset isn't a gym.Wrapper.

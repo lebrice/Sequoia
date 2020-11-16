@@ -55,6 +55,7 @@ class WrapEnvPatch:
 
         return env
 
+# "Patch" up the models, so we change just the method above:
 
 class A2CModel(WrapEnvPatch, A2C):
     pass
@@ -81,12 +82,20 @@ class SACModel(WrapEnvPatch, SAC):
 
 
 class StableBaselines3Method(Method, target_setting=ContinualRLSetting):
+    """ Base class for the methods that use models from the stable_baselines3
+    repo.
+    """
+
+    # Class variable that represents what kind of Model will be used.
+    # (This is just here so we can easily create one Method class per model type
+    # below by just changing this class attribute.)
     Model: ClassVar[Type[BaseAlgorithm]] = A2CModel
     
     def __init__(self):
-        self.model: Optional[BaseAlgorithm]
+        self.model: Optional[BaseAlgorithm] = None
 
     def configure(self, setting: ContinualRLSetting):
+        # Delete the model, if present.
         self.model = None
         # For now, we don't batch the space because stablebaselines3 will add an
         # additional batch dimension if we do.
@@ -94,21 +103,34 @@ class StableBaselines3Method(Method, target_setting=ContinualRLSetting):
         setting.train_batch_size = None
         setting.valid_batch_size = None
         setting.test_batch_size = None
+        from common.transforms import Transforms, ChannelsLastIfNeeded
+        # assert False, setting.train_transforms
+        # BUG: Need to fix an issue when using the CnnPolicy and Atary envs, the
+        # input shape isn't what they expect (only 2 channels instead of three
+        # apparently.)
+        # setting.train_transforms = [Transforms.channels_last]
+        # setting.val_transforms = [Transforms.channels_last]
+        # setting.test_transforms = [Transforms.channels_last]
         
         if setting.observe_state_directly:
             self.policy_type = "MlpPolicy"
         else:
             self.policy_type = "CnnPolicy"
         
+        # TODO: Need to figure out how many steps these methods need to be
+        # trained for, as well as a way to "check" that training works.
+
         # Only one "epoch" of training for now.
         self.total_timesteps = setting.steps_per_task
 
     def fit(self, train_env: gym.Env = None, valid_env: gym.Env = None):
+        # Remove the extra information that the Setting gives us.
         train_env = RemoveTaskLabelsWrapper(train_env)
         train_env = NoTypedObjectsWrapper(train_env)
         
         valid_env = RemoveTaskLabelsWrapper(valid_env)
         valid_env = NoTypedObjectsWrapper(valid_env)
+
         if self.model is None:
             self.model = self.Model(self.policy_type, train_env, verbose=1)
         else:
@@ -123,7 +145,10 @@ class StableBaselines3Method(Method, target_setting=ContinualRLSetting):
         obs = observations[0]
         predictions = self.model.predict(obs)
         action, _ = predictions
+        if action not in action_space:
+            action = action.item()
         return action
+
 
 @register_method
 class A2CMethod(StableBaselines3Method):
@@ -153,6 +178,7 @@ class SACMethod(StableBaselines3Method):
 
 @register_method
 class TD3Method(StableBaselines3Method):
+    name: ClassVar[str] = "td3" 
     Model: ClassVar[Type[BaseAlgorithm]] = TD3Model
 
 
@@ -191,6 +217,3 @@ if __name__ == "__main__":
     # # TODO: Check out the wandb output.
     # import wandb
     # wandb.gym.monitor()
-
-        
-        

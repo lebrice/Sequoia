@@ -50,4 +50,3 @@ for module in all_modules:
 # from .pl_bolts_methods.cpcv2 import CPCV2Method
 
 # print(" All methods: ", all_methods)
-assert False, all_methods

@@ -6,7 +6,7 @@ from common import Metrics, RegressionMetrics, ClassificationMetrics
 from typing import List, ClassVar, Dict
 from utils.plotting import autolabel, plt
 from simple_parsing import list_field
-
+import numpy as np
 # @dataclass
 # class EpisodeMetrics(Metrics):
 #     rewards: List[float]
@@ -19,6 +19,9 @@ class RLResults(IncrementalSetting.Results, Results):
 
     Similar to ClassIncrementalResults, but here the metrics would be the mean
     reward, something like that.
+    
+    TODO: Actually implement this, making sure that the metrics/plots this creates
+    make sense.
     """
     episode_rewards: List[List[float]] = list_field()
     episode_lengths: List[List[int]] = list_field()
@@ -54,8 +57,12 @@ class RLResults(IncrementalSetting.Results, Results):
         return sum(map(sum, self.episode_rewards))
 
     def summary(self):
-        return f"Mean reward: {self.mean_reward}"
-        return super().summary()
+        lines = [
+            f"Total reward: {self.total_reward}"
+            f"Mean reward: {self.mean_reward}"
+        ]        
+        return "\n".join(lines)
+               
     
     def make_plots(self):
         results = {
