@@ -201,10 +201,6 @@ class Buffer(nn.Module):
         if idx_buffer.numel() == 0:
             return
 
-        assert idx_buffer.max() < self.bx.size(0), pdb.set_trace()
-        assert idx_buffer.max() < self.by.size(0), pdb.set_trace()
-        assert idx_buffer.max() < self.bt.size(0), pdb.set_trace()
-
         # perform overwrite op
         for name, data in batch.items():
             buffer = getattr(self, f'b{name}')
