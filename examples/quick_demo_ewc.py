@@ -2,30 +2,23 @@
 quick_demo.py script, adding an EWC-like loss to prevent the weights from
 changing too much between tasks.
 """
-from abc import ABC
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Dict, Tuple, ClassVar, Optional, List, Dict, Type
-from pathlib import Path
+from typing import Dict, Tuple, ClassVar, Optional
 import sys
-sys.path.extend([".", ".."])
 
 import gym
-import pytorch_lightning as pl
 import torch
-import wandb
-from gym import spaces
-from torch import nn, Tensor
-from simple_parsing import ArgumentParser, Serializable
+from torch import Tensor
 
-from settings import Setting, PassiveEnvironment, PassiveSetting, ClassIncrementalSetting, Results
-from common.config import Config
-from methods import Method as Method
+# This "hack" is required so we can run `python examples/quick_demo_ewc.py`
+sys.path.extend([".", ".."])
+from settings import ClassIncrementalSetting
 from utils.logging_utils import get_logger
 from utils import dict_intersection
 
-from examples.quick_demo import MyModel, DemoMethod, Observations, Actions, Rewards
-from settings.passive.cl.objects import (Actions, Observations, Results, Rewards)
+from examples.quick_demo import MyModel, DemoMethod
+from settings.passive.cl.objects import Observations, Rewards
 
 logger = get_logger(__file__)
 

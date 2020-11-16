@@ -53,27 +53,46 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
     """
     # NOTE: these two fields are also used to create the command-line arguments.
     # HyperParameters of the method.
-    hparams: BaselineModel.HParams
+    hparams: BaselineModel.HParams = mutable_field(BaselineModel.HParams)
     # Configuration options.
-    config: Config
-
-    # TODO: Need to device where to put this.. Doesn't really make sense to have
-    # it inside the setting, imo.
+    config: Config = mutable_field(Config)
     # Options for the Trainer object.
-    trainer_options: TrainerConfig = None
+    trainer_options: TrainerConfig = mutable_field(TrainerConfig)
     
     def __init__(self,
-                 hparams: BaselineModel.HParams,
+                 hparams: BaselineModel.HParams = None,
                  config: Config = None,
-                 trainer_options: TrainerConfig = None):
-        self.hparams = hparams
-        self.config = config or Config.from_args()
-        self.trainer_options = trainer_options or TrainerConfig.from_args()
+                 trainer_options: TrainerConfig = None, **kwargs):
+        # TODO: When creating a Method from a script, like `BaselineMethod()`,
+        # should we expect the hparams to be passed? Should we create them from
+        # the **kwargs? Should we parse them from the command-line? 
+        
+        # Option 1: Use the default values:
+        # self.hparams = hparams or BaselineModel.HParams()
+        # self.config = config or Config()
+        # self.trainer_options = trainer_options or TrainerConfig()
+        
+        # Option 2: Try to use the keyword arguments to create the hparams,
+        # config and trainer options.
+        self.hparams = hparams or BaselineModel.HParams.from_dict(kwargs, drop_extra_fields=True)
+        self.config = config or Config.from_dict(kwargs, drop_extra_fields=True)
+        self.trainer_options = trainer_options or TrainerConfig.from_dict(kwargs, drop_extra_fields=True)
+        
+        # Option 3: Parse them from the command-line.
+        # self.hparams = hparams or BaselineModel.HParams.from_args()
+        # self.config = config or Config.from_args()
+        # self.trainer_options = trainer_options or TrainerConfig.from_args()
+        
+        if self.config.debug:
+            # Disable wandb logging if debug is True.
+            self.trainer_options.no_wandb = True
+        
         # The model and Trainer objects will be created in `self.configure`. 
         # NOTE: This right here doesn't create the fields, it just gives some
         # type information for static type checking.
         self.trainer: Trainer
         self.model: LightningModule
+
       
     
     def configure(self, setting: SettingType) -> None:
@@ -92,7 +111,10 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # Note: this here is temporary, just tinkering with wandb atm.
         method_name: str = self.get_name()
         setting_name: str = setting.get_name()
-        dataset: str = getattr(setting, "dataset", "")        
+        dataset: str = setting.dataset
+        
+        # TODO: Should we set the 'config' on the setting from here?
+        setting.config = self.config
         
         wandb_options: WandbLoggerConfig = self.trainer_options.wandb
         if wandb_options.run_name is None:
@@ -181,7 +203,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         method_name: str = self.get_name()
         setting_name: str = setting.get_name()
         dataset: str = getattr(setting, "dataset", "")
-        if not (self.config.debug or self.trainer_options.fast_dev_run):
+        if not (self.config.debug or self.trainer_options.fast_dev_run or self.trainer_options.no_wandb):
             wandb.summary["method"] = method_name
             wandb.summary["setting"] = setting_name
             if dataset:

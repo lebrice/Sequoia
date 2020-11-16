@@ -11,16 +11,20 @@ from pathlib import Path
 
 import gym
 import pandas as pd
+import tqdm
 import torch
+from numpy import inf
 from gym import spaces
+from torch import Tensor, nn
+
 # This "hack" is required so we can run `python examples/quick_demo.py`
 sys.path.extend([".", ".."])
-from settings import Method as Method
+
+from settings import Method
 from settings import Setting
 from settings.passive.cl import ClassIncrementalSetting
 from settings.passive.cl.objects import (Actions, Observations,
                                          PassiveEnvironment, Results, Rewards)
-from torch import Tensor, nn
 
 
 class MyModel(nn.Module):
@@ -111,7 +115,7 @@ class DemoMethod(Method, target_setting=ClassIncrementalSetting):
             parser.add_arguments(cls, dest="hparams")
             args, _ = parser.parse_known_args()
             return args.hparams
-    
+
     def __init__(self, hparams: HParams = None):
         self.hparams: DemoMethod.HParams = hparams or self.HParams.from_args()
         self.max_epochs: int = 1
@@ -135,9 +139,13 @@ class DemoMethod(Method, target_setting=ClassIncrementalSetting):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
 
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
+        """ Example train loop.
+        You can do whatever you want with train_env and valid_env here.
+        
+        NOTE: In the Settings where task boundaries are known (in this case all
+        the supervised CL settings), this will be called once per task.
+        """
         # configure() will have been called by the setting before we get here.
-        import tqdm
-        from numpy import inf
         best_val_loss = inf
         best_epoch = 0
         for epoch in range(self.max_epochs):
