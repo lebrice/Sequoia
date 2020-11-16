@@ -5,7 +5,6 @@ import gym
 import numpy as np
 from common.transforms import to_tensor
 from gym.envs.classic_control import CartPoleEnv
-from gym.envs.classic_control.rendering import Viewer
 from gym.wrappers.pixel_observation import PixelObservationWrapper as PixelObservationWrapper_
 from torch import Tensor
 
@@ -24,9 +23,11 @@ class PixelObservationWrapper(PixelObservationWrapper_):
         env.reset()
         super().__init__(env)
         self.observation_space = self.observation_space["pixels"]
+        from gym.envs.classic_control.rendering import Viewer
         self.viewer: Viewer
         if self.env.viewer is None:
             self.env.render(mode="rgb_array")
+                    
         if self.env.viewer is not None:
             self.viewer: Viewer = env.viewer
             self.viewer.window.set_visible(False)
