@@ -383,6 +383,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         )
         # a bit hacky, but it works.
         dataloader.task_schedule = self.test_task_schedule
+        # TODO: Would this mislead the Method into not observing/getting the last batch ?
         dataloader.max_steps = self.max_steps = len(dataset) // dataloader.batch_size
         
         # TODO: Configure the 'monitoring' dir properly.

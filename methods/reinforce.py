@@ -5,8 +5,7 @@ import numpy as np
 import torch
 from gym import spaces
 
-from methods.models.output_heads.rl.reinforce_head import (
-    ClassificationOutput, ReinforceHead)
+from .models.output_heads.rl.reinforce_head import ClassificationOutput, ReinforceHead
 
 
 def main():

@@ -30,8 +30,8 @@ from common.transforms import SplitBatch, Transforms
 from common.batch import Batch
 from settings.base.setting import Setting, SettingType, Observations, Actions, Rewards
 from settings.assumptions.incremental import IncrementalSetting
-from utils.logging_utils import get_logger
 from settings import Environment, Observations, Actions, Rewards
+from utils.logging_utils import get_logger
 
 from .base_hparams import BaseHParams
 from ..output_heads import OutputHead, RegressionHead, ClassificationHead

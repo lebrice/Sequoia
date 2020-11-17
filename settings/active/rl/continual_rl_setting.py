@@ -142,7 +142,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
-        
         # Post processing of the 'dataset' field, so that it is a proper env id
         # if the name from the dict of available_dataset above was used, so for
         # instance: "breakout" -> "Breakout-v0".
@@ -745,7 +744,7 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         for step, episode_reward, episode_length in zip(itertools.accumulate(lengths), rewards, lengths):
             # Given the step, find the task id.
             task_id = bisect.bisect_right(task_steps, step) - 1
-
+            
             episode_rewards[task_id].append(episode_reward)
             episode_lengths[task_id].append(episode_length)
             episode_metric = RegressionMetrics(n_samples=episode_length, mse=episode_reward / episode_length)

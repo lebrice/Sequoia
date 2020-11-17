@@ -24,7 +24,7 @@ from utils.parseable import Parseable
 logger = get_logger(__file__)
 
 
-class SettingABC(LightningDataModule):
+class SettingABC(Parseable, LightningDataModule):
     """ Abstract base class for a Setting.
 
     This just shows the minimal API. For more info, see the `Setting` class,
@@ -315,6 +315,15 @@ class Method(Generic[SettingType], Parseable, ABC):
 
     @classmethod
     def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
+        """ Run an Experiment from the command-line using this method.
+        
+        (TODO: @lebrice Finish writing a good docstring here that explains how this works
+        and how to use it.)
+        You can then select which setting, dataset, etc. this method will be
+        applied to using the --setting <setting_name>, and the rest of the
+        arguments will be passed to the Setting's from_args method. 
+        """
+
         from main import Experiment
         experiment: Experiment
         # Create the Method object from the command-line:

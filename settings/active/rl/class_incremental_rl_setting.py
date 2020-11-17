@@ -43,6 +43,7 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
     def create_task_schedules(self, temp_env: MultiTaskEnvironment) -> None:
         # Start with the default task (step 0) and then add a new task at
         # intervals of `self.steps_per_task`
+        
         for task_step in range(0, self.max_steps, self.steps_per_task):
             if task_step == 0:
                 self.train_task_schedule[task_step] = temp_env.default_task

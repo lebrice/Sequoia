@@ -365,7 +365,7 @@ class Setting(SettingABC,
     def from_argparse_args(cls, args: Union[Namespace, ArgumentParser], **kwargs):
         dest: str = cls.__qualname__
         if hasattr(args, dest):
-            instance = args.dest
+            instance = getattr(args, dest)
             assert not kwargs, f"kwargs: {kwargs}"
             return instance
         return super().from_argparse_args(args=args, **kwargs)
