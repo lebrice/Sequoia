@@ -1,3 +1,5 @@
+""" UNUSED:  Was trying to use the DQN from pytorch lightning bolts package.
+"""
 from typing import Dict, Union, ClassVar, Type
 from collections import deque
 
@@ -86,9 +88,6 @@ class DQNMethod(Method, target_setting=ContinualRLSetting):
         self.trainer: Trainer
 
     def configure(self, setting: ContinualRLSetting):
-        
-        
-        
         self.trainer = self.trainer_config.make_trainer()
         # Ask the setting not to batch observations during training, since the
         # DQN model needs to add its own hacks on top of the env.
