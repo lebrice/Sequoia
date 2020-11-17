@@ -37,8 +37,9 @@ from .models import BaselineModel, ForwardPass
 
 logger = get_logger(__file__)
 
+from . import register_method
 
-
+@register_method
 @dataclass
 class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
     """ Versatile Baseline method which targets all settings.

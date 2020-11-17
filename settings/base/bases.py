@@ -1,3 +1,5 @@
+""" This module defines the base classes for Settings and Methods.
+"""
 import dataclasses
 import inspect
 from abc import ABC, abstractmethod
@@ -17,6 +19,7 @@ from settings.base.environment import (Actions, Environment, Observations,
 from settings.base.objects import Actions, Observations, Rewards
 from settings.base.results import Results
 from utils.utils import camel_case, remove_suffix
+from utils.parseable import Parseable
 
 logger = get_logger(__file__)
 
@@ -237,8 +240,7 @@ class SettingABC(LightningDataModule):
 
 SettingType = TypeVar("SettingType", bound=SettingABC)
 
-
-class Method(Generic[SettingType], ABC):
+class Method(Generic[SettingType], Parseable, ABC):
     """ ABC for a Method, which is a solution to a research problem (a Setting).
     """
     # Class attribute that holds the setting this method was designed to target.

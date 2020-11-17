@@ -7,6 +7,8 @@ from typing import Optional, Type
 
 import pytest
 
+
+from conftest import slow
 from common.config import Config
 from methods import BaselineMethod, Method, RandomBaselineMethod, all_methods
 from settings import Results, Setting, all_settings
@@ -39,13 +41,11 @@ def mock_apply(self: Setting, method: Method, config: Config) -> Results:
 @pytest.fixture()
 def set_argv_for_debug(monkeypatch):
     monkeypatch.setattr(sys, "argv", shlex.split("main.py --debug --fast_dev_run"))
-    return
 
 
 @pytest.fixture(params=all_methods)
 def method_type(request, monkeypatch, set_argv_for_debug):
     method_class: Type[Method] = request.param
-    # monkeypatch.setattr(method_class, "apply_to", mock_apply_to)
     return method_class
 
 
@@ -55,7 +55,6 @@ def setting_type(request, monkeypatch, set_argv_for_debug):
     monkeypatch.setattr(setting_class, "apply", mock_apply)
     for method_type in setting_class.get_applicable_methods():
         pass
-        # monkeypatch.setattr(method_type, "apply_to", mock_apply_to)
     return setting_class
 
 
@@ -70,11 +69,14 @@ def test_combination_of_string_or_type(method_type: Optional[Type[Method]],
     setting = setting_type.get_name() if use_setting_name else setting_type
     
     experiment = Experiment(method=method, setting=setting)
+    if not method_type.is_applicable(setting_type):
+        pytest.skip(msg=f"Skipping test since Method {method_type} isn't applicable on settings of type {setting_type}.")
     all_results = experiment.launch("--debug --fast_dev_run --batch-size 1")
     assert all_results == (method_type, setting_type)
 
 
 
+@slow
 @pytest.mark.parametrize("use_method_name", [False, True])
 def test_none_setting(method_type: Optional[Type[Method]],
                       use_method_name: bool):
