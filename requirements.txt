@@ -20,3 +20,5 @@ pytorch-lightning-bolts
 # Requirements for running tests:
 pytest-timeout
 pytest-xdist
+# Required for the RL methods
+stable-baselines3

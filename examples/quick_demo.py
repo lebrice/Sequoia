@@ -1,18 +1,30 @@
-""" Demo: Creates a simple new method and applies it to various CL settings. """
+""" Demo: Creates a simple new method and applies it to a single CL setting.
+
+Optionally, this also shows how you can 
+"""
+import sys
 from dataclasses import dataclass
-from typing import Dict, Tuple, Type, List
+from typing import Dict, List, Tuple, Type
+
+from collections import defaultdict
+from pathlib import Path
 
 import gym
+import pandas as pd
+import tqdm
 import torch
+from numpy import inf
 from gym import spaces
 from torch import Tensor, nn
 
-from settings import Method as Method
+# This "hack" is required so we can run `python examples/quick_demo.py`
+sys.path.extend([".", ".."])
+
+from settings import Method
 from settings import Setting
 from settings.passive.cl import ClassIncrementalSetting
 from settings.passive.cl.objects import (Actions, Observations,
                                          PassiveEnvironment, Results, Rewards)
-
 
 
 class MyModel(nn.Module):
@@ -94,9 +106,18 @@ class DemoMethod(Method, target_setting=ClassIncrementalSetting):
         """ Hyper-parameters of the demo model. """
         # Learning rate of the optimizer.
         learning_rate: float = 0.001
-    
-    def __init__(self, hparams: HParams):
-        self.hparams: DemoMethod.HParams = hparams
+        
+        @classmethod
+        def from_args(cls) -> "HParams":
+            """ Get the hparams of the method from the command-line. """
+            from simple_parsing import ArgumentParser
+            parser = ArgumentParser(description=cls.__doc__)
+            parser.add_arguments(cls, dest="hparams")
+            args, _ = parser.parse_known_args()
+            return args.hparams
+
+    def __init__(self, hparams: HParams = None):
+        self.hparams: DemoMethod.HParams = hparams or self.HParams.from_args()
         self.max_epochs: int = 1
         self.early_stop_patience: int = 2
 
@@ -118,9 +139,13 @@ class DemoMethod(Method, target_setting=ClassIncrementalSetting):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
 
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
+        """ Example train loop.
+        You can do whatever you want with train_env and valid_env here.
+        
+        NOTE: In the Settings where task boundaries are known (in this case all
+        the supervised CL settings), this will be called once per task.
+        """
         # configure() will have been called by the setting before we get here.
-        import tqdm
-        from numpy import inf
         best_val_loss = inf
         best_epoch = 0
         for epoch in range(self.max_epochs):
@@ -168,81 +193,29 @@ class DemoMethod(Method, target_setting=ClassIncrementalSetting):
         return self.target_setting.Actions(y_pred)
 
 
-def demo(method_type = DemoMethod):
-    method = create_method(method_type)
-    all_results = evaluate_on_all_settings(method)
-    return all_results
-
-
-def create_method(DemoMethod = DemoMethod) -> DemoMethod:
-    from simple_parsing import ArgumentParser
-    
-    # Get the hparams of the method from the command-line.
-    parser = ArgumentParser(description=__doc__)
-    parser.add_arguments(DemoMethod.HParams, dest="hparams")
-    args = parser.parse_args()
-    hparams: DemoMethod.HParams = args.hparams
-
-    # Create the method and return it.
-    method = DemoMethod(hparams=hparams)
-    return method
-
-
-def evaluate_on_all_settings(method: DemoMethod, below: Type[Setting]=None, datasets: List[str] = ["mnist", "fashionmnist"]):
-    """ Applies the method to all its applicable settings and shows the results.
-    """
-    import pandas as pd
-    from collections import defaultdict
-    from pathlib import Path
-
-    # Iterate over all the applicable evaluation settings, using the default
-    # options for each setting, and store the results inside this dictionary.
-    all_results: Dict[Type[Setting], Dict[str, Results]] = defaultdict(dict)
-    
-    setting: ClassIncrementalSetting
-    for setting in method.all_evaluation_settings():
-        if below is not None:
-            if not isinstance(setting, below):
-                continue
-
-        setting_type = type(setting)         
-        dataset = setting.dataset
-
-        # Limiting this demo to just mnist/fashion_mnist datasets.
-        if setting.dataset not in datasets:
-            print(f"Skipping {setting_type} / {setting.dataset} for now.")
-            continue
-
-        # Apply the method on the setting.
-        results: Results = setting.apply(method)
-        print(f"Results on setting {setting_type}, dataset {dataset}:")
-        print(results.summary())
-        # Save the results.
-        all_results[setting_type][dataset] = results
-
-    # Aggregate all the results in a pandas DataFrame.
-
-    from .demo_utils import make_result_dataframe
-    result_df: pd.DataFrame = make_result_dataframe(all_results)
-
-    csv_path = Path(f"examples/results/results_{method.get_name()}.csv")
-    csv_path.parent.mkdir(exist_ok=True, parents=True)
-    result_df.to_csv(csv_path)
-    print(f"Saved dataframe with results to path {csv_path}")
-
-    # BONUS: Display the results in a LaTeX-formatted table!
-
-    latex_table_path = Path(f"examples/results/table_{method.get_name()}.tex")
-    caption = f"Results for method {type(method).__name__} settings."
-    result_df.to_latex(
-        buf=latex_table_path,
-        caption=caption,
-        na_rep="N/A",
-        multicolumn=True,
-    )
-    print(f"Saved LaTeX table with results to path {latex_table_path}")
-    return all_results
-
 
 if __name__ == "__main__":
-    demo(DemoMethod)
+    # Example: Evaluate a Method on a single CL setting:
+    from settings import TaskIncrementalSetting
+
+    ## 1. Creating the setting:
+    # First option: create the setting manually:
+    # setting = TaskIncrementalSetting(dataset="fashionmnist")
+    # Second option: create the setting from the command-line:
+    setting = TaskIncrementalSetting.from_args()
+    
+    ## 2. Creating the Method
+    method = DemoMethod()
+    
+    ## 3. Applying the method to the setting:
+    results = setting.apply(method)
+    
+    print(results.summary())
+    print(f"objective: {results.objective}")
+    
+    exit()
+    
+    # Optionally, other demo: Evaluate on *ALL* the applicable
+    # settings, and aggregate the results in a nice little LaTeX table.
+    from .demo_utils import demo_all_settings
+    all_results = demo_all_settings(DemoMethod)

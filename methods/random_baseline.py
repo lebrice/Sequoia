@@ -11,10 +11,11 @@ from common.metrics import ClassificationMetrics
 from settings.base import Method, Actions, Observations, Environment
 
 from settings import ClassIncrementalSetting, Setting
+from methods import register_method
 
 logger = get_logger(__file__)
 
-
+@register_method
 @dataclass
 class RandomBaselineMethod(Method, target_setting=Setting):
     """ Baseline method that gives random predictions for any given setting.

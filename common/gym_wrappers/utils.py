@@ -193,7 +193,7 @@ def reshape_box(space: spaces.Box, new_shape: Tuple[int, ...]) -> spaces.Box:
 @reshape_space.register
 def reshape_discrete(space: spaces.Discrete, new_shape: Tuple[int, ...]) -> spaces.Discrete:
     # Can't change the shape of a Discrete space, return a new one anyway.
-    assert space.shape is (), "Discrete spaces should have empty shape."
+    assert space.shape == (), "Discrete spaces should have empty shape."
     assert new_shape in [(), None], f"Can't change the shape of a Discrete space to {new_shape}."
     return spaces.Discrete(n=space.n)
 
