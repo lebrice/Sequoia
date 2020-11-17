@@ -10,8 +10,17 @@ all_methods: List[Type[Method]] = []
 
 def register_method(new_method: Type[Method]) -> Type[Method]:
     if new_method not in all_methods:
-        all_methods.append(new_method)
+        if all(method.get_name() != new_method.get_name() for method in all_methods):
+            # BUG: There's this weird double-import thing happening during
+            # testing, where some methods are import twice, first as
+            # methods.baseline_method.BaselineMethod, for instance, then again
+            # as SSCL.methods.baseline_method.BaselineMethod
+            all_methods.append(new_method)
+        else:
+            pass
+            # assert False, (all_methods, new_method)
     return new_method
+
 
 from .baseline_method import BaselineMethod
 from .random_baseline import RandomBaselineMethod
