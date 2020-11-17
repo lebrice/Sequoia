@@ -736,7 +736,7 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         
         assert 0 in task_steps, task_steps
         import bisect
-        nb_tasks = len(task_steps)
+        nb_tasks = len(task_steps) - 1
         assert nb_tasks >= 1
         episode_rewards: List[float] = [[] for _ in range(nb_tasks)]
         episode_lengths: List[int] = [[] for _ in range(nb_tasks)]

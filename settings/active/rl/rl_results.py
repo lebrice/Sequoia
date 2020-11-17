@@ -1,12 +1,15 @@
-from settings.base import Results
 from dataclasses import dataclass, field
-from settings.assumptions.incremental import IncrementalSetting
-from utils import mean
-from common import Metrics, RegressionMetrics, ClassificationMetrics
-from typing import List, ClassVar, Dict
-from utils.plotting import autolabel, plt
-from simple_parsing import list_field
+from typing import ClassVar, Dict, List
+
 import numpy as np
+from simple_parsing import list_field
+
+from common import ClassificationMetrics, Metrics, RegressionMetrics
+from settings.assumptions.incremental import IncrementalSetting
+from settings.base import Results
+from utils import mean
+from utils.plotting import autolabel, plt
+
 # @dataclass
 # class EpisodeMetrics(Metrics):
 #     rewards: List[float]
@@ -50,20 +53,25 @@ class RLResults(IncrementalSetting.Results, Results):
         return average_metric.mse
 
     @property
+    def mean_episode_length(self) -> int:
+        return np.mean(self.episode_lengths)
+
+    @property
     def total_steps(self):
         return sum(map(sum, self.episode_lengths))
 
+    @property
     def total_reward(self) -> float:
         return sum(map(sum, self.episode_rewards))
 
     def summary(self):
         lines = [
-            f"Total reward: {self.total_reward}"
-            f"Mean reward: {self.mean_reward}"
-        ]        
+            f"Total reward: {self.total_reward}",
+            f"Mean reward: {self.mean_reward}",
+            f"Mean episode length: {self.mean_episode_length:.2f}",
+        ]
         return "\n".join(lines)
-               
-    
+
     def make_plots(self):
         results = {
             "mean_reward": self.mean_reward_plot()
@@ -71,6 +79,7 @@ class RLResults(IncrementalSetting.Results, Results):
         return results
 
     def mean_reward_plot(self):
+        raise NotImplementedError("TODO")
         figure: plt.Figure
         axes: plt.Axes
         figure, axes = plt.subplots()
@@ -88,6 +97,7 @@ class RLResults(IncrementalSetting.Results, Results):
         results = {}
         results[self.objective_name] = self.objective
         return results
+    
         average_metrics = self.average_metrics
 
         if isinstance(average_metrics, ClassificationMetrics):
