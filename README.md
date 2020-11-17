@@ -10,17 +10,119 @@ Requires python >= 3.7
 pip install -r requirements.txt
 ```
 
-## Getting Started:
-- Take a look at Pytorch Lightning
-- Take a quick look at [simple_parsing](https://github.com/lebrice/SimpleParsing) (A python package I've created) which we use to generate the command-line arguments for the experiments.
-- Take a look at the `Setting` class, which looks a 
+## Getting Started - Adding a new Method:
+
+### Prerequisites:
+
+- Take a quick look at the [demo script](examples/quick_demo.py), which can be run using `python examples/quick_demo.py`.
+
+### Steps:
+
+1. Choose a target setting from the tree (See the [Available Settings]() section below).
+
+2. Create a new subclass of [`Method`](settings/base/bases.py), with the chosen target setting.
+
+	Your class should implement the following methods:
+	- `fit(train_env, valid_env)`
+	- `get_actions(observations, observation_space) -> Actions`
+	
+	The following methods are optional, but can be very useful to help customize how your method is used at train/test time:
+	- `configure(setting: Setting)`
+	- `on_task_switch(task_id: Optional[int])`
+	- `test(test_env)`
+
+	```python
+	class MyNewMethod(Method, target_setting=ClassIncrementalSetting):
+		... # Your code here.
+
+		def fit(self, train_env: DataLoader, valid_env: DataLoader):
+			# Train your model however you want here.
+			self.trainer.fit(
+				self.model,
+				train_dataloader=train_env,
+				val_dataloaders=valid_env,
+			)
+		
+		def get_actions(self,
+						observations: Observations,
+						observation_space: gym.Space) -> Actions:
+			# Return an "Action" (prediction) for the given observations.
+			# Each Setting has its own Observations, Actions and Rewards types,
+			# which are based on those of their parents.
+			return self.model.predict(observations.x)
+
+		def on_task_switch(self, task_id: Optional[int]):
+			#This method gets called if task boundaries are known in the current
+			#setting. Furthermore, if task labels are available, task_id will be
+			# the index of the new task. If not, task_id will be None.
+			# For example, you could do something like this:
+			self.model.current_output_head = self.model.output_heads[task_id]
+	```
+
+3. Running / Debugging your method:
+ 
+	(at the bottom of your script, for example)
+	```python
+	if __name__ == "__main__":
+		## 1. Create the setting you want to apply your method on.
+		# First option: Create the Setting directly in code:
+		setting = ClassIncrementalSetting(dataset="cifar10", nb_tasks=5)
+		# Second option: Create the Setting from the command-line:
+		setting = ClassIncrementalSetting.from_args()
+		
+		## 2. Create your Method, however you want.
+		my_method = MyNewMethod()
+
+		## 3. Apply your method on the setting to obtain results.
+		results = setting.apply(my_method)
+		# Optionally, display the results.
+		print(results.summary())
+		results.make_plots()
+	```
+
+4. (WIP): Adding your new method to the tree:
+
+	- Place the script/package that defines your Method inside of the `methods` folder.
+
+	- Add the `@register_method` decorator to your Method definition, for example:
+
+		```python
+		from methods import register_method
+
+		@register_method
+		class MyNewMethod(Method, target_setting=ClassIncrementalSetting):
+			name: ClassVar[str] = "my_new_method"
+			...
+		```
+
+	- To launch an experiment using your method, run the following command:
+
+		```console
+		python main.py --setting <some_setting_name> --method my_new_method
+		```
+		To customize how your method gets created from the command-line, override two following class methods:
+		- `add_argparse_args(cls, parser: ArgumentParser)`
+		- `from_argparse_args(cls, args: Namespace) -> Method`
+
+	- Create a `<your_method_script_name>_test.py` file next to your method script. In it, write unit tests for every module/component used in your Method. Have them be easy to read so people can ideally understand how the components of your Method work by simply reading the tests.
+
+		- To run the unittests locally, use the following command: `pytest methods/my_new_method_test.py`
+
+	- Then, write a functional test that demonstrates how your new method should behave, and what kind of results it expects to produce. The easiest way to do this is to implement a `validate_results(setting: Setting, results: Results)` method.
+		- To debug/run the "integration tests" locally, use the following command: `pytest -x methods/my_new_method_test.py --slow`
+
+	- Create a Pull Request, and you're good to go!
 
 
-### Adding a new Setting or Method:
-- [ ] Write a test that demonstrates how your new setting or method should behave.
-- [ ] Implement your new method / setting
-- [ ] Write some tests for **every single module**. Have them be easy to read so people could ideally understand how things work by simply reading the tests.
-- [ ] Finally, graft your new method or setting onto the tree by adding them to `all_methods` or `all_settings`, respectively.
+## (WIP): Getting Started - Adding a new Setting:
+
+Prerequisites:
+
+- Take a quick look at the `dataclasses` example
+- Take a quick look at [simple_parsing](https://github.com/lebrice/SimpleParsing) (A python package I've created) which we use to generate the command-line arguments for the Settings.
+
+
+
 
 <!-- MAKETREE -->
    
