@@ -22,13 +22,13 @@ class Parseable:
     #     super().__init__(*args, **kwargs)
     
     @classmethod
-    def add_args(cls, parser: ArgumentParser) -> None:
+    def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
         """ Adds the command-line arguments for this class to the parser.
 
         Override this if you don't use simple-parsing to add the args.
         """
         if is_dataclass(cls):
-            dest = camel_case(cls.__qualname__)
+            dest = dest or camel_case(cls.__qualname__)
             parser.add_arguments(cls, dest=dest)
         elif issubclass(cls, LightningDataModule):
             # TODO: Test this case out (using a LightningDataModule as a Setting).
@@ -41,13 +41,13 @@ class Parseable:
             )
         
     @classmethod
-    def from_argparse_args(cls: Type[P], args: Namespace) -> P:
+    def from_argparse_args(cls: Type[P], args: Namespace, dest: str = None) -> P:
         """ Creates an instance of this class from the parsed arguments.
         
         Override this if you don't use simple-parsing.
         """
         if is_dataclass(cls):
-            dest = camel_case(cls.__qualname__)
+            dest = dest or camel_case(cls.__qualname__)
             return getattr(args, dest)
 
         # if issubclass(cls, LightningDataModule):
@@ -135,7 +135,7 @@ class Parseable:
             argv = shlex.split(argv)
 
         parser = ArgumentParser(description=cls.__doc__)
-        cls.add_args(parser)
+        cls.add_argparse_args(parser)
 
         instance: P
         if strict:

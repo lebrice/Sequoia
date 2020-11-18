@@ -44,6 +44,7 @@ from .rl_results import RLResults
 from .wrappers import (AddDoneToObservation, HideTaskLabelsWrapper,
                        NoTypedObjectsWrapper, RemoveTaskLabelsWrapper,
                        TypedObjectsWrapper, AddInfoToObservation)
+from stable_baselines3.common.atari_wrappers import AtariWrapper
 
 logger = get_logger(__file__)
 
@@ -279,7 +280,9 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                             
         # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
         if self.dataset.startswith("Breakout") or isinstance(self.dataset, AtariEnv):
-            wrappers.append(AtariPreprocessing)
+            wrappers.append(AtariWrapper)
+            # wrappers.append(AtariPreprocessing)
+            
         
         if not self.observe_state_directly:
             # Apply the image transforms to the env.
@@ -443,7 +446,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 
         # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
         if self.dataset.startswith("Breakout") or isinstance(self.dataset, AtariEnv):
-            wrappers.append(AtariPreprocessing)
+            wrappers.append(AtariWrapper)
         
         if not self.observe_state_directly:
             # Wrapper to apply the image transforms to the env.
@@ -567,7 +570,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 wrappers.append(PixelObservationWrapper)
                 
         if self.dataset.startswith("Breakout") or isinstance(self.dataset, AtariEnv):
-            wrappers.append(AtariPreprocessing)    
+            wrappers.append(AtariWrapper)    
+            # wrappers.append(AtariPreprocessing)    
         
         if not self.observe_state_directly:
             wrappers.append(partial(TransformObservation, f=self.val_transforms))
@@ -688,7 +692,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 wrappers.append(PixelObservationWrapper)
                 
         if self.dataset.startswith("Breakout") or isinstance(self.dataset, AtariEnv):
-            wrappers.append(AtariPreprocessing)    
+            wrappers.append(AtariWrapper)    
+            # wrappers.append(AtariPreprocessing)    
         
         if not self.observe_state_directly:
             wrappers.append(partial(TransformObservation, f=self.test_transforms))
@@ -733,9 +738,9 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         assert has_wrapper(self.env, MultiTaskEnvironment), self.env
         task_steps = sorted(self.task_schedule.keys())
         
-        assert 0 in task_steps, task_steps
+        assert 0 in task_steps
         import bisect
-        nb_tasks = len(task_steps) - 1
+        nb_tasks = len(task_steps)
         assert nb_tasks >= 1
         episode_rewards: List[float] = [[] for _ in range(nb_tasks)]
         episode_lengths: List[int] = [[] for _ in range(nb_tasks)]

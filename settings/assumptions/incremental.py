@@ -325,7 +325,7 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
         
         # TODO: Maybe render the env with human mode when debugging.
         # if debug
-        # self.render("human")
+        self.render("human")
         if not isinstance(done, bool):
             done = all(done)
 

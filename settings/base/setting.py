@@ -64,7 +64,6 @@ from  .bases import SettingABC, Method
 class Setting(SettingABC,
               Generic[EnvironmentType],
               Serializable,
-              Parseable,
               metaclass=SettingMeta):
     """ Base class for all research settings in ML: Root node of the tree. 
 
@@ -351,24 +350,6 @@ class Setting(SettingABC,
             for method, results in all_results.items()
         })
         return all_results
-
-    @classmethod
-    def add_argparse_args(cls, parent_parser: ArgumentParser) -> ArgumentParser:
-        if not is_dataclass(cls):
-            return super().add_argparse_args(parent_parser)
-        parser = ArgumentParser(parents=[parent_parser], add_help=False,)
-        dest: str = cls.__qualname__
-        parser.add_arguments(cls, dest=dest)
-        return parser
-
-    @classmethod
-    def from_argparse_args(cls, args: Union[Namespace, ArgumentParser], **kwargs):
-        dest: str = cls.__qualname__
-        if hasattr(args, dest):
-            instance = getattr(args, dest)
-            assert not kwargs, f"kwargs: {kwargs}"
-            return instance
-        return super().from_argparse_args(args=args, **kwargs)
 
     @classmethod
     def get_path_to_source_file(cls: Type) -> Path:

@@ -20,5 +20,7 @@ class TD3Model(TD3):
 @register_method
 @dataclass
 class TD3Method(StableBaselines3Method):
+    """ Method that uses the TD3 model from stable-baselines3. """
+    
     Model: ClassVar[Type[TD3Model]] = TD3Model
     hparams: TD3Model.HParams = mutable_field(TD3Model.HParams)

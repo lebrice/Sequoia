@@ -21,6 +21,7 @@ class PPOModel(PPO):
 @register_method
 @dataclass
 class PPOMethod(StableBaselines3Method):
+    """ Method that uses the PPO model from stable-baselines3. """
     Model: ClassVar[Type[PPOModel]] = PPOModel
     # Hyper-parameters of the PPO Model.
     hparams: PPOModel.HParams = mutable_field(PPOModel.HParams)

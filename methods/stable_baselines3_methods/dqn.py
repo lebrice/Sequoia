@@ -1,8 +1,11 @@
+import warnings
 from dataclasses import dataclass
 from typing import ClassVar, Type, Union, Callable, Optional, Dict, Any
-from gym import Env
 
+import gym
+import numpy as np
 import torch
+from gym import Env, spaces
 from simple_parsing import choice, mutable_field
 from stable_baselines3.dqn import DQN
 from stable_baselines3.dqn.dqn import DQNPolicy
@@ -10,11 +13,14 @@ from stable_baselines3.dqn.policies import CnnPolicy
 from stable_baselines3.common.base_class import BaseAlgorithm, GymEnv
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
 
+from settings import ContinualRLSetting
 from utils import Serializable, Parseable
 from methods import register_method
 
 from .base import StableBaselines3Method, SB3BaseHParams
+from utils.logging_utils import get_logger
 
+logger = get_logger(__file__)
 
 class DQNModel(DQN):
     @dataclass
@@ -128,13 +134,61 @@ class DQNModel(DQN):
 @register_method
 @dataclass
 class DQNMethod(StableBaselines3Method):
+    """ Method that uses a DQN model from the stable-baselines3 package. """
     Model: ClassVar[Type[DQNModel]] = DQNModel
-    
-    total_train_timesteps: int = 10_000
     
     # Hyper-parameters of the DQN model.
     hparams: DQNModel.HParams = mutable_field(DQNModel.HParams)
 
+    # Approximate limit on the size of the replay buffer, in megabytes.
+    max_buffer_size_megabytes: float = 1024
+    
+    def configure(self, setting: ContinualRLSetting):
+        super().configure(setting)
+        from gym.spaces.utils import flatdim, flatten_space
+
+        observation_dims = flatdim(setting.observation_space)
+        flattened_observation_space = flatten_space(setting.observation_space)
+        observation_size_bytes = flattened_observation_space.sample().nbytes
+
+        # IF there are more than a few dimensions per observation, then we
+        # should probably reduce the size of the replay buffer according to
+        # the size of the observations.
+        max_buffer_size_bytes = self.max_buffer_size_megabytes * 1024 * 1024
+        max_buffer_length = max_buffer_size_bytes // observation_size_bytes
+        
+        if max_buffer_length == 0:
+            raise RuntimeError(
+                f"Couldn't even fit a single observation in the buffer, "
+                f"given the  specified max_buffer_size_megabytes "
+                f"({self.max_buffer_size_megabytes}) and the size of a "
+                f"single observation ({observation_size_bytes} bytes)!"
+            )
+        
+        if self.hparams.buffer_size > max_buffer_length:
+            calculated_size_bytes = observation_size_bytes * self.hparams.buffer_size
+            calculated_size_gb = calculated_size_bytes / 1024 ** 3
+            warnings.warn(RuntimeWarning(
+                f"The selected buffer size ({self.hparams.buffer_size} is "
+                f"too large! (It would take roughly around "
+                f"{calculated_size_gb:.3f}Gb to hold  many observations alone! "
+                f"The buffer size will be capped at {max_buffer_length} "
+                f"entries."
+            ))
+            
+            self.hparams.buffer_size = max_buffer_length
+
+        # Don't use up too many of the observations from the task to fill up the buffer.
+        # Truth is, we should probably get this to work first.
+        if not setting.known_task_boundaries_at_train_time:
+            if self.hparams.buffer_size > setting.steps_per_task // 10:
+                warnings.warn(RuntimeWarning(
+                    "Operating on a ContinualRL setting, so we're limiting the "
+                    "buffer size to 1/10 the number of steps in the training "
+                    "loop."
+                ))
+                self.hparams.buffer_size = setting.steps_per_task // 10
+        logger.info(f"Will use a Replay buffer of size {self.hparams.buffer_size}.")
 
 if __name__ == "__main__":
     from settings import RLSetting

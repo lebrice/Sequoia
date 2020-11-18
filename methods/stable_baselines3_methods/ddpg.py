@@ -22,6 +22,8 @@ class DDPGModel(DDPG):
 @register_method
 @dataclass
 class DDPGMethod(StableBaselines3Method):
+    """ Method that uses the DDPG model from stable-baselines3. """
+    
     Model: ClassVar[Type[DDPGModel]] = DDPGModel
 
     # Hyper-parameters of the DDPG model.

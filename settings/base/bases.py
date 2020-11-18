@@ -237,6 +237,10 @@ class SettingABC(Parseable, LightningDataModule):
             yield parent
             yield from parent.get_parents()
 
+    @classmethod
+    def depth(cls) -> int:
+        return len(list(cls.get_parents()))
+    
 
 SettingType = TypeVar("SettingType", bound=SettingABC)
 

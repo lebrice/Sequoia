@@ -170,9 +170,10 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         # BUG: Need to fix an issue when using the CnnPolicy and Atary envs, the
         # input shape isn't what they expect (only 2 channels instead of three
         # apparently.)
-        # setting.train_transforms = [Transforms.channels_last]
-        # setting.val_transforms = [Transforms.channels_last]
-        # setting.test_transforms = [Transforms.channels_last]
+        setting.transforms = []
+        setting.train_transforms = []
+        setting.val_transforms = []
+        setting.test_transforms = []
 
         if self.hparams.policy is None:     
             if setting.observe_state_directly:
@@ -198,7 +199,6 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
                 ))
             self.num_epochs_per_task = 1
         # Otherwise, we can train basically as long as we want on each task.
-            
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> BaseAlgorithm:
         return self.Model(env=train_env, **self.hparams.to_dict())
@@ -211,7 +211,6 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         for wrapper in self.extra_valid_wrappers:
             valid_env = wrapper(valid_env)
 
-        
         if self.model is None:
             self.model = self.create_model(train_env, valid_env)
         else:
@@ -249,38 +248,3 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
 
 
 
-
-if __name__ == "__main__":
-    # Example: Evaluate a Method from stable_baselines3 on an RL setting:
-
-    ## 1. Creating the setting:
-    # Creating the setting manually:
-    # setting = ContinualRLSetting(dataset="Breakout-v0")
-    # Or, from the command-line:
-    # setting = ContinualRLSetting.from_args()
-    
-    # NOTE: For debugging with the cartpole/pendulum etc envs it might be useful
-    # to set observe_state_directly=True. This allows us to see the state (joint
-    # angles, velocities, etc) as the observations, rather than pixels.
-    setting = ContinualRLSetting(dataset="CartPole-v0", observe_state_directly=True)
-    
-    ## 2. Creating the Method
-    # TODO: Test all of those below.
-    # method = PPOMethod()
-    # method = A2CMethod()
-    method = DQNMethod()
-    # method = SACMethod()
-    
-    results = setting.apply(method)
-    print(results.summary())
-    print(f"objective: {results.objective}")
-    exit()
-    
-    # Other example: evaluate on all settings for the given datasets:
-    
-    from examples.quick_demo import evaluate_on_all_settings
-    all_results = evaluate_on_all_settings(method, datasets=["CartPole-v0"])
-    print(f"All results: {all_results}")
-    # # TODO: Check out the wandb output.
-    # import wandb
-    # wandb.gym.monitor()

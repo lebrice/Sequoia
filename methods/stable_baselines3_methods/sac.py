@@ -19,6 +19,8 @@ class SACModel(SAC):
 
 @register_method
 class SACMethod(StableBaselines3Method):
+    """ Method that uses the SAC model from stable-baselines3. """
+    
     Model: ClassVar[Type[SACModel]] = SACModel
 
     hparams: SACModel.HParams = mutable_field(SACModel.HParams)
