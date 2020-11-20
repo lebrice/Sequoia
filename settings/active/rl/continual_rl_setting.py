@@ -1,5 +1,6 @@
 import itertools
 import warnings
+import json
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -34,6 +35,7 @@ from settings.assumptions.incremental import (IncrementalSetting,
 from settings.base import Method
 from settings.base.results import Results
 from simple_parsing import choice, list_field
+from simple_parsing.helpers import dict_field
 from torch import Tensor
 from utils import dict_union, get_logger
 
@@ -140,6 +142,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # debug environments like CartPole, for instance.
     observe_state_directly: bool = False
 
+    train_task_schedule: Dict[int, Dict] = dict_field()
+    valid_task_schedule: Dict[int, Dict] = dict_field()
+    test_task_schedule: Dict[int, Dict] = dict_field()
+
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
@@ -181,6 +187,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         if not self.nb_tasks:
             if self.steps_per_task:
                 self.nb_tasks = self.max_steps // self.steps_per_task
+            elif self.train_task_schedule:
+                self.nb_tasks = len(self.train_task_schedule) - (1 if self.max_steps in self.train_task_schedule else 0)
             else:
                 self.nb_tasks = 1
                 self.steps_per_task = self.max_steps
@@ -198,15 +206,12 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             self.steps_per_task = self.max_steps
 
         # Task schedules for training / validation and testing.
-        self.train_task_schedule: Dict[int, Dict] = {}
-        self.valid_task_schedule: Dict[int, Dict] = {}
-        self.test_task_schedule: Dict[int, Dict] = {}
 
-        
         # Create a temporary environment so we can extract the spaces.
         with self.make_env(self.dataset, self.temp_wrappers()) as temp_env:
             # Populate the task schedules created above.
-            self.create_task_schedules(temp_env)
+            if not self.train_task_schedule:
+                self.create_task_schedules(temp_env)
             # Set the spaces using the temp env.
             self.observation_space = temp_env.observation_space
             self.action_space = temp_env.action_space
@@ -308,6 +313,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         self.configure(method)
         method.configure(setting=self)
         
+        logger.info(f"Train task schedule:" + json.dumps(self.train_task_schedule, indent="\t"))
         # Run the Training loop (which is defined in IncrementalSetting).
         self.train_loop(method)
         
@@ -612,19 +618,19 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         num_workers = num_workers or self.num_workers
 
         if batch_size is None:
-            env = self.make_env(self.dataset, wrappers=self.train_wrappers())
+            env = self.make_env(self.dataset, wrappers=self.test_wrappers())
         elif num_workers is None:
             warnings.warn(UserWarning(
                 f"Running {batch_size} environments in series (very slow!) "
                 f"since the num_workers is None."
             ))
             env = SyncVectorEnv([
-                partial(self.make_env, base_env=self.dataset, wrappers=self.train_wrappers())
+                partial(self.make_env, base_env=self.dataset, wrappers=self.test_wrappers())
                 for _ in range(batch_size)
             ])
         else:
             env = BatchedVectorEnv(
-                [partial(self.make_env, base_env=self.dataset, wrappers=self.train_wrappers())
+                [partial(self.make_env, base_env=self.dataset, wrappers=self.test_wrappers())
                     for _ in range(batch_size) 
                 ],
                 n_workers=num_workers,

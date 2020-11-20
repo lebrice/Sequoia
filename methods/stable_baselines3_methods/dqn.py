@@ -141,12 +141,15 @@ class DQNMethod(StableBaselines3Method):
     hparams: DQNModel.HParams = mutable_field(DQNModel.HParams)
 
     # Approximate limit on the size of the replay buffer, in megabytes.
-    max_buffer_size_megabytes: float = 1024
-    
+    max_buffer_size_megabytes: float = 50
+
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting)
         from gym.spaces.utils import flatdim, flatten_space
 
+        # The default value for the buffer size in the DQN model is WAY too
+        # large, we can't really have any  
+        
         observation_dims = flatdim(setting.observation_space)
         flattened_observation_space = flatten_space(setting.observation_space)
         observation_size_bytes = flattened_observation_space.sample().nbytes

@@ -37,6 +37,8 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
     task_labels_at_test_time: bool = False
 
     def __post_init__(self, *args, **kwargs):
+        if self.train_task_schedule:
+            self.nb_tasks = len(self.train_task_schedule)
         super().__post_init__(*args, **kwargs)
         assert not self.smooth_task_boundaries
 

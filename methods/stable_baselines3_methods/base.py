@@ -115,7 +115,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     # HyperParameters of the Method.
     hparams: SB3BaseHParams = mutable_field(SB3BaseHParams)
     
-    # The number of 'epochs' to run.
+    # The number of training steps to run per task.
     # NOTE: This shouldn't be set to more than 1 when applying this method on a
     # ContinualRLSetting, because we don't currently have a way of "resetting"
     # the nonstationarity in the environment, and there is only one task,
@@ -123,7 +123,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     # non-stationarity only lasts for 10_000 steps, we'd have seen an almost
     # stationary distribution, since the environment would have stopped changing after 10_000 steps.
     # 
-    num_epochs_per_task: int = 1
+    train_steps_per_task: int = 10_000
         
     # Evaluate the agent every ``eval_freq`` timesteps (this may vary a little) 
     eval_freq: int = -1
@@ -191,13 +191,13 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         if not setting.known_task_boundaries_at_train_time:
             # We are in a ContinualRL setting, where `fit` will only be called
             # once and where the environment can only be traversed once.
-            if self.num_epochs_per_task > 1:
+            if self.train_steps_per_task > setting.max_steps:
                 warnings.warn(RuntimeWarning(
-                    f"Can't train for the requested {self.num_epochs_per_task} "
-                    f"epochs, since we're (currently) only allowed one 'pass' "
+                    f"Can't train for the requested {self.train_steps_per_task} "
+                    f"steps, since we're (currently) only allowed one 'pass' "
                     f"through the environment when in a Continual-RL Setting."
                 ))
-            self.num_epochs_per_task = 1
+            self.train_steps_per_task = setting.max_steps
         # Otherwise, we can train basically as long as we want on each task.
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> BaseAlgorithm:
@@ -218,8 +218,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
             self.model.set_env(train_env)
 
         # Decide how many steps to train on.
-        steps_per_epoch = train_env.max_steps
-        total_timesteps = self.num_epochs_per_task * steps_per_epoch
+        total_timesteps = self.train_steps_per_task
 
         # TODO: Actually setup/customize the parametrers of the model and of this
         # "learn" method, and also make sure that this "works" and training converges.

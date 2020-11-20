@@ -16,7 +16,7 @@ P = TypeVar("T", bound="Parseable")
 
 
 class Parseable:
-    _argv: Optional[List[str]] = field(default=None, init=False, repr=False)
+    _argv: Optional[List[str]] = []
 
     # def __init__(self, *args, **kwargs):
     #     super().__init__(*args, **kwargs)
