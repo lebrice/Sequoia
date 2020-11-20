@@ -162,9 +162,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         # For now, we don't batch the space because stablebaselines3 will add an
         # additional batch dimension if we do.
         # TODO: Still need to debug the batching stuff with stablebaselines
-        setting.train_batch_size = None
-        setting.valid_batch_size = None
-        setting.test_batch_size = None
+        setting.batch_size = None
         from common.transforms import ChannelsLastIfNeeded, Transforms
         # assert False, setting.train_transforms
         # BUG: Need to fix an issue when using the CnnPolicy and Atary envs, the

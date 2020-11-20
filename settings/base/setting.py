@@ -172,9 +172,6 @@ class Setting(SettingABC,
 
         self.batch_size: Optional[int] = None
         self.num_workers: Optional[int] = None
-        self.train_batch_size: Optional[int] = None
-        self.valid_batch_size: Optional[int] = None
-        self.test_batch_size: Optional[int] = None
         # TODO: We have to set the 'dims' property from LightningDataModule so
         # that models know the input dimensions.
         # This should probably be set on `self` inside of `apply` call.
@@ -371,12 +368,10 @@ class Setting(SettingABC,
         config : Config
             [description]
         """
+        # TODO: Remove this, move it to `prepare_data`.
         assert self.config is not None
-        # Get the arguments that will be used to create the dataloaders.
-        
         # TODO: Should the data_dir be in the Setting, or the Config?
         self.data_dir = self.config.data_dir
-        
         # Create the dataloader kwargs, if needed.
         self.batch_size = self.batch_size or getattr(self.config, "batch_size", None)
         self.num_workers = self.num_workers or self.config.num_workers

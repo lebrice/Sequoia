@@ -15,7 +15,14 @@ from .tile_images import tile_images
 from .worker import FINAL_STATE_KEY
 
 
-class SyncVectorEnv(SyncVectorEnv_):    
+class SyncVectorEnv(SyncVectorEnv_):
+    """ Subclassing the SyncVectorEnv from gym just so we can add in the changes
+    from these open PRs:
+    - https://github.com/openai/gym/pull/2072
+    - https://github.com/openai/gym/pull/2104
+    """
+    
+     
     def step_wait(self):
         observations, infos = [], []
         for i, (env, action) in enumerate(zip(self.envs, self._actions)):

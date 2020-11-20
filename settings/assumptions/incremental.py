@@ -15,8 +15,10 @@ from common import Metrics, ClassificationMetrics, RegressionMetrics
 from utils import flag, constant, mean
 from utils.logging_utils import get_logger
 
+from common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper, StepCallback, Callback
 from settings.base import SettingABC, Method, Actions, Environment, Observations, Results, Rewards
-
+from settings.active.rl.wrappers import NoTypedObjectsWrapper, RemoveTaskLabelsWrapper, HideTaskLabelsWrapper
+        
 logger = get_logger(__file__)
 
 
@@ -77,11 +79,6 @@ class IncrementalSetting(SettingABC):
     # The number of tasks. By default 0, which means that it will be set
     # depending on other fields in __post_init__, or eventually be just 1. 
     nb_tasks: int = field(0, alias=["n_tasks", "num_tasks"])
-
-    # Number of episodes to perform through the test environment in the test
-    # loop. Depending on what an 'episode' might represent in your setting, this
-    # could be as low as 1 (for example, supervised learning, episode == epoch).
-    test_loop_episodes: int = 1
     
     # Attributes (not parsed through the command-line):
     _current_task_id: int = field(default=0, init=False)
@@ -153,6 +150,15 @@ class IncrementalSetting(SettingABC):
         The idea is that this loop should be exactly the same, regardless of if
         you're on the RL or the CL side of the tree.
         
+        NOTE: If `self.known_task_boundaries_at_test_time` is `True` and the
+        method has the `on_task_switch` callback defined, then a callback
+        wrapper is added that will invoke the method's `on_task_switch` and pass
+        it the task id (or `None` if `not self.task_labels_available_at_test_time`) 
+        when a task boundary is encountered.
+
+        This `on_task_switch` 'callback' wrapper gets added the same way for
+        Supervised or Reinforcement learning settings.
+        
         Args:
             method (Method): The Method to evaluate.
 
@@ -185,14 +191,8 @@ class IncrementalSetting(SettingABC):
             just use the usual Trainer.fit() and Trainer.test() methods, so feel
             free to overwrite this method with your own implementation if that
             makes your life easier.
-        """ 
-        # Create a list that will hold the test metrics encountered during each
-        # task.
-        # TODO: Instead of doing the loop manually here, we'd need to create a
-        # single environment, which would have everything we need.
-        from common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper, StepCallback, Callback
-        from settings.active.rl.wrappers import NoTypedObjectsWrapper, RemoveTaskLabelsWrapper, HideTaskLabelsWrapper
-        
+        """
+
         test_env = self.test_dataloader()
         test_env: TestEnvironment
         
@@ -209,6 +209,9 @@ class IncrementalSetting(SettingABC):
                     return
                 if self.task_labels_at_test_time:
                     task_steps = sorted(self.test_task_schedule.keys())
+                    # TODO: If the ordering of tasks were different (shuffled
+                    # tasks for example), then this wouldn't work, we'd need a
+                    # list of the task ids or something like that.
                     task_id = task_steps.index(step)
                     logger.debug(f"Calling `method.on_task_switch({task_id})` "
                                  f"since task labels are available at test-time.")
