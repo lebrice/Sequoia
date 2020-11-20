@@ -284,19 +284,19 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         method.receive_results(self, results=results)
         return results
 
-    def setup(self, stage=None):
+    def setup(self, stage: str=None) -> None:
         # Called before the start of each task during training, validation and
         # testing.
+        super().setup(stage=stage)
         if stage in {"fit", None}:
             self.train_wrappers = self.create_train_wrappers()
             self.valid_wrappers = self.create_valid_wrappers()
         elif stage in {"test", None}:
             self.test_wrappers = self.create_test_wrappers()
-        return super().setup(stage=stage)
 
-    def prepare_data(self, *args, **kwargs):
+    def prepare_data(self, *args, **kwargs) -> None:
         # We don't really download anything atm.
-        return super().prepare_data(*args, **kwargs)
+        super().prepare_data(*args, **kwargs)
 
     def train_dataloader(self, batch_size: int = None, num_workers: int = None) -> ActiveEnvironment:
         """Create a training gym.Env/DataLoader for the current task.
@@ -531,7 +531,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             max_steps=max_steps,
         )
 
-    def create_val_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
+    def create_valid_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to each validation environment.
         
         The result of this method must be pickleable when using
@@ -616,7 +616,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 )
 
         # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
-        if self.dataset.startswith("Breakout") or isinstance(self.dataset.unwrapped, AtariEnv):
+        if self.dataset.startswith("Breakout") or (
+            isinstance(self.dataset, gym.Env) and isinstance(self.dataset.unwrapped, AtariEnv)):
             # TODO: Figure out the differences (if there are any) between the 
             # AtariWrapper from SB3 and the AtariPreprocessing wrapper from gym.
             wrappers.append(AtariWrapper)

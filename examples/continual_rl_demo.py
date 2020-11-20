@@ -10,17 +10,15 @@ if __name__ == "__main__":
         1000:   {"gravity": 10, "length": 1.2},
         2000:   {"gravity": 10, "length": 0.2},
     }
-
-    setting = ClassIncrementalRLSetting(
+    setting = ContinualRLSetting(
         dataset="CartPole-v1",
         observe_state_directly=True,
+        max_steps=2000,
         train_task_schedule=task_schedule,
-        valid_task_schedule=task_schedule,
-        test_task_schedule=task_schedule,
     )
     # Create the method to use here:
     method = DQNMethod(train_steps_per_task=1_000)
-    
+
     # We can change the hyper-parameters like so:
     # method.hparams.buffer_size = 100
 
