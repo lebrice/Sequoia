@@ -326,6 +326,10 @@ class Batch(ABC):
                 # FIXME: This could either mean that this method is being passed
                 # a tuple or a list of non-Batched items, or that an individual
                 # field has None as a value. Hard to distinguish these two..
+                return cls(*inputs)
+            
+                assert False, f"This should only be used on 'batched' inputs, not {inputs}.."
+                
                 inputs = [
                     [item] for item in inputs
                 ]

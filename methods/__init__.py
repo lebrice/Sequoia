@@ -1,4 +1,5 @@
 import glob
+import inspect
 import warnings
 from importlib import import_module
 from os.path import basename, dirname, isfile, join
@@ -9,7 +10,7 @@ from settings.base import Method
 AbstractMethod = Method
 
 all_methods: List[Type[Method]] = []
-import inspect
+
 def register_method(new_method: Type[Method]) -> Type[Method]:
     name = new_method.get_name()
     if new_method not in all_methods:
@@ -19,7 +20,8 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
                 # testing, where some methods are import twice, first as
                 # methods.baseline_method.BaselineMethod, for instance, then again
                 # as SSCL.methods.baseline_method.BaselineMethod
-                if inspect.getsourcefile(method) == inspect.getsourcefile(new_method):
+                from os.path import abspath
+                if abspath(inspect.getsourcefile(method)) == abspath(inspect.getsourcefile(new_method)):
                     # The two classes have the same name and are both defined in
                     # the same file, so this is basically the 'double-import bug
                     # described above.
@@ -29,8 +31,10 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
             all_methods.append(new_method)
     return new_method
 
-# from .baseline_method import BaselineMethod
-# from .random_baseline import RandomBaselineMethod
+
+from .baseline_method import BaselineMethod
+from .random_baseline import RandomBaselineMethod
+
 
 ## Pretty hacky: Dynamically import all the modules/packages defined in this
 # folder. This way, we register the methods as they are declared.

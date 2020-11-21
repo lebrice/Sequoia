@@ -69,12 +69,14 @@ class RLResults(IncrementalSetting.Results, Results):
     def summary(self):
         tasks = []
         for task in range(self.num_tasks):
+            episodes = sum(self.episode_lengths[task])
             log_dict = {
-                "Episodes": sum(self.episode_lengths[task]),
+                "Episodes": episodes,
                 "Total reward": float(sum(self.episode_rewards[task])),
                 "Mean reward": float(self.average_metrics_per_task[task].mse),
-                "Mean episode length": float(mean(self.episode_lengths[task])),
             }
+            if episodes:
+                log_dict["Mean episode length"] = float(np.mean(self.episode_lengths[task]))
             print(f"Task {task}:", json.dumps(log_dict, indent="\t"))
             tasks.append(log_dict)
         return tasks

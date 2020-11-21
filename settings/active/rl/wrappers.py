@@ -45,7 +45,9 @@ class TypedObjectsWrapper(IterableWrapper):
         self.Rewards = rewards_type
         self.Actions = actions_type
         super().__init__(env=env)
-
+        # if not isinstance(env.unwrapped, VectorEnv):
+        #     raise RuntimeError(f"Expected the env to be vectorized, but it isn't! (env={env})")
+        
     def step(self, action: Actions) -> Tuple[Observations, Rewards, bool, Dict]:
         # "unwrap" the actions before passing it to the wrapped environment.
         if isinstance(action, Actions):
@@ -74,9 +76,10 @@ def unwrap_rewards(rewards: Rewards) -> Union[Tensor, np.ndarray]:
 
 def unwrap_observations(observations: Observations) -> Union[Tensor, np.ndarray]:
     # This gets rid of everything except just the image.
-    assert isinstance(observations, Observations)
-    # TODO: Keep the task labels? or no? For now, yes.        
-    return observations.x
+    if isinstance(observations, Observations):
+        # TODO: Keep the task labels? or no? For now, yes.        
+        return observations.x
+    assert False, observations
 
 
 class NoTypedObjectsWrapper(IterableWrapper):
@@ -158,8 +161,7 @@ class HideTaskLabelsWrapper(TransformObservation):
     def __init__(self, env: gym.Env, f=hide_task_labels):
         super().__init__(env, f=f)
         self.observation_space = self.space_change(self.env.observation_space)
-        
-    
+
     @classmethod
     def space_change(cls, input_space: gym.Space) -> gym.Space:
         assert isinstance(input_space, spaces.Tuple)

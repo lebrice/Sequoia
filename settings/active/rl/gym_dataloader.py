@@ -26,6 +26,7 @@ from typing import (Any, Callable, Dict, Generator, Iterable, List, Optional,
                     Sequence, Tuple, Type, TypeVar, Union, Iterator)
 import multiprocessing as mp
 import gym
+import numpy as np
 from gym import Env, Wrapper, spaces
 from gym.vector import VectorEnv
 from gym.vector.utils import batch_space
@@ -216,6 +217,8 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
         # logger.debug(f"Receiving actions {action}")
         if isinstance(action, Actions):
             action = action.y_pred.cpu().detach().numpy().tolist()
+        elif isinstance(action, np.ndarray):
+            action = action.tolist()
         assert action in self.env.action_space, (action, self.env.action_space)
         return self.env.send(action)
 

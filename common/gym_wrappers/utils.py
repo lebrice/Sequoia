@@ -1,6 +1,6 @@
 from abc import ABC
 from typing import (Dict, Generic, Iterator, List, NamedTuple, Tuple, Type,
-                    TypeVar)
+                    Union, TypeVar)
 from collections.abc import Sized
 from functools import singledispatch
 import gym
@@ -19,6 +19,21 @@ classic_control_env_prefixes: Tuple[str, ...] = (
     "CartPole", "Pendulum", "Acrobot", "MountainCar", "MountainCarContinuous"
 )
 
+def is_classic_control_env(env: Union[str, gym.Env]) -> bool:
+    if isinstance(env, str) and env.startswith(classic_control_env_prefixes):
+        return True
+    if isinstance(env, gym.Env) and isinstance(env.unwrapped, classic_control_envs):
+        return True
+    return False
+
+def is_atari_env(env: Union[str, gym.Env]) -> bool:
+    # TODO: Add more names from the atari environments, or figure out a smarter
+    # way to do this.
+    if isinstance(env, str) and env.startswith("Breakout"):
+        return True
+    if isinstance(env, gym.Env) and isinstance(env.unwrapped, AtariEnv):
+        return True
+    return False
 
 logger = get_logger(__file__)
 

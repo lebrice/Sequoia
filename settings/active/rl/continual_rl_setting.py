@@ -25,6 +25,8 @@ from common.gym_wrappers.pixel_observation import PixelObservationWrapper
 from common.gym_wrappers.sparse_space import Sparse
 from common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
 from common.gym_wrappers.utils import (IterableWrapper,
+                                       is_classic_control_env,
+                                       is_atari_env,
                                        classic_control_envs,
                                        classic_control_env_prefixes, 
                                        has_wrapper)
@@ -498,7 +500,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # Create a GymDataLoader for the EnvDataset.
         env_dataloader = GymDataLoader(dataset)
 
-        if batch_size:
+        if batch_size and seed:
             # Seed each environment with its own seed (based on the base seed).
             env.seed([seed + i for i in range(env_dataloader.num_envs)])
         else:
@@ -598,26 +600,23 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised?
-        if not self.observe_state_directly:
-            # If we are in a classic control env, and we dont want the state to
-            # be fully-observable (i.e. we want pixel observations rather than
-            # getting the pole angle, velocity, etc.), then add the
-            # PixelObservation wrapper to the list of wrappers.
-            # TODO: Change the BaselineMethod so that it uses an nn.Identity()
-            # as its encoder when setting.observe_state_directly is True.
-            if ((isinstance(self.dataset, str) and
-                 self.dataset.startswith(classic_control_env_prefixes))
-                or isinstance(self.dataset, classic_control_envs)):
-                wrappers.append(PixelObservationWrapper)
-            else:
-                raise RuntimeError(
-                    f"Don't know how to observe state rather than pixels for "
-                    f"environment {self.dataset}"
-                )
+
+        # If we are in a classic control env, and we dont want the state to
+        # be fully-observable (i.e. we want pixel observations rather than
+        # getting the pole angle, velocity, etc.), then add the
+        # PixelObservation wrapper to the list of wrappers.
+        # TODO: Change the BaselineMethod so that it uses an nn.Identity()
+        # as its encoder when setting.observe_state_directly is True.    
+        if is_classic_control_env(self.dataset) and not self.observe_state_directly:
+            wrappers.append(PixelObservationWrapper)
+        elif self.observe_state_directly:
+            raise RuntimeError(
+                f"Don't know how to observe state rather than pixels for "
+                f"environment {self.dataset}"
+            )
 
         # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
-        if self.dataset.startswith("Breakout") or (
-            isinstance(self.dataset, gym.Env) and isinstance(self.dataset.unwrapped, AtariEnv)):
+        if is_atari_env(self.dataset):
             # TODO: Figure out the differences (if there are any) between the 
             # AtariWrapper from SB3 and the AtariPreprocessing wrapper from gym.
             wrappers.append(AtariWrapper)
@@ -675,49 +674,6 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             starting_step=0,
             max_steps=self.max_steps,
         )
-
-        wrappers: List[Callable[[gym.Env], gym.Env]] = []
-        if not self.observe_state_directly:
-            # If we are in a classic control env, and we dont want the state to
-            # be fully-observable (i.e. we want pixel observations rather than
-            # getting the pole angle, velocity, etc.), then add the
-            # PixelObservation wrapper to the list of wrappers.
-
-            # TODO: Change the BaselineMethod so that it uses an nn.Identity()
-            # or the like in the case where setting.observe_state_directly is True.
-            if ((isinstance(self.dataset, str) and
-                 self.dataset.startswith(classic_control_env_prefixes))
-                or isinstance(self.dataset, classic_control_envs)):
-                wrappers.append(PixelObservationWrapper)
-            else:
-                raise RuntimeError(
-                    f"Don't know how to observe state rather than pixels for "
-                    f"environment {self.dataset}"
-                )
-
-        # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
-        if self.dataset.startswith("Breakout") or isinstance(self.dataset, AtariEnv):
-            # TODO: Figure out the differences between the AtariWrapper from
-            # stable-baselines3 and the AtariPreprocessing wrapper from gym.
-            wrappers.append(AtariWrapper)
-            # wrappers.append(AtariPreprocessing)
-
-        if not self.observe_state_directly:
-            # Apply the image transforms to the env.
-            wrappers.append(partial(TransformObservation, f=self.train_transforms))
-
-        # Add a wrapper that creates the 'tasks' (non-stationarity in the env).
-        # First, get the set of parameters that will be changed over time.
-        cl_task_params = task_params.get(self.dataset, [])
-        if self.smooth_task_boundaries:
-            cl_wrapper = SmoothTransitions
-        else:
-            cl_wrapper = MultiTaskEnvironment
-        # We want to have a 'task-label' space, but it will be filled with
-        # None values when task boundaries are smooth.
-        wrappers.append(partial(cl_wrapper, task_params=cl_task_params, add_task_id_to_obs=True))
-        return wrappers
-
 
 class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
     def get_results(self) -> RLResults:

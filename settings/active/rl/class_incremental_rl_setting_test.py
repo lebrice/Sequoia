@@ -18,7 +18,8 @@ from .class_incremental_rl_setting import ClassIncrementalRLSetting
 @pytest.mark.parametrize(
     "dataset, expected_obs_shape", [
         ("CartPole-v0", (3, 400, 600)),
-        ("Breakout-v0", (3, 210, 160)),
+        # ("Breakout-v0", (3, 210, 160)),
+        ("Breakout-v0", (3, 84, 84)), # Since the Atari Preprocessing is added by default.
         # ("duckietown", (120, 160, 3)),
     ],
 )
@@ -50,9 +51,12 @@ def test_check_iterate_and_step(dataset: str,
 
         assert obs_space[0] == spaces.Box(0., 1., expected_obs_batch_shape, dtype=np.float32)
         if batch_size:
-            assert str(obs_space[1]) == str(spaces.Tuple([Sparse(spaces.Discrete(5), none_prob=1.) for _ in range(batch_size)]))
+            assert str(obs_space[1]) == str(spaces.MultiDiscrete([5] * batch_size))
+            # assert str(obs_space[1]) == str(spaces.Tuple([Sparse(spaces.Discrete(5), none_prob=1.) for _ in range(batch_size)]))
         else:
-            assert obs_space[1] == Sparse(spaces.Discrete(5), none_prob=1.)
+            # TODO: Should the task labels be given in the valid dataloader if they arent' during testing?
+            assert obs_space[1] == spaces.Discrete(5)
+            # assert obs_space[1] == Sparse(spaces.Discrete(5), none_prob=1.)
 
     with setting.test_dataloader(batch_size=batch_size) as temp_env:
         obs_space = temp_env.observation_space
@@ -70,11 +74,10 @@ def test_check_iterate_and_step(dataset: str,
     #     ]))
 
     def check_obs(obs, task_label: int = None):
-        assert isinstance(obs, ClassIncrementalRLSetting.Observations), obs[0].shape
-        assert obs.x.shape == expected_obs_batch_shape
         if batch_size is None:
-            assert obs.task_labels is task_label
+            assert obs[1] is task_label
         else:
+            assert isinstance(obs, ClassIncrementalRLSetting.Observations), obs[0].shape
             assert obs.task_labels is task_label or all(task_label == task_label for task_label in obs.task_labels)
 
     env = setting.train_dataloader(batch_size=batch_size)

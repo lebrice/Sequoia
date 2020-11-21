@@ -4,7 +4,6 @@ from settings import (ClassIncrementalRLSetting, ContinualRLSetting, RLSetting,
 
 
 if __name__ == "__main__":
-    
     task_schedule = {
         0:      {"gravity": 10, "length": 0.2},
         1000:   {"gravity": 10, "length": 1.2},
@@ -18,14 +17,8 @@ if __name__ == "__main__":
     )
     # Create the method to use here:
     method = DQNMethod(train_steps_per_task=1_000)
-
-    # We can change the hyper-parameters like so:
+    # You could change the hyper-parameters of the method too:
     # method.hparams.buffer_size = 100
 
     results = setting.apply(method)
-    
-    # def evaluation_procedure(algo) -> Resutls:
-    
-    
-    
     print(results.summary())

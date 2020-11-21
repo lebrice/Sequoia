@@ -326,9 +326,12 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
         observation_for_stats = unwrap_observations(observation)
         reward_for_stats = unwrap_rewards(reward)
         
-        # TODO: Maybe render the env with human mode when debugging.
-        # if debug
-        self.render("human")
+        # TODO: Maybe render the env with human mode only when debugging?
+        try:
+            self.render("human")
+        except NotImplementedError:
+            pass
+            
         if not isinstance(done, bool):
             done = all(done)
 

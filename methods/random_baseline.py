@@ -34,6 +34,10 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         return action_space.sample()
 
+    @classmethod
+    def from_args(cls, *args, **kwargs):
+        return RandomBaselineMethod()
+
     ## Methods below are just here for testing purposes.
         
     @singledispatchmethod
