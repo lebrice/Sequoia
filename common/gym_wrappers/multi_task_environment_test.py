@@ -24,7 +24,7 @@ def test_task_schedule():
     env.reset()
     for step in range(100):
         _, _, done, _ = env.step(env.action_space.sample())
-        env.render()
+        # env.render()
         if done:
             env.reset()
 
@@ -51,7 +51,7 @@ def test_multi_task(environment_name: str):
     for task_id in range(5):
         for i in range(20):
             observation, reward, done, info = env.step(env.action_space.sample())
-            env.render()
+            # env.render()
         env.reset(new_random_task=True)
         print(f"New task: {env.current_task}")
     env.close()
@@ -83,7 +83,7 @@ def test_monitor_env(environment_name):
     for task_id in range(20):
         for i in range(100):
             observation, reward, done, info = env.step(env.action_space.sample())
-            env.render()
+            # env.render()
             if done:
                 env.reset(new_task=False)
 
@@ -136,7 +136,7 @@ def test_add_task_dict_to_info():
     env.reset()
     for step in range(100):
         _, _, done, info = env.step(env.action_space.sample())
-        env.render()
+        # env.render()
         if done:
             env.reset()
 
@@ -184,7 +184,7 @@ def test_add_task_id_to_obs():
     
     for step in range(100):
         obs, _, done, info = env.step(env.action_space.sample())
-        env.render()
+        # env.render()
 
         x, task_id = obs
         
@@ -259,7 +259,7 @@ def test_starting_step_and_max_step():
         assert env.steps == max(min(step + 10, 19), 10)
         
         obs, _, done, info = env.step(env.action_space.sample())
-        env.render()
+        # env.render()
 
         x, task_id = obs
 
@@ -296,7 +296,7 @@ def test_task_id_is_added_even_when_no_known_task_schedule():
     ])
     for step in range(0, 100):
         obs, _, done, info = env.step(env.action_space.sample())
-        env.render()
+        # env.render()
 
         x, task_id = obs
         assert task_id == 0
