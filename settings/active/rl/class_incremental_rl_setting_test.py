@@ -138,7 +138,7 @@ def test_on_task_switch_is_called():
     setting = ClassIncrementalRLSetting(
         dataset=DummyEnvironment,
         nb_tasks=5,
-        n_steps_per_task=100,
+        steps_per_task=100,
         max_steps=500,
         train_transforms=[],
         test_transforms=[],
@@ -154,13 +154,12 @@ def test_on_task_switch_is_called():
     setting = ClassIncrementalRLSetting(
         dataset=DummyEnvironment,
         nb_tasks=5,
-        n_steps_per_task=100,
+        steps_per_task=100,
         max_steps=500,
         train_transforms=[],
         test_transforms=[],
         val_transforms=[],
         task_labels_at_test_time=True,
-        known_task_boundaries_at_test_time=True,
     )
     method = DummyMethod()
     results = setting.apply(method)
