@@ -45,6 +45,11 @@ def test_init_still_works():
     setting = Setting(val_fraction=0.01)
     assert setting.val_fraction == 0.01
 
+
+def test_passing_unexpected_arg_raises_typeerror():
+    with pytest.raises(TypeError, match="unexpected keyword argument 'baz'"):
+        bob2 = Setting2(foo=4, bar=4, baz=123123)
+        
 @dataclass
 class SettingA(Setting): pass
 

@@ -40,16 +40,20 @@ class SettingMeta(_DataModuleWrapper, Type["Setting"]):
         
         for key in list(kwargs.keys()):
             value = kwargs[key]
-            if key not in init_fields:
+            if key not in fields:
                 # We let this through, so that if there is a problem, it is
                 # raised when calling the constructor below.
                 continue
+            # elif key in fields and key not in init_fields:
+            #     # We let this through, so that if there is a problem, it is
+            #     # raised when calling the constructor below.
+            #     logger.warning(RuntimeWarning(
+            #         f"Constructor Argument {key} is a field with init=False but"
+            #         f"but is being passed to the constructor."
+            #     ))
+            #     continue
                 # Alternative: Raise a custom Exception directly:
                 # raise RuntimeError((
-                logger.warning(RuntimeWarning(
-                    f"Constructor Argument {key} isn't a field of the setting "
-                    f"{cls} but is being passed to the constructor."
-                ))
                 # Other idea: go up two stackframes so that it looks like
                 # `cls(blabla=123)` is what's causing the exception?
 
