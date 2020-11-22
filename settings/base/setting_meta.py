@@ -1,9 +1,10 @@
 """
 
 """
+import dataclasses
+from dataclasses import Field
 from typing import Type, List, Dict, Any
 from pytorch_lightning.core.datamodule import _DataModuleWrapper
-from dataclasses import fields
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
@@ -13,6 +14,9 @@ class SettingMeta(_DataModuleWrapper, Type["Setting"]):
     
     Might remove this. Was experimenting with using this to create class
     properties for each Setting.
+    
+    What this currently does is to remove any keyword argument passed to the
+    constructor if its value is marked as a 'constant'.
 
     TODO: A little while back I noticed some strange behaviour when trying
     to create a Setting class (either manually or through the command-line), and
@@ -26,14 +30,37 @@ class SettingMeta(_DataModuleWrapper, Type["Setting"]):
     def __call__(cls, *args, **kwargs):
         # This is used to filter the arguments passed to the constructor
         # of the Setting and only keep the ones that are fields with init=True.
-        init_fields: List[str] = [f.name for f in fields(cls) if f.init]
-        extra_args: Dict[str, Any] = {}
-        for k in list(kwargs.keys()):
-            if k not in init_fields:
-                extra_args[k] = kwargs.pop(k)
-        if extra_args:
-            logger.warning(UserWarning(
-                f"Ignoring args {extra_args} when creating class {cls}."
-            ))
+        fields: Dict[str, Field] = {
+            field.name: field for field in dataclasses.fields(cls)
+        }
+        init_fields: List[str] = [name for name, f in fields.items() if f.init]
+        
+        for key in list(kwargs.keys()):
+            value = kwargs[key]
+            if key not in fields:
+                # We allow things through even though they aren't fields, and
+                # let the constructor take care of it.
+                raise TypeError((
+                    f"Setting {cls} does not have a '{key}' field: (__init__ got "
+                    f"an unexpected keyword argument '{key}')."
+                ))
+                # raise RuntimeError((
+                logger.warning(RuntimeWarning(
+                    f"Constructor Argument {key} isn't a field of the setting "
+                    f"{cls} but is being passed to the constructor."
+                ))
+                continue
+
+            field = fields[key]
+            _missing = object()
+            constant_value = field.metadata.get("constant", _missing)
+            if constant_value is not _missing and value != constant_value:
+                logger.warning(UserWarning(
+                    f"Ignoring argument {key}={value} when creating class "
+                    f"{cls}, since it has that field marked as constant with a "
+                    f"value of {constant_value}."
+                ))
+                kwargs.pop(key)
+                    
         return super().__call__(*args, **kwargs)
 

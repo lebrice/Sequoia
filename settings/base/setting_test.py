@@ -69,8 +69,7 @@ class CoolGeneralMethod(Method, target_setting=Setting): pass
 def test_that_transforms_can_be_set_through_command_line():
     from common.transforms import Transforms, Compose
 
-    setting = Setting(transforms=[], train_transforms=[])
-    assert setting.transforms == []
+    setting = Setting(train_transforms=[])
     assert setting.train_transforms == []
     
     

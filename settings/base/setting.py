@@ -125,12 +125,6 @@ class Setting(SettingABC,
     # Number of labeled examples.
     n_labeled_examples: Optional[int] = None
 
-    # These should be set by all settings, not from the command-line. Hence we
-    # mark them as InitVars, which means they should be passed to __post_init__.
-    # x_shape: Tuple[int, ...] = field(init=False)
-    # action_shape: Tuple[int, ...] = field(init=False)
-    # reward_shape: Tuple[int, ...] = field(init=False)
-    
     def __post_init__(self,
                       observation_space: gym.Space = None,
                       action_space: gym.Space = None,
@@ -154,13 +148,6 @@ class Setting(SettingABC,
         self._observation_space = observation_space
         self._action_space = action_space
         self._reward_space = reward_space
-        
-        # # Transform that will split batches into Observations and Rewards.
-        # self.split_batch_transform = SplitBatch(
-        #     observation_type=self.Observations,
-        #     reward_type=self.Rewards
-        # )
-        logger.debug(f"Transforms: {self.transforms}")
 
         # TODO: Testing out an idea: letting the transforms tell us how
         # they change the shape of the observations.

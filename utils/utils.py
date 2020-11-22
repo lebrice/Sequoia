@@ -281,6 +281,8 @@ def camel_case(name):
     return s2
 
 def constant(v: T, **kwargs) -> T:
+    metadata = kwargs.setdefault("metadata", {})
+    metadata["constant"] = v
     return field(default=v, init=False, **kwargs)
 
 def flag(default: bool, *args, **kwargs):
