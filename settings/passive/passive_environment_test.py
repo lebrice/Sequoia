@@ -16,7 +16,11 @@ from .passive_environment import PassiveEnvironment
 def test_passive_environment_as_dataloader():
     batch_size = 1
     dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
-    env: Iterable[Tuple[Tensor, Tensor]] = PassiveEnvironment(dataset, batch_size=batch_size, n_classes=10,)
+    env: Iterable[Tuple[Tensor, Tensor]] = PassiveEnvironment(
+        dataset,
+        batch_size=batch_size,
+        n_classes=10,
+    )
 
     for x, y in env:
         assert x.shape == (batch_size, 3, 28, 28)
@@ -40,9 +44,9 @@ def test_mnist_as_gym_env():
                              n_classes=10,
                              batch_size=batch_size)
     
-    assert env.observation_space[0].shape == (3, 28, 28)
-    assert env.action_space[0].shape == ()
-    assert env.reward_space[0].shape == ()
+    assert env.observation_space.shape == (batch_size, 3, 28, 28)
+    assert env.action_space.shape == (batch_size,)
+    assert env.reward_space.shape == (batch_size,)
     
     env.seed(123)
     obs = env.reset()
@@ -70,9 +74,9 @@ def test_env_gives_done_on_last_item():
                              n_classes=10,
                              batch_size=batch_size)
 
-    assert env.observation_space[0].shape == (3, 28, 28)
-    assert env.action_space[0].shape == ()
-    assert env.reward_space[0].shape == ()
+    assert env.observation_space.shape == (batch_size, 3, 28, 28)
+    assert env.action_space.shape == (batch_size,)
+    assert env.reward_space.shape == (batch_size,)
     
     env.seed(123)
     obs = env.reset()
@@ -103,9 +107,9 @@ def test_env_done_works_with_batch_size():
                              n_classes=10,
                              batch_size=batch_size)
 
-    assert env.observation_space[0].shape == (3, 28, 28)
-    assert env.action_space[0].shape == ()
-    assert env.reward_space[0].shape == ()
+    assert env.observation_space.shape == (batch_size, 3, 28, 28)
+    assert env.action_space.shape == (batch_size,)
+    assert env.reward_space.shape == (batch_size,)
     
     env.seed(123)
     obs = env.reset()
@@ -138,9 +142,9 @@ def test_multiple_epochs_env():
                              n_classes=10,
                              batch_size=batch_size)
 
-    assert env.observation_space[0].shape == (3, 28, 28)
-    assert env.action_space[0].shape == ()
-    assert env.reward_space[0].shape == ()
+    assert env.observation_space.shape == (batch_size, 3, 28, 28)
+    assert env.action_space.shape == (batch_size,)
+    assert env.reward_space.shape == (batch_size,)
     
     env.seed(123)
     total_steps = 0
@@ -180,9 +184,9 @@ def test_multiple_epochs_dataloader():
                              n_classes=10,
                              batch_size=batch_size)
 
-    assert env.observation_space[0].shape == (3, 28, 28)
-    assert env.action_space[0].shape == ()
-    assert env.reward_space[0].shape == ()
+    assert env.observation_space.shape == (batch_size, 3, 28, 28)
+    assert env.action_space.shape == (batch_size,)
+    assert env.reward_space.shape == (batch_size,)
     total_steps = 0
     for epoch in range(max_epochs):
         for obs, reward in env:
@@ -215,9 +219,9 @@ def test_multiple_epochs_dataloader_with_split_batch_fn():
                              batch_size=batch_size,
                              split_batch_fn=split_batch_fn)
 
-    assert env.observation_space[0].shape == (3, 28, 28)
-    assert env.action_space[0].shape == ()
-    assert env.reward_space[0].shape == ()
+    assert env.observation_space.shape == (batch_size, 3, 28, 28)
+    assert env.action_space.shape == (batch_size,)
+    assert env.reward_space.shape == (batch_size,)
     total_steps = 0
     for epoch in range(max_epochs):
         for obs, reward in env:
@@ -290,11 +294,11 @@ def test_split_batch_fn():
             high=np.array([(i+1) * classes_per_task]),
             dtype=int,
         ).shape == (1,)
-        assert isinstance(env.observation_space[0], spaces.Tuple)
-        assert env.observation_space[0][0].shape == (3, 28, 28)
-        assert env.observation_space[0][1].shape == ()
-        assert env.action_space[0].shape == (1,)
-        assert env.reward_space[0].shape == (1,)
+        assert isinstance(env.observation_space[0], spaces.Box)
+        assert env.observation_space[0].shape == (batch_size, 3, 28, 28)
+        assert env.observation_space[1].shape == (batch_size,)
+        assert env.action_space.shape == (batch_size, 1)
+        assert env.reward_space.shape == (batch_size,)
         
         env.seed(123)
         

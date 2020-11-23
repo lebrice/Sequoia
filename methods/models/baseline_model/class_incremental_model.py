@@ -109,7 +109,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
     def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
         """ Forward pass of the Model. Returns a dict."""
         # Just testing things out here.
-        assert isinstance(observations, self.Observations)
+        assert isinstance(observations, self.Observations), observations
         
         # Get the task labels from the observation.
         task_labels = observations.task_labels

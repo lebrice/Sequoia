@@ -85,6 +85,14 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self._next_batch: Optional[Tuple[ObservationType, RewardType]] = None
         self._done: Optional[bool] = None
         self._closed: bool = False
+        
+        if not self.observation_space:
+            self.observation_space = spaces.Box(0., 1., self.dataset[0][0].shape)
+        if not self.action_space:
+            self.action_space = spaces.Discrete(n_classes)
+        if not self.reward_space:
+            self.reward_space = spaces.Discrete(n_classes) 
+        
         if self.batch_size:
             self.observation_space = batch_space(self.observation_space, self.batch_size)
             self.action_space = batch_space(self.action_space, self.batch_size)
@@ -379,10 +387,9 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         """ Return the last latch of rewards from the dataset (which were
         withheld if in 'active' mode)
         """
-        assert False, (
-            "TODO: work in progress, if you're gonna pretend this is an "
-            "'active' environment, then use the gym API for now."
-        )
+        # TODO: work in progress, if you're gonna pretend this is an "
+        # 'active' environment, then it might be better to just use the gym API
+        # for now.
         # assert self.action_space.contains(action), action
         return None
 

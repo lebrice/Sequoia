@@ -376,6 +376,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         
         dataset = ConcatDataset(self.test_datasets)
         batch_size = batch_size or self.batch_size
+        assert batch_size, "batch size is None?"
         num_workers = num_workers or self.num_workers
         
         # batch_transforms: List[Callable] = self.test_batch_transforms()
@@ -392,7 +393,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             reward_space=self.reward_space,
         )
         self.test_task_schedule = dict.fromkeys(
-            [step // dataloader.batch_size for step in transition_steps],
+            [step // (dataloader.batch_size or 1) for step in transition_steps],
             range(len(transition_steps)),
         )
         # a bit hacky, but it works.

@@ -4,6 +4,7 @@ Should be applicable to any Setting.
 """
 
 import gym
+from dataclasses import dataclass
 from utils import get_logger, singledispatchmethod
 
 from common.metrics import ClassificationMetrics
@@ -15,6 +16,7 @@ from methods import register_method
 logger = get_logger(__file__)
 
 @register_method
+@dataclass
 class RandomBaselineMethod(Method, target_setting=Setting):
     """ Baseline method that gives random predictions for any given setting.
 
@@ -31,12 +33,17 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         # self.action_space = train_env.action_space
         return 1
 
+    def configure(self, setting):
+        # Set any batch size, really.
+        setting.batch_size = 32
+
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         return action_space.sample()
 
     @classmethod
     def from_args(cls, *args, **kwargs):
-        return RandomBaselineMethod()
+        return super().from_args(*args, **kwargs)
+        # return RandomBaselineMethod()
 
     ## Methods below are just here for testing purposes.
         
