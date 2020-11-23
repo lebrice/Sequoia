@@ -46,7 +46,7 @@ all_modules: List[str] = [
     if (#(isfile(f) and
     not f.endswith('__init__.py') and
     not f.endswith("_test.py"))
-
+]
 
 for module in all_modules:
     try:
