@@ -27,19 +27,13 @@ logger = get_logger(__file__)
 
 @dataclass
 class ExperienceReplayMethod(Method, target_setting=Setting):
-    """ Baseline method that gives random predictions for any given setting.
-
-    This method doesn't have a model or any parameters. It just returns a random
-    action for every observation.
+    """ Simple method that uses a replay buffer to reduce forgetting.
     """
     def fit(self,
             train_env: Environment=None,
             valid_env: Environment=None,
             datamodule=None
         ):
-        # This is useless atm (we don't train) but just for testing purposes.
-        # self.observation_space = train_env.observation_space
-        # self.action_space = train_env.action_space
         self.net.train()
 
         # Training loop:
@@ -67,12 +61,9 @@ class ExperienceReplayMethod(Method, target_setting=Setting):
                 # add to buffer
                 self.buffer.add_reservoir({'x': x, 'y': y, 't': self.task})
 
-
-
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         logits = self.net(observations.x)
         pred   = logits.max(1)[1]
-
         return pred
 
     def configure(self, setting: Setting):
@@ -88,7 +79,6 @@ class ExperienceReplayMethod(Method, target_setting=Setting):
         self.optim = torch.optim.SGD(self.net.parameters(), lr=.1)
 
         self.task = 0
-        super().configure(setting)
 
     def on_task_switch(self, task_id):
         self.task = task_id
@@ -106,7 +96,6 @@ class ExperienceReplayMethod(Method, target_setting=Setting):
         assert results is not None
         assert results.objective > 0
         print(f"Objective when applied to a setting of type {type(setting)}: {results.objective}")
-
 
     @validate_results.register
     def validate(self, setting: ClassIncrementalSetting, results: ClassIncrementalSetting.Results):
@@ -151,7 +140,7 @@ class Buffer(nn.Module):
         self.current_index = 0
         self.n_seen_so_far = 0
         self.is_full       = 0
-
+        # (@lebrice) args isn't defined here:
         self.to_one_hot  = lambda x : x.new(x.size(0), args.n_classes).fill_(0).scatter_(1, x.unsqueeze(1), 1)
         self.arange_like = lambda x : torch.arange(x.size(0)).to(x.device)
         self.shuffle     = lambda x : x[torch.randperm(x.size(0))]
