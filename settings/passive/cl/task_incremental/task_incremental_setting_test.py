@@ -25,7 +25,7 @@ def check_only_right_classes_present(env: TaskIncrementalSetting):
     """ Checks that only the classes within each task are present. """
     for i in range(env.nb_tasks):
         env.current_task_id = i
-        train_loader = env.train_dataloader(batch_size=1)
+        train_loader = env.train_dataloader(batch_size=5)
         
         # # Find out which classes are supposed to be within this task.
         classes_of_task = env.current_task_classes(train=True)

@@ -48,6 +48,7 @@ from tqdm import tqdm
 from common import ClassificationMetrics, Metrics, get_metrics
 from common.config import Config
 from common.loss import Loss
+from common.gym_wrappers import Sparse
 from common.transforms import Transforms, SplitBatch, Compose
 from settings.base import Method, Results, ObservationType, RewardType
 from utils import dict_union, get_logger, constant, mean, take
@@ -217,11 +218,15 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # make things a bit more complicated.
         assert isinstance(self.increment, int) and isinstance(self.test_increment, int)
         self.n_classes_per_task: int = self.increment
-
+        image_space = spaces.Box(low=0, high=1, shape=image_shape, dtype=np.float32)
+        task_label_space = spaces.Discrete(self.nb_tasks)
+        if not self.task_labels_at_train_time:
+            task_label_space = Sparse(task_label_space, 1.0)
         observation_space = spaces.Tuple([
-            spaces.Box(low=0, high=1, shape=image_shape, dtype=np.float32),
-            spaces.Discrete(self.nb_tasks),
+            image_space,
+            task_label_space,
         ])
+        # assert False, image_space
         # TODO: Change the actions from logits to predicted labels.
         action_space = spaces.Discrete(self.n_classes_per_task)
         # self.action_space = Box(low=-np.inf, high=np.inf, shape=(self.n_classes_per_task,))
@@ -233,6 +238,12 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             action_space=action_space,
             reward_space=reward_space, # the labels have shape (1,) always.
         )
+        image_space = self.train_transforms.space_change(image_space)
+        self.observation_space = spaces.Tuple([
+            image_space,
+            task_label_space,
+        ])
+        
 
         self.train_datasets: List[_ContinuumDataset] = []
         self.val_datasets: List[_ContinuumDataset] = []
@@ -263,6 +274,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         return results
 
     def prepare_data(self, data_dir: Path = None, **kwargs):
+        self.config = self.config or Config.from_args(self._argv)
         data_dir = data_dir or self.data_dir or self.config.data_dir
         self.make_dataset(data_dir, download=True)
         self.data_dir = data_dir
@@ -270,9 +282,10 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
     def setup(self, stage: Optional[str] = None, *args, **kwargs):
         """ Creates the datasets for each task.
-        
         TODO: Figure out a way of setting data_dir elsewhere maybe?
         """
+        assert self.config
+        # self.config = self.config or Config.from_args(self._argv)
         logger.debug(f"data_dir: {self.data_dir}, setup args: {args} kwargs: {kwargs}")
         
         self.train_cl_dataset = self.make_dataset(self.data_dir, download=False, train=True)
@@ -297,17 +310,17 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
         super().setup(stage, *args, **kwargs)
 
-    def train_dataloader(self, **kwargs) -> PassiveEnvironment:
+    def train_dataloader(self, batch_size: int = None, num_workers: int = None) -> PassiveEnvironment:
         """Returns a DataLoader for the train dataset of the current task. """
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_fit:
             self.setup("fit")
+        batch_size = batch_size or self.batch_size
+        num_workers = num_workers or self.config.num_workers
         dataset = self.train_datasets[self.current_task_id]
         # TODO: Add some kind of Wrapper around the dataset to make it
-        # semi-supervised.
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        
+        # semi-supervised.        
         self.train_env = PassiveEnvironment(
             dataset,
             split_batch_fn=self.split_batch_function(training=True),
@@ -315,43 +328,42 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             action_space=self.action_space,
             reward_space=self.reward_space,
             pin_memory=True,
-            **kwargs,
+            batch_size=batch_size,
+            num_workers=num_workers,
         )
         # TODO: Do we want to update self.observation_space here?
         # We want to keep the spaces 'un-batched', so we keep a slice across the
         # first dimension.
-        assert all(isinstance(space, spaces.Tuple) for space in [
-            self.train_env.observation_space,
-            self.train_env.action_space,
-            self.train_env.reward_space,
-        ])
-        self.observation_space = self.train_env.observation_space[0]
-        self.action_space = self.train_env.action_space[0]
-        self.reward_space = self.train_env.reward_space[0]
+        # self.observation_space = self.train_env.observation_space[0]
+        # self.action_space = self.train_env.action_space[0]
+        # self.reward_space = self.train_env.reward_space[0]
         return self.train_env
 
-    def val_dataloader(self, **kwargs) -> PassiveEnvironment:
+    def val_dataloader(self, batch_size: int = None, num_workers: int = None) -> PassiveEnvironment:
         """Returns a DataLoader for the validation dataset of the current task.
         """
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_fit:
             self.setup("fit")
+
         dataset = self.val_datasets[self.current_task_id]
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
-        
+        batch_size = batch_size or self.batch_size
+        num_workers = num_workers or self.num_workers
+
         # batch_transforms: List[Callable] = self.val_batch_transforms()
         self.val_env = PassiveEnvironment(
             dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
             split_batch_fn=self.split_batch_function(training=True),
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
-            **kwargs,
         )
         return self.val_env
 
-    def test_dataloader(self, **kwargs) -> PassiveEnvironment["ClassIncrementalSetting.Observations", Actions, Rewards]:
+    def test_dataloader(self, batch_size: int = None, num_workers: int = None) -> PassiveEnvironment["ClassIncrementalSetting.Observations", Actions, Rewards]:
         """Returns a DataLoader for the test dataset of the current task.
         """
         if not self.has_prepared_data:
@@ -362,8 +374,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # Testing this out, we're gonna have a "test schedule" like this!
         transition_steps = [0] + list(itertools.accumulate(map(len, self.test_datasets)))[:-1]
         
-        dataset = ConcatDataset(self.test_datasets)        
-        kwargs = dict_union(self.dataloader_kwargs, kwargs)
+        dataset = ConcatDataset(self.test_datasets)
+        batch_size = batch_size or self.batch_size
+        num_workers = num_workers or self.num_workers
         
         # batch_transforms: List[Callable] = self.test_batch_transforms()
         # FIXME: the transform that splits the batch is actually changing the
@@ -371,11 +384,12 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
         dataloader = PassiveEnvironment(
             dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
             split_batch_fn=self.split_batch_function(training=False),
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
-            **kwargs,
         )
         self.test_task_schedule = dict.fromkeys(
             [step // dataloader.batch_size for step in transition_steps],
@@ -415,6 +429,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             """
             # In this context (class_incremental), we will always have 3 items per
             # batch, because we use the ClassIncremental scenario from Continuum.
+            assert len(batch) == 3
             x, y, t = batch
 
             # Relabel y so it is always in [0, n_classes_per_task) for each task.
@@ -458,19 +473,6 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             return observations, rewards
         return split_batch
     
-    def configure(self, method: Method):
-        # TODO: See the docstring of Setting.configure, we need to clean this up.
-        assert self.config is not None
-        
-        # TODO: Should the data_dir be in the Setting, or the Config?
-        self.data_dir = self.config.data_dir
-        
-        # Set the dataloader kwargs, if needed.
-        self.num_workers = self.num_workers or self.config.num_workers
-        # Debugging: Run a quick check to see that what is returned by the
-        # dataloaders is of the right type and shape etc.
-        self._check_environments()
-
     def make_train_cl_loader(self, train_dataset: _ContinuumDataset) -> _BaseCLLoader:
         """ Creates a train ClassIncremental object from continuum. """
         return ClassIncremental(
@@ -550,7 +552,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         """
         for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
             logger.debug(f"Checking loader method {loader_method.__name__}")
-            env = loader_method()
+            env = loader_method(batch_size=5)
             obs = env.reset()
             assert isinstance(obs, self.Observations)
             # Convert the observation to numpy arrays, to make it easier to
@@ -643,7 +645,7 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         actions = torch.as_tensor(self.action)
         
         batch_size = reward.shape[0]
-        fake_logits = torch.zeros([batch_size, self.action_space[0].n], dtype=int)
+        fake_logits = torch.zeros([batch_size, self.action_space.nvec[0]], dtype=int)
         # FIXME: There must be a smarter way to do this indexing.
         for i, action in enumerate(actions):
             fake_logits[i, action] = 1

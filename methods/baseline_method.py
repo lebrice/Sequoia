@@ -116,6 +116,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         setting_name: str = setting.get_name()
         dataset: str = setting.dataset
         
+        setting.batch_size = self.hparams.batch_size
         # TODO: Should we set the 'config' on the setting from here?
         setting.config = self.config
         
