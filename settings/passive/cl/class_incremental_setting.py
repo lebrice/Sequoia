@@ -275,6 +275,15 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
     def prepare_data(self, data_dir: Path = None, **kwargs):
         self.config = self.config or Config.from_args(self._argv)
+        
+        if self.batch_size is None:
+            logger.warning(UserWarning(
+                f"Using the default batch size of 32. (You can set the "
+                f"batch size attribute of the setting inside your 'configure' "
+                f"method) "
+            ))
+            self.batch_size = 32
+        
         data_dir = data_dir or self.data_dir or self.config.data_dir
         self.make_dataset(data_dir, download=True)
         self.data_dir = data_dir

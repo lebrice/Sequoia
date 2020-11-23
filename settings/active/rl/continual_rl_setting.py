@@ -607,14 +607,14 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # PixelObservation wrapper to the list of wrappers.
         # TODO: Change the BaselineMethod so that it uses an nn.Identity()
         # as its encoder when setting.observe_state_directly is True.    
-        if is_classic_control_env(self.dataset) and not self.observe_state_directly:
-            wrappers.append(PixelObservationWrapper)
-        elif self.observe_state_directly:
+        if is_classic_control_env(self.dataset):
+            if not self.observe_state_directly:
+                wrappers.append(PixelObservationWrapper)
+        elif self.observe_state_directly:    
             raise RuntimeError(
                 f"Don't know how to observe state rather than pixels for "
-                f"environment {self.dataset}"
+                f"environment {self.dataset}, as it isn't a classic control env!"
             )
-
         # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
         if is_atari_env(self.dataset):
             # TODO: Figure out the differences (if there are any) between the 

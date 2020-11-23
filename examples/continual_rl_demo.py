@@ -1,4 +1,7 @@
-from methods.stable_baselines3_methods import DQNMethod
+import sys
+# This "hack" is required so we can run `python examples/continual_rl_demo.py`
+sys.path.extend([".", ".."])
+from methods.stable_baselines3_methods import DQNMethod, A2CMethod
 from settings import (ClassIncrementalRLSetting, ContinualRLSetting, RLSetting,
                       TaskIncrementalRLSetting)
 
@@ -6,7 +9,7 @@ from settings import (ClassIncrementalRLSetting, ContinualRLSetting, RLSetting,
 if __name__ == "__main__":
     task_schedule = {
         0:      {"gravity": 10, "length": 0.2},
-        1000:   {"gravity": 10, "length": 1.2},
+        1000:   {"gravity": 100, "length": 1.2},
         2000:   {"gravity": 10, "length": 0.2},
     }
     setting = ContinualRLSetting(
@@ -16,7 +19,9 @@ if __name__ == "__main__":
         train_task_schedule=task_schedule,
     )
     # Create the method to use here:
-    method = DQNMethod(train_steps_per_task=1_000)
+    # NOTE: The DQN method doesn't seem to work nearly as well as A2C.
+    # method = DQNMethod(train_steps_per_task=1_000)
+    method = A2CMethod(train_steps_per_task=1_000)
     # You could change the hyper-parameters of the method too:
     # method.hparams.buffer_size = 100
 

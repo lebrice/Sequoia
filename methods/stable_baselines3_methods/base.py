@@ -235,11 +235,11 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         )
 
     def get_actions(self, observations: ContinualRLSetting.Observations, action_space: spaces.Space) -> ContinualRLSetting.Actions:
-        obs = observations[0]
+        obs = observations.x
         predictions = self.model.predict(obs)
         action, _ = predictions
         if action not in action_space:
-            assert len(action) == 1
+            assert len(action) == 1, (observations, action, action_space)
             action = action.item()
         return action
 
