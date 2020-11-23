@@ -2,33 +2,66 @@
 
 Should be applicable to any Setting.
 """
+from collections import Iterable, OrderedDict
 from dataclasses import dataclass
+from typing import Optional
+from argparse import ArgumentParser, Namespace
 
 import gym
-from utils import get_logger, singledispatchmethod
-
-from common.metrics import ClassificationMetrics
-from settings.base import Method, Actions, Observations, Environment
-
-from settings import ClassIncrementalSetting, Setting
-
-import tqdm
+from gym import spaces
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
+import tqdm
+from torch import Tensor
 
-from collections import OrderedDict
-from collections import Iterable
+from common.metrics import ClassificationMetrics
+from methods import register_method
+from settings import ClassIncrementalSetting, Setting
+from settings.base import Actions, Environment, Method, Observations
+from torchvision.models import ResNet, resnet18
+from utils import get_logger, singledispatchmethod
+
 
 logger = get_logger(__file__)
 
 
+@register_method
 @dataclass
-class ExperienceReplayMethod(Method, target_setting=Setting):
+class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
     """ Simple method that uses a replay buffer to reduce forgetting.
     """
+    
+    def __init__(self, learning_rate: float = 0.1, buffer_capacity: int = 200):
+        self.learning_rate = learning_rate
+        self.buffer_capacity = buffer_capacity
+
+        self.net: ResNet
+        self.buffer: Buffer
+        self.optim: torch.optim.Optimizer
+        self.task: int = 0
+        
+        self.device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+
+    def configure(self, setting: ClassIncrementalSetting):
+        # create the model
+        self.net = models.resnet18(pretrained=False)
+        self.net.fc = nn.Linear(512, setting.increment * setting.nb_tasks)
+        if torch.cuda.is_available():
+            self.net = self.net.to(device=self.device)
+        net_params = sum([np.prod(x.shape) for x in self.net.parameters()])
+
+        image_space: spaces.Box = setting.observation_space[0]
+        # create the buffer
+        self.buffer = Buffer(capacity=self.buffer_capacity, input_shp=image_space.shape)
+        self.buffer = self.buffer.to(device=self.device)
+
+        # optimizer
+        self.optim = torch.optim.SGD(self.net.parameters(), lr=self.learning_rate)
+
     def fit(self,
             train_env: Environment=None,
             valid_env: Environment=None,
@@ -45,8 +78,9 @@ class ExperienceReplayMethod(Method, target_setting=Setting):
                 self.optim.zero_grad()
 
                 obs, rew = batch
+                obs = obs.to(device=self.device)
+                rew = rew.to(device=self.device)
                 x, y = obs.x, rew.y
-
                 logits = self.net(x)
                 loss = F.cross_entropy(logits, y)
 
@@ -62,28 +96,26 @@ class ExperienceReplayMethod(Method, target_setting=Setting):
                 self.buffer.add_reservoir({'x': x, 'y': y, 't': self.task})
 
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
+        observations = observations.to(device=self.device)
         logits = self.net(observations.x)
         pred   = logits.max(1)[1]
         return pred
 
-    def configure(self, setting: Setting):
-        # create the model
-        self.net = models.resnet18(pretrained=False)
-        self.net.fc = nn.Linear(512, setting.increment * setting.nb_tasks)
-        net_params = sum([np.prod(x.shape) for x in self.net.parameters()])
-
-        # create the buffer
-        self.buffer = Buffer(capacity=200, input_shp=setting.observation_space[0].shape)
-
-        # optimizer
-        self.optim = torch.optim.SGD(self.net.parameters(), lr=.1)
-
-        self.task = 0
-
-    def on_task_switch(self, task_id):
+    def on_task_switch(self, task_id: Optional[int]):
         self.task = task_id
         print(f'task id : {task_id}')
 
+    @classmethod
+    def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
+        parser.add_argument("--learning_rate", type=float, default=0.1)
+        parser.add_argument("--buffer_capacity", type=int, default=200)
+    
+    @classmethod
+    def from_argparse_args(cls, args: Namespace, dest: str = None):
+        return cls(learning_rate=args.learning_rate,
+                   buffer_capacity=args.buffer_capacity)
+        return super().from_argparse_args(args, dest=dest)
+    
     @singledispatchmethod
     def validate_results(self, setting: Setting, results: Setting.Results):
         """Called during testing. Use this to assert that the results you get
@@ -180,9 +212,9 @@ class Buffer(nn.Module):
         self.place_left = False
 
         indices = torch.FloatTensor(x.size(0)-place_left).to(x.device).uniform_(0, self.n_seen_so_far).long()
-        valid_indices = (indices < self.bx.size(0)).long()
+        valid_indices: Tensor = (indices < self.bx.size(0)).long()
 
-        idx_new_data = valid_indices.nonzero().squeeze(-1)
+        idx_new_data = valid_indices.nonzero(as_tuple=False).squeeze(-1)
         idx_buffer   = indices[idx_new_data]
 
         self.n_seen_so_far += x.size(0)
