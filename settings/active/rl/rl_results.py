@@ -1,12 +1,15 @@
-from settings.base import Results
+import json
 from dataclasses import dataclass, field
-from settings.assumptions.incremental import IncrementalSetting
-from utils import mean
-from common import Metrics, RegressionMetrics, ClassificationMetrics
-from typing import List, ClassVar, Dict
-from utils.plotting import autolabel, plt
+from typing import ClassVar, Dict, List
+
+import numpy as np
 from simple_parsing import list_field
 
+from common import ClassificationMetrics, Metrics, RegressionMetrics
+from settings.assumptions.incremental import IncrementalSetting
+from settings.base import Results
+from utils import mean
+from utils.plotting import autolabel, plt
 # @dataclass
 # class EpisodeMetrics(Metrics):
 #     rewards: List[float]
@@ -19,11 +22,15 @@ class RLResults(IncrementalSetting.Results, Results):
 
     Similar to ClassIncrementalResults, but here the metrics would be the mean
     reward, something like that.
+    
+    TODO: Actually implement this, making sure that the metrics/plots this creates
+    make sense.
     """
-    episode_rewards: List[List[float]] = list_field()
-    episode_lengths: List[List[int]] = list_field()
-    test_metrics: List[List[Metrics]] = list_field()
-    objective_name: ClassVar[str] = "Mean Reward"      
+    objective_name: ClassVar[str] = "Mean Reward"
+      
+    episode_rewards: List[List[float]] = list_field(repr=False)
+    episode_lengths: List[List[int]] = list_field(repr=False)
+    test_metrics: List[List[Metrics]] = list_field(repr=False)
 
     def __post_init__(self):
         if not self.test_metrics:
@@ -36,7 +43,7 @@ class RLResults(IncrementalSetting.Results, Results):
                 ]
                 self.test_metrics.append(task_metrics)
         self.test_metrics = list(filter(len, self.test_metrics))
-    
+
     @property
     def objective(self) -> float:
         return self.mean_reward
@@ -47,16 +54,33 @@ class RLResults(IncrementalSetting.Results, Results):
         return average_metric.mse
 
     @property
+    def mean_episode_length(self) -> int:
+        all_episode_lengths = sum(self.episode_lengths, [])
+        return np.mean(all_episode_lengths)
+
+    @property
     def total_steps(self):
         return sum(map(sum, self.episode_lengths))
 
+    @property
     def total_reward(self) -> float:
         return sum(map(sum, self.episode_rewards))
 
     def summary(self):
-        return f"Mean reward: {self.mean_reward}"
-        return super().summary()
-    
+        tasks = []
+        for task in range(self.num_tasks):
+            episodes = sum(self.episode_lengths[task])
+            log_dict = {
+                "Episodes": episodes,
+                "Total reward": float(sum(self.episode_rewards[task])),
+                "Mean reward": float(self.average_metrics_per_task[task].mse),
+            }
+            if episodes:
+                log_dict["Mean episode length"] = float(np.mean(self.episode_lengths[task]))
+            print(f"Task {task}:", json.dumps(log_dict, indent="\t"))
+            tasks.append(log_dict)
+        return tasks
+
     def make_plots(self):
         results = {
             "mean_reward": self.mean_reward_plot()
@@ -64,6 +88,7 @@ class RLResults(IncrementalSetting.Results, Results):
         return results
 
     def mean_reward_plot(self):
+        raise NotImplementedError("TODO")
         figure: plt.Figure
         axes: plt.Axes
         figure, axes = plt.subplots()
@@ -81,20 +106,4 @@ class RLResults(IncrementalSetting.Results, Results):
         results = {}
         results[self.objective_name] = self.objective
         return results
-        average_metrics = self.average_metrics
-
-        if isinstance(average_metrics, ClassificationMetrics):
-            results["accuracy/average"] = average_metrics.accuracy
-        elif isinstance(average_metrics, RegressionMetrics):
-            results["mse/average"] = average_metrics.mse
-        else:
-            results["average metrics"] = average_metrics
-
-        for i, average_task_metrics in enumerate(self.average_metrics_per_task):
-            if isinstance(average_task_metrics, ClassificationMetrics):
-                results[f"accuracy/task_{i}"] = average_task_metrics.accuracy
-            elif isinstance(average_task_metrics, RegressionMetrics):
-                results[f"mse/task_{i}"] = average_task_metrics.mse
-            else:
-                results[f"task_{i}"] = average_task_metrics
-        return results
+        # TODO: Create a dict of useful things to log.

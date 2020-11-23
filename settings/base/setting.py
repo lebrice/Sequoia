@@ -64,7 +64,6 @@ from  .bases import SettingABC, Method
 class Setting(SettingABC,
               Generic[EnvironmentType],
               Serializable,
-              Parseable,
               metaclass=SettingMeta):
     """ Base class for all research settings in ML: Root node of the tree. 
 
@@ -126,12 +125,6 @@ class Setting(SettingABC,
     # Number of labeled examples.
     n_labeled_examples: Optional[int] = None
 
-    # These should be set by all settings, not from the command-line. Hence we
-    # mark them as InitVars, which means they should be passed to __post_init__.
-    # x_shape: Tuple[int, ...] = field(init=False)
-    # action_shape: Tuple[int, ...] = field(init=False)
-    # reward_shape: Tuple[int, ...] = field(init=False)
-    
     def __post_init__(self,
                       observation_space: gym.Space = None,
                       action_space: gym.Space = None,
@@ -155,13 +148,6 @@ class Setting(SettingABC,
         self._observation_space = observation_space
         self._action_space = action_space
         self._reward_space = reward_space
-        
-        # # Transform that will split batches into Observations and Rewards.
-        # self.split_batch_transform = SplitBatch(
-        #     observation_type=self.Observations,
-        #     reward_type=self.Rewards
-        # )
-        logger.debug(f"Transforms: {self.transforms}")
 
         # TODO: Testing out an idea: letting the transforms tell us how
         # they change the shape of the observations.
@@ -171,11 +157,8 @@ class Setting(SettingABC,
         #     logger.debug(f"x shape after transforms: {x_shape}")
         # self.observation_space = x_shape
 
-        self.dataloader_kwargs: Dict[str, Any] = {}
         self.batch_size: Optional[int] = None
-        self.train_batch_size: Optional[int] = None
-        self.valid_batch_size: Optional[int] = None
-        self.test_batch_size: Optional[int] = None
+        self.num_workers: Optional[int] = None
         # TODO: We have to set the 'dims' property from LightningDataModule so
         # that models know the input dimensions.
         # This should probably be set on `self` inside of `apply` call.
@@ -353,24 +336,6 @@ class Setting(SettingABC,
         return all_results
 
     @classmethod
-    def add_argparse_args(cls, parent_parser: ArgumentParser) -> ArgumentParser:
-        if not is_dataclass(cls):
-            return super().add_argparse_args(parent_parser)
-        parser = ArgumentParser(parents=[parent_parser], add_help=False,)
-        dest: str = cls.__qualname__
-        parser.add_arguments(cls, dest=dest)
-        return parser
-
-    @classmethod
-    def from_argparse_args(cls, args: Union[Namespace, ArgumentParser], **kwargs):
-        dest: str = cls.__qualname__
-        if hasattr(args, dest):
-            instance = args.dest
-            assert not kwargs, f"kwargs: {kwargs}"
-            return instance
-        return super().from_argparse_args(args=args, **kwargs)
-
-    @classmethod
     def get_path_to_source_file(cls: Type) -> Path:
         from utils.utils import get_path_to_source_file
         return get_path_to_source_file(cls)
@@ -390,65 +355,53 @@ class Setting(SettingABC,
         config : Config
             [description]
         """
+        # TODO: Remove this, move it to `prepare_data`.
         assert self.config is not None
-        config = self.config
-        # Get the arguments that will be used to create the dataloaders.
-        
         # TODO: Should the data_dir be in the Setting, or the Config?
-        self.data_dir = config.data_dir
-        
+        self.data_dir = self.config.data_dir
         # Create the dataloader kwargs, if needed.
-        if not self.dataloader_kwargs:
-            batch_size = 32
-            if hasattr(method, "batch_size"):
-                batch_size = method.batch_size
-            elif hasattr(method, "model") and hasattr(method.model, "batch_size"):
-                batch_size = method.model.batch_size
-            elif hasattr(config, "batch_size"):
-                batch_size = config.batch_size
-
-            dataloader_kwargs = dict(
-                batch_size=batch_size,
-                num_workers=config.num_workers,
-                shuffle=False,
-            )
-        # Save the dataloader kwargs in `self` so that calling `train_dataloader()`
-        # from outside with no arguments (i.e. when fitting the model with self
-        # as the datamodule) will use the same args as passing the dataloaders
-        # manually.
-        self.dataloader_kwargs = dataloader_kwargs
-        logger.debug(f"Dataloader kwargs: {dataloader_kwargs}")
+        self.batch_size = self.batch_size or getattr(self.config, "batch_size", None)
+        self.num_workers = self.num_workers or self.config.num_workers
 
         # Debugging: Run a quick check to see that what is returned by the
         # dataloaders is of the right type and shape etc.
-        # self._check_environments()
+        if self.config.debug:
+            self._check_environments()
 
 
     def _check_environments(self):
         """ Do a quick check to make sure that interacting with the envs/dataloaders
         works correctly.
         """
-        batch_size: int = self.dataloader_kwargs.get("batch_size", 16)
+        from settings.passive import PassiveEnvironment
+        from settings.active import ActiveEnvironment
         
+        # Check that the env's spaces are batched versions of the settings'.
+        from gym.vector.utils import batch_space
+
+        batch_size = 5
         for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
             print(f"\n\nChecking loader method {loader_method.__name__}\n\n")
             env = loader_method(batch_size=batch_size)
-            
-            from settings.passive import PassiveEnvironment
-            from settings.active import ActiveEnvironment
-            
-            # Check that the env's spaces are batched versions of the settings'.
-            from gym.vector.utils import batch_space
+            batch_size = env.batch_size
+
             # We could compare the spaces directly, but that's a bit messy, and
             # would be depends on the type of spaces for each. Instead, we could
             # check samples from such spaces on how the spaces are batched. 
             
             expected_observation_space = batch_space(self.observation_space, n=batch_size)
-            expected_action_space = batch_space(self.action_space, batch_size)
-            expected_reward_space = batch_space(self.reward_space, batch_size)
-            
-            # TODO: Batching the 'Sparse' makes it really ugly.
-            assert env.observation_space[0] == expected_observation_space[0], (env.observation_space[0], expected_observation_space[0])
+            expected_action_space = batch_space(self.action_space, n=batch_size)
+            expected_reward_space = batch_space(self.reward_space, n=batch_size)
+
+            # TODO: Batching the 'Sparse' makes it really ugly, so just
+            # comparing the 'image' portion of the space for now.
+            assert env.observation_space[0].shape == expected_observation_space[0].shape, (env.observation_space[0], expected_observation_space[0])
+            # assert env.observation_space[0] == expected_observation_space[0], (env.observation_space[0], expected_observation_space[0])
+            # assert env.observation_space[1] == expected_observation_space[1], (
+            #     f"env obs space: {env.observation_space[1]}, \n"
+            #     f"expected obs space: {expected_observation_space[1]}"
+            # )
+
             assert env.action_space == expected_action_space, (env.action_space, expected_action_space)
             assert env.reward_space == expected_reward_space, (env.reward_space, expected_reward_space)
 
@@ -483,36 +436,58 @@ class Setting(SettingABC,
                 actions = tuple(
                     self.action_space.sample() for _ in range(batch_size)
                 )
-                actions = self.Actions(torch.as_tensor(actions))
-                
+                # actions = self.Actions(torch.as_tensor(actions))
                 rewards = env.send(actions)
                 self._check_rewards(env, rewards)
     
     def _check_observations(self, env: Environment, observations: Any):
-        assert isinstance(observations, self.Observations)
+        """ Check that the given observation makes sense for the given environment.
+        
+        TODO: This should probably not be in this file here. It's more used for
+        testing than anything else.
+        """
+        assert isinstance(observations, self.Observations), observations
         images = observations.x
-        assert isinstance(images, torch.Tensor)
-        images_np = images.cpu().numpy()
-        assert images_np in env.observation_space
-
-        # Assume that the image space is here (which is the case so far)
-        assert images_np[0] in image_space
+        assert isinstance(images, (torch.Tensor, np.ndarray))
+        if isinstance(images, Tensor):
+            images = images.cpu().numpy()
+        
+        # Find the 'image' space:
+        if isinstance(env.observation_space, spaces.Box):
+            image_space = env.observation_space
+        elif isinstance(env.observation_space, spaces.Tuple):
+            image_space = env.observation_space[0]
+        else:
+            raise RuntimeError(f"Don't know how to find the image space in the "
+                               f"env's obs space ({env.observation_space}).")
+        assert images in image_space
     
     def _check_actions(self, env: Environment, actions: Any):
-        assert isinstance(actions, self.Actions)
-        y_pred = actions.y_pred
-        assert isinstance(y_pred, torch.Tensor)
-        y_pred_np = y_pred.cpu().numpy()
-        assert y_pred_np in env.action_space
-        assert y_pred_np[0] in self.action_space
+        if isinstance(actions, Actions):
+            assert isinstance(actions, self.Actions)
+            y_pred = actions.y_pred.cpu().numpy()
+        elif isinstance(actions, Tensor):
+            y_pred = actions.cpu().numpy()
+        elif isinstance(actions, np.ndarray):
+            y_pred = actions
+        else:
+            raise RuntimeError(f"Invalid actions {actions}.")
+        assert y_pred in env.action_space
+        assert y_pred[0] in self.action_space
     
     def _check_rewards(self, env: Environment, rewards: Any):
-        assert isinstance(rewards, self.Rewards)
-        y = rewards.y
-        assert isinstance(y, torch.Tensor)
-        y_np = y.cpu().numpy()
-        assert y_np in env.action_space
-        assert y_np[0] in self.action_space
+        if isinstance(rewards, Rewards):
+            assert isinstance(rewards, self.Rewards)
+            y = rewards.y.cpu().numpy()
+        elif isinstance(rewards, Tensor):
+            y = rewards.cpu().numpy()
+        elif isinstance(rewards, np.ndarray):
+            y = rewards
+        else:
+            raise RuntimeError(f"Invalid rewards {rewards}.")
+        assert isinstance(y, np.ndarray)
+        assert y in env.reward_space
+        assert y[0] in self.reward_space
 
     
     # Just to make type hinters stop throwing errors when using the constructor

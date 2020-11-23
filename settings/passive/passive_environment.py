@@ -5,6 +5,7 @@ Supervised dataset.
 from typing import *
 
 import gym
+from gym.vector.utils import batch_space
 import torch
 import numpy as np
 from gym import spaces
@@ -77,7 +78,6 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self.action_space: gym.Space = action_space
         self.reward_space: gym.Space = reward_space
         self.n_classes: Optional[int] = n_classes
-
         self._iterator: Optional[_BaseDataLoaderIter] = None
         # NOTE: These here are never processed with self.observation or self.reward. 
         self._previous_batch: Optional[Tuple[ObservationType, RewardType]] = None
@@ -85,13 +85,28 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self._next_batch: Optional[Tuple[ObservationType, RewardType]] = None
         self._done: Optional[bool] = None
         self._closed: bool = False
-
-        if adjust_spaces_with_data:
-            self._adjust_spaces_using_data()
+        
+        if not self.observation_space:
+            self.observation_space = spaces.Box(0., 1., self.dataset[0][0].shape)
+        if not self.action_space:
+            self.action_space = spaces.Discrete(n_classes)
+        if not self.reward_space:
+            self.reward_space = spaces.Discrete(n_classes) 
+        
+        if self.batch_size:
+            self.observation_space = batch_space(self.observation_space, self.batch_size)
+            self.action_space = batch_space(self.action_space, self.batch_size)
+            self.reward_space = batch_space(self.reward_space, self.batch_size)
+        # if adjust_spaces_with_data:
+        #     self._adjust_spaces_using_data()
 
     def _adjust_spaces_using_data(self) -> None:
         """ Adjust the observation / reward spaces to reflect the data, if
         possible.
+        
+        TODO: This isn't pretty. It might be more elegant to use an approach more
+        similar to the ContinualRLSetting, where the transforms/etc actually
+        dictate the 'shape' of the environment.
         """ 
         observation_space = self.observation_space
         action_space = self.action_space
@@ -107,9 +122,6 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             raise RuntimeError(f"Batches should be lists, tuples or Batch "
                                f"objects, not {type(sample_batch)}.")
         
-        # if self.split_batch_fn:
-        #     # Use the function to split the batch.
-        #     sample_batch = self.split_batch_fn(sample_batch)
         if len(sample_batch) != 2:
             raise RuntimeError("Need to pass a split_batch_fn since batches "
                                "don't have length 2.")
@@ -137,13 +149,15 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         else:
             # Adjust the obs space to match the shape of the real observations.
             # BUG: When a tensor is None, then what do we do?
+            # TODO: Fix this.
+            observation_space = observation_space
+            assert False, (observation_space, observations[0].shape, observations[1])
             observation_space = reshape_space(
                 observation_space,
-                observations[0].shape if len(observations) == 1 else
-                tuple(tensor.shape[1:] if hasattr(tensor, "shape") else None 
-                      for tensor in observations)
+                observations[0].shape
             )
-
+        # TODO: Change this so that the observation/action/reward spaces dont
+        # have a batch dimension.
         self.observation_space = spaces.Tuple([
             observation_space for _ in range(self.batch_size)
         ])
@@ -373,10 +387,9 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         """ Return the last latch of rewards from the dataset (which were
         withheld if in 'active' mode)
         """
-        assert False, (
-            "TODO: work in progress, if you're gonna pretend this is an "
-            "'active' environment, then use the gym API for now."
-        )
+        # TODO: work in progress, if you're gonna pretend this is an "
+        # 'active' environment, then it might be better to just use the gym API
+        # for now.
         # assert self.action_space.contains(action), action
         return None
 

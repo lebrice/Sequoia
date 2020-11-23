@@ -2,6 +2,7 @@
 
 
 """
+import methods
 from methods import all_methods
 from settings import all_settings
 from utils import get_logger

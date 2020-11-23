@@ -83,7 +83,7 @@ class SemiSupervisedModel(BaseModel[SettingType]):
         # from the Loss object. If it does, then we could maybe just fuse the
         # labeled and unlabeled losses and metrics, but that might also cause
         # issues.
-        loss = Loss(loss_name=loss_name)
+        loss = Loss(name=loss_name)
         if unlabeled_forward_pass:
             # TODO: Setting a different loss name for the for this is definitely going to cause trouble! 
             unsupervised_loss = super().get_loss(

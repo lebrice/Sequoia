@@ -101,6 +101,8 @@ class EnvDataset(gym.Wrapper,
         # Here we add calls to the (potentially overwritten) 'observation',
         # 'action' and 'reward' methods.
         action = self.action(action)
+        if isinstance(action, Tensor) and action.requires_grad:
+            action = action.detach()
         observation, reward, done, info = self.env.step(action)
         observation = self.observation(observation)
         reward = self.reward(reward)
@@ -136,7 +138,7 @@ class EnvDataset(gym.Wrapper,
             When an action wasn't passed through 'send', and a default policy
             isn't set.
         """
-        logger.debug(f"__next__ is being called at step {self.n_steps_}.")
+        # logger.debug(f"__next__ is being called at step {self.n_steps_}.")
         
         if self.closed_:
             raise gym.error.ClosedEnvironmentError("Env is closed.")
@@ -159,6 +161,8 @@ class EnvDataset(gym.Wrapper,
                 "You have to send an action using send() between every "
                 "observation_."
             )
+        if hasattr(self.action_, "detach"):
+            self.action_ = self.action_.detach()
         self.observation_, self.reward_, self.done_, self.info_ = self.step(self.action_)
         return self.observation_
 
@@ -222,7 +226,7 @@ class EnvDataset(gym.Wrapper,
         while not any([self.done_is_true(),
                        self.reached_step_limit,
                        self.reached_episode_length_limit]):
-            logger.debug(f"step {self.n_steps_}/{self.max_steps}, ")
+            # logger.debug(f"step {self.n_steps_}/{self.max_steps},  (episode {self.n_episodes_})")
             
             # Set those to None to force the user to call .send()
             self.action_ = None

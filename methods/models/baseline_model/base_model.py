@@ -14,6 +14,7 @@ from collections import abc as collections_abc
 from typing import (Any, ClassVar, Dict, Generic, List, NamedTuple, Optional,
                     Sequence, Tuple, Type, TypeVar, Union)
 
+import numpy as np
 import torch
 from gym import spaces
 from pytorch_lightning import LightningDataModule, LightningModule
@@ -21,14 +22,16 @@ from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
 from simple_parsing import list_field
 from torch import nn, Tensor
+from torch.optim.optimizer import Optimizer
 
 from common.config import Config
 from common.loss import Loss
 from common.transforms import SplitBatch, Transforms
 from common.batch import Batch
 from settings.base.setting import Setting, SettingType, Observations, Actions, Rewards
-from utils.logging_utils import get_logger
+from settings.assumptions.incremental import IncrementalSetting
 from settings import Environment, Observations, Actions, Rewards
+from utils.logging_utils import get_logger
 
 from .base_hparams import BaseHParams
 from ..output_heads import OutputHead, RegressionHead, ClassificationHead
@@ -95,13 +98,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.output_head = self.create_output_head()
 
     @auto_move_data
-    def forward(self, input_batch: Any) -> ForwardPass:
+    def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
         """ Forward pass of the Model.
         
         Returns a ForwardPass object (or a dict)
-        """
-        observations: Observations = self.Observations.from_inputs(input_batch)
-        
+        """        
         # Encode the observation to get representations.
         representations = self.encode(observations)
         # Pass the observations and representations to the output head to get
@@ -130,11 +131,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # If there's any additional 'input preprocessing' to do, do it here.
         # NOTE (@lebrice): This is currently done this way so that we don't have
         # to pass transforms to the settings from the method side.
-        """
-        TODOS:
-        - Mark the transforms fields on the Setting as ClassVars.
-        - Add those fields on the Method/models' HParam!                        
-        """
         preprocessed_observations = self.preprocess_observations(observations)
         # Here in this base model the encoder only takes the 'x' from the observations.
         h_x = self.encoder(preprocessed_observations.x)
@@ -143,6 +139,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             h_x = h_x[0]
         return h_x
 
+    
     def get_actions(self, observations: Observations, representations: Tensor) -> Actions:
         """ Pass the required inputs to the output head and get predictions.
         
@@ -235,24 +232,35 @@ class BaseModel(LightningModule, Generic[SettingType]):
             assert isinstance(dataloader_idx, int)
             loss_name += f"/{dataloader_idx}"
 
+        # Split the batch into observations and rewards.
+        # NOTE: Only in the case of the Supervised settings do we ever get the
+        # Rewards at the same time as the Observations.
+        # TODO: It would be nice if we could actually do the same things for
+        # both sides of the tree here..
         observations, rewards = self.split_batch(batch)
 
         # Get the forward pass results, containing:
         # - "observation": the augmented/transformed/processed observation.
         # - "representations": the representations for the observations.
         # - "actions": The actions (predictions)
+        
         forward_pass: ForwardPass = self(observations)
         
         # get the actions from the forward pass:
         actions = forward_pass.actions
         
         if rewards is None:
-            assert False, "not using this API atm."
             # Get the reward from the environment (the dataloader).
+            if self.config.debug:
+                environment.render()
+                # import matplotlib.pyplot as plt
+                # plt.waitforbuttonpress(10)
+            
             rewards = environment.send(actions)
             assert rewards is not None
 
         loss: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)
+        
         return {
             "loss": loss.loss,
             "log": loss.to_log_dict(),
@@ -268,7 +276,10 @@ class BaseModel(LightningModule, Generic[SettingType]):
         """ Splits the batch into the observations and the rewards. 
         
         Uses the types defined on the setting that this model is being applied
-        on (which were copied to `self.Observations` and `self.Actions`).
+        on (which were copied to `self.Observations` and `self.Actions`) to
+        figure out how many fields each type requires.
+
+        TODO: This is slightly confusing, should probably get rid of this.
         """
         if isinstance(batch, (tuple, list)) and len(batch) == 2:
             observations, rewards = batch
@@ -277,16 +288,31 @@ class BaseModel(LightningModule, Generic[SettingType]):
                 return observations, rewards
         return self.split_batch_transform(batch)
 
-    def get_loss(self, forward_pass: Dict[str, Batch], rewards: Rewards = None, loss_name: str = "") -> Loss:
-        """Returns a Loss object containing the total loss and metrics. 
+    def get_loss(self,
+                 forward_pass: Dict[str, Tensor],
+                 rewards: Rewards = None,
+                 loss_name: str = "") -> Loss:
+        """Gets a Loss given the results of the forward pass and the reward.
 
         Args:
-            x (Tensor): The input examples.
-            y (Tensor, optional): The associated labels. Defaults to None.
-            name (str, optional): Name to give to the resulting loss object. Defaults to "".
+            forward_pass (Dict[str, Tensor]): Results of the forward pass.
+            reward (Tensor, optional): The reward that resulted from the action
+                chosen in the forward pass. Defaults to None.
+            loss_name (str, optional): The name for the resulting Loss.
+                Defaults to "".
 
         Returns:
-            Loss: An object containing everything needed for logging/progressbar/metrics/etc.
+            Loss: a Loss object containing the loss tensor, associated metrics
+            and sublosses.
+        
+        This could look a bit like this, for example:
+        ```
+        action = forward_pass["action"]
+        predicted_reward = forward_pass["predicted_reward"]
+        nce = self.loss_fn(predicted_reward, reward)
+        loss = Loss(loss_name, loss=nce)
+        return loss
+        ```
         """
         assert loss_name
         # Create an 'empty' Loss object with the given name, so that we always
@@ -295,12 +321,39 @@ class BaseModel(LightningModule, Generic[SettingType]):
         total_loss = Loss(name=loss_name)
         if rewards:
             assert rewards.y is not None
+            # TODO: If we decide to re-organize the forward pass object to also
+            # contain the predictions of the self-supervised tasks, (atm they
+            # perform their 'forward pass' in their get_loss functions)
+            # then we could change 'actions' to be a dict, and index the
+            # dict with the 'name' of each output head, like so:
+            # actions_of_head = forward_pass.actions[self.output_head.name]
+            # rewards_of_head = forward_pass.rewards[self.output_head.name]
+
+            # For now though, we only have one "prediction" in the actions:
+            actions = forward_pass.actions
+
             # So far we only use 'y' from the rewards in the output head.
-            supervised_loss = self.output_head.get_loss(forward_pass, y=rewards.y)
+            supervised_loss = self.output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
             total_loss += supervised_loss
+            
+            
+            
         return total_loss
 
     def preprocess_observations(self, observations: Observations) -> Observations:
+        if isinstance(observations, Observations):
+            return observations
+        
+        assert False, f"TODO: This is weird.. why aren't the observations instances of Observations? (observations = {observations}) "
+        
+        arrays_or_tensors = [
+            np.asarray(v) if not isinstance(v, Tensor) else v for v in observations
+        ]
+        observations = self.Observations.from_inputs([
+            torch.as_tensor(item, device=self.device) if item.dtype != np.object_
+            else [v_i.item() if isinstance(v_i, np.ndarray) else v_i for v_i in item]
+            for item in arrays_or_tensors
+        ])
         return observations
     
     def preprocess_rewards(self, reward: Rewards) -> Rewards:
@@ -321,6 +374,33 @@ class BaseModel(LightningModule, Generic[SettingType]):
     def learning_rate(self) -> float:
         return self.hp.learning_rate
     
+    
+    def backward(self, loss: Tensor, optimizer: Optimizer, optimizer_idx: int, *args, **kwargs) -> None:
+        """
+        Override backward with your own implementation if you need to.
+
+        Args:
+            loss: Loss is already scaled by accumulated grads
+            optimizer: Current optimizer being used
+            optimizer_idx: Index of the current optimizer being used
+
+        Called to perform backward step.
+        Feel free to override as needed.
+        The loss passed in has already been scaled for accumulated gradients if requested.
+
+        Example::
+
+            def backward(self, loss, optimizer, optimizer_idx):
+                loss.backward()
+
+        """
+        # TODO: There might be no loss at some steps, because for instance
+        # we haven't reached the end of an episode yet. Need to figure out
+        # how to do backprop then.
+        if loss != 0.:
+            return loss.backward(retain_graph=True)
+        
+        
     @learning_rate.setter
     def learning_rate(self, value: float) -> None:
         self.hp.learning_rate = value

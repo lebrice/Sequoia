@@ -8,7 +8,7 @@ methods.
 from collections import OrderedDict
 from dataclasses import dataclass, is_dataclass
 from pathlib import Path
-from typing import (Any, ClassVar, Dict, Generic, List, Optional, Sequence,
+from typing import (Any, ClassVar, Callable, Dict, Generic, List, Optional, Sequence,
                     Set, Tuple, Type, TypeVar, Union)
 
 import gym
@@ -37,7 +37,7 @@ from .models import BaselineModel, ForwardPass
 
 logger = get_logger(__file__)
 
-from . import register_method
+from methods import register_method
 
 @register_method
 @dataclass
@@ -92,8 +92,10 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # NOTE: This right here doesn't create the fields, it just gives some
         # type information for static type checking.
         self.trainer: Trainer
-        self.model: LightningModule
-
+        self.model: BaselineModel
+        
+        self.additional_train_wrappers: List[Callable] = []
+        self.additional_valid_wrappers: List[Callable] = []
       
     
     def configure(self, setting: SettingType) -> None:
@@ -114,19 +116,34 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         setting_name: str = setting.get_name()
         dataset: str = setting.dataset
         
+        setting.batch_size = self.hparams.batch_size
         # TODO: Should we set the 'config' on the setting from here?
         setting.config = self.config
         
         wandb_options: WandbLoggerConfig = self.trainer_options.wandb
         if wandb_options.run_name is None:
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
-        
-        self.trainer: Trainer = self.create_trainer(setting)
-        self.model: BaselineModel = self.create_model(setting)
+
+        self.trainer = self.create_trainer(setting)
+        self.model = self.create_model(setting)
         self.Observations: Type[Observations] = setting.Observations
         self.Actions: Type[Actions] = setting.Actions
         self.Rewards: Type[Rewards] = setting.Rewards
 
+        setting.batch_size = self.hparams.batch_size
+
+        if isinstance(setting, ContinualRLSetting):
+            from settings.active.rl.wrappers import AddDoneToObservation, AddInfoToObservation
+            # Configure specifically for a Continual RL setting.
+            self.additional_train_wrappers.extend([
+                AddDoneToObservation,
+                AddInfoToObservation,
+            ])
+            self.additional_valid_wrappers.extend([
+                AddDoneToObservation,
+                AddInfoToObservation,
+            ])
+            
 
     def fit(self,
             train_env: Environment[Observations, Actions, Rewards] = None,
@@ -141,6 +158,12 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             "For now, Setting should have been nice enough to call "
             "method.configure(setting=self) before calling `fit`!"
         )
+
+        for wrapper in self.additional_train_wrappers:
+            train_env = wrapper(train_env)
+        for wrapper in self.additional_valid_wrappers:
+            valid_env = wrapper(valid_env)
+
         return self.trainer.fit(
             model=self.model,
             train_dataloader=train_env,
@@ -223,20 +246,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             # self.hparams.knn_callback,
             # SaveVaeSamplesCallback(),
         ]
-
-    @classmethod
-    def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
-        from main import Experiment
-        experiment: Experiment
-        # Create the Method object from the command-line:
-        method = cls.from_args(argv)
-        # Then create the 'Experiment' from the command-line, which makes it
-        # possible to choose between all the settings.
-        experiment = Experiment.from_args(argv)
-        # Set the method attribute to be the one parsed above.
-        experiment.method = method
-        results: Results = experiment.launch(argv)
-        return results
 
     def apply_all(self, argv: Union[str, List[str]] = None) -> Dict[Type["Method"], Results]:
         applicable_settings = self.get_applicable_settings()

@@ -23,7 +23,7 @@ WrapperAndKwargs = Tuple[Type[gym.Wrapper], Dict]
 # we could use a dict like this to save the 'default' wrappers to use before and
 # after batching for each env name or type of env.
 # TODO: Figure out the right ordering to use for the wrappers.
-default_wrappers_for_env: Dict[str, Iterable[WrapperAndKwargs]] = {
+default_wrappers_for_env: Dict[str, List[Type[gym.Wrapper]]] = {
     "CartPole-v0": [ConvertToFromTensors],
 }
 
@@ -94,15 +94,6 @@ def make_batched_env(base_env: Union[str, Callable],
         base_env_factory = partial(gym.make, base_env)
     elif callable(base_env):
         base_env_factory = base_env
-    elif False and isinstance(base_env, gym.Env): # turning this off for now.
-        # TODO: Check that there isn't a smarter way of doing this, maybe
-        # by getting the env spec and creating a new one like it using
-        # `gym.make`?
-        logger.warning(RuntimeWarning(
-            "Will try to use deepcopy as an env factory.. but this is really "
-            "less than ideal!"))
-        logger.debug(f"Env spec: {base_env.spec}")
-        base_env_factory = partial(copy.deepcopy, base_env)
     else:
         raise NotImplementedError(
             f"Unsupported base env: {base_env}. Must be "

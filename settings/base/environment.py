@@ -26,6 +26,7 @@ class Environment(gym.Env, Generic[ObservationType, ActionType, RewardType], ABC
 
     Different settings can implement this interface however they want.
     """
+    reward_space: gym.Space
     # TODO: This is currently changing. We don't really need to force the envs
     # on the RL branch to also be iterables/dataloaders, only those on the
     # supervised learning branch. Rather than force RL/active setups to adopt

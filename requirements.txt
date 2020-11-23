@@ -20,5 +20,6 @@ pytorch-lightning-bolts
 # Requirements for running tests:
 pytest-timeout
 pytest-xdist
+pytest-xvfb # Prevents the gym popups from displaying during tests.
 # Required for the RL methods
 stable-baselines3
