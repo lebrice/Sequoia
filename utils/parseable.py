@@ -36,10 +36,13 @@ class Parseable:
         else:
             raise NotImplementedError(
                 f"Don't know how to add command-line arguments for class "
-                f"{cls}, since it isn't a dataclass. You must implement the "
-                f"`add_args` classmethod yourself."
+                f"{cls}, since it isn't a dataclass and doesn't override the "
+                f"`add_argparse_args` method!\n"
+                f"Either make class {cls} a dataclass and add command-line "
+                f"arguments as fields, or add an implementation for the "
+                f"`add_argparse_args` and `from_argparse_args` classmethods."
             )
-        
+
     @classmethod
     def from_argparse_args(cls: Type[P], args: Namespace, dest: str = None) -> P:
         """ Creates an instance of this class from the parsed arguments.
@@ -55,9 +58,9 @@ class Parseable:
         #     return super()._from_argparse_args(args)  # type: ignore
 
         raise NotImplementedError(
-            f"Don't know how to create an instance of class {cls} from the "
-            f"parsed arguments, since it isn't a dataclass. You'll have to "
-            f"override the `from_argparse_args` classmethod."
+            f"Don't know how to extract the command-line arguments for class "
+            f"{cls} from the namespace, since {cls} isn't a dataclass and "
+            f"doesn't override the `from_argparse_args` classmethod."
         )
 
     @classmethod
@@ -101,12 +104,12 @@ class Parseable:
         NotImplementedError
             [description]
         """
-        if not is_dataclass(cls):
-            raise NotImplementedError(
-                f"Don't know how to create an instance of class {cls} from the "
-                f"command-line, as it isn't a dataclass. You'll have to "
-                f"override the `from_args` or `from_known_args` classmethods."
-            )
+        # if not is_dataclass(cls):
+        #     raise NotImplementedError(
+        #         f"Don't know how to create an instance of class {cls} from the "
+        #         f"command-line, as it isn't a dataclass. You'll have to "
+        #         f"override the `from_args` or `from_known_args` classmethods."
+        #     )
         if isinstance(argv, str):
             argv = shlex.split(argv)
         instance, unused_args = cls.from_known_args(
@@ -114,6 +117,7 @@ class Parseable:
             reorder=reorder,
             strict=strict,
         )
+        assert not (strict and unused_args), "an error should have been raised"
         return instance
 
     @classmethod
@@ -121,12 +125,13 @@ class Parseable:
                         argv: Union[str, List[str]] = None,
                         reorder: bool = True,
                         strict: bool = False) -> Tuple[P, List[str]]:
-        if not is_dataclass(cls):
-            raise NotImplementedError(
-                f"Don't know how to create an instance of class {cls} from the "
-                f"command-line, as it isn't a dataclass. You'll have to "
-                f"override the `from_known_args` classmethod."
-            )
+        # if not is_dataclass(cls):
+        #     raise NotImplementedError(
+        #         f"Don't know how to parse an instance of class {cls} from the "
+        #         f"command-line, as it isn't a dataclass or doesn't have the "
+        #         f"`add_arpargse_args` and `from_argparse_args` classmethods. "
+        #         f"You'll have to override the `from_known_args` classmethod."
+        #     )
 
         if argv is None:
             argv = sys.argv[1:]
