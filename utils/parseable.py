@@ -18,14 +18,20 @@ P = TypeVar("T", bound="Parseable")
 class Parseable:
     _argv: Optional[List[str]] = []
 
-    # def __init__(self, *args, **kwargs):
-    #     super().__init__(*args, **kwargs)
-    
     @classmethod
     def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
-        """ Adds the command-line arguments for this class to the parser.
-
+        """Add the command-line arguments for this Method to the given parser.
+        
         Override this if you don't use simple-parsing to add the args.
+        
+        Parameters
+        ----------
+        parser : ArgumentParser
+            The ArgumentParser. 
+        dest : str, optional
+            The 'base' destination where the arguments should be set on the
+            namespace, by default None, in which case the arguments can be at
+            the "root" level on the namespace.
         """
         if is_dataclass(cls):
             dest = dest or camel_case(cls.__qualname__)
@@ -45,9 +51,22 @@ class Parseable:
 
     @classmethod
     def from_argparse_args(cls: Type[P], args: Namespace, dest: str = None) -> P:
-        """ Creates an instance of this class from the parsed arguments.
-        
+        """Extract the parsed command-line arguments from the namespace and
+        return an instance of class `cls`.
+
         Override this if you don't use simple-parsing.
+
+        Parameters
+        ----------
+        args : Namespace
+            The namespace containing all the parsed command-line arguments.
+        dest : str, optional
+            The , by default None
+
+        Returns
+        -------
+        cls
+            An instance of the class `cls`.
         """
         if is_dataclass(cls):
             dest = dest or camel_case(cls.__qualname__)
@@ -67,7 +86,7 @@ class Parseable:
     def from_args(cls: Type[P],
                   argv: Union[str, List[str]] = None,
                   reorder: bool = True,
-                  strict: bool = False) -> P:
+                  strict: bool = True) -> P:
         """Parse an instance of this class from the command-line args.
 
         Parameters
