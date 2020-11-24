@@ -82,7 +82,7 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         
                 
         # Important, this must be done before the call to super().__init__
-        from common.gym_wrappers.sparse_space import Sparse
+        from common.spaces.sparse import Sparse
         
         super().__init__(
             env_fns=env_fns,
