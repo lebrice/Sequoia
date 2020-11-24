@@ -6,10 +6,11 @@
 .dmypy.json
 dmypy.json
 
-
+examples/results/*
 results/*
 !results/**/*.csv
 data/*
+*/data/*
 !data/**/*.py
 scripts/*.png
 wandb
@@ -18,3 +19,6 @@ wandb
 checkpoints
 lightning_logs
 .pylintrc
+
+*.gz
+*.pt
