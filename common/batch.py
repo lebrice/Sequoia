@@ -2,25 +2,28 @@
 represent the different forms of "batches" that settings produce and that
 different models expect.
 """
-import gym
-from gym import spaces
-from abc import ABC
 import dataclasses
 import itertools
-import numpy as np
+from abc import ABC
 from collections import abc as collections_abc
+from collections import namedtuple
 from dataclasses import dataclass
-from typing import (Any, ClassVar, Dict, Generic, Iterable, List, Optional,
-                    Sequence, Tuple, TypeVar, Union, Mapping, Iterator, Set)
+from typing import (Any, ClassVar, Dict, Generic, Iterable, Iterator, List,
+                    Mapping, NamedTuple, Optional, Sequence, Set, Tuple, Type,
+                    TypeVar, Union)
 
+import gym
+import numpy as np
 import torch
+from gym import spaces
 from torch import Tensor
+
 
 Item = TypeVar("Item", bound=collections_abc.Sized)
 
 
 @dataclass(frozen=True)
-class Batch(Sequence[Item], ABC):
+class Batch(ABC):
     """ABC for objects that represent a batch of tensors. Behaves like tuple.
 
     Can be used the same way as a tuple of tensors, or an immutable mapping from
@@ -58,31 +61,47 @@ class Batch(Sequence[Item], ABC):
     >>> batch.to("cuda").device
     device(type='cuda', index=0)
     """
-    field_names: ClassVar[Tuple[str, ...]]
-
     # TODO: Would it make sense to add a gym Space classvar here? 
     # space: ClassVar[Optional[gym.Space]] = None
-
+    field_names: ClassVar[List[str]]
+    _namedtuple: ClassVar[Type[NamedTuple]]
+    
     def __init_subclass__(cls, *args, **kwargs):
         # IDEA: By not marking 'Batch' a dataclass, we would let the subclass
         # decide it if wants to be frozen or not!
         
-        
+        # Subclasses of `Batch` should be dataclasses!
         if not dataclasses.is_dataclass(cls):
             raise RuntimeError(f"{__class__} subclass {cls} must be a dataclass!")
-        # Subclasses of `Batch` should be dataclasses!
         super().__init_subclass__(*args, **kwargs)
 
     def __post_init__(self):
-        type(self).field_names = [f.name for f in dataclasses.fields(self)]
+        # TODO: We have to set these here because __init_subclass__ is called
+        # before the dataclasses package sets the 'fields' attribute, it seems.
+        # Create a NamedTuple type for this new subclass.
+        cls = type(self)
+        if "field_names" not in cls.__dict__:
+            type(self).field_names = [f.name for f in dataclasses.fields(self)]
+        if "_named_tuple" not in cls.__dict__:
+            type(self)._namedtuple = namedtuple(type(self).__name__ + "Tuple", self.field_names)
 
-    def __iter__(self) -> Iterator[Item]:
+    def unwrap(self) -> Union[Item, Tuple[Item, ...]]:
+        """ Returns the 'unwrapped' contents of this object, which will be a
+        tuple of batched tensors if there is more than one field, or a single
+        batched tensor is there is only one field.
+        """
+        tensors = self.as_namedtuple()
+        return tensors[0] if len(tensors) == 1 else tensors 
+
+    # def __iter__(self) -> Iterable[Tuple[Item, ...]]:
+    #     # return itertools.starmap(self._namedtuple, zip(*self.as_tuple()))
+    #     return iter(self.as_tuple())
+    
         # for name in self.field_names:
         #     yield getattr(self, name)
-        return iter(self.as_tuple())
 
-    def __len__(self):
-        return len(self.field_names)
+    # def __len__(self):
+    #     return len(self.field_names)
 
     def __getitem__(self, index: Union[int, str]):  # type: ignore
         if isinstance(index, int):
@@ -104,11 +123,14 @@ class Batch(Sequence[Item], ABC):
                                  f"tuples, they need to have len > 1.")
             if isinstance(field_index, int):
                 return self[field_index][index[1:]]
-            if field_index != slice(None):
-                raise IndexError("Can only use int or empty slice as first "
-                                 "item of index tuple.")
-            return tuple(value[index[1:]] if value is not None else None 
-                         for value in self.values())
+            if field_index == slice(None):
+                # Get all fields, sliced with the second item.
+                return tuple(value[index[1:]] if value is not None else None 
+                            for value in self.values())
+            return self[field_index][index[1:]]
+            # else:
+            #     raise IndexError("Can only use int or empty slice as first "
+            #                      "item of index tuple.")
         raise IndexError(index)
 
     def __setitem__(self, index: Union[int, str], value: Any):
@@ -136,7 +158,7 @@ class Batch(Sequence[Item], ABC):
     def items(self) -> Iterable[Tuple[str, Item]]:
         for name in self.field_names:
             yield name, getattr(self, name)
-    
+
     @property
     def devices(self) -> Tuple[Optional[torch.device]]:
         """ Returns the device common to all the elements in the Batch, else
@@ -184,15 +206,41 @@ class Batch(Sequence[Item], ABC):
             return None
         return dtypes[0]
 
+    def as_namedtuple(self) -> Tuple[Item, ...]:
+        return self._namedtuple(**self.as_dict())
+    
+    def as_list_of_tuples(self) -> Iterable[Tuple[Item, ...]]:
+        """Returns an iterable of the items in the 'batch', each item as a
+        namedtuple (list of tuples).
+        """
+        # If one of the fields is None, then we convert it into a list of Nones,
+        # so we can zip all the fields to create a list of tuples.
+        field_items = [
+            [items for _ in range(self.batch_size)] if items is None or items is {} else
+            [item for item in items]
+            for items in self.as_tuple()
+        ]
+        assert all([len(items) == self.batch_size for items in field_items])
+        return list(itertools.starmap(self._namedtuple, zip(*field_items)))
+
     def as_tuple(self) -> Tuple[Item, ...]:
-        return dataclasses.astuple(self)
+        """Returns a namedtuple containing the 'batched' attributes of this
+        object (tuple of lists).
+        """
+        # TODO: Turning on the namedtuple return value by default.
+        return self.as_namedtuple()
+        return tuple(
+            getattr(self, f.name) for f in dataclasses.fields(self) 
+        )
 
     def as_dict(self) -> Dict[str, Item]:
-        return dataclasses.asdict(self)
+        return {
+            f.name: getattr(self, f.name) for f in dataclasses.fields(self) 
+        }
 
     def to(self, *args, **kwargs):
         return type(self)(**{
-            name: item.to(*args, **kwargs) if isinstance(item, Tensor) else item
+            name: item.to(*args, **kwargs) if isinstance(item, (Tensor, Batch)) else item
             for name, item in self.items()
         })
 
@@ -209,7 +257,7 @@ class Batch(Sequence[Item], ABC):
             [description]
         """
         return type(self)(**{
-            k: v.detach().cpu().numpy() if isinstance(v, Tensor) else v
+            k: v.detach().cpu().numpy() if isinstance(v, (Tensor, Batch)) else v
             for k, v in self.items()
         })
 
@@ -223,7 +271,7 @@ class Batch(Sequence[Item], ABC):
             New object of the same type, but with all tensors detached.
         """
         return type(self)(**{
-            k: v.detach() if isinstance(v, Tensor) else v for k, v in self.items()
+            k: v.detach() if isinstance(v, (Tensor, Batch)) else v for k, v in self.items()
         })
 
     def cpu(self, **kwargs):
@@ -273,9 +321,37 @@ class Batch(Sequence[Item], ABC):
         if isinstance(inputs, cls):
             return inputs
         if isinstance(inputs, (tuple, list)):
-            if len(inputs) == 1 and isinstance(inputs[0], (list, tuple)):
-                assert False, inputs
-                inputs = inputs[0]
+            from collections.abc import Sized
+            if not all(isinstance(item, Sized) for item in inputs):
+                # FIXME: This could either mean that this method is being passed
+                # a tuple or a list of non-Batched items, or that an individual
+                # field has None as a value. Hard to distinguish these two..
+                return cls(*inputs)
+            
+                assert False, f"This should only be used on 'batched' inputs, not {inputs}.."
+                
+                inputs = [
+                    [item] for item in inputs
+                ]
+
+            # Convert things that aren't tensors to numpy arrays.
+            # Stack tensors (to preserve their 'grad' attributes, if present).
+            inputs: List[Union[np.ndarray, Tensor]] = [
+                items if isinstance(items, Tensor) else
+                torch.stack(items) if isinstance(items[0], Tensor) else
+                np.asarray(items)
+                for items in inputs
+            ]
+            
+            # Ndarrays with 'object' dtype aren't supported in pytorch.
+            # TODO: We convert arrays with None to lists, but is this the best
+            # thing to do?
+            inputs = [
+                array if isinstance(array, Tensor) else
+                torch.as_tensor(array) if array.dtype != np.object_ else
+                array.tolist()
+                for array in inputs
+            ]
             return cls(*inputs)
 
         if isinstance(inputs, Tensor):

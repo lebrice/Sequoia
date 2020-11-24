@@ -1,6 +1,6 @@
 from abc import ABC
 from typing import (Dict, Generic, Iterator, List, NamedTuple, Tuple, Type,
-                    TypeVar)
+                    Union, TypeVar)
 from collections.abc import Sized
 from functools import singledispatch
 import gym
@@ -19,6 +19,21 @@ classic_control_env_prefixes: Tuple[str, ...] = (
     "CartPole", "Pendulum", "Acrobot", "MountainCar", "MountainCarContinuous"
 )
 
+def is_classic_control_env(env: Union[str, gym.Env]) -> bool:
+    if isinstance(env, str) and env.startswith(classic_control_env_prefixes):
+        return True
+    if isinstance(env, gym.Env) and isinstance(env.unwrapped, classic_control_envs):
+        return True
+    return False
+
+def is_atari_env(env: Union[str, gym.Env]) -> bool:
+    # TODO: Add more names from the atari environments, or figure out a smarter
+    # way to do this.
+    if isinstance(env, str) and env.startswith("Breakout"):
+        return True
+    if isinstance(env, gym.Env) and isinstance(env.unwrapped, AtariEnv):
+        return True
+    return False
 
 logger = get_logger(__file__)
 
@@ -50,7 +65,7 @@ def has_wrapper(env: gym.Wrapper, wrapper_type: Type[gym.Wrapper]) -> bool:
         if isinstance(env, wrapper_type):
             return True
         env = env.env
-    return False
+    return isinstance(env, wrapper_type)
 
 
 def remove_wrapper(env: gym.Wrapper, wrapper_type: Type[gym.Wrapper]) -> gym.Wrapper:
@@ -107,7 +122,7 @@ class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
         
         # (Following option 4 below)
         if has_wrapper(self.env, EnvDataset):
-            logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.send.")
+            # logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.send.")
             return EnvDataset.send(self, action)
 
     def __iter__(self) -> Iterator:
@@ -128,11 +143,11 @@ class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
         # Option 4: Slight variation on option 3: We cut straight to the
         # EnvDataset iterator.
         if has_wrapper(self.env, EnvDataset):
-            logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__ with the wrapper as `self`.")
+            # logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__ with the wrapper as `self`.")
             return EnvDataset.__iter__(self)
         
         if has_wrapper(self.env, PolicyEnv):
-            logger.debug(f"Wrapped env is a PolicyEnv, will use PolicyEnv.__iter__ with the wrapper as `self`.")
+            # logger.debug(f"Wrapped env is a PolicyEnv, will use PolicyEnv.__iter__ with the wrapper as `self`.")
             return PolicyEnv.__iter__(self)
         
         # NOTE: This works even though IterableDataset isn't a gym.Wrapper.
@@ -160,7 +175,7 @@ class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
         """
         if attr.endswith("_") and has_wrapper(self.env, EnvDataset):
             if attr in {"observation_", "action_", "reward_", "done_", "info_", "n_sends_"}:
-                logger.debug(f"Attribute {attr} will be set on the wrapped env rather than on the wrapper itself.")
+                # logger.debug(f"Attribute {attr} will be set on the wrapped env rather than on the wrapper itself.")
                 env = self.env
                 while not isinstance(env, EnvDataset) and env.env is not env:
                     env = env.env

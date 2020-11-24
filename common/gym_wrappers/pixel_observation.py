@@ -10,11 +10,13 @@ from torch import Tensor
 
 
 class PixelObservationWrapper(PixelObservationWrapper_):
-    """ Less annoying version of `PixelObservationWrapper`:
+    """ Less annoying version of gym's `PixelObservationWrapper`:
 
     - Resets the environment before calling the constructor (fixes crash).
     - Makes the popup window non-visible when rendering with mode="rgb_array".
     - State is always pixels instead of dict with pixels at key 'pixels'
+        - TODO: What if we wanted to also have access to the state? We might
+          have to revert this change at some point.
     - `reset()` returns the pixels.
     """
     def __init__(self, env: Union[str, gym.Env]):

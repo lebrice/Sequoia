@@ -4,7 +4,6 @@ from typing import Callable, Dict, Iterable, List, Tuple
 import gym
 from pytorch_lightning import LightningModule
 
-from common.gym_wrappers import MultiTaskEnvironment, PixelObservationWrapper
 from .gym_dataloader import GymDataLoader
 from utils import constant, dict_union
 from utils.logging_utils import get_logger
@@ -37,21 +36,7 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
     task_labels_at_test_time: bool = False
 
     def __post_init__(self, *args, **kwargs):
+        if self.train_task_schedule:
+            self.nb_tasks = len(self.train_task_schedule)
         super().__post_init__(*args, **kwargs)
         assert not self.smooth_task_boundaries
-
-    def create_task_schedules(self, temp_env: MultiTaskEnvironment) -> None:
-        # Start with the default task (step 0) and then add a new task at
-        # intervals of `self.steps_per_task`
-        for task_step in range(0, self.max_steps, self.steps_per_task):
-            if task_step == 0:
-                self.train_task_schedule[task_step] = temp_env.default_task
-            else:
-                self.train_task_schedule[task_step] = temp_env.random_task()
-
-        assert len(self.train_task_schedule) == self.nb_tasks
-        # For now, set the validation and test tasks as the same sequence as the
-        # train tasks.
-        self.valid_task_schedule = self.train_task_schedule.copy()
-        self.test_task_schedule = self.train_task_schedule.copy()
-

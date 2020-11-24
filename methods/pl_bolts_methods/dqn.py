@@ -1,4 +1,6 @@
-from typing import Dict, Union, ClassVar, Type
+""" UNUSED:  Was trying to use the DQN from pytorch lightning bolts package.
+"""
+from typing import Dict, Union, ClassVar, Type, Optional
 from collections import deque
 
 import gym
@@ -82,19 +84,14 @@ class DQNMethod(Method, target_setting=ContinualRLSetting):
         self.dqn_params = dqn_params or {}
         self.trainer_config = trainer_config or TrainerConfig()
         
-        self.model: Optional[CustomModel] = None
+        self.model: Optional[DQN] = None
         self.trainer: Trainer
 
     def configure(self, setting: ContinualRLSetting):
-        
-        
-        
         self.trainer = self.trainer_config.make_trainer()
         # Ask the setting not to batch observations during training, since the
         # DQN model needs to add its own hacks on top of the env.
-        setting.train_batch_size = None
-        setting.test_batch_size = 1
-        self.test_batch_size = 1
+        setting.batch_size = None
         self.test_buffer = deque(maxlen=4)
 
     def fit(self, train_env: gym.Env = None, valid_env: gym.Env = None):

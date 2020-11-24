@@ -24,7 +24,7 @@ from utils.parseable import Parseable
 logger = get_logger(__file__)
 
 
-class SettingABC(LightningDataModule):
+class SettingABC(Parseable, LightningDataModule):
     """ Abstract base class for a Setting.
 
     This just shows the minimal API. For more info, see the `Setting` class,
@@ -237,6 +237,10 @@ class SettingABC(LightningDataModule):
             yield parent
             yield from parent.get_parents()
 
+    @classmethod
+    def depth(cls) -> int:
+        return len(list(cls.get_parents()))
+    
 
 SettingType = TypeVar("SettingType", bound=SettingABC)
 
@@ -310,8 +314,32 @@ class Method(Generic[SettingType], Parseable, ABC):
             [description]
         """
 
-    ## Below this are some class attributes and methods related to the Tree.
+    ## Below this are some class attributes and methods related to the Tree
+    ## structure and for launching Experiments using this method.
 
+    @classmethod
+    def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
+        """ Run an Experiment from the command-line using this method.
+        
+        (TODO: @lebrice Finish writing a good docstring here that explains how this works
+        and how to use it.)
+        You can then select which setting, dataset, etc. this method will be
+        applied to using the --setting <setting_name>, and the rest of the
+        arguments will be passed to the Setting's from_args method. 
+        """
+
+        from main import Experiment
+        experiment: Experiment
+        # Create the Method object from the command-line:
+        method = cls.from_args(argv)
+        # Then create the 'Experiment' from the command-line, which makes it
+        # possible to choose between all the settings.
+        experiment = Experiment.from_args(argv)
+        # Set the method attribute to be the one parsed above.
+        experiment.method = method
+        results: Results = experiment.launch(argv)
+        return results
+    
     @classmethod
     def is_applicable(cls, setting: Union[SettingType, Type[SettingType]]) -> bool:
         """Returns wether this Method is applicable to the given setting.

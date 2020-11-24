@@ -25,20 +25,22 @@ def check_only_right_classes_present(env: TaskIncrementalSetting):
     """ Checks that only the classes within each task are present. """
     for i in range(env.nb_tasks):
         env.current_task_id = i
-        train_loader = env.train_dataloader(batch_size=1)
+        batch_size = 5
+        train_loader = env.train_dataloader(batch_size=batch_size)
         
         # # Find out which classes are supposed to be within this task.
         classes_of_task = env.current_task_classes(train=True)
 
-        for j, (x, y, t) in enumerate(itertools.islice(train_loader, 100)):
+        for j, (observations, rewards) in enumerate(itertools.islice(train_loader, 100)):
+            x, t = observations
+            y = rewards.y 
             print(i, j, y, t)
-            assert y.item() in classes_of_task
-            assert x.shape == (1, 3, 28, 28)
+            assert all(y < env.n_classes_per_task)
+            assert x.shape == (batch_size, 3, 28, 28)
             x = x.permute(0, 2, 3, 1)[0]
             assert x.shape == (28, 28, 3)
             
-            
-            reward = train_loader.send(4)
+            reward = train_loader.send([4 for _ in range(batch_size)])
             assert reward is None
 
 

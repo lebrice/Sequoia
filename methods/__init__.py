@@ -1,24 +1,34 @@
-from typing import List, Type
-from importlib import import_module
 import glob
-from os.path import dirname, basename, isfile, join
+import inspect
+import warnings
+from importlib import import_module
+from os.path import basename, dirname, isfile, join
+from typing import List, Type
 
 from settings.base import Method
+
 AbstractMethod = Method
 
 all_methods: List[Type[Method]] = []
 
 def register_method(new_method: Type[Method]) -> Type[Method]:
+    name = new_method.get_name()
     if new_method not in all_methods:
-        if all(method.get_name() != new_method.get_name() for method in all_methods):
-            # BUG: There's this weird double-import thing happening during
-            # testing, where some methods are import twice, first as
-            # methods.baseline_method.BaselineMethod, for instance, then again
-            # as SSCL.methods.baseline_method.BaselineMethod
-            all_methods.append(new_method)
+        for method in all_methods:
+            if method.get_name() == name:
+                # BUG: There's this weird double-import thing happening during
+                # testing, where some methods are import twice, first as
+                # methods.baseline_method.BaselineMethod, for instance, then again
+                # as SSCL.methods.baseline_method.BaselineMethod
+                from os.path import abspath
+                if abspath(inspect.getsourcefile(method)) == abspath(inspect.getsourcefile(new_method)):
+                    # The two classes have the same name and are both defined in
+                    # the same file, so this is basically the 'double-import bug
+                    # described above.
+                    break
+                raise RuntimeError(f"There is already a registered method with name {name}: {method}")
         else:
-            pass
-            # assert False, (all_methods, new_method)
+            all_methods.append(new_method)
     return new_method
 
 
@@ -26,21 +36,22 @@ from .baseline_method import BaselineMethod
 from .random_baseline import RandomBaselineMethod
 
 
-## Pretty hacky: Dynamically import all the modules defined in this folder:
+## Pretty hacky: Dynamically import all the modules/packages defined in this
+# folder. This way, we register the methods as they are declared.
 modules = glob.glob(join(dirname(__file__), "*"))
 
 all_modules: List[str] = [
-    basename(f)[:-3] for f in modules
-    if (isfile(f) and
+    basename(f).replace(".py", "") for f in modules
+    if (#(isfile(f) and
     not f.endswith('__init__.py') and
     not f.endswith("_test.py"))
-    ]
-__all__ = all_modules
-for module in all_modules:
-    import_module("methods." + module)
+]
 
-# # TODO: We could also 'register' the methods as they are declared!
-# from .stable_baselines_method import A2CMethod, PPOMethod
+for module in all_modules:
+    try:
+        import_module(f"methods.{module}")
+    except ImportError as e:
+        warnings.warn(RuntimeWarning(f"Couldn't import Method from module methods/{module}: {e}"))
 
 # TODO: (#17): Add Pl Bolts Models as Methods on IID Setting.
 # from .pl_bolts_methods.cpcv2 import CPCV2Method

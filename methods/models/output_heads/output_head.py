@@ -66,8 +66,8 @@ class OutputHead(nn.Module):
                  name: str = ""):
         super().__init__()
         self.input_size = input_size
-        self.action_space: gym.Space = action_space
-        self.reward_space: gym.Space = reward_space or action_space
+        self.action_space = action_space
+        self.reward_space = reward_space or action_space
         self.hparams = hparams or self.HParams()
         self.name = name or type(self).name
 
@@ -90,9 +90,10 @@ class OutputHead(nn.Module):
         """
 
     @abstractmethod
-    def get_loss(self, forward_pass: ForwardPass, y: Tensor) -> Loss:
-        """ Given the forward pass (including the actions produced by this
-        output head), and the corresponding rewards, get a Loss to use for
-        training.
+    def get_loss(self, forward_pass: ForwardPass, actions: Actions, rewards: Rewards) -> Loss:
+        """ Given the forward pass,(a dict-like object that includes the
+        observations, representations and actions, the actions produced by this
+        output head and the resulting rewards, returns a Loss to use.
         """
+        
         

@@ -124,6 +124,12 @@ def flatdim_sparse(space: Sparse) -> int:
 def flatten_sparse(space: Sparse[T], x: Optional[T]) -> Optional[np.ndarray]:
     return np.array([None]) if x is None else gym.spaces.utils.flatten(space.base, x)
 
+@register_sparse_variant(gym.spaces.utils, "flatten_space")
+def flatten_sparse_space(space: Sparse[T]) -> Optional[np.ndarray]:
+    space = gym.spaces.utils.flatten_space(space.base)
+    space.dtype = np.object_
+    return space
+    
 @register_sparse_variant(gym.spaces.utils, "unflatten")
 def unflatten_sparse(space: Sparse[T], x: np.ndarray) -> Optional[T]:
     if len(x) == 1 and x[0] is None:

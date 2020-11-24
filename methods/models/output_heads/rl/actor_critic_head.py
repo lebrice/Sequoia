@@ -1,26 +1,29 @@
-from typing import Dict, Tuple, Union
-import gym
-from gym import spaces
-import torch
-from common.layers import Lambda
-from torch import Tensor, nn
-from utils.utils import prod
+""" TODO: *Actually* implement the actor-critic algorithm.
 
-from .output_head import OutputHead
+NOTE (@lebrice) This code here isn't meant as an actual implementation of the
+actor-critic algo, it was more just me testing out stuff and writing what sortof
+remember about actor-critic from my RL classes.
+"""
+from dataclasses import dataclass
+from typing import Dict, Tuple, Union
+
+import gym
+import numpy as np
+import torch
+from gym import spaces
+from torch import LongTensor, Tensor, nn
+
+from common.layers import Lambda
+from common import Loss
+from settings.base.objects import Actions, Observations, Rewards
+from utils.utils import prod
+from .policy_head import ClassificationOutput, PolicyHead
 
 # TODO: Refactor this to use a RegressionHead for the predicted reward and a
 # ClassificationHead for the choice of action?
 
 
-def concat_obs_and_action(observation_action: Tuple[Tensor, Tensor]) -> Tensor:
-    observation, action = observation_action
-    batch_size = observation.shape[0]
-    observation = observation.reshape([batch_size, -1])
-    action = action.reshape([batch_size, -1])
-    return torch.cat([observation, action], dim=-1)
-
-
-class ActorCriticHead(OutputHead):
+class ActorCriticHead(PolicyHead):
     def __init__(self,
                  input_size: int,
                  action_space: gym.Space,
@@ -53,11 +56,27 @@ class ActorCriticHead(OutputHead):
         )
 
     # @auto_move_data
-    def forward(self, state: Tensor) -> Dict[str, Tensor]:
+    def forward(self, observations: Observations, representations: Tensor) -> Actions:
+        # NOTE: Here we could probably use either as the 'state':
+        # state = observations.x 
+        state = representations
         action = self.actor(state)
+        # TODO: Actually implement the actor-critic forward pass. This is just a rough illustration.
         predicted_reward = self.critic([state, action])
+        
         return {
             "action": action,
             "predicted_reward": predicted_reward,
         }
+    
+    def get_loss(self, forward_pass, y) -> Loss:
+        raise NotImplementedError("TODO")
+        return super().get_loss(forward_pass, y)
 
+
+def concat_obs_and_action(observation_action: Tuple[Tensor, Tensor]) -> Tensor:
+    observation, action = observation_action
+    batch_size = observation.shape[0]
+    observation = observation.reshape([batch_size, -1])
+    action = action.reshape([batch_size, -1])
+    return torch.cat([observation, action], dim=-1)

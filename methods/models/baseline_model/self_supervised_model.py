@@ -92,7 +92,7 @@ class SelfSupervisedModel(BaseModel[SettingType]):
         AuxiliaryTask.hidden_size = self.hidden_size
         AuxiliaryTask.input_shape = self.input_shape
         AuxiliaryTask.encoder = self.encoder
-        AuxiliaryTask.classifier = self.output_head
+        AuxiliaryTask.output_head = self.output_head
         AuxiliaryTask.preprocessing = self.preprocess_batch
 
         tasks: Dict[str, AuxiliaryTask] = nn.ModuleDict()

@@ -129,8 +129,6 @@ class BatchedVectorEnv(VectorEnv):
         if self.env_b:
             obs_b = self.env_b.reset_wait(timeout=timeout)
             obs_b = unroll(obs_b, item_space=self.single_observation_space)
-        print(f"n_a: {self.n_a}, n_b: {self.n_b}")
-        print(f"self.env_a.observation_space: {self.env_a.observation_space}")
         observations = fuse_and_batch(self.single_observation_space, obs_a, obs_b, n_items = self.n_a + self.n_b)
         return observations
 
@@ -287,45 +285,24 @@ from functools import singledispatch
 @singledispatch
 def fuse_and_batch(item_space: spaces.Space, *sequences: Sequence[Sequence[T]], n_items: int) -> Sequence[T]:
     # fuse the lists
-    print(f"Fusing {n_items} items from space {item_space}")
+    # print(f"Fusing {n_items} items from space {item_space}")
     # sequence_a, sequence_b = sequences
     assert all(isinstance(sequence, list) for sequence in sequences)
-    
-    if len(sequences) == 1:
-        joined_sequence = sequences[0]
-    else:
-        joined_sequence = sum(sequences, [])
-    
-    # out = create_empty_array(item_space, n=n_items)
-    return np.concatenate([np.asarray(v).reshape([-1, *item_space.shape]) for v in joined_sequence])
-    
-    # return concatenate(joined_sequence, out, item_space)
-
-    # TODO: This works temporarily. Also might not work with Sparse spaces.
-    return np.concatenate([
-        np.concatenate(sequence) if sequence.shape else np.stack(sequence)
-        for sequence in joined_sequence if len(sequence)
+    out = create_empty_array(item_space, n=n_items)
+    # # Concatenate the (two) batches into a single batch of samples.
+    items_batch = np.concatenate([
+        np.asarray(v).reshape([-1, *item_space.shape])
+        for v in itertools.chain(*sequences)
     ])
-    # out = create_empty_array(item_space, n_items)
-    # item_batch = concatenate(all_items, empty_array, item_space)
-    
-    all_items = list(itertools.chain(*sequences))
-
-    if len(all_items) != n_items:
-        raise RuntimeError(
-            f"Expected to have {n_items} items in the batch, but we "
-            f"instead have {len(all_items)}! (items={sequences}, "
-            f"item_space={item_space})."
-        )
-    if item_space is None:
-        return all_items
-
-    empty_array = create_empty_array(item_space, n=n_items)
-    item_batch = concatenate(all_items, empty_array, item_space)
-    return item_batch
+    # # Split this batch of samples into a list of items from each space.
+    items = [
+        v.reshape(item_space.shape) for v in np.split(items_batch, n_items)
+    ]
+    # TODO: Need to add more tests to make sure this works with custom spaces and Dict spaces.
+    return concatenate(items, out, item_space)
 
 
-@fuse_and_batch.register
+@fuse_and_batch.register(spaces.Dict)
 def fuse_and_batch_dicts(item_space: spaces.Dict, *sequences: Sequence[Dict[K, V]], n_items: int) -> Dict[K, Sequence[T]]:
     values = {
         k: [] for k in item_space.spaces.keys()
@@ -340,7 +317,7 @@ def fuse_and_batch_dicts(item_space: spaces.Dict, *sequences: Sequence[Dict[K, V
     }
 
 
-@fuse_and_batch.register
+@fuse_and_batch.register(spaces.Tuple)
 def fuse_and_batch_tuples(item_space: spaces.Tuple, *sequences: Sequence[Tuple[T, ...]], n_items: int) -> Tuple[Sequence[T], ...]:
     # First, just get rid of any empty lists or tuples (which in our case is
     # the obs_b which might be [] if env_b is None)

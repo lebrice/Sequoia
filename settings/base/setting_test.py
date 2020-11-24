@@ -45,6 +45,11 @@ def test_init_still_works():
     setting = Setting(val_fraction=0.01)
     assert setting.val_fraction == 0.01
 
+
+def test_passing_unexpected_arg_raises_typeerror():
+    with pytest.raises(TypeError, match="unexpected keyword argument 'baz'"):
+        bob2 = Setting2(foo=4, bar=4, baz=123123)
+        
 @dataclass
 class SettingA(Setting): pass
 
@@ -69,8 +74,7 @@ class CoolGeneralMethod(Method, target_setting=Setting): pass
 def test_that_transforms_can_be_set_through_command_line():
     from common.transforms import Transforms, Compose
 
-    setting = Setting(transforms=[], train_transforms=[])
-    assert setting.transforms == []
+    setting = Setting(train_transforms=[])
     assert setting.train_transforms == []
     
     

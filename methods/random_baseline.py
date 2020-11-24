@@ -2,9 +2,9 @@
 
 Should be applicable to any Setting.
 """
-from dataclasses import dataclass
 
 import gym
+from dataclasses import dataclass
 from utils import get_logger, singledispatchmethod
 
 from common.metrics import ClassificationMetrics
@@ -33,13 +33,20 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         # self.action_space = train_env.action_space
         return 1
 
+    def configure(self, setting):
+        # Set any batch size, really.
+        setting.batch_size = 32
+
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         return action_space.sample()
 
-    def configure(self, setting: Setting):
-        self.action_space = setting.action_space
-        super().configure(setting)
+    @classmethod
+    def from_args(cls, *args, **kwargs):
+        return super().from_args(*args, **kwargs)
+        # return RandomBaselineMethod()
 
+    ## Methods below are just here for testing purposes.
+        
     @singledispatchmethod
     def validate_results(self, setting: Setting, results: Setting.Results):
         """Called during testing. Use this to assert that the results you get

@@ -9,12 +9,13 @@ T = TypeVar("T")
 K = TypeVar("K")
 V = TypeVar("V")
 
+
 @singledispatch
 def move(x: T, device: Union[str, torch.device]) -> T:
     """Moves x to the specified device if possible, else returns x unchanged.
-    NOTE: This works for torch.Tensor.
+    NOTE: This works for Tensors or any collection of Tensors.
     """
-    if hasattr(x, "to") and callable(x.to):
+    if hasattr(x, "to") and callable(x.to) and device:
         return x.to(device=device)
     return x
 

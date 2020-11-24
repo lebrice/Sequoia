@@ -1,40 +1,55 @@
 import itertools
+import warnings
+import json
+from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
-from typing import ClassVar, Dict, List, Type, Callable, Union, Optional
 from pathlib import Path
+from typing import (Callable, ClassVar, Dict, List, Optional, Sequence, Type,
+                    Union)
 
 import gym
 import numpy as np
 from gym import spaces
-from gym.envs.classic_control import CartPoleEnv
 from gym.envs.atari import AtariEnv
-from simple_parsing import choice, list_field
-from torch import Tensor
+from gym.envs.classic_control import CartPoleEnv
+from gym.wrappers import AtariPreprocessing
 
 from common import Batch, Config
 from common.gym_wrappers import (MultiTaskEnvironment, SmoothTransitions,
                                  TransformAction, TransformObservation,
                                  TransformReward)
-from common.gym_wrappers.batch_env import BatchedVectorEnv
+from common.gym_wrappers.batch_env import BatchedVectorEnv, SyncVectorEnv, VectorEnv
 from common.gym_wrappers.env_dataset import EnvDataset
 from common.gym_wrappers.pixel_observation import PixelObservationWrapper
-from common.gym_wrappers.utils import classic_control_env_prefixes, IterableWrapper, has_wrapper
-from common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
 from common.gym_wrappers.sparse_space import Sparse
+from common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
+from common.gym_wrappers.utils import (IterableWrapper,
+                                       is_classic_control_env,
+                                       is_atari_env,
+                                       classic_control_envs,
+                                       classic_control_env_prefixes, 
+                                       has_wrapper)
 from common.metrics import RegressionMetrics
 from common.transforms import Transforms
 from settings.active import ActiveSetting
-from settings.assumptions.incremental import IncrementalSetting, TestEnvironment
-from settings.base.results import Results
+from settings.assumptions.incremental import (IncrementalSetting,
+                                              TestEnvironment)
 from settings.base import Method
+from settings.base.results import Results
+from simple_parsing import choice, list_field
+from simple_parsing.helpers import dict_field
+from torch import Tensor
 from utils import dict_union, get_logger
 
+from .. import ActiveEnvironment
 from .gym_dataloader import GymDataLoader
 from .make_env import make_batched_env
 from .rl_results import RLResults
-from .wrappers import HideTaskLabelsWrapper, RemoveTaskLabelsWrapper, TypedObjectsWrapper, NoTypedObjectsWrapper
-from .. import ActiveEnvironment
+from .wrappers import (AddDoneToObservation, HideTaskLabelsWrapper,
+                       NoTypedObjectsWrapper, RemoveTaskLabelsWrapper,
+                       TypedObjectsWrapper, AddInfoToObservation)
+from stable_baselines3.common.atari_wrappers import AtariWrapper
 
 logger = get_logger(__file__)
 
@@ -89,8 +104,16 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # Just as a reminder, these are the fields defined in the base classes:
         # x: Tensor
         # task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
+        
+        # The 'done' part of the 'step' method. We add these two here in case a
+        # method were to iterate on the environments in the dataloader-style so
+        # they also have access to those (i.e. for the BaselineMethod).
+        done: Optional[Sequence[bool]] = None
+        # Same, for the 'info' portion of the result of 'step'.
+        info: Optional[Sequence[Dict]] = None
 
-    transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.channels_first_if_needed)
+    # Image transforms to use.
+    transforms: List[Transforms] = list_field()
 
     # Class variable that holds the dict of available environments.
     available_datasets: ClassVar[Dict[str, str]] = {
@@ -99,7 +122,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         "breakout": "Breakout-v0",
         # "duckietown": "Duckietown-straight_road-v0"
     }
-    # Which environment to learn on.
+    # Which environment (a.k.a. "dataset") to learn on.
+    # The dataset could be either a string (env id or a key from the
+    # available_datasets dict), a gym.Env, or a callable that returns a single environment.
+    # If self.dataset isn't one of those, an error will be raised.
     dataset: str = choice(available_datasets, default="breakout")
 
     # Max number of steps ("length" of the training and test "datasets").
@@ -107,30 +133,66 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # Number of steps per task. When left unset, takes the value of `max_steps`
     # divided by `nb_tasks`.
     steps_per_task: Optional[int] = None
+    # Number of episodes per task.
+    episodes_per_task: Optional[int] = None
+    
+    
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
 
-    # Number of episodes to perform through the test environment in the test
-    # loop. Depending on what an 'episode' might represent in your setting, this
-    # could be as low as 1 (for example, supervised learning, episode == epoch).
-    test_loop_episodes: int = 100
-    
+    # Wether to observe the state directly, rather than pixels. This can be
+    # useful to debug environments like CartPole, for instance.
+    observe_state_directly: bool = False
+
+    # NOTE: Added this `cmd=False` option to mark that we don't want to generate
+    # any command-line arguments for these fields.
+    train_task_schedule: Dict[int, Dict] = dict_field(cmd=False)
+    valid_task_schedule: Dict[int, Dict] = dict_field(cmd=False)
+    test_task_schedule: Dict[int, Dict] = dict_field(cmd=False)
+
+    train_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
+    valid_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
+    test_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
     
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
-          
+        
+        # Post processing of the 'dataset' field:
+        if self.dataset in self.available_datasets.keys():
+            # the environment name was passed, rather than an id
+            # (e.g. 'cartpole' -> 'CartPole-v0").
+            self.dataset = self.available_datasets[self.dataset]
+
+        elif self.dataset not in self.available_datasets.values(): 
+            # The passed dataset is assumed to be an environment ID, but it
+            # wasn't in the dict of available datasets! We issue a warning, but
+            # proceed to let the user use whatever environment they want to.
+            logger.warning(UserWarning(
+                f"The chosen dataset/environment ({self.dataset}) isn't in the "
+                f"available_datasets dict, so we can't garantee this will work!"
+            ))
+
+        if isinstance(self.dataset, gym.Env) and self.batch_size:
+            raise RuntimeError(f"Batch size should be None when a gym.Env "
+                                f"object is passed as `dataset`.")
+        if not isinstance(self.dataset, (str, gym.Env)) and not callable(self.dataset):
+            raise RuntimeError(f"`dataset` must be either a string, a gym.Env, "
+                               f"or a callable. (got {self.dataset})")
+
         # Set the number of tasks depending on the increment, and vice-versa.
         # (as only one of the two should be used).
-        assert self.max_steps
+        assert self.max_steps, "assuming this should always be set, for now."
         if not self.nb_tasks:
             if self.steps_per_task:
                 self.nb_tasks = self.max_steps // self.steps_per_task
+            elif self.train_task_schedule:
+                self.nb_tasks = len(self.train_task_schedule) - (1 if self.max_steps in self.train_task_schedule else 0)
             else:
                 self.nb_tasks = 1
                 self.steps_per_task = self.max_steps
         elif not self.steps_per_task:
             self.steps_per_task = int(self.max_steps / self.nb_tasks)
-        
+
         if self.smooth_task_boundaries:
             # If we're operating in the 'Online/smooth task transitions' "regime",
             # then there is only one "task", and we don't have task labels.
@@ -142,16 +204,19 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             self.steps_per_task = self.max_steps
 
         # Task schedules for training / validation and testing.
-        self.train_task_schedule: Dict[int, Dict] = {}
-        self.valid_task_schedule: Dict[int, Dict] = {}
-        self.test_task_schedule: Dict[int, Dict] = {}
 
         # Create a temporary environment so we can extract the spaces.
-        with self.make_temp_env() as temp_env:
+        with self._make_env(self.dataset, self._temp_wrappers()) as temp_env:
             # Populate the task schedules created above.
-            self.create_task_schedules(temp_env)
-            
-            
+            if not self.train_task_schedule:
+                self.train_task_schedule = self.create_task_schedule(temp_env)
+            # The validation and test tasks schedules are the same as training
+            # by default.
+            if not self.valid_task_schedule:
+                self.valid_task_schedule = deepcopy(self.train_task_schedule)
+            if not self.test_task_schedule:
+                self.test_task_schedule = deepcopy(self.valid_task_schedule)
+
             # Set the spaces using the temp env.
             self.observation_space = temp_env.observation_space
             self.action_space = temp_env.action_space
@@ -165,61 +230,44 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # the Method being currently applied on this setting.
         self.on_task_switch_callback: Callable[[Optional[int]], None] = None
 
-    def create_task_schedules(self, temp_env: MultiTaskEnvironment) -> None:
-        assert self.nb_tasks == 1
-        self.train_task_schedule[0] = temp_env.default_task
-        self.train_task_schedule[self.max_steps] = temp_env.random_task()
-        
-        # For now, set the validation and test tasks as the same sequence as the
-        # train tasks.
-        self.valid_task_schedule = self.train_task_schedule.copy() 
-        self.test_task_schedule = self.train_task_schedule.copy()
-    
-    def make_temp_env(self) -> gym.Env:
-        """ Creates a temporary environment.
-        Will be called in the 'constructor' (__post_init__), so this should
-        ideally depend on as little state as possible.
-        """
-        if self.env_name:
-            temp_env = gym.make(self.env_name)
-        else:
-            assert callable(self.dataset), f"dataset should either be a string or a callable, got {self.dataset}"
-            temp_env = self.dataset()
-        # Apply the image transforms to the env.
-        temp_env = TransformObservation(temp_env, f=self.train_transforms)
-        # Add a wrapper that creates the 'tasks' (non-stationarity in the env).
-        # First, get the set of parameters that will be changed over time.
-        cl_task_params = task_params.get(self.env_name, task_params.get(type(temp_env.unwrapped), []))            
-        
+    def create_task_schedule(self, temp_env: MultiTaskEnvironment) -> Dict[int, Dict]:
+        task_schedule: Dict[int, Dict] = {}
+        # Start with the default task (step 0) and then add a new task at
+        # intervals of `self.steps_per_task`
+        for task_step in range(0, self.max_steps, self.steps_per_task):
+            if task_step == 0:
+                # Start with the default task, so that we can recover the 'iid'
+                # case with standard env dynamics when there is only one task
+                # and no non-stationarity.
+                task_schedule[task_step] = temp_env.default_task
+            else:
+                task_schedule[task_step] = temp_env.random_task()
+        # Add a last 'task' at the end of the 'epoch', so that the env changes
+        # smoothly right until the end.
         if self.smooth_task_boundaries:
-            cl_wrapper = SmoothTransitions
-        else:
-            cl_wrapper = MultiTaskEnvironment
+            task_schedule[self.max_steps] = temp_env.random_task()
+        return task_schedule
 
-        # We want to have a 'task-label' space, but it will be filled with
-        # None values when task boundaries are smooth.
-        temp_env = cl_wrapper(
-            temp_env,
-            task_params=cl_task_params,
-            add_task_id_to_obs=True,
-        )
-        return temp_env
-    
-    
-    
     def apply(self, method: Method, config: Config=None) -> "ContinualRLSetting.Results":
-        """Apply the given method on this setting to producing some results."""
+        """Apply the given method on this setting to producing some results. """
+        # Use the supplied config, or parse one from the arguments that were
+        # used to create `self`.
         self.config = config or Config.from_args(self._argv)
-        method.config = self.config
+        # TODO: Should we really overwrite the method's 'config' attribute here?
+        if not getattr(method, "config", None):
+            method.config = self.config
 
+        # TODO: Remove `Setting.configure(method)` entirely, from everywhere,
+        # and use the `prepare_data` or `setup` methods instead (since these
+        # `configure` methods aren't using the `method` anyway.)
         self.configure(method)
         method.configure(setting=self)
-        
+
+        logger.info(f"Train task schedule:" + json.dumps(self.train_task_schedule, indent="\t"))
         # Run the Training loop (which is defined in IncrementalSetting).
         self.train_loop(method)
-        
-        # NOTE: Since we want to be pass a reference to the method's
-        # 'on_task_switch' callback, we have to store it here.
+
+        # Store a reference to the method's 'on_task_switch' method.
         if self.known_task_boundaries_at_test_time:
             self.on_task_switch_callback = getattr(method, "on_task_switch", None)
             if self.on_task_switch_callback is None:
@@ -227,7 +275,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                     f"Task boundaries are available at test time, but the "
                     f"method doesn't have an 'on_task_switch' callback."
                 ))
-        
+
+        if self.config.debug:
+            logger.debug(f"Test task schedule:" + json.dumps(self.test_task_schedule, indent="\t"))
+
         # Run the Test loop (which is defined in IncrementalSetting).
         results: RlResults = self.test_loop(method)
         logger.info("Results summary:")
@@ -235,57 +286,201 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         method.receive_results(self, results=results)
         return results
 
-    @property
-    def env_name(self) -> str:
-        """Returns the gym 'id' associated with the selected dataset/env, or an
-        empty string if the env doesn't have a spec. 
+    def setup(self, stage: str=None) -> None:
+        # Called before the start of each task during training, validation and
+        # testing.
+        super().setup(stage=stage)
+        if stage in {"fit", None}:
+            self.train_wrappers = self.create_train_wrappers()
+            self.valid_wrappers = self.create_valid_wrappers()
+        elif stage in {"test", None}:
+            self.test_wrappers = self.create_test_wrappers()
+
+    def prepare_data(self, *args, **kwargs) -> None:
+        # We don't really download anything atm.
+        super().prepare_data(*args, **kwargs)
+
+    def train_dataloader(self, batch_size: int = None, num_workers: int = None) -> ActiveEnvironment:
+        """Create a training gym.Env/DataLoader for the current task.
+        
+        Parameters
+        ----------
+        batch_size : int, optional
+            The batch size, which in this case is the number of environments to
+            run in parallel. When `None`, the env won't be vectorized. Defaults
+            to None.
+        num_workers : int, optional
+            The number of workers (processes) to use in the vectorized env. When
+            None, the envs are run in sequence, which could be very slow. Only
+            applies when `batch_size` is not None. Defaults to None.
 
         Returns
         -------
-        str
-            The env's spec.id, or an empty string if the env doesn't have one.
+        GymDataLoader
+            A (possibly vectorized) environment/dataloader for the current task.
         """
-        if self.dataset in self.available_datasets.values():
-            return self.dataset
-        if self.dataset in self.available_datasets.keys():
-            return self.available_datasets[self.dataset]
-        if isinstance(self.dataset, str):
-            return self.dataset
-        elif self.dataset.spec:
-            return self.dataset.spec.id
-        return "" # No idea what the dataset name is, return None.
-        # return self.dataset
-
-    def setup(self, stage=None):
-        return super().setup(stage=stage)
-
-    def prepare_data(self, *args, **kwargs):
-        return super().prepare_data(*args, **kwargs)
-
-    def train_dataloader(self, batch_size: int = None) -> ActiveEnvironment:
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_fit:
             self.setup("fit")
 
-        batch_size = batch_size or self.train_batch_size or self.batch_size
+        batch_size = batch_size or self.batch_size
+        num_workers = num_workers or self.num_workers
+        env_factory = partial(self._make_env, base_env=self.dataset,
+                                              wrappers=self.train_wrappers)
+        env_dataloader = self._make_env_dataloader(
+            env_factory,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            max_steps=self.steps_per_task,
+            max_episodes=self.episodes_per_task,
+        )
+        self.train_env = env_dataloader
+        return self.train_env
 
-        # NOTE: Setting this to False when debugging can be very helpful,
-        # especially when trying to solve problems related to the env wrappers
-        # or the input preprocessing. Beware though, if the batch size isn't
-        # small (< 32)  this will makes things incredibly slow.
-        if batch_size is None:
-            env = self.make_train_env()
+    def val_dataloader(self, batch_size: int = None, num_workers: int = None) -> Environment:
+        """Create a validation gym.Env/DataLoader for the current task.
+        
+        Parameters
+        ----------
+        batch_size : int, optional
+            The batch size, which in this case is the number of environments to
+            run in parallel. When `None`, the env won't be vectorized. Defaults
+            to None.
+        num_workers : int, optional
+            The number of workers (processes) to use in the vectorized env. When
+            None, the envs are run in sequence, which could be very slow. Only
+            applies when `batch_size` is not None. Defaults to None.
+
+        Returns
+        -------
+        GymDataLoader
+            A (possibly vectorized) environment/dataloader for the current task.
+        """
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_fit:
+            self.setup("fit")
+
+        env_factory = partial(self._make_env, base_env=self.dataset,
+                                              wrappers=self.valid_wrappers)
+        env_dataloader = self._make_env_dataloader(
+            env_factory,
+            batch_size=batch_size or self.batch_size,
+            num_workers=num_workers or self.num_workers,
+            max_steps=self.steps_per_task,
+            max_episodes=self.episodes_per_task,
+        )
+        self.val_env = env_dataloader
+        return self.val_env
+    
+    def test_dataloader(self, batch_size: int = None, num_workers: int = None) -> TestEnvironment:
+        """Create the test 'dataloader/gym.Env' for all tasks.
+        
+        NOTE: This test environment isn't just for the current task, it actually
+        contains the sequence of all tasks. This is different than the train or
+        validation environments, since if the task labels are available at train
+        time, then calling train/valid_dataloader` returns the envs for the
+        current task only, and the `.fit` method is called once per task.
+        
+        This environment is also different in that it is wrapped with a Monitor,
+        which we might eventually use to save the results/gifs/logs of the
+        testing runs.
+
+        Parameters
+        ----------
+        batch_size : int, optional
+            The batch size, which in this case is the number of environments to
+            run in parallel. When `None`, the env won't be vectorized. Defaults
+            to None.
+        num_workers : int, optional
+            The number of workers (processes) to use in the vectorized env. When
+            None, the envs are run in sequence, which could be very slow. Only
+            applies when `batch_size` is not None. Defaults to None.
+
+        Returns
+        -------
+        TestEnvironment
+            A testing environment which keeps track of the performance of the
+            actor and accumulates logs/statistics that are used to eventually
+            create the 'Result' object.
+        """
+        if not self.has_prepared_data:
+            self.prepare_data()
+        if not self.has_setup_test:
+            self.setup("test")
+
+        batch_size = batch_size or self.batch_size
+        num_workers = num_workers or self.num_workers
+        env_factory = partial(self._make_env, base_env=self.dataset,
+                                              wrappers=self.test_wrappers)
+        env_dataloader = self._make_env_dataloader(
+            env_factory,
+            batch_size=batch_size,
+            num_workers=num_workers,
+        )
+
+        # TODO: We should probably change the max_steps depending on the
+        # batch size of the env.
+        test_loop_max_steps = self.max_steps
+        # TODO: Find where to configure this 'test directory' for the outputs of
+        # the Monitor.
+        test_dir = "results"
+        self.test_env = ContinualRLTestEnvironment(
+            env_dataloader,
+            directory=test_dir,
+            step_limit=self.max_steps,
+            force=True,
+        )
+        return self.test_env
+
+    @staticmethod
+    def _make_env(base_env: Union[str, gym.Env, Callable[[], gym.Env]],
+                 wrappers: List[Callable[[gym.Env], gym.Env]]=None) -> gym.Env:
+        """ Helper function to create a single (non-vectorized) environment. """
+        env: gym.Env
+        if isinstance(base_env, str):
+            env = gym.make(base_env)
+        elif isinstance(base_env, gym.Env):
+            env = base_env
+        elif callable(base_env):
+            env = base_env()
         else:
-            use_mp = batch_size is not None and batch_size > 1 # and not self.config.debug
-            env = make_batched_env(
-                self.env_name,
-                wrappers=self.train_wrappers(),
-                batch_size=batch_size,
-                asynchronous=use_mp,
-                # asynchronous=False,
+            raise RuntimeError(
+                f"base_env should either be a string, a callable, or a gym "
+                f"env. (got {base_env})."
+            )
+        for wrapper in wrappers:
+            env = wrapper(env)
+        return env
+
+    def _make_env_dataloader(self,
+                            env_factory: Callable[[], gym.Env],
+                            batch_size: Optional[int],
+                            num_workers: Optional[int] = None,
+                            seed: Optional[int] = None,
+                            max_steps: Optional[int] = None,
+                            max_episodes: Optional[int] = None,) -> GymDataLoader:
+        """ Helper function for creating a (possibly vectorized) environment.
+        
+        """
+        logger.debug(f"batch_size: {batch_size}, num_workers: {num_workers}, seed: {seed}")
+        if batch_size is None:
+            env = env_factory()
+        elif num_workers is None:
+            warnings.warn(UserWarning(
+                f"Running {batch_size} environments in series (very slow!) "
+                f"since the num_workers is None."
+            ))
+            env = SyncVectorEnv([env_factory for _ in range(batch_size)])
+        else:
+            env = BatchedVectorEnv(
+                [env_factory for _ in range(batch_size)],
+                n_workers=num_workers,
+                # TODO: Still debugging shared memory + Sparse spaces.
                 shared_memory=False,
             )
+
         # Apply the "post-batch" wrappers:
         # Add a wrapper that converts numpy arrays / etc to Observations/Rewards
         # and from Actions objects to numpy arrays.
@@ -296,145 +491,49 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             actions_type=self.Actions,
         )
         # Create an IterableDataset from the env using the EnvDataset wrapper.
-        dataset = EnvDataset(env, max_steps=self.steps_per_task)
+        dataset = EnvDataset(
+            env,
+            max_steps=max_steps,
+            max_episodes=max_episodes,
+        )
+
         # Create a GymDataLoader for the EnvDataset.
-        dataloader = GymDataLoader(dataset)
-        self.train_env = dataloader
-        return self.train_env
+        env_dataloader = GymDataLoader(dataset)
 
-    def make_train_env(self) -> gym.Env:
-        """ Make a single (not-batched) training environment. """
-        if self.env_name:
-            env = gym.make(self.env_name)
+        if batch_size and seed:
+            # Seed each environment with its own seed (based on the base seed).
+            env.seed([seed + i for i in range(env_dataloader.num_envs)])
         else:
-            assert callable(self.dataset), f"dataset should either be a string or a callable, got {self.dataset}"
-            env = self.dataset()
+            env.seed(seed)
 
-        for wrapper in self.train_wrappers():
-            env = wrapper(env)
-        return env
+        return env_dataloader
 
-    def train_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
+    def create_train_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to each training environment.
         
         The result of this method must be pickleable when using
         multiprocessing.
-
+        
         Returns
         -------
         List[Callable[[gym.Env], gym.Env]]
             [description]
-
-        Raises
-        ------
-        NotImplementedError
-            [description]
         """
-        wrappers: List[Callable[[gym.Env], gym.Env]] = []
-        # TODO: Add some kind of Wrapper around the dataset to make it
-        # semi-supervised?
-        # When using something like CartPole or Pendulum, we'd need to add
-        # a PixelObservations wrapper so we can get the 'observation'
-        # When using something like CartPole, we'd need to add a
-        # PixelObservations wrapper.
-        if self.env_name.startswith(classic_control_env_prefixes):
-            wrappers.append(PixelObservationWrapper)
-
-        # Wrapper to apply the image transforms to the env.
-        wrappers.append(partial(TransformObservation, f=self.train_transforms))
-
-        if self.smooth_task_boundaries:
-            # Add a wrapper that creates smooth 'tasks' (changes in the env).
-            # We allow iteration over the entire stream
-            # (no start_step and max_step)
-            # TODO: Should this maybe be a wrapper to be applied on top of a
-            # MultiTaskEnvironment, rather than as a subclass/replacement to
-            # MultiTaskEnvironment?
-            assert not self.known_task_boundaries_at_train_time
-            wrappers.append(partial(SmoothTransitions,
-                task_schedule=self.train_task_schedule,
-                # Add the 'task_id' space to the observation space, but it will
-                # be Sparse, and all of its samples will always be 'None'.
-                add_task_id_to_obs=True,
-                # Add the 'task dict' to the 'info' dict.
-                add_task_dict_to_info=True,
-            ))
-
-        elif self.known_task_boundaries_at_train_time:
-            assert self.nb_tasks >= 1
-            # Add a wrapper that creates sharp 'tasks'.
-            # We add a restriction to prevent users from getting data from
-            # previous or future tasks.
-            starting_step = self.current_task_id * self.steps_per_task
-            max_steps = (self.current_task_id + 1) * self.steps_per_task - 1
-
-            # Add the task id to the observation.
-            # Add the 'task dict' to the 'info' dict.
-            wrappers.append(partial(MultiTaskEnvironment,
-                task_schedule=self.train_task_schedule,
-                add_task_id_to_obs=True,
-                add_task_dict_to_info=True,
-                starting_step=starting_step,
-                max_steps=max_steps,
-            ))
-            # NOTE: Since we want a 'None' task label when not available,
-            # instead of not adding the task labels above, we instead set
-            # them to None with another wrapper here.
-            # We could also add an argument to the MultiTaskEnvironment, but it 
-            # already has enough responsability as it is imo.
-
-        # Apply the "post-batch" wrappers:
-        if not self.task_labels_at_train_time:
-            # TODO: Hide or remove the task labels?
-            # wrappers.append(RemoveTaskLabelsWrapper)
-            wrappers.append(HideTaskLabelsWrapper)
-        return wrappers
-    
-    def val_dataloader(self, batch_size: int = None) -> Environment:
-        if not self.has_prepared_data:
-            self.prepare_data()
-        if not self.has_setup_fit:
-            self.setup("fit")
-        
-        batch_size = batch_size or self.valid_batch_size or self.batch_size
-
-        if batch_size is None:
-            env = self.make_val_env()
-        else:
-            use_mp = batch_size is not None and batch_size > 1 # and not self.config.debug
-            env = make_batched_env(
-                self.env_name,
-                wrappers=self.val_wrappers(),
-                batch_size=batch_size,
-                asynchronous=use_mp,
-                # asynchronous=False,
-                shared_memory=False,
-            )
-        # Apply the "post-batch" wrappers:
-        env = TypedObjectsWrapper(
-            env,
-            observations_type=self.Observations,
-            actions_type=self.Actions,
-            rewards_type=self.Rewards,
+        # We add a restriction to prevent users from getting data from
+        # previous or future tasks.
+        # TODO: This assumes that tasks all have the same length.
+        starting_step = self.current_task_id * self.steps_per_task
+        max_steps = starting_step + self.steps_per_task - 1
+        return self._make_wrappers(
+            task_schedule=self.train_task_schedule,
+            sharp_task_boundaries=self.known_task_boundaries_at_train_time,
+            task_labels_available=self.task_labels_at_train_time,
+            transforms=self.train_transforms,
+            starting_step=starting_step,
+            max_steps=max_steps,
         )
-        dataset = EnvDataset(env, max_steps=self.steps_per_task)
-        dataloader = GymDataLoader(dataset)
 
-        self.val_env = dataloader
-        return self.val_env
-
-    def make_val_env(self) -> gym.Env:
-        """ Create a single (non-batched) validation environment. """
-        if self.env_name:
-            env = gym.make(self.env_name)
-        else:
-            assert callable(self.dataset), f"dataset should either be a string or a callable, got {self.dataset}"
-            env = self.dataset()
-        for wrapper in self.val_wrappers():
-            env = wrapper(env)
-        return env
-    
-    def val_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
+    def create_valid_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to each validation environment.
         
         The result of this method must be pickleable when using
@@ -444,110 +543,26 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         -------
         List[Callable[[gym.Env], gym.Env]]
             [description]
+            
+        TODO: Decide how this 'validation' environment should behave in
+        comparison with the train and test environments. 
         """
-        wrappers: List[Callable[[gym.Env], gym.Env]] = []
-
-        if self.env_name.startswith(classic_control_env_prefixes):
-            wrappers.append(PixelObservationWrapper)
-
-        wrappers.append(partial(TransformObservation, f=self.val_transforms))
-
-        if self.smooth_task_boundaries:
-            wrappers.append(partial(SmoothTransitions,
-                task_schedule=self.valid_task_schedule,
-                add_task_id_to_obs=True,
-                add_task_dict_to_info=True,
-            ))
-        # TODO: Should the validation environment have task labels if the train
-        # env does but not the test env? 
-        elif self.known_task_boundaries_at_train_time:
-            starting_step = self.current_task_id * self.steps_per_task
-            max_steps = (self.current_task_id + 1) * self.steps_per_task - 1
-            wrappers.append(partial(MultiTaskEnvironment,
-                task_schedule=self.valid_task_schedule,
-                add_task_id_to_obs=True,
-                add_task_dict_to_info=True,
-                starting_step=starting_step,
-                max_steps=max_steps,
-            ))
-
-        # TODO: See below, should the validation environment have task labels if
-        # the train env does but not the test env? 
-        if not self.task_labels_at_test_time:
-            # TODO: The RemoveTaskLabelsWrapper makes the 'task label' space
-            # Sparse with none_prob=1., but it still allows the user to see the
-            # number of tasks.
-            # TODO: Hide or remove the task labels?
-            # wrappers.append(RemoveTaskLabelsWrapper)
-            wrappers.append(HideTaskLabelsWrapper)
-        return wrappers
-
-    def test_dataloader(self, batch_size: int = None) -> TestEnvironment:
-        if not self.has_prepared_data:
-            self.prepare_data()
-        if not self.has_setup_test:
-            self.setup("test")
-
-        batch_size = batch_size or self.test_batch_size or self.batch_size
-        # TODO: The test environment shouldn't be just for the current task, it
-        # should be the sequence of all tasks.
-        use_mp = batch_size is not None and batch_size > 1 # and not self.config.debug
-        # BUG: Turn shared_memory back to True once the bugs with shared memory
-        # and Sparse spaces are fixed.
-        if batch_size is None:
-            env = self.make_test_env()
-        else:
-            env = make_batched_env(
-                self.env_name,
-                wrappers=self.test_wrappers(),
-                batch_size=batch_size,
-                asynchronous=use_mp,
-                # asynchronous=False,
-                shared_memory=False,
-            )
-        
-        # If we know the task boundaries at test time, and the method has the
-        # callback for it, then we add a callback wrapper that will invoke the
-        # method's on_task_switch and pass it the task label if required when on
-        # a task boundary.
-        # This is different than the train or validation environments, since the
-        # test environment might cover multiple tasks, while if the task labels
-        # are available at train time, then each train/valid environment is for
-        # a single task.
-
-        env = TypedObjectsWrapper(
-            env,
-            observations_type=self.Observations,
-            rewards_type=self.Rewards,
-            actions_type=self.Actions,
+        # We add a restriction to prevent users from getting data from
+        # previous or future tasks.
+        # TODO: Should the validation environment only be for the current task?
+        starting_step = self.current_task_id * self.steps_per_task
+        max_steps = starting_step + self.steps_per_task - 1
+        return self._make_wrappers(
+            task_schedule=self.valid_task_schedule,
+            sharp_task_boundaries=self.known_task_boundaries_at_train_time,
+            task_labels_available=self.task_labels_at_train_time,
+            transforms=self.val_transforms,
+            starting_step=starting_step,
+            max_steps=max_steps,
         )
-        dataset = EnvDataset(env, max_steps=self.steps_per_task)
-        dataloader = GymDataLoader(dataset)
-        test_dir = "results"
-        # TODO: We should probably change the max_steps depending on the
-        # batch size of the env.
-        test_loop_max_steps = self.max_steps
-        self.test_env = ContinualRLTestEnvironment(
-            dataloader,
-            directory=test_dir,
-            step_limit=self.max_steps,
-            force=True,
-        )
-        return self.test_env
 
-    def make_test_env(self) -> gym.Env:
-        """ Make a single (not-batched) testing environment. """
-        if self.env_name:
-            env = gym.make(self.env_name)
-        else:
-            assert callable(self.dataset), f"dataset should either be a string or a callable, got {self.dataset}"
-            env = self.dataset()
 
-        for wrapper in self.test_wrappers():
-            env = wrapper(env)
-        return env
-
-    def test_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
+    def create_test_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to a single test environment.
         
         The result of this method must be pickleable when using
@@ -558,49 +573,111 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         List[Callable[[gym.Env], gym.Env]]
             [description]
         """
+        return self._make_wrappers(
+            task_schedule=self.test_task_schedule,
+            sharp_task_boundaries=self.known_task_boundaries_at_test_time,
+            task_labels_available=self.task_labels_at_test_time,
+            transforms=self.test_transforms,
+            starting_step=0,
+            max_steps=self.max_steps,
+        )
+
+    def _make_wrappers(self,
+                       task_schedule: Dict[int, Dict],
+                       sharp_task_boundaries: bool,
+                       task_labels_available: bool,
+                       transforms: List[Transforms],
+                       starting_step: int,
+                       max_steps: int,
+                       ) -> List[Callable[[gym.Env], gym.Env]]:
+        """ helper function for creating the train/valid/test wrappers. 
+        
+        These wrappers get applied *before* the batching, if applicable.
+        """
         wrappers: List[Callable[[gym.Env], gym.Env]] = []
+        # NOTE: When transitions are smooth, there are no "task boundaries".
+        assert sharp_task_boundaries == (not self.smooth_task_boundaries) 
 
-        if self.env_name.startswith(classic_control_env_prefixes):
-            wrappers.append(PixelObservationWrapper)
+        # TODO: Add some kind of Wrapper around the dataset to make it
+        # semi-supervised?
 
-        wrappers.append(partial(TransformObservation, f=self.test_transforms))
+        # If we are in a classic control env, and we dont want the state to
+        # be fully-observable (i.e. we want pixel observations rather than
+        # getting the pole angle, velocity, etc.), then add the
+        # PixelObservation wrapper to the list of wrappers.
+        # TODO: Change the BaselineMethod so that it uses an nn.Identity()
+        # as its encoder when setting.observe_state_directly is True.    
+        if is_classic_control_env(self.dataset):
+            if not self.observe_state_directly:
+                wrappers.append(PixelObservationWrapper)
+        elif self.observe_state_directly:    
+            raise RuntimeError(
+                f"Don't know how to observe state rather than pixels for "
+                f"environment {self.dataset}, as it isn't a classic control env!"
+            )
+        # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
+        if is_atari_env(self.dataset):
+            # TODO: Figure out the differences (if there are any) between the 
+            # AtariWrapper from SB3 and the AtariPreprocessing wrapper from gym.
+            wrappers.append(AtariWrapper)
+            # wrappers.append(AtariPreprocessing)
 
-        if self.smooth_task_boundaries:
-            wrappers.append(partial(SmoothTransitions,
-                task_schedule=self.test_task_schedule,
-                add_task_id_to_obs=True,
-                # TODO: Figure this out, the info dicts have the env attributes atm.
-                add_task_dict_to_info=self.task_labels_at_test_time,
-            ))
+        if not self.observe_state_directly:
+            # Wrapper to apply the image transforms to the env.
+            wrappers.append(partial(TransformObservation, f=transforms))
 
-        elif self.known_task_boundaries_at_test_time:
-            # TODO: We maybe don't actually want to get an env for just one task, but instead get an environment spanning all tasks.
-            # rather we want a test env that covers the whole 'stream'.
-            starting_step = 0
-            # TODO: Is the limit on the number of test steps the same as for training steps?
-            max_steps = self.max_steps
-            # starting_step = self.current_task_id * self.steps_per_task
-            # max_steps = (self.current_task_id + 1) * self.steps_per_task - 1
-            wrappers.append(partial(MultiTaskEnvironment,
-                task_schedule=self.test_task_schedule,
-                add_task_id_to_obs=True,
-                add_task_dict_to_info=True,
-                starting_step=starting_step,
-                max_steps=max_steps,
-            ))
-        if not self.task_labels_at_test_time:
-            # TODO: Hide or remove the task labels?
+        # Add a wrapper which will add non-stationarity to the environment.
+        # The "task" transitions will either be sharp or smooth.
+        # In either case, the task ids for each sample are added to the
+        # observations, and the dicts containing the task information (i.e. the
+        # current values of the env attributes from the task schedule) get added
+        # to the 'info' dicts.
+        if sharp_task_boundaries:
+            assert self.nb_tasks >= 1
+            # Add a wrapper that creates sharp tasks.
+            cl_wrapper = MultiTaskEnvironment
+        else:
+            # Add a wrapper that creates smooth tasks.
+            cl_wrapper = SmoothTransitions
+        wrappers.append(partial(cl_wrapper,
+            task_schedule=task_schedule,
+            add_task_id_to_obs=True,
+            add_task_dict_to_info=True,
+            starting_step=starting_step,
+            max_steps=max_steps,
+        ))
+        # If the task labels aren't available, we then add another wrapper that
+        # hides that information (setting both of them to None) and also marks
+        # those spaces as `Sparse`.
+        if not task_labels_available:
+            # NOTE: This sets the task labels to None, rather than removing
+            # them entirely.
             # wrappers.append(RemoveTaskLabelsWrapper)
             wrappers.append(HideTaskLabelsWrapper)
         return wrappers
 
-    def get_metrics(self, actions, rewards):
-        assert False, rewards
-        return super().get_metrics(actions, rewards)
-
+    def _temp_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
+        """ Gets the minimal wrappers needed to figure out the Spaces of the
+        train/valid/test environments.
+        
+        This is called in the 'constructor' (__post_init__) to set the Setting's
+        observation/action/reward spaces, so this should depend on as little
+        state from `self` as possible, since not all attributes have been
+        defined at the time when this is called. 
+        """
+        return self._make_wrappers(
+            task_schedule=self.train_task_schedule,
+            sharp_task_boundaries=self.known_task_boundaries_at_train_time,
+            task_labels_available=self.task_labels_at_train_time,
+            transforms=self.train_transforms,
+            # These two shouldn't matter really:
+            starting_step=0,
+            max_steps=self.max_steps,
+        )
 
 class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
     def get_results(self) -> RLResults:
+        # TODO: Create a RLMetrics object?
         rewards = self.get_episode_rewards()
         lengths = self.get_episode_lengths()
         total_steps = self.get_total_steps()
@@ -608,7 +685,7 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         assert has_wrapper(self.env, MultiTaskEnvironment), self.env
         task_steps = sorted(self.task_schedule.keys())
         
-        assert 0 in task_steps, task_steps
+        assert 0 in task_steps
         import bisect
         nb_tasks = len(task_steps)
         assert nb_tasks >= 1
@@ -619,7 +696,7 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         for step, episode_reward, episode_length in zip(itertools.accumulate(lengths), rewards, lengths):
             # Given the step, find the task id.
             task_id = bisect.bisect_right(task_steps, step) - 1
-
+            
             episode_rewards[task_id].append(episode_reward)
             episode_lengths[task_id].append(episode_length)
             episode_metric = RegressionMetrics(n_samples=episode_length, mse=episode_reward / episode_length)

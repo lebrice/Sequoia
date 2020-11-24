@@ -1,8 +1,8 @@
 """Tests for the class-incremental version of the Model class.
 """
 # from conftest import config
-from typing import Dict, List, Tuple
-
+from typing import Dict, List, Tuple, Type
+from gym import spaces
 import pytest
 import torch
 from common.config import Config
@@ -32,18 +32,22 @@ def mixed_samples(config: Config):
 
 
 class MockOutputHead(OutputHead):
-    def __init__(self, *args, task_id: int = -1, **kwargs):
+    def __init__(self, input_size: int, Actions: Type, task_id: int = -1, **kwargs):
         self.task_id = task_id
-        super().__init__(*args, **kwargs)
+        self.Actions = Actions
+        super().__init__(input_size=input_size, **kwargs)
+        
 
-    def forward(self, x: Tensor, h_x: Tensor) -> Tensor:  # type: ignore
+    def forward(self, observations, representations) -> Tensor:  # type: ignore
+        x: Tensor = observations.x
+        h_x = representations
         # TODO: We should maybe convert this to also return a dict instead
         # of a Tensor, just to be consistent with everything else. This could
         # also maybe help with having multiple different output heads, each
         # having a different name and giving back a dictionary of their own
         # forward pass tensors (if needed) and predictions?
-        return torch.stack([x_i.mean() * self.task_id for x_i in x])
-
+        actions = torch.stack([x_i.mean() * self.task_id for x_i in x])
+        return self.Actions(actions)
 # def mock_output_task(self: ClassIncrementalModel, x: Tensor, h_x: Tensor) -> Tensor:
 #     return self.output_head(x)
 
@@ -64,8 +68,9 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
     from different tasks, and when the model is multiheaded, it will use the
     right output head for each image.
     """
+    setting = ClassIncrementalSetting()
     model = ClassIncrementalModel(
-        setting=ClassIncrementalSetting(),
+        setting=setting,
         hparams=ClassIncrementalModel.HParams(batch_size=30, multihead=True),
         config=config,
     )
@@ -78,9 +83,19 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
     # monkeypatch.setattr(model, "forward", mock_encoder_forward)
     model.encoder = mock_encoder
     # model.output_task = mock_output_task
-    model.output_head = MockOutputHead(input_size=model.hidden_size, output_size=2, task_id=None)
+    model.output_head = MockOutputHead(
+        input_size=model.hidden_size, 
+        Actions=setting.Actions,
+        action_space=spaces.Discrete(2),
+        task_id=None,
+    )
     for i in range(5):
-        model.output_heads[str(i)] = MockOutputHead(input_size=model.hidden_size, output_size=2, task_id=i)
+        model.output_heads[str(i)] = MockOutputHead(
+            input_size=model.hidden_size,
+            Actions=setting.Actions,
+            action_space=spaces.Discrete(2),
+            task_id=i,
+        )
     
     xs, ys, ts = map(torch.cat, zip(*mixed_samples.values()))
     
@@ -89,7 +104,7 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
     labels = ys[indices]
     task_ids = ts[indices].int()
     
-    obs = (images, task_ids)
+    obs = setting.Observations(x=images, task_labels=task_ids)
     # assert False, obs
     with torch.no_grad():
         forward_pass = model(obs)
