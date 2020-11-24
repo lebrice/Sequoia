@@ -28,7 +28,7 @@ from settings.active.rl.class_incremental_rl_setting import ClassIncrementalRLSe
 from settings.active import ActiveEnvironment, ActiveSetting
 from settings.active.rl.wrappers import RemoveTaskLabelsWrapper, NoTypedObjectsWrapper
 
-from utils.nngeometry.nngeometry.object import PVector
+from utils.nngeometry.nngeometry.object import (PVector, PMatDiag, PMatBlockDiag)
 from torch.nn.functional import softmax
 from utils.nngeometry.nngeometry.generator.jacobian import Jacobian 
 from utils.nngeometry.nngeometry.layercollection import LayerCollection
@@ -37,6 +37,9 @@ from stable_baselines3 import DQN
 from stable_baselines3.dqn import MlpPolicy  
 from stable_baselines3.common.type_aliases import GymEnv 
 from stable_baselines3.common.evaluation import evaluate_policy
+
+from settings import (ClassIncrementalRLSetting, ContinualRLSetting, RLSetting,
+                      TaskIncrementalRLSetting)
 
 #copied from https://github.com/tfjgeorge/nngeometry
 def FIM(model,
@@ -214,9 +217,19 @@ class DQN_EWC(DQN):
             # We're in the first task: do nothing.
             return 0.
         
-        v_current = PVector.from_model(self.q_net)     
+        v_current = PVector.from_model(self.q_net)      
         regularizer = self.FIM.vTMv(v_current - self.previous_model_weights)
         return regularizer
+    
+    def forward(self,observation:Observations):
+        return self.q_net(observation)
+    
+    def get_action(self, observations: Observations, task_id: int = None):
+        #TODO: multihead DQN that would make use of task id
+        observation = observations[0]
+        #task_id = observation[1]
+        action, _ = self.predict(observation, deterministic=True)
+        return action
 
 class Supervised_EWC(nn.Module):
 
@@ -287,7 +300,7 @@ class Supervised_EWC(nn.Module):
                 x, task_labels = observations
                 task_label = torch.unique(task_labels)
                 assert len(task_label)==1
-            except ValueError and self.multihead:
+            except ValueError:
                 # this path should be used when calculating FIM
                 x = observations
                 task_label = [self._previous_task_id] if self._previous_task_id is not None else [0]
@@ -302,7 +315,7 @@ class Supervised_EWC(nn.Module):
             logits = self.classifiers[task_label[0]](features)
             return logits
         else:
-            x = observations
+            x = observations[0]
             features = self.encoder(x)
             logits = self.classifiers(features)
             return logits
@@ -400,7 +413,7 @@ class Supervised_EWC(nn.Module):
             torch.set_grad_enabled(True)
 
             if epoch_val_loss < best_val_loss:
-                best_val_loss = valid_env
+                best_val_loss = epoch_val_loss
                 best_epoch = i
             if i - best_epoch > self.early_stop_patience:
                 print(f"Early stopping at epoch {i}.")
@@ -415,6 +428,11 @@ class Supervised_EWC(nn.Module):
         v_current = PVector.from_model(self)     
         regularizer = self.FIM.vTMv(v_current - self.previous_model_weights)
         return regularizer
+
+    def get_action(self, observations):    
+            logits = self(observations)
+            y_pred = logits.argmax(dim=-1)
+            return y_pred
 
 class EWC(Method, target_setting= IncrementalSetting):  
     """ Minimal example of a Method targetting the Class-Incremental CL setting.
@@ -435,25 +453,28 @@ class EWC(Method, target_setting= IncrementalSetting):
         ewc_coefficient: float = 100   
 
         #number of timesteps for learning
-        total_timesteps_train: int = 100
+        total_timesteps_train: int = 5000
 
-        #number of episodes for evaluation
-        n_eval_episodes: int = 10
+        # #number of episodes for evaluation
+        # n_eval_episodes: int = 10
 
         #number of timesteps for FIM calculation
-        total_timesteps_fim: int = 100
+        total_timesteps_fim: int = 10000
         
-        #number of timesteps for demonstration of agents performance
-        timesteps_demo: int = 100
+        # #number of timesteps for demonstration of agents performance
+        # timesteps_demo: int = 100
 
         #how many steps of the model to collect transitions for before learning starts (DQN)
-        learning_starts: int = 0
+        learning_starts: int = 50000
 
         #replay buffer size (DQN)
-        buffer_size: int = 100
+        buffer_size: int = 1000
 
         #maximum number of epochs (supervised)
         max_epochs: int = 10
+
+        #debug
+        debug: bool = False
             
     def __init__(self, hparams: HParams):
         self.hparams: EWC.HParams = hparams
@@ -467,6 +488,8 @@ class EWC(Method, target_setting= IncrementalSetting):
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
         """
+        FIM_representation = PMatDiag if self.hparams.FIM_representation=='diagonal' else PMatBlockDiag
+
         if isinstance(setting, PassiveSetting):
             self.model = Supervised_EWC(
                 nb_tasks = setting.nb_tasks,
@@ -474,19 +497,19 @@ class EWC(Method, target_setting= IncrementalSetting):
                 observation_space=setting.observation_space,
                 action_space=setting.action_space,
                 reward_space=setting.reward_space,
-                fim_representation=self.FIM_representation,
+                fim_representation=FIM_representation,
                 ewc_coefficient=self.hparams.ewc_coefficient,
-                max_epochs = self.hparams.max_epochs,
-                multihead=True if isinstance(self.target_setting,TaskIncrementalSetting) else False,
+                max_epochs = self.hparams.max_epochs if not self.hparams.debug else 1,
+                multihead=True if isinstance(setting,TaskIncrementalSetting) else False,
                 device=self.config.device
             )
         else:  
-            self.model = DQN_EWC(fim_representation=self.hparams.FIM_representation,
+            self.model = DQN_EWC(fim_representation=FIM_representation,
                 learning_rate=self.hparams.learning_rate,
                 ewc_coefficient=self.hparams.ewc_coefficient,
-                learning_starts = self.hparams.learning_starts,
-                total_timesteps_fim=self.hparams.total_timesteps_fim,
-                buffer_size = self.hparams.buffer_size,
+                learning_starts = self.hparams.learning_starts if not self.hparams.debug else 0,
+                total_timesteps_fim=self.hparams.total_timesteps_fim if not self.hparams.debug else 100,
+                buffer_size = self.hparams.buffer_size if not self.hparams.debug else 100,
                 policy=MlpPolicy,
                 device=self.config.device) 
          
@@ -509,20 +532,12 @@ class EWC(Method, target_setting= IncrementalSetting):
         self.model.set_env(train_env)
         if self.model.policy is None:
             self.model._setup_model()    
-        self.model.learn(total_timesteps=self.hparams.total_timesteps_train)
+        self.model.learn(total_timesteps=self.hparams.total_timesteps_train if not self.hparams.debug else 100)
         ####################################
         #evaluate 
-        mean_reward, std_reward = evaluate_policy(self.model, valid_env, n_eval_episodes=self.hparams.n_eval_episodes)
-        metrics_dict = {'mean_reward':mean_reward,'std_reward':std_reward}
+        # mean_reward, std_reward = evaluate_policy(self.model, valid_env, n_eval_episodes=self.hparams.n_eval_episodes)
+        # metrics_dict = {'mean_reward':mean_reward,'std_reward':std_reward}
         ####################################
-        #show agent's performance
-        obs = valid_env.reset() 
-        for i in range(self.hparams.timesteps_demo):        
-            action, _states = self.model.predict(obs, deterministic=True)
-            obs, reward, done, info = train_env.step(action)
-            train_env.render()
-            if done:
-                obs = train_env.reset()
 
     def fit(self, train_env: Environment, valid_env: Environment):
         if isinstance(train_env, PassiveEnvironment):
@@ -537,11 +552,11 @@ class EWC(Method, target_setting= IncrementalSetting):
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         """ Get a batch of predictions (aka actions) for these observations. """ 
         with torch.no_grad():
-            logits = self.model(observations)
-        # Get the predicted classes
-        y_pred = logits.argmax(dim=-1)
-        return self.target_setting.Actions(y_pred)
-        
+            action = self.model.get_action(observations)
+        print(action)
+        print(observations[0])
+        return self.target_setting.Actions(action)
+
 def demo():
     from simple_parsing import ArgumentParser
     parser = ArgumentParser(description=__doc__)
@@ -549,9 +564,21 @@ def demo():
     args = parser.parse_args()
     hparams: EWC.HParams = args.hparams
     method = EWC(hparams=hparams)
-    setting = ClassIncrementalRLSetting(dataset="cartpole", nb_tasks=5)
+    
+    # task_schedule = {
+    #     0:      {"gravity": 10, "length": 0.2},
+    #     1000:   {"gravity": 100, "length": 1.2},
+    #     2000:   {"gravity": 10, "length": 0.2},
+    # }
+    # setting = TaskIncrementalRLSetting(
+    #     dataset="CartPole-v1",
+    #     observe_state_directly=True,
+    #     max_steps=2000,
+    #     train_task_schedule=task_schedule,
+    # )
+     
     #setting = ClassIncrementalSetting(dataset="mnist", nb_tasks=5)
+    setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
     setting.apply(method)
-
 if __name__ == "__main__":
     demo()
