@@ -15,7 +15,7 @@ from gym import spaces
 from utils.logging_utils import get_logger
 
 from .multi_task_environment import MultiTaskEnvironment
-from .sparse_space import Sparse
+from common.spaces.sparse import Sparse
 logger = get_logger(__file__)
 
 

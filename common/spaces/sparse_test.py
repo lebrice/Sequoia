@@ -1,4 +1,4 @@
-from .sparse_space import Sparse
+from .sparse import Sparse
 from typing import Iterable
 
 import gym
@@ -144,7 +144,7 @@ from gym.spaces.utils import flatten_space, flatdim, flatten
 
 def test_change_persists_after_import():
     from gym.vector.utils import concatenate
-    from .sparse_space import Sparse
+    from .sparse import Sparse
     assert hasattr(gym.vector.utils.concatenate, "registry")
     assert hasattr(gym.vector.utils.batch_space, "registry")
 

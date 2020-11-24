@@ -6,12 +6,13 @@ from gym import spaces
 from torch import Tensor
 
 from common import Batch, batch
-from common.gym_wrappers import IterableWrapper, Sparse, TransformObservation
+from common.gym_wrappers import IterableWrapper, TransformObservation
 from common.gym_wrappers.batch_env import VectorEnv
 from common.gym_wrappers.transform_wrappers import (TransformAction,
                                                     TransformObservation,
                                                     TransformReward)
 from common.gym_wrappers.utils import has_wrapper
+from common.spaces import Sparse
 from settings.base import Environment
 from settings.base.objects import (Actions, ActionType, Observations,
                                    ObservationType, Rewards, RewardType)

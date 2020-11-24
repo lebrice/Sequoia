@@ -22,7 +22,6 @@ from common.gym_wrappers import (MultiTaskEnvironment, SmoothTransitions,
 from common.gym_wrappers.batch_env import BatchedVectorEnv, SyncVectorEnv, VectorEnv
 from common.gym_wrappers.env_dataset import EnvDataset
 from common.gym_wrappers.pixel_observation import PixelObservationWrapper
-from common.gym_wrappers.sparse_space import Sparse
 from common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
 from common.gym_wrappers.utils import (IterableWrapper,
                                        is_classic_control_env,
@@ -31,6 +30,7 @@ from common.gym_wrappers.utils import (IterableWrapper,
                                        classic_control_env_prefixes, 
                                        has_wrapper)
 from common.metrics import RegressionMetrics
+from common.spaces import Sparse
 from common.transforms import Transforms
 from settings.active import ActiveSetting
 from settings.assumptions.incremental import (IncrementalSetting,

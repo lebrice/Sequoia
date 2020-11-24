@@ -48,7 +48,7 @@ from tqdm import tqdm
 from common import ClassificationMetrics, Metrics, get_metrics
 from common.config import Config
 from common.loss import Loss
-from common.gym_wrappers import Sparse
+from common.spaces import Sparse
 from common.transforms import Transforms, SplitBatch, Compose
 from settings.base import Method, Results, ObservationType, RewardType
 from utils import dict_union, get_logger, constant, mean, take

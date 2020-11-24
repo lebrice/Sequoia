@@ -5,8 +5,8 @@ import pytest
 import numpy as np
 from gym import spaces
 
-from common.gym_wrappers.sparse_space import Sparse
 from common.config import Config
+from common.spaces import Sparse
 from common.transforms import ChannelsFirstIfNeeded, ToTensor, Transforms
 from conftest import xfail_param
 from utils.utils import take

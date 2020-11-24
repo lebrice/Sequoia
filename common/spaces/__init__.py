@@ -1,1 +1,1 @@
-from .sparse_space import Sparse
+from .sparse import Sparse

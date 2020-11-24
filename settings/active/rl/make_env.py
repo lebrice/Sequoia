@@ -10,9 +10,9 @@ from gym import Wrapper
 from gym.envs.classic_control import CartPoleEnv
 from gym.vector import VectorEnv
 from utils.logging_utils import get_logger
-from common.gym_wrappers.sparse_space import Sparse
 from common.gym_wrappers.batch_env import AsyncVectorEnv, BatchedVectorEnv, SyncVectorEnv
 from common.gym_wrappers import ConvertToFromTensors
+from common.spaces import Sparse
 logger = get_logger(__file__)
 
 W = TypeVar("W", bound=Union[gym.Env, gym.Wrapper])
