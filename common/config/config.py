@@ -26,15 +26,16 @@ from .wandb_config import WandbLoggerConfig
 class Config(Serializable, Parseable):
     """ Configuration options for an experiment.
 
-    Contains all the command-line arguments for things that aren't supposed
-    to be hyperparameters, but still determine how and experiment takes
-    place. For instance, things like wether or not CUDA is used, or where
-    the log directory is, etc.
-
-    Extend this class whenever you want to add some command-line arguments
-    for your experiment.
+    TODO: This should contain configuration options that are not specific to
+    either the Setting or the Method, or common to both. For instance, the
+    random seed, or the log directory, wether CUDA is to be used, etc.
     """
-    data_dir: Path = Path("data")
+    
+    # Directory containing the datasets.
+    data_dir: Path = Path("data")    
+    # Directory containing the results of an experiment.
+    log_dir: Path = Path("results")
+    
     # Run in Debug mode: no wandb logging, extra output.
     debug: bool = flag(False)
     # Enables more verbose logging.

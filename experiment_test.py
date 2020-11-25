@@ -3,6 +3,7 @@
 
 import shlex
 import sys
+from pathlib import Path
 from typing import Optional, Type
 
 import pytest
@@ -58,44 +59,48 @@ def setting_type(request, monkeypatch, set_argv_for_debug):
     return setting_class
 
 
-@pytest.mark.parametrize("use_method_name", [False, True])
-@pytest.mark.parametrize("use_setting_name", [False, True])
-def test_combination_of_string_or_type(method_type: Optional[Type[Method]],
-                                       use_method_name: bool,
-                                       setting_type: Optional[Type[Setting]],
-                                       use_setting_name: bool):
-    
-    method = method_type.get_name() if use_method_name else method_type
-    setting = setting_type.get_name() if use_setting_name else setting_type
-    
-    experiment = Experiment(method=method, setting=setting)
+def test_experiment_from_args(method_type: Optional[Type[Method]],
+                              setting_type: Optional[Type[Setting]]):
+    """ Test that when parsing the 'Experiment' from the command-line, the
+    `setting` and `method` fields get set to the classes corresponding to their
+    names.
+    """
+    method = method_type.get_name()
+    setting = setting_type.get_name()
     if not method_type.is_applicable(setting_type):
         pytest.skip(msg=f"Skipping test since Method {method_type} isn't applicable on settings of type {setting_type}.")
-    all_results = experiment.launch("--debug --fast_dev_run --batch-size 1")
+    experiment = Experiment.from_args(f"--setting {setting} --method {method}")
+    assert experiment.method is method_type
+    assert experiment.setting is setting_type
+    
+
+def test_launch_experiment_with_constructor(method_type: Optional[Type[Method]],
+                                            setting_type: Optional[Type[Setting]]):
+    if not method_type.is_applicable(setting_type):
+        pytest.skip(msg=f"Skipping test since Method {method_type} isn't applicable on settings of type {setting_type}.")
+    experiment = Experiment(method=method_type, setting=setting_type)
+    all_results = experiment.launch("--debug --fast_dev_run --batch_size 1")
     assert all_results == (method_type, setting_type)
 
 
-
-@slow
-@pytest.mark.parametrize("use_method_name", [False, True])
-def test_none_setting(method_type: Optional[Type[Method]],
-                      use_method_name: bool):
-    method = method_type.get_name() if use_method_name else method_type
-    experiment = Experiment(method=method, setting=None)
-    all_results = experiment.launch("--debug --fast_dev_run --batch-size 1")
-    for setting_type in method_type.get_applicable_settings():
-        result = all_results[setting_type]
+def test_none_setting(method_type: Optional[Type[Method]], tmp_path: Path):
+    """ Test that leaving the Setting unset runs on all applicable setting. """ 
+    method = method_type.get_name()
+    all_results = Experiment.main(f"--method {method} --debug --fast_dev_run "
+                                  f"--log_dir {tmp_path}")
+    for setting_type in method_type.get_applicable_settings():        
+        result = all_results[(setting_type, method_type)]
         assert result == (method_type, setting_type)
 
 
-@pytest.mark.parametrize("use_setting_name", [False, True])
-def test_none_method(setting_type: Optional[Type[Setting]],
-                     use_setting_name: bool):
-    setting = setting_type.get_name() if use_setting_name else setting_type
-    experiment = Experiment(method=None, setting=setting)
-    all_results = experiment.launch("--debug --fast_dev_run --batch-size 1")
+def test_none_method(setting_type: Optional[Type[Setting]]):
+    """ Test that leaving the method unset runs all applicable methods on the
+    setting.
+    """ 
+    setting = setting_type.get_name()
+    all_results = Experiment.main(f"--setting {setting} --debug --fast_dev_run --batch-size 1")
     for method_type in setting_type.get_applicable_methods():
-        result = all_results[method_type]
+        result = all_results[(setting_type, method_type)]
         assert result == (method_type, setting_type)
 
     # assert all_results == {
