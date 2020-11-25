@@ -24,9 +24,9 @@ def get_dict_slice(value: Dict[K, V], indices: Sequence[int]) -> Dict[K, V]:
 
 @get_slice.register(tuple)
 def get_tuple_slice(value: Tuple[T, ...], indices: Sequence[int]) -> Tuple[T, ...]:
-    return type(value)(
+    return type(value)([
         get_slice(v, indices) for v in value
-    )
+    ])
 
 
 @singledispatch

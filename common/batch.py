@@ -18,7 +18,7 @@ import torch
 from gym import spaces
 from torch import Tensor
 
-
+from utils.slicing import get_slice, set_slice
 Item = TypeVar("Item", bound=collections_abc.Sized)
 
 
@@ -369,6 +369,21 @@ class Batch(ABC):
             f"into a Batch object of type {cls}!"
         )
         # return cls(inputs)
+
+
+@get_slice.register(Batch)
+def get_tuple_slice(value: Batch, indices: Sequence[int]) -> Batch:
+    return type(value).from_inputs([
+        get_slice(v, indices) for v in value
+    ])
+
+
+@set_slice.register(Batch)
+def set_tuple_slice(target: Batch, indices: Sequence[int], values: Tuple[T, ...]) -> None:
+    assert isinstance(values, tuple)
+    assert len(target) == len(values)
+    for target_item, values_item in zip(target, values):
+        set_slice(target_item, indices, values_item)
 
 
 if __name__ == "__main__":
