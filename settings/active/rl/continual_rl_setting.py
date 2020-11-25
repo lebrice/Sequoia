@@ -282,6 +282,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # Run the Test loop (which is defined in IncrementalSetting).
         results: RlResults = self.test_loop(method)
         logger.info("Results summary:")
+        logger.info(results.to_log_dict())
         logger.info(results.summary())
         method.receive_results(self, results=results)
         return results
@@ -681,9 +682,13 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         rewards = self.get_episode_rewards()
         lengths = self.get_episode_lengths()
         total_steps = self.get_total_steps()
-        
-        assert has_wrapper(self.env, MultiTaskEnvironment), self.env
-        task_steps = sorted(self.task_schedule.keys())
+        task_schedule: Dict[int, Dict] = {}
+        if isinstance(self.env.unwrapped, VectorEnv):
+            task_schedule = self.env.unwrapped[0].task_schedule
+        else:
+            assert has_wrapper(self.env, MultiTaskEnvironment), self.env
+            task_schedule = self.env.task_schedule
+        task_steps = sorted(task_schedule.keys())
         
         assert 0 in task_steps
         import bisect

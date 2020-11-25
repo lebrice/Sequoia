@@ -270,9 +270,8 @@ class Method(Generic[SettingType], Parseable, ABC):
         """
 
     @abstractmethod
-    def fit(self,
-            train_env: Environment[Observations, Actions, Rewards] = None,
-            valid_env: Environment[Observations, Actions, Rewards] = None):
+    def fit(self, train_env: Environment[Observations, Actions, Rewards],
+                  valid_env: Environment[Observations, Actions, Rewards]):
         """Called by the Setting to give the method data to train with.
 
         Might be called more than once before training is 'complete'.

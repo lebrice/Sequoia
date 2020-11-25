@@ -283,12 +283,17 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
     """ Wrapper around a 'test' environment, which limits the number of steps
     and keeps tracks of the performance.
     """
-    def __init__(self, env: gym.Env, directory: Path, step_limit: int = 1_000, no_rewards: bool = False, *args, **kwargs):
+    def __init__(self,
+                 env: gym.Env,
+                 directory: Path,
+                 step_limit: int = 1_000,
+                 no_rewards: bool = False,
+                 *args, **kwargs):
         super().__init__(env, directory, *args, **kwargs)
         self.step_limit = step_limit
         self.no_rewards = no_rewards
         self._closed = False
-    
+
     def is_closed(self):
         return self._closed
     

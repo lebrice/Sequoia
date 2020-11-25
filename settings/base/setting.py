@@ -117,6 +117,7 @@ class Setting(SettingABC,
     test_transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
 
     # Fraction of training data to use to create the validation set.
+    # (Only applicable in Passive settings.)
     val_fraction: float = 0.2
 
     # TODO: Add support for semi-supervised training.

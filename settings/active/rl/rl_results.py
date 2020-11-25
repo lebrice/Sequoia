@@ -1,4 +1,5 @@
 import json
+from io import StringIO
 from dataclasses import dataclass, field
 from typing import ClassVar, Dict, List
 
@@ -65,21 +66,30 @@ class RLResults(IncrementalSetting.Results, Results):
     @property
     def total_reward(self) -> float:
         return sum(map(sum, self.episode_rewards))
-
-    def summary(self):
-        tasks = []
+    
+    def to_log_dict(self) -> Dict:        
+        # TODO: Create a dict of useful things to log.
+        log_dict = {}
         for task in range(self.num_tasks):
             episodes = sum(self.episode_lengths[task])
-            log_dict = {
-                "Episodes": episodes,
+            task_log_dict = {
+                "Episodes": int(episodes),
                 "Total reward": float(sum(self.episode_rewards[task])),
                 "Mean reward": float(self.average_metrics_per_task[task].mse),
             }
+            mean_episode_length = 0
             if episodes:
-                log_dict["Mean episode length"] = float(np.mean(self.episode_lengths[task]))
-            print(f"Task {task}:", json.dumps(log_dict, indent="\t"))
-            tasks.append(log_dict)
-        return tasks
+                mean_episode_length = float(np.mean(self.episode_lengths[task]))
+            task_log_dict["Mean episode length"] = mean_episode_length
+            log_dict[str(task)] = task_log_dict
+        return log_dict
+
+    def summary(self):
+        s = StringIO()
+        for task, log_dict in self.to_log_dict().items():
+            print(f"Task {task}:", json.dumps(log_dict, indent="\t"), file=s)
+        s.seek(0)
+        return s.read()
 
     def make_plots(self):
         results = {
@@ -101,9 +111,3 @@ class RLResults(IncrementalSetting.Results, Results):
         axes.set_ylim(0, 1.0)
         autolabel(axes, rects)
         return figure
-
-    def to_log_dict(self) -> Dict[str, float]:
-        results = {}
-        results[self.objective_name] = self.objective
-        return results
-        # TODO: Create a dict of useful things to log.
