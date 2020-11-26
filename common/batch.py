@@ -370,7 +370,7 @@ class Batch(ABC):
         )
         # return cls(inputs)
 
-
+T = TypeVar("T")
 @get_slice.register(Batch)
 def get_tuple_slice(value: Batch, indices: Sequence[int]) -> Batch:
     return type(value).from_inputs([
@@ -380,8 +380,6 @@ def get_tuple_slice(value: Batch, indices: Sequence[int]) -> Batch:
 
 @set_slice.register(Batch)
 def set_tuple_slice(target: Batch, indices: Sequence[int], values: Tuple[T, ...]) -> None:
-    assert isinstance(values, tuple)
-    assert len(target) == len(values)
     for target_item, values_item in zip(target, values):
         set_slice(target_item, indices, values_item)
 
