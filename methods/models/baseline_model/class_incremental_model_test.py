@@ -41,12 +41,10 @@ class MockOutputHead(OutputHead):
     def forward(self, observations, representations) -> Tensor:  # type: ignore
         x: Tensor = observations.x
         h_x = representations
-        # TODO: We should maybe convert this to also return a dict instead
-        # of a Tensor, just to be consistent with everything else. This could
-        # also maybe help with having multiple different output heads, each
-        # having a different name and giving back a dictionary of their own
-        # forward pass tensors (if needed) and predictions?
-        actions = torch.stack([x_i.mean() * self.task_id for x_i in x])
+        # actions = torch.stack([h_i.mean() * self.task_id for h_i in h_z])
+        # actions = torch.stack([x_i.mean() * self.task_id for x_i in x])
+        actions = [x_i.mean() * self.task_id  for x_i in x]
+        actions = torch.stack(actions)
         return self.Actions(actions)
 # def mock_output_task(self: ClassIncrementalModel, x: Tensor, h_x: Tensor) -> Tensor:
 #     return self.output_head(x)
@@ -99,21 +97,23 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
     
     xs, ys, ts = map(torch.cat, zip(*mixed_samples.values()))
     
+    xs = xs[indices]
+    ys = ys[indices]
+    ts = ts[indices].int()
     
-    images = xs[indices]
-    labels = ys[indices]
-    task_ids = ts[indices].int()
-    
-    obs = setting.Observations(x=images, task_labels=task_ids)
-    # assert False, obs
+    obs = setting.Observations(x=xs, task_labels=ts)
     with torch.no_grad():
         forward_pass = model(obs)
         y_preds = forward_pass["y_pred"]
+
+    assert y_preds.shape == ts.shape
+    assert torch.all(y_preds == ts * xs.view([xs.shape[0], -1]).mean(1))
     
-    for x, y_pred, task_id in zip(xs, y_preds, task_ids):
-        # print(y_pred)
-        # print(x.mean() * task_id)
-        assert y_pred == x.mean() * task_id 
+    # Test that the output head predictions make sense:
+    # print(ts)
+    # for x, y_pred, task_id in zip(xs, y_preds, ts):
+    #     assert y_pred.tolist() == (x.mean() * task_id).tolist()
+        # assert y_pred.tolist() == (x.mean() * task_id).tolist() 
     
     # assert False, y_preds[0]
     

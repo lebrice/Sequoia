@@ -16,6 +16,7 @@ from settings.assumptions.incremental import IncrementalSetting
 
 from utils import dict_intersection, zip_dicts, prod
 from utils.logging_utils import get_logger
+from utils.slicing import get_slice, set_slice
 
 # from .semi_supervised_model import SemiSupervisedModel
 from .base_model import BaseModel
@@ -132,7 +133,6 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             task_labels = [int(label) if label != None else None for label in task_labels]
             unique_task_labels = list(set(task_labels))
 
-
         if len(unique_task_labels) == 1:
             # If everything is in the same task, no need to split/merge.
             task_id = unique_task_labels[0]
@@ -142,10 +142,9 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         batch_size = observations.batch_size
 
         # The 'merged' forward pass result dict.
-        merged_results: Dict = {}
+        merged_forward_pass: Dict = {}
         
-        logger.debug(f"Mix of tasks: ")
-        # TODO: Write tests to check that this works.
+        logger.debug(f"Batch contains a mix of tasks!")
         
         all_task_indices: Dict[Any, Tensor] = {}
         
@@ -166,59 +165,35 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             for task_id, task_indices in all_task_indices.items()
         }
         logger.debug(f"Fraction of tasks in the batch: {fraction_of_batch}")
+
         # Split off the input batch, do a forward pass for each sub-task.
         # (could be done in parallel but whatever.)
         # TODO: Also, not sure if this will play well with DP, DDP, etc.
         for task_id, task_indices in all_task_indices.items():
-            # TODO: Maybe Use -1 instead of 'None' and always index into
-            # `self.output_heads`?
+            # # Make a partial observation without the task labels, so that
+            # # super().forward will use the current output head.
+            partial_observation = get_slice(observations, task_indices)
+
+            logger.debug(
+                f"Doing partial forward for "
+                f"{len(task_indices)/batch_size:.0%} of the batch which "
+                f"has task_id of '{task_id}'."
+            )
+            
             with self.temporarily_in_task(task_id):
-                logger.debug(
-                    f"Doing partial forward for "
-                    f"{len(task_indices)/batch_size:.0%} of the batch which "
-                    f"has task_id of '{task_id}'.")
-
-                # Make a partial observation without the task labels, so that
-                # super().forward will use the current output head.
-                tensor_slices = {
-                    name: torch.as_tensor(tensor[task_indices], device=self.device)
-                    for name, tensor in observations.items()
-                    if name != "task_labels"
-                }
-                partial_observation = self.Observations(**tensor_slices)
                 task_forward_pass = super().forward(partial_observation)
+                # print(f"forward pass of task {task_id}: {task_forward_pass}")
 
-            if not merged_results:
-                # Create the merged results: a dict with empty tensors based on
-                # the shape of the first results we get.
-                for name, partial_result in task_forward_pass.items():
-                    if isinstance(partial_result, Tensor):
-                        placeholder = partial_result.new_empty([batch_size, *partial_result.shape[1:]])
-                    else:
-                        placeholder_tensors = {
-                            name: value.new_empty([batch_size, *value.shape[1:]])
-                            for name, value in partial_result.items()
-                            if isinstance(value, Tensor)
-                        }
-                        placeholder = type(partial_result)(**placeholder_tensors)
-                    merged_results[name] = placeholder
+            if not merged_forward_pass:
+                # Create the merged results, filled with empty tensors, based on
+                # the shape of the first results we get, but with the right
+                # batch size.
+                merged_forward_pass = create_placeholder(task_forward_pass, batch_size)
 
-            # Merge the results from each task by setting at the right indices
-            # in the placeholder tensors. 
-            for name, (full_result, partial_result) in dict_intersection(merged_results, task_forward_pass):
-                if isinstance(full_result, Tensor):
-                    full_result[task_indices] = partial_result
-                else:
-                    for name, (full_tensor, partial_tensor) in dict_intersection(full_result, partial_result):
-                        if full_tensor is None:
-                            assert partial_tensor is None
-                        else:    
-                            assert isinstance(full_tensor, Tensor)
-                            assert isinstance(partial_tensor, Tensor)
-                            full_tensor[task_indices] = partial_tensor
-        # Return an object of the same type as the results from each task.
-        return type(task_forward_pass)(**merged_results)
-        return merged_results
+            # Set the partial results at the right indices in the placeholders. 
+            set_slice(merged_forward_pass, task_indices, task_forward_pass) 
+           
+        return merged_forward_pass
 
     @contextmanager
     def temporarily_in_task(self, task_id: Optional[int]):
@@ -290,60 +265,9 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         return self.setting.current_task_classes(self.training)
 
     def preprocess_batch(self, *batch) -> Tuple[Tensor, Optional[Tensor]]:
+        # TODO: Clean this up.
         assert False, batch
-        
-    #     # TODO: Sort this out a bit.
-    #     x, y, *extra_inputs = super().preprocess_batch(*batch)
-    #     task_labels: Optional[Tensor] = None
-    #     if len(extra_inputs) >= 1:
-    #         task_labels = extra_inputs[0]
-
-    #     if task_labels is None and y is not None:
-    #         # This basically checks if the labels in y have already been
-    #         # relabeled in the range [0-n_classes_per_task]. If they aren't,
-    #         # then raises an error.
-    #         current_task_id = self.setting.current_task_id
-    #         current_task_classes = self.setting.task_classes(current_task_id, self.training)
-    #         logger.debug(f"Current task id: {current_task_id}")
-    #         logger.debug(f"Classes in current task: {current_task_classes}")
-    #         n_classes_per_task = self.setting.n_classes_per_task
-    #         # y_unique are the (sorted) unique values found within the batch.
-    #         # idx[i] holds the index of the value at y[i] in y_unique, s.t. for
-    #         # all i in range(0, len(y)) --> y[i] == y_unique[idx[i]]
-    #         y_unique, idx = y.unique(sorted=True, return_inverse=True)
-
-            
-    #         if set(y_unique.tolist()) <= set(range(n_classes_per_task)):
-    #             # The images were already re-labeled by the continuum package.
-    #             return x, y
-    #         # TODO: This might not make sense anymore, given that I think the
-    #         # Continuum package already re-labels these for us. We could however
-    #         # just figure out which output head to use, if we stored the
-    #         # 'classes' that were assigned to each output head during training.
-    #         # (This might be similar to the "labels trick" from
-    #         # https://arxiv.org/abs/1803.10123)
-    #         elif not (set(y_unique.tolist()) <= set(current_task_classes)):
-    #             raise RuntimeError(
-    #                 f"There are labels in the batch that aren't part of the "
-    #                 f"current task! (current task: "
-    #                 f"{current_task_id}), Current task classes: "
-    #                 f"{current_task_classes}, batch labels: {y_unique})"
-    #             )
-    #         else:
-    #             # Relabel the images manually, which really sucks!
-    #             y = self.relabel(y, current_task_classes)
-    #     return x, y
-
-    # def relabel(self, y: Tensor, current_task_classes: List[int]) -> Tensor:
-    #     # Re-label the given batch so the losses/metrics work correctly.
-    #     # Example: if the current task classes is [2, 3] then relabel that
-    #     # those examples as [0, 1].
-    #     # TODO: Double-check that that this is what is usually done in CL.
-    #     new_y = torch.empty_like(y)
-    #     for i, label in enumerate(current_task_classes):
-    #         new_y[y == label] = i
-    #     return new_y
-
+   
     def load_state_dict(self, state_dict: Union[Dict[str, Tensor], Dict[str, Tensor]],
                         strict: bool = True):
         if self.hp.multihead:
@@ -373,3 +297,45 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             logger.debug(f"Missing keys: {missing_keys}, unexpected keys: {unexpected_keys}")
         
         return missing_keys, unexpected_keys
+
+from functools import singledispatch
+from typing import Any, Tuple, Dict, TypeVar
+from utils.utils import NamedTuple
+K = TypeVar("K")
+V = TypeVar("V")
+T = TypeVar("T")
+
+
+@singledispatch
+def create_placeholder(original: Any, batch_size: int) -> Any:
+    raise NotImplementedError(original)
+
+
+@create_placeholder.register(Tensor)
+def _create_placeholder_tensor(original: Tensor, batch_size: int) -> Tensor:
+    return original.new_empty([batch_size, *original.shape[1:]])
+
+
+@create_placeholder.register(dict)
+def _create_placeholder_dict(original: Dict[K, V], batch_size: int) -> Dict[K, V]:
+    return type(original)(
+        (key, create_placeholder(value, batch_size))
+        for key, value in original.items()    
+    )
+
+
+@create_placeholder.register(dict)
+def _create_placeholder_tuple(original: Tuple[T], batch_size: int) -> Tuple[T]:
+    return type(original)(
+        create_placeholder(value, batch_size)
+        for value in original    
+    )
+
+
+@create_placeholder.register(Batch)
+@create_placeholder.register(NamedTuple)
+def _create_placeholder_tuple(original: Tuple[T], batch_size: int) -> Tuple[T]:
+    return type(original)(*[
+        create_placeholder(value, batch_size)
+        for value in original    
+    ])
