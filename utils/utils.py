@@ -21,7 +21,7 @@ import numpy as np
 import torch
 from simple_parsing import field
 from torch import Tensor, cuda, nn
-
+from .namedtuple_patch import NamedTuple, is_namedtuple, is_namedtuple_type
 cuda_available = cuda.is_available()
 gpus_available = cuda.device_count()
 
@@ -280,13 +280,16 @@ def camel_case(name):
         s2 = s2.replace("__", "_")
     return s2
 
+
 def constant(v: T, **kwargs) -> T:
     metadata = kwargs.setdefault("metadata", {})
     metadata["constant"] = v
     return field(default=v, init=False, **kwargs)
 
+
 def flag(default: bool, *args, **kwargs):
     return field(default=default, nargs=1, *args, **kwargs)
+
 
 def dict_union(*dicts: Dict[K, V], recurse: bool=True, dict_factory=dict) -> Dict[K, V]:
     """ Simple dict union until we use python 3.9
@@ -400,13 +403,14 @@ def remove_prefix(s: str, prefix: str) -> str:
     if not s.startswith(prefix):
         return s
     return s[len(prefix):]
-    
+
 
 def get_all_subclasses_of(cls: Type[T]) -> Iterable[Type[T]]:
     scope_dict: Dict = globals()
     for name, var in scope_dict.items():
         if isclass(var) and issubclass(var, cls):
             yield var
+
 
 def get_all_concrete_subclasses_of(cls: Type[T]) -> Iterable[Type[T]]:
     yield from filterfalse(inspect.isabstract, get_all_subclasses_of(cls))
