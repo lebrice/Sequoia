@@ -1,47 +1,44 @@
 # Imports:
-from dataclasses import dataclass
-from argparse import ArgumentParser, Namespace
-from typing import Dict, Tuple, Type, Optional
 import sys
+import warnings
+from argparse import Namespace
+from dataclasses import dataclass
+from typing import Dict, Optional, Tuple, Type, Union
 
-from simple_parsing.helpers.serialization.encoding import encode
-from torch.cuda import device
-sys.path.extend([".", ".."])
 import gym
 import torch
-import warnings
-from gym import spaces 
-from settings import Method
-from torch import Tensor, nn 
 import torch.nn.functional as F
-from simple_parsing import choice
-from settings import Setting
-from methods import register_method
-from settings.base import Environment
-from torch.utils.data import TensorDataset, DataLoader
+from gym import spaces
+from nngeometry.generator.jacobian import Jacobian
+from nngeometry.layercollection import LayerCollection
+from nngeometry.object.pspace import (PMatAbstract, PMatBlockDiag, PMatDiag,
+                                      PVector)
+from simple_parsing import ArgumentParser, choice
+from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.type_aliases import GymEnv
+from stable_baselines3.dqn import DQN, MlpPolicy
+from stable_baselines3.dqn.policies import DQNPolicy
+from torch import Tensor, nn
+from torch.cuda import device
+from torch.utils.data import DataLoader, TensorDataset
 
+sys.path.extend([".", ".."])
+# Repo imports:
+from settings import Method, Setting
+from settings.active import ActiveEnvironment, ActiveSetting
+from settings.active.rl import (ClassIncrementalRLSetting, ContinualRLSetting,
+                                RLSetting, TaskIncrementalRLSetting)
+from settings.active.rl.wrappers import (NoTypedObjectsWrapper,
+                                         RemoveTaskLabelsWrapper)
 from settings.assumptions.incremental import IncrementalSetting
+from settings.base import Environment
 from settings.passive import PassiveEnvironment, PassiveSetting
-from settings.passive.cl.task_incremental import TaskIncrementalSetting 
-from settings.passive.cl.class_incremental_setting import ClassIncrementalSetting
+from settings.passive.cl import ClassIncrementalSetting, TaskIncrementalSetting
 from settings.passive.cl.objects import (Actions, Observations,
                                          PassiveEnvironment, Results, Rewards)
-from settings.active.rl.class_incremental_rl_setting import ClassIncrementalRLSetting
-from settings.active import ActiveEnvironment, ActiveSetting
-from settings.active.rl.wrappers import RemoveTaskLabelsWrapper, NoTypedObjectsWrapper
 
-from utils.nngeometry.nngeometry.object import (PVector, PMatDiag, PMatBlockDiag)
-from torch.nn.functional import softmax
-from utils.nngeometry.nngeometry.generator.jacobian import Jacobian 
-from utils.nngeometry.nngeometry.layercollection import LayerCollection
+from methods import register_method
 
-from stable_baselines3 import DQN     
-from stable_baselines3.dqn import MlpPolicy  
-from stable_baselines3.common.type_aliases import GymEnv 
-from stable_baselines3.common.evaluation import evaluate_policy
-
-from settings import (ClassIncrementalRLSetting, ContinualRLSetting, RLSetting,
-                      TaskIncrementalRLSetting)
 
 #copied from https://github.com/tfjgeorge/nngeometry
 def FIM(model,
@@ -109,9 +106,8 @@ def FIM(model,
             probs = torch.exp(log_probs).detach()
             return (log_probs * probs**.5)
 
-
     else:
-        raise NotImplementedError
+        raise NotImplementedError(variant)
 
     generator = Jacobian(layer_collection=layer_collection,
                          model=model,
@@ -120,14 +116,23 @@ def FIM(model,
                          n_output=n_output)
     return representation(generator)
 
+
 class DQN_EWC(DQN):
-    def __init__(self, fim_representation, ewc_coefficient:float, total_timesteps_fim:int, *args, **kwargs) -> None:    
-        super(DQN_EWC, self).__init__(verbose=1, _init_setup_model=False, env=None, *args, **kwargs)
+    def __init__(self,
+                 policy: Union[str, Type[DQNPolicy]],
+                 env: Union[GymEnv, str],
+                 fim_representation: Type[PMatAbstract],
+                 ewc_coefficient: float,
+                 total_timesteps_fim: int,
+                 verbose: int = 0,
+                 _init_setup_model=False,
+                 *args, **kwargs) -> None:
+        super().__init__(policy, None, verbose=1, _init_setup_model=False, *args, **kwargs)
 
         ########################################
         ######### EWC specific things ##########
         self.FisherMatrix: Jacobian = None
-        self.FIM_representation = fim_representation       
+        self.FIM_representation = fim_representation
         self.ewc_coefficient: float = ewc_coefficient
         self.last_task_train_env:ActiveEnvironment = None
 
@@ -219,14 +224,14 @@ class DQN_EWC(DQN):
         if self.previous_model_weights is None:
             # We're in the first task: do nothing.
             return 0.
-        
+
         v_current = PVector.from_model(self.q_net)      
         regularizer = self.FIM.vTMv(v_current - self.previous_model_weights)
         return regularizer
-    
-    def forward(self,observation:Observations):
+
+    def forward(self,observation: Observations):
         return self.q_net(observation)
-    
+
     def get_action(self, observations: Observations, task_id: int = None):
         #TODO: multihead DQN that would make use of task id
         observation = observations[0]
@@ -234,19 +239,19 @@ class DQN_EWC(DQN):
         action, _ = self.predict(observation, deterministic=True)
         return action
 
-class Supervised_EWC(nn.Module):
 
+class Supervised_EWC(nn.Module):
     def __init__(self,
                  nb_tasks: int, 
                  learning_rate: float,
                  observation_space: gym.Space,
                  action_space: gym.Space,
                  reward_space: gym.Space,
-                 fim_representation, 
+                 fim_representation: Type[PMatAbstract],
                  ewc_coefficient: float,
                  max_epochs: int,
                  multihead: bool,
-                 device):
+                 device: Union[str, torch.device]):
         super().__init__()
         image_shape = observation_space[0].shape
         assert image_shape == (3, 28, 28)
@@ -258,7 +263,6 @@ class Supervised_EWC(nn.Module):
         image_channels = image_shape[0]
 
         self.multihead = multihead        
-        self._previous_task_id: Optional[int] = None  
         self._previous_task_id: Optional[int] = None
         
         self.encoder = nn.Sequential(
@@ -277,6 +281,7 @@ class Supervised_EWC(nn.Module):
             nn.ReLU(),
             nn.Linear(84, self.n_classes),
         )
+        # TODO: Would we need to deepcopy `self.classifier` here?
         self.classifiers = nn.ModuleList([self.classifier for _ in range(nb_tasks)]) if self.multihead else self.classifier
         self.loss = nn.CrossEntropyLoss()
 
@@ -287,9 +292,9 @@ class Supervised_EWC(nn.Module):
         ########################################
         ######### EWC specific things ##########
         self.FisherMatrix: Jacobian = None
-        self.FIM_representation = fim_representation        
+        self.FIM_representation = fim_representation
         self.ewc_coefficient = ewc_coefficient
-        self.last_task_train_env:PassiveEnvironment = None
+        self.last_task_train_env: PassiveEnvironment = None
 
         self.device = device
         self.previous_model_weights = None
@@ -297,39 +302,37 @@ class Supervised_EWC(nn.Module):
         self._previous_task_id: int = 0
         ########################################
 
-    def forward(self, observations: (Observations, Tensor)) -> Tensor:
-        if self.multihead:
-            if isinstance(observations, Observations):
-                x = observations.x
-                task_labels = observations.task_labels    
-                task_labels_unique = torch.unique(task_labels)
-            elif isinstance(observations, Tensor):
-                # this path should be used when calculating FIM
-                x = observations
-                task_label = [self._previous_task_id] if self._previous_task_id is not None else [0]
-                features = self.encoder(x)
-                logits = self.classifiers[task_label[0]](features)
-                return torch.log_softmax(logits, dim=1)
-            else:
-                raise NotImplementedError
-
-            features = self.encoder(x)
-            if len(task_labels_unique)==1:
-                logits = self.classifiers[task_labels_unique[0]](features)
-            else:
-                logits=[]
-                for i, label in enumerate(task_labels):
-                    logits.append(self.classifiers[label](features[i].unsqueeze(0)))
-                logits=torch.stack(logits).to(self.device)
-            return logits
-        else:
+    def forward(self, observations: Union[Observations, Tensor]) -> Tensor:
+        if not self.multihead:
             x = observations[0]
             features = self.encoder(x)
             logits = self.classifiers(features)
             return logits
 
-        
-        
+        if isinstance(observations, Observations):
+            x = observations.x
+            task_labels = observations.task_labels    
+            task_labels_unique = torch.unique(task_labels)
+        elif isinstance(observations, Tensor):
+            # this path should be used when calculating FIM
+            x = observations
+            task_label = [self._previous_task_id] if self._previous_task_id is not None else [0]
+            features = self.encoder(x)
+            logits = self.classifiers[task_label[0]](features)
+            return torch.log_softmax(logits, dim=1)
+        else:
+            raise NotImplementedError
+
+        features = self.encoder(x)
+        if len(task_labels_unique)==1:
+            logits = self.classifiers[task_labels_unique[0]](features)
+        else:
+            logits=[]
+            for i, label in enumerate(task_labels):
+                logits.append(self.classifiers[label](features[i].unsqueeze(0)))
+            logits=torch.stack(logits).to(self.device)
+        return logits
+
     def training_step(self, batch: Tuple[Observations, Rewards], *args, **kwargs):
         return self.shared_step(batch, *args, **kwargs)
 
@@ -353,42 +356,48 @@ class Supervised_EWC(nn.Module):
         metrics_dict = {"accuracy": accuracy}
         
         return loss, metrics_dict
-    
+
     def on_task_switch(self, new_task_id: Optional[int]):
-        if new_task_id>self._previous_task_id:
+        if new_task_id > self._previous_task_id:
             if self._previous_task_id is None and self._n_switches == 0:
                 print("Starting the first task, no EWC update.")
-                
+
             elif new_task_id is None or new_task_id != self._previous_task_id:
                 # NOTE: We also switch between unknown tasks.
                 print(f"Switching tasks: {self._previous_task_id} -> {new_task_id}: ")
                 print(f"Updating the EWC 'anchor' weights.")                
-                
+
                 self.previous_model_weights = PVector.from_model(self).clone().detach()
+                # TODO: (@lebrice) Fix the RemoveTaskLabels and NoTypedObjects
+                # Wrappers so that we could eventually do this, instead of
+                # re-creating a new dataloader using its dataset and batch size. 
+                # dataloader = self.last_task_train_env
+                # dataloader = RemoveTaskLabelsWrapper(dataloader)
+                # dataloader = NoTypedObjectsWrapper(dataloader)
                 dataloader = DataLoader(self.last_task_train_env.dataset,
-                                                            batch_size=self.last_task_train_env.batch_size)
+                                        batch_size=self.last_task_train_env.batch_size)
                 self.FIM = FIM(model=self,
-                            loader=dataloader,                 
-                            representation=self.FIM_representation,
-                            n_output=self.n_classes,
-                            variant='classif_logits',    
-                            device=self.device.type)
+                               loader=dataloader,                 
+                               representation=self.FIM_representation,
+                               n_output=self.n_classes,
+                               variant='classif_logits',    
+                               device=self.device.type)
                 self._previous_task_id = new_task_id
             
             self._n_switches += 1
     
-    def train_supervised(self, train_env: PassiveEnvironment, valid_env:PassiveEnvironment):
+    def train_supervised(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
         # configure() will have been called by the setting before we get here.
-        
-        #we save a reference the training environment of the current task to use it during task_switch of EWC 
+
+        # We save a reference the training environment of the current task to use
+        # it during task_switch of EWC
         self.last_task_train_env = train_env
         ####################################
-        import tqdm  
+        import tqdm
         from numpy import inf
         best_val_loss = inf
         best_epoch = 0
-        for epoch in range(self.max_epochs):               
-            # self.train_supervised(train_env, valid_env)
+        for epoch in range(self.max_epochs):
             # Training loop:
             self.train()
             with tqdm.tqdm(train_env) as train_pbar:
@@ -438,10 +447,10 @@ class Supervised_EWC(nn.Module):
         regularizer = self.FIM.vTMv(v_current - self.previous_model_weights)
         return regularizer
 
-    def get_action(self, observations):    
-            logits = self(observations)
-            y_pred = logits.argmax(dim=-1)
-            return y_pred
+    def get_action(self, observations: IncrementalSetting.Observations) -> IncrementalSetting.Actions:    
+        logits = self(observations)
+        y_pred = logits.argmax(dim=-1)
+        return y_pred
 
 @register_method
 class EWC(Method, target_setting=IncrementalSetting):  
@@ -482,16 +491,13 @@ class EWC(Method, target_setting=IncrementalSetting):
 
         #maximum number of epochs (supervised)
         max_epochs: int = 10
-
-        # #config.debug
-        # config.debug: bool = False
-
     
     def __init__(self, hparams: HParams):
         self.hparams: EWC.HParams = hparams
-
+        # Will be set in experiment.py if we don't already have one.
+        self.config: Config
         # We will create those when `configure` will be called, before training.
-        self.model = None       
+        self.model = None 
 
     @classmethod
     def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
@@ -507,19 +513,14 @@ class EWC(Method, target_setting=IncrementalSetting):
             the "root" level on the namespace.
         """
         prefix = f"{dest}." if dest else ""
-        parser.add_argument(f"--{prefix}learning_rate", type=float, default=0.01, help="learning rate")
-        parser.add_argument(f"--{prefix}FIM_representation", type=str, choices=['diagonal', 'block_diagonal'],  default='diagonal', help="maximum number of epochs (supervised)")
-        parser.add_argument(f"--{prefix}ewc_coefficient", type=int, default=10, help="Coeficient of EWC regularizer")
-        parser.add_argument(f"--{prefix}total_timesteps_train", type=int, default=200, help="number of timesteps for learning")
-        parser.add_argument(f"--{prefix}total_timesteps_fim", type=int, default=10000, help="number of timesteps for FIM calculation")
-        parser.add_argument(f"--{prefix}learning_starts", type=int, default=200, help="how many steps of the model to collect transitions for before learning starts (DQN)")
-        parser.add_argument(f"--{prefix}buffer_size", type=int, default=200, help="replay buffer size (DQN)")
-        parser.add_argument(f"--{prefix}max_epochs", type=int, default=10, help="maximum number of epochs (supervised)")
-    
+        # Adding the arguments for each field:
+        parser.add_arguments(cls.HParams, dest="hparams", prefix=prefix)
+
     @classmethod
     def from_argparse_args(cls, args: Namespace, dest: str = None):
         args = args if not dest else getattr(args, dest)
-        return cls(args)     
+        hparams: EWC.HParams = args.hparams
+        return cls(hparams=hparams)
 
     def configure(self, setting: Setting):
         """ Called before the method is applied on a setting (before training). 
@@ -527,7 +528,9 @@ class EWC(Method, target_setting=IncrementalSetting):
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
         """
-        FIM_representation = PMatDiag if self.hparams.FIM_representation=='diagonal' else PMatBlockDiag
+        FIM_representation: Type[PMatAbstract] = PMatBlockDiag
+        if self.hparams.FIM_representation == 'diagonal':
+            FIM_representation = PMatDiag
 
         if isinstance(setting, PassiveSetting):
             self.model = Supervised_EWC(
@@ -539,24 +542,26 @@ class EWC(Method, target_setting=IncrementalSetting):
                 fim_representation=FIM_representation,
                 ewc_coefficient=self.hparams.ewc_coefficient,
                 max_epochs = self.hparams.max_epochs if not self.config.debug else 1,
-                multihead=True if isinstance(setting,TaskIncrementalSetting) else False,
+                multihead=True if isinstance(setting, TaskIncrementalSetting) else False,
                 device=self.config.device
             ).to(self.config.device)
-        else:  
-            self.model = DQN_EWC(fim_representation=FIM_representation,
+        else:
+            self.model = DQN_EWC(
+                fim_representation=FIM_representation,
                 learning_rate=self.hparams.learning_rate,
                 ewc_coefficient=self.hparams.ewc_coefficient,
                 learning_starts = self.hparams.learning_starts if not self.config.debug else 0,
                 total_timesteps_fim=self.hparams.total_timesteps_fim if not self.config.debug else 100,
                 buffer_size = self.hparams.buffer_size if not self.config.debug else 100,
                 policy=MlpPolicy,
-                device=self.config.device)
+                device=self.config.device,
+            )
          
     def train_supervised(self, train_env: PassiveEnvironment, valid_env:PassiveEnvironment):
         return self.model.train_supervised(train_env, valid_env)
 
     def train_rl(self, train_env: ActiveEnvironment, valid_env:ActiveEnvironment):
-        self.last_task_train_env = train_env  
+        self.last_task_train_env = train_env
         train_env = RemoveTaskLabelsWrapper(train_env)
         train_env = NoTypedObjectsWrapper(train_env)
         valid_env = RemoveTaskLabelsWrapper(valid_env)
@@ -570,7 +575,7 @@ class EWC(Method, target_setting=IncrementalSetting):
         # set the new environment and learn from it
         self.model.set_env(train_env)
         if self.model.policy is None:
-            self.model._setup_model()    
+            self.model._setup_model()
         self.model.learn(total_timesteps=self.hparams.total_timesteps_train if not self.config.debug else 100)
         ####################################
         #evaluate 
@@ -596,11 +601,21 @@ class EWC(Method, target_setting=IncrementalSetting):
 
 def demo():
     from simple_parsing import ArgumentParser
+
+    # Adding arguments for each group directly:
     parser = ArgumentParser(description=__doc__)
     parser.add_arguments(EWC.HParams, dest="hparams")
     args = parser.parse_args()
     hparams: EWC.HParams = args.hparams
     method = EWC(hparams=hparams)
+
+    # Or:
+    parser = ArgumentParser(description=__doc__)
+    # Add the arguments:
+    EWC.add_argparse_args(parser)    
+    args = parser.parse_args()
+    # Create the method using the parsed values.
+    method: EWC = EWC.from_argparse_args(args)
     
     # task_schedule = {
     #     0:      {"gravity": 10, "length": 0.2},
@@ -613,9 +628,11 @@ def demo():
     #     max_steps=2000,
     #     train_task_schedule=task_schedule,
     # )
-     
+
     #setting = ClassIncrementalSetting(dataset="mnist", nb_tasks=5)
     setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
-    setting.apply(method)
+    results = setting.apply(method)
+    print(results.summary())
+
 if __name__ == "__main__":
     demo()
