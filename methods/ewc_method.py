@@ -40,6 +40,155 @@ from settings.passive.cl.objects import (Actions, Observations,
 from methods import register_method
 
 
+@register_method
+class EWC(Method, target_setting=IncrementalSetting):  
+    """ Minimal example of a Method targetting the Class-Incremental CL setting.
+    
+    For a quick intro to dataclasses, see examples/dataclasses_example.py    
+    """
+
+    @dataclass
+    class HParams:     
+        """ Hyper-parameters of the demo model. """
+        # Learning rate of the optimizer.
+        learning_rate: float = 0.001
+            
+        # Fisher information type   
+        FIM_representation: str = choice('diagonal', 'block_diagonal', default='diagonal')
+            
+        # Coeficient of EWC regularizer
+        ewc_coefficient: float = 100   
+
+        #number of timesteps for learning
+        total_timesteps_train: int = 5000
+
+        # #number of episodes for evaluation
+        # n_eval_episodes: int = 10
+
+        #number of timesteps for FIM calculation
+        total_timesteps_fim: int = 10000
+        
+        # #number of timesteps for demonstration of agents performance
+        # timesteps_demo: int = 100
+
+        #how many steps of the model to collect transitions for before learning starts (DQN)
+        learning_starts: int = 50000
+
+        #replay buffer size (DQN)
+        buffer_size: int = 1000
+
+        #maximum number of epochs (supervised)
+        max_epochs: int = 10
+    
+    def __init__(self, hparams: HParams):
+        self.hparams: EWC.HParams = hparams
+        # Will be set in experiment.py if we don't already have one.
+        self.config: Config
+        # We will create those when `configure` will be called, before training.
+        self.model = None 
+
+    @classmethod
+    def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
+        """Add the command-line arguments for this Method to the given parser.
+        
+        Parameters
+        ----------
+        parser : ArgumentParser
+            The ArgumentParser. 
+        dest : str, optional
+            The 'base' destination where the arguments should be set on the
+            namespace, by default None, in which case the arguments can be at
+            the "root" level on the namespace.
+        """
+        prefix = f"{dest}." if dest else ""
+        # Adding the arguments for each field:
+        parser.add_arguments(cls.HParams, dest="hparams", prefix=prefix)
+
+    @classmethod
+    def from_argparse_args(cls, args: Namespace, dest: str = None):
+        args = args if not dest else getattr(args, dest)
+        hparams: EWC.HParams = args.hparams
+        return cls(hparams=hparams)
+
+    def configure(self, setting: Setting):
+        """ Called before the method is applied on a setting (before training). 
+
+        You can use this to instantiate your model, for instance, since this is
+        where you get access to the observation & action spaces.
+        """
+        FIM_representation: Type[PMatAbstract] = PMatBlockDiag
+        if self.hparams.FIM_representation == 'diagonal':
+            FIM_representation = PMatDiag
+
+        if isinstance(setting, PassiveSetting):
+            self.model = Supervised_EWC(
+                nb_tasks = setting.nb_tasks,
+                learning_rate=self.hparams.learning_rate,
+                observation_space=setting.observation_space,
+                action_space=setting.action_space,
+                reward_space=setting.reward_space,
+                fim_representation=FIM_representation,
+                ewc_coefficient=self.hparams.ewc_coefficient,
+                max_epochs = self.hparams.max_epochs if not self.config.debug else 1,
+                multihead=True if isinstance(setting, TaskIncrementalSetting) else False,
+                device=self.config.device
+            ).to(self.config.device)
+        else:
+            self.model = DQN_EWC(
+                fim_representation=FIM_representation,
+                learning_rate=self.hparams.learning_rate,
+                ewc_coefficient=self.hparams.ewc_coefficient,
+                learning_starts = self.hparams.learning_starts if not self.config.debug else 0,
+                total_timesteps_fim=self.hparams.total_timesteps_fim if not self.config.debug else 100,
+                buffer_size = self.hparams.buffer_size if not self.config.debug else 100,
+                policy=MlpPolicy,
+                device=self.config.device,
+            )
+         
+    def train_supervised(self, train_env: PassiveEnvironment, valid_env:PassiveEnvironment):
+        return self.model.train_supervised(train_env, valid_env)
+
+    def train_rl(self, train_env: ActiveEnvironment, valid_env:ActiveEnvironment):
+        self.last_task_train_env = train_env
+        train_env = RemoveTaskLabelsWrapper(train_env)
+        train_env = NoTypedObjectsWrapper(train_env)
+        valid_env = RemoveTaskLabelsWrapper(valid_env)
+        valid_env = NoTypedObjectsWrapper(valid_env)   
+
+        if self.model.observation_space == None:            
+            self.model.observation_space = train_env.observation_space
+        if self.model.action_space is None:
+            self.model.action_space = train_env.action_space
+        ####################################
+        # set the new environment and learn from it
+        self.model.set_env(train_env)
+        if self.model.policy is None:
+            self.model._setup_model()
+        self.model.learn(total_timesteps=self.hparams.total_timesteps_train if not self.config.debug else 100)
+        ####################################
+        #evaluate 
+        # mean_reward, std_reward = evaluate_policy(self.model, valid_env, n_eval_episodes=self.hparams.n_eval_episodes)
+        # metrics_dict = {'mean_reward':mean_reward,'std_reward':std_reward}
+        ####################################
+
+    def fit(self, train_env: Environment, valid_env: Environment):
+        if isinstance(train_env, PassiveEnvironment):
+            return self.train_supervised(train_env, valid_env)   
+        elif isinstance(train_env, ActiveEnvironment):
+            return self.train_rl(train_env, valid_env)
+
+    def on_task_switch(self, task_id: Optional[int]):
+        if hasattr(self.model, 'on_task_switch'):
+            self.model.on_task_switch(task_id) 
+    
+    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
+        """ Get a batch of predictions (aka actions) for these observations. """ 
+        with torch.no_grad():
+            action = self.model.get_action(observations.to(self.config.device))
+        return self.target_setting.Actions(action)
+
+
+
 #copied from https://github.com/tfjgeorge/nngeometry
 def FIM(model,
         loader,
@@ -451,153 +600,6 @@ class Supervised_EWC(nn.Module):
         logits = self(observations)
         y_pred = logits.argmax(dim=-1)
         return y_pred
-
-@register_method
-class EWC(Method, target_setting=IncrementalSetting):  
-    """ Minimal example of a Method targetting the Class-Incremental CL setting.
-    
-    For a quick intro to dataclasses, see examples/dataclasses_example.py    
-    """
-
-    @dataclass
-    class HParams:     
-        """ Hyper-parameters of the demo model. """
-        # Learning rate of the optimizer.
-        learning_rate: float = 0.001
-            
-        # Fisher information type   
-        FIM_representation: str = choice('diagonal', 'block_diagonal', default='diagonal')
-            
-        # Coeficient of EWC regularizer
-        ewc_coefficient: float = 100   
-
-        #number of timesteps for learning
-        total_timesteps_train: int = 5000
-
-        # #number of episodes for evaluation
-        # n_eval_episodes: int = 10
-
-        #number of timesteps for FIM calculation
-        total_timesteps_fim: int = 10000
-        
-        # #number of timesteps for demonstration of agents performance
-        # timesteps_demo: int = 100
-
-        #how many steps of the model to collect transitions for before learning starts (DQN)
-        learning_starts: int = 50000
-
-        #replay buffer size (DQN)
-        buffer_size: int = 1000
-
-        #maximum number of epochs (supervised)
-        max_epochs: int = 10
-    
-    def __init__(self, hparams: HParams):
-        self.hparams: EWC.HParams = hparams
-        # Will be set in experiment.py if we don't already have one.
-        self.config: Config
-        # We will create those when `configure` will be called, before training.
-        self.model = None 
-
-    @classmethod
-    def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
-        """Add the command-line arguments for this Method to the given parser.
-        
-        Parameters
-        ----------
-        parser : ArgumentParser
-            The ArgumentParser. 
-        dest : str, optional
-            The 'base' destination where the arguments should be set on the
-            namespace, by default None, in which case the arguments can be at
-            the "root" level on the namespace.
-        """
-        prefix = f"{dest}." if dest else ""
-        # Adding the arguments for each field:
-        parser.add_arguments(cls.HParams, dest="hparams", prefix=prefix)
-
-    @classmethod
-    def from_argparse_args(cls, args: Namespace, dest: str = None):
-        args = args if not dest else getattr(args, dest)
-        hparams: EWC.HParams = args.hparams
-        return cls(hparams=hparams)
-
-    def configure(self, setting: Setting):
-        """ Called before the method is applied on a setting (before training). 
-
-        You can use this to instantiate your model, for instance, since this is
-        where you get access to the observation & action spaces.
-        """
-        FIM_representation: Type[PMatAbstract] = PMatBlockDiag
-        if self.hparams.FIM_representation == 'diagonal':
-            FIM_representation = PMatDiag
-
-        if isinstance(setting, PassiveSetting):
-            self.model = Supervised_EWC(
-                nb_tasks = setting.nb_tasks,
-                learning_rate=self.hparams.learning_rate,
-                observation_space=setting.observation_space,
-                action_space=setting.action_space,
-                reward_space=setting.reward_space,
-                fim_representation=FIM_representation,
-                ewc_coefficient=self.hparams.ewc_coefficient,
-                max_epochs = self.hparams.max_epochs if not self.config.debug else 1,
-                multihead=True if isinstance(setting, TaskIncrementalSetting) else False,
-                device=self.config.device
-            ).to(self.config.device)
-        else:
-            self.model = DQN_EWC(
-                fim_representation=FIM_representation,
-                learning_rate=self.hparams.learning_rate,
-                ewc_coefficient=self.hparams.ewc_coefficient,
-                learning_starts = self.hparams.learning_starts if not self.config.debug else 0,
-                total_timesteps_fim=self.hparams.total_timesteps_fim if not self.config.debug else 100,
-                buffer_size = self.hparams.buffer_size if not self.config.debug else 100,
-                policy=MlpPolicy,
-                device=self.config.device,
-            )
-         
-    def train_supervised(self, train_env: PassiveEnvironment, valid_env:PassiveEnvironment):
-        return self.model.train_supervised(train_env, valid_env)
-
-    def train_rl(self, train_env: ActiveEnvironment, valid_env:ActiveEnvironment):
-        self.last_task_train_env = train_env
-        train_env = RemoveTaskLabelsWrapper(train_env)
-        train_env = NoTypedObjectsWrapper(train_env)
-        valid_env = RemoveTaskLabelsWrapper(valid_env)
-        valid_env = NoTypedObjectsWrapper(valid_env)   
-
-        if self.model.observation_space == None:            
-            self.model.observation_space = train_env.observation_space
-        if self.model.action_space is None:
-            self.model.action_space = train_env.action_space
-        ####################################
-        # set the new environment and learn from it
-        self.model.set_env(train_env)
-        if self.model.policy is None:
-            self.model._setup_model()
-        self.model.learn(total_timesteps=self.hparams.total_timesteps_train if not self.config.debug else 100)
-        ####################################
-        #evaluate 
-        # mean_reward, std_reward = evaluate_policy(self.model, valid_env, n_eval_episodes=self.hparams.n_eval_episodes)
-        # metrics_dict = {'mean_reward':mean_reward,'std_reward':std_reward}
-        ####################################
-
-    def fit(self, train_env: Environment, valid_env: Environment):
-        if isinstance(train_env, PassiveEnvironment):
-            return self.train_supervised(train_env, valid_env)   
-        elif isinstance(train_env, ActiveEnvironment):
-            return self.train_rl(train_env, valid_env)
-
-    def on_task_switch(self, task_id: Optional[int]):
-        if hasattr(self.model, 'on_task_switch'):
-            self.model.on_task_switch(task_id) 
-    
-    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
-        """ Get a batch of predictions (aka actions) for these observations. """ 
-        with torch.no_grad():
-            action = self.model.get_action(observations.to(self.config.device))
-        return self.target_setting.Actions(action)
 
 def demo():
     from simple_parsing import ArgumentParser
