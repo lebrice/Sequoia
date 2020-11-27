@@ -135,6 +135,7 @@ class EWC(Method, target_setting=IncrementalSetting):
             ).to(self.config.device)
         else:
             self.model = DQN_EWC(
+                env=None,
                 fim_representation=FIM_representation,
                 learning_rate=self.hparams.learning_rate,
                 ewc_coefficient=self.hparams.ewc_coefficient,
