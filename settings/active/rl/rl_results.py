@@ -11,10 +11,6 @@ from settings.assumptions.incremental import IncrementalSetting
 from settings.base import Results
 from utils import mean
 from utils.plotting import autolabel, plt
-# @dataclass
-# class EpisodeMetrics(Metrics):
-#     rewards: List[float]
-#     length: int
 
 
 @dataclass
