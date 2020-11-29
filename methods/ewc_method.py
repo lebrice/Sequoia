@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Type, Union
 
 import gym
+from copy import deepcopy
 import torch
 from collections import deque
 import torch.nn.functional as F
@@ -59,7 +60,7 @@ class EWC(Method, target_setting=IncrementalSetting):
         learning_rate: float = 0.001
             
         # Fisher information type   
-        FIM_representation: str = choice('diagonal', 'block_diagonal', default='diagonal')
+        FIM_representation: str = choice('diagonal', 'block_diagonal', default='block_diagonal')
             
         # Coeficient of EWC regularizer
         ewc_coefficient: float = 100   
@@ -212,13 +213,12 @@ class EWC(Method, target_setting=IncrementalSetting):
         return self.target_setting.Actions(action)
 
 
-
 #copied from https://github.com/tfjgeorge/nngeometry
 def FIM(model,
         loader,
         representation,
         n_output,
-        variant='classif_logits',
+        variant='classifimlogits',
         device='cpu',
         function=None,
         layer_collection=None):
@@ -238,11 +238,11 @@ def FIM(model,
         the matrix
     n_output : int
         Number of outputs of the model
-    variants : string 'classif_logits' or 'regression', optional
-            (default='classif_logits')
+    variants : string 'classifimlogits' or 'regression', optional
+            (default='classifimlogits')
         Variant to use depending on how you interpret your function.
         Possible choices are:
-         - 'classif_logits' when using logits for classification
+         - 'classifimlogits' when using logits for classification
          - 'regression' when using a gaussian regression model
     device : string, optional (default='cpu')
         Target device for the returned matrix
@@ -262,7 +262,7 @@ def FIM(model,
     if layer_collection is None:
         layer_collection = LayerCollection.from_model(model)
 
-    if variant == 'classif_logits':
+    if variant == 'classifimlogits':
         def function_fim(*d):          
             log_probs = torch.log_softmax(function(*d), dim=1)
             probs = torch.exp(log_probs).detach()
@@ -314,7 +314,7 @@ class A2C_EWC(A2C):
 
         ########################################
         ######### EWC specific things ##########
-        self.FisherMatrix: Jacobian = None
+        self.FIM: Jacobian = None
         self.FIM_representation = fim_representation
         self.ewc_coefficient: float = ewc_coefficient
         self.last_task_train_env:ActiveEnvironment = None
@@ -348,7 +348,7 @@ class A2C_EWC(A2C):
                 actions = actions.long().flatten()
 
             # TODO: avoid second computation of everything because of the gradient
-            values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)            
+            values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
             self.observation_collector.append(rollout_data.observations)
             values = values.flatten()
             #
@@ -370,7 +370,7 @@ class A2C_EWC(A2C):
                 entropy_loss = -torch.mean(-log_prob)
             else:
                 entropy_loss = -torch.mean(entropy)
-
+            
             loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
 
             ### add EWC regularizer ###
@@ -399,6 +399,24 @@ class A2C_EWC(A2C):
         if hasattr(self.policy, "log_std"):
             logger.record("train/std", torch.exp(self.policy.log_std).mean().item())
 
+    def consolidate(self, new_FIM, new_FIM_critic, task):
+        if self.FIM is None:
+            self.FIM = new_FIM
+            self.FIM_critic = new_FIM_critic
+        else:
+            #consolidate
+            if isinstance(self.FIM, PMatDiag):
+                self.FIM.data = ((deepcopy(new_FIM.data)) + self.FIM.data * (task)) / (task + 1)
+                self.FIM_critic.data = ((deepcopy(new_FIM_critic.data)) + self.FIM_critic.data * (task)) / (task + 1)
+
+            elif isinstance(self.FIM.data, dict):
+                for (n, p), (n_, p_) in zip(self.FIM.data.items(),new_FIM.data.items()):
+                    for item, item_ in zip(p, p_):
+                        item.data = ((item.data*(task))+deepcopy(item_.data))/(task+1) #+ self.FIM.data[n]
+                for (n, p), (n_, p_) in zip(self.FIM_critic.data.items(),new_FIM_critic.data.items()):
+                    for item, item_ in zip(p, p_):
+                        item.data = ((item.data*(task))+deepcopy(item_.data))/(task+1) #+ self.FIM.data[n]
+
     def on_task_switch(self, task_id: Optional[int]):
         """ Executed when the task switches (to either a known or unknown task).
         """
@@ -414,19 +432,21 @@ class A2C_EWC(A2C):
                 self.previous_model_weights = PVector.from_model(self.policy).clone().detach()
                 observation_collection = torch.cat(list(self.observation_collector)).squeeze().to(self.device)
                 dataloader = DataLoader(TensorDataset(observation_collection), batch_size=self.n_steps, shuffle=False)
-                self.FIM = FIM(model=self.policy,      
-                            loader=dataloader,                 
+                #TODO: keepng to FIMs might be not the optimal way of doing this
+                new_FIM = FIM(model=self.policy,      
+                            loader=dataloader,
                             representation=self.FIM_representation,
                             n_output=1, #self.action_space.n,
                             variant='r2c',
                             device=self.device.type)    
 
-                self.FIM_critic = FIM(model=self.policy,      
-                            loader=dataloader,                   
+                new_FIM_critic = FIM(model=self.policy,      
+                            loader=dataloader,
                             representation=self.FIM_representation,
                             n_output=1, #self.action_space.n,
                             variant='r2c_critic',
-                            device=self.device.type)    
+                            device=self.device.type)   
+                self.consolidate(new_FIM,new_FIM_critic,task=self._previous_task_id) 
 
             self._n_switches += 1
             self._previous_task_id = task_id
@@ -467,7 +487,7 @@ class DQN_EWC(DQN):
 
         ########################################
         ######### EWC specific things ##########
-        self.FisherMatrix: Jacobian = None
+        self.FIM: Jacobian = None
         self.FIM_representation = fim_representation
         self.ewc_coefficient: float = ewc_coefficient
         self.last_task_train_env:ActiveEnvironment = None
@@ -481,7 +501,20 @@ class DQN_EWC(DQN):
     def set_env(self, env: GymEnv) -> None:
         self.last_task_train_env=env
         return super().set_env(env)
+    
+    def consolidate(self, new_FIM, task):
+        if self.FIM is None:
+            self.FIM = new_FIM
+        else:
+            #consolidate
+            if isinstance(self.FIM, PMatDiag):
+                self.FIM.data = ((deepcopy(new_FIM.data)) + self.FIM.data * (task)) / (task + 1)
 
+            elif isinstance(self.FIM.data, dict):
+                for (n, p), (n_, p_) in zip(self.FIM.data.items(),new_FIM.data.items()):
+                    for item, item_ in zip(p, p_):
+                        item.data = ((item.data*(task))+deepcopy(item_.data))/(task+1) #+ self.FIM.data[n]
+    
     def train(self, gradient_steps: int, batch_size: int = 100) -> None:
         # Update learning rate according to schedule
         self._update_learning_rate(self.policy.optimizer)
@@ -532,7 +565,6 @@ class DQN_EWC(DQN):
         logger.record("train/loss", np.mean(losses))
         logger.record("train/ewc_loss", np.mean(ewc_regs))
 
-
     def on_task_switch(self, task_id: Optional[int]):
         """ Executed when the task switches (to either a known or unknown task).
         """
@@ -549,12 +581,13 @@ class DQN_EWC(DQN):
                 observation_collection = torch.Tensor(self.replay_buffer.observations[:self.total_timesteps_fim]).squeeze().to(self.device)
                 #create a dataloader from the observations in the replay buffer of DQN
                 dataloader = DataLoader(TensorDataset(observation_collection), batch_size=100)
-                self.FIM = FIM(model=self.policy.q_net,      
+                new_FIM = FIM(model=self.policy.q_net,      
                             loader=dataloader,                   
                             representation=self.FIM_representation,
                             n_output=self.action_space.n,
                             variant='dqn',
-                            device=self.device.type)        
+                            device=self.device.type)     
+                self.consolidate(new_FIM, task=self._previous_task_id)   
             self._n_switches += 1
             self._previous_task_id = task_id
     
@@ -601,7 +634,7 @@ class Supervised_EWC(nn.Module):
         self.learning_rate = learning_rate
         image_channels = image_shape[0]
 
-        self.multihead = multihead        
+        self.multihead = multihead
         self._previous_task_id: Optional[int] = None
         
         self.encoder = nn.Sequential(
@@ -611,13 +644,13 @@ class Supervised_EWC(nn.Module):
             nn.Conv2d(6, 16, 5),
             nn.ReLU(),
             nn.MaxPool2d(2),
-        )
-        self.classifier = nn.Sequential(
             nn.Flatten(),
             nn.Linear(256, 120),
             nn.ReLU(),
             nn.Linear(120, 84),
-            nn.ReLU(),
+            nn.ReLU()
+        )
+        self.classifier = nn.Sequential(
             nn.Linear(84, self.n_classes),
         )
         # TODO: Would we need to deepcopy `self.classifier` here?
@@ -630,7 +663,7 @@ class Supervised_EWC(nn.Module):
 
         ########################################
         ######### EWC specific things ##########
-        self.FisherMatrix: Jacobian = None
+        self.FIM: Jacobian = None
         self.FIM_representation = fim_representation
         self.ewc_coefficient = ewc_coefficient
         self.last_task_train_env: PassiveEnvironment = None
@@ -640,6 +673,19 @@ class Supervised_EWC(nn.Module):
         self._n_switches: int = 0
         self._previous_task_id: int = 0
         ########################################
+
+    def consolidate(self, new_FIM, task):
+        if self.FIM is None:
+            self.FIM = new_FIM
+        else:
+            #consolidate
+            if isinstance(self.FIM, PMatDiag):
+                self.FIM.data = ((deepcopy(new_FIM.data)) + self.FIM.data * (task)) / (task + 1)
+
+            elif isinstance(self.FIM.data, dict):
+                for (n, p), (n_, p_) in zip(self.FIM.data.items(),new_FIM.data.items()):
+                    for item, item_ in zip(p, p_):
+                        item.data = ((item.data*(task))+deepcopy(item_.data))/(task+1) #+ self.FIM.data[n]
 
     def forward(self, observations: Union[Observations, Tensor]) -> Tensor:
         if not self.multihead:
@@ -658,7 +704,7 @@ class Supervised_EWC(nn.Module):
             task_label = [self._previous_task_id] if self._previous_task_id is not None else [0]
             features = self.encoder(x)
             logits = self.classifiers[task_label[0]](features)
-            return torch.log_softmax(logits, dim=1)
+            return logits
         else:
             raise NotImplementedError
 
@@ -697,14 +743,14 @@ class Supervised_EWC(nn.Module):
         return loss, metrics_dict
 
     def on_task_switch(self, new_task_id: Optional[int]):
-        if new_task_id > self._previous_task_id:
+        if new_task_id > self._previous_task_id:                 
             if self._previous_task_id is None and self._n_switches == 0:
                 print("Starting the first task, no EWC update.")
 
             elif new_task_id is None or new_task_id != self._previous_task_id:
                 # NOTE: We also switch between unknown tasks.
                 print(f"Switching tasks: {self._previous_task_id} -> {new_task_id}: ")
-                print(f"Updating the EWC 'anchor' weights.")                
+                print(f"Updating the EWC 'anchor' weights.")
 
                 self.previous_model_weights = PVector.from_model(self).clone().detach()
                 # TODO: (@lebrice) Fix the RemoveTaskLabels and NoTypedObjects
@@ -715,12 +761,13 @@ class Supervised_EWC(nn.Module):
                 # dataloader = NoTypedObjectsWrapper(dataloader)
                 dataloader = DataLoader(self.last_task_train_env.dataset,
                                         batch_size=self.last_task_train_env.batch_size)
-                self.FIM = FIM(model=self,
+                new_FIM = FIM(model=self,
                                loader=dataloader,                 
                                representation=self.FIM_representation,
                                n_output=self.n_classes,
-                               variant='classif_logits',    
+                               variant='classifimlogits',    
                                device=self.device.type)
+                self.consolidate(new_FIM, task=self._previous_task_id)
                 self._previous_task_id = new_task_id
             
             self._n_switches += 1
@@ -745,9 +792,9 @@ class Supervised_EWC(nn.Module):
                     loss, metrics_dict = self.training_step(batch)
 
                     ### add EWC regularizer ###
-                    ewc_reg = self.get_ewc_loss()
+                    ewc_reg = self.ewc_coefficient * self.get_ewc_loss()
                     metrics_dict["ewc_regularizer"] = ewc_reg
-                    loss += self.ewc_coefficient * ewc_reg
+                    loss += ewc_reg
                     ###########################
                     
                     self.optimizer.zero_grad()
