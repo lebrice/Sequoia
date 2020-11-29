@@ -7,16 +7,21 @@ from typing import Dict, Optional, Tuple, Type, Union
 
 import gym
 import torch
+from collections import deque
 import torch.nn.functional as F
 from gym import spaces
 from nngeometry.generator.jacobian import Jacobian
-from nngeometry.layercollection import LayerCollection
-from nngeometry.object.pspace import (PMatAbstract, PMatBlockDiag, PMatDiag,
+from nngeometry.layercollection import LayerCollection        
+from nngeometry.object.pspace import (PMatAbstract, PMatKFAC, PMatDiag,
                                       PVector)
 from simple_parsing import ArgumentParser, choice
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.type_aliases import GymEnv
 from stable_baselines3.dqn import DQN, MlpPolicy
+from stable_baselines3.a2c import A2C
+from stable_baselines3.a2c import MlpPolicy as MlpPolicy_A2C
+from stable_baselines3.common.utils import explained_variance
+from stable_baselines3.common import logger
 from stable_baselines3.dqn.policies import DQNPolicy
 from torch import Tensor, nn
 from torch.cuda import device
@@ -79,6 +84,9 @@ class EWC(Method, target_setting=IncrementalSetting):
 
         #maximum number of epochs (supervised)
         max_epochs: int = 10
+
+        #RL algo to use
+        rl_algo: str = choice('DQN', 'A2C', default='A2C')
     
     def __init__(self, hparams: HParams):
         self.hparams: EWC.HParams = hparams
@@ -116,7 +124,7 @@ class EWC(Method, target_setting=IncrementalSetting):
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
         """
-        FIM_representation: Type[PMatAbstract] = PMatBlockDiag
+        FIM_representation: Type[PMatAbstract] = PMatKFAC
         if self.hparams.FIM_representation == 'diagonal':
             FIM_representation = PMatDiag
 
@@ -134,17 +142,32 @@ class EWC(Method, target_setting=IncrementalSetting):
                 device=self.config.device
             ).to(self.config.device)
         else:
-            self.model = DQN_EWC(
-                env=None,
-                fim_representation=FIM_representation,
-                learning_rate=self.hparams.learning_rate,
-                ewc_coefficient=self.hparams.ewc_coefficient,
-                learning_starts = self.hparams.learning_starts if not self.config.debug else 0,
-                total_timesteps_fim=self.hparams.total_timesteps_fim if not self.config.debug else 100,
-                buffer_size = self.hparams.buffer_size if not self.config.debug else 100,
-                policy=MlpPolicy,
-                device=self.config.device,
-            )
+            if self.hparams.rl_algo=='DQN':
+                self.model = DQN_EWC(
+                    env=None,
+                    fim_representation=FIM_representation,
+                    learning_rate=self.hparams.learning_rate,
+                    ewc_coefficient=self.hparams.ewc_coefficient,
+                    learning_starts = self.hparams.learning_starts if not self.config.debug else 0,
+                    total_timesteps_fim=self.hparams.total_timesteps_fim if not self.config.debug else 100,
+                    buffer_size = self.hparams.buffer_size if not self.config.debug else 100,
+                    policy=MlpPolicy,
+                    device=self.config.device,
+                )
+        
+            elif self.hparams.rl_algo=='A2C':
+                #A2C
+                self.model = A2C_EWC(
+                    env=None,
+                    fim_representation=FIM_representation,
+                    learning_rate=self.hparams.learning_rate,
+                    ewc_coefficient=self.hparams.ewc_coefficient,
+                    total_timesteps_fim=self.hparams.total_timesteps_fim if not self.config.debug else 100,
+                    policy=MlpPolicy_A2C, #MlpPolicy,
+                    device=self.config.device,
+                )
+            else:
+                raise NotImplementedError
          
     def train_supervised(self, train_env: PassiveEnvironment, valid_env:PassiveEnvironment):
         return self.model.train_supervised(train_env, valid_env)
@@ -256,6 +279,17 @@ def FIM(model,
             probs = torch.exp(log_probs).detach()
             return (log_probs * probs**.5)
 
+    elif variant == 'r2c':
+        def function_fim(*d):      
+            actions, values, log_probs = model(d[0].squeeze())
+            probs = torch.exp(log_probs).detach()
+            return (log_probs * probs**.5)
+
+    elif variant == 'r2c_critic':
+        def function_fim(*d):      
+            actions, values, log_probs = model(d[0].squeeze())
+            return values
+
     else:
         raise NotImplementedError(variant)
 
@@ -266,6 +300,158 @@ def FIM(model,
                          n_output=n_output)
     return representation(generator)
 
+class A2C_EWC(A2C):
+    def __init__(self,
+                 policy: Union[str, Type[DQNPolicy]],
+                 env: Union[GymEnv, str],
+                 fim_representation: Type[PMatAbstract],
+                 ewc_coefficient: float,
+                 total_timesteps_fim: int,
+                 verbose: int = 0,
+                 _init_setup_model=False,
+                 *args, **kwargs) -> None:
+        super().__init__(policy, None, verbose=1, _init_setup_model=False, *args, **kwargs)
+
+        ########################################
+        ######### EWC specific things ##########
+        self.FisherMatrix: Jacobian = None
+        self.FIM_representation = fim_representation
+        self.ewc_coefficient: float = ewc_coefficient
+        self.last_task_train_env:ActiveEnvironment = None
+
+        self._previous_task_id = 0
+        self.previous_model_weights: PVector = None
+        self._n_switches: int = 0 
+        self.total_timesteps_fim = total_timesteps_fim
+        self.observation_collector = deque(maxlen=total_timesteps_fim)
+
+        ########################################
+    
+    def set_env(self, env: GymEnv) -> None:
+        self.last_task_train_env=env
+        return super().set_env(env)
+
+    def train(self) -> None:
+        """
+        Update policy using the currently gathered
+        rollout buffer (one gradient step over whole data).
+        """
+        # Update optimizer learning rate
+        self._update_learning_rate(self.policy.optimizer)
+
+        # This will only loop once (get all data in one go)
+        for rollout_data in self.rollout_buffer.get(batch_size=None):
+
+            actions = rollout_data.actions
+            if isinstance(self.action_space, spaces.Discrete):
+                # Convert discrete action from float to long
+                actions = actions.long().flatten()
+
+            # TODO: avoid second computation of everything because of the gradient
+            values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)            
+            self.observation_collector.append(rollout_data.observations)
+            values = values.flatten()
+            #
+
+            # Normalize advantage (not present in the original implementation)
+            advantages = rollout_data.advantages
+            if self.normalize_advantage:
+                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+            # Policy gradient loss
+            policy_loss = -(advantages * log_prob).mean()
+
+            # Value loss using the TD(gae_lambda) target
+            value_loss = F.mse_loss(rollout_data.returns, values)
+
+            # Entropy loss favor exploration
+            if entropy is None:
+                # Approximate entropy when no analytical form
+                entropy_loss = -torch.mean(-log_prob)
+            else:
+                entropy_loss = -torch.mean(entropy)
+
+            loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
+
+            ### add EWC regularizer ###
+            ewc_reg = self.get_ewc_loss()
+            #metrics_dict["ewc_regularizer"] = ewc_reg
+            loss += self.ewc_coefficient * ewc_reg
+            ###########################
+
+            # Optimization step
+            self.policy.optimizer.zero_grad()
+            loss.backward()
+
+            # Clip grad norm
+            torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+            self.policy.optimizer.step()
+
+        explained_var = explained_variance(self.rollout_buffer.returns.flatten(), self.rollout_buffer.values.flatten())
+
+        self._n_updates += 1
+        logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+        logger.record("train/ewc_loss", ewc_reg.item())
+        logger.record("train/explained_variance", explained_var)
+        logger.record("train/entropy_loss", entropy_loss.item())
+        logger.record("train/policy_loss", policy_loss.item())
+        logger.record("train/value_loss", value_loss.item())
+        if hasattr(self.policy, "log_std"):
+            logger.record("train/std", torch.exp(self.policy.log_std).mean().item())
+
+    def on_task_switch(self, task_id: Optional[int]):
+        """ Executed when the task switches (to either a known or unknown task).
+        """
+        if task_id>self._previous_task_id:
+            if self.previous_model_weights is None and self._n_switches == 0:
+                print("Starting the first task, no EWC update.")
+                
+            elif task_id is None or task_id != self._previous_task_id:
+                # NOTE: We also switch between unknown tasks.
+                print(f"Switching tasks: {self._previous_task_id} -> {task_id}: ")
+                print(f"Updating the EWC 'anchor' weights.")
+                    
+                self.previous_model_weights = PVector.from_model(self.policy).clone().detach()
+                observation_collection = torch.cat(list(self.observation_collector)).squeeze().to(self.device)
+                dataloader = DataLoader(TensorDataset(observation_collection), batch_size=self.n_steps, shuffle=False)
+                self.FIM = FIM(model=self.policy,      
+                            loader=dataloader,                 
+                            representation=self.FIM_representation,
+                            n_output=1, #self.action_space.n,
+                            variant='r2c',
+                            device=self.device.type)    
+
+                self.FIM_critic = FIM(model=self.policy,      
+                            loader=dataloader,                   
+                            representation=self.FIM_representation,
+                            n_output=1, #self.action_space.n,
+                            variant='r2c_critic',
+                            device=self.device.type)    
+
+            self._n_switches += 1
+            self._previous_task_id = task_id
+            self.observation_collector = deque(maxlen=self.total_timesteps_fim)
+    
+    def get_ewc_loss(self) -> Tensor:
+        """Gets an 'ewc-like' regularization loss.
+        """
+        if self.previous_model_weights is None:
+            # We're in the first task: do nothing.
+            return torch.tensor(0.)
+
+        v_current = PVector.from_model(self.policy)    
+        regularizer = self.FIM.vTMv(v_current - self.previous_model_weights) + self.FIM_critic.vTMv(v_current - self.previous_model_weights)
+        return regularizer
+
+    def forward(self,observation: Observations):
+        return self.q_net(observation)
+
+    def get_action(self, observations: Observations, task_id: int = None):
+        #TODO: multihead DQN that would make use of task id
+        observation = observations[0]
+        #task_id = observation[1]
+        action, _ = self.predict(observation.cpu(), deterministic=True)
+        return action
 
 class DQN_EWC(DQN):
     def __init__(self,
@@ -301,6 +487,7 @@ class DQN_EWC(DQN):
         self._update_learning_rate(self.policy.optimizer)
 
         losses = []
+        ewc_regs = []
         for gradient_step in range(gradient_steps):
             # Sample replay buffer
             replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
@@ -326,6 +513,7 @@ class DQN_EWC(DQN):
 
             ### add EWC regularizer ###
             ewc_reg = self.get_ewc_loss()
+            ewc_regs.append(ewc_reg)
             #metrics_dict["ewc_regularizer"] = ewc_reg
             loss += self.ewc_coefficient * ewc_reg
             ###########################
@@ -339,10 +527,11 @@ class DQN_EWC(DQN):
             self.policy.optimizer.step()
 
         # Increase update counter
-        self._n_updates += gradient_steps
+        self._n_updates += gradient_step
+        logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+        logger.record("train/loss", np.mean(losses))
+        logger.record("train/ewc_loss", np.mean(ewc_regs))
 
-        # logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
-        # logger.record("train/loss", np.mean(losses))
 
     def on_task_switch(self, task_id: Optional[int]):
         """ Executed when the task switches (to either a known or unknown task).
@@ -358,6 +547,7 @@ class DQN_EWC(DQN):
                     
                 self.previous_model_weights = PVector.from_model(self.policy.q_net).clone().detach() 
                 observation_collection = torch.Tensor(self.replay_buffer.observations[:self.total_timesteps_fim]).squeeze().to(self.device)
+                #create a dataloader from the observations in the replay buffer of DQN
                 dataloader = DataLoader(TensorDataset(observation_collection), batch_size=100)
                 self.FIM = FIM(model=self.policy.q_net,      
                             loader=dataloader,                   
@@ -373,7 +563,7 @@ class DQN_EWC(DQN):
         """
         if self.previous_model_weights is None:
             # We're in the first task: do nothing.
-            return 0.
+            return torch.tensor(0.)
 
         v_current = PVector.from_model(self.q_net)      
         regularizer = self.FIM.vTMv(v_current - self.previous_model_weights)
@@ -388,7 +578,6 @@ class DQN_EWC(DQN):
         #task_id = observation[1]
         action, _ = self.predict(observation, deterministic=True)
         return action
-
 
 class Supervised_EWC(nn.Module):
     def __init__(self,
@@ -591,7 +780,7 @@ class Supervised_EWC(nn.Module):
         """
         if self.previous_model_weights is None:
             # We're in the first task: do nothing.
-            return 0.
+            return torch.tensor(0.)
         
         v_current = PVector.from_model(self)     
         regularizer = self.FIM.vTMv(v_current - self.previous_model_weights)
@@ -625,15 +814,14 @@ def demo():
     #     1000:   {"gravity": 100, "length": 1.2},
     #     2000:   {"gravity": 10, "length": 0.2},
     # }
-    # setting = TaskIncrementalRLSetting(
-    #     dataset="CartPole-v1",
-    #     observe_state_directly=True,
-    #     max_steps=2000,
-    #     train_task_schedule=task_schedule,
-    # )
+    setting = TaskIncrementalRLSetting(
+        dataset="CartPole-v1",
+        observe_state_directly=True,
+        max_steps=2000,
+    )
 
     #setting = ClassIncrementalSetting(dataset="mnist", nb_tasks=5)
-    setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
+    # setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
     results = setting.apply(method)
     print(results.summary())
 
