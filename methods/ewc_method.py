@@ -688,12 +688,17 @@ class Supervised_EWC(nn.Module):
                         item.data = ((item.data*(task))+deepcopy(item_.data))/(task+1) #+ self.FIM.data[n]
 
     def forward(self, observations: Union[Observations, Tensor]) -> Tensor:
+        #SINGLEHEAD:
         if not self.multihead:
-            x = observations[0]
+            if isinstance(observations, Observations):
+                x = observations.x
+            elif isinstance(observations, Tensor):
+                x = observations
             features = self.encoder(x)
             logits = self.classifiers(features)
             return logits
-
+        
+        #MULTIHEAD:
         if isinstance(observations, Observations):
             x = observations.x
             task_labels = observations.task_labels    
