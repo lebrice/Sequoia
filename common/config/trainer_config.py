@@ -13,7 +13,7 @@ from pytorch_lightning.loggers import LightningLoggerBase
 from simple_parsing import choice, field, mutable_field
 from utils.serialization import Serializable
 from utils.parseable import Parseable
-
+from .config import Config
 
 from .wandb_config import WandbLoggerConfig
 
@@ -73,12 +73,13 @@ class TrainerConfig(Serializable, Parseable):
         )
 
     def make_trainer(self,
+                     config: Config,
                      callbacks: Optional[List[Callback]] = None,
                      loggers: Iterable[LightningLoggerBase] = None) -> Trainer:
         """ Create a Trainer object from the command-line args.
         Adds the given loggers and callbacks as well.
         """
-        if loggers is None:
+        if loggers is None and not config.debug:
             loggers = self.create_loggers()
         return Trainer(
             logger=loggers,
@@ -92,6 +93,8 @@ class TrainerConfig(Serializable, Parseable):
             fast_dev_run=self.fast_dev_run,
             auto_scale_batch_size=self.auto_scale_batch_size,
             auto_lr_find=self.auto_lr_find,
+            # TODO: Doing the backward pass manually (debugging RL output head)
+            automatic_optimization=False,
             # TODO: Either move the log-dir-related stuff from Config to this
             # class, or figure out a way to pass the value from Config to this
             # function

@@ -7,6 +7,7 @@ from pathlib import Path
 import gym
 import torch
 import tqdm
+from gym.vector import VectorEnv
 from gym import spaces
 from simple_parsing import field
 from torch import Tensor
@@ -127,14 +128,12 @@ class IncrementalSetting(SettingABC):
 
             # Creating the dataloaders ourselves (rather than passing 'self' as
             # the datamodule):
-            # success = trainer.fit(model, datamodule=self)
-            # TODO: Pass the train_dataloader and val_dataloader methods, rather than the envs.
+            # TODO: Pass the train_dataloader and val_dataloader methods, rather than the envs?
             task_train_loader = self.train_dataloader()
             task_valid_loader = self.val_dataloader()
             success = method.fit(
                 train_env=task_train_loader,
                 valid_env=task_valid_loader,
-                # datamodule=self,
             )
             if success != 0:
                 logger.debug(f"Finished Training on task {task_id}.")
@@ -246,6 +245,11 @@ class IncrementalSetting(SettingABC):
         pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
         for step in pbar:
             action = method.get_actions(obs, test_env.action_space)
+            if isinstance(action, Actions):
+                action = action.y_pred
+            if isinstance(action, Tensor):
+                action = action.cpu().numpy()
+            
             obs, reward, done, info = test_env.step(action)
             
             if test_env.is_closed():
@@ -327,6 +331,8 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
 
         self._before_step(action_for_stats)
         
+        if isinstance(action, Tensor):
+            action = action.cpu().numpy()
         observation, reward, done, info = self.env.step(action)
         observation_for_stats = unwrap_observations(observation)
         reward_for_stats = unwrap_rewards(reward)
@@ -336,10 +342,12 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
             self.render("human")
         except NotImplementedError:
             pass
-            
-        if not isinstance(done, bool):
+        
+        if isinstance(self.env.unwrapped, VectorEnv):
             done = all(done)
-
+        else:
+            done = bool(done)
+        
         done = self._after_step(observation_for_stats, reward_for_stats, done, info)
     
         if self.get_total_steps() >= self.step_limit:

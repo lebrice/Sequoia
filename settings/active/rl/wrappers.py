@@ -1,28 +1,18 @@
 """ Wrappers specific to the RL settings, so not exactly as general as those in
 `common/gym_wrappers`.
 """
-from dataclasses import replace, is_dataclass
-from typing import Dict, List, Optional, Tuple, Type, TypeVar, Union, Callable
+from dataclasses import is_dataclass, replace
+from typing import Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union
 
 import gym
 import numpy as np
 from gym import spaces
 from torch import Tensor
 
-from common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
-from common import Batch, batch
+from common import Batch
 from common.gym_wrappers import IterableWrapper, TransformObservation
-from common.gym_wrappers.batch_env import VectorEnv
-from common.gym_wrappers.transform_wrappers import (TransformAction,
-                                                    TransformObservation,
-                                                    TransformReward)
-from common.gym_wrappers.utils import has_wrapper
-from common.gym_wrappers.add_done_to_obs import AddDoneToObservation
-from common.gym_wrappers.add_info_to_obs import AddInfoToObservation
 from common.spaces import Sparse
-from settings.base import Environment
-from settings.base.objects import (Actions, ActionType, Observations,
-                                   ObservationType, Rewards, RewardType)
+from settings.base.objects import Actions, Observations, Rewards
 
 T = TypeVar("T")
 

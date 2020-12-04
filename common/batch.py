@@ -340,6 +340,7 @@ class Batch(ABC):
                 items if isinstance(items, Tensor) else
                 torch.stack(items) if isinstance(items[0], Tensor) else
                 np.asarray(items)
+                
                 for items in inputs
             ]
             
@@ -371,17 +372,20 @@ class Batch(ABC):
         # return cls(inputs)
 
 T = TypeVar("T")
+
 @get_slice.register(Batch)
-def get_tuple_slice(value: Batch, indices: Sequence[int]) -> Batch:
-    return type(value).from_inputs([
-        get_slice(v, indices) for v in value
-    ])
+def get_batch_slice(value: Batch, indices: Sequence[int]) -> Batch:
+    return type(value)(**{
+        field_name: get_slice(field_value, indices) if field_value is not None else None
+        for field_name, field_value in value.as_dict().items()
+    })
 
 
 @set_slice.register(Batch)
-def set_tuple_slice(target: Batch, indices: Sequence[int], values: Tuple[T, ...]) -> None:
+def set_batch_slice(target: Batch, indices: Sequence[int], values: Tuple[T, ...]) -> None:
     for target_item, values_item in zip(target, values):
         set_slice(target_item, indices, values_item)
+
 
 
 if __name__ == "__main__":

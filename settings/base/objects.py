@@ -17,6 +17,9 @@ class Observations(Batch):
     def state(self) -> Tensor:
         return self.x
 
+    def __len__(self) -> int:
+        return self.batch_size
+
 
 @dataclass(frozen=True)
 class Actions(Batch):

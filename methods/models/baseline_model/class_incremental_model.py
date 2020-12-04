@@ -62,7 +62,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             output_head = self.create_output_head()
             self.output_head = output_head
             self.output_heads[str(self.setting.current_task_id)] = output_head
-    
+
     @property
     def output_head(self) -> OutputHead:
         """ Get the output head for the current task.
@@ -106,7 +106,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # logger.debug(f"Setting output head to {value}")
         self._output_head = value
 
-    @auto_move_data
+    # @auto_move_data
     def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
         """ Forward pass of the Model. Returns a dict."""
         # Just testing things out here.
@@ -115,6 +115,15 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # Get the task labels from the observation.
         task_labels = observations.task_labels
         
+        if isinstance(task_labels, np.ndarray):
+            if task_labels.dtype == np.object:
+                if all(task_labels == None):
+                    task_labels = None
+                elif all(task_labels != None):
+                    task_labels = torch.as_tensor(task_labels.as_dtype(np.int))
+                else:
+                    raise NotImplementedError(f"TODO: Only given a portion of task labels?")
+                        
         # IDEA: This would basically call super.forward() on the slices of the
         # batch, and then re-combine the forward pass dicts before returning
         # the results.
@@ -125,7 +134,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             # the current output head (at attribute `self.output_head`).
             return super().forward(observations)
 
-        if isinstance(task_labels, (Tensor, np.ndarray)):
+        if isinstance(task_labels, Tensor):
             unique_task_labels = torch.unique(task_labels).tolist()
         else:
             # In case task_labels is a list of numpy arrays, convert it to a
@@ -222,19 +231,6 @@ class ClassIncrementalModel(BaseModel[SettingType]):
                 "anyway). "
             )
             dataloader_idx = None
-        elif ((self.training and self.setting.task_labels_at_train_time) or
-              (not self.training and self.setting.task_labels_at_test_time)):
-            # If we're not told the dataloader idx, but we have access to the
-            # task labels, then switch to the current task if it's not the same
-            # as the previous task.
-            # TODO: Remove this, and use the per-sample task labels from
-            # continuum instead.
-            current_task = self.setting.current_task_id
-            if self.current_task != current_task:
-                self.previous_task = self.current_task
-                self.current_task = current_task
-
-                self.on_task_switch(self.current_task)
         
         return super().shared_step(
             batch=batch,

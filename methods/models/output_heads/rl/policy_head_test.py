@@ -14,7 +14,7 @@ from torch import Tensor
 from methods.models.forward_pass import ForwardPass
 from settings.active.rl.continual_rl_setting import ContinualRLSetting
 
-from .policy_head import PolicyHead
+from .policy_head import PolicyHead, PolicyHeadOutput, Categorical
 
 from common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
 from common.gym_wrappers import AddDoneToObservation, ConvertToFromTensors, EnvDataset
@@ -141,9 +141,9 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
     non_zero_losses = 0
     
     for i, obs in zip(range(100), env):
-        
-        done = obs[1]
+        print(i, obs)
         x = obs[0]
+        done = obs[1]
         representations = x
         assert isinstance(x, Tensor)
         assert isinstance(done, Tensor)
@@ -199,8 +199,11 @@ def test_buffers_are_stacked_correctly(monkeypatch):
     assert obs.tolist() == list(range(batch_size))
     
     reward_space = spaces.Box(*env.reward_range, shape=())
-    
-    output_head = PolicyHead(1, action_space=env.single_action_space, reward_space=reward_space)
+    output_head = PolicyHead(observation_space=spaces.Tuple([env.observation_space,
+                                           spaces.Box(False, True, [batch_size], np.bool)]),
+                             representation_space=spaces.Box(0, 1, (1,)),
+                             action_space=env.single_action_space,
+                             reward_space=reward_space)
     # Set the max window length, for testing.
     output_head.hparams.max_episode_window_length = 100
     
@@ -213,21 +216,22 @@ def test_buffers_are_stacked_correctly(monkeypatch):
     def mock_get_episode_loss(self: PolicyHead,
                               env_index: int,
                               observations: ContinualRLSetting.Observations,
+                              representations: Tensor,
                               actions: ContinualRLSetting.Observations,
                               rewards: ContinualRLSetting.Rewards,
-                              episode_ended: bool) -> Optional[Loss]:
-        print(f"Environment at index {env_index}, episode ended: {episode_ended}")
-        if episode_ended:
+                              done: bool) -> Optional[Loss]:
+        print(f"Environment at index {env_index}, episode ended: {done}")
+        if done:
             print(f"Full episode: {observations}")
         else:
             print(f"Episode so far: {observations}")
-        
+
         n_observations = len(observations.x)
         # assert len(actions.y_pred) == n_observations if not episode_ended else n_observations - 1, (episode_ended, observations, actions, rewards)
         # assert len(rewards.y) == n_observations if not episode_ended else n_observations - 1, (episode_ended, observations, actions, rewards)
 
         assert observations.x.tolist() == (env_index + np.arange(n_observations)).tolist()
-        if episode_ended:
+        if done:
             # Unfortunately, we don't get the final state, because of how
             # VectorEnv works atm.
             assert observations.x[-1] == targets[env_index] - 1
@@ -252,7 +256,9 @@ def test_buffers_are_stacked_correctly(monkeypatch):
         # set the action, so all that we're testing is the loss part.
 
         # actions = output_head(observations, representations)
-        actions = ContinualRLSetting.Actions(y_pred=torch.ones(batch_size, dtype=int))
+        actions = PolicyHeadOutput(y_pred=torch.ones(batch_size, dtype=int),
+                                   logits=torch.ones(batch_size) / 2,
+                                   policy=Categorical(torch.ones([batch_size, 2])/2))
 
         # Wrap things up to pretend like the output head is being used in the
         # BaselineModel:
@@ -275,20 +281,26 @@ def test_buffers_are_stacked_correctly(monkeypatch):
         
         # Check the contents of the episode buffers.
 
-        assert len(output_head.episode_buffers) == batch_size
-        for env_index, env_episode_buffer in enumerate(output_head.episode_buffers):
+        assert len(output_head.observations) == batch_size
+        for env_index in range(batch_size):
+            obs_buffer = output_head.observations[env_index]
+            representations_buffer = output_head.representations[env_index]
+            action_buffer = output_head.actions[env_index]
+            reward_buffer = output_head.rewards[env_index]
             if step >= batch_size:
                 if step + env_index == targets[env_index]:
-                    assert not env_episode_buffer
+                    assert len(obs_buffer) == 1 and obs_buffer[0].done == False
                 # if env_index == step - batch_size:
                 continue
-            assert len(env_episode_buffer) == step + 1
+            assert len(obs_buffer) == step + 1
             # Check to see that the last entry in the episode buffer for this
             # environment corresponds to the slice of the most recent
             # observations/actions/rewards at the index corresponding to this
             # environment.
-            observation_tuple, action_tuple, reward_tuple = env_episode_buffer[-1]
-
+            
+            observation_tuple = obs_buffer[-1]
+            action_tuple = action_buffer[-1]
+            reward_tuple = reward_buffer[-1]
             assert observation_tuple.x == observations.x[env_index]
             assert observation_tuple.task_labels is None
             assert observation_tuple.done == observations.done[env_index]
@@ -305,7 +317,9 @@ def test_buffers_are_stacked_correctly(monkeypatch):
                 
     # assert False, (obs, rewards, done, info)
     # loss: Loss = output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
-
+from settings.active.rl.make_env import make_batched_env
+from common.gym_wrappers import PixelObservationWrapper
+  
 
 
 def test_sanity_check_cartpole_done_vector(monkeypatch):
@@ -316,12 +330,10 @@ def test_sanity_check_cartpole_done_vector(monkeypatch):
     
     starting_values = [i for i in range(batch_size)]
     targets = [10 for i in range(batch_size)]
-    from settings.active.rl.make_env import make_batched_env
-    from common.gym_wrappers import PixelObservationWrapper
-    from settings.active.rl.wrappers import AddDoneToObservation, AddInfoToObservation
+    
     env = make_batched_env("CartPole-v0", batch_size=5, wrappers=[PixelObservationWrapper])
     env = AddDoneToObservation(env)
-    env = AddInfoToObservation(env)
+    # env = AddInfoToObservation(env)
     
     # env = BatchedVectorEnv([
     #     partial(gym.make, "CartPole-v0") for i in range(batch_size)

@@ -1,5 +1,5 @@
 from functools import singledispatch, wraps
-from typing import Any, Dict, List, Tuple, TypeVar, Union
+from typing import Any, Dict, List, Tuple, TypeVar, Union, Optional
 
 import gym
 import numpy as np
@@ -87,6 +87,7 @@ def wrap_space(space: S, device: torch.device = None) -> S:
 
     return space
 
+
 @singledispatch
 def from_tensor(space: Space, sample: Union[Tensor, Any]) -> Union[np.ndarray, Any]:
     """ Converts a Tensor into a sample from the given space. """
@@ -124,6 +125,17 @@ def to_tensor(space: Space,
     """ Converts a sample from the given space into a Tensor. """
     return torch.as_tensor(sample, device=device)
 
+from ..spaces.sparse import Sparse
+
+
+@to_tensor.register(Sparse)
+def _(space: Sparse,
+      sample: Optional[Any],
+      device: torch.device = None) -> Optional[Tensor]:
+    if sample is None:
+        return None
+    return to_tensor(space.base, sample, device)
+
 
 @to_tensor.register
 def _(space: spaces.MultiBinary,
@@ -146,7 +158,15 @@ def _(space: spaces.Dict,
 def _(space: spaces.Tuple,
       sample: Tuple[Union[np.ndarray, Any], ...],
       device: torch.device = None) -> Tuple[Union[Tensor, Any], ...]:
+    if len(space.spaces) == 1 and isinstance(space.spaces[0], Sparse):
+        # TODO: Debug this, why are we getting to this case?
+        if sample == None:
+            return (None,)
+        assert False, (space, sample)
+        
     return type(sample)(
-        to_tensor(space[i], value, device)
-        for i, value in enumerate(sample)
+        to_tensor(subspace, sample[i], device)
+        for i, subspace in enumerate(space.spaces) 
     )
+    
+    

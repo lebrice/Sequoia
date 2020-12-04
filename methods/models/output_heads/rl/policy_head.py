@@ -262,9 +262,7 @@ class PolicyHead(ClassificationHead):
                 # initial obs of the new episode.
                 self.observations[env_index].append(env_observation)
             elif not self.observations[env_index]:
-                # IF there are no observations in the buffer, this means we
-                # were just at the end of an episode.
-                # FIXME: Pick up here.
+                raise RuntimeError(f"There are no observations in the buffer?")
 
             
             episode_obs = tuple(self.observations[env_index])

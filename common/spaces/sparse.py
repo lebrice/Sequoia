@@ -9,7 +9,9 @@ argument to the AsyncVectorEnv or BatchedVectorEnv wrappers, we'd need to
 test/debug some bugs with shared memory functions below. In the interest of time
 though, I just set that `shared_memory=False`, and it works great.  
 """
-from typing import Any, Dict, Generic, Optional, Tuple, TypeVar, Union
+from collections import OrderedDict
+from typing import (Any, Dict, Generic, Optional, Sequence, Tuple, TypeVar,
+                    Union)
 
 import gym
 import numpy as np
@@ -85,9 +87,17 @@ from functools import singledispatch
 
 import gym.spaces.utils
 import gym.vector.utils
+import gym.vector.utils.numpy_utils
 from gym.vector.utils import (batch_space, concatenate, create_empty_array,
                               create_shared_memory)
-import gym.vector.utils.numpy_utils
+
+import multiprocessing as mp
+from ctypes import c_bool
+from multiprocessing import Array, Value
+from multiprocessing.context import BaseContext
+
+import gym.vector.utils.shared_memory
+
 # Customize how these functions handle `Sparse` spaces by making them
 # singledispatch callables and registering a new callable.
 
@@ -138,18 +148,10 @@ def unflatten_sparse(space: Sparse[T], x: np.ndarray) -> Optional[T]:
         return gym.spaces.utils.unflatten(space.base, x)
 
 
-@register_sparse_variant(gym.vector.utils.numpy_utils, "create_empty_array")
+@register_sparse_variant(gym.vector.utils, "create_empty_array")
 def create_empty_array_sparse(space: Sparse, n=1, fn=np.zeros) -> np.ndarray:
     return fn([n], dtype=np.object_)
 
-import multiprocessing as mp
-from multiprocessing import Array, Value
-from multiprocessing.context import BaseContext
-
-import gym.vector.utils.shared_memory
-
-from gym.vector.utils.shared_memory import write_base_to_shared_memory
-from ctypes import c_bool
 
 
 @register_sparse_variant(gym.vector.utils.shared_memory, "create_shared_memory")
@@ -222,7 +224,6 @@ def read_from_shared_memory(shared_memory: Union[Dict, Tuple, BaseContext.Array]
         return read_from_shared_memory_(shared_memory, space.base, n)
     return read_from_shared_memory_(shared_memory, space, n)
 
-    
 
 @register_sparse_variant(gym.vector.utils, "batch_space")
 def batch_sparse_space(space: Sparse, n: int=1) -> gym.Space:
@@ -259,7 +260,21 @@ def batch_sparse_space(space: Sparse, n: int=1) -> gym.Space:
     return batch_space(space.base, n)
 
 
-@register_sparse_variant(gym.vector.utils, "concatenate")
-def concatenate_sparse_spaces(space: Sparse, n: int=1) -> gym.Space:
-    assert False, f"Debugging: {space}, {n}"
-    return concatenate(space.base, n)
+@register_sparse_variant(gym.vector.utils.numpy_utils, "concatenate")
+def concatenate_sparse_items(space: Sparse,
+                              items: Sequence[Optional[Any]],
+                              out: Union[tuple, dict, np.ndarray]) -> Union[list, tuple]:
+    for i, item in enumerate(items):
+        out[i] = item
+    return out
+
+from  gym.vector.utils.numpy_utils import concatenate
+
+# @gym.vector.utils.numpy_utils.concatenate.register(spaces.Dict)
+# def concatenate_dict(space: spaces.Dict,
+#                      items: Union[list, tuple],
+#                      out: Union[tuple, dict, np.ndarray]) -> OrderedDict:
+#     return OrderedDict([(
+#         key, concatenate(subspace, [item.get(key) for item in items], out=out[key])
+#         ) for (key, subspace) in space.spaces.items()
+#     ])

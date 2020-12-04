@@ -1,23 +1,25 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List, Any
+from typing import Any, ClassVar, Dict, List
 
 import gym
+import numpy as np
+from common.loss import Loss
+from common.metrics import ClassificationMetrics, get_metrics
 from gym import spaces
+from gym.spaces.utils import flatdim
+from settings import Actions, Observations, Rewards
+from simple_parsing import list_field
 from torch import Tensor, nn
 from torch.nn import Flatten  # type: ignore
-
-from common.loss import Loss
-from common.metrics import get_metrics, ClassificationMetrics
-from simple_parsing import list_field
 from utils.serialization import Serializable
 from utils.utils import camel_case, remove_suffix
+from gym.spaces.utils import flatdim
 
-from settings import Observations, Actions, Rewards
-from ..forward_pass import ForwardPass 
+from ..forward_pass import ForwardPass
 
 
-class OutputHead(nn.Module):
+class OutputHead(nn.Module, ABC):
     """Module for the output head of the model.
     
     This output head is meant for classification, but you could inherit from it
@@ -59,15 +61,18 @@ class OutputHead(nn.Module):
                 )
 
     def __init__(self,
-                 input_size: int,
+                 observation_space: gym.Space,
+                 representation_space: gym.Space,
                  action_space: gym.Space,
                  reward_space: gym.Space = None,
                  hparams: "OutputHead.HParams" = None,
                  name: str = ""):
         super().__init__()
-        self.input_size = input_size
+        self.observation_space = observation_space
+        self.representation_space = representation_space
         self.action_space = action_space
-        self.reward_space = reward_space or action_space
+        self.reward_space = reward_space or spaces.Box(-np.inf, np.inf, ())
+        self.input_size = flatdim(representation_space)
         self.hparams = hparams or self.HParams()
         self.name = name or type(self).name
 

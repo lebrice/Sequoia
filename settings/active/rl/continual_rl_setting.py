@@ -1,6 +1,6 @@
 import itertools
-import warnings
 import json
+import warnings
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
@@ -14,21 +14,25 @@ from gym import spaces
 from gym.envs.atari import AtariEnv
 from gym.envs.classic_control import CartPoleEnv
 from gym.wrappers import AtariPreprocessing
+from simple_parsing import choice, list_field
+from simple_parsing.helpers import dict_field
+from stable_baselines3.common.atari_wrappers import AtariWrapper
+from torch import Tensor
 
 from common import Batch, Config
-from common.gym_wrappers import (MultiTaskEnvironment, SmoothTransitions,
+from common.gym_wrappers import (AddDoneToObservation, AddInfoToObservation,
+                                 MultiTaskEnvironment, SmoothTransitions,
                                  TransformAction, TransformObservation,
                                  TransformReward)
-from common.gym_wrappers.batch_env import BatchedVectorEnv, SyncVectorEnv, VectorEnv
+from common.gym_wrappers.batch_env import (BatchedVectorEnv, SyncVectorEnv,
+                                           VectorEnv)
 from common.gym_wrappers.env_dataset import EnvDataset
 from common.gym_wrappers.pixel_observation import PixelObservationWrapper
 from common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
 from common.gym_wrappers.utils import (IterableWrapper,
-                                       is_classic_control_env,
-                                       is_atari_env,
-                                       classic_control_envs,
-                                       classic_control_env_prefixes, 
-                                       has_wrapper)
+                                       classic_control_env_prefixes,
+                                       classic_control_envs, has_wrapper,
+                                       is_atari_env, is_classic_control_env)
 from common.metrics import RegressionMetrics
 from common.spaces import Sparse
 from common.transforms import Transforms
@@ -37,19 +41,14 @@ from settings.assumptions.incremental import (IncrementalSetting,
                                               TestEnvironment)
 from settings.base import Method
 from settings.base.results import Results
-from simple_parsing import choice, list_field
-from simple_parsing.helpers import dict_field
-from torch import Tensor
 from utils import dict_union, get_logger
 
 from .. import ActiveEnvironment
 from .gym_dataloader import GymDataLoader
 from .make_env import make_batched_env
 from .rl_results import RLResults
-from .wrappers import (AddDoneToObservation, HideTaskLabelsWrapper,
-                       NoTypedObjectsWrapper, RemoveTaskLabelsWrapper,
-                       TypedObjectsWrapper, AddInfoToObservation)
-from stable_baselines3.common.atari_wrappers import AtariWrapper
+from .wrappers import (HideTaskLabelsWrapper, NoTypedObjectsWrapper,
+                       RemoveTaskLabelsWrapper, TypedObjectsWrapper)
 
 logger = get_logger(__file__)
 
@@ -110,7 +109,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # they also have access to those (i.e. for the BaselineMethod).
         done: Optional[Sequence[bool]] = None
         # Same, for the 'info' portion of the result of 'step'.
-        info: Optional[Sequence[Dict]] = None
+        # info: Optional[Sequence[Dict]] = None
 
     # Image transforms to use.
     transforms: List[Transforms] = list_field()
@@ -229,6 +228,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # This attribute will hold a reference to the `on_task_switch` method of
         # the Method being currently applied on this setting.
         self.on_task_switch_callback: Callable[[Optional[int]], None] = None
+        
+        self.train_env: gym.Env
+        self.valid_env: gym.Env
+        self.test_env: gym.Env
 
     def create_task_schedule(self, temp_env: MultiTaskEnvironment) -> Dict[int, Dict]:
         task_schedule: Dict[int, Dict] = {}
@@ -429,6 +432,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         test_dir = "results"
         self.test_env = ContinualRLTestEnvironment(
             env_dataloader,
+            task_schedule=self.test_task_schedule,
             directory=test_dir,
             step_limit=self.max_steps,
             force=True,
@@ -468,20 +472,26 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         logger.debug(f"batch_size: {batch_size}, num_workers: {num_workers}, seed: {seed}")
         if batch_size is None:
             env = env_factory()
-        elif num_workers is None:
-            warnings.warn(UserWarning(
-                f"Running {batch_size} environments in series (very slow!) "
-                f"since the num_workers is None."
-            ))
-            env = SyncVectorEnv([env_factory for _ in range(batch_size)])
         else:
-            env = BatchedVectorEnv(
-                [env_factory for _ in range(batch_size)],
-                n_workers=num_workers,
-                # TODO: Still debugging shared memory + Sparse spaces.
+            env = make_batched_env(
+                env_factory,
+                batch_size=batch_size,
+                num_workers=num_workers,
                 shared_memory=False,
             )
 
+        # elif num_workers is None or num_workers < 0:
+        #     env = SyncVectorEnv([env_factory for _ in range(batch_size)])
+        # else:
+        #     env = BatchedVectorEnv(
+        #         [env_factory for _ in range(batch_size)],
+        #         n_workers=num_workers,
+        #         # TODO: Still debugging shared memory + Sparse spaces.
+        #         shared_memory=False,
+        #     )
+
+        from common.gym_wrappers import ConvertToFromTensors
+        env = ConvertToFromTensors(env, device=self.config.device)
         # Apply the "post-batch" wrappers:
         # Add a wrapper that converts numpy arrays / etc to Observations/Rewards
         # and from Actions objects to numpy arrays.
@@ -655,6 +665,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # them entirely.
             # wrappers.append(RemoveTaskLabelsWrapper)
             wrappers.append(HideTaskLabelsWrapper)
+        
         return wrappers
 
     def _temp_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
@@ -677,17 +688,16 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         )
 
 class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
+    def __init__(self, *args,  task_schedule: Dict, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.task_schedule = task_schedule
+
     def get_results(self) -> RLResults:
         # TODO: Create a RLMetrics object?
         rewards = self.get_episode_rewards()
         lengths = self.get_episode_lengths()
         total_steps = self.get_total_steps()
-        task_schedule: Dict[int, Dict] = {}
-        if isinstance(self.env.unwrapped, VectorEnv):
-            task_schedule = self.env.unwrapped[0].task_schedule
-        else:
-            assert has_wrapper(self.env, MultiTaskEnvironment), self.env
-            task_schedule = self.env.task_schedule
+        task_schedule: Dict[int, Dict] = self.task_schedule
         task_steps = sorted(task_schedule.keys())
         
         assert 0 in task_steps

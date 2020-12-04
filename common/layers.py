@@ -16,7 +16,7 @@ class Lambda(nn.Module):
 
 class Flatten(nn.Module):
     def forward(self, inputs):
-        return inputs.view([inputs.shape[0], -1])
+        return inputs.reshape([inputs.shape[0], -1])
 
 
 class Reshape(nn.Module):

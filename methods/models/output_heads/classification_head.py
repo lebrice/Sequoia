@@ -7,10 +7,11 @@ from common import Batch, ClassificationMetrics, Loss
 from gym import spaces
 from torch import Tensor, nn, LongTensor
 
-from .output_head import OutputHead
-from ..forward_pass import ForwardPass
+from common.layers import Flatten
 from settings import Observations, Actions, Rewards
 
+from .output_head import OutputHead
+from ..forward_pass import ForwardPass
 
 @dataclass(frozen=True)
 class ClassificationOutput(Actions):
@@ -41,13 +42,15 @@ class ClassificationOutput(Actions):
 
 class ClassificationHead(OutputHead):
     def __init__(self,
-                 input_size: int,
+                 observation_space: gym.Space,
+                 representation_space: gym.Space,
                  action_space: gym.Space,
                  reward_space: gym.Space = None,
                  hparams: "OutputHead.HParams" = None,
                  name: str = "classification"):
         super().__init__(
-            input_size=input_size,
+            observation_space=observation_space,
+            representation_space=representation_space,
             action_space=action_space,
             reward_space=reward_space,
             hparams=hparams,
@@ -65,7 +68,7 @@ class ClassificationHead(OutputHead):
             in_features = out_features # next input size is output size of prev.
 
         self.dense = nn.Sequential(
-            nn.Flatten(),
+            Flatten(),
             *hidden_layers,
             nn.Linear(in_features, output_size)
         )

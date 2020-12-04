@@ -18,8 +18,8 @@ from simple_parsing import (Serializable, choice, field, flag, list_field,
                             mutable_field)
 from utils.parseable import Parseable
 
-from .trainer_config import TrainerConfig
-from .wandb_config import WandbLoggerConfig
+# from .trainer_config import TrainerConfig
+# from .wandb_config import WandbLoggerConfig
 
 
 @dataclass
@@ -41,7 +41,7 @@ class Config(Serializable, Parseable):
     # Enables more verbose logging.
     verbose: bool = flag(False)
     # Number of workers for the dataloaders.
-    num_workers: int = torch.get_num_threads()
+    num_workers: Optional[int] = torch.get_num_threads()
     # Random seed.
     seed: Optional[int] = None
     # Which device to use. Defaults to 'cuda' if available.

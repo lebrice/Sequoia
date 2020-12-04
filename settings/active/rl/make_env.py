@@ -1,6 +1,8 @@
 """Creates an IterableDataset from a gym env by applying different wrappers.
 """
 import copy
+import warnings
+
 import multiprocessing as mp
 from functools import partial
 from typing import Callable, Dict, Iterable, List, Tuple, Type, TypeVar, Union
@@ -120,6 +122,13 @@ def make_batched_env(base_env: Union[str, Callable],
         if batch_size != num_workers:
             return BatchedVectorEnv(env_fns, shared_memory=shared_memory, n_workers=num_workers)
         return AsyncVectorEnv(env_fns, shared_memory=shared_memory)
+
+    if batch_size > 1:
+        warnings.warn(UserWarning(
+            f"Running {batch_size} environments in series, which might be "
+            f"slow. Consider setting the `num_workers` argument, perhaps to "
+            f"the number of CPUs on your machine."
+        ))
     return SyncVectorEnv(env_fns)
 
 

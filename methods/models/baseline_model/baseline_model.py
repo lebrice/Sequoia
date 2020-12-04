@@ -73,48 +73,74 @@ class BaselineModel(SemiSupervisedModel,
         logger.debug(f"Observation space: {self.observation_space}")
         logger.debug(f"Action/Output space: {self.action_space}")
         logger.debug(f"Reward/Label space: {self.reward_space}")
-        
+
         if self.config.debug and self.config.verbose:
             logger.debug("Config:")
             logger.debug(self.config.dumps(indent="\t"))
             logger.debug("Hparams:")
             logger.debug(self.hp.dumps(indent="\t"))
 
-    def create_output_head(self) -> OutputHead:
-        """ Create an output head for the current action space. """
-
-        if isinstance(self.action_space, spaces.Discrete):
-            if isinstance(self.reward_space, spaces.Discrete):
-                # Classification problem:
-                self.output_shape = (self.action_space.n,)
-                return ClassificationHead(
-                    input_size=self.hidden_size,
-                    action_space=self.action_space,
-                    reward_space=self.reward_space,
-                )
-            else:
-                # RL problem, reward is a scalar.
-                self.output_shape = self.reward_space.shape
-                return PolicyHead(
-                    input_size=self.hidden_size,
-                    action_space=self.action_space,
-                    reward_space=self.reward_space,
-                    hparams=self.hp.output_head,
-                )
-
-        if isinstance(self.action_space, spaces.Box):
-            # Regression problem
-            self.output_shape = self.action_space.shape
-            return RegressionHead(
-                input_size=self.hidden_size,
-                action_space=self.action_space,
-                reward_space=self.reward_space,
-            )
-
-        raise NotImplementedError(
-            f"No output head available for action space {self.action_space}"
-        )
 
     # @auto_move_data
     def forward(self, observations: IncrementalSetting.Observations) -> Dict[str, Tensor]:
         return super().forward(observations)
+
+    def training_step(self,
+                      batch: Tuple[Observations, Optional[Rewards]],
+                      batch_idx: int,
+                      *args,
+                      **kwargs):
+        step_result = self.shared_step(
+            batch,
+            batch_idx,
+            *args,
+            environment=self.setting.train_env,
+            loss_name="train",
+            **kwargs
+        )
+        # FIXME: Debugging the baseline method on RL settings. 
+        from settings.active.rl import ContinualRLSetting
+        assert isinstance(batch, ContinualRLSetting.Observations)
+        observations = batch
+        loss: Tensor = step_result["loss"]
+        if any(observations.done):
+            assert False, (batch_idx, observations, loss)
+        # assert False, (batch, loss)
+        if loss == 0.:
+            return None
+        
+        # TODO: Figure this out.
+        optimizer = self.optimizers()
+        optimizer.zero_grad()
+        self.manual_backward(loss, optimizer)
+        assert False, loss
+        self.manual_backward(loss, optimizer)
+        # self.log("")
+        self.manual_optimizer_step(optimizer)
+        return loss
+
+
+    def validation_step(self,
+                      batch: Tuple[Observations, Optional[Rewards]],
+                      *args,
+                      **kwargs):
+        return self.shared_step(
+            batch,
+            *args,
+            environment=self.setting.val_env,
+            loss_name="val",
+            **kwargs
+        )
+
+    def test_step(self,
+                      batch: Tuple[Observations, Optional[Rewards]],
+                      *args,
+                      **kwargs):
+        return self.shared_step(
+            batch,
+            *args,
+            environment=self.setting.test_env,
+            loss_name="test",
+            **kwargs
+        )
+    

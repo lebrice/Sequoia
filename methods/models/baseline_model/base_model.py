@@ -93,8 +93,15 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # training in pytorch-lightning. Not 100% sure.
         # self.example_input_array = torch.rand(self.batch_size, *self.input_shape)
         
-        # Create the encoder and the output head. 
-        self.encoder, self.hidden_size = self.hp.make_encoder()
+        # Create the encoder and the output head.
+        from settings import ContinualRLSetting
+        from gym.spaces.utils import flatdim
+        if isinstance(setting, ContinualRLSetting) and setting.observe_state_directly:
+            self.encoder = nn.Sequential()
+            self.hidden_size = flatdim(self.observation_space[0])
+        else:
+            self.encoder, self.hidden_size = self.hp.make_encoder()
+
         self.output_head = self.create_output_head()
 
     @auto_move_data
@@ -159,27 +166,44 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def create_output_head(self) -> OutputHead:
         """ Create an output head for the current action space. """
-
+        
+        output_head: OutputHead
+        
         if isinstance(self.action_space, spaces.Discrete):
-            self.output_shape = (self.action_space.n,)
-            return ClassificationHead(
-                input_size=self.hidden_size,
-                action_space=self.action_space,
-                reward_space=self.reward_space,
-            )
-
-        if isinstance(self.action_space, spaces.Box):
+            if isinstance(self.reward_space, spaces.Discrete):
+                # Classification problem:
+                # self.output_shape = (self.action_space.n,)
+                output_head = ClassificationHead(
+                    input_size=self.hidden_size,
+                    action_space=self.action_space,
+                    reward_space=self.reward_space,
+                )
+            else:
+                # RL problem, reward is a scalar.
+                # self.output_shape = self.reward_space.shape
+                output_head = PolicyHead(
+                    input_size=self.hidden_size,
+                    action_space=self.action_space,
+                    reward_space=self.reward_space,
+                    hparams=self.hp.output_head,
+                )
+        elif isinstance(self.action_space, spaces.Box):
             # Regression problem
             self.output_shape = self.action_space.shape
-            return RegressionHead(
+            output_head = RegressionHead(
                 input_size=self.hidden_size,
                 action_space=self.action_space,
                 reward_space=self.reward_space,
             )
-
-        raise NotImplementedError(
-            f"No output head available for action space {self.action_space}"
-        )
+        else:
+            raise NotImplementedError(f"Unsupported action space: {self.action_space}")
+        
+        # Add the new parameters to the Optimizer, if it already exists.
+        if self.trainer:
+            optimizer: Optimizer = self.optimizers()
+            assert isinstance(optimizer, Optimizer)
+            optimizer.add_param_group({"params": output_head.parameters()})
+        return output_head
 
     def training_step(self,
                       batch: Tuple[Observations, Optional[Rewards]],
@@ -238,12 +262,10 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # TODO: It would be nice if we could actually do the same things for
         # both sides of the tree here..
         observations, rewards = self.split_batch(batch)
-
         # Get the forward pass results, containing:
         # - "observation": the augmented/transformed/processed observation.
         # - "representations": the representations for the observations.
         # - "actions": The actions (predictions)
-        
         forward_pass: ForwardPass = self(observations)
         
         # get the actions from the forward pass:

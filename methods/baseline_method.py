@@ -94,8 +94,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         self.trainer: Trainer
         self.model: BaselineModel
         
-        self.additional_train_wrappers: List[Callable] = []
-        self.additional_valid_wrappers: List[Callable] = []
+        # self.additional_train_wrappers: List[Callable] = []
+        # self.additional_valid_wrappers: List[Callable] = []
       
     
     def configure(self, setting: SettingType) -> None:
@@ -115,35 +115,34 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         method_name: str = self.get_name()
         setting_name: str = setting.get_name()
         dataset: str = setting.dataset
-        
+
+        # Set the batch size on the setting.
         setting.batch_size = self.hparams.batch_size
+
         # TODO: Should we set the 'config' on the setting from here?
-        setting.config = self.config
-        
+        # setting.config = self.config
+        if self.config != Config():
+            assert setting.config == Config(), "method.config has been modified, and so has setting.config!"
+            setting.config == self.config
+        else:
+            assert setting.config != Config(), "Weird, both configs have default values.."
+            self.config = setting.config
+
         wandb_options: WandbLoggerConfig = self.trainer_options.wandb
         if wandb_options.run_name is None:
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
 
         self.trainer = self.create_trainer(setting)
         self.model = self.create_model(setting)
+
+        # Save the types to use.
         self.Observations: Type[Observations] = setting.Observations
         self.Actions: Type[Actions] = setting.Actions
         self.Rewards: Type[Rewards] = setting.Rewards
 
-        setting.batch_size = self.hparams.batch_size
-
         if isinstance(setting, ContinualRLSetting):
-            from settings.active.rl.wrappers import AddDoneToObservation, AddInfoToObservation
             # Configure specifically for a Continual RL setting.
-            self.additional_train_wrappers.extend([
-                AddDoneToObservation,
-                AddInfoToObservation,
-            ])
-            self.additional_valid_wrappers.extend([
-                AddDoneToObservation,
-                AddInfoToObservation,
-            ])
-            
+            from settings.active.rl.wrappers import AddDoneToObservation, AddInfoToObservation
 
     def fit(self,
             train_env: Environment[Observations, Actions, Rewards] = None,
@@ -158,12 +157,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             "For now, Setting should have been nice enough to call "
             "method.configure(setting=self) before calling `fit`!"
         )
-
-        for wrapper in self.additional_train_wrappers:
-            train_env = wrapper(train_env)
-        for wrapper in self.additional_valid_wrappers:
-            valid_env = wrapper(valid_env)
-
         return self.trainer.fit(
             model=self.model,
             train_dataloader=train_env,
@@ -217,6 +210,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # We use this here to create loggers!
         callbacks = self.create_callbacks(setting)
         trainer = self.trainer_options.make_trainer(
+            config=self.config,
             callbacks=callbacks,
         )
         return trainer
