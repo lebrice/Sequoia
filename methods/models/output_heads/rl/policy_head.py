@@ -104,8 +104,7 @@ class PolicyHead(ClassificationHead):
         max_episode_window_length: int = 10
 
     def __init__(self,
-                 observation_space: spaces.Space,
-                 representation_space: spaces.Space,
+                 input_space: spaces.Space,
                  action_space: spaces.Discrete,
                  reward_space: spaces.Box,
                  hparams: "PolicyHead.HParams" = None,
@@ -113,14 +112,17 @@ class PolicyHead(ClassificationHead):
         assert isinstance(action_space, spaces.Discrete), f"Only support discrete action space for now (got {action_space})."
         assert isinstance(reward_space, spaces.Box), f"Reward space should be a Box (scalar rewards) (got {reward_space})."
         super().__init__(
-            observation_space=observation_space,
-            representation_space=representation_space,
+            input_space=input_space,
             action_space=action_space,
             reward_space=reward_space,
             hparams=hparams,
             name=name,
         )
         if not isinstance(self.hparams, self.HParams):
+            # NOTE: This (getting the wrong hparams class) could happen for
+            # instance when parsing a BaselineMethod from the command-line, the
+            # default type of hparams on the method is BaselineModel.HParams,
+            # which the `output_head` field doesn't have the right type exactly. 
             current_hparams = self.hparams.to_dict()
             missing_args = [f.name for f in dataclasses.fields(self.HParams)
                             if f.name not in current_hparams]
@@ -131,22 +133,25 @@ class PolicyHead(ClassificationHead):
             ))
             self.hparams = self.HParams.from_dict(current_hparams)
         self.hparams: PolicyHead.HParams
+        self.input_space: spaces.Box
         self.action_space: spaces.Discrete
-        self.reward_spaces: spaces.Box
+        self.reward_space: spaces.Box
 
-        self.density: Categorical
-        
         # List of buffers for each environment that will hold some items.
         # TODO: Won't use the 'observations' anymore, will only use the
         # representations from the encoder, so renaming 'representations' to
         # 'observations' in this case.
         # (Should probably come up with another name so this isn't ambiguous).
-        self.observations: List[deque] = []
+        # TODO: Perhaps we should register these as buffers so they get
+        # persisted correclty? But then we also need to make sure that the grad
+        # stuff would work the same way..
+        self.inputs: List[deque] = []
         # self.representations: List[deque] = []
         self.actions: List[deque] = []
         self.rewards: List[deque] = []
         
-                        
+        self.done: np.ndarray = torch.zeros(1, dtype=bool)
+
         # List that holds the 'initial' observations, when an episode boundary
         # is reached.
         self.initial_observations: List[Optional[Tuple]] = []
@@ -177,10 +182,14 @@ class PolicyHead(ClassificationHead):
         # Choose the actions according to their probabilities, rather than just
         # taking the action with highest probability, as is done in the
         # ClassificationHead.
+        self.done = observations.done
+        for i, done in enumerate(observations.done):
+            if done:
+                logger.debug(f"Reached end of episode in env {i}")
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
         policy = Categorical(logits=logits)
-        actions = policy.rsample()
+        actions = policy.sample()
         output = PolicyHeadOutput(
             y_pred=actions,
             logits=logits,
@@ -208,7 +217,7 @@ class PolicyHead(ClassificationHead):
         The contents of this buffer are then rearranged and presented to the
         `get_episode_loss` method in order to get a loss for the given episode.
         The `get_episode_loss` method is also given the environment index, and
-        is passed a boolean `episode_ended` that indicates wether the last
+        is passed a boolean `done` that indicates wether the last
         items in the sequences it received mark the end of the episode.
         
         TODO: My hope is that this will allow us to implement RL methods that
@@ -220,69 +229,93 @@ class PolicyHead(ClassificationHead):
         maximum length of the 'episode buffer' to 1, and consider all
         observations as final, i.e., when episode length == 1
         """
-        observations: ContinualRLSetting.Observations = forward_pass.observations
-        representations: Tensor = forward_pass.representations
-        assert isinstance(observations, ContinualRLSetting.Observations)
+        # TODO: Should we allow the RL output head to use the observations to
+        # create its loss, rather than just the representations? If not, then
+        # how/where do we get the 'done' boolean from? Would it get added to the
+        # representations?
+        inputs: Tensor = forward_pass.representations
+        dones = forward_pass.observations.done
 
-        batch_size = observations.batch_size or 1
+        batch_size = len(inputs)
+        if len(self.done) != batch_size:
+            self.done = np.zeros(batch_size, dtype=bool)
         # Setup the buffers, which will hold the most recent observations,
         # actions and rewards within the current episode for each environment.
-        if not self.observations:
+        if not self.inputs:
             def make_buffers() -> List[deque]:
                 return [
                     deque(maxlen=self.hparams.max_episode_window_length)
                     for _ in range(batch_size)
                 ]
-            self.observations = make_buffers()
-            self.representations = make_buffers()
-            self.actions = make_buffers() 
+            self.inputs = make_buffers()
+            self.actions = make_buffers()
             self.rewards = make_buffers()
 
         total_loss = Loss(self.name)
-        
+
         # Append the most recent elements into the buffer for that environment.
         # per_env_items = zip(env_observations, env_actions, env_rewards)
         for env_index in range(batch_size):
             # Slice the obs/actions/rewards, to recover the individual items
             # from each environment.
-            # NOTE: Will reuse this 'env_observation' later below.
-            env_observation = get_slice(observations, env_index)
-            env_representations = get_slice(representations, env_index)
+            env_done = dones[env_index]
+            env_input = get_slice(inputs, env_index)
             env_action = get_slice(actions, env_index)
             env_reward = get_slice(rewards, env_index)
 
-            done: bool = env_observation.done
-            if isinstance(done, (Tensor, np.ndarray)):
-                done = done.item()
-            assert isinstance(done, bool), done
+            if isinstance(env_done, (Tensor, np.ndarray)):
+                env_done = env_done.item()
+            assert isinstance(env_done, bool), env_done
 
             # TODO: For now, we just overwrite (get rid of) the oldest items in
             # the buffers.
-            self.representations[env_index].append(env_representations)
-            self.actions[env_index].append(env_action)
-            self.rewards[env_index].append(env_reward)
+            if env_done:
+                # TODO: The actions
+                # self.actions[env_index].append(env_reward)
+                # self.rewards[env_index].append(env_reward)
+                
+                # Take out the items
+                episode_inputs = tuple(self.inputs[env_index])
+                episode_actions = tuple(self.actions[env_index])
+                episode_rewards = tuple(self.rewards[env_index])
+                # Clear the buffer
+                self.inputs[env_index].clear()
+                self.actions[env_index].clear()
+                self.rewards[env_index].clear()
 
-            if not done:
-                # If this obs has done=True, assuming that the env is vectorized
-                # and that the AddDoneToObs wrapper gets added *after* the
-                # batching as recommended, then the rest of the obs is the
-                # initial obs of the new episode.
-                self.observations[env_index].append(env_observation)
-            elif not self.observations[env_index]:
-                raise RuntimeError(f"There are no observations in the buffer?")
+                # Add the new items (initial obs for new episode.)
+                self.inputs[env_index].append(env_input)
+                self.actions[env_index].append(env_action)
+                self.rewards[env_index].append(env_reward)
 
-            episode_obs = tuple(self.observations[env_index])
-            episode_actions = tuple(self.actions[env_index])
-            episode_rewards = tuple(self.rewards[env_index])
+            else:
+                self.inputs[env_index].append(env_input)
+                self.actions[env_index].append(env_action)
+                self.rewards[env_index].append(env_reward)
+                
+                episode_inputs = tuple(self.inputs[env_index])
+                episode_actions = tuple(self.actions[env_index])
+                episode_rewards = tuple(self.rewards[env_index])
+            
+
+            # if not env_done:
+            #     # If done is True for this env, because we assume that the
+            #     # env is vectorized, everything we're getting now is for the
+            #     # start of the next episode, not the final observation in the
+            #     # episode.
+            #     # This is one annoying thing about gym's VectorEnvs that I
+            #     # really don't like.
+            #     self.inputs[env_index].append(env_observation)
+
             
             # TODO: Maybe add a mechanism for disabling this 're-stacking' when
             # we always only compute a loss at the end of episodes?
-                        
+
             # Make sure this all still works (should work even better) once we
             # change the obs to dicts instead of Batch objects.
-            stacked_obs = stack(self.observation_space, episode_obs)
+            stacked_inputs = stack(self.input_space, episode_inputs)
             # TODO: Could maybe use out=<some parameter on this module> to
-            # prevent having to create new 'container' tensors all the time.
+            # prevent having to create new 'container' tensors at each step?
             # TODO: Update this if we change the action space
             y_preds = torch.stack([action.y_pred for action in episode_actions])
             logits = torch.stack([action.policy.logits for action in episode_actions])
@@ -296,33 +329,23 @@ class PolicyHead(ClassificationHead):
                 y=stack(self.reward_space, [reward.y for reward in episode_rewards])
             )
 
-            if done:
-                # Clear the buffers.
-                self.observations[env_index].clear()
-                self.actions[env_index].clear()
-                self.rewards[env_index].clear()
+            # if done:
+            #     # Clear the buffers.
+            #     self.observations[env_index].clear()
+            #     self.actions[env_index].clear()
+            #     self.rewards[env_index].clear()
 
-                # Add the new 'initial' obs in the buffer.
-                # TODO: Move this somewhere else.
-                from dataclasses import is_dataclass, replace
-                if is_dataclass(env_observation):
-                    env_observation = replace(env_observation, done=False)
-                elif isinstance(env_observation, NamedTuple):
-                    env_observation = env_observation._replace(done=False)
-                elif isinstance(env_observation, dict):
-                    assert "done" in env_observation
-                    env_observation["done"] = False
-                else:
-                    raise NotImplementedError("TODO: Don't know how to set 'done=False' in env obs {env_observation}.")
-
-                self.observations[env_index].append(env_observation)
+            #     # Add the new 'initial' obs in the buffer.
+            #     # TODO: Move this somewhere else.
+                
+            #     self.observations[env_index].append(env_observation)
 
             loss = self.get_episode_loss(
                 env_index=env_index,
-                observations=stacked_obs,
+                inputs=stacked_inputs,
                 actions=stacked_actions,
                 rewards=stacked_rewards,
-                done=done,
+                done=env_done,
             )
             # If we are able to get a loss for this set of observations/actions/
             # rewards, then add it to the total loss.
@@ -336,9 +359,9 @@ class PolicyHead(ClassificationHead):
            
     def get_episode_loss(self,
                          env_index: int,
-                         observations: ContinualRLSetting.Observations,
-                         representations: Tensor,
-                         actions: ContinualRLSetting.Observations,
+                        #  observations: ContinualRLSetting.Observations,
+                         inputs: Tensor,
+                         actions: PolicyHeadOutput,
                          rewards: ContinualRLSetting.Rewards,
                          done: bool) -> Optional[Loss]:
         """Calculate a loss to train with, given the last (up to
@@ -360,8 +383,11 @@ class PolicyHead(ClassificationHead):
 
         log_probabilities = actions.y_pred_log_prob
         rewards = rewards.y
-        loss = self.policy_gradient(rewards=rewards, log_probs=log_probabilities, gamma=self.hparams.gamma)
-
+        loss = self.policy_gradient(
+            rewards=rewards,
+            log_probs=log_probabilities,
+            gamma=self.hparams.gamma,
+        )
         # TODO: Add 'Metrics' for each episode?
         return Loss(self.name, loss)
 

@@ -132,10 +132,18 @@ class Batch(ABC):
 
             # e.g: forward_pass[:, 1]
             if field_index == slice(None):
+                # if len(index) == 2 and isinstance(index[1], int):
+                #     return self[index[1]]
+                # if len(index) > 2 and isinstance(index[1], int):
+                #     return self[index[1]][index[1:]]
+                # assert False, index
+                # return self[index[1:]]
+                # return get_slice(self, )
                 # Get all fields, sliced with the second item.
-                return get_slice(self, index)
-                # return tuple(value[index[1:]] if value is not None else None 
-                #             for value in self.values())
+                return type(self)(**{
+                    key: value[index[1:]] if value is not None else None 
+                    for key, value in self.items()
+                })
             
             raise NotImplementedError(f"{type(self)} doesn't support indexing with {index}.")
             return self[field_index][index[1:]]

@@ -578,13 +578,8 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             if task_label is None:
                 assert x in self.observation_space[0]
             else:
-                assert first_obs in self.observation_space
-            
-            assert len(first_obs) == len(self.size())
-            for sample_item, expected_shape in zip(first_obs, self.size()):
-                if isinstance(sample_item, (Tensor, np.ndarray)):
-                    assert sample_item.shape == expected_shape
-
+                assert tuple(first_obs) in self.observation_space, first_obs
+                        
             for i in range(5):
                 actions = env.action_space.sample()
                 observations, rewards, done, info = env.step(actions)
