@@ -21,7 +21,8 @@ import numpy as np
 import torch
 from simple_parsing import field
 from torch import Tensor, cuda, nn
-from .namedtuple_patch import NamedTuple, is_namedtuple, is_namedtuple_type
+
+
 cuda_available = cuda.is_available()
 gpus_available = cuda.device_count()
 

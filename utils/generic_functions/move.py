@@ -2,7 +2,7 @@
 """
 from functools import singledispatch
 from typing import Dict, Sequence, TypeVar, Union
-from .utils import NamedTuple
+from ._namedtuple import NamedTuple
 import torch
 
 T = TypeVar("T")

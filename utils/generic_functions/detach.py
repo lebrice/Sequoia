@@ -1,6 +1,6 @@
 from functools import singledispatch
 from typing import Any, Dict, Sequence, TypeVar
-from .utils import NamedTuple
+from ._namedtuple import NamedTuple
 
 T = TypeVar("T")
 

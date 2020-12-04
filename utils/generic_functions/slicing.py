@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from .utils import is_namedtuple
+from ._namedtuple import is_namedtuple
 
 K = TypeVar("K")
 V = TypeVar("V")
