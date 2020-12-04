@@ -1,3 +1,7 @@
+""" WIP: Exploring the idea of creating a 'universal encoder' function, that
+would create an appropriate model for mapping from any given input space to
+output space, given a specified budget (maximum number of network parameters).
+"""
 import bisect
 import math
 import warnings
