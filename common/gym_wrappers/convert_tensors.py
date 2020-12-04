@@ -13,6 +13,8 @@ logger = get_logger(__file__)
 
 S = TypeVar("S", bound=Space)
 
+from utils.generic_functions import to_tensor, from_tensor
+
 
 class ConvertToFromTensors(gym.Wrapper):
     """ Wrapper that converts Tensors into samples/ndarrays and vice versa.
@@ -58,6 +60,11 @@ class ConvertToFromTensors(gym.Wrapper):
         # info = np.ndarray(info)
         return type(result)([observation, reward, done, info])
 
+def does_supports_tensors(space: S) -> bool:
+    return getattr(space, "__supports_tensors", False)
+
+def _mark_supports_tensors(space: S) -> bool:
+    return setattr(space, "__supports_tensors", True)
 
 def wrap_space(space: S, device: torch.device = None) -> S:
     """Wraps `space` so its `sample()` method produces Tensors, and its
@@ -68,6 +75,10 @@ def wrap_space(space: S, device: torch.device = None) -> S:
     # Save the original methods so we can use them.
     sample = space.sample
     contains = space.contains
+    if does_supports_tensors(space):
+        logger.debug(f"Space {space} already supports Tensors.")
+        return
+    _mark_supports_tensors(space)
     
     @wraps(space.sample)
     def _sample(*args, **kwargs):
@@ -84,89 +95,10 @@ def wrap_space(space: S, device: torch.device = None) -> S:
 
     space.sample = _sample
     space.contains = _contains
-
+    if isinstance(space, (spaces.Tuple, spaces.Dict)):
+        @wraps(space.__getitem__)
+        def __getitem__(self, index):
+            return wrap_space(self.spaces[index])
+        space.__getitem__ = __getitem__
+    
     return space
-
-
-@singledispatch
-def from_tensor(space: Space, sample: Union[Tensor, Any]) -> Union[np.ndarray, Any]:
-    """ Converts a Tensor into a sample from the given space. """
-    if isinstance(sample, Tensor):
-        return sample.cpu().numpy()
-    return sample
-
-
-@from_tensor.register
-def _(space: spaces.Discrete, sample: Tensor) -> int:
-    if isinstance(sample, Tensor):
-        return sample.item()
-    return sample
-
-
-@from_tensor.register
-def _(space: spaces.Dict, sample: Dict[str, Union[Tensor, Any]]) -> Dict[str, Union[np.ndarray, Any]]:
-    return {
-        key: from_tensor(space[key], value)
-        for key, value in sample.items()
-    }
-
-@from_tensor.register
-def _(space: spaces.Tuple, sample: Tuple[Union[Tensor, Any]]) -> Tuple[Union[np.ndarray, Any]]:
-    return type(sample)(
-        from_tensor(space[i], value)
-        for i, value in enumerate(sample)
-    )
-
-
-@singledispatch
-def to_tensor(space: Space,
-              sample: Union[np.ndarray, Any],
-              device: torch.device = None) -> Union[np.ndarray, Any]:
-    """ Converts a sample from the given space into a Tensor. """
-    return torch.as_tensor(sample, device=device)
-
-from ..spaces.sparse import Sparse
-
-
-@to_tensor.register(Sparse)
-def _(space: Sparse,
-      sample: Optional[Any],
-      device: torch.device = None) -> Optional[Tensor]:
-    if sample is None:
-        return None
-    return to_tensor(space.base, sample, device)
-
-
-@to_tensor.register
-def _(space: spaces.MultiBinary,
-      sample: np.ndarray,
-      device: torch.device = None) -> Dict[str, Union[Tensor, Any]]:
-    return torch.as_tensor(sample, device=device, dtype=torch.bool)
-
-
-@to_tensor.register
-def _(space: spaces.Dict,
-      sample: Dict[str, Union[np.ndarray, Any]],
-      device: torch.device = None) -> Dict[str, Union[Tensor, Any]]:
-    return {
-        key: to_tensor(space[key], value, device)
-        for key, value in sample.items()
-    }
-
-
-@to_tensor.register
-def _(space: spaces.Tuple,
-      sample: Tuple[Union[np.ndarray, Any], ...],
-      device: torch.device = None) -> Tuple[Union[Tensor, Any], ...]:
-    if len(space.spaces) == 1 and isinstance(space.spaces[0], Sparse):
-        # TODO: Debug this, why are we getting to this case?
-        if sample == None:
-            return (None,)
-        assert False, (space, sample)
-        
-    return type(sample)(
-        to_tensor(subspace, sample[i], device)
-        for i, subspace in enumerate(space.spaces) 
-    )
-    
-    
