@@ -61,8 +61,6 @@ def add_done_to_space(observation: Space, done: Space) -> Space:
     )
 
 
-
-
 @add_done.register
 def _add_done_to_box_space(observation: spaces.Box, done: Space) -> spaces.Tuple:
     return spaces.Tuple([
@@ -94,9 +92,14 @@ class AddDoneToObservation(IterableWrapper):
     when iterating over the env like a dataloader, the yielded items only
     have the observations, and dont have the 'done' vector. (so as to be
     consistent with supervised learning).
+    
+    NOTE: NEVER use this *BEFORE* batching, because of how the 'reset' works in
+    all VectorEnvs, the observations will always be the 'new' ones, so `done`
+    (in the obs) will always be False!
     """
     def __init__(self, env: gym.Env, done_space: Space = None):
         super().__init__(env)
+        # happens in the VectorEnv, done is always False!
         self.is_vectorized = isinstance(env.unwrapped, VectorEnv)
         # boolean value. (0 or 1)
         if done_space is None:
