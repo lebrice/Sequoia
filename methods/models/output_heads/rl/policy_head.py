@@ -137,9 +137,12 @@ class PolicyHead(ClassificationHead):
         self.density: Categorical
         
         # List of buffers for each environment that will hold some items.
-        # self.episode_buffers: List[deque] = []
+        # TODO: Won't use the 'observations' anymore, will only use the
+        # representations from the encoder, so renaming 'representations' to
+        # 'observations' in this case.
+        # (Should probably come up with another name so this isn't ambiguous).
         self.observations: List[deque] = []
-        self.representations: List[deque] = []
+        # self.representations: List[deque] = []
         self.actions: List[deque] = []
         self.rewards: List[deque] = []
         
@@ -150,7 +153,11 @@ class PolicyHead(ClassificationHead):
 
     def forward(self, observations: ContinualRLSetting.Observations, representations: Tensor) -> PolicyHeadOutput:
         """ Forward pass of a Policy head.
-        
+
+        TODO: Do we actually need the observations here? It is here so we have
+        access to the 'done' from the env, but do we really need it here? or
+        would there be another (cleaner) way to do this?
+
         NOTE: (@lebrice) This is identical to the forward pass of the
         ClassificationHead, except that the policy is stochastic: the actions
         are sampled from the probabilities described by the logits, rather than
@@ -173,7 +180,7 @@ class PolicyHead(ClassificationHead):
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
         policy = Categorical(logits=logits)
-        actions = policy.sample()
+        actions = policy.rsample()
         output = PolicyHeadOutput(
             y_pred=actions,
             logits=logits,
@@ -264,9 +271,7 @@ class PolicyHead(ClassificationHead):
             elif not self.observations[env_index]:
                 raise RuntimeError(f"There are no observations in the buffer?")
 
-            
             episode_obs = tuple(self.observations[env_index])
-            episode_representations = tuple(self.representations[env_index])
             episode_actions = tuple(self.actions[env_index])
             episode_rewards = tuple(self.rewards[env_index])
             
@@ -278,7 +283,6 @@ class PolicyHead(ClassificationHead):
             stacked_obs = stack(self.observation_space, episode_obs)
             # TODO: Could maybe use out=<some parameter on this module> to
             # prevent having to create new 'container' tensors all the time.
-            stacked_representations = stack(self.representation_space, episode_representations)
             # TODO: Update this if we change the action space
             y_preds = torch.stack([action.y_pred for action in episode_actions])
             logits = torch.stack([action.policy.logits for action in episode_actions])
@@ -295,7 +299,6 @@ class PolicyHead(ClassificationHead):
             if done:
                 # Clear the buffers.
                 self.observations[env_index].clear()
-                self.representations[env_index].clear()          
                 self.actions[env_index].clear()
                 self.rewards[env_index].clear()
 
@@ -317,7 +320,6 @@ class PolicyHead(ClassificationHead):
             loss = self.get_episode_loss(
                 env_index=env_index,
                 observations=stacked_obs,
-                representations=stacked_representations,
                 actions=stacked_actions,
                 rewards=stacked_rewards,
                 done=done,

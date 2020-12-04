@@ -32,6 +32,7 @@ from settings.base.setting import Setting, SettingType
 from settings.base import Method
 from utils import Parseable, Serializable, get_logger, singledispatchmethod
 from utils.utils import get_path_to_source_file
+from common.gym_wrappers import AddDoneToObservation, AddInfoToObservation
 
 from .models import BaselineModel, ForwardPass
 
@@ -121,7 +122,9 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         # TODO: Should we set the 'config' on the setting from here?
         # setting.config = self.config
-        if self.config != Config():
+        if setting.config == self.config:
+            pass
+        elif self.config != Config():
             assert setting.config == Config(), "method.config has been modified, and so has setting.config!"
             setting.config == self.config
         else:
@@ -142,7 +145,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         if isinstance(setting, ContinualRLSetting):
             # Configure specifically for a Continual RL setting.
-            from settings.active.rl.wrappers import AddDoneToObservation, AddInfoToObservation
+            pass
 
     def fit(self,
             train_env: Environment[Observations, Actions, Rewards] = None,

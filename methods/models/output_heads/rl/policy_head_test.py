@@ -38,8 +38,7 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
     env = EnvDataset(env)
 
     head = PolicyHead(
-        observation_space=obs_space,
-        representation_space=obs_space[0],
+        input_space=obs_space[0],
         action_space=action_space,
         reward_space=reward_space,
     )
@@ -131,8 +130,8 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
     env = EnvDataset(env)
 
     head = PolicyHead(
-        observation_space=obs_space,
-        representation_space=obs_space[0],
+        # observation_space=obs_space,
+        input_space=obs_space[0],
         action_space=action_space,
         reward_space=reward_space,
     )
@@ -199,9 +198,9 @@ def test_buffers_are_stacked_correctly(monkeypatch):
     assert obs.tolist() == list(range(batch_size))
     
     reward_space = spaces.Box(*env.reward_range, shape=())
-    output_head = PolicyHead(observation_space=spaces.Tuple([env.observation_space,
-                                           spaces.Box(False, True, [batch_size], np.bool)]),
-                             representation_space=spaces.Box(0, 1, (1,)),
+    output_head = PolicyHead(#observation_space=spaces.Tuple([env.observation_space,
+                             #              spaces.Box(False, True, [batch_size], np.bool)]),
+                             input_space=spaces.Box(0, 1, (1,)),
                              action_space=env.single_action_space,
                              reward_space=reward_space)
     # Set the max window length, for testing.
@@ -235,7 +234,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
             # Unfortunately, we don't get the final state, because of how
             # VectorEnv works atm.
             assert observations.x[-1] == targets[env_index] - 1
-        
+
     monkeypatch.setattr(PolicyHead, "get_episode_loss", mock_get_episode_loss)
 
     # perform 10 iterations, incrementing each DummyEnvironment's counter at

@@ -61,18 +61,16 @@ class OutputHead(nn.Module, ABC):
                 )
 
     def __init__(self,
-                 observation_space: gym.Space,
-                 representation_space: gym.Space,
+                 input_space: gym.Space,
                  action_space: gym.Space,
                  reward_space: gym.Space = None,
                  hparams: "OutputHead.HParams" = None,
                  name: str = ""):
         super().__init__()
-        self.observation_space = observation_space
-        self.representation_space = representation_space
+        self.input_space = input_space
         self.action_space = action_space
         self.reward_space = reward_space or spaces.Box(-np.inf, np.inf, ())
-        self.input_size = flatdim(representation_space)
+        self.input_size = flatdim(input_space)
         self.hparams = hparams or self.HParams()
         self.name = name or type(self).name
 

@@ -35,7 +35,7 @@ class Batch(ABC):
     iterator over the values, not the string keys.
     
     Examples:
-    
+
     >>> import torch
     >>> from typing import Optional
     >>> from dataclasses import dataclass
@@ -115,7 +115,13 @@ class Batch(ABC):
             # is slicing into the tensors, rather than into the fields.
             # Plus, there really shouldn't be that many fields in a Batch object
             # anyway.
-            raise NotImplementedError(f"Batch doesn't support slice indexing.")
+            if index == slice(None, None, None):
+                return self
+            raise NotImplementedError(
+                "Batch objects only support slice indexing with empty slices."
+            )
+        elif index is Ellipsis:
+            return self
         elif isinstance(index, (tuple, list)):
             field_index = index[0]
             if len(index) <= 1:
@@ -123,10 +129,15 @@ class Batch(ABC):
                                  f"tuples, they need to have len > 1.")
             if isinstance(field_index, int):
                 return self[field_index][index[1:]]
+
+            # e.g: forward_pass[:, 1]
             if field_index == slice(None):
                 # Get all fields, sliced with the second item.
-                return tuple(value[index[1:]] if value is not None else None 
-                            for value in self.values())
+                return get_slice(self, index)
+                # return tuple(value[index[1:]] if value is not None else None 
+                #             for value in self.values())
+            
+            raise NotImplementedError(f"{type(self)} doesn't support indexing with {index}.")
             return self[field_index][index[1:]]
             # else:
             #     raise IndexError("Can only use int or empty slice as first "
@@ -379,7 +390,6 @@ def get_batch_slice(value: Batch, indices: Sequence[int]) -> Batch:
         field_name: get_slice(field_value, indices) if field_value is not None else None
         for field_name, field_value in value.as_dict().items()
     })
-
 
 @set_slice.register(Batch)
 def set_batch_slice(target: Batch, indices: Sequence[int], values: Tuple[T, ...]) -> None:

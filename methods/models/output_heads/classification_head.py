@@ -42,15 +42,13 @@ class ClassificationOutput(Actions):
 
 class ClassificationHead(OutputHead):
     def __init__(self,
-                 observation_space: gym.Space,
-                 representation_space: gym.Space,
+                 input_space: gym.Space,
                  action_space: gym.Space,
                  reward_space: gym.Space = None,
                  hparams: "OutputHead.HParams" = None,
                  name: str = "classification"):
         super().__init__(
-            observation_space=observation_space,
-            representation_space=representation_space,
+            input_space=input_space,
             action_space=action_space,
             reward_space=reward_space,
             hparams=hparams,

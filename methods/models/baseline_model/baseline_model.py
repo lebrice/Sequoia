@@ -98,25 +98,16 @@ class BaselineModel(SemiSupervisedModel,
             loss_name="train",
             **kwargs
         )
-        # FIXME: Debugging the baseline method on RL settings. 
-        from settings.active.rl import ContinualRLSetting
-        assert isinstance(batch, ContinualRLSetting.Observations)
-        observations = batch
         loss: Tensor = step_result["loss"]
-        if any(observations.done):
-            assert False, (batch_idx, observations, loss)
-        # assert False, (batch, loss)
         if loss == 0.:
             return None
-        
+
+        # self.log("loss", loss, on_step=True, prog_bar=True, logger=True)
         # TODO: Figure this out.
-        optimizer = self.optimizers()
-        optimizer.zero_grad()
-        self.manual_backward(loss, optimizer)
-        assert False, loss
-        self.manual_backward(loss, optimizer)
-        # self.log("")
-        self.manual_optimizer_step(optimizer)
+        # optimizer = self.optimizers()
+        # optimizer.zero_grad()
+        # self.manual_backward(loss, optimizer)
+        # self.manual_optimizer_step(optimizer)
         return loss
 
 
