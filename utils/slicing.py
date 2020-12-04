@@ -71,72 +71,71 @@ def _set_tuple_slice(target: Tuple[T, ...], indices: Sequence[int], values: Tupl
         set_slice(target_item, indices, values_item)
 
 
-
-@singledispatch
-def concatenate(value_a: T, value_b: T, *args, **kwargs) -> T:
-    """ Concatenates two tensors. Also supports arbitrarily nested tuples and
-    dicts of tensors.
-    """
-    raise NotImplementedError(
-        f"Function `{concatenate}` doesn't have a registered implementation "
-        f"for handling values of type {type(value_a)}. "
-        f"(value_a: {value_a}, value_b: {value_b}, args: {args}, kwargs: {kwargs})."
-    )
-
-from collections import namedtuple
-from typing import NamedTuple
+# from collections import namedtuple
+# from typing import NamedTuple
 
 
-@concatenate.register(np.ndarray)
-def _concatenate_numpy_arrays(value_a: np.ndarray, value_b: np.ndarray, *args, **kwargs) -> np.ndarray:
-    return np.concatenate([value_a, value_b], *args, **kwargs)
+# @singledispatch
+# def concatenate(value_a: T, value_b: T, *args, **kwargs) -> T:
+#     """ Concatenates two tensors. Also supports arbitrarily nested tuples and
+#     dicts of tensors.
+#     """
+#     raise NotImplementedError(
+#         f"Function `{concatenate}` doesn't have a registered implementation "
+#         f"for handling values of type {type(value_a)}. "
+#         f"(value_a: {value_a}, value_b: {value_b}, args: {args}, kwargs: {kwargs})."
+#     )
+
+# @concatenate.register(np.ndarray)
+# def _concatenate_numpy_arrays(value_a: np.ndarray, value_b: np.ndarray, *args, **kwargs) -> np.ndarray:
+#     return np.concatenate([value_a, value_b], *args, **kwargs)
 
 
-@concatenate.register(Tensor)
-def _concatenate_tensors(value_a: Tensor, value_b: Tensor, *args, **kwargs) -> np.ndarray:
-    return torch.concatenate([value_a, value_b], *args, **kwargs)
+# @concatenate.register(Tensor)
+# def _concatenate_tensors(value_a: Tensor, value_b: Tensor, *args, **kwargs) -> np.ndarray:
+#     return torch.concatenate([value_a, value_b], *args, **kwargs)
 
 
-@concatenate.register(list)
-def _concatenate_lists(value_a: List[T], value_b: List[T], *args, **kwargs) -> np.ndarray:
-    # TODO: Should we concatenate lists like usual? or should we treat those
-    # like we do tuples below and concatenate the elements?
-    raise NotImplementedError(
-        f"Refusing to concatenate lists, because its ambiguous atm wether this "
-        f"should concat the elements of the two lists or the lists themselves. "
-    )
-    return np.concatenate([value_a, value_b], *args, **kwargs)
+# @concatenate.register(list)
+# def _concatenate_lists(value_a: List[T], value_b: List[T], *args, **kwargs) -> np.ndarray:
+#     # TODO: Should we concatenate lists like usual? or should we treat those
+#     # like we do tuples below and concatenate the elements?
+#     raise NotImplementedError(
+#         f"Refusing to concatenate lists, because its ambiguous atm wether this "
+#         f"should concat the elements of the two lists or the lists themselves. "
+#     )
+#     return np.concatenate([value_a, value_b], *args, **kwargs)
 
 
-@concatenate.register(NamedTuple)
-def _concatenate_namedtuples(value_a: Tuple[T, ...], value_b: Tuple[T, ...], *args, **kwargs) -> Tuple[T, ...]:
-    assert type(value_a) == type(value_b)
-    assert len(value_a) == len(value_b)
-    return type(value_a)(*[
-        concatenate(value_a[i], value_b[i], *args, **kwargs)
-        for i in range(len(value_a))
-    ])
+# @concatenate.register(NamedTuple)
+# def _concatenate_namedtuples(value_a: Tuple[T, ...], value_b: Tuple[T, ...], *args, **kwargs) -> Tuple[T, ...]:
+#     assert type(value_a) == type(value_b)
+#     assert len(value_a) == len(value_b)
+#     return type(value_a)(*[
+#         concatenate(value_a[i], value_b[i], *args, **kwargs)
+#         for i in range(len(value_a))
+#     ])
 
 
-@concatenate.register(tuple)
-def _concatenate_tuples(value_a: Tuple[T, ...], value_b: Tuple[T, ...], *args, **kwargs) -> Tuple[T, ...]:
-    assert type(value_a) == type(value_b)
-    assert len(value_a) == len(value_b)
+# @concatenate.register(tuple)
+# def _concatenate_tuples(value_a: Tuple[T, ...], value_b: Tuple[T, ...], *args, **kwargs) -> Tuple[T, ...]:
+#     assert type(value_a) == type(value_b)
+#     assert len(value_a) == len(value_b)
 
-    if is_namedtuple(value_a):
-        return _concatenate_namedtuples(value_a, value_b, *args, **kwargs)
+#     if is_namedtuple(value_a):
+#         return _concatenate_namedtuples(value_a, value_b, *args, **kwargs)
 
-    return type(value_a)(
-        concatenate(value_a[i], value_b[i], *args, **kwargs)
-        for i in range(len(value_a))
-    )
+#     return type(value_a)(
+#         concatenate(value_a[i], value_b[i], *args, **kwargs)
+#         for i in range(len(value_a))
+#     )
 
 
-@concatenate.register(dict)
-def _concatenate_dicts(value_a: Dict[K, V], value_b: Dict[K, V], *args, **kwargs) -> Dict[K, V]:
-    assert type(value_a) == type(value_b)
-    assert value_a.keys() == value_b.keys()
-    return type(value_a)(
-        (key, concatenate(value_a[key], value_b[key], *args, **kwargs))
-        for key in value_a
-    )
+# @concatenate.register(dict)
+# def _concatenate_dicts(value_a: Dict[K, V], value_b: Dict[K, V], *args, **kwargs) -> Dict[K, V]:
+#     assert type(value_a) == type(value_b)
+#     assert value_a.keys() == value_b.keys()
+#     return type(value_a)(
+#         (key, concatenate(value_a[key], value_b[key], *args, **kwargs))
+#         for key in value_a
+#     )
