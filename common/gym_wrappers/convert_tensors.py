@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from gym import Space, spaces
 from torch import Tensor
-from utils.move import move
+from utils.generic_functions import move
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)

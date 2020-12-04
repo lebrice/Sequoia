@@ -16,7 +16,7 @@ from settings.assumptions.incremental import IncrementalSetting
 
 from utils import dict_intersection, zip_dicts, prod
 from utils.logging_utils import get_logger
-from utils.slicing import get_slice, set_slice
+from utils.generic_functions import get_slice, set_slice
 
 # from .semi_supervised_model import SemiSupervisedModel
 from .base_model import BaseModel
@@ -296,7 +296,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
 
 from functools import singledispatch
 from typing import Any, Tuple, Dict, TypeVar
-from utils.utils import NamedTuple
+from utils import NamedTuple
 K = TypeVar("K")
 V = TypeVar("V")
 T = TypeVar("T")

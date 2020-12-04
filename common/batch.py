@@ -18,7 +18,7 @@ import torch
 from gym import spaces
 from torch import Tensor
 
-from utils.slicing import get_slice, set_slice
+from utils.generic_functions import get_slice, set_slice
 Item = TypeVar("Item", bound=collections_abc.Sized)
 
 

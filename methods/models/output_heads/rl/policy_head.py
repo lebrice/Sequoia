@@ -22,15 +22,15 @@ from common.layers import Lambda
 from methods.models.forward_pass import ForwardPass 
 from utils.utils import prod
 from utils.logging_utils import get_logger
+from utils.generic_functions import stack
 from settings.base.objects import Actions, Observations, Rewards
 from settings.active.rl.continual_rl_setting import ContinualRLSetting
 
-from .stack import stack
 from ..classification_head import ClassificationOutput, ClassificationHead
 from ..output_head import OutputHead
 logger = get_logger(__file__)
 
-from utils.slicing import get_slice, set_slice
+from utils.generic_functions import get_slice, set_slice
 
 class Categorical(Categorical_):
     """ Simple little addition to the Categorical class, allowing it to be 'split'
