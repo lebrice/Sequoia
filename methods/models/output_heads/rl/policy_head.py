@@ -4,31 +4,33 @@ BaselineMethod when applied on an RL setting.
 import dataclasses
 import itertools
 from dataclasses import dataclass
-from typing import Dict, Tuple, Union, List, Optional, TypeVar, Iterable, Any
+from typing import Dict, Tuple, Union, List, Optional, TypeVar, Iterable, Any, Sequence, NamedTuple
 from abc import abstractmethod, ABC
-from collections import deque
+from collections import namedtuple, deque, OrderedDict
 
 import gym
 import numpy as np
 import torch
-from gym import spaces
+from gym import spaces, Space
+from gym.vector.utils.numpy_utils import concatenate, create_empty_array
 from torch import LongTensor, Tensor, nn
 from torch.distributions import Categorical as Categorical_, Distribution
 
 from common import Loss
 from common.layers import Lambda
-from common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
+# from common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
 from methods.models.forward_pass import ForwardPass 
 from utils.utils import prod
 from utils.logging_utils import get_logger
 from settings.base.objects import Actions, Observations, Rewards
 from settings.active.rl.continual_rl_setting import ContinualRLSetting
 
+from .stack import stack
 from ..classification_head import ClassificationOutput, ClassificationHead
 from ..output_head import OutputHead
 logger = get_logger(__file__)
-from collections import namedtuple
 
+from utils.slicing import get_slice, set_slice
 
 class Categorical(Categorical_):
     """ Simple little addition to the Categorical class, allowing it to be 'split'
@@ -100,9 +102,10 @@ class PolicyHead(ClassificationHead):
         # states/actions/rewards of the current episode. When a batched
         # environment is used
         max_episode_window_length: int = 10
-    
+
     def __init__(self,
-                 input_size: int,
+                 observation_space: spaces.Space,
+                 representation_space: spaces.Space,
                  action_space: spaces.Discrete,
                  reward_space: spaces.Box,
                  hparams: "PolicyHead.HParams" = None,
@@ -110,7 +113,8 @@ class PolicyHead(ClassificationHead):
         assert isinstance(action_space, spaces.Discrete), f"Only support discrete action space for now (got {action_space})."
         assert isinstance(reward_space, spaces.Box), f"Reward space should be a Box (scalar rewards) (got {reward_space})."
         super().__init__(
-            input_size=input_size,
+            observation_space=observation_space,
+            representation_space=representation_space,
             action_space=action_space,
             reward_space=reward_space,
             hparams=hparams,
@@ -131,8 +135,15 @@ class PolicyHead(ClassificationHead):
         self.reward_spaces: spaces.Box
 
         self.density: Categorical
+        
         # List of buffers for each environment that will hold some items.
-        self.episode_buffers: List[deque] = []
+        # self.episode_buffers: List[deque] = []
+        self.observations: List[deque] = []
+        self.representations: List[deque] = []
+        self.actions: List[deque] = []
+        self.rewards: List[deque] = []
+        
+                        
         # List that holds the 'initial' observations, when an episode boundary
         # is reached.
         self.initial_observations: List[Optional[Tuple]] = []
@@ -198,179 +209,164 @@ class PolicyHead(ClassificationHead):
         as methods (like A2C, I think) which can give a Loss even when the
         episode isn't over yet.
         
-        Also, standard supervised learning could possibly be recovered if you
-        set the maximum length of the 'episode buffer' to 1.
+        Also, standard supervised learning could be recovered by setting the
+        maximum length of the 'episode buffer' to 1, and consider all
+        observations as final, i.e., when episode length == 1
         """
         observations: ContinualRLSetting.Observations = forward_pass.observations
-        batch_size = observations.batch_size or 1
-        # Extract the outputs of this head from the forwardpass object.
-        # TODO: Its a bit dumb to have to retrieve our own predictions from the
-        # forward pass dict this way. Might be more natural to get passed the
-        # actions directly as an argument. That would also make it possible to
-        # have more than one 'action' inside the forward pass object.
-        actions: PolicyHeadOutput = forward_pass.actions
-        rewards: ContinualRLSetting.Rewards
+        representations: Tensor = forward_pass.representations
         assert isinstance(observations, ContinualRLSetting.Observations)
-        # Note: we need to have a loss for each, here.
-        done: Sequence[bool] = observations.done
-        
+
+        batch_size = observations.batch_size or 1
         # Setup the buffers, which will hold the most recent observations,
         # actions and rewards within the current episode for each environment.
-        if not self.episode_buffers:
-            self.episode_buffers = [
-                deque(maxlen=self.hparams.max_episode_window_length)
-                for _ in range(batch_size)
-            ]
-
-        if not self.initial_observations:
-            self.initial_observations = [
-                None for _ in range(batch_size)
-            ]
-
-        # Split the batches into slices for each environment.
-        per_env_observation = observations.as_list_of_tuples()
-        per_env_action = actions.as_list_of_tuples()
-        per_env_reward = rewards.as_list_of_tuples()
-
-        per_env_items = zip(per_env_observation, per_env_action, per_env_reward)
-
-        # Append the most recent elements into the buffer for that environment.
-        for env_index, env_items in enumerate(per_env_items):
-            env_observation, env_action, env_reward = env_items
-            
-            env_episode_buffer: deque = self.episode_buffers[env_index]
-            if len(env_episode_buffer) == env_episode_buffer.maxlen:
-                # TODO: When the 'initial' observation becomes older than the
-                # length of the buffer, what should we do with it?
-                # Possibly update the 'initial' observation?
-                old_initial_obs = self.initial_observations[env_index]
-                new_initial_obs = self.update_initial_observation(
-                    env_index=env_index,
-                    current_initial_observation=old_initial_obs,
-                    env_episode_buffer=env_episode_buffer,
-                )
-            # We still add the obs, action, reward to the buffer, because we
-            # want to keep the action and reward. We'll just discard the
-            # observation when re-packing them below.
-            self.episode_buffers[env_index].append((env_observation, env_action, env_reward))
-
-        # Get a loss per environment:
-        # NOTE: The buffers for each environment will most likely have different
-        # lengths!
+        if not self.observations:
+            def make_buffers() -> List[deque]:
+                return [
+                    deque(maxlen=self.hparams.max_episode_window_length)
+                    for _ in range(batch_size)
+                ]
+            self.observations = make_buffers()
+            self.representations = make_buffers()
+            self.actions = make_buffers() 
+            self.rewards = make_buffers()
 
         total_loss = Loss(self.name)
         
-        # Loop over each environment's buffer, retrieve and re-arrange the items
-        # from the buffer before they get passed to the get_episode_loss method. 
-        for env_index, episode_buffer in enumerate(self.episode_buffers):
-            # NOTE: See above, when the done=True with vector envs, the
-            # observation is the new initial observation.
-            episode_ended = bool(done[env_index])
-            
-            # The buffer is a list of tuples, so we first 'split' those into a
-            # tuple of lists.
-            items: Tuple[List] = tuple_of_lists(episode_buffer)
+        # Append the most recent elements into the buffer for that environment.
+        # per_env_items = zip(env_observations, env_actions, env_rewards)
+        for env_index in range(batch_size):
+            # Slice the obs/actions/rewards, to recover the individual items
+            # from each environment.
+            # NOTE: Will reuse this 'env_observation' later below.
+            env_observation = get_slice(observations, env_index)
+            env_representations = get_slice(representations, env_index)
+            env_action = get_slice(actions, env_index)
+            env_reward = get_slice(rewards, env_index)
 
-            # We stored three items at each step, so we get three lists of tuples.
-            env_observations_list: List[namedtuple] = items[0]
-            env_actions_list: List[namedtuple] = items[1]
-            env_rewards_list: List[namedtuple] = items[2]
-            # env_observations_list, env_actions_list, env_rewards_list = items
-            
-            # Insert the current 'initial observation' at the start of the list.
-            initial_observation = self.initial_observations[env_index]
-            if initial_observation is not None:
-                env_observations_list.insert(0, initial_observation)
+            done: bool = env_observation.done
+            if isinstance(done, (Tensor, np.ndarray)):
+                done = done.item()
+            assert isinstance(done, bool), done
 
-            if episode_ended:
-                # Safeguard the initial observation for that environment, and
-                # also remove it from the list so it isn't passed to
-                # get_episode_loss.
-                # TODO: The 'initial' observation now has 'done'=True, and the
-                # last one in the list doesn't!
-                initial_observation = env_observations_list.pop(-1)
-                initial_observation = initial_observation._replace(done=False)
-                
-                self.initial_observations[env_index] = initial_observation
+            # TODO: For now, we just overwrite (get rid of) the oldest items in
+            # the buffers.
+            self.representations[env_index].append(env_representations)
+            self.actions[env_index].append(env_action)
+            self.rewards[env_index].append(env_reward)
+
+            if not done:
+                # If this obs has done=True, assuming that the env is vectorized
+                # and that the AddDoneToObs wrapper gets added *after* the
+                # batching as recommended, then the rest of the obs is the
+                # initial obs of the new episode.
+                self.observations[env_index].append(env_observation)
+            elif not self.observations[env_index]:
+                # IF there are no observations in the buffer, this means we
+                # were just at the end of an episode.
+                # FIXME: Pick up here.
+
             
-            # Re-package the items into their original 'Batch' objects, but now
-            # the 'batch' will be a sequence of items from the same environment.
-            env_observations = tuple_of_lists(env_observations_list)
-            env_actions = tuple_of_lists(env_actions_list)
-            env_rewards = tuple_of_lists(env_rewards_list)
+            episode_obs = tuple(self.observations[env_index])
+            episode_representations = tuple(self.representations[env_index])
+            episode_actions = tuple(self.actions[env_index])
+            episode_rewards = tuple(self.rewards[env_index])
             
-            # 'Stack' the items back into their original 'Batch' types.
-            env_observations: ContinualRLSetting.Observations = type(observations).from_inputs(env_observations)             
-            env_actions: ContinualRLSetting.Actions = type(actions).from_inputs(env_actions)             
-            env_rewards: ContinualRLSetting.Rewards = type(rewards).from_inputs(env_rewards)
-            
-            
-            loss = self.get_episode_loss(
-                env_index=env_index,
-                observations=env_observations,
-                actions=env_actions,
-                rewards=env_rewards,
-                episode_ended=episode_ended
+            # TODO: Maybe add a mechanism for disabling this 're-stacking' when
+            # we always only compute a loss at the end of episodes?
+                        
+            # Make sure this all still works (should work even better) once we
+            # change the obs to dicts instead of Batch objects.
+            stacked_obs = stack(self.observation_space, episode_obs)
+            # TODO: Could maybe use out=<some parameter on this module> to
+            # prevent having to create new 'container' tensors all the time.
+            stacked_representations = stack(self.representation_space, episode_representations)
+            # TODO: Update this if we change the action space
+            y_preds = torch.stack([action.y_pred for action in episode_actions])
+            logits = torch.stack([action.policy.logits for action in episode_actions])
+            stacked_actions = type(actions)(
+                y_pred=y_preds,
+                logits=logits,
+                policy=Categorical(logits=logits),
+            )
+            # stack(self.reward_space, episode_rewards)
+            stacked_rewards = type(rewards)(
+                y=stack(self.reward_space, [reward.y for reward in episode_rewards])
             )
 
+            if done:
+                # Clear the buffers.
+                self.observations[env_index].clear()
+                self.representations[env_index].clear()          
+                self.actions[env_index].clear()
+                self.rewards[env_index].clear()
+
+                # Add the new 'initial' obs in the buffer.
+                # TODO: Move this somewhere else.
+                from dataclasses import is_dataclass, replace
+                if is_dataclass(env_observation):
+                    env_observation = replace(env_observation, done=False)
+                elif isinstance(env_observation, NamedTuple):
+                    env_observation = env_observation._replace(done=False)
+                elif isinstance(env_observation, dict):
+                    assert "done" in env_observation
+                    env_observation["done"] = False
+                else:
+                    raise NotImplementedError("TODO: Don't know how to set 'done=False' in env obs {env_observation}.")
+
+                self.observations[env_index].append(env_observation)
+
+            loss = self.get_episode_loss(
+                env_index=env_index,
+                observations=stacked_obs,
+                representations=stacked_representations,
+                actions=stacked_actions,
+                rewards=stacked_rewards,
+                done=done,
+            )
             # If we are able to get a loss for this set of observations/actions/
             # rewards, then add it to the total loss.
             if loss is not None:
                 total_loss += loss
-            
-            if episode_ended:
-                # Clear the buffer if the episode ended. NOTE: the initial obs
-                # are saved in self.initial_observations.
-                episode_buffer.clear()
-        
+
         if not isinstance(total_loss.loss, Tensor):
             assert total_loss.loss == 0.
             total_loss.loss = torch.zeros(1, requires_grad=True)
         return total_loss
-
-    def update_initial_observation(self, 
-                                   env_index: int,
-                                   current_initial_observation: Any,
-                                   env_episode_buffer: List[Tuple[Observations, Actions, Rewards]]):
-        """ Update the 'initial observation', when the episode is longer than
-        the max buffer size. We could possibly use this in the future maybe.
-        
-        Returns None for now.
-        """
-        return None
-    
+           
     def get_episode_loss(self,
                          env_index: int,
                          observations: ContinualRLSetting.Observations,
+                         representations: Tensor,
                          actions: ContinualRLSetting.Observations,
                          rewards: ContinualRLSetting.Rewards,
-                         episode_ended: bool) -> Optional[Loss]:
+                         done: bool) -> Optional[Loss]:
         """Calculate a loss to train with, given the last (up to
         max_episode_window_length) observations/actions/rewards of the current
         episode in the environment at the given index in the batch.
 
+        If `done` is True, then this is for the end of an episode. If `done` is
+        False, the episode is still underway.
+        
         NOTE: While the Batch Observations/Actions/Rewards objects usually
         contain the "batches" of data coming from the N different environments,
         now they are actually a sequence of items coming from this single
         environment. For more info on how this is done, see the  
         """
-        if not episode_ended:
+        if not done:
             # This particular algorithm (REINFORCE) can't give a loss until the
             # end of the episode is reached.
             return None
 
         log_probabilities = actions.y_pred_log_prob
         rewards = rewards.y
-        # torch.stack(
-        #     [action.policy.log_prob(action.y_pred) for action in actions]
-        # )
-        # rewards = torch.stack([reward[0] for reward in rewards])
-        loss = self.policy_gradient_optimized(rewards=rewards, log_probs=log_probabilities)
+        loss = self.policy_gradient(rewards=rewards, log_probs=log_probabilities, gamma=self.hparams.gamma)
 
         # TODO: Add 'Metrics' for each episode?
-        return Loss("policy_gradient", loss)
+        return Loss(self.name, loss)
 
-    def policy_gradient_optimized(self, rewards: List[float], log_probs: List[Tensor]):
+
+    def policy_gradient(self, rewards: List[float], log_probs: List[Tensor], gamma: float=0.95):
         """Implementation of the REINFORCE algorithm.
 
         Adapted from https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
@@ -400,7 +396,7 @@ class PolicyHead(ClassificationHead):
         reward_matrix = rewards.expand([T, T]).triu()
         # Get the gamma matrix (upper triangular), see make_gamma_matrix for
         # more info.
-        gamma_matrix = make_gamma_matrix(self.hparams.gamma, T, device=log_probs.device)
+        gamma_matrix = make_gamma_matrix(gamma, T, device=log_probs.device)
 
         discounted_rewards = (reward_matrix * gamma_matrix).sum(dim=-1)
         # normalize discounted rewards

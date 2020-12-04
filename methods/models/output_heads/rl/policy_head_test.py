@@ -10,12 +10,177 @@ from common.loss import Loss
 from common.gym_wrappers.batch_env import BatchedVectorEnv
 from conftest import DummyEnvironment
 from gym import spaces
+from torch import Tensor
 from methods.models.forward_pass import ForwardPass
 from settings.active.rl.continual_rl_setting import ContinualRLSetting
 
 from .policy_head import PolicyHead
 
 from common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
+from common.gym_wrappers import AddDoneToObservation, ConvertToFromTensors, EnvDataset
+
+
+@pytest.mark.parametrize("batch_size", [1, 2, 5])
+def test_loss_is_nonzero_at_episode_end(batch_size: int):
+    """ Test that when stepping through the env, when the episode ends, a
+    non-zero loss is returned by the output head.
+    """
+    with gym.make("CartPole-v0") as temp_env:
+        temp_env = AddDoneToObservation(temp_env)
+        obs_space = temp_env.observation_space
+        action_space = temp_env.action_space
+        reward_space = getattr(temp_env, "reward_space",
+                               spaces.Box(*temp_env.reward_range, shape=())) 
+
+    env = gym.vector.make("CartPole-v0", num_envs=batch_size, asynchronous=False)
+    env = AddDoneToObservation(env)
+    env = ConvertToFromTensors(env)
+    env = EnvDataset(env)
+
+    head = PolicyHead(
+        observation_space=obs_space,
+        representation_space=obs_space[0],
+        action_space=action_space,
+        reward_space=reward_space,
+    )
+
+    env.seed(123)
+    obs = env.reset()
+
+    # obs = torch.as_tensor(obs, dtype=torch.float32)
+
+    done = torch.zeros(batch_size, dtype=bool)
+    info = np.array([{} for _ in range(batch_size)])
+    loss = None
+    
+    non_zero_losses = 0
+    
+    for i in range(100):
+        representations = obs[0]
+        observations = ContinualRLSetting.Observations(
+            x=obs[0],
+            done=done,
+            # info=info,
+        )
+        head_output = head.forward(observations, representations=representations)
+        actions = head_output.actions.numpy().tolist()
+        # actions = np.zeros(batch_size, dtype=int).tolist()
+
+        obs, rewards, done, info = env.step(actions)
+        done = torch.as_tensor(done, dtype=bool)
+        rewards = ContinualRLSetting.Rewards(rewards)
+        assert len(info) == batch_size
+
+        print(f"Step {i}, obs: {obs}, done: {done}, info: {info}")
+
+        forward_pass = ForwardPass(         
+            observations=observations,
+            representations=representations,
+            actions=head_output,
+        )
+        loss = head.get_loss(forward_pass, actions=head_output, rewards=rewards)
+        print("loss:", loss)
+
+        for env_index, env_is_done in enumerate(observations.done):
+            if env_is_done:
+                print(f"Episode ended for env {env_index} at step {i}")
+                assert loss.total_loss != 0.
+                non_zero_losses += 1
+                break
+        else:
+            print(f"No episode ended on step {i}, expecting no loss.")
+            assert loss.total_loss == 0.
+
+    assert non_zero_losses > 0
+
+
+@pytest.mark.parametrize("batch_size", [1, 2, 5])
+def test_done_is_sometimes_True_when_iterating_through_env(batch_size: int):
+    """ Test that when *iterating* through the env, done is sometimes 'True'.
+    """
+    env = gym.vector.make("CartPole-v0", num_envs=batch_size, asynchronous=True)
+    env = AddDoneToObservation(env)
+    env = ConvertToFromTensors(env)
+    env = EnvDataset(env)
+    for i, obs in zip(range(100), env):
+        print(i, obs[1])
+        reward = env.send(env.action_space.sample())
+        if any(obs[1]):
+            break
+    else:
+        assert False, "Never encountered done=True!"
+
+
+
+@pytest.mark.parametrize("batch_size", [1, 2, 5])
+def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
+    """ Test that when *iterating* through the env (active-dataloader style),
+    when the episode ends, a non-zero loss is returned by the output head.
+    """
+    with gym.make("CartPole-v0") as temp_env:
+        temp_env = AddDoneToObservation(temp_env)
+        
+        obs_space = temp_env.observation_space
+        action_space = temp_env.action_space
+        reward_space = getattr(temp_env, "reward_space",
+                               spaces.Box(*temp_env.reward_range, shape=())) 
+
+    env = gym.vector.make("CartPole-v0", num_envs=batch_size, asynchronous=False)
+    env = AddDoneToObservation(env)
+    env = ConvertToFromTensors(env)
+    env = EnvDataset(env)
+
+    head = PolicyHead(
+        observation_space=obs_space,
+        representation_space=obs_space[0],
+        action_space=action_space,
+        reward_space=reward_space,
+    )
+
+    env.seed(123)
+    non_zero_losses = 0
+    
+    for i, obs in zip(range(100), env):
+        
+        done = obs[1]
+        x = obs[0]
+        representations = x
+        assert isinstance(x, Tensor)
+        assert isinstance(done, Tensor)
+        observations = ContinualRLSetting.Observations(
+            x=x,
+            done=done,
+            # info=info,
+        )
+        head_output = head.forward(observations, representations=representations)
+        
+        actions = head_output.actions.numpy().tolist()
+        # actions = np.zeros(batch_size, dtype=int).tolist()
+
+        rewards = env.send(actions) 
+
+        print(f"Step {i}, obs: {obs}, done: {done}")
+        assert isinstance(representations, Tensor)
+        forward_pass = ForwardPass(         
+            observations=observations,
+            representations=representations,
+            actions=head_output,
+        )
+        rewards = ContinualRLSetting.Rewards(rewards)
+        loss = head.get_loss(forward_pass, actions=head_output, rewards=rewards)
+        print("loss:", loss)
+
+        for env_index, env_is_done in enumerate(observations.done):
+            if env_is_done:
+                print(f"Episode ended for env {env_index} at step {i}")
+                assert loss.total_loss != 0.
+                non_zero_losses += 1
+                break
+        else:
+            print(f"No episode ended on step {i}, expecting no loss.")
+            assert loss.total_loss == 0.
+
+    assert non_zero_losses > 0
 
 def test_buffers_are_stacked_correctly(monkeypatch):
     """TODO: Test that when "de-synced" episodes, when fed to the output head,
@@ -78,7 +243,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
         print(f"Step {step}.")
         # Wrap up the obs to pretend that this is the data coming from a
         # ContinualRLSetting.
-        observations = ContinualRLSetting.Observations(x=obs, done=done, info=info)
+        observations = ContinualRLSetting.Observations(x=obs, done=done)#, info=info)
         # We don't use an encoder for testing, so the representations is just x.
         representations = obs.reshape([batch_size, 1])
         assert observations.task_labels is None
@@ -140,7 +305,6 @@ def test_buffers_are_stacked_correctly(monkeypatch):
                 
     # assert False, (obs, rewards, done, info)
     # loss: Loss = output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
-
 
 
 
