@@ -45,7 +45,7 @@ def test_iterating_with_policy():
         state_transition, reward = batch
         actual_transitions.append(state_transition)
 
-        observation, action, next_observation = state_transition
+        observation, action, next_observation = state_transition[:]
 
         assert observation == expected_obs[i]
         assert next_observation == expected_obs[i+1]

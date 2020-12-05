@@ -136,7 +136,7 @@ class Batch(ABC, Mapping[str, Union[Tensor, Any]]):
         # Plus, there really shouldn't be that many fields in a Batch object
         # anyway.
         if index == slice(None, None, None):
-            return self
+            return self.as_namedtuple()
         # NOTE: Untested, not sure this would actually be useful either.
         # e.g.: x, task_label = Observations[:2]
         raise NotImplementedError(
