@@ -123,10 +123,10 @@ def test_to(batch_type: Type[Batch], items_dict: Dict[str, Tensor]):
     [
         (
             ForwardPass,
-            dict(x = torch.rand([10, 10]),
-                 h_x = torch.rand([10, 10]) + 1,
-                 y_pred = torch.rand([10, 10]) + 2),
-        ),                   
+            dict(x = torch.arange(25).reshape([5, 5]),
+                 h_x = torch.arange(25).reshape([5, 5]) + 1,
+                 y_pred = torch.arange(25).reshape([5, 5]) + 2),
+        ),
     ]
 )
 @pytest.mark.parametrize("index", [
@@ -136,7 +136,7 @@ def test_to(batch_type: Type[Batch], items_dict: Dict[str, Tensor]):
     (slice(None), slice(3)), # obj[:, :3]
     (slice(None), slice(None, -3)), # obj[:, -3:]
     (slice(None), slice(None, None, 2)), # obj[:, ::2]
-    (slice(None), np.arange(10) % 2 == 0), # obj[:, even_mask]
+    (slice(None), np.arange(5) % 2 == 0), # obj[:, even_mask]
 ])
 def test_numpy_style_indexing(batch_type: Type[Batch], items_dict: Dict[str, Tensor], index: Any):
     """ Test that the 'to' method behaves like `torch.Tensor.to`, so that we
@@ -145,11 +145,20 @@ def test_numpy_style_indexing(batch_type: Type[Batch], items_dict: Dict[str, Ten
     obj = batch_type(**items_dict)
 
     batch_slice = obj[index]
-    expected_sliced_items = {
+    
+    if isinstance(index, tuple) and index[0] == slice(None):
+        index = index[1:]
+    expected_slices = {
         k: v[index] for k, v in items_dict.items()
     }
+    print(f"expected sliced items:")
+    for key, value in expected_slices.items():
+        print(key, value)
     # When slicing a batch object, you get a batch object of the same type.
     assert isinstance(batch_slice, batch_type)
     for k, sliced_value in batch_slice.items():
-        expected_value = expected_sliced_items[k]
+        print(f"key {k}, index {index}")
+        print(f"Sliced value: {sliced_value}")
+        expected_value = expected_slices[k]
+        print(f"Expected value: {expected_value}")
         assert (sliced_value == expected_value).all()

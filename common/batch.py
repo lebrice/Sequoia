@@ -17,19 +17,27 @@ import numpy as np
 import torch
 from gym import spaces
 from torch import Tensor
-
+from utils.logging_utils import get_logger
 from utils.generic_functions import get_slice, set_slice
-Item = TypeVar("Item", bound=collections_abc.Sized)
+from utils import singledispatchmethod
 
+Item = TypeVar("Item", bound=collections_abc.Sized)
+logger = get_logger(__file__)
+B = TypeVar("B", bound="Batch")
 
 @dataclass(frozen=True)
-class Batch(ABC):
-    """ABC for objects that represent a batch of tensors. Behaves like tuple.
+class Batch(ABC, Mapping[str, Union[Tensor, Any]]):
+    """ABC for typed immutable containers of tensors, with some helper methods.
 
-    Can be used the same way as a tuple of tensors, or an immutable mapping from
-    strings to tensors.
-    Also has some Tensor-like methods like to(), numpy(), detach(), etc.
-    Supports tuple and indexing also.
+    Can be used the same way as an immutable dict, mapping from strings to the
+    attributes of object, or as a tuple if you index with an integer.    
+    
+    The main reason why this class is present rather than using NamedTuples is
+    because those don't really support inheritance. Dataclasses work better for
+    that purpose.
+
+    Also has some Tensor-like helper methods like `to()`, `numpy()`, `detach()`,
+    etc.
     
     NOTE: One difference with dict is that __iter__ gives an
     iterator over the values, not the string keys.
@@ -61,11 +69,11 @@ class Batch(ABC):
     >>> batch.to("cuda").device
     device(type='cuda', index=0)
     """
-    # TODO: Would it make sense to add a gym Space classvar here? 
-    # space: ClassVar[Optional[gym.Space]] = None
+    # TODO: Would it make sense to add a gym Space class variable here? 
+    space: ClassVar[Optional[gym.Space]]
     field_names: ClassVar[List[str]]
     _namedtuple: ClassVar[Type[NamedTuple]]
-    
+        
     def __init_subclass__(cls, *args, **kwargs):
         # IDEA: By not marking 'Batch' a dataclass, we would let the subclass
         # decide it if wants to be frozen or not!
@@ -76,81 +84,100 @@ class Batch(ABC):
         super().__init_subclass__(*args, **kwargs)
 
     def __post_init__(self):
+        # Create some class attributes, if they don't already exist.
         # TODO: We have to set these here because __init_subclass__ is called
         # before the dataclasses package sets the 'fields' attribute, it seems.
-        # Create a NamedTuple type for this new subclass.
         cls = type(self)
         if "field_names" not in cls.__dict__:
             type(self).field_names = [f.name for f in dataclasses.fields(self)]
+        # Create a NamedTuple type for this new subclass.
         if "_named_tuple" not in cls.__dict__:
             type(self)._namedtuple = namedtuple(type(self).__name__ + "Tuple", self.field_names)
 
     def unwrap(self) -> Union[Item, Tuple[Item, ...]]:
         """ Returns the 'unwrapped' contents of this object, which will be a
-        tuple of batched tensors if there is more than one field, or a single
-        batched tensor is there is only one field.
+        tuple of batched tensors if there is more than one field, or the only
+        wrapped tensor is there is only one field in this class.
         """
         tensors = self.as_namedtuple()
         return tensors[0] if len(tensors) == 1 else tensors 
-
-    # def __iter__(self) -> Iterable[Tuple[Item, ...]]:
-    #     # return itertools.starmap(self._namedtuple, zip(*self.as_tuple()))
-    #     return iter(self.as_tuple())
     
+    def __iter__(self) -> Iterable[str]:
+        """ Yield the 'keys', which are the field names in this case. """
+        return iter(self.field_names)
+        # return itertools.starmap(self._namedtuple, zip(*self.as_tuple()))
+        # return iter(self.as_tuple())
         # for name in self.field_names:
         #     yield getattr(self, name)
 
-    # def __len__(self):
-    #     return len(self.field_names)
+    def __len__(self) -> int:
+        return len(self.field_names)
 
-    def __getitem__(self, index: Union[int, str]):  # type: ignore
-        if isinstance(index, int):
-            field_name = self.field_names[index]
-            return getattr(self, field_name)
-        elif isinstance(index, str):
-            return getattr(self, index)
-        elif isinstance(index, slice):
-            # I don't think it would be a good idea to support slice indexing,
-            # as it could be confusing and give the user the impression that it
-            # is slicing into the tensors, rather than into the fields.
-            # Plus, there really shouldn't be that many fields in a Batch object
-            # anyway.
-            if index == slice(None, None, None):
-                return self
-            raise NotImplementedError(
-                "Batch objects only support slice indexing with empty slices."
-            )
-        elif index is Ellipsis:
+    def __getitem__(self, index: Any):
+        return self.getitem(index)
+    
+    @singledispatchmethod
+    def getitem(self, index: Any) -> Any:
+        raise KeyError(index)
+    
+    @getitem.register
+    def _(self, index: int) -> Union[Tensor, Any]:
+        return getattr(self, self.field_names[index])
+    
+    @getitem.register
+    def _(self, index: str) -> Union[Tensor, Any]:
+        return getattr(self, index)
+
+    @getitem.register(slice)
+    def _(self, index: slice) -> "Batch":
+        # I don't think it would be a good idea to support slice indexing,
+        # as it could be confusing and give the user the impression that it
+        # is slicing into the tensors, rather than into the fields.
+        # Plus, there really shouldn't be that many fields in a Batch object
+        # anyway.
+        if index == slice(None, None, None):
             return self
-        elif isinstance(index, (tuple, list)):
-            field_index = index[0]
-            if len(index) <= 1:
-                raise IndexError(f"Invalid index {index}: When indexing with "
-                                 f"tuples, they need to have len > 1.")
-            if isinstance(field_index, int):
-                return self[field_index][index[1:]]
+        # NOTE: Untested, not sure this would actually be useful either.
+        # e.g.: x, task_label = Observations[:2]
+        raise NotImplementedError(
+            "Batch objects only support slice indexing with empty slices atm."
+        )
 
-            # e.g: forward_pass[:, 1]
-            if field_index == slice(None):
-                # if len(index) == 2 and isinstance(index[1], int):
-                #     return self[index[1]]
-                # if len(index) > 2 and isinstance(index[1], int):
-                #     return self[index[1]][index[1:]]
-                # assert False, index
-                # return self[index[1:]]
-                # return get_slice(self, )
-                # Get all fields, sliced with the second item.
-                return type(self)(**{
-                    key: value[index[1:]] if value is not None else None 
-                    for key, value in self.items()
-                })
-            
-            raise NotImplementedError(f"{type(self)} doesn't support indexing with {index}.")
-            return self[field_index][index[1:]]
-            # else:
-            #     raise IndexError("Can only use int or empty slice as first "
-            #                      "item of index tuple.")
-        raise IndexError(index)
+    @getitem.register(type(Ellipsis))
+    def _(self: B, index) -> B:
+        return self
+    
+    @getitem.register(tuple)
+    def _(self, index: Tuple[Union[slice, Tensor, np.ndarray, int], ...]):
+        """ When slicing with a tuple, if the first item is an integer, we get
+        the attribute at that index and slice it with the rest.
+        For now, the first item in the tuple can only be either an int or an
+        empty slice.
+        """
+        if len(index) <= 1:
+            raise IndexError(f"Invalid index {index}: When indexing with "
+                             f"tuples or lists, they need to have len > 1.")
+        field_index = index[0]
+        item_index = index[1:]
+        # if len(item_index) == 1:
+        #     item_index = item_index[0]
+
+        if isinstance(field_index, int):
+            # logger.debug(f"Getting the {field_index}'th field, with slice {index[1:]}")
+            return self[field_index][item_index]
+
+        # e.g: forward_pass[:, 1]
+        if field_index == slice(None):
+            # logger.debug(f"Indexing all fields {field_index} with index: {item_index}")
+            return type(self)(**{
+                key: value[item_index] if value is not None else None 
+                for key, value in self.items()
+            })
+
+        raise NotImplementedError(
+            f"Only support tuple indexing with empty slices or int as first "
+            f"tuple item for now. (index={index})"
+        )
 
     def __setitem__(self, index: Union[int, str], value: Any):
         # NOTE: If we mark this dataclass as frozen, then this won't work.
