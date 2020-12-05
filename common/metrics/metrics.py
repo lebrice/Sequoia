@@ -20,7 +20,6 @@ class Metrics(Serializable):
     # This field isn't used in comparisons between Metrics.
     n_samples: int = field(default=0, compare=False)
 
-    
     # TODO: Refactor this to take any kwargs, and then let each metric type
     # specify its own InitVars.
     
