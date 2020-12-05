@@ -91,7 +91,7 @@ class SmoothTransitions(MultiTaskEnvironment):
             n_tasks = len(self.task_schedule)
             self.observation_space = spaces.Tuple([
                 self.env.observation_space,
-                Sparse(spaces.Discrete(n=n_tasks), none_prob=1.0),
+                Sparse(spaces.Discrete(n=n_tasks), sparsity=1.0),
             ])
 
     def step(self, *args, **kwargs):

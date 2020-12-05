@@ -143,30 +143,57 @@ class RemoveTaskLabelsWrapper(TransformObservation):
         assert len(input_space) == 2
         return input_space[0]
 
+from gym import spaces, Space
+from functools import singledispatch
+from dataclasses import replace
 
+
+@singledispatch
 def hide_task_labels(observation: Tuple[T, int]) -> Tuple[T, Optional[int]]:
     assert len(observation) == 2
-    if isinstance(observation, Batch):
-        return type(observation).from_inputs((observation[0], None))
     return observation[0], None
 
 
-def hide_task_labels_on_space(input_space: spaces.Tuple) -> spaces.Tuple:
-    assert isinstance(input_space, spaces.Tuple)
-    assert len(input_space) == 2
+@hide_task_labels.register
+def _hide_task_labels_on_batch(observation: Batch) -> Batch:
+    return replace(observation, task_labels=None)
 
-    task_label_space = input_space.spaces[1]
+
+@hide_task_labels.register(Space)
+def hide_task_labels_in_space(observation: Space) -> Space:
+    raise NotImplementedError(
+        f"TODO: Don't know how to remove task labels from space {observation}."
+    )
+
+@hide_task_labels.register
+def hide_task_labels_in_tuple_space(observation: spaces.Tuple) -> spaces.Tuple:
+    assert len(observation.spaces) == 2, "ambiguous"
+    
+    task_label_space = observation.spaces[1]
     if isinstance(task_label_space, Sparse):
         # Replace the existing 'Sparse' space with another one with the same
-        # base but with none_prob = 1.0
+        # base but with sparsity = 1.0
         task_label_space = task_label_space.base
     assert not isinstance(task_label_space, Sparse)
-    # Do we set the task label space as sparse? or do we just remote that
-    # space?
+    # We set the task label space as sparse, instead of removing that space.
     return spaces.Tuple([
-        input_space[0],
-        Sparse(task_label_space, none_prob=1.)
+        observation[0],
+        Sparse(task_label_space, sparsity=1.)
     ])
+
+
+@hide_task_labels.register
+def hide_task_labels_in_dict_space(observation: spaces.Dict) -> spaces.Dict:
+    task_label_space = observation.spaces["task_labels"]
+    if isinstance(task_label_space, Sparse):
+        # Replace the existing 'Sparse' space with another one with the same
+        # base but with sparsity = 1.0
+        task_label_space = task_label_space.base
+    assert not isinstance(task_label_space, Sparse)
+    return type(observation)({
+        key: subspace if key != "task_labels" else Sparse(task_label_space, 1.0)
+        for key, subspace in observation.spaces.items()
+    })
 
 
 class HideTaskLabelsWrapper(TransformObservation):
@@ -179,5 +206,5 @@ class HideTaskLabelsWrapper(TransformObservation):
     """
     def __init__(self, env: gym.Env, f=hide_task_labels):
         super().__init__(env, f=f)
-        self.observation_space = self.hide_task_labels_on_space(self.env.observation_space)
+        self.observation_space = hide_task_labels(self.env.observation_space)
 

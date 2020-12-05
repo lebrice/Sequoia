@@ -45,18 +45,6 @@ def to_tensor(space: Space,
     return torch.as_tensor(sample, device=device)
 
 
-from common.spaces.sparse import Sparse
-
-
-@to_tensor.register(Sparse)
-def _(space: Sparse,
-      sample: Optional[Any],
-      device: torch.device = None) -> Optional[Tensor]:
-    if sample is None:
-        return None
-    return to_tensor(space.base, sample, device)
-
-
 @to_tensor.register
 def _(space: spaces.MultiBinary,
       sample: np.ndarray,
@@ -78,15 +66,9 @@ def _(space: spaces.Dict,
 def _(space: spaces.Tuple,
       sample: Tuple[Union[np.ndarray, Any], ...],
       device: torch.device = None) -> Tuple[Union[Tensor, Any], ...]:
-    if len(space.spaces) == 1 and isinstance(space.spaces[0], Sparse):
-        # TODO: Debug this, why are we getting to this case?
-        if sample == None:
-            return (None,)
-        assert False, (space, sample)
-        
-    return type(sample)(
+    return tuple(
         to_tensor(subspace, sample[i], device)
-        for i, subspace in enumerate(space.spaces) 
+        for i, subspace in enumerate(space.spaces)
     )
-    
+
     
