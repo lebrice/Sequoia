@@ -384,6 +384,7 @@ class Setting(SettingABC,
         for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
             print(f"\n\nChecking loader method {loader_method.__name__}\n\n")
             env = loader_method(batch_size=batch_size)
+            
             batch_size = env.batch_size
 
             # We could compare the spaces directly, but that's a bit messy, and
@@ -450,6 +451,8 @@ class Setting(SettingABC,
                 # actions = self.Actions(torch.as_tensor(actions))
                 rewards = env.send(actions)
                 self._check_rewards(env, rewards)
+
+            env.close()
     
     def _check_observations(self, env: Environment, observations: Any):
         """ Check that the given observation makes sense for the given environment.

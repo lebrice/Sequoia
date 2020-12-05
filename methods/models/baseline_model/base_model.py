@@ -36,7 +36,7 @@ from settings import Environment, Observations, Actions, Rewards
 from utils.logging_utils import get_logger
 
 from .base_hparams import BaseHParams
-from ..output_heads import OutputHead, RegressionHead, ClassificationHead
+from ..output_heads import OutputHead, RegressionHead, ClassificationHead, PolicyHead
 from ..forward_pass import ForwardPass
 
 
@@ -96,17 +96,22 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # self.example_input_array = torch.rand(self.batch_size, *self.input_shape)
         
         # Create the encoder and the output head.
+        # Space of our encoder representations.
+        self.representation_space: gym.Space
         if isinstance(setting, ContinualRLSetting) and setting.observe_state_directly:
             self.encoder = nn.Sequential()
+            # self.representation_space = self.observation_space
+            self.representation_space = self.observation_space[0]
             self.hidden_size = flatdim(self.observation_space[0])
         else:
             self.encoder, self.hidden_size = self.hp.make_encoder()
-        
-        # A gym Space for the representations that come out of our encoder.
-        from common.gym_wrappers.convert_tensors import wrap_space
-        self.representation_space = spaces.Box(-np.inf, np.inf, (self.hidden_size,), np.float32)
-        self.representation_space = wrap_space(self.representation_space)
+            # TODO: Check that the outputs of the encoders are actually
+            # flattened. I'm not sure they all are, which case the samples
+            # wouldn't match with this space. 
+            self.representation_space = spaces.Box(-np.inf, np.inf, (self.hidden_size,), np.float32)
 
+        from common.gym_wrappers.convert_tensors import wrap_space
+        self.representation_space = wrap_space(self.representation_space)
 
         self.output_head = self.create_output_head()
 
@@ -450,7 +455,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # how to do backprop then.
         if loss != 0.:
             return loss.backward(retain_graph=True)
-        
         
     @learning_rate.setter
     def learning_rate(self, value: float) -> None:

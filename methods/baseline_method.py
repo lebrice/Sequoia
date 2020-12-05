@@ -95,8 +95,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         self.trainer: Trainer
         self.model: BaselineModel
         
-        # self.additional_train_wrappers: List[Callable] = []
-        # self.additional_valid_wrappers: List[Callable] = []
+        self.additional_train_wrappers: List[Callable] = []
+        self.additional_valid_wrappers: List[Callable] = []
       
     
     def configure(self, setting: SettingType) -> None:
@@ -146,6 +146,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         if isinstance(setting, ContinualRLSetting):
             # Configure specifically for a Continual RL setting.
             pass
+        
 
     def fit(self,
             train_env: Environment[Observations, Actions, Rewards] = None,
@@ -157,8 +158,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         Overwrite this to customize training.
         """
         assert self.model is not None, (
-            "For now, Setting should have been nice enough to call "
-            "method.configure(setting=self) before calling `fit`!"
+            "Setting should have been called method.configure(setting=self) "
+            "before calling `fit`!"
         )
         return self.trainer.fit(
             model=self.model,

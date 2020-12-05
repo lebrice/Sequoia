@@ -141,6 +141,6 @@ class SmoothTransitions(MultiTaskEnvironment):
             )
             current_task[attr] = interpolated_value
             # logger.debug(f"interpolated value of {attr} at step {self.step}: {interpolated_value}")
-        logger.debug(f"Updating task at step {self.step}: {current_task}")
+        # logger.debug(f"Updating task at step {self.step}: {current_task}")
         self.current_task = current_task
 

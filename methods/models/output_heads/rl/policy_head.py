@@ -182,10 +182,7 @@ class PolicyHead(ClassificationHead):
         # Choose the actions according to their probabilities, rather than just
         # taking the action with highest probability, as is done in the
         # ClassificationHead.
-        self.done = observations.done
-        for i, done in enumerate(observations.done):
-            if done:
-                logger.debug(f"Reached end of episode in env {i}")
+        assert observations.done is not None
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
         policy = Categorical(logits=logits)
@@ -263,9 +260,10 @@ class PolicyHead(ClassificationHead):
             env_action = get_slice(actions, env_index)
             env_reward = get_slice(rewards, env_index)
 
-            if isinstance(env_done, (Tensor, np.ndarray)):
-                env_done = env_done.item()
-            assert isinstance(env_done, bool), env_done
+            if isinstance(env_done, (Tensor, np.ndarray, np.bool_)):
+                env_done = bool(env_done.item())
+            # env_done = bool(env_done)
+            assert isinstance(env_done, bool), (env_done, type(env_done))
 
             # TODO: For now, we just overwrite (get rid of) the oldest items in
             # the buffers.

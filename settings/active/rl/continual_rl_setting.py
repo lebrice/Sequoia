@@ -477,22 +477,14 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 env_factory,
                 batch_size=batch_size,
                 num_workers=num_workers,
+                # TODO: Still debugging shared memory + Sparse spaces.
                 shared_memory=False,
             )
 
-        # elif num_workers is None or num_workers < 0:
-        #     env = SyncVectorEnv([env_factory for _ in range(batch_size)])
-        # else:
-        #     env = BatchedVectorEnv(
-        #         [env_factory for _ in range(batch_size)],
-        #         n_workers=num_workers,
-        #         # TODO: Still debugging shared memory + Sparse spaces.
-        #         shared_memory=False,
-        #     )
-
+        ## Apply the "post-batch" wrappers:
         from common.gym_wrappers import ConvertToFromTensors
+        env = AddDoneToObservation(env)
         env = ConvertToFromTensors(env, device=self.config.device)
-        # Apply the "post-batch" wrappers:
         # Add a wrapper that converts numpy arrays / etc to Observations/Rewards
         # and from Actions objects to numpy arrays.
         env = TypedObjectsWrapper(

@@ -537,8 +537,10 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             return increment[task_id]
         return increment
 
-    def num_classes_in_current_task(self, train: bool) -> int:
+    def num_classes_in_current_task(self, train: bool=None) -> int:
         """ Returns the number of classes in the current task. """
+        # TODO: Its ugly to have the 'method' tell us if we're currently in
+        # train/eval/test, no? Maybe just make a method for each?     
         return self.num_classes_in_task(self._current_task_id, train=train)
 
     def task_classes(self, task_id: int, train: bool) -> List[int]:
@@ -570,7 +572,6 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             obs = obs.numpy()
             # take a slice of the first batch, to get sample tensors.
             first_obs = obs[:, 0]
-            
             # TODO: Here we'd like to be able to check that the first observation
             # is inside the observation space, but we can't do that because the
             # task label might be None, and so that would make it fail.

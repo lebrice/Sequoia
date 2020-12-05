@@ -93,8 +93,8 @@ class TrainerConfig(Serializable, Parseable):
             fast_dev_run=self.fast_dev_run,
             auto_scale_batch_size=self.auto_scale_batch_size,
             auto_lr_find=self.auto_lr_find,
-            # # TODO: Doing the backward pass manually (debugging RL output head)
-            # automatic_optimization=False,
+            # TODO: Doing the backward pass manually (debugging RL output head)
+            automatic_optimization=False,
             # TODO: Either move the log-dir-related stuff from Config to this
             # class, or figure out a way to pass the value from Config to this
             # function

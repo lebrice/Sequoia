@@ -26,6 +26,8 @@ from methods.models.output_heads import OutputHead, ClassificationHead, Regressi
 from simple_parsing import Serializable, choice, mutable_field
 from utils.logging_utils import get_logger
 
+torch.autograd.set_detect_anomaly(True)
+
 logger = get_logger(__file__)
 SettingType = TypeVar("SettingType", bound=LightningDataModule)
 
@@ -80,7 +82,6 @@ class BaselineModel(SemiSupervisedModel,
             logger.debug("Hparams:")
             logger.debug(self.hp.dumps(indent="\t"))
 
-
     # @auto_move_data
     def forward(self, observations: IncrementalSetting.Observations) -> Dict[str, Tensor]:
         return super().forward(observations)
@@ -99,14 +100,17 @@ class BaselineModel(SemiSupervisedModel,
             **kwargs
         )
         loss: Tensor = step_result["loss"]
+        loss_object = step_result["loss_object"]
         if loss == 0.:
             return None
 
         # self.log("loss", loss, on_step=True, prog_bar=True, logger=True)
         # TODO: Figure this out.
-        # optimizer = self.optimizers()
-        # optimizer.zero_grad()
+        optimizer = self.optimizers()
+        optimizer.zero_grad()
+        loss.backward(retain_graph=True)
         # self.manual_backward(loss, optimizer)
+        optimizer.step()
         # self.manual_optimizer_step(optimizer)
         return loss
 
