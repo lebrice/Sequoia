@@ -302,6 +302,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
     def prepare_data(self, *args, **kwargs) -> None:
         # We don't really download anything atm.
+        if self.config is None:
+            self.config = Config()
         super().prepare_data(*args, **kwargs)
 
     def train_dataloader(self, batch_size: int = None, num_workers: int = None) -> ActiveEnvironment:
@@ -460,12 +462,12 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         return env
 
     def _make_env_dataloader(self,
-                            env_factory: Callable[[], gym.Env],
-                            batch_size: Optional[int],
-                            num_workers: Optional[int] = None,
-                            seed: Optional[int] = None,
-                            max_steps: Optional[int] = None,
-                            max_episodes: Optional[int] = None,) -> GymDataLoader:
+                             env_factory: Callable[[], gym.Env],
+                             batch_size: Optional[int],
+                             num_workers: Optional[int] = None,
+                             seed: Optional[int] = None,
+                             max_steps: Optional[int] = None,
+                             max_episodes: Optional[int] = None,) -> GymDataLoader:
         """ Helper function for creating a (possibly vectorized) environment.
         
         """

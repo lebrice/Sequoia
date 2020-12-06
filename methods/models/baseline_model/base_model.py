@@ -417,33 +417,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
     @property
     def learning_rate(self) -> float:
         return self.hp.learning_rate
-    
-    
-    def backward(self, loss: Tensor, optimizer: Optimizer, optimizer_idx: int, *args, **kwargs) -> None:
-        """
-        Override backward with your own implementation if you need to.
 
-        Args:
-            loss: Loss is already scaled by accumulated grads
-            optimizer: Current optimizer being used
-            optimizer_idx: Index of the current optimizer being used
-
-        Called to perform backward step.
-        Feel free to override as needed.
-        The loss passed in has already been scaled for accumulated gradients if requested.
-
-        Example::
-
-            def backward(self, loss, optimizer, optimizer_idx):
-                loss.backward()
-
-        """
-        # TODO: There might be no loss at some steps, because for instance
-        # we haven't reached the end of an episode yet. Need to figure out
-        # how to do backprop then.
-        if loss != 0.:
-            return loss.backward(retain_graph=True)
-        
     @learning_rate.setter
     def learning_rate(self, value: float) -> None:
         self.hp.learning_rate = value

@@ -183,6 +183,16 @@ class PolicyHead(ClassificationHead):
         # taking the action with highest probability, as is done in the
         # ClassificationHead.
         assert observations.done is not None
+        
+        # TODO: (@lebrice) Need to calculate the loss HERE if the episode is
+        # done, i.e. before doing the next forward pass! (otherwise the actions
+        # for the initial observation are based on the previous weights, which
+        # won't be at the right version when we will backpropagate the loss for
+        # the next episode, if it goes back until the initial observation!
+        # Problem is, we would also need to backpropagate that loss BEFORE we
+        # can do the forward pass on the new observations! Otherwise the first
+        # actions won't have been based on the right weights!
+
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
         policy = Categorical(logits=logits)
@@ -267,16 +277,25 @@ class PolicyHead(ClassificationHead):
 
             # TODO: For now, we just overwrite (get rid of) the oldest items in
             # the buffers.
+            
+            # Start of a new episode.
             if env_done:
-                # TODO: The actions
-                # self.actions[env_index].append(env_reward)
-                # self.rewards[env_index].append(env_reward)
+                # If done is True for this env, because we assume that the
+                # env is vectorized, everything we're getting now is for the
+                # start of the next episode, not the final observation in the
+                # episode.
+                # This is one annoying thing about gym's VectorEnvs that I
+                # really don't like.
                 
-                # Take out the items
+                # TODO: The rewards are for the previous observations & actions,
+                # There's somethign weird going on here.
+                self.rewards[env_index].append(env_reward)
+                
                 episode_inputs = tuple(self.inputs[env_index])
                 episode_actions = tuple(self.actions[env_index])
                 episode_rewards = tuple(self.rewards[env_index])
                 # Clear the buffer
+ 
                 self.inputs[env_index].clear()
                 self.actions[env_index].clear()
                 self.rewards[env_index].clear()
@@ -284,28 +303,22 @@ class PolicyHead(ClassificationHead):
                 # Add the new items (initial obs for new episode.)
                 self.inputs[env_index].append(env_input)
                 self.actions[env_index].append(env_action)
-                self.rewards[env_index].append(env_reward)
-
             else:
-                self.inputs[env_index].append(env_input)
-                self.actions[env_index].append(env_action)
-                self.rewards[env_index].append(env_reward)
-                
+                # TODO: IF this is the start of a new episode, then the reward
+                # shouldn't get added, right?
+                if not self.inputs[env_index]:
+                    assert False, "whats going on?!"
+                    self.inputs[env_index].append(env_input)
+                    self.actions[env_index].append(env_action)
+                else:
+                    self.inputs[env_index].append(env_input)
+                    self.actions[env_index].append(env_action)
+                    self.rewards[env_index].append(env_reward)
+
                 episode_inputs = tuple(self.inputs[env_index])
                 episode_actions = tuple(self.actions[env_index])
                 episode_rewards = tuple(self.rewards[env_index])
-            
 
-            # if not env_done:
-            #     # If done is True for this env, because we assume that the
-            #     # env is vectorized, everything we're getting now is for the
-            #     # start of the next episode, not the final observation in the
-            #     # episode.
-            #     # This is one annoying thing about gym's VectorEnvs that I
-            #     # really don't like.
-            #     self.inputs[env_index].append(env_observation)
-
-            
             # TODO: Maybe add a mechanism for disabling this 're-stacking' when
             # we always only compute a loss at the end of episodes?
 
@@ -374,6 +387,9 @@ class PolicyHead(ClassificationHead):
         now they are actually a sequence of items coming from this single
         environment. For more info on how this is done, see the  
         """
+        # TODO: Need some help with this.
+        assert len(inputs) == len(actions.y_pred) == len(rewards.y), (len(inputs), len(actions.y_pred), len(rewards.y))
+        # return Loss("debugging", (actions.logits).mean())
         if not done:
             # This particular algorithm (REINFORCE) can't give a loss until the
             # end of the episode is reached.

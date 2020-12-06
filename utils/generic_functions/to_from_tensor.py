@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from gym import Space, spaces
 from torch import Tensor
+from ._namedtuple import NamedTuple
 
 
 @singledispatch
@@ -29,12 +30,20 @@ def _(space: spaces.Dict, sample: Dict[str, Union[Tensor, Any]]) -> Dict[str, Un
         for key, value in sample.items()
     }
 
+
 @from_tensor.register
 def _(space: spaces.Tuple, sample: Tuple[Union[Tensor, Any]]) -> Tuple[Union[np.ndarray, Any]]:
-    return type(sample)(
+    if not isinstance(sample, tuple):
+        # BUG: Sometimes instead of having a sample of Tuple(Discrete(2))
+        # be `(1,)`, its `array([1])` instead.
+        sample = tuple(sample)
+    values_gen = (
         from_tensor(space[i], value)
         for i, value in enumerate(sample)
     )
+    if isinstance(sample, NamedTuple):
+        return type(sample)(values_gen)
+    return tuple(values_gen)
 
 
 @singledispatch

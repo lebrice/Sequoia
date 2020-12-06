@@ -75,7 +75,7 @@ def test_check_iterate_and_step(dataset: str,
 
     def check_obs(obs, task_label: int = None):
         if batch_size is None:
-            assert obs[1] is task_label
+            assert obs[1] == task_label
         else:
             assert isinstance(obs, ClassIncrementalRLSetting.Observations), obs[0].shape
             assert obs.task_labels is task_label or all(task_label == task_label for task_label in obs.task_labels)
