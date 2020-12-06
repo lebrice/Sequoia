@@ -11,6 +11,19 @@ AbstractMethod = Method
 
 all_methods: List[Type[Method]] = []
 
+
+"""
+TODO: IDEA: Add arguments to register_method that help configure the tests we
+add the that method! E.g.:
+
+```
+@register_method(slow=True, requires_cuda=True, required_memory_gb=4)
+class MyMethod(Method, target_setting=ContinualRLSetting):
+    ...
+```
+"""
+
+
 def register_method(new_method: Type[Method]) -> Type[Method]:
     name = new_method.get_name()
     if new_method not in all_methods:

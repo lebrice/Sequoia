@@ -18,7 +18,7 @@ from pl_bolts.models.self_supervised.cpc import (CPCEvalTransformsCIFAR10,
 # from pl_bolts.models.gans import GAN
 
 from settings import IIDSetting, IIDResults
-from methods.method import Method
+from methods import Method
 
 
 # datamodule = CIFAR10DataModule(

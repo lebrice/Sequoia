@@ -82,17 +82,20 @@ def test_launch_experiment_with_constructor(method_type: Optional[Type[Method]],
     all_results = experiment.launch("--debug --fast_dev_run --batch_size 1")
     assert all_results == (method_type, setting_type)
 
-
-def test_none_setting(method_type: Optional[Type[Method]], tmp_path: Path):
+@slow
+@pytest.mark.timeout(300)
+def test_none_setting(method_type: Optional[Type[Method]], tmp_path: Path, monkeypatch):
     """ Test that leaving the Setting unset runs on all applicable setting. """ 
     method = method_type.get_name()
     all_results = Experiment.main(f"--method {method} --debug --fast_dev_run "
                                   f"--log_dir {tmp_path}")
-    for setting_type in method_type.get_applicable_settings():        
+    for setting_type in method_type.get_applicable_settings():
+        monkeypatch.setattr(setting_type, "apply", mock_apply)      
         result = all_results[(setting_type, method_type)]
         assert result == (method_type, setting_type)
 
-
+@slow
+@pytest.mark.timeout(300)
 def test_none_method(setting_type: Optional[Type[Setting]]):
     """ Test that leaving the method unset runs all applicable methods on the
     setting.

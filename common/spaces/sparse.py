@@ -302,7 +302,9 @@ def sparse_sample_to_tensor(space: Sparse,
             return np.array([
                 None if v == None else v for v in sample
             ])
-        assert sample is None, (space, sample) #or all(v == None for v in sample)
+        if sample is not None:
+            assert isinstance(sample, np.ndarray) and sample.dtype == np.object
+            assert not sample.shape
         return None
     if space.sparsity == 0.:
         # Do we need to convert dtypes here though?

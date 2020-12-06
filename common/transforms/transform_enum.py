@@ -84,13 +84,15 @@ class Compose(List[T], ComposeBase):
     
     This can also be passed in members of the `Transforms` enum, which makes it
     possible to do something like this:
-    >>> from transforms import Compose, Transforms
-    >>> transforms = Compose([Transforms.to_tensor, Transforms.fix_channels,])
-    >>> Transforms.fix_channels in transforms
+    >>> transforms = Compose([Transforms.to_tensor, Transforms.channels_first,])
+    >>> Transforms.channels_first in transforms
     True
-    >>> transforms += [Transforms.random_grayscale]
-    >>> transforms
-    [<Transforms.to_tensor: ToTensor()>, <Transforms.fix_channels: FixChannels()>, <Transforms.random_grayscale: RandomGrayscale(p=0.1)>]
+    >>> transforms += [Transforms.resize_32x32]
+    >>> from pprint import pprint
+    >>> pprint(transforms)
+    [<Transforms.to_tensor: ToTensor()>,
+     <Transforms.channels_first: ChannelsFirst()>,
+     <Transforms.resize_32x32: Resize(size=(32, 32), interpolation=PIL.Image.BILINEAR)>]
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
