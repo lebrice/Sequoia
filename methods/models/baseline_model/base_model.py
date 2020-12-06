@@ -397,21 +397,9 @@ class BaseModel(LightningModule, Generic[SettingType]):
         return total_loss
 
     def preprocess_observations(self, observations: Observations) -> Observations:
-        if isinstance(observations, Observations):
-            return observations
-        
-        assert False, f"TODO: This is weird.. why aren't the observations instances of Observations? (observations = {observations}) "
-        
-        arrays_or_tensors = [
-            np.asarray(v) if not isinstance(v, Tensor) else v for v in observations
-        ]
-        observations = self.Observations.from_inputs([
-            torch.as_tensor(item, device=self.device) if item.dtype != np.object_
-            else [v_i.item() if isinstance(v_i, np.ndarray) else v_i for v_i in item]
-            for item in arrays_or_tensors
-        ])
+        assert isinstance(observations, Observations)
         return observations
-    
+
     def preprocess_rewards(self, reward: Rewards) -> Rewards:
         return reward
 

@@ -4,7 +4,7 @@ correctly.
 
 
 from dataclasses import dataclass
-from typing import Dict, Type, Any
+from typing import Dict, Type, Any, Tuple
 import pytest
 import doctest
 import numpy as np
@@ -50,6 +50,7 @@ def test_batch_behaves_like_a_dict(batch_type, items_dict):
         assert (obj[k] == v).all()  # values are the same.
         assert (obj[k] == getattr(obj, k)).all() # getattr same as __getitem__
         assert (obj[i] == v).all() # can also be indexed with ints like a tuple.
+
 
 @pytest.mark.parametrize(
     "batch_type, items_dict",
@@ -116,8 +117,6 @@ def test_to(batch_type: Type[Batch], items_dict: Dict[str, Tensor]):
         assert (v == original_value.to(dtype=torch.float32)).all()
 
 
-
-
 @pytest.mark.parametrize(
     "batch_type, items_dict",
     [
@@ -130,35 +129,47 @@ def test_to(batch_type: Type[Batch], items_dict: Dict[str, Tensor]):
     ]
 )
 @pytest.mark.parametrize("index", [
-    slice(None), # obj[:]
-    Ellipsis, # obj[...]
+    (0, 0), # obj[0, 0]
+    (0, ..., 0), # obj[0, ..., 0]
     (slice(None), 0), # obj[:, 0]
     (slice(None), slice(3)), # obj[:, :3]
     (slice(None), slice(None, -3)), # obj[:, -3:]
     (slice(None), slice(None, None, 2)), # obj[:, ::2]
     (slice(None), np.arange(5) % 2 == 0), # obj[:, even_mask]
+    (slice(None), np.arange(5) % 2 == 0), # obj[:, even_mask]
 ])
-def test_numpy_style_indexing(batch_type: Type[Batch], items_dict: Dict[str, Tensor], index: Any):
-    """ Test that the 'to' method behaves like `torch.Tensor.to`, so that we
-    can move all the items in a `Batch` between devices or dtypes.
+def test_tuple_indexing(batch_type: Type[Batch], items_dict: Dict[str, Tensor], index: Tuple[Any, ...]):
+    """ Test that we can index into the object in the same style as an ndarray
     """
     obj = batch_type(**items_dict)
-
-    batch_slice = obj[index]
     
-    if isinstance(index, tuple) and index[0] == slice(None):
-        index = index[1:]
-    expected_slices = {
-        k: v[index] for k, v in items_dict.items()
+    
+    keys = list(items_dict.keys())
+    print(f"Expected keys: {keys}")
+    expected_items = {
+        k: items_dict[k][index[1:]] for k in np.array(keys)[index[0]] 
     }
+    
     print(f"expected sliced items:")
-    for key, value in expected_slices.items():
+    for key, value in expected_items.items():
         print(key, value)
-    # When slicing a batch object, you get a batch object of the same type.
-    assert isinstance(batch_slice, batch_type)
-    for k, sliced_value in batch_slice.items():
-        print(f"key {k}, index {index}")
-        print(f"Sliced value: {sliced_value}")
-        expected_value = expected_slices[k]
-        print(f"Expected value: {expected_value}")
-        assert (sliced_value == expected_value).all()
+    
+    actual_slice = obj[index]
+    
+    if index[0] == slice(None):
+        # actual_slice: Batch
+        assert isinstance(actual_slice, batch_type)
+        assert list(actual_slice.keys()) == keys
+
+        for k, sliced_value in actual_slice.items():
+            print(f"key {k}, index {index}")
+            print(f"Sliced value: {sliced_value}")
+            expected_value = expected_items[k]
+            print(f"Expected value: {expected_value}")
+            assert (sliced_value == expected_value).all()
+    
+    if isinstance(index[0], int):
+        # e.g. Observations[0, <...>]
+        key = keys[index[0]]
+        expected_value = expected_items[key]
+        assert (actual_slice == expected_value).all()

@@ -424,6 +424,11 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     def split_batch_function(self, training: bool) -> Callable[[Tuple[Tensor, ...]], Tuple[Observations, Rewards]]:
         """ Returns a callable that can be used to split a batch into observations and rewards.
         """
+        task_classes = {
+            i: self.task_classes(i, train=training)
+            for i in range(self.nb_tasks)
+        }
+        
         def split_batch(batch: Tuple[Tensor, ...]) -> Tuple[Observations, Rewards]:
             """Splits the batch into a tuple of Observations and Rewards.
 
@@ -443,43 +448,18 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             x, y, t = batch
 
             # Relabel y so it is always in [0, n_classes_per_task) for each task.
-            task_labels_in_batch = torch.unique(t).tolist()
+            y = relabel(y, task_classes)
 
-            # Index using the task labels, to get the classes for each
-            # task label, and then relabel each y to its index within the labels
-            # of its corresponding task.
-            # TODO: Make sure that this is how we want to do this. This
-            # wouldn't make sense for example if successive tasks could use
-            # the same input image, but with a different label!
-
-            # NOTE: This supports relabeling data from multiple tasks.
-            
-            all_indices = np.arange(x.shape[0])
-            for task_label in task_labels_in_batch:
-                # Get the set of classes for the task at index `t`.
-                classes_in_task = self.task_classes(task_label, train=training)
-                # Relabel that portion of the labels.
-                indices = all_indices[t == task_label]
-                y[indices] = relabel(y[indices], task_classes=classes_in_task)
-
-            # Make sure that the labels are in [0, n_classes_per_task] range:
-            assert 0 <= y.min(), y
-            assert y.max() < self.n_classes_per_task, y
-            
-            # Re-arrange tensors: (x, y, t) -> ((x, t), y)
-            observations = (x, t)
-            rewards = y
-            
             if ((training and not self.task_labels_at_train_time) or 
                 (not training and not self.task_labels_at_test_time)):
                 # Remove the task labels if we're not currently allowed to have
                 # them.
                 # TODO: Using None might cause some issues. Maybe set -1 instead?
-                observations = (x, None)
+                t = None
 
-            # Create the 'Observations' and 'Rewards' objects.
-            observations = self.Observations.from_inputs(observations)
-            rewards = self.Rewards.from_inputs(rewards)
+            observations = self.Observations(x=x, task_labels=t)
+            rewards = self.Rewards(y=y)
+            
             return observations, rewards
         return split_batch
     
@@ -593,23 +573,25 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             env.close()
 
 
-def relabel(y: Tensor, task_classes: List[int]) -> Tensor:
-    """ Relabel the elements of 'y' to their  index in the task classes.
+def relabel(y: Tensor, task_classes: Dict[int, List[int]]) -> Tensor:
+    """ Relabel the elements of 'y' to their  index in the list of classes for
+    their task.
     
     Example:
     
     >>> import torch
     >>> y = torch.as_tensor([2, 3, 2, 3, 2, 2])
-    >>> task_classes = [2, 3]
+    >>> task_classes = {0: [0, 1], 1: [2, 3]}
     >>> relabel(y, task_classes)
     tensor([0, 1, 0, 1, 0, 0])
     """
     # TODO: Double-check that this never leaves any zeros where it shouldn't.
     new_y = torch.zeros_like(y)
     unique_y = set(torch.unique(y).tolist())
-    assert unique_y <= set(task_classes), (unique_y, task_classes)
-    for i, label in enumerate(task_classes):
-        new_y[y == label] = i
+    # assert unique_y <= set(task_classes), (unique_y, task_classes)
+    for task_id, task_true_classes in task_classes.items():
+        for i, label in enumerate(task_true_classes):
+            new_y[y == label] = i
     return new_y
 
 # This is just meant as a cleaner way to import the Observations/Actions/Rewards

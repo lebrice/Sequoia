@@ -1,6 +1,7 @@
 from functools import singledispatch
 from typing import Any, Dict, Sequence, TypeVar
 from ._namedtuple import NamedTuple
+from collections.abc import Mapping
 
 T = TypeVar("T")
 
@@ -24,7 +25,7 @@ def _detach_namedtuple(x: NamedTuple) -> NamedTuple:
     return type(x)(*[detach(v) for v in x])
 
 
-@detach.register(dict)
+@detach.register(Mapping)
 def _detach_dict(d: Dict[str, Any]) -> Dict[str, Any]:
     """ Detaches all the keys and tensors in a dict, as well as all nested dicts.
     """

@@ -8,7 +8,6 @@ import torch
 from gym import Space, spaces
 from torch import Tensor
 from common.spaces import Sparse
-from common.batch import Batch
 
 
 @singledispatch

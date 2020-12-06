@@ -8,40 +8,51 @@ from abc import ABC
 from collections import abc as collections_abc
 from collections import namedtuple
 from dataclasses import dataclass
-from typing import (Any, ClassVar, Dict, Generic, Iterable, Iterator, List,
-                    Mapping, NamedTuple, Optional, Sequence, Set, Tuple, Type,
-                    TypeVar, Union)
+from typing import (Any, ClassVar, Dict, Generic, Iterable, Iterator, KeysView,
+                    List, Mapping, NamedTuple, Optional, Sequence, Set, Tuple,
+                    Type, TypeVar, Union)
 
 import gym
 import numpy as np
 import torch
 from gym import spaces
 from torch import Tensor
-from utils.logging_utils import get_logger
-from utils.generic_functions import get_slice, set_slice
-from utils import singledispatchmethod
 
-Item = TypeVar("Item", bound=collections_abc.Sized)
+from utils.generic_functions import get_slice, set_slice, singledispatchmethod
+from utils.logging_utils import get_logger
+
 logger = get_logger(__file__)
+
 B = TypeVar("B", bound="Batch")
+T = TypeVar("T", Tensor, np.ndarray, B, Any)
+
+
+def hasmethod(obj: Any, method_name: str) -> bool:
+    return hasattr(obj, method_name) and callable(getattr(obj, method_name))
+
 
 @dataclass(frozen=True)
-class Batch(ABC, Mapping[str, Union[Tensor, Any]]):
-    """ABC for typed immutable containers of tensors, with some helper methods.
-
-    Can be used the same way as an immutable dict, mapping from strings to the
-    attributes of object, or as a tuple if you index with an integer.    
+class Batch(ABC, Mapping[str, T]):
+    """ Abstract base class for typed, immutable objects holding tensors.
     
-    The main reason why this class is present rather than using NamedTuples is
-    because those don't really support inheritance. Dataclasses work better for
-    that purpose.
-
+    Can be used as an immutable dictionary mapping from strings to tensors, or
+    as a tuple if you index with an integer.
     Also has some Tensor-like helper methods like `to()`, `numpy()`, `detach()`,
     etc.
     
-    NOTE: One difference with dict is that __iter__ gives an
-    iterator over the values, not the string keys.
-    
+    Other features:
+    - numpy-style indexing/slicing/masking
+    - moving all items between devices
+    - changing the dtype of all tensors
+    - detaching all tensors
+    - Convertign all tensors to numpy arrays
+    - convertible to a tuple or a dict
+
+    NOTE: Using dataclasses rather than namedtuples, because those aren't really
+    meant to be subclassed, so we couldn't use them to make the 'Observations'
+    hierarchy, for instance.
+    Dataclasses work better for that purpose.
+
     Examples:
 
     >>> import torch
@@ -60,7 +71,7 @@ class Batch(ABC, Mapping[str, Union[Tensor, Any]]):
     (torch.float32, torch.int64)
     >>> batch.dtype # No shared dtype, so dtype returns None.
     >>> batch.float().dtype # Converting the all items to float dtype:
-    torch.float64
+    torch.float32
     
     Device-related methods:
     
@@ -73,7 +84,7 @@ class Batch(ABC, Mapping[str, Union[Tensor, Any]]):
     space: ClassVar[Optional[gym.Space]]
     field_names: ClassVar[List[str]]
     _namedtuple: ClassVar[Type[NamedTuple]]
-        
+    
     def __init_subclass__(cls, *args, **kwargs):
         # IDEA: By not marking 'Batch' a dataclass, we would let the subclass
         # decide it if wants to be frozen or not!
@@ -94,7 +105,7 @@ class Batch(ABC, Mapping[str, Union[Tensor, Any]]):
         if "_named_tuple" not in cls.__dict__:
             type(self)._namedtuple = namedtuple(type(self).__name__ + "Tuple", self.field_names)
 
-    def unwrap(self) -> Union[Item, Tuple[Item, ...]]:
+    def unwrap(self) -> Union[T, Tuple[T, ...]]:
         """ Returns the 'unwrapped' contents of this object, which will be a
         tuple of batched tensors if there is more than one field, or the only
         wrapped tensor is there is only one field in this class.
@@ -105,49 +116,42 @@ class Batch(ABC, Mapping[str, Union[Tensor, Any]]):
     def __iter__(self) -> Iterable[str]:
         """ Yield the 'keys', which are the field names in this case. """
         return iter(self.field_names)
-        # return itertools.starmap(self._namedtuple, zip(*self.as_tuple()))
-        # return iter(self.as_tuple())
-        # for name in self.field_names:
-        #     yield getattr(self, name)
 
     def __len__(self) -> int:
         return len(self.field_names)
 
-    def __getitem__(self, index: Any):
-        return self.getitem(index)
-    
     @singledispatchmethod
-    def getitem(self, index: Any) -> Any:
+    def __getitem__(self, index: Any) -> T:
         raise KeyError(index)
-    
-    @getitem.register
-    def _(self, index: int) -> Union[Tensor, Any]:
-        return getattr(self, self.field_names[index])
-    
-    @getitem.register
+
+    @__getitem__.register
     def _(self, index: str) -> Union[Tensor, Any]:
         return getattr(self, index)
 
-    @getitem.register(slice)
-    def _(self, index: slice) -> "Batch":
-        # I don't think it would be a good idea to support slice indexing,
-        # as it could be confusing and give the user the impression that it
-        # is slicing into the tensors, rather than into the fields.
-        # Plus, there really shouldn't be that many fields in a Batch object
-        # anyway.
-        if index == slice(None, None, None):
-            return self.as_namedtuple()
-        # NOTE: Untested, not sure this would actually be useful either.
-        # e.g.: x, task_label = Observations[:2]
-        raise NotImplementedError(
-            "Batch objects only support slice indexing with empty slices atm."
-        )
+    @__getitem__.register
+    def _(self, index: int) -> Union[Tensor, Any]:
+        return getattr(self, self.field_names[index])
 
-    @getitem.register(type(Ellipsis))
+    @__getitem__.register(slice)
+    def _(self, index: slice) -> "Batch":
+        """e.g.: x, task_label = Observations[:2]
+        
+        NOTE: I don't think it would be a good idea to support slice indexing,
+        as it could be confusing and give the user the impression that it
+        is slicing into the tensors, rather than into the fields.       
+        """
+        raise NotImplementedError(
+            "Batch objects don't support indexing with (just) slices atm."
+        )
+        # I guess this might be doable, but is it really useful?
+        if index == slice(None, None, None) or index == slice(0, len(self), 1):
+            return self
+
+    @__getitem__.register(type(Ellipsis))
     def _(self: B, index) -> B:
         return self
-    
-    @getitem.register(tuple)
+
+    @__getitem__.register(tuple)
     def _(self, index: Tuple[Union[slice, Tensor, np.ndarray, int], ...]):
         """ When slicing with a tuple, if the first item is an integer, we get
         the attribute at that index and slice it with the rest.
@@ -180,28 +184,25 @@ class Batch(ABC, Mapping[str, Union[Tensor, Any]]):
         )
 
     def __setitem__(self, index: Union[int, str], value: Any):
-        # NOTE: If we mark this dataclass as frozen, then this won't work.
-        if isinstance(index, int):
-            field_name = self.field_names[index]
-            return setattr(self, field_name, value)
-        elif isinstance(index, str):
-            return getattr(self, index)
-        elif isinstance(index, slice):
-            # I don't think it would be a good idea to support slice indexing,
-            # as it could be confusing and give the user the impression that it
-            # is slicing into the tensors, rather than into the fields. Plus,
-            # There really shouldn't be that many fields in a Batch object.
-            raise NotImplementedError(f"Batch doesn't support slice indexing.")
-        raise IndexError(index)
+        """ Set a value in slices of one or more of the fields.
 
-    def keys(self) -> Set[str]:
-        return set(self.field_names)
-    
-    def values(self) -> Iterable[Item]:
-        for name in self.field_names:
-            yield getattr(self, name)
+        NOTE: Since this class is marked as frozen, we can't change the
+        attributes, so the index should be a tuple (to change parts of the
+        tensors, for instance.
+        """
+        if not isinstance(index, tuple) or len(index) < 2:
+            raise NotImplementedError("index needs to be tuple with len >= 2")
+        selected_items = self.values()[index[0]]
+        for value in selected_items:
+            value[index[1:]] = value
 
-    def items(self) -> Iterable[Tuple[str, Item]]:
+    def keys(self) -> KeysView[str]:
+        return KeysView(self.field_names)
+
+    def values(self) -> Tuple[T, ...]:
+        return self.as_namedtuple()
+
+    def items(self) -> Iterable[Tuple[str, T]]:
         for name in self.field_names:
             yield name, getattr(self, name)
 
@@ -252,10 +253,10 @@ class Batch(ABC, Mapping[str, Union[Tensor, Any]]):
             return None
         return dtypes[0]
 
-    def as_namedtuple(self) -> Tuple[Item, ...]:
+    def as_namedtuple(self) -> Tuple[T, ...]:
         return self._namedtuple(**self.as_dict())
     
-    def as_list_of_tuples(self) -> Iterable[Tuple[Item, ...]]:
+    def as_list_of_tuples(self) -> Iterable[Tuple[T, ...]]:
         """Returns an iterable of the items in the 'batch', each item as a
         namedtuple (list of tuples).
         """
@@ -269,19 +270,21 @@ class Batch(ABC, Mapping[str, Union[Tensor, Any]]):
         assert all([len(items) == self.batch_size for items in field_items])
         return list(itertools.starmap(self._namedtuple, zip(*field_items)))
 
-    def as_tuple(self) -> Tuple[Item, ...]:
+    def as_tuple(self) -> Tuple[T, ...]:
         """Returns a namedtuple containing the 'batched' attributes of this
         object (tuple of lists).
         """
         # TODO: Turning on the namedtuple return value by default.
+        # return tuple(
+        #     getattr(self, f.name) for f in dataclasses.fields(self)
+        # )
         return self.as_namedtuple()
-        return tuple(
-            getattr(self, f.name) for f in dataclasses.fields(self) 
-        )
 
-    def as_dict(self) -> Dict[str, Item]:
+    def as_dict(self) -> Dict[str, T]:
+        # NOTE: dicts are ordered since python 3.7
         return {
-            f.name: getattr(self, f.name) for f in dataclasses.fields(self) 
+            field_name: getattr(self, field_name)
+            for field_name in self.field_names
         }
 
     def to(self, *args, **kwargs):
@@ -290,8 +293,17 @@ class Batch(ABC, Mapping[str, Union[Tensor, Any]]):
             for name, item in self.items()
         })
 
-    def float(self):
-        return self.to(dtype=float)
+    def float(self, dtype=torch.float):
+        return self.to(dtype=dtype)
+    
+    def float32(self, dtype=torch.float32):
+        return self.to(dtype=dtype)
+
+    def int(self, dtype=torch.int):
+        return self.to(dtype=dtype)
+
+    def double(self, dtype=torch.double):
+        return self.to(dtype=dtype)
 
     def numpy(self):
         """Returns a new Batch object of the same type, with all Tensors
@@ -361,66 +373,67 @@ class Batch(ABC, Mapping[str, Union[Tensor, Any]]):
                 return len(item)
         return None
     
-    @classmethod
-    def from_inputs(cls, inputs):
-        """ Converts a batch of items into a 'Batch' object. """
-        if isinstance(inputs, cls):
-            return inputs
-        if isinstance(inputs, (tuple, list)):
-            from collections.abc import Sized
-            if not all(isinstance(item, Sized) for item in inputs):
-                # FIXME: This could either mean that this method is being passed
-                # a tuple or a list of non-Batched items, or that an individual
-                # field has None as a value. Hard to distinguish these two..
-                return cls(*inputs)
+    # @classmethod
+    # def from_inputs(cls, inputs):
+    #     """ Converts a batch of items into a 'Batch' object. """
+    #     if isinstance(inputs, cls):
+    #         return inputs
+    #     if isinstance(inputs, (tuple, list)):
+    #         from collections.abc import Sized
+    #         if not all(isinstance(item, Sized) for item in inputs):
+    #             # FIXME: This could either mean that this method is being passed
+    #             # a tuple or a list of non-Batched items, or that an individual
+    #             # field has None as a value. Hard to distinguish these two..
+    #             return cls(*inputs)
             
-                assert False, f"This should only be used on 'batched' inputs, not {inputs}.."
+    #             assert False, f"This should only be used on 'batched' inputs, not {inputs}.."
                 
-                inputs = [
-                    [item] for item in inputs
-                ]
+    #             inputs = [
+    #                 [item] for item in inputs
+    #             ]
 
-            # Convert things that aren't tensors to numpy arrays.
-            # Stack tensors (to preserve their 'grad' attributes, if present).
-            inputs: List[Union[np.ndarray, Tensor]] = [
-                items if isinstance(items, Tensor) else
-                torch.stack(items) if isinstance(items[0], Tensor) else
-                np.asarray(items)
+    #         # Convert things that aren't tensors to numpy arrays.
+    #         # Stack tensors (to preserve their 'grad' attributes, if present).
+    #         inputs: List[Union[np.ndarray, Tensor]] = [
+    #             items if isinstance(items, Tensor) else
+    #             torch.stack(items) if isinstance(items[0], Tensor) else
+    #             np.asarray(items)
                 
-                for items in inputs
-            ]
+    #             for items in inputs
+    #         ]
             
-            # Ndarrays with 'object' dtype aren't supported in pytorch.
-            # TODO: We convert arrays with None to lists, but is this the best
-            # thing to do?
-            inputs = [
-                array if isinstance(array, Tensor) else
-                torch.as_tensor(array) if array.dtype != np.object_ else
-                array.tolist()
-                for array in inputs
-            ]
-            return cls(*inputs)
+    #         # Ndarrays with 'object' dtype aren't supported in pytorch.
+    #         # TODO: We convert arrays with None to lists, but is this the best
+    #         # thing to do?
+    #         inputs = [
+    #             array if isinstance(array, Tensor) else
+    #             torch.as_tensor(array) if array.dtype != np.object_ else
+    #             array.tolist()
+    #             for array in inputs
+    #         ]
+    #         return cls(*inputs)
 
-        if isinstance(inputs, Tensor):
-            return cls(inputs)
-        if isinstance(inputs, np.ndarray):
-            return cls(torch.as_tensor(inputs))
-        if isinstance(inputs, dict):
-            return cls(**inputs)
-        # TODO: Do we want to allow Batch objects to contain single "items" in
-        # addition to batches of items?
-        if isinstance(inputs, (int, float)):
-            return cls(torch.as_tensor(inputs))
-        raise RuntimeError(
-            f"Don't know how to turn inputs {inputs} (type {type(inputs)}) "
-            f"into a Batch object of type {cls}!"
-        )
-        # return cls(inputs)
+    #     if isinstance(inputs, Tensor):
+    #         return cls(inputs)
+    #     if isinstance(inputs, np.ndarray):
+    #         return cls(torch.as_tensor(inputs))
+    #     if isinstance(inputs, dict):
+    #         return cls(**inputs)
+    #     # TODO: Do we want to allow Batch objects to contain single "items" in
+    #     # addition to batches of items?
+    #     if isinstance(inputs, (int, float)):
+    #         return cls(torch.as_tensor(inputs))
+    #     raise RuntimeError(
+    #         f"Don't know how to turn inputs {inputs} (type {type(inputs)}) "
+    #         f"into a Batch object of type {cls}!"
+    #     )
+    #     # return cls(inputs)
 
 T = TypeVar("T")
 
 @get_slice.register(Batch)
 def get_batch_slice(value: Batch, indices: Sequence[int]) -> Batch:
+    # return value[:, indices]
     return type(value)(**{
         field_name: get_slice(field_value, indices) if field_value is not None else None
         for field_name, field_value in value.as_dict().items()
