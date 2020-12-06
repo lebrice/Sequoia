@@ -118,7 +118,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
     @auto_move_data
     def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
         """ Forward pass of the Model.
-        
+
         Returns a ForwardPass object (or a dict)
         """        
         # Encode the observation to get representations.

@@ -40,6 +40,7 @@ logger = get_logger(__file__)
 
 from methods import register_method
 
+
 @register_method
 @dataclass
 class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
@@ -135,6 +136,12 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         if wandb_options.run_name is None:
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
 
+        
+        if isinstance(setting, ContinualRLSetting):
+            # Configure specifically for a Continual RL setting.
+            # TODO: Doing the backward pass manually (debugging RL output head)
+            self.trainer_options.automatic_optimization = False
+    
         self.trainer = self.create_trainer(setting)
         self.model = self.create_model(setting)
 
@@ -143,9 +150,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         self.Actions: Type[Actions] = setting.Actions
         self.Rewards: Type[Rewards] = setting.Rewards
 
-        if isinstance(setting, ContinualRLSetting):
-            # Configure specifically for a Continual RL setting.
-            pass
         
 
     def fit(self,

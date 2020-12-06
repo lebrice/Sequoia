@@ -33,7 +33,7 @@ class TrainerConfig(Serializable, Parseable):
     max_epochs: int = 10
     # Number of nodes to use.
     num_nodes: int = 1
-    distributed_backend: str = "dp"
+    distributed_backend: Optional[str] = "dp" if gpus != 0 else None
     log_gpu_memory: bool = False
     val_check_interval: Union[int, float] = 1.0
     auto_scale_batch_size: Optional[str] = None
@@ -41,6 +41,9 @@ class TrainerConfig(Serializable, Parseable):
     # Floating point precision to use in the model. (See pl.Trainer)
     precision: int = choice(16, 32, default=32)
     default_root_dir: Path = Path(os.getcwd()) / "results"
+
+    # Wether to do the backward pass manually or automatically.
+    automatic_optimization: bool = False
 
     # How much of training dataset to check (floats = percent, int = num_batches)
     limit_train_batches: Union[int, float] = 1.0
@@ -93,8 +96,7 @@ class TrainerConfig(Serializable, Parseable):
             fast_dev_run=self.fast_dev_run,
             auto_scale_batch_size=self.auto_scale_batch_size,
             auto_lr_find=self.auto_lr_find,
-            # # TODO: Doing the backward pass manually (debugging RL output head)
-            # automatic_optimization=False,
+            automatic_optimization=self.automatic_optimization,
             # TODO: Either move the log-dir-related stuff from Config to this
             # class, or figure out a way to pass the value from Config to this
             # function

@@ -13,6 +13,7 @@ from simple_parsing import list_field
 from torch import Tensor, nn
 from torch.nn import Flatten  # type: ignore
 from utils.serialization import Serializable
+from utils import Parseable
 from utils.utils import camel_case, remove_suffix
 from gym.spaces.utils import flatdim
 
@@ -31,7 +32,7 @@ class OutputHead(nn.Module, ABC):
     name: ClassVar[str] = "classification"
 
     @dataclass
-    class HParams(Serializable):
+    class HParams(Serializable, Parseable):
         """ Hyperparameters of the output head. """
         # Number of hidden layers in the output head.
         hidden_layers: int = 0

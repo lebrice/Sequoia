@@ -127,7 +127,7 @@ class PolicyHead(ClassificationHead):
         # The maximum length of the buffer that will hold the most recent
         # states/actions/rewards of the current episode. When a batched
         # environment is used
-        max_episode_window_length: int = 10
+        max_episode_window_length: int = 100
 
     def __init__(self,
                  input_space: spaces.Space,
@@ -150,14 +150,19 @@ class PolicyHead(ClassificationHead):
             # default type of hparams on the method is BaselineModel.HParams,
             # which the `output_head` field doesn't have the right type exactly. 
             current_hparams = self.hparams.to_dict()
-            missing_args = [f.name for f in dataclasses.fields(self.HParams)
+            missing_fields = [f.name for f in dataclasses.fields(self.HParams)
                             if f.name not in current_hparams]
             logger.warning(RuntimeWarning(
                 f"Upgrading the hparams from type {type(self.hparams)} to "
-                f"type {self.HParams}, which will use the default values for "
-                f"the missing arguments {missing_args}"
+                f"type {self.HParams}. This will try to fetch the values for "
+                f"the missing fields {missing_fields} from the command-line. "
             ))
+            # Get the missing values
+            hparams = self.HParams.from_args(strict=False)
+            for missing_field in missing_fields:
+                current_hparams[missing_field] = getattr(hparams, missing_field) 
             self.hparams = self.HParams.from_dict(current_hparams)
+
         self.hparams: PolicyHead.HParams
         self.input_space: spaces.Box
         self.action_space: spaces.Discrete
@@ -272,19 +277,20 @@ class PolicyHead(ClassificationHead):
         # can do the forward pass on the new observations! Otherwise the first
         # actions won't have been based on the right weights!
 
-        self.loss: Loss = Loss("episode_loss")
+        self.loss: Loss = Loss(self.name)
         for env_index, done in enumerate(observations.done):
             if done:
                 logger.debug(f"Reached end of episode in env {env_index}")
                 self.loss += self.on_episode_end(env_index)
                 self.clear_buffers(env_index)
-
+        
+        
         if self.loss.loss != 0. and self.training:
+            logger.debug(f"non-zero loss: {self.loss}")
+            # TODO: TODO: Do we need to get an optimizer and do the step here?
             self.optimizer.zero_grad()
             self.loss.loss.backward(retain_graph=True)
             self.optimizer.step()
-            # TODO: We might even need to get the optimizer and do the step
-            # here, no?
 
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
@@ -295,17 +301,17 @@ class PolicyHead(ClassificationHead):
             logits=logits,
             policy=policy,
         )
-
+        
         for env_index in range(self.batch_size):
             # Get the obs/representations/actions for this env, by slicing each
             # of the objects above.
             env_observations = get_slice(observations, env_index)
             env_representations = get_slice(representations, env_index)
             env_actions = get_slice(actions, env_index)
-                       
+
             # Add those actions to the buffer at that index.
             # self.observations.append(env_observations)
-            self.representations[env_index].append(env_representations)
+            self.representations[env_index].append(env_representations.detach())
             self.actions[env_index].append(env_actions)
 
         return actions
@@ -318,6 +324,13 @@ class PolicyHead(ClassificationHead):
         # episode.
         # This is one annoying thing about gym's VectorEnvs that I
         # really don't like.
+        
+        # BUG: Testing stuff out:
+        episode_length = len(self.representations[env_index])
+        logger.debug(f"Env {env_index} had episode length {episode_length}")
+        first_representations = self.representations[env_index].popleft()
+        first_action = self.actions[env_index].popleft()
+        first_reward = self.rewards[env_index].popleft()
         stacked_inputs, stacked_actions, stacked_rewards = self.stack_buffers(env_index)
         
         loss = self.get_episode_loss(
@@ -327,14 +340,8 @@ class PolicyHead(ClassificationHead):
             rewards=stacked_rewards,
             done=True,
         )
+        logger.debug(f"Loss for env {env_index}: {loss}")
         return loss
-        # If we are able to get a loss for this set of observations/actions/
-        # rewards, then add it to the total loss.
-        
-        if not isinstance(total_loss.loss, Tensor):
-            assert total_loss.loss == 0.
-            total_loss.loss = torch.zeros(1, requires_grad=True)
-        return total_loss
 
     def get_loss(self,
                  forward_pass: ForwardPass,
@@ -363,8 +370,10 @@ class PolicyHead(ClassificationHead):
         # backpropagated. That way, we can update the model while also
         # (eventually) having the metrics and loss from the episode returned in
         # get_loss.
-        return Loss(self.name, torch.ones(1, requires_grad=True))
-        return self.loss.detach() + torch.ones(1, requires_grad=True)
+        # return Loss(self.name, torch.ones(1, requires_grad=True))
+        fake_loss = self.loss.detach()
+        coefficient = torch.ones(1, requires_grad=True, device=fake_loss.loss.device)
+        return fake_loss * coefficient
         
         inputs: Tensor = forward_pass.representations
         dones = forward_pass.observations.done
