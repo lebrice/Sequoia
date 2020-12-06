@@ -16,22 +16,33 @@ import torch
 from torch import Tensor
 from typing import Optional
 
+
 @dataclass(frozen=True)
-class ForwardPass(Batch):
+class Observations(Batch):
     x: Tensor
-    h_x: Optional[Tensor] = None
-    y_pred: Optional[Tensor] = None
+    task_labels: Optional[Tensor] = None
+
+@dataclass(frozen=True)
+class Actions(Batch):
+    y_pred: Tensor
+
+
+@dataclass(frozen=True)
+class Rewards(Batch):
+    y: Tensor
+
 
 
 @pytest.mark.parametrize(
     "batch_type, items_dict",
     [
         (
-            ForwardPass,
-            dict(x = torch.arange(10),
-                 h_x = torch.arange(10) + 1,
-                 y_pred = torch.arange(10) + 2),
-        ),                   
+            Observations,
+            dict(
+                x = torch.arange(10),
+                task_labels = torch.arange(10) + 1,
+            )
+        ),       
     ]
 )
 def test_batch_behaves_like_a_dict(batch_type, items_dict):
@@ -56,11 +67,12 @@ def test_batch_behaves_like_a_dict(batch_type, items_dict):
     "batch_type, items_dict",
     [
         (
-            ForwardPass,
-            dict(x = torch.arange(10),
-                 h_x = torch.arange(10) + 1,
-                 y_pred = torch.arange(10) + 2),
-        ),                   
+            Observations,
+            dict(
+                x = torch.arange(10),
+                task_labels = torch.arange(10) + 1,
+            ),
+        ),
     ]
 )
 def test_to(batch_type: Type[Batch], items_dict: Dict[str, Tensor]):
@@ -83,14 +95,12 @@ def test_to(batch_type: Type[Batch], items_dict: Dict[str, Tensor]):
         assert v.device == original_value.device == original_devices[k]
         assert v.dtype == original_value.dtype == original_dtypes[k]
 
-    
-    devices = tuple(original_devices.values())
-    dtypes = tuple(original_dtypes.values())    
     # The 'devices' and 'dtypes' attributes give the devices and dtypes of all
     # items.
-    assert obj.devices == devices
-    assert obj.dtypes == dtypes
-
+    assert obj.devices == original_devices
+    assert obj.dtypes == original_dtypes
+    devices = list(original_devices.values())
+    dtypes = list(original_dtypes.values())
     if len(set(devices)) == 1:
         # If they all share the same device, then the `device` attribute on the
         # `batch` is this shared device.
@@ -117,17 +127,15 @@ def test_to(batch_type: Type[Batch], items_dict: Dict[str, Tensor]):
         assert (v == original_value.to(dtype=torch.float32)).all()
 
 
-@pytest.mark.parametrize(
-    "batch_type, items_dict",
-    [
-        (
-            ForwardPass,
-            dict(x = torch.arange(25).reshape([5, 5]),
-                 h_x = torch.arange(25).reshape([5, 5]) + 1,
-                 y_pred = torch.arange(25).reshape([5, 5]) + 2),
+@pytest.mark.parametrize("batch_type, items_dict", [
+    (
+        Observations,
+        dict(
+            x = torch.arange(25).reshape([5, 5]),
+            task_labels = torch.arange(25).reshape([5, 5]) + 1,
         ),
-    ]
-)
+    ),
+])
 @pytest.mark.parametrize("index", [
     (0, 0), # obj[0, 0]
     (0, ..., 0), # obj[0, ..., 0]
@@ -173,3 +181,54 @@ def test_tuple_indexing(batch_type: Type[Batch], items_dict: Dict[str, Tensor], 
         key = keys[index[0]]
         expected_value = expected_items[key]
         assert (actual_slice == expected_value).all()
+
+
+def test_masking():
+    """ Test indexing or changing values in the item using a mask array."""
+    bob = Observations(
+        x = torch.arange(25).reshape([5, 5]),
+    )
+    odd_rows = np.arange(5) % 2 == 1
+    bob[:, odd_rows] = False
+    
+    tensor = torch.as_tensor
+    
+    expected = Observations(
+        x=tensor([[ 0,  1,  2,  3,  4],
+                  [ 0,  0,  0,  0,  0],
+                  [10, 11, 12, 13, 14],
+                  [ 0,  0,  0,  0,  0],
+                  [20, 21, 22, 23, 24]]),
+        task_labels=None,
+    )
+    assert (expected.x == bob.x).all()
+    assert expected.task_labels == bob.task_labels
+
+ 
+@dataclass(frozen=True)
+class ForwardPass(Batch):
+    observations: Observations
+    h_x: Tensor
+    actions: Actions
+
+
+def test_nesting():
+    obj = ForwardPass(
+        observations=Observations(
+            x=torch.arange(10).reshape([2, 5]),
+            task_labels=torch.arange(2, dtype=int),
+        ),
+        h_x=torch.arange(8).reshape([2, 4]),
+        actions=Actions(
+            y_pred=torch.arange(2, dtype=int),
+        )
+    )
+    assert obj.batch_size == 2
+    assert obj[0, 1, 0] == obj.observations.task_labels[0]
+    tensor = torch.as_tensor
+    assert str(obj.slice(0)) == str(ForwardPass(
+        observations=Observations(x=tensor([0, 1, 2, 3, 4]),
+                                  task_labels=tensor(0)),
+        h_x=tensor([0, 1, 2, 3]),
+        actions=Actions(y_pred=tensor(0)),
+    ))

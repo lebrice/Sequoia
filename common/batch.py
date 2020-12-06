@@ -31,7 +31,7 @@ def hasmethod(obj: Any, method_name: str) -> bool:
     return hasattr(obj, method_name) and callable(getattr(obj, method_name))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Batch(ABC, Mapping[str, T]):
     """ Abstract base class for typed, immutable objects holding tensors.
     
@@ -58,27 +58,76 @@ class Batch(ABC, Mapping[str, T]):
     >>> import torch
     >>> from typing import Optional
     >>> from dataclasses import dataclass
+    
     >>> @dataclass(frozen=True)
     ... class MyBatch(Batch):
     ...     x: Tensor
     ...     y: Tensor = None
+    
     >>> batch = MyBatch(x=torch.ones([10, 3, 32, 32]), y=torch.arange(10))
     >>> batch.shapes
-    (torch.Size([10, 3, 32, 32]), torch.Size([10]))
+    {'x': torch.Size([10, 3, 32, 32]), 'y': torch.Size([10])}
     >>> batch.batch_size
     10
     >>> batch.dtypes
-    (torch.float32, torch.int64)
+    {'x': torch.float32, 'y': torch.int64}
     >>> batch.dtype # No shared dtype, so dtype returns None.
     >>> batch.float().dtype # Converting the all items to float dtype:
     torch.float32
     
     Device-related methods:
     
-    >>> batch.device  # Returns the device common to all items, or None.
+        
+    >>> from dataclasses import dataclass
+    >>> import torch
+    >>> from torch import Tensor
+    
+    >>> @dataclass(frozen=True)
+    ... class Observations(Batch):
+    ...     x: Tensor
+    ...     task_labels: Tensor
+    ...     done: Tensor
+    ...
+    >>> # Example: observations from two gym environments (e.g. VectorEnv) 
+    >>> observations = Observations(
+    ...     x = torch.arange(10).reshape([2, 5]),
+    ...     task_labels = torch.arange(2, dtype=int),
+    ...     done = torch.zeros(2, dtype=bool),
+    ... )
+    
+    >>> observations.shapes
+    {'x': torch.Size([2, 5]), 'task_labels': torch.Size([2]), 'done': torch.Size([2])}
+    >>> observations.batch_size
+    2
+    
+    Datatypes:
+    
+    >>> observations.dtypes
+    {'x': torch.int64, 'task_labels': torch.int64, 'done': torch.bool}
+    >>> observations.dtype # No shared dtype, so dtype returns None.
+    >>> observations.float().dtype # Converting the all items to float dtype:
+    torch.float32
+    
+    
+    Returns the device common to all items, or None:
+    
+    >>> observations.device  
     device(type='cpu')
-    >>> batch.to("cuda").device
+    >>> observations.to("cuda").device
     device(type='cuda', index=0)
+    
+    >>> observations[0]
+    tensor([[0, 1, 2, 3, 4],
+            [5, 6, 7, 8, 9]])
+    
+    Additionally, when slicing a Batch across the first dimension, you get
+    other typed objects as a result! For example:    
+    
+    >>> observations[:, 0]
+    Observations(x=tensor([0, 1, 2, 3, 4]), task_labels=tensor(0), done=tensor(False))
+    
+    >>> observations[:, 1]
+    Observations(x=tensor([5, 6, 7, 8, 9]), task_labels=tensor(1), done=tensor(False))
     """
     # TODO: Would it make sense to add a gym Space class variable here? 
     space: ClassVar[Optional[gym.Space]]
@@ -105,23 +154,38 @@ class Batch(ABC, Mapping[str, T]):
         if "_named_tuple" not in cls.__dict__:
             type(self)._namedtuple = namedtuple(type(self).__name__ + "Tuple", self.field_names)
 
-    def unwrap(self) -> Union[T, Tuple[T, ...]]:
-        """ Returns the 'unwrapped' contents of this object, which will be a
-        tuple of batched tensors if there is more than one field, or the only
-        wrapped tensor is there is only one field in this class.
-        """
-        tensors = self.as_namedtuple()
-        return tensors[0] if len(tensors) == 1 else tensors 
-    
     def __iter__(self) -> Iterable[str]:
-        """ Yield the 'keys', which are the field names in this case. """
+        """ Yield the 'keys' of this object, i.e. the names of the fields. """
         return iter(self.field_names)
 
     def __len__(self) -> int:
+        """ Returns the number of fields. """
         return len(self.field_names)
-
+    
+    def __eq__(self, other: Union["Batch", Any]) -> bool:
+        # Not sure this is useful.
+        return NotImplemented
+    
+        if not isinstance(other, Batch):
+            return NotImplemented
+        if type(self) != type(other):
+            # Not allowing these sorts of comparisons.
+            return NotImplemented
+        items_equal = {
+            k: v == other[k]
+            for k, v in self.items()
+        }
+        return all(
+            is_equal.all() if isinstance(is_equal, (Tensor, np.ndarray)) else is_equal
+            for is_equal in items_equal.values()
+        )
+        
+        
     @singledispatchmethod
     def __getitem__(self, index: Any) -> T:
+        """ Select a subset of the fields of this object. Can also be indexed
+        with tuples, numpy arrays, or tensors. 
+        """
         raise KeyError(index)
 
     @__getitem__.register
@@ -134,23 +198,31 @@ class Batch(ABC, Mapping[str, T]):
 
     @__getitem__.register(slice)
     def _(self, index: slice) -> "Batch":
-        """e.g.: x, task_label = Observations[:2]
-        
-        NOTE: I don't think it would be a good idea to support slice indexing,
-        as it could be confusing and give the user the impression that it
-        is slicing into the tensors, rather than into the fields.       
-        """
+        # NOTE: I don't think it would be a good idea to support slice indexing,
+        # as it could be confusing and give the user the impression that it
+        # is slicing into the tensors, rather than into the fields.
+        # I guess this might be doable, but is it really useful?
         raise NotImplementedError(
             "Batch objects don't support indexing with (just) slices atm."
         )
-        # I guess this might be doable, but is it really useful?
         if index == slice(None, None, None) or index == slice(0, len(self), 1):
             return self
+        
 
     @__getitem__.register(type(Ellipsis))
     def _(self: B, index) -> B:
         return self
 
+    @__getitem__.register(np.ndarray)
+    @__getitem__.register(Tensor)
+    def _(self, index: np.ndarray) -> B:
+        """
+        NOTE: Indexing with just an array uses the array as a 'mask' on all
+        fields, instead of indexing the "keys" of this object.
+        """
+        assert len(index) == self.batch_size
+        return self[:][index]
+    
     @__getitem__.register(tuple)
     def _(self, index: Tuple[Union[slice, Tensor, np.ndarray, int], ...]):
         """ When slicing with a tuple, if the first item is an integer, we get
@@ -171,17 +243,38 @@ class Batch(ABC, Mapping[str, T]):
             return self[field_index][item_index]
 
         # e.g: forward_pass[:, 1]
-        if field_index == slice(None):
-            # logger.debug(f"Indexing all fields {field_index} with index: {item_index}")
+        if isinstance(field_index, slice):
+            if field_index == slice(None):
+                # logger.debug(f"Indexing all fields {field_index} with index: {item_index}")
+                return type(self)(**{
+                    key: value[item_index] if value is not None else None 
+                    for key, value in self.items()
+                })
+
+        # batch[..., 0] : Not sure this would really be that helpful.
+        if field_index == Ellipsis:
+            logger.debug(f"Using ellipsis (...) as the field index?")
             return type(self)(**{
-                key: value[item_index] if value is not None else None 
+                key: value[Ellipsis, item_index] if value is not None else None 
                 for key, value in self.items()
             })
-
+        
         raise NotImplementedError(
-            f"Only support tuple indexing with empty slices or int as first "
+            f"Only support tuple indexing with emptyslices or int as first "
             f"tuple item for now. (index={index})"
         )
+
+    def slice(self: B, index: Union[int, slice, np.ndarray, Tensor]) -> B:
+        """ Gets a slice across the first (batch) dimension.
+        Raises an error if there is no batch size.
+        """
+        if not isinstance(index, (int, slice, np.ndarray, Tensor)):
+            raise NotImplementedError("can't slice")
+        return type(self)(**{
+            k: v.slice(index) if isinstance(v, Batch) else
+            v[index] if v is not None else None
+            for k, v in self.items()
+        })
 
     def __setitem__(self, index: Union[int, str], value: Any):
         """ Set a value in slices of one or more of the fields.
@@ -192,9 +285,12 @@ class Batch(ABC, Mapping[str, T]):
         """
         if not isinstance(index, tuple) or len(index) < 2:
             raise NotImplementedError("index needs to be tuple with len >= 2")
-        selected_items = self.values()[index[0]]
-        for value in selected_items:
-            value[index[1:]] = value
+        # Get which keys/fields were selected:
+        selected_fields = np.array(self.field_names)[index[0]]
+        for selected_field in selected_fields:
+            item = self[selected_field]
+            if item is not None:
+                item[index[1:]] = value
 
     def keys(self) -> KeysView[str]:
         return KeysView(self.field_names)
@@ -207,31 +303,55 @@ class Batch(ABC, Mapping[str, T]):
             yield name, getattr(self, name)
 
     @property
-    def devices(self) -> Tuple[Optional[torch.device]]:
-        """ Returns the device common to all the elements in the Batch, else
-        None if not all items share the same device. """
-        return tuple(
-            getattr(value, "device", None) for value in self.values()
-        )
+    def devices(self) -> Dict[str, Union[Optional[torch.device], Dict]]:
+        """ Dict from field names to their device if they have one, else None.
+        
+        If `self` has `Batch` fields, the values for those will be dicts.
+        """
+        return {
+            k: v.devices if isinstance(v, Batch) else getattr(v, "device", None)
+            for k, v in self.items()
+        }
 
     @property
     def device(self) -> Optional[torch.device]:
-        """Returns the device common to all items, or None.
+        """Returns the device common to all items, or `None`.
 
         Returns
         -------
         Tuple[Optional[torch.device]]
             None if the devices are unknown/different, or the common device.
         """
-        devices = self.devices
-        if not devices or not all(device == devices[0] for device in devices):
-            # No common dtype.
-            return None
-        return devices[0]
+        device: Optional[torch.device] = None
+        # TODO: These kinds of methods can't discriminate between a child item
+        # having all all None tensors and it having different devices atm.
+        for key, value in self.items():
+            if isinstance(value, Batch):
+                item_device = value.device
+                if item_device is None:
+                    # Child item doesn't have a 'device', so `self` also doesnt.
+                    return None
+            else:
+                item_device = getattr(value, "device", None)
+            
+            if item_device is None:
+                continue
+            if device is None:
+                device = item_device
+            elif item_device != device:
+                return None
+        return device
 
     @property
-    def dtypes(self) -> Tuple[Optional[torch.dtype]]:
-        return tuple(getattr(value, "dtype", None) for value in self.values())
+    def dtypes(self) -> Dict[str, Union[Optional[torch.dtype], Dict]]:
+        """ Dict from field names to their dtypes if they have one, else None.
+        
+        If `self` has `Batch` fields, the values for those will be dicts.
+        """
+        return {
+            k: v.dtypes if isinstance(v, Batch) else getattr(v, "dtype", None)
+            for k, v in self.items()
+        }
 
     @property
     def dtype(self) -> Tuple[Optional[torch.dtype]]:
@@ -239,22 +359,25 @@ class Batch(ABC, Mapping[str, T]):
 
         Returns
         -------
-        Tuple[Optional[torch.dtype]]
-            None if the dtypes are unknown/different, or the common dtype.
-
-        Raises
-        ------
-        NotImplementedError
-            [description]
+        Dict[Optional[torch.dtype]]
+            The common dtype, or `None` if the dtypes are unknown/different.
         """
-        dtypes = self.dtypes
-        if not dtypes or not all(dtype == dtypes[0] for dtype in dtypes):
-            # No common dtype.
-            return None
-        return dtypes[0]
+        dtype: Optional[torch.dtype] = None
+        
+        for key, value in self.items():
+            item_dtype = getattr(value, "dtype", None)
+            if item_dtype is None:
+                continue
+            if dtype is None:
+                dtype = item_dtype
+            elif item_dtype != dtype:
+                return None
+        return dtype
 
     def as_namedtuple(self) -> Tuple[T, ...]:
-        return self._namedtuple(**self.as_dict())
+        return self._namedtuple(**{
+            k: v for k, v in self.items()
+        })
     
     def as_list_of_tuples(self) -> Iterable[Tuple[T, ...]]:
         """Returns an iterable of the items in the 'batch', each item as a
@@ -280,12 +403,12 @@ class Batch(ABC, Mapping[str, T]):
         # )
         return self.as_namedtuple()
 
-    def as_dict(self) -> Dict[str, T]:
-        # NOTE: dicts are ordered since python 3.7
-        return {
-            field_name: getattr(self, field_name)
-            for field_name in self.field_names
-        }
+    # def as_dict(self) -> Dict[str, T]:
+    #     # NOTE: dicts are ordered since python 3.7
+    #     return {
+    #         field_name: getattr(self, field_name)
+    #         for field_name in self.field_names
+    #     }
 
     def to(self, *args, **kwargs):
         return type(self)(**{
@@ -355,89 +478,55 @@ class Batch(ABC, Mapping[str, T]):
         return self.to(device=(device or "cuda"), **kwargs)
 
     @property
-    def shapes(self) -> Tuple[Optional[Union[torch.Size, Tuple[int, ...]]], ...]:
-        """ Returns a tuple of the shapes of the elements in the batch. 
-        If an element doesn't have a 'shape' attribute, returns None for that
-        element.
+    def shapes(self) -> Dict[str, Union[torch.Size, Dict]]:
+        """ Dict from field names to their shapes if they have one, else None.
+        
+        If `self` has `Batch` fields, the values for those will be dicts.
         """
-        return tuple(getattr(item, "shape", None) for item in self.values())
+        return {
+            k: v.shapes if isinstance(v, Batch) else getattr(v, "shape", None)
+            for k, v in self.items()
+        }
 
     @property
     def batch_size(self) -> Optional[int]:
-        """ Returns the batch size, i.e. the length of the first dimension of
-        all non-None items in the batch. If there are no non-None items in the
-        batch, returns None.
+        """ Returns the length of the first dimension if it is common to all
+        tensors in this object, else None.
         """
-        for item in self.values():
-            if item is not None:
-                return len(item)
-        return None
-    
-    # @classmethod
-    # def from_inputs(cls, inputs):
-    #     """ Converts a batch of items into a 'Batch' object. """
-    #     if isinstance(inputs, cls):
-    #         return inputs
-    #     if isinstance(inputs, (tuple, list)):
-    #         from collections.abc import Sized
-    #         if not all(isinstance(item, Sized) for item in inputs):
-    #             # FIXME: This could either mean that this method is being passed
-    #             # a tuple or a list of non-Batched items, or that an individual
-    #             # field has None as a value. Hard to distinguish these two..
-    #             return cls(*inputs)
-            
-    #             assert False, f"This should only be used on 'batched' inputs, not {inputs}.."
-                
-    #             inputs = [
-    #                 [item] for item in inputs
-    #             ]
+        # NOTE: If all tensors have just one dimension and are all the same
+        # length, then this would give back that length.
+        batch_size: Optional[int] = None
+        for k, v in self.items():
+            if isinstance(v, Batch):
+                v_batch_size = v.batch_size
+                if v_batch_size is None:
+                    # child item doesn't have a batch size, so we dont either.
+                    return None
+                elif batch_size is None:
+                    batch_size = v_batch_size
+                elif v_batch_size != batch_size:
+                    return None
+            else:
+                item_shape = getattr(v, "shape", None)
+                if item_shape is None:
+                    continue
+                v_batch_size = item_shape[0] 
+                if batch_size is None:
+                    batch_size = v_batch_size
+                elif v_batch_size != batch_size:
+                    return None
+        return batch_size
 
-    #         # Convert things that aren't tensors to numpy arrays.
-    #         # Stack tensors (to preserve their 'grad' attributes, if present).
-    #         inputs: List[Union[np.ndarray, Tensor]] = [
-    #             items if isinstance(items, Tensor) else
-    #             torch.stack(items) if isinstance(items[0], Tensor) else
-    #             np.asarray(items)
-                
-    #             for items in inputs
-    #         ]
-            
-    #         # Ndarrays with 'object' dtype aren't supported in pytorch.
-    #         # TODO: We convert arrays with None to lists, but is this the best
-    #         # thing to do?
-    #         inputs = [
-    #             array if isinstance(array, Tensor) else
-    #             torch.as_tensor(array) if array.dtype != np.object_ else
-    #             array.tolist()
-    #             for array in inputs
-    #         ]
-    #         return cls(*inputs)
-
-    #     if isinstance(inputs, Tensor):
-    #         return cls(inputs)
-    #     if isinstance(inputs, np.ndarray):
-    #         return cls(torch.as_tensor(inputs))
-    #     if isinstance(inputs, dict):
-    #         return cls(**inputs)
-    #     # TODO: Do we want to allow Batch objects to contain single "items" in
-    #     # addition to batches of items?
-    #     if isinstance(inputs, (int, float)):
-    #         return cls(torch.as_tensor(inputs))
-    #     raise RuntimeError(
-    #         f"Don't know how to turn inputs {inputs} (type {type(inputs)}) "
-    #         f"into a Batch object of type {cls}!"
-    #     )
-    #     # return cls(inputs)
 
 T = TypeVar("T")
 
 @get_slice.register(Batch)
 def get_batch_slice(value: Batch, indices: Sequence[int]) -> Batch:
-    # return value[:, indices]
-    return type(value)(**{
-        field_name: get_slice(field_value, indices) if field_value is not None else None
-        for field_name, field_value in value.as_dict().items()
-    })
+    return value.slice(indices)
+    # return type(value)(**{
+    #     field_name: get_slice(field_value, indices) if field_value is not None else None
+    #     for field_name, field_value in value.as_dict().items()
+    # })
 
 @set_slice.register(Batch)
 def set_batch_slice(target: Batch, indices: Sequence[int], values: Tuple[T, ...]) -> None:
