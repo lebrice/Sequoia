@@ -1,5 +1,31 @@
 """ Defines a (hopefully general enough) Output Head class to be used by the
 BaselineMethod when applied on an RL setting.
+
+NOTE: The training procedure is fundamentally on-policy atm, i.e. the
+observation is a single state, not a rollout, and the reward is the
+immediate reward at the current step.
+
+Therefore, what we do here is to first split things up and push the
+observations/actions/rewards into a per-environment buffer, of max
+length `self.hparams.max_episode_window_length`. These buffers get
+cleared when starting a new episode in their corresponding environment.
+
+The contents of this buffer are then rearranged and presented to the
+`get_episode_loss` method in order to get a loss for the given episode.
+The `get_episode_loss` method is also given the environment index, and
+is passed a boolean `done` that indicates wether the last
+items in the sequences it received mark the end of the episode.
+
+TODO: My hope is that this will allow us to implement RL methods that
+need a complete episode in order to give a loss to train with, as well
+as methods (like A2C, I think) which can give a Loss even when the
+episode isn't over yet.
+
+Also, standard supervised learning could be recovered by setting the
+maximum length of the 'episode buffer' to 1, and consider all
+observations as final, i.e., when episode length == 1
+
+
 """
 import dataclasses
 import itertools
@@ -145,7 +171,7 @@ class PolicyHead(ClassificationHead):
         # TODO: Perhaps we should register these as buffers so they get
         # persisted correclty? But then we also need to make sure that the grad
         # stuff would work the same way..
-        self.inputs: List[deque] = []
+        self.representations: List[deque] = []
         # self.representations: List[deque] = []
         self.actions: List[deque] = []
         self.rewards: List[deque] = []
@@ -156,6 +182,62 @@ class PolicyHead(ClassificationHead):
         # is reached.
         self.initial_observations: List[Optional[Tuple]] = []
 
+        self.loss: Loss = None
+
+        self.batch_size: int = 0
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=3e-4)
+        
+    def create_buffers(self):
+        """ Creates the buffers to hold the items from each env. """
+        logger.debug(f"Creating buffers (batch size={self.batch_size})")
+        logger.debug(f"Maximum buffer length: {self.hparams.max_episode_window_length}")
+        self.done = np.zeros(self.batch_size, dtype=bool)
+        def _make_buffers() -> List[deque]:
+            return [
+                deque(maxlen=self.hparams.max_episode_window_length)
+                for _ in range(self.batch_size)
+            ]
+        self.representations = _make_buffers()
+        self.actions = _make_buffers()
+        self.rewards = _make_buffers()
+
+    def clear_buffers(self, env_index: int) -> None:
+        """ Clear the buffers associated with the environment at env_index.
+        """
+        self.representations[env_index].clear()
+        self.actions[env_index].clear()
+        self.rewards[env_index].clear()
+    
+    def stack_buffers(self, env_index: int):
+        """Stack the observations/actions/rewards for this env and return them.
+        """ 
+        # episode_observations = tuple(self.observations[env_index])
+        episode_representations = tuple(self.representations[env_index])
+        episode_actions = tuple(self.actions[env_index])
+        episode_rewards = tuple(self.rewards[env_index])
+        # TODO: Could maybe use out=<some parameter on this module> to
+        # prevent having to create new 'container' tensors at each step?
+
+        # Make sure this all still works (should work even better) once we
+        # change the obs spaces to dicts instead of Tuples.
+        stacked_inputs = stack(self.input_space, episode_representations)
+        # stacked_actions = stack(self.action_space, episode_actions)
+        # stacked_rewards = stack(self.reward_space, episode_rewards)
+        
+        # TODO: Update this to use 'stack' if we change the action/reward spaces
+        y_preds = torch.stack([action.y_pred for action in episode_actions])
+        logits = torch.stack([action.policy.logits for action in episode_actions])
+        stacked_actions = PolicyHeadOutput(
+            y_pred=y_preds,
+            logits=logits,
+            policy=Categorical(logits=logits),
+        )
+        rewards_type = type(episode_rewards[0])
+        stacked_rewards = rewards_type(
+            y=stack(self.reward_space, [reward.y for reward in episode_rewards])
+        )
+        return stacked_inputs, stacked_actions, stacked_rewards
+    
     def forward(self, observations: ContinualRLSetting.Observations, representations: Tensor) -> PolicyHeadOutput:
         """ Forward pass of a Policy head.
 
@@ -173,19 +255,16 @@ class PolicyHead(ClassificationHead):
         Would it make sense to maybe re-order the "hierarchy" of the output
         heads, and make the ClassificationHead inherit from this one?
         """
-        # Get the raw / unscaled logits for each action using the
-        # ClassificationHead's forward method.
+        # Setup the buffers, which will hold the most recent observations,
+        # actions and rewards within the current episode for each environment.
+        if not self.batch_size:
+            self.batch_size = representations.shape[0]
+            self.create_buffers()
 
-        # NOTE: Not sure if this is that useful.
-        # Also, doesn't work on CUDA atm, for some reason.
+        assert observations.done is not None, "we need the end-of-episode flag."
 
-        # Choose the actions according to their probabilities, rather than just
-        # taking the action with highest probability, as is done in the
-        # ClassificationHead.
-        assert observations.done is not None
-        
         # TODO: (@lebrice) Need to calculate the loss HERE if the episode is
-        # done, i.e. before doing the next forward pass! (otherwise the actions
+        # done, i.e. before doing the next forward pass!! (otherwise the actions
         # for the initial observation are based on the previous weights, which
         # won't be at the right version when we will backpropagate the loss for
         # the next episode, if it goes back until the initial observation!
@@ -193,17 +272,70 @@ class PolicyHead(ClassificationHead):
         # can do the forward pass on the new observations! Otherwise the first
         # actions won't have been based on the right weights!
 
+        self.loss: Loss = Loss("episode_loss")
+        for env_index, done in enumerate(observations.done):
+            if done:
+                logger.debug(f"Reached end of episode in env {env_index}")
+                self.loss += self.on_episode_end(env_index)
+                self.clear_buffers(env_index)
+
+        if self.loss.loss != 0. and self.training:
+            self.optimizer.zero_grad()
+            self.loss.loss.backward(retain_graph=True)
+            self.optimizer.step()
+            # TODO: We might even need to get the optimizer and do the step
+            # here, no?
+
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
         policy = Categorical(logits=logits)
-        actions = policy.sample()
-        output = PolicyHeadOutput(
-            y_pred=actions,
+        sample = policy.sample()
+        actions = PolicyHeadOutput(
+            y_pred=sample,
             logits=logits,
             policy=policy,
         )
-        return output
+
+        for env_index in range(self.batch_size):
+            # Get the obs/representations/actions for this env, by slicing each
+            # of the objects above.
+            env_observations = get_slice(observations, env_index)
+            env_representations = get_slice(representations, env_index)
+            env_actions = get_slice(actions, env_index)
+                       
+            # Add those actions to the buffer at that index.
+            # self.observations.append(env_observations)
+            self.representations[env_index].append(env_representations)
+            self.actions[env_index].append(env_actions)
+
+        return actions
     
+    def on_episode_end(self, env_index: int) -> Loss:
+        """ Called when an end of episode is reached in an environment. """
+        # If done is True for this env, because we assume that the
+        # env is vectorized, everything we're getting now is for the
+        # start of the next episode, not the final observation in the
+        # episode.
+        # This is one annoying thing about gym's VectorEnvs that I
+        # really don't like.
+        stacked_inputs, stacked_actions, stacked_rewards = self.stack_buffers(env_index)
+        
+        loss = self.get_episode_loss(
+            env_index=env_index,
+            inputs=stacked_inputs,
+            actions=stacked_actions,
+            rewards=stacked_rewards,
+            done=True,
+        )
+        return loss
+        # If we are able to get a loss for this set of observations/actions/
+        # rewards, then add it to the total loss.
+        
+        if not isinstance(total_loss.loss, Tensor):
+            assert total_loss.loss == 0.
+            total_loss.loss = torch.zeros(1, requires_grad=True)
+        return total_loss
+
     def get_loss(self,
                  forward_pass: ForwardPass,
                  actions: PolicyHeadOutput,
@@ -211,163 +343,49 @@ class PolicyHead(ClassificationHead):
         """ Given the forward pass, the actions produced by this output head and
         the corresponding rewards for the current step, get a Loss to use for
         training.
-        
-        NOTE: The training procedure is fundamentally on-policy atm, i.e. the
-        observation is a single state, not a rollout, and the reward is the
-        immediate reward at the current step.
-        
-        Therefore, what we do here is to first split things up and push the
-        observations/actions/rewards into a per-environment buffer, of max
-        length `self.hparams.max_episode_window_length`. These buffers get
-        cleared when starting a new episode in their corresponding environment.
-        
-        The contents of this buffer are then rearranged and presented to the
-        `get_episode_loss` method in order to get a loss for the given episode.
-        The `get_episode_loss` method is also given the environment index, and
-        is passed a boolean `done` that indicates wether the last
-        items in the sequences it received mark the end of the episode.
-        
-        TODO: My hope is that this will allow us to implement RL methods that
-        need a complete episode in order to give a loss to train with, as well
-        as methods (like A2C, I think) which can give a Loss even when the
-        episode isn't over yet.
-        
-        Also, standard supervised learning could be recovered by setting the
-        maximum length of the 'episode buffer' to 1, and consider all
-        observations as final, i.e., when episode length == 1
         """
         # TODO: Should we allow the RL output head to use the observations to
         # create its loss, rather than just the representations? If not, then
         # how/where do we get the 'done' boolean from? Would it get added to the
         # representations?
+        if not self.batch_size:
+            self.batch_size = len(rewards.y)
+        assert self.batch_size == len(rewards.y)
+
+        # NOTE: The rewards are for the previous observations & actions,
+        for env_index, reward_buffer in enumerate(self.rewards):
+            # Take the slice of the batch for this environment.
+            env_step_rewards = get_slice(rewards, env_index)
+            self.rewards[env_index].append(env_step_rewards)
+
+        # IDEA: Hacky, but the idea is that we'd give back a 'fake' loss,
+        # with the right metrics, etc, but the loss has already been
+        # backpropagated. That way, we can update the model while also
+        # (eventually) having the metrics and loss from the episode returned in
+        # get_loss.
+        return Loss(self.name, torch.ones(1, requires_grad=True))
+        return self.loss.detach() + torch.ones(1, requires_grad=True)
+        
         inputs: Tensor = forward_pass.representations
         dones = forward_pass.observations.done
 
-        batch_size = len(inputs)
         if len(self.done) != batch_size:
             self.done = np.zeros(batch_size, dtype=bool)
         # Setup the buffers, which will hold the most recent observations,
         # actions and rewards within the current episode for each environment.
-        if not self.inputs:
+        if not self.representations:
             def make_buffers() -> List[deque]:
                 return [
                     deque(maxlen=self.hparams.max_episode_window_length)
                     for _ in range(batch_size)
                 ]
-            self.inputs = make_buffers()
+            self.representations = make_buffers()
             self.actions = make_buffers()
             self.rewards = make_buffers()
 
         total_loss = Loss(self.name)
 
-        # Append the most recent elements into the buffer for that environment.
-        # per_env_items = zip(env_observations, env_actions, env_rewards)
-        for env_index in range(batch_size):
-            # Slice the obs/actions/rewards, to recover the individual items
-            # from each environment.
-            env_done = dones[env_index]
-            env_input = get_slice(inputs, env_index)
-            env_action = get_slice(actions, env_index)
-            env_reward = get_slice(rewards, env_index)
-
-            if isinstance(env_done, (Tensor, np.ndarray, np.bool_)):
-                env_done = bool(env_done.item())
-            # env_done = bool(env_done)
-            assert isinstance(env_done, bool), (env_done, type(env_done))
-
-            # TODO: For now, we just overwrite (get rid of) the oldest items in
-            # the buffers.
-            
-            # Start of a new episode.
-            if env_done:
-                # If done is True for this env, because we assume that the
-                # env is vectorized, everything we're getting now is for the
-                # start of the next episode, not the final observation in the
-                # episode.
-                # This is one annoying thing about gym's VectorEnvs that I
-                # really don't like.
-                
-                # TODO: The rewards are for the previous observations & actions,
-                # There's somethign weird going on here.
-                self.rewards[env_index].append(env_reward)
-                
-                episode_inputs = tuple(self.inputs[env_index])
-                episode_actions = tuple(self.actions[env_index])
-                episode_rewards = tuple(self.rewards[env_index])
-                # Clear the buffer
- 
-                self.inputs[env_index].clear()
-                self.actions[env_index].clear()
-                self.rewards[env_index].clear()
-
-                # Add the new items (initial obs for new episode.)
-                self.inputs[env_index].append(env_input)
-                self.actions[env_index].append(env_action)
-            else:
-                # TODO: IF this is the start of a new episode, then the reward
-                # shouldn't get added, right?
-                if not self.inputs[env_index]:
-                    assert False, "whats going on?!"
-                    self.inputs[env_index].append(env_input)
-                    self.actions[env_index].append(env_action)
-                else:
-                    self.inputs[env_index].append(env_input)
-                    self.actions[env_index].append(env_action)
-                    self.rewards[env_index].append(env_reward)
-
-                episode_inputs = tuple(self.inputs[env_index])
-                episode_actions = tuple(self.actions[env_index])
-                episode_rewards = tuple(self.rewards[env_index])
-
-            # TODO: Maybe add a mechanism for disabling this 're-stacking' when
-            # we always only compute a loss at the end of episodes?
-
-            # Make sure this all still works (should work even better) once we
-            # change the obs to dicts instead of Batch objects.
-            stacked_inputs = stack(self.input_space, episode_inputs)
-            # TODO: Could maybe use out=<some parameter on this module> to
-            # prevent having to create new 'container' tensors at each step?
-            # TODO: Update this if we change the action space
-            y_preds = torch.stack([action.y_pred for action in episode_actions])
-            logits = torch.stack([action.policy.logits for action in episode_actions])
-            stacked_actions = type(actions)(
-                y_pred=y_preds,
-                logits=logits,
-                policy=Categorical(logits=logits),
-            )
-            # stack(self.reward_space, episode_rewards)
-            stacked_rewards = type(rewards)(
-                y=stack(self.reward_space, [reward.y for reward in episode_rewards])
-            )
-
-            # if done:
-            #     # Clear the buffers.
-            #     self.observations[env_index].clear()
-            #     self.actions[env_index].clear()
-            #     self.rewards[env_index].clear()
-
-            #     # Add the new 'initial' obs in the buffer.
-            #     # TODO: Move this somewhere else.
-                
-            #     self.observations[env_index].append(env_observation)
-
-            loss = self.get_episode_loss(
-                env_index=env_index,
-                inputs=stacked_inputs,
-                actions=stacked_actions,
-                rewards=stacked_rewards,
-                done=env_done,
-            )
-            # If we are able to get a loss for this set of observations/actions/
-            # rewards, then add it to the total loss.
-            if loss is not None:
-                total_loss += loss
-
-        if not isinstance(total_loss.loss, Tensor):
-            assert total_loss.loss == 0.
-            total_loss.loss = torch.zeros(1, requires_grad=True)
-        return total_loss
-           
+                   
     def get_episode_loss(self,
                          env_index: int,
                         #  observations: ContinualRLSetting.Observations,

@@ -20,6 +20,8 @@ T = TypeVar("T")
 def get_slice(value: Any, indices: Sequence[int]) -> Any:
     """ Returns a slices of `value` at the given indices.
     """
+    if value is None:
+        return None
     return value[indices]
 
 

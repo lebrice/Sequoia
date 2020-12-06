@@ -247,17 +247,12 @@ def test_buffers_are_stacked_correctly(monkeypatch):
         # We don't use an encoder for testing, so the representations is just x.
         representations = obs.reshape([batch_size, 1])
         assert observations.task_labels is None
-
-        # Instead of actually getting the action from the output head, we just
-        # set the action, so all that we're testing is the loss part.
-
-        # actions = output_head(observations, representations)
-        actions = PolicyHeadOutput(y_pred=torch.ones(batch_size, dtype=int),
-                                   logits=torch.ones(batch_size) / 2,
-                                   policy=Categorical(torch.ones([batch_size, 2])/2))
+        
+        actions = output_head(observations.float(), representations.float())
 
         # Wrap things up to pretend like the output head is being used in the
         # BaselineModel:
+                
         forward_pass = ForwardPass(
             observations = observations,
             representations = representations,
@@ -277,35 +272,36 @@ def test_buffers_are_stacked_correctly(monkeypatch):
         
         # Check the contents of the episode buffers.
 
-        # assert len(output_head.observations) == batch_size
-        assert len(output_head.inputs) == batch_size
+        assert len(output_head.representations) == batch_size
         for env_index in range(batch_size):
+            
             # obs_buffer = output_head.observations[env_index]
-            input_buffer = output_head.inputs[env_index]
-            # representations_buffer = output_head.representations[env_index]
+            representations_buffer = output_head.representations[env_index]
             action_buffer = output_head.actions[env_index]
             reward_buffer = output_head.rewards[env_index]
+            
             if step >= batch_size:
                 if step + env_index == targets[env_index]:
-                    assert len(input_buffer) == 1 and output_head.done[env_index] == False
+                    assert len(representations_buffer) == 1 and output_head.done[env_index] == False
                 # if env_index == step - batch_size:
                 continue
-            assert len(input_buffer) == step + 1
+            assert len(representations_buffer) == step + 1
             # Check to see that the last entry in the episode buffer for this
             # environment corresponds to the slice of the most recent
             # observations/actions/rewards at the index corresponding to this
             # environment.
             
             # observation_tuple = input_buffer[-1]
-            action_tuple = action_buffer[-1]
-            reward_tuple = reward_buffer[-1]
+            step_action = action_buffer[-1]
+            step_reward = reward_buffer[-1]
             # assert observation_tuple.x == observations.x[env_index]
             # assert observation_tuple.task_labels is None
             # assert observation_tuple.done == observations.done[env_index]
 
-            assert action_tuple.y_pred == actions.y_pred[env_index]
-
-            assert reward_tuple.y == rewards.y[env_index]
+            # The last element in the buffer should be the slice in the batch
+            # for that environment. 
+            assert step_action.y_pred == actions.y_pred[env_index]
+            assert step_reward.y == rewards.y[env_index]
 
         if step < batch_size:
             assert obs.tolist() == (np.arange(batch_size) + step + 1).tolist()

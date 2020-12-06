@@ -79,5 +79,4 @@ def _(space: spaces.Tuple,
         to_tensor(subspace, sample[i], device)
         for i, subspace in enumerate(space.spaces)
     )
-
     
