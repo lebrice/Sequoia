@@ -510,6 +510,8 @@ class Batch(ABC, Mapping[str, T]):
                 item_shape = getattr(v, "shape", None)
                 if item_shape is None:
                     continue
+                if not item_shape:
+                    return None
                 v_batch_size = item_shape[0] 
                 if batch_size is None:
                     batch_size = v_batch_size
