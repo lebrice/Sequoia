@@ -320,18 +320,18 @@ def _create_placeholder_dict(original: Dict[K, V], batch_size: int) -> Dict[K, V
     )
 
 
-@create_placeholder.register(dict)
+@create_placeholder.register(tuple)
 def _create_placeholder_tuple(original: Tuple[T], batch_size: int) -> Tuple[T]:
     return type(original)(
         create_placeholder(value, batch_size)
-        for value in original    
+        for value in original
     )
 
 
 @create_placeholder.register(Batch)
-@create_placeholder.register(NamedTuple)
-def _create_placeholder_tuple(original: Tuple[T], batch_size: int) -> Tuple[T]:
-    return type(original)(*[
-        create_placeholder(value, batch_size)
-        for value in original    
-    ])
+# @create_placeholder.register(NamedTuple)
+def _create_placeholder_dataclass(original: Tuple[T], batch_size: int) -> Tuple[T]:
+    return type(original)(**{
+        key: create_placeholder(value, batch_size)
+        for key, value in original.items()    
+    })

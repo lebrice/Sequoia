@@ -13,7 +13,7 @@ from settings import ClassIncrementalSetting
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
 from utils import take
-
+from common import Loss
 from .class_incremental_model import ClassIncrementalModel, OutputHead
 
 
@@ -32,11 +32,11 @@ def mixed_samples(config: Config):
 
 
 class MockOutputHead(OutputHead):
-    def __init__(self, input_size: int, Actions: Type, task_id: int = -1, **kwargs):
+    def __init__(self, *args, Actions: Type, task_id: int = -1, **kwargs):
+        super().__init__(*args, **kwargs)
         self.task_id = task_id
         self.Actions = Actions
-        super().__init__(input_size=input_size, **kwargs)
-        
+        self.name = f"task_{task_id}"
 
     def forward(self, observations, representations) -> Tensor:  # type: ignore
         x: Tensor = observations.x
@@ -46,6 +46,10 @@ class MockOutputHead(OutputHead):
         actions = [x_i.mean() * self.task_id  for x_i in x]
         actions = torch.stack(actions)
         return self.Actions(actions)
+    
+    def get_loss(self, forward_pass, actions, rewards):
+        return Loss(self.name, 0.)
+    
 # def mock_output_task(self: ClassIncrementalModel, x: Tensor, h_x: Tensor) -> Tensor:
 #     return self.output_head(x)
 
@@ -82,14 +86,14 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
     model.encoder = mock_encoder
     # model.output_task = mock_output_task
     model.output_head = MockOutputHead(
-        input_size=model.hidden_size, 
+        input_space=spaces.Box(0, 1, [model.hidden_size]),
         Actions=setting.Actions,
         action_space=spaces.Discrete(2),
         task_id=None,
     )
     for i in range(5):
         model.output_heads[str(i)] = MockOutputHead(
-            input_size=model.hidden_size,
+            input_space=spaces.Box(0, 1, [model.hidden_size]),
             Actions=setting.Actions,
             action_space=spaces.Discrete(2),
             task_id=i,

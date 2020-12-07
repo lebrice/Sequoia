@@ -134,7 +134,13 @@ class Setting(SettingABC,
         command-line.
         """
         logger.debug(f"__post_init__ of Setting")
-        
+        if len(self.train_transforms) == 1 and isinstance(self.train_transforms[0], list):
+            self.train_transforms = self.train_transforms[0]
+        if len(self.val_transforms) == 1 and isinstance(self.val_transforms[0], list):
+            self.val_transforms = self.val_transforms[0]
+        if len(self.test_transforms) == 1 and isinstance(self.test_transforms[0], list):
+            self.test_transforms = self.test_transforms[0]
+
         # Actually compose the list of Transforms or callables into a single transform.
         self.train_transforms: Compose = Compose(self.train_transforms)
         self.val_transforms: Compose = Compose(self.val_transforms)

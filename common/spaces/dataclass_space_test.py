@@ -36,5 +36,3 @@ def test_supports_dataclasses():
         c=np.array([0, 1]),
     ) in wrapped_space
     assert isinstance(wrapped_space.sample(), Sample)
-
-from common import Batch

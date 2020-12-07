@@ -32,8 +32,9 @@ def check_only_right_classes_present(env: TaskIncrementalSetting):
         classes_of_task = env.current_task_classes(train=True)
 
         for j, (observations, rewards) in enumerate(itertools.islice(train_loader, 100)):
-            x, t = observations
-            y = rewards.y 
+            x = observations.x
+            t = observations.task_labels
+            y = rewards.y
             print(i, j, y, t)
             assert all(y < env.n_classes_per_task)
             assert x.shape == (batch_size, 3, 28, 28)

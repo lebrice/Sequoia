@@ -311,11 +311,11 @@ class PolicyHead(ClassificationHead):
 
             # Add those actions to the buffer at that index.
             # self.observations.append(env_observations)
-            self.representations[env_index].append(env_representations.detach())
+            self.representations[env_index].append(env_representations)
             self.actions[env_index].append(env_actions)
 
         return actions
-    
+
     def on_episode_end(self, env_index: int) -> Loss:
         """ Called when an end of episode is reached in an environment. """
         # If done is True for this env, because we assume that the
@@ -364,7 +364,7 @@ class PolicyHead(ClassificationHead):
             # Take the slice of the batch for this environment.
             env_step_rewards = get_slice(rewards, env_index)
             self.rewards[env_index].append(env_step_rewards)
-
+        
         # IDEA: Hacky, but the idea is that we'd give back a 'fake' loss,
         # with the right metrics, etc, but the loss has already been
         # backpropagated. That way, we can update the model while also
@@ -408,7 +408,7 @@ class PolicyHead(ClassificationHead):
 
         If `done` is True, then this is for the end of an episode. If `done` is
         False, the episode is still underway.
-        
+
         NOTE: While the Batch Observations/Actions/Rewards objects usually
         contain the "batches" of data coming from the N different environments,
         now they are actually a sequence of items coming from this single

@@ -36,3 +36,7 @@ class Image(spaces.Box):
                 f"Shouldn't be using an Image space, since the shape "
                 f"doesn't appear to be an image: {self.shape}"
             )
+    
+    @property
+    def channels_last(self) -> bool:
+        return not self.channels_first

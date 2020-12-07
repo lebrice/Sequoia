@@ -34,10 +34,11 @@ class DictSpace(spaces.Dict):
         self.dataclass_type = dataclass_type
         
     def contains(self, x):
-        if isinstance(x, self.dataclass_type):
-            return super().contains(dataclasses.asdict(x))
-        if not isinstance(x, Mapping):
-            return False
+        if not issubclass(self.dataclass_type, Mapping):
+            # Avoid using 'asdict' from dataclasses if possible.
+            if isinstance(x, self.dataclass_type):
+                return super().contains(dataclasses.asdict(x))
+
         if len(x) != len(self.spaces):
             return False
         for k, subspace in self.spaces.items():
