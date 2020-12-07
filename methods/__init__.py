@@ -34,6 +34,7 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
 
 from .baseline_method import BaselineMethod
 from .random_baseline import RandomBaselineMethod
+from .experience_replay import ExperienceReplayMethod
 
 
 ## Pretty hacky: Dynamically import all the modules/packages defined in this
