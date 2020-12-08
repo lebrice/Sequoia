@@ -94,7 +94,7 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
                 break
         else:
             print(f"No episode ended on step {i}, expecting no loss.")
-            assert loss.total_loss == 0.
+            assert loss is None or loss.loss == 0.
 
     assert non_zero_losses > 0
 
