@@ -1,31 +1,201 @@
 from functools import partial
-from typing import Optional
+from typing import Optional, Callable, Sequence, Any
 
 import gym
 import numpy as np
 import pytest
 import torch
-
-from common.loss import Loss
-from common.gym_wrappers.batch_env import BatchedVectorEnv
-from conftest import DummyEnvironment
 from gym import spaces
-from torch import Tensor
+from torch import Tensor, nn
+
+from common.gym_wrappers import (AddDoneToObservation, ConvertToFromTensors,
+                                 EnvDataset)
+from common.gym_wrappers.batch_env import BatchedVectorEnv
+from common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
+from common.loss import Loss
+from conftest import DummyEnvironment, xfail_param
 from methods.models.forward_pass import ForwardPass
 from settings.active.rl.continual_rl_setting import ContinualRLSetting
 
-from .policy_head import PolicyHead, PolicyHeadOutput, Categorical
+from .policy_head import Categorical, PolicyHead, PolicyHeadOutput
+from gym.vector import VectorEnv, SyncVectorEnv
+from gym.vector.utils import batch_space
 
-from common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
-from common.gym_wrappers import AddDoneToObservation, ConvertToFromTensors, EnvDataset
-from conftest import xfail_param
+
+from common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
+
+
+class FakeEnvironment(SyncVectorEnv):
+    def __init__(self,
+                 env_fn: Callable[[], gym.Env],
+                 batch_size: int,
+                 new_episode_length: Callable[[int], int],
+                 episode_lengths: Sequence[int] = None,
+                ):
+        super().__init__([
+            env_fn for _ in range(batch_size)
+        ])
+        self.new_episode_length = new_episode_length
+        self.batch_size = batch_size
+        self.episode_lengths = np.array(episode_lengths or [
+            new_episode_length(i) for i in range(self.num_envs)
+        ])
+        self.steps_left_in_episode = self.episode_lengths.copy()
+        
+        reward_space = spaces.Box(*self.reward_range, shape=())
+        self.single_reward_space = reward_space
+        self.reward_space = batch_space(reward_space, batch_size)
+ 
+    def step(self, actions):
+        self.steps_left_in_episode[:] -= 1
+        
+        # obs, reward, done, info = super().step(actions)
+        obs = self.observation_space.sample()
+        reward = np.ones(self.batch_size)
+        
+        assert not any(self.steps_left_in_episode < 0)
+        done = self.steps_left_in_episode == 0
+
+        info = np.array([{} for _ in range(self.batch_size)])
+
+        for env_index, env_done in enumerate(done):
+            if env_done:
+                next_episode_length = self.new_episode_length(env_index)
+                self.episode_lengths[env_index] = next_episode_length
+                self.steps_left_in_episode[env_index] = next_episode_length
+
+        return obs, reward, done, info
+
+
+
+from common.layers import Flatten
+from gym.spaces.utils import flatdim, flatten
 
 
 @pytest.mark.parametrize("batch_size",
 [
+    2,
+    5,
+])
+def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
+    """ TODO: Test out the PolicyHead in a very controlled environment, where we
+    know exactly the lengths of each episode.
+    """
+    env = FakeEnvironment(
+        partial(gym.make, "CartPole-v0"),
+        batch_size=batch_size,
+        episode_lengths=[5, *(10 for _ in range(batch_size-1))],
+        new_episode_length=lambda env_index: 10,
+    )
+    env = AddDoneToObservation(env)
+    env = ConvertToFromTensors(env)
+    env = EnvDataset(env)
+    
+    
+    obs_space = env.single_observation_space
+    x_dim = flatdim(obs_space[0])
+    # Create some dummy encoder.
+    encoder = nn.Linear(x_dim, x_dim)
+    representation_space = obs_space[0]
+
+    output_head = PolicyHead(
+        input_space=representation_space,
+        action_space=env.single_action_space,
+        reward_space=env.single_reward_space,
+        hparams=PolicyHead.HParams(max_episode_window_length=100)
+    )
+
+    # Simplify the loss function so we know exactly what the loss should be at
+    # each step.
+    
+    def mock_policy_gradient(rewards: Sequence[float], log_probs: Sequence[float], gamma: float = 0.95) -> Optional[Loss]:
+        log_probs = (log_probs - log_probs.clone()) + 1
+        # Return the length of the episode, but with a "gradient" flowing back into log_probs.
+        return len(rewards) * log_probs.mean()
+    
+    monkeypatch.setattr(output_head, "policy_gradient", mock_policy_gradient)
+
+    batch_size = env.batch_size 
+        
+    obs = env.reset()
+    step_done = np.zeros(batch_size, dtype=np.bool)
+    
+    for step in range(20):
+        x, obs_done = obs
+        
+        # The done from the obs should always be the same as the 'done' from the 'step' function.
+        assert np.array_equal(obs_done, step_done)
+
+        representations = encoder(x)
+        observations = ContinualRLSetting.Observations(
+            x=x,
+            done=obs_done,
+        )
+
+        actions_obj = output_head(observations, representations)
+        actions = actions_obj.y_pred
+      
+        # TODO: kinda useless to wrap a single tensor in an object..
+        forward_pass = ForwardPass(
+            observations=observations,
+            representations=representations,
+            actions=actions,
+        )
+        obs, rewards, step_done, info = env.step(actions)
+        
+        rewards_obj = ContinualRLSetting.Rewards(y=rewards)
+        loss = output_head.get_loss(
+            forward_pass=forward_pass,
+            actions=actions,
+            rewards=rewards_obj,
+        )
+        print(f"Step {step}")
+        print(f"num episodes since update: {output_head.num_episodes_since_update}")
+        print(f"Tensors with gradients: {output_head.num_grad_tensors}")
+        print(f"Tensors without gradients: {output_head.num_detached_tensors}")
+        print(f"steps left in episode: {env.steps_left_in_episode}")
+        print(f"Loss for that step: {loss}")
+        
+        if 0 <= step < 5:
+            assert loss.loss == 0.
+        elif 5 == step:
+            assert loss.loss == 5.
+            # Episode end in env 0: from steps 0 to 5!
+            # assert not loss.requires_grad
+            # TODO: Add a check for the metrics of the Loss once we add those.
+        elif 5 < step < 10:
+            assert loss.loss == 0.
+            # assert not loss.requires_grad
+        elif 10 == step:
+            # All environments have now finished an episode! (first env is
+            # offset from the other by 5 steps, and all other finish their first
+            # episode at step 10.
+            
+            # Episode end in envs 1 .. batch_size: (from steps 0 to 10)
+            assert loss.loss == 5 + (batch_size-1) * 10 
+            # assert loss.requires_grad
+        elif 10 < step < 15: 
+            # Loss gets reset
+            assert loss.loss == 0.
+            # assert not loss.requires_grad
+        elif 15 == step:
+            assert loss.loss == 10. # episode end in env 1 (from steps 5 to 15)
+        elif 15 <= step < 20:
+            assert loss.loss == 0.
+        elif 20 == step:
+            assert loss.loss == 10 * batch_size
+        elif 21 >= step:
+            assert loss.loss == 0.
+            break
+            # assert not loss.requires_grad
+
+
+    
+@pytest.mark.parametrize("batch_size",
+[
     1,
-    xfail_param(2, reason="doesn't work with batched envs yet."),
-    xfail_param(5, reason="doesn't work with batched envs yet."),
+    2,
+    5,
 ])
 def test_loss_is_nonzero_at_episode_end(batch_size: int):
     """ Test that when stepping through the env, when the episode ends, a
@@ -48,6 +218,7 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
         action_space=action_space,
         reward_space=reward_space,
     )
+    head.train()
 
     env.seed(123)
     obs = env.reset()
@@ -60,8 +231,12 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
     
     non_zero_losses = 0
     
+    encoder = nn.Linear(4, 4)
+    encoder.train()
+    
     for i in range(100):
-        representations = obs[0]
+        representations = encoder(obs[0])
+        
         observations = ContinualRLSetting.Observations(
             x=obs[0],
             done=done,
@@ -323,9 +498,8 @@ def test_buffers_are_stacked_correctly(monkeypatch):
                 
     # assert False, (obs, rewards, done, info)
     # loss: Loss = output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
-from settings.active.rl.make_env import make_batched_env
 from common.gym_wrappers import PixelObservationWrapper
-  
+from settings.active.rl.make_env import make_batched_env
 
 
 def test_sanity_check_cartpole_done_vector(monkeypatch):

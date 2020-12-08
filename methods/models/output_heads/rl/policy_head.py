@@ -138,7 +138,11 @@ class PolicyHead(ClassificationHead):
         # The maximum length of the buffer that will hold the most recent
         # states/actions/rewards of the current episode. When a batched
         # environment is used
-        max_episode_window_length: int = 100
+        max_episode_window_length: int = 1000
+        
+        # Minumum number of epidodes that need to be completed in each env
+        # before we update the parameters of the output head.
+        min_episodes_before_update: int = 1
 
     def __init__(self,
                  input_space: spaces.Space,
@@ -193,7 +197,6 @@ class PolicyHead(ClassificationHead):
         self.actions: List[deque] = []
         self.rewards: List[deque] = []
 
-        self.done: np.ndarray = torch.zeros(1, dtype=bool)
         # The actual "internal" loss we use for training.
         self.loss: Loss = Loss(self.name)
         # The loss we expose and return in `get_loss` ( has all metrics etc.)
@@ -209,7 +212,6 @@ class PolicyHead(ClassificationHead):
         """ Creates the buffers to hold the items from each env. """
         logger.debug(f"Creating buffers (batch size={self.batch_size})")
         logger.debug(f"Maximum buffer length: {self.hparams.max_episode_window_length}")
-        self.done = np.zeros(self.batch_size, dtype=bool)
         
         self.representations = self._make_buffers()
         self.actions = self._make_buffers()
@@ -217,8 +219,8 @@ class PolicyHead(ClassificationHead):
 
         self.has_reached_episode_end = np.zeros(self.batch_size, dtype=bool)
         self.num_episodes_since_update = np.zeros(self.batch_size, dtype=int)
-        self.num_wasted_steps = np.zeros(self.batch_size, dtype=int)
-        self.num_used_steps = np.zeros(self.batch_size, dtype=int)
+        self.num_detached_tensors = np.zeros(self.batch_size, dtype=int)
+        self.num_grad_tensors = np.zeros(self.batch_size, dtype=int)
         self.metrics_per_env: List[RLMetrics] = []
         self.optimizer.zero_grad()
  
@@ -256,48 +258,74 @@ class PolicyHead(ClassificationHead):
             self.batch_size = representations.shape[0]
             self.create_buffers()
 
+        self.detached_loss = Loss(self.name)
+
         # NOTE: This means we also need it at test-time though.
         assert observations.done is not None, "need the end-of-episode signal"
+        if self.training:
+            for env_index, done in enumerate(observations.done):
+                if done:
+                    # End of episode reached in that env!
+                    self.has_reached_episode_end[env_index] = True
+                    self.num_episodes_since_update[env_index] += 1
 
-        
-        for env_index, done in enumerate(observations.done):
-            if done:
-                # End of episode reached in that env!
-                self.has_reached_episode_end[env_index] = True
-            
-            env_loss = self.get_episode_loss(env_index, done=done)
+                    episode_actions = self.actions[env_index]
+                    n_stored_items = len(self.actions[env_index])
+                    n_items_with_grad = sum(v.requires_grad for v in self.representations[env_index])
+                    n_items_without_grad = n_stored_items - n_items_with_grad
+                    self.num_grad_tensors[env_index] += n_items_with_grad
+                    self.num_detached_tensors[env_index] += n_items_without_grad
 
-            if done:
-                self.clear_buffers(env_index)
-            
-            if env_loss is None:
-                continue
+                env_loss = self.get_episode_loss(env_index, done=done)
 
-            # TODO: Here we have two options: Either we sum up all the losses
-            # and do one larger backward pass, and have `retrain_graph=False`,
-            # or we do multiple little backward passes as soon as an episode end
-            # is reached in a single env, and use `retain_graph=True`.
-            # Option 1:
-            self.loss += env_loss
-            
-            # Option 2:
-            # if env_loss.requires_grad:
-            #     env_loss.backward(retain_graph=True)
-            # # Detach the loss so we can keep the metrics but not all the graphs.
-            # self.loss += env_loss.detach()
+                if done:
+                    self.clear_buffers(env_index)
 
-        if all(self.has_reached_episode_end):
-            self.optimizer.zero_grad()
-            self.loss.backward()
-            self.optimizer.step()
-            
-            self.has_reached_episode_end[:] = False
-            self.detach_all_buffers()
-            
-            self.detached_loss = self.loss.detach()
-            self.loss = Loss(self.name)
-        else:
-            self.detached_loss = Loss(self.name)
+                if env_loss is None:
+                    continue
+
+                # TODO: Here we have two options: Either we:
+                # (1): sum up all the losses and do one larger backward pass,
+                # and have `retrain_graph=False`, or
+                # (2): we do multiple little backward passes as soon as an
+                # episode end is reached in a single env, w/ `retain_graph=True`.
+                
+                # Option 1:
+                self.loss += env_loss
+                self.detached_loss += env_loss.detach()
+                
+                # Option 2:
+                # if env_loss.requires_grad:
+                #     env_loss.backward(retain_graph=True)
+                # # Detach the loss so we can keep the metrics but not all the graphs.
+                # self.loss += env_loss.detach()
+
+            if all(self.num_episodes_since_update >= self.hparams.min_episodes_before_update):
+                # TODO: Maybe move this into a 'optimizer_step' method?
+                # self.update_model()
+                
+                logger.debug(f"Backpropagating loss: {self.loss}")
+                # Option 1 from above:
+                # NOTE: Need to step as well, since the predictions below will
+                # depend on the model at the current time.
+                # self.optimizer.zero_grad()
+                # self.loss.backward()
+                # self.optimizer.step()
+                
+                # Option 2 from above:
+                # self.optimizer.step()
+                # self.optimizer.zero_grad()
+
+                self.detach_all_buffers()
+                
+                self.has_reached_episode_end[:] = False
+                self.num_episodes_since_update[:] = 0
+                
+                self.detached_loss = self.loss.detach()
+                self.loss = Loss(self.name)
+
+        # Option 2 from above:
+        # representations = representations.detach()
 
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
@@ -341,7 +369,6 @@ class PolicyHead(ClassificationHead):
             self.rewards[env_index].append(env_rewards)
         
         return self.detached_loss
-
                    
     def get_episode_loss(self,
                          env_index: int,
@@ -461,15 +488,11 @@ class PolicyHead(ClassificationHead):
         """
         def detach_buffer(old_buffer) -> deque:
             new_items = self._make_buffer()
-            n_detached = 0
             for item in old_buffer:
                 detached = item.detach()
                 # del item
                 new_items.append(detached)
-                n_detached += 1
-            logger.debug(f"Detached {n_detached} tensors.")
             return new_items
-
         # detached_representations = map(detach, )
         # detached_actions = map(detach, self.actions[env_index])
         # detached_rewards = map(detach, self.rewards[env_index])
