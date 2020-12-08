@@ -106,11 +106,13 @@ class Loss(Serializable):
             metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
             if metrics:
                 self.metrics[self.name] = metrics
-
+        self._device: torch.device = None
         for name in list(self.tensors.keys()):
             tensor = self.tensors[name]
             if not isinstance(tensor, Tensor):
                 self.tensors[name] = torch.as_tensor(tensor)
+            elif self._device is None:
+                self._device = tensor.device
 
     def to_pl_dict(self, verbose: bool = False) -> Dict:
         """Creates a pytorch-lightning-style dict from this Loss object.
@@ -146,7 +148,17 @@ class Loss(Serializable):
     @property
     def total_loss(self) -> Tensor:
         return self.loss
-
+    
+    @property
+    def requires_grad(self) -> bool:
+        """ Returns wether the loss tensor in this object requires grad. """
+        assert isinstance(self.loss, Tensor)
+        return self.loss.requires_grad
+    
+    def backward(self, *args, **kwargs):
+        """ Calls `self.loss.backward(*args, **kwargs)`. """
+        return self.loss.backward(*args, **kwargs)
+    
     @property
     def metric(self) -> Optional[Metrics]:
         """Shortcut for `self.metrics[self.name]`.

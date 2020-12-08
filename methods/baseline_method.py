@@ -5,6 +5,7 @@ we use pytorch-lightning, and a few little utility classes such as `Metrics` and
 `Loss`, which are basically just like dicts/objects, with some cool other
 methods.
 """
+import warnings
 from collections import OrderedDict
 from dataclasses import dataclass, is_dataclass
 from pathlib import Path
@@ -136,12 +137,26 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         if wandb_options.run_name is None:
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
 
-        
         if isinstance(setting, ContinualRLSetting):
             # Configure specifically for a Continual RL setting.
-            # TODO: Doing the backward pass manually (debugging RL output head)
+
+            # TODO: (@lebrice) Fix/remove these restrictions, if possible.
+            # - Doing the backward pass manually (debugging RL output head)
+            # - We only support batch size of 1 for now in RL, because of
+            #   problems with the backward pass.
             self.trainer_options.automatic_optimization = False
-    
+            # if self.hparams.batch_size != 1:
+            #     warnings.warn(UserWarning(
+            #         "Only supports batch size of 1 in RL for now."
+            #     ))
+            # setting.batch_size = 1
+            # self.hparams.batch_size = 1
+            
+            # TODO: Limit the number of epochs so we never iterate on a closed
+            # env.
+            
+            
+                
         self.trainer = self.create_trainer(setting)
         self.model = self.create_model(setting)
 

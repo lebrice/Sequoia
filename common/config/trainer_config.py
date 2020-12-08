@@ -43,7 +43,7 @@ class TrainerConfig(Serializable, Parseable):
     default_root_dir: Path = Path(os.getcwd()) / "results"
 
     # Wether to do the backward pass manually or automatically.
-    automatic_optimization: bool = False
+    automatic_optimization: bool = True
 
     # How much of training dataset to check (floats = percent, int = num_batches)
     limit_train_batches: Union[int, float] = 1.0

@@ -78,7 +78,7 @@ task_params: Dict[Union[Type[gym.Env], str], List[str]] = {
     ],      
 }
 
-
+# Type alias for the Environment returned by `train/val/test_dataloader`.
 Environment = ActiveEnvironment["ContinualRLSetting.Observations",
                                 "ContinualRLSetting.Observations",
                                 "ContinualRLSetting.Rewards"]
@@ -94,6 +94,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     in cartpole, making the task progressively harder as the agent interacts with
     the environment.
     """
+
+    # The type of results returned by an RL experiment.
     Results: ClassVar[Type[Results]] = RLResults
     
     @dataclass(frozen=True)

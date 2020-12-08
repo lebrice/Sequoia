@@ -29,4 +29,7 @@ def _detach_namedtuple(x: NamedTuple) -> NamedTuple:
 def _detach_dict(d: Dict[str, Any]) -> Dict[str, Any]:
     """ Detaches all the keys and tensors in a dict, as well as all nested dicts.
     """
-    return type(d)((detach(k), detach(v)) for k, v in d.items())
+    return type(d)(**{
+        detach(k): detach(v)
+        for k, v in d.items()
+    })

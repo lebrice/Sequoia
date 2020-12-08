@@ -218,21 +218,32 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # make things a bit more complicated.
         assert isinstance(self.increment, int) and isinstance(self.test_increment, int)
         self.n_classes_per_task: int = self.increment
-        image_space = spaces.Box(low=0, high=1, shape=image_shape, dtype=np.float32)
+        from common.spaces import DictSpace, Image
+        
+        image_space = Image(low=0, high=1, shape=image_shape, dtype=np.float32)
         task_label_space = spaces.Discrete(self.nb_tasks)
         if not self.task_labels_at_train_time:
             task_label_space = Sparse(task_label_space, 1.0)
-        observation_space = spaces.Tuple([
-            image_space,
-            task_label_space,
-        ])
+        observation_space = DictSpace(
+            x=image_space,
+            task_labels=task_label_space,
+            dataclass_type=self.Observations,
+        )
         # assert False, image_space
         # TODO: Change the actions from logits to predicted labels.
         action_space = spaces.Discrete(self.n_classes_per_task)
+        # action_space = DictSpace(
+        #     y_pred=spaces.Discrete(self.n_classes_per_task),
+        #     dataclass_type=self.Actions,
+        # )
         # self.action_space = Box(low=-np.inf, high=np.inf, shape=(self.n_classes_per_task,))
-        # self.reward_space = spaces.Discrete(self.num_classes)
         reward_space = spaces.Discrete(self.n_classes_per_task)
-
+        
+        # reward_space = DictSpace(
+        #     y=spaces.Discrete(self.n_classes_per_task),
+        #     dataclass_type=self.Rewards,
+        # ) 
+        
         super().__post_init__(
             observation_space=observation_space,
             action_space=action_space,
@@ -631,7 +642,8 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
     def _after_step(self, observation, reward, done, info):
         
         assert isinstance(reward, Tensor)
-        actions = torch.as_tensor(self.action)
+        action = self.action
+        actions = torch.as_tensor(action)
         
         batch_size = reward.shape[0]
         fake_logits = torch.zeros([batch_size, self.action_space.nvec[0]], dtype=int)

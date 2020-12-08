@@ -89,7 +89,7 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
         for env_index, env_is_done in enumerate(observations.done):
             if env_is_done:
                 print(f"Episode ended for env {env_index} at step {i}")
-                assert loss.total_loss != 0.
+                assert loss.loss != 0.
                 non_zero_losses += 1
                 break
         else:

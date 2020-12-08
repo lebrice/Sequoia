@@ -92,9 +92,6 @@ class BaselineModel(SemiSupervisedModel,
                       *args,
                       **kwargs):
         from settings import ContinualRLSetting
-        if isinstance(self.setting, ContinualRLSetting):
-            optimizer = self.optimizers()
-            optimizer.zero_grad()
 
         step_result = self.shared_step(
             batch,
@@ -105,7 +102,9 @@ class BaselineModel(SemiSupervisedModel,
             **kwargs
         )
         loss: Tensor = step_result["loss"]
-        # loss_object: Loss = step_result["loss_object"]
+        loss_object: Loss = step_result["loss_object"]
+        # return step_result
+        # self.log("train loss", loss, on_step=True, prog_bar=True, logger=True)
 
         if isinstance(self.setting, ContinualRLSetting):
             # TODO: Figure out how to get backprop to work with the RL setup we
@@ -113,13 +112,22 @@ class BaselineModel(SemiSupervisedModel,
             # TODO: There might be no loss at some steps, because for instance
             # we haven't reached the end of an episode yet. Need to figure out
             # how to do backprop then.
-            if loss != 0.:
-                self.manual_backward(loss, optimizer, retain_graph=True)
+            self.log("train loss", loss, on_step=True, prog_bar=True, logger=True)
+            
+            if loss != 0 and loss.requires_grad:
+                optimizer = self.optimizers()
+                self.manual_backward(loss, optimizer)
                 self.manual_optimizer_step(optimizer)
-                self.log("train loss", loss, on_step=True, prog_bar=True, logger=True)
-
                 return step_result
+
             return None
+        
+        
+        # if self._running_manual_backward:
+        #     self.manual_backward(loss, optimizer)
+        #     self.manual_optimizer_step(optimizer)
+        #     optimizer.zero_grad() 
+               
         return step_result
         
     def validation_step(self,
