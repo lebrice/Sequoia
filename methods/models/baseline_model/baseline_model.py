@@ -121,13 +121,12 @@ class BaselineModel(SemiSupervisedModel,
                 return step_result
 
             return None
-        
-        
-        # if self._running_manual_backward:
+
+        # if self._running_manual_backwar4d:
         #     self.manual_backward(loss, optimizer)
         #     self.manual_optimizer_step(optimizer)
-        #     optimizer.zero_grad() 
-               
+        #     optimizer.zero_grad()
+
         return step_result
         
     def validation_step(self,

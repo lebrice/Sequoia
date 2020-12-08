@@ -1,4 +1,4 @@
-from .convert_tensors import ConvertToFromTensors, wrap_space, to_tensor, from_tensor
+from .convert_tensors import ConvertToFromTensors, add_tensor_support, to_tensor, from_tensor
 import gym
 from gym import spaces
 import torch
@@ -8,9 +8,9 @@ from typing import Union
 
 
 
-def test_wrap_space():
+def test_add_tensor_support():
     space = spaces.Box(0, 1, (28,28), dtype=np.uint8)
-    new_space = wrap_space(space)
+    new_space = add_tensor_support(space)
     sample = new_space.sample()
 
     assert isinstance(sample, Tensor)

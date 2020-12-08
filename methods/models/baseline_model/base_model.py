@@ -110,8 +110,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # wouldn't match with this space. 
             self.representation_space = spaces.Box(-np.inf, np.inf, (self.hidden_size,), np.float32)
 
-        from common.gym_wrappers.convert_tensors import wrap_space
-        self.representation_space = wrap_space(self.representation_space)
+        from common.gym_wrappers.convert_tensors import add_tensor_support
+        self.representation_space = add_tensor_support(self.representation_space)
 
         self.output_head = self.create_output_head()
 
@@ -175,66 +175,75 @@ class BaseModel(LightningModule, Generic[SettingType]):
         assert isinstance(actions, self.Actions)
         return actions
 
-    def create_output_head(self) -> OutputHead:
-        """ Create an output head for the current action space. """
+    def create_output_head(self, add_to_optimizer: bool = None) -> OutputHead:
+        """Create an output head for the current action and reward spaces.
         
-        output_head: OutputHead
-        # TODO: Are there any bounds on the representation space?
+        NOTE: This assumes that the input, action and reward spaces don't change
+        between tasks.
+        
+        Parameters
+        ----------
+        add_to_optimizer : bool, optional
+            Wether to add the parameters of the new output head to the optimizer
+            of the model. Defaults to None, in which case we add the output head
+            parameters as long as it doesn't have an `optimizer` attribute of
+            its own.
 
+        Returns
+        -------
+        OutputHead
+            The new output head.
+        """
+        
+        input_space: Space = self.representation_space
+        action_space: Space = self.action_space
+        reward_space: Space = self.reward_space
+        hparams: OutputHead.HParams = self.hp.output_head
+
+        # Choose what type of output head to use depending on the kind of
+        # action/reward space.
+        output_head_type: Type[OutputHead]
+        
         if isinstance(self.action_space, spaces.Discrete):
+            # Discrete actions: i.e. classification problem.
             if isinstance(self.reward_space, spaces.Discrete):
-                action_space = self.action_space
-                reward_space = self.reward_space
-                if self.hp.multihead:
-                    # The action space for each head is smaller (each head does
-                    # n_t-way classification, rather than N-way, with n_t being
-                    # the number of classes per task.)
-                    from common.gym_wrappers.convert_tensors import wrap_space
-                    from settings.passive import ClassIncrementalSetting
-                    assert isinstance(self.setting, ClassIncrementalSetting)
-                    n_classes_in_current_task = self.setting.num_classes_in_current_task()
-                    # TODO: Is it imperative that the output should be a single
-                    # logit if we're doing binary (2-way) classification? Or is
-                    # it alright to use softmax over 2 logits? 
-                    action_space = spaces.Discrete(n_classes_in_current_task)
-                    reward_space = spaces.Discrete(n_classes_in_current_task)
-                    wrap_space(action_space)
-                    wrap_space(reward_space)
-
-                # Classification problem:
-                # self.output_shape = (self.action_space.n,)
-                output_head = ClassificationHead(
-                    input_space=self.representation_space,
-                    action_space=action_space,
-                    reward_space=reward_space,
-                    hparams=self.hp.output_head,
-                )
+                # Classification problem: Discrete action, Discrete rewards (labels).
+                output_head_type = ClassificationHead
             else:
-                # RL problem, reward is a scalar.
-                # self.output_shape = self.reward_space.shape
-                output_head = PolicyHead(
-                    input_space=self.representation_space,
-                    action_space=self.action_space,
-                    reward_space=self.reward_space,
-                    hparams=self.hp.output_head,
-                )
+                # Reinforcement learning problem: Discrete action, float rewards.
+                # TODO: There might be some RL environments with discrete
+                # rewards, right? For instance CartPole is, on-paper, a discrete
+                # reward setting, since its always 1.
+                output_head_type = PolicyHead
         elif isinstance(self.action_space, spaces.Box):
-            # Regression problem
-            self.output_shape = self.action_space.shape
-            output_head = RegressionHead(
-                input_space=self.representation_space,
-                action_space=self.action_space,
-                reward_space=self.reward_space,
-                hparams=self.hp.output_head,
-            )
+            # Regression problem: For now there is only RL that has such a
+            # space.
+            output_head_type = RegressionHead
         else:
             raise NotImplementedError(f"Unsupported action space: {self.action_space}")
         
-        # Add the new parameters to the Optimizer, if it already exists.
-        if self.trainer:
-            optimizer: Optimizer = self.optimizers()
-            assert isinstance(optimizer, Optimizer)
-            optimizer.add_param_group({"params": output_head.parameters()})
+        output_head = output_head_type(
+            input_space=input_space,
+            action_space=action_space,
+            reward_space=reward_space,
+            hparams=hparams,
+        )
+        
+        if add_to_optimizer is None:
+            add_to_optimizer = not hasattr(output_head, "optimizer")
+            # Do not add the output head's parameters to the optimizer of the
+            # whole model.
+
+        if add_to_optimizer:
+            # Add the new parameters to the Optimizer, if it already exists.
+            # If we don't yet have a Trainer, the Optimizer hasn't been created
+            # yet. Once it is created though, it will most likely get the
+            # parameters of this output head from `self.parameters()` is passed
+            # to its constructor, since the output head will be stored in
+            # `self.output_heads`.
+            if self.trainer:
+                optimizer: Optimizer = self.optimizers()
+                optimizer.add_param_group({"params": output_head.parameters()})
 
         output_head = output_head.to(self.device)
         return output_head

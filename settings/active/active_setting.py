@@ -9,5 +9,5 @@ from .active_dataloader import ActiveDataLoader
 class ActiveSetting(Setting[ActiveDataLoader[ObservationType, ActionType, RewardType]]):
     """LightningDataModule for an 'active' setting.
     
-    TODO: Use this for something like RL or Active Learning.
+    This is to be the parent of settings like RL or maybe Active Learning.
     """

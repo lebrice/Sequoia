@@ -3,7 +3,7 @@ from gym import Space, spaces
 from gym.vector.utils import batch_space
 import numpy as np
 
-from common.gym_wrappers.convert_tensors import wrap_space
+from common.gym_wrappers.convert_tensors import add_tensor_support
 from .universal_encoder import n_parameters
 
 def test_universal_encoder():
@@ -24,8 +24,8 @@ def test_universal_encoder():
     batch_input_space = batch_space(input_space, batch_size)
     batch_output_space = batch_space(output_space, batch_size)
     
-    batch_input_space = wrap_space(batch_input_space)
-    output_space = wrap_space(output_space)
+    batch_input_space = add_tensor_support(batch_input_space)
+    output_space = add_tensor_support(output_space)
     
     sample = batch_input_space.sample()
     encoder_output = encoder(sample)

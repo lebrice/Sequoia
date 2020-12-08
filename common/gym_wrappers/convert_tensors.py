@@ -34,10 +34,10 @@ class ConvertToFromTensors(gym.Wrapper):
     def __init__(self, env: gym.Env, device: Union[torch.device, str] = None):
         super().__init__(env=env)
         self.device = device
-        self.observation_space: Space = wrap_space(self.env.observation_space, device=device)
-        self.action_space: Space = wrap_space(self.env.action_space, device=device)
+        self.observation_space: Space = add_tensor_support(self.env.observation_space, device=device)
+        self.action_space: Space = add_tensor_support(self.env.action_space, device=device)
         if hasattr(self.env, "reward_space"):
-            self.reward_space: Space = wrap_space(self.env.reward_space, device=device)
+            self.reward_space: Space = add_tensor_support(self.env.reward_space, device=device)
 
     def reset(self, *args, **kwargs):
         obs = self.env.reset(*args, **kwargs)
@@ -60,24 +60,29 @@ class ConvertToFromTensors(gym.Wrapper):
         # info = np.ndarray(info)
         return type(result)([observation, reward, done, info])
 
-def does_supports_tensors(space: S) -> bool:
+
+def supports_tensors(space: S) -> bool:
     return getattr(space, "__supports_tensors", False)
+
 
 def _mark_supports_tensors(space: S) -> bool:
     return setattr(space, "__supports_tensors", True)
 
-def wrap_space(space: S, device: torch.device = None) -> S:
-    """Wraps `space` so its `sample()` method produces Tensors, and its
+
+def add_tensor_support(space: S, device: torch.device = None) -> S:
+    """Modifies `space` so its `sample()` method produces Tensors, and its
     `contains` method also accepts Tensors.
     
+    For Dict and Tuple spaces, all the subspaces are also modified recursively.
+            
     Returns the modified Space.
     """
     # Save the original methods so we can use them.
     sample = space.sample
     contains = space.contains
-    if does_supports_tensors(space):
+    if supports_tensors(space):
         logger.debug(f"Space {space} already supports Tensors.")
-        return
+        return space
     _mark_supports_tensors(space)
     
     @wraps(space.sample)
@@ -96,9 +101,10 @@ def wrap_space(space: S, device: torch.device = None) -> S:
     space.sample = _sample
     space.contains = _contains
     if isinstance(space, (spaces.Tuple, spaces.Dict)):
+        # Also add tensor support to all the subspaces.
         @wraps(space.__getitem__)
         def __getitem__(self, index):
-            return wrap_space(self.spaces[index])
+            return add_tensor_support(self.spaces[index])
         space.__getitem__ = __getitem__
     
     return space
