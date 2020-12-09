@@ -154,9 +154,12 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             
             # TODO: Limit the number of epochs so we never iterate on a closed
             # env.
-            
-            
-                
+            if setting.max_steps is not None:
+                self.trainer_options.limit_train_batches = setting.max_steps // setting.batch_size - 1
+                self.trainer_options.limit_val_batches = setting.max_steps // setting.batch_size - 1
+                # TODO: Test batch size is set to 1 for now.
+                self.trainer_options.limit_test_batches = setting.max_steps
+   
         self.trainer = self.create_trainer(setting)
         self.model = self.create_model(setting)
 

@@ -106,7 +106,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # logger.debug(f"Setting output head to {value}")
         self._output_head = value
 
-    # @auto_move_data
+    @auto_move_data
     def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
         """ Forward pass of the Model. Returns a dict."""
         # Just testing things out here.
@@ -123,13 +123,15 @@ class ClassIncrementalModel(BaseModel[SettingType]):
                     task_labels = torch.as_tensor(task_labels.as_dtype(np.int))
                 else:
                     raise NotImplementedError(f"TODO: Only given a portion of task labels?")
-                        
+        if isinstance(task_labels, Tensor) and not task_labels.shape:
+            task_labels = task_labels.reshape([1])
+  
         # IDEA: This would basically call super.forward() on the slices of the
         # batch, and then re-combine the forward pass dicts before returning
         # the results.
         # It's a bit extra. Maybe we only really ever want to have the output
         # task be the 'branched-out/multi-task' portion.
-        if task_labels is None or not len(task_labels):
+        if task_labels is None:
             # Default back to the behaviour of the parent class, which will use
             # the current output head (at attribute `self.output_head`).
             return super().forward(observations)

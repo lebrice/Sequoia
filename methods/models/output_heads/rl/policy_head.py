@@ -24,9 +24,8 @@ episode isn't over yet.
 Also, standard supervised learning could be recovered by setting the
 maximum length of the 'episode buffer' to 1, and consider all
 observations as final, i.e., when episode length == 1
-
-
 """
+
 import dataclasses
 import itertools
 from dataclasses import dataclass
@@ -38,11 +37,12 @@ import gym
 import numpy as np
 import torch
 from gym import spaces, Space
+from gym.spaces.utils import flatdim
 from gym.vector.utils.numpy_utils import concatenate, create_empty_array
 from torch import LongTensor, Tensor, nn
 from torch.distributions import Categorical as Categorical_, Distribution
 
-from common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
+from common.metrics.rl_metrics import EpisodeMetrics, RLMetrics, GradientUsageMetric
 from common import Loss, Metrics
 from common.layers import Lambda
 # from common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
@@ -107,11 +107,6 @@ class PolicyHeadOutput(ClassificationOutput):
             ])
         return self.policy.probs(self.y_pred)
 
-# BUG: Since its too complicated to try and get the final state
-# from the info dict to look like the observation, I'm just
-# going to discard it, and so whenever the get_episode_loss
-# function is called, it won't receive the final observation
-# in it.
 
 ## NOTE: Since the gym VectorEnvs actually auto-reset the individual
 ## environments (and also discard the final state, for some weird
@@ -123,15 +118,6 @@ class PolicyHeadOutput(ClassificationOutput):
 ## the Observations object, while the 'observation' you get from step
 ## is the 'initial' observation of the new episode.             
 
-@dataclass
-class WastedGradientsMetric(Metrics):
-    used_gradients: int = 0
-    wasted_gradients: int = 0
-    used_gradients_fraction: float = 0.
-    def __post_init__(self):
-        self.n_samples = self.used_gradients + self.wasted_gradients
-        if self.n_samples:
-            self.used_gradients_fraction = self.used_gradients / self.n_samples
 
 class PolicyHead(ClassificationHead):
     """ [WIP] Output head for RL settings.
@@ -221,6 +207,10 @@ class PolicyHead(ClassificationHead):
         self.has_reached_episode_end: Sequence[bool] = []
         self.num_episodes_since_update: Sequence[int] = []
         
+        # See the two 'options' described below.
+        self.option: int = 1
+        
+        
     def create_buffers(self):
         """ Creates the buffers to hold the items from each env. """
         logger.debug(f"Creating buffers (batch size={self.batch_size})")
@@ -265,13 +255,15 @@ class PolicyHead(ClassificationHead):
         # can do the forward pass on the new observations! Otherwise the first
         # actions won't have been based on the right weights!
         
+        if len(representations.shape) < 2:
+            representations = representations.reshape([-1, flatdim(self.input_space)])
+        
         # Setup the buffers, which will hold the most recent observations,
         # actions and rewards within the current episode for each environment.
         if not self.batch_size:
             self.batch_size = representations.shape[0]
             self.create_buffers()
 
-        # Option 2 below:
         self.detached_loss = Loss(self.name)
 
         # NOTE: This means we also need it at test-time though.
@@ -282,7 +274,6 @@ class PolicyHead(ClassificationHead):
                     # End of episode reached in that env!
                     self.has_reached_episode_end[env_index] = True
                     self.num_episodes_since_update[env_index] += 1
-
 
                 env_loss = self.get_episode_loss(env_index, done=done)
 
@@ -297,45 +288,52 @@ class PolicyHead(ClassificationHead):
                 # and have `retrain_graph=False`, or
                 # (2): we do multiple little backward passes as soon as an
                 # episode end is reached in a single env, w/ `retain_graph=True`.
-                
-                # Option 1:
-                self.loss += env_loss
-                self.detached_loss += env_loss.detach()
-                
-                # # Option 2:
-                # env_loss.backward(retain_graph=True)
-                # # # Detach the loss so we can keep the metrics but not all the graphs.
-                # self.detached_loss += env_loss.detach()
+                # Option 1 is maybe more performant, as it might only require
+                # unrolling the graph once, but would use more memory.
+                if self.option == 1:
+                    # Option 1:
+                    self.loss += env_loss
+                    self.detached_loss += env_loss.detach()
+                else:
+                    # Option 2:
+                    env_loss.backward(retain_graph=True)
+                    # # Detach the loss so we can keep the metrics but not all the graphs.
+                    self.detached_loss += env_loss.detach()
 
             if all(self.num_episodes_since_update >= self.hparams.min_episodes_before_update):
                 # TODO: Maybe move this into a 'optimizer_step' method?
                 # self.update_model()
                 
                 # logger.debug(f"Backpropagating loss: {self.loss}")
-                # Option 1 from above:
-                # NOTE: Need to step as well, since the predictions below will
-                # depend on the model at the current time.
-                self.optimizer.zero_grad()
-                self.loss.backward()
-                self.optimizer.step()
-                # Reset the losses.
-                self.detached_loss = self.loss.detach()
-                self.loss = Loss(self.name, metrics={self.name: RLMetrics()})
-
-                # # Option 2 from above:
-                # logger.debug(f"Updating model: ")
-                # self.optimizer.step()
-                # self.optimizer.zero_grad()
+                if self.option == 1:    
+                    # Option 1 from above:
+                    # NOTE: Need to step as well, since the predictions below will
+                    # depend on the model at the current time.
+                    self.optimizer.zero_grad()
+                    self.loss.backward()
+                    self.optimizer.step()
+                    # Reset the losses.
+                    # self.detached_loss = self.loss.detach()
+                    
+                    self.loss = Loss(self.name)
+                else:
+                    # # Option 2 from above:
+                    logger.debug(f"Updating model: ")
+                    self.optimizer.step()
+                    self.optimizer.zero_grad()
 
                 self.detach_all_buffers()
                 
                 self.has_reached_episode_end[:] = False
                 self.num_episodes_since_update[:] = 0
                 
+                # self.detached_loss = self.loss.detach()
+                # self.loss = Loss(self.name, metrics={self.name: RLMetrics()})
 
-        # Option 1 from above:
-        representations = representations.detach()
-
+        
+        # In either case, do we want to detach the representations? or not?
+        representations = representations.detach().float()
+        
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
         policy = Categorical(logits=logits)
@@ -345,11 +343,10 @@ class PolicyHead(ClassificationHead):
             logits=logits,
             policy=policy,
         )
-
         for env_index in range(self.batch_size):
             # Take a slice across the first dimension
             # env_observations = get_slice(observations, env_index)
-            env_representations = get_slice(representations, env_index)
+            env_representations = representations[env_index]
             env_actions = get_slice(actions, env_index)
             self.representations[env_index].append(env_representations)
             self.actions[env_index].append(env_actions)
@@ -402,20 +399,25 @@ class PolicyHead(ClassificationHead):
             # This particular algorithm (REINFORCE) can't give a loss until the
             # end of the episode is reached.
             return None
-        
+
+        if len(self.actions[env_index]) == 0:
+            logger.debug(f"Weird, asked to get episode loss, but there is "
+                         f"nothing in the buffer?")
+            return None
+            
         inputs, actions, rewards = self.stack_buffers(env_index) 
         
-        # TODO: If the episode has len of 1, we can't really get a loss!
-
         episode_length = actions.batch_size
-        assert len(inputs) == len(actions.y_pred) == len(rewards.y), (len(inputs), len(actions.y_pred), len(rewards.y))
-        
+        assert len(inputs) == len(actions.y_pred) == len(rewards.y)
+
         if episode_length <= 1:
+            # TODO: If the episode has len of 1, we can't really get a loss!
             logger.error("Episode is too short!")
             return None
 
         log_probabilities = actions.y_pred_log_prob
         rewards = rewards.y
+        
         loss = self.policy_gradient(
             rewards=rewards,
             log_probs=log_probabilities,
@@ -428,14 +430,19 @@ class PolicyHead(ClassificationHead):
         n_items_without_grad = n_stored_items - n_items_with_grad
         self.num_grad_tensors[env_index] += n_items_with_grad
         self.num_detached_tensors[env_index] += n_items_without_grad
-        print(f"Env {env_index} produces a loss based on {n_items_with_grad} tensors with grad and {n_items_without_grad} without. ")
-        
-        wasted_gradients_metric = WastedGradientsMetric(n_items_with_grad, n_items_without_grad)
+        # logger.debug(f"Env {env_index} produces a loss based on "
+        #              f"{n_items_with_grad} tensors with grad and "
+        #              f"{n_items_without_grad} without. ")
+
+        gradient_usage = GradientUsageMetric(
+            used_gradients=n_items_with_grad,
+            wasted_gradients=n_items_without_grad,
+        )
         
         # TODO: Add 'Metrics' for each episode?
         return Loss(self.name, loss, metrics={
-            self.name: EpisodeMetrics(rewards=rewards),
-            "wasted_gradients": wasted_gradients_metric
+            self.name: RLMetrics(episodes=[EpisodeMetrics(rewards=rewards)]),
+            "gradient_usage": gradient_usage
         })
 
 
@@ -487,11 +494,25 @@ class PolicyHead(ClassificationHead):
     def training(self, value: bool) -> None:
         # logger.debug(f"setting training to {value} on the Policy output head")
         if hasattr(self, "_training") and value != self._training:
-            logger.debug(f"Clearing buffers, since we're transitioning between train/test")
-            for env_id in range(self.batch_size):
-                self.clear_buffers(env_id)
+            before = "train" if self._training else "test"
+            after = "train" if value else "test"
+            logger.debug(f"Clearing buffers, since we're transitioning between from {before}->{after}")
+            self.clear_all_buffers()
+            self.batch_size = None
         self._training = value
-    
+
+    def clear_all_buffers(self) -> None:
+        if self.batch_size is None:
+            assert not self.rewards
+            assert not self.representations
+            assert not self.actions
+            return
+        for env_id in range(self.batch_size):
+            self.clear_buffers(env_id)
+        self.rewards.clear()
+        self.representations.clear()
+        self.actions.clear()
+        
     def clear_buffers(self, env_index: int) -> None:
         """ Clear the buffers associated with the environment at env_index.
         """

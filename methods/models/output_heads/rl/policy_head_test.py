@@ -102,7 +102,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
         input_space=representation_space,
         action_space=env.single_action_space,
         reward_space=env.single_reward_space,
-        hparams=PolicyHead.HParams(max_episode_window_length=100)
+        hparams=PolicyHead.HParams(max_episode_window_length=100, min_episodes_before_update=1)
     )
 
     # Simplify the loss function so we know exactly what the loss should be at
@@ -155,36 +155,27 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
         print(f"Tensors without gradients: {output_head.num_detached_tensors}")
         print(f"steps left in episode: {env.steps_left_in_episode}")
         print(f"Loss for that step: {loss}")
+
+        if any(obs_done):
+            assert loss != 0.
         
-        if 0 <= step < 5:
+        if step == 5.:
+            # Env 0 first episode from steps 0 -> 5
+            assert loss.loss == 5. 
+            assert loss.metrics["gradient_usage"].used_gradients == 5.
+            assert loss.metrics["gradient_usage"].wasted_gradients == 0.            
+        elif step % 10 == 0 and step != 0:
+            # Env 1 to batch_size, first episode, from steps 0 -> 10
+            assert loss.loss == 10. * (batch_size-1) 
+            assert loss.metrics["gradient_usage"].used_gradients == 10. * (batch_size-1)
+            assert loss.metrics["gradient_usage"].wasted_gradients == 0.   
+        elif step % 10 == 5:
+            # Env 0 second episode from steps 5 -> 15
+            assert loss.loss == 10.
+            assert loss.metrics["gradient_usage"].used_gradients == 5
+            assert loss.metrics["gradient_usage"].wasted_gradients == 5
+        else:
             assert loss.loss == 0.
-        elif 5 == step:
-            assert loss.loss == 5.
-            # Episode end in env 0: from steps 0 to 5!
-            # assert not loss.requires_grad
-            # TODO: Add a check for the metrics of the Loss once we add those.
-        elif 5 < step < 10:
-            assert loss.loss == 0. 
-        elif 10 == step:
-            # All environments have now finished an episode! (first env is
-            # offset from the other by 5 steps, and all other finish their first
-            # episode at step 10.
-            
-            # Episode end in envs 1 .. batch_size: (from steps 0 to 10)
-            assert loss.loss == 5 + (batch_size-1) * 10 
-            # assert loss.requires_grad
-        elif 10 < step < 15:
-            assert loss.loss == 0.
-        elif 15 == step:
-            assert loss.loss == 10. # episode end in env 1 (from steps 5 to 15)
-        elif 15 <= step < 20:
-            assert loss.loss == 0.
-        elif 20 == step:
-            assert loss.loss == 10 * batch_size
-        elif 21 >= step:
-            assert loss.loss == 0.
-            
-            # assert not loss.requires_grad
 
 
 @pytest.mark.xfail(reason="Older, confusing test.")

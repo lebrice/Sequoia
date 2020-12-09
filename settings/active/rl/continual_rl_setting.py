@@ -111,6 +111,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # they also have access to those (i.e. for the BaselineMethod).
         done: Optional[Sequence[bool]] = None
         # Same, for the 'info' portion of the result of 'step'.
+        # TODO: If we add the 'task space' (with all the attributes, for instance
+        # then add it to the observations using the `AddInfoToObservations`.
         # info: Optional[Sequence[Dict]] = None
 
     # Image transforms to use.
@@ -135,12 +137,11 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     max_episodes: int = 5_000
     
     
-    # Number of steps per task. When left unset, takes the value of `max_steps`
-    # divided by `nb_tasks`.
+    # Number of steps per task. When left unset and when `max_steps` is set,
+    # takes the value of `max_steps` divided by `nb_tasks`.
     steps_per_task: Optional[int] = None
     # Number of episodes per task.
     episodes_per_task: Optional[int] = None
-    
     
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
@@ -421,8 +422,11 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             self.prepare_data()
         if not self.has_setup_test:
             self.setup("test")
-
-        batch_size = batch_size or self.batch_size
+        # BUG: gym.wrappers.Monitor doesn't want to play nice when applied to
+        # Vectorized env, it seems..
+        batch_size = None 
+        # batch_size = batch_size or self.batch_size
+        
         num_workers = num_workers or self.num_workers
         env_factory = partial(self._make_env, base_env=self.dataset,
                                               wrappers=self.test_wrappers)
@@ -434,7 +438,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
         # TODO: We should probably change the max_steps depending on the
         # batch size of the env.
-        test_loop_max_steps = self.max_steps
+        test_loop_max_steps = self.max_steps // (batch_size or 1)
         # TODO: Find where to configure this 'test directory' for the outputs of
         # the Monitor.
         test_dir = "results"
@@ -442,7 +446,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             env_dataloader,
             task_schedule=self.test_task_schedule,
             directory=test_dir,
-            step_limit=self.max_steps,
+            step_limit=test_loop_max_steps,
             force=True,
         )
         return self.test_env
@@ -700,7 +704,6 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         total_steps = self.get_total_steps()
         task_schedule: Dict[int, Dict] = self.task_schedule
         task_steps = sorted(task_schedule.keys())
-        
         assert 0 in task_steps
         import bisect
         nb_tasks = len(task_steps)

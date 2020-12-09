@@ -23,6 +23,8 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     This method doesn't have a model or any parameters. It just returns a random
     action for every observation.
     """
+    batch_size: int = 16
+    
     def fit(self,
             train_env: Environment=None,
             valid_env: Environment=None,
@@ -35,10 +37,7 @@ class RandomBaselineMethod(Method, target_setting=Setting):
 
     def configure(self, setting):
         # Set any batch size, really.
-        if isinstance(setting, PassiveSetting):
-            setting.batch_size = 32
-        else:
-            setting.batch_size = None
+        setting.batch_size = self.batch_size
 
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         return action_space.sample()

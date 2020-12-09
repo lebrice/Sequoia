@@ -107,31 +107,22 @@ class BaselineModel(SemiSupervisedModel,
         # self.log("train loss", loss, on_step=True, prog_bar=True, logger=True)
 
         if isinstance(self.setting, ContinualRLSetting):
-            # TODO: Figure out how to get backprop to work with the RL setup we
-            # have.
             # TODO: There might be no loss at some steps, because for instance
-            # we haven't reached the end of an episode yet. Need to figure out
-            # how to do backprop then.
+            # we haven't reached the end of an episode yet.
             self.log("train loss", loss, on_step=True, prog_bar=True, logger=True)
             
             for metric_name, metric in loss_object.all_metrics().items():
-                assert False, (metric, metric.to_log_dict())
-                for key, value in metric.to_log_dict():
+                for key, value in metric.to_log_dict().items():
                     self.log(f"{metric_name}/{key}", value, prog_bar=True, logger=True, on_step=True, on_epoch=True)
-            
-            if loss != 0 and loss.requires_grad:
+
+            if self._running_manual_backward and loss.requires_grad:
                 optimizer = self.optimizers()
                 self.manual_backward(loss, optimizer)
                 self.manual_optimizer_step(optimizer)
+                optimizer.zero_grad()
                 return step_result
-
-            return None
-
-        # if self._running_manual_backwar4d:
-        #     self.manual_backward(loss, optimizer)
-        #     self.manual_optimizer_step(optimizer)
-        #     optimizer.zero_grad()
-
+            else:
+                return None
         return step_result
         
     def validation_step(self,

@@ -20,6 +20,9 @@ def from_tensor(space: Space, sample: Union[Tensor, Any]) -> Union[np.ndarray, A
 def _(space: spaces.Discrete, sample: Tensor) -> int:
     if isinstance(sample, Tensor):
         return sample.item()
+    elif isinstance(sample, np.ndarray):
+        assert sample.size == 1
+        return int(sample)
     return sample
 
 

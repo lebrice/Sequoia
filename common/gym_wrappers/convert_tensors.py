@@ -45,7 +45,8 @@ class ConvertToFromTensors(gym.Wrapper):
 
     def step(self, action: Tensor) -> Tuple[Tensor, Tensor, Tensor, List[Dict]]:
         action = from_tensor(self.action_space, action)
-
+        assert action in self.env.action_space, (action, self.env.action_space)
+        
         result = self.env.step(action)
         observation, reward, done, info = result
         
