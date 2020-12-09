@@ -120,7 +120,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
     obs = env.reset()
     step_done = np.zeros(batch_size, dtype=np.bool)
     
-    for step in range(20):
+    for step in range(200):
         x, obs_done = obs
         
         # The done from the obs should always be the same as the 'done' from the 'step' function.
@@ -164,8 +164,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             # assert not loss.requires_grad
             # TODO: Add a check for the metrics of the Loss once we add those.
         elif 5 < step < 10:
-            assert loss.loss == 0.
-            # assert not loss.requires_grad
+            assert loss.loss == 0. 
         elif 10 == step:
             # All environments have now finished an episode! (first env is
             # offset from the other by 5 steps, and all other finish their first
@@ -174,10 +173,8 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             # Episode end in envs 1 .. batch_size: (from steps 0 to 10)
             assert loss.loss == 5 + (batch_size-1) * 10 
             # assert loss.requires_grad
-        elif 10 < step < 15: 
-            # Loss gets reset
+        elif 10 < step < 15:
             assert loss.loss == 0.
-            # assert not loss.requires_grad
         elif 15 == step:
             assert loss.loss == 10. # episode end in env 1 (from steps 5 to 15)
         elif 15 <= step < 20:
@@ -186,11 +183,11 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             assert loss.loss == 10 * batch_size
         elif 21 >= step:
             assert loss.loss == 0.
-            break
+            
             # assert not loss.requires_grad
 
 
-    
+@pytest.mark.xfail(reason="Older, confusing test.")
 @pytest.mark.parametrize("batch_size",
 [
     1,

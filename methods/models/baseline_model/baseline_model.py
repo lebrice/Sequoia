@@ -14,6 +14,7 @@ from gym import spaces
 from pytorch_lightning import LightningDataModule, LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
+from simple_parsing import Serializable, choice, mutable_field
 from torch import Tensor, nn, optim
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
@@ -23,7 +24,7 @@ from common.config import Config
 from common.loss import Loss
 from methods.aux_tasks.auxiliary_task import AuxiliaryTask
 from methods.models.output_heads import OutputHead, ClassificationHead, RegressionHead, PolicyHead
-from simple_parsing import Serializable, choice, mutable_field
+from settings import ContinualRLSetting
 from utils.logging_utils import get_logger
 
 torch.autograd.set_detect_anomaly(True)
@@ -91,7 +92,6 @@ class BaselineModel(SemiSupervisedModel,
                       batch_idx: int,
                       *args,
                       **kwargs):
-        from settings import ContinualRLSetting
 
         step_result = self.shared_step(
             batch,
@@ -113,6 +113,11 @@ class BaselineModel(SemiSupervisedModel,
             # we haven't reached the end of an episode yet. Need to figure out
             # how to do backprop then.
             self.log("train loss", loss, on_step=True, prog_bar=True, logger=True)
+            
+            for metric_name, metric in loss_object.all_metrics().items():
+                assert False, (metric, metric.to_log_dict())
+                for key, value in metric.to_log_dict():
+                    self.log(f"{metric_name}/{key}", value, prog_bar=True, logger=True, on_step=True, on_epoch=True)
             
             if loss != 0 and loss.requires_grad:
                 optimizer = self.optimizers()

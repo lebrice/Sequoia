@@ -105,10 +105,12 @@ class AddDoneToObservation(IterableWrapper):
         if done_space is None:
             done_space = spaces.Box(0, 1, (), dtype=np.bool)
             if self.is_vectorized:
+                self.single_observation_space = add_done(self.single_observation_space, done_space)
                 done_space = batch_space(done_space, self.env.num_envs)
         self.done_space = done_space
         self.observation_space = add_done(self.env.observation_space,
                                                    self.done_space)
+        
 
     def reset(self, **kwargs):
         observation = self.env.reset()

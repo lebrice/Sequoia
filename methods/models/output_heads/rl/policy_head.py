@@ -42,7 +42,8 @@ from gym.vector.utils.numpy_utils import concatenate, create_empty_array
 from torch import LongTensor, Tensor, nn
 from torch.distributions import Categorical as Categorical_, Distribution
 
-from common import Loss
+from common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
+from common import Loss, Metrics
 from common.layers import Lambda
 # from common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
 from methods.models.forward_pass import ForwardPass 
@@ -70,6 +71,11 @@ class Categorical(Categorical_):
     def __iter__(self) -> Iterable["Categorical"]:
         for index in range(self.logits.shape[0]):
             yield self[index]
+
+
+@detach.register
+def detach_categorical(v: Categorical) -> Categorical:
+    return type(v)(logits=v.logits.detach())
 
 
 @dataclass(frozen=True)
@@ -117,8 +123,15 @@ class PolicyHeadOutput(ClassificationOutput):
 ## the Observations object, while the 'observation' you get from step
 ## is the 'initial' observation of the new episode.             
 
-
-
+@dataclass
+class WastedGradientsMetric(Metrics):
+    used_gradients: int = 0
+    wasted_gradients: int = 0
+    used_gradients_fraction: float = 0.
+    def __post_init__(self):
+        self.n_samples = self.used_gradients + self.wasted_gradients
+        if self.n_samples:
+            self.used_gradients_fraction = self.used_gradients / self.n_samples
 
 class PolicyHead(ClassificationHead):
     """ [WIP] Output head for RL settings.
@@ -198,9 +211,9 @@ class PolicyHead(ClassificationHead):
         self.rewards: List[deque] = []
 
         # The actual "internal" loss we use for training.
-        self.loss: Loss = Loss(self.name)
+        self.loss: Loss = Loss(self.name, metrics={self.name: RLMetrics()})
         # The loss we expose and return in `get_loss` ( has all metrics etc.)
-        self.detached_loss: Loss = Loss(self.name)
+        self.detached_loss: Loss = self.loss.detach()
 
         self.batch_size: int = 0
         self.optimizer = torch.optim.Adam(self.parameters(), lr=3e-4)
@@ -258,6 +271,7 @@ class PolicyHead(ClassificationHead):
             self.batch_size = representations.shape[0]
             self.create_buffers()
 
+        # Option 2 below:
         self.detached_loss = Loss(self.name)
 
         # NOTE: This means we also need it at test-time though.
@@ -269,12 +283,6 @@ class PolicyHead(ClassificationHead):
                     self.has_reached_episode_end[env_index] = True
                     self.num_episodes_since_update[env_index] += 1
 
-                    episode_actions = self.actions[env_index]
-                    n_stored_items = len(self.actions[env_index])
-                    n_items_with_grad = sum(v.requires_grad for v in self.representations[env_index])
-                    n_items_without_grad = n_stored_items - n_items_with_grad
-                    self.num_grad_tensors[env_index] += n_items_with_grad
-                    self.num_detached_tensors[env_index] += n_items_without_grad
 
                 env_loss = self.get_episode_loss(env_index, done=done)
 
@@ -294,25 +302,28 @@ class PolicyHead(ClassificationHead):
                 self.loss += env_loss
                 self.detached_loss += env_loss.detach()
                 
-                # Option 2:
-                # if env_loss.requires_grad:
-                #     env_loss.backward(retain_graph=True)
-                # # Detach the loss so we can keep the metrics but not all the graphs.
-                # self.loss += env_loss.detach()
+                # # Option 2:
+                # env_loss.backward(retain_graph=True)
+                # # # Detach the loss so we can keep the metrics but not all the graphs.
+                # self.detached_loss += env_loss.detach()
 
             if all(self.num_episodes_since_update >= self.hparams.min_episodes_before_update):
                 # TODO: Maybe move this into a 'optimizer_step' method?
                 # self.update_model()
                 
-                logger.debug(f"Backpropagating loss: {self.loss}")
+                # logger.debug(f"Backpropagating loss: {self.loss}")
                 # Option 1 from above:
                 # NOTE: Need to step as well, since the predictions below will
                 # depend on the model at the current time.
-                # self.optimizer.zero_grad()
-                # self.loss.backward()
-                # self.optimizer.step()
-                
-                # Option 2 from above:
+                self.optimizer.zero_grad()
+                self.loss.backward()
+                self.optimizer.step()
+                # Reset the losses.
+                self.detached_loss = self.loss.detach()
+                self.loss = Loss(self.name, metrics={self.name: RLMetrics()})
+
+                # # Option 2 from above:
+                # logger.debug(f"Updating model: ")
                 # self.optimizer.step()
                 # self.optimizer.zero_grad()
 
@@ -321,11 +332,9 @@ class PolicyHead(ClassificationHead):
                 self.has_reached_episode_end[:] = False
                 self.num_episodes_since_update[:] = 0
                 
-                self.detached_loss = self.loss.detach()
-                self.loss = Loss(self.name)
 
-        # Option 2 from above:
-        # representations = representations.detach()
+        # Option 1 from above:
+        representations = representations.detach()
 
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
@@ -412,8 +421,22 @@ class PolicyHead(ClassificationHead):
             log_probs=log_probabilities,
             gamma=self.hparams.gamma,
         )
+        
+        episode_actions = self.actions[env_index]
+        n_stored_items = len(self.actions[env_index])
+        n_items_with_grad = sum(v.logits.requires_grad for v in episode_actions)
+        n_items_without_grad = n_stored_items - n_items_with_grad
+        self.num_grad_tensors[env_index] += n_items_with_grad
+        self.num_detached_tensors[env_index] += n_items_without_grad
+        print(f"Env {env_index} produces a loss based on {n_items_with_grad} tensors with grad and {n_items_without_grad} without. ")
+        
+        wasted_gradients_metric = WastedGradientsMetric(n_items_with_grad, n_items_without_grad)
+        
         # TODO: Add 'Metrics' for each episode?
-        return Loss(self.name, loss)
+        return Loss(self.name, loss, metrics={
+            self.name: EpisodeMetrics(rewards=rewards),
+            "wasted_gradients": wasted_gradients_metric
+        })
 
 
     def policy_gradient(self, rewards: List[float], log_probs: List[Tensor], gamma: float=0.95):
@@ -462,7 +485,7 @@ class PolicyHead(ClassificationHead):
 
     @training.setter
     def training(self, value: bool) -> None:
-        logger.debug(f"setting training to {value} on the Policy output head")
+        # logger.debug(f"setting training to {value} on the Policy output head")
         if hasattr(self, "_training") and value != self._training:
             logger.debug(f"Clearing buffers, since we're transitioning between train/test")
             for env_id in range(self.batch_size):
@@ -490,7 +513,6 @@ class PolicyHead(ClassificationHead):
             new_items = self._make_buffer()
             for item in old_buffer:
                 detached = item.detach()
-                # del item
                 new_items.append(detached)
             return new_items
         # detached_representations = map(detach, )

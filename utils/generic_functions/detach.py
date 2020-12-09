@@ -10,8 +10,18 @@ def detach(value: T) -> T:
     """ Detaches a value when possible, else returns the value unchanged. """
     if hasattr(value, "detach") and callable(value.detach):
         return value.detach()
-    else:
-        return value
+    raise NotImplementedError(f"Don't know how to detach value {value}!")
+    # else:
+    #     return value
+
+@detach.register(type(None))
+@detach.register(str)
+@detach.register(int)
+@detach.register(bool)
+@detach.register(float)
+def no_op_detach(v: Any) -> Any:
+    return v
+
 
 @detach.register(list)
 @detach.register(tuple)

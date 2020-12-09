@@ -451,9 +451,10 @@ class Batch(ABC, Mapping[str, T]):
         Batch
             New object of the same type, but with all tensors detached.
         """
-        return type(self)(**{
+        from utils.generic_functions import detach
+        return type(self)(**detach({
             k: v.detach() if isinstance(v, (Tensor, Batch)) else v for k, v in self.items()
-        })
+        }))
 
     def cpu(self, **kwargs):
         """Returns a new Batch object of the same type, with all Tensors

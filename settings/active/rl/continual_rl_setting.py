@@ -128,9 +128,13 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # available_datasets dict), a gym.Env, or a callable that returns a single environment.
     # If self.dataset isn't one of those, an error will be raised.
     dataset: str = choice(available_datasets, default="breakout")
-
-    # Max number of steps ("length" of the training and test "datasets").
+    
+    # Max number of steps per task. ("length" of the training and test "datasets").
     max_steps: int = 10_000
+    # Maximum episodes per task.
+    max_episodes: int = 5_000
+    
+    
     # Number of steps per task. When left unset, takes the value of `max_steps`
     # divided by `nb_tasks`.
     steps_per_task: Optional[int] = None
@@ -682,6 +686,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             starting_step=0,
             max_steps=self.max_steps,
         )
+
 
 class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
     def __init__(self, *args,  task_schedule: Dict, **kwargs):

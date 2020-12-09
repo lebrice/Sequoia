@@ -23,7 +23,6 @@ class Metrics(Serializable):
     # TODO: Refactor this to take any kwargs, and then let each metric type
     # specify its own InitVars.
     
-    @torch.no_grad()
     def __post_init__(self, **tensors):
         """Creates metrics given `y_pred` and `y`.
 
