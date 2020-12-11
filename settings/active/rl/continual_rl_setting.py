@@ -424,9 +424,17 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             self.setup("test")
         # BUG: gym.wrappers.Monitor doesn't want to play nice when applied to
         # Vectorized env, it seems..
-        batch_size = None 
+        if batch_size is not None:
+            raise NotImplementedError(
+                "WIP: Only support batch size of `None` (i.e., a single env) "
+                "for test environments atm, because of how the Monitor class "
+                "from gym works."
+            )
+            batch_size = None
+        # FIXME: Uncomment this when the Monitor class works correctly with
+        # batched environments.
         # batch_size = batch_size or self.batch_size
-        
+
         num_workers = num_workers or self.num_workers
         env_factory = partial(self._make_env, base_env=self.dataset,
                                               wrappers=self.test_wrappers)

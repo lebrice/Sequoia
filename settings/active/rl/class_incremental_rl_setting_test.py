@@ -58,20 +58,15 @@ def test_check_iterate_and_step(dataset: str,
             assert obs_space[1] == spaces.Discrete(5)
             # assert obs_space[1] == Sparse(spaces.Discrete(5), sparsity=1.)
 
-    with setting.test_dataloader(batch_size=batch_size) as temp_env:
+    # NOTE: Limitting the batch size at test time to None (i.e. a single env)
+    # because of how the Monitor class works atm.
+    
+    with setting.test_dataloader(batch_size=None) as temp_env:
         obs_space = temp_env.observation_space
-        
+        assert obs_space[1] == Sparse(spaces.Discrete(5), sparsity=1.)
         # No task labels:
-        if batch_size:
-            assert str(obs_space[1]) == str(spaces.Tuple([Sparse(spaces.Discrete(5), sparsity=1.) for _ in range(batch_size)]))
-        else:
-            assert obs_space[1] == Sparse(spaces.Discrete(5), sparsity=1.)
-
-    # with setting.val_dataloader(batch_size=batch_size) as valid_env:
-    #     assert str(valid_env.observation_space) == str(spaces.Tuple([
-    #         spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32),
-    #         Sparse(spaces.MultiDiscrete([5] * batch_size), sparsity=1.),
-    #     ]))
+        # if batch_size:
+        #     assert str(obs_space[1]) == str(spaces.Tuple([Sparse(spaces.Discrete(5), sparsity=1.) for _ in range(batch_size)]))
 
     def check_obs(obs, task_label: int = None):
         if batch_size is None:
