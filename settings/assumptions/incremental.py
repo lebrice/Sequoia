@@ -243,20 +243,28 @@ class IncrementalSetting(SettingABC):
 
         # Reset on the last step is causing trouble, since the env is closed.
         pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
+        episode = 0
         for step in pbar:
+            if test_env.is_closed():
+                logger.debug(f"Env is closed")
+                break
+            # logger.debug(f"At step {step}")
             action = method.get_actions(obs, test_env.action_space)
+
+            # logger.debug(f"action: {action}")
             if isinstance(action, Actions):
                 action = action.y_pred
             if isinstance(action, Tensor):
                 action = action.cpu().numpy()
-            
+
             obs, reward, done, info = test_env.step(action)
             
-            if test_env.is_closed():
-                break
-            if done:
+            if done and not test_env.is_closed():
+                # logger.debug(f"end of test episode {episode}")
                 obs = test_env.reset()
-
+                episode += 1
+        
+        test_env.close()
         test_results = test_env.get_results()
         
         return test_results
@@ -297,6 +305,7 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
         self.step_limit = step_limit
         self.no_rewards = no_rewards
         self._closed = False
+        self._steps = 0
 
     def is_closed(self):
         return self._closed
@@ -326,7 +335,7 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
     def step(self, action):
         # TODO: Its A bit uncomfortable that we have to 'unwrap' these here.. 
         from settings.active.rl.wrappers import unwrap_rewards, unwrap_actions, unwrap_observations
-        
+        # logger.debug(f"Step {self._steps}")
         action_for_stats = action.y_pred if isinstance(action, Actions) else action
 
         self._before_step(action_for_stats)

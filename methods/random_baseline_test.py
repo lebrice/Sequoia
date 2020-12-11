@@ -8,6 +8,7 @@ import pytest
 
 from common import ClassificationMetrics, Config
 from conftest import get_dataset_params, parametrize, slow
+from settings.assumptions.incremental import IncrementalSetting
 from settings import (ClassIncrementalResults, ClassIncrementalRLSetting,
                       ClassIncrementalSetting, ContinualRLSetting, IIDSetting,
                       Results, RLSetting, Setting, TaskIncrementalResults,
@@ -29,8 +30,10 @@ def test_is_applicable_to_all_settings():
     settings = RandomBaselineMethod.get_applicable_settings()
     assert set(settings) == set(all_settings)
 
+from conftest import slow
 
-@pytest.mark.timeout(30)
+# This is a very slow test, because it actually iterates through the entire test set for each task.
+@pytest.mark.timeout(60)
 @parametrize("setting_type", RandomBaselineMethod.get_applicable_settings())
 def test_fast_dev_run(setting_type: Type[Setting],
                       test_dataset: str,
@@ -38,16 +41,17 @@ def test_fast_dev_run(setting_type: Type[Setting],
     dataset = test_dataset
     if dataset not in getattr(setting_type, "available_datasets", []):
         pytest.skip(msg=f"dataset {dataset} isn't available for this setting.")
-    
+
     # Create the Setting
     setting: Setting = setting_type(dataset=dataset)
-    
-    # TODO: IDEA: Let the settings configure themselves for quick debugging.
-    if isinstance(setting, ContinualRLSetting):
-        setting.max_steps = 100
-
+    # TODO: Do we need to pass anything else here to 'shorten' the run?
     # Create the Method
     method = RandomBaselineMethod()
+    if isinstance(setting, ClassIncrementalSetting):
+        method.batch_size = 64
+    elif isinstance(setting, ContinualRLSetting):
+        method.batch_size = None
+        setting.max_steps = 100
     
     results = setting.apply(method, config=config)
     method.validate_results(setting, results)

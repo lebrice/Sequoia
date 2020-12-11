@@ -424,6 +424,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # TODO: Configure the 'monitoring' dir properly.
         test_dir = "results"
         test_loop_max_steps = len(dataset) // dataloader.batch_size
+        # TODO: Fix this: iteration doesn't ever end for some reason.
         self.test_env = ClassIncrementalTestEnvironment(
             dataloader,
             directory=test_dir,
@@ -624,7 +625,7 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         self._steps = 0
         self.task_steps = sorted(self.env.task_schedule.keys())
         self.metrics: List[ClassificationMetrics] = [[] for step in self.task_steps]
-        
+        self._reset = False
 
     def get_results(self) -> ClassIncrementalResults:
         rewards = self.get_episode_rewards()
@@ -634,7 +635,17 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         return ClassIncrementalResults(
             test_metrics=self.metrics
         )
-    
+
+    def reset(self):
+        if not self._reset:
+            logger.debug(f"Initial reset.")
+            self._reset = True
+            return super().reset()
+        else:
+            logger.debug(f"Resetting the env closes it.")
+            self.close()
+            return None
+        
     def _before_step(self, action):
         self.action = action
         return super()._before_step(action)
@@ -667,7 +678,7 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         self.metrics[task_id].append(metric)
         self._steps += 1
         return super()._after_step(observation, reward, done, info)
-
+    
     def _after_reset(self, observation: ClassIncrementalSetting.Observations):
         image_batch = observation.numpy().x
         from common.gym_wrappers.batch_env.tile_images import tile_images

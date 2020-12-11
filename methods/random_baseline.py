@@ -30,13 +30,12 @@ class RandomBaselineMethod(Method, target_setting=Setting):
             valid_env: Environment=None,
             datamodule=None
         ):
-        # This is useless atm (we don't train) but just for testing purposes.
-        # self.observation_space = train_env.observation_space
-        # self.action_space = train_env.action_space
-        return 1
+        # This method doesn't actually train, so we just return immediately.
+        return
 
     def configure(self, setting):
         # Set any batch size, really.
+        print(f"Setting the batch size on the setting to {self.batch_size}")
         setting.batch_size = self.batch_size
 
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
