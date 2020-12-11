@@ -10,7 +10,7 @@ from utils import get_logger, singledispatchmethod
 from common.metrics import ClassificationMetrics
 from settings.base import Method, Actions, Observations, Environment
 
-from settings import ClassIncrementalSetting, Setting
+from settings import ClassIncrementalSetting, Setting, PassiveSetting
 from methods import register_method
 
 logger = get_logger(__file__)
@@ -23,19 +23,20 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     This method doesn't have a model or any parameters. It just returns a random
     action for every observation.
     """
+    batch_size: int = 16
+    
     def fit(self,
             train_env: Environment=None,
             valid_env: Environment=None,
             datamodule=None
         ):
-        # This is useless atm (we don't train) but just for testing purposes.
-        # self.observation_space = train_env.observation_space
-        # self.action_space = train_env.action_space
-        return 1
+        # This method doesn't actually train, so we just return immediately.
+        return
 
     def configure(self, setting):
         # Set any batch size, really.
-        setting.batch_size = 32
+        print(f"Setting the batch size on the setting to {self.batch_size}")
+        setting.batch_size = self.batch_size
 
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         return action_space.sample()

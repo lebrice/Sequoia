@@ -13,7 +13,7 @@ from settings import ClassIncrementalSetting
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
 from utils import take
-
+from common import Loss
 from .class_incremental_model import ClassIncrementalModel, OutputHead
 
 
@@ -32,22 +32,24 @@ def mixed_samples(config: Config):
 
 
 class MockOutputHead(OutputHead):
-    def __init__(self, input_size: int, Actions: Type, task_id: int = -1, **kwargs):
+    def __init__(self, *args, Actions: Type, task_id: int = -1, **kwargs):
+        super().__init__(*args, **kwargs)
         self.task_id = task_id
         self.Actions = Actions
-        super().__init__(input_size=input_size, **kwargs)
-        
+        self.name = f"task_{task_id}"
 
     def forward(self, observations, representations) -> Tensor:  # type: ignore
         x: Tensor = observations.x
         h_x = representations
-        # TODO: We should maybe convert this to also return a dict instead
-        # of a Tensor, just to be consistent with everything else. This could
-        # also maybe help with having multiple different output heads, each
-        # having a different name and giving back a dictionary of their own
-        # forward pass tensors (if needed) and predictions?
-        actions = torch.stack([x_i.mean() * self.task_id for x_i in x])
+        # actions = torch.stack([h_i.mean() * self.task_id for h_i in h_z])
+        # actions = torch.stack([x_i.mean() * self.task_id for x_i in x])
+        actions = [x_i.mean() * self.task_id  for x_i in x]
+        actions = torch.stack(actions)
         return self.Actions(actions)
+    
+    def get_loss(self, forward_pass, actions, rewards):
+        return Loss(self.name, 0.)
+    
 # def mock_output_task(self: ClassIncrementalModel, x: Tensor, h_x: Tensor) -> Tensor:
 #     return self.output_head(x)
 
@@ -84,14 +86,14 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
     model.encoder = mock_encoder
     # model.output_task = mock_output_task
     model.output_head = MockOutputHead(
-        input_size=model.hidden_size, 
+        input_space=spaces.Box(0, 1, [model.hidden_size]),
         Actions=setting.Actions,
         action_space=spaces.Discrete(2),
         task_id=None,
     )
     for i in range(5):
         model.output_heads[str(i)] = MockOutputHead(
-            input_size=model.hidden_size,
+            input_space=spaces.Box(0, 1, [model.hidden_size]),
             Actions=setting.Actions,
             action_space=spaces.Discrete(2),
             task_id=i,
@@ -99,21 +101,23 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
     
     xs, ys, ts = map(torch.cat, zip(*mixed_samples.values()))
     
+    xs = xs[indices]
+    ys = ys[indices]
+    ts = ts[indices].int()
     
-    images = xs[indices]
-    labels = ys[indices]
-    task_ids = ts[indices].int()
-    
-    obs = setting.Observations(x=images, task_labels=task_ids)
-    # assert False, obs
+    obs = setting.Observations(x=xs, task_labels=ts)
     with torch.no_grad():
         forward_pass = model(obs)
         y_preds = forward_pass["y_pred"]
+
+    assert y_preds.shape == ts.shape
+    assert torch.all(y_preds == ts * xs.view([xs.shape[0], -1]).mean(1))
     
-    for x, y_pred, task_id in zip(xs, y_preds, task_ids):
-        # print(y_pred)
-        # print(x.mean() * task_id)
-        assert y_pred == x.mean() * task_id 
+    # Test that the output head predictions make sense:
+    # print(ts)
+    # for x, y_pred, task_id in zip(xs, y_preds, ts):
+    #     assert y_pred.tolist() == (x.mean() * task_id).tolist()
+        # assert y_pred.tolist() == (x.mean() * task_id).tolist() 
     
     # assert False, y_preds[0]
     

@@ -84,42 +84,43 @@ class ReinforceHead(PolicyHead):
         policy_gradient = - log_probs.dot(discounted_rewards)
         return policy_gradient
 
-    def policy_gradient_optimized(self, rewards: List[float], log_probs: List[Tensor]):
-        """Implementation of the REINFORCE algorithm.
+   
+def policy_gradient_optimized(rewards: List[float], log_probs: List[Tensor], gamma: float):
+    """Implementation of the REINFORCE algorithm.
 
-        Adapted from https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
+    Adapted from https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
 
-        Parameters
-        ----------
-        - episode_rewards : List[Tensor]
+    Parameters
+    ----------
+    - episode_rewards : List[Tensor]
 
-            The rewards at each step in an episode
+        The rewards at each step in an episode
 
-        - episode_log_probs : List[Tensor]
+    - episode_log_probs : List[Tensor]
 
-            The log probabilities associated with the actions that were taken at
-            each step.
+        The log probabilities associated with the actions that were taken at
+        each step.
 
-        Returns
-        -------
-        Tensor
-            The "policy gradient" resulting from that episode.
-        """
-        T = len(rewards)
-        log_probs = torch.stack(log_probs)
-        rewards = torch.as_tensor(rewards).type_as(log_probs)
-        # Construct a reward matrix, with previous rewards masked out (with each
-        # row as a step along the trajectory).
-        reward_matrix = rewards.expand([T, T]).triu()
-        # Get the gamma matrix (upper triangular), see make_gamma_matrix for
-        # more info.
-        gamma_matrix = make_gamma_matrix(self.hparams.gamma, T, device=log_probs.device)
+    Returns
+    -------
+    Tensor
+        The "policy gradient" resulting from that episode.
+    """
+    T = len(rewards)
+    log_probs = torch.stack(log_probs)
+    rewards = torch.as_tensor(rewards).type_as(log_probs)
+    # Construct a reward matrix, with previous rewards masked out (with each
+    # row as a step along the trajectory).
+    reward_matrix = rewards.expand([T, T]).triu()
+    # Get the gamma matrix (upper triangular), see make_gamma_matrix for
+    # more info.
+    gamma_matrix = make_gamma_matrix(gamma, T, device=log_probs.device)
 
-        discounted_rewards = (reward_matrix * gamma_matrix).sum(dim=-1)
-        # normalize discounted rewards
-        discounted_rewards = normalize(discounted_rewards)
-        policy_gradient = - log_probs.dot(discounted_rewards)
-        return policy_gradient
+    discounted_rewards = (reward_matrix * gamma_matrix).sum(dim=-1)
+    # normalize discounted rewards
+    discounted_rewards = normalize(discounted_rewards)
+    policy_gradient = - log_probs.dot(discounted_rewards)
+    return policy_gradient
 
 # @torch.jit.script
 # @lru_cache()

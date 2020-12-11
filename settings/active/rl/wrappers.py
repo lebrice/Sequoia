@@ -1,20 +1,18 @@
-from typing import Dict, List, Optional, Tuple, Type, TypeVar, Union
+""" Wrappers specific to the RL settings, so not exactly as general as those in
+`common/gym_wrappers`.
+"""
+from dataclasses import is_dataclass, replace
+from typing import Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union
 
 import gym
 import numpy as np
 from gym import spaces
 from torch import Tensor
 
-from common import Batch, batch
-from common.gym_wrappers import IterableWrapper, Sparse, TransformObservation
-from common.gym_wrappers.batch_env import VectorEnv
-from common.gym_wrappers.transform_wrappers import (TransformAction,
-                                                    TransformObservation,
-                                                    TransformReward)
-from common.gym_wrappers.utils import has_wrapper
-from settings.base import Environment
-from settings.base.objects import (Actions, ActionType, Observations,
-                                   ObservationType, Rewards, RewardType)
+from common import Batch
+from common.gym_wrappers import IterableWrapper, TransformObservation
+from common.spaces import Sparse
+from settings.base.objects import Actions, Observations, Rewards
 
 T = TypeVar("T")
 
@@ -54,14 +52,19 @@ class TypedObjectsWrapper(IterableWrapper):
             action = unwrap_actions(action)
         
         observation, reward, done, info = self.env.step(action)
-        observation = self.Observations.from_inputs(observation)
+        # TODO: Make the observation space a Dict
+        observation = self.Observations(*observation)
 
-        reward = self.Rewards.from_inputs(reward)
+        reward = self.Rewards(reward)
         return observation, reward, done, info
 
     def reset(self, **kwargs) -> Observations:
         observation = self.env.reset(**kwargs)
-        return self.Observations.from_inputs(observation)
+        # TODO: Make the observation space a Dict rather than this annoying
+        # NamedTuple!
+        return self.Observations(*observation)
+
+
 
 
 def unwrap_actions(actions: Actions) -> Union[Tensor, np.ndarray]:
@@ -121,7 +124,7 @@ def remove_task_labels(observation: Tuple[T, int]) -> T:
         #     return observation._replace(task_labels=None)
         # except:
         #     pass
-        assert len(observation) == 2
+        assert len(observation) == 2, "fix this."
         return observation[0]
     if isinstance(observation, dict):
         observation.pop("task_labels")
@@ -142,12 +145,57 @@ class RemoveTaskLabelsWrapper(TransformObservation):
         assert len(input_space) == 2
         return input_space[0]
 
+from gym import spaces, Space
+from functools import singledispatch
+from dataclasses import replace
 
+
+@singledispatch
 def hide_task_labels(observation: Tuple[T, int]) -> Tuple[T, Optional[int]]:
     assert len(observation) == 2
-    if isinstance(observation, Batch):
-        return type(observation).from_inputs((observation[0], None))
     return observation[0], None
+
+
+@hide_task_labels.register
+def _hide_task_labels_on_batch(observation: Batch) -> Batch:
+    return replace(observation, task_labels=None)
+
+
+@hide_task_labels.register(Space)
+def hide_task_labels_in_space(observation: Space) -> Space:
+    raise NotImplementedError(
+        f"TODO: Don't know how to remove task labels from space {observation}."
+    )
+
+@hide_task_labels.register
+def hide_task_labels_in_tuple_space(observation: spaces.Tuple) -> spaces.Tuple:
+    assert len(observation.spaces) == 2, "ambiguous"
+    
+    task_label_space = observation.spaces[1]
+    if isinstance(task_label_space, Sparse):
+        # Replace the existing 'Sparse' space with another one with the same
+        # base but with sparsity = 1.0
+        task_label_space = task_label_space.base
+    assert not isinstance(task_label_space, Sparse)
+    # We set the task label space as sparse, instead of removing that space.
+    return spaces.Tuple([
+        observation[0],
+        Sparse(task_label_space, sparsity=1.)
+    ])
+
+
+@hide_task_labels.register
+def hide_task_labels_in_dict_space(observation: spaces.Dict) -> spaces.Dict:
+    task_label_space = observation.spaces["task_labels"]
+    if isinstance(task_label_space, Sparse):
+        # Replace the existing 'Sparse' space with another one with the same
+        # base but with sparsity = 1.0
+        task_label_space = task_label_space.base
+    assert not isinstance(task_label_space, Sparse)
+    return type(observation)({
+        key: subspace if key != "task_labels" else Sparse(task_label_space, 1.0)
+        for key, subspace in observation.spaces.items()
+    })
 
 
 class HideTaskLabelsWrapper(TransformObservation):
@@ -160,153 +208,5 @@ class HideTaskLabelsWrapper(TransformObservation):
     """
     def __init__(self, env: gym.Env, f=hide_task_labels):
         super().__init__(env, f=f)
-        self.observation_space = self.space_change(self.env.observation_space)
+        self.observation_space = hide_task_labels(self.env.observation_space)
 
-    @classmethod
-    def space_change(cls, input_space: gym.Space) -> gym.Space:
-        assert isinstance(input_space, spaces.Tuple)
-        assert len(input_space) == 2
-        
-        task_label_space = input_space.spaces[1]
-        if isinstance(task_label_space, Sparse):
-            # Replace the existing 'Sparse' space with another one with the same
-            # base but with none_prob = 1.0
-            task_label_space = task_label_space.base
-        assert not isinstance(task_label_space, Sparse)
-        # Do we set the task label space as sparse? or do we just remote that
-        # space?
-        return spaces.Tuple([
-            input_space[0],
-            Sparse(task_label_space, none_prob=1.)
-        ])
-
-
-
-def add_done(observation, done: bool):
-    if is_dataclass(observation):
-        return replace(observation, done=done)
-    if isinstance(observation, tuple):
-        return observation + (done,)
-    elif isinstance(observation, dict):
-        assert "done" not in observation
-        observation["done"] = done
-        return observation    
-    return (observation, done)
-
-
-class AddDoneToObservation(gym.ObservationWrapper):
-    """
-    Need to add the 'done' vector to the observation, so we can
-    get access to the 'end of episode' signal in the shared_step, since
-    when iterating over the env like a dataloader, the yielded items only
-    have the observations, and dont have the 'done' vector. (so as to be
-    consistent with supervised learning).
-    """
-    def __init__(self, env: gym.Env):
-        super().__init__(env)
-        self.is_vectorized = has_wrapper(env, VectorEnv)
-        # boolean value. (0 or 1)
-        done_space = spaces.Box(0, 1, (), dtype=np.bool)
-        if self.is_vectorized:
-            done_space = spaces.MultiBinary(env.num_envs)
-        
-        if isinstance(env.observation_space, spaces.Tuple):
-            new_spaces = list(env.observation_space.spaces)
-            new_spaces.append(done_space)
-            self.observation_space = spaces.Tuple(new_spaces)
-        elif isinstance(env.observation_space, spaces.Dict):
-            new_spaces = env.observation_space.spaces.copy()
-            assert "done" not in spaces, f"space shouldn't already have a 'done' key."
-            new_spaces["done"] = done_space
-            self.observation_space = spaces.Dict(new_spaces)
-        else:
-            self.observation_space = spaces.Tuple([
-                self.env.observation_space,
-                done_space,
-            ])
-
-    def reset(self, **kwargs):
-        observation = self.env.reset()
-        if self.is_vectorized:
-            done = np.zeros(self.env.num_envs, dtype=bool)
-        else:
-            done = False
-        return add_done(observation, done)
-    
-    def step(self, action):
-        observation, reward, done, info = self.env.step(action)
-        observation = add_done(observation, done)
-        return observation, reward, done, info 
-
-from dataclasses import replace, is_dataclass
-
-from common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
-
-
-def add_info(observation: Observations, info: List[Dict]):
-    if is_dataclass(observation):
-        return replace(observation, info=info)
-    if isinstance(observation, tuple):
-        return observation + (info,)
-    if isinstance(observation, list):
-        return observation + [info]
-    if isinstance(observation, dict):
-        assert "info" not in observation
-        observation["info"] = info
-        return observation
-    return (observation, info)
-
-class AddInfoToObservation(gym.ObservationWrapper):
-    # TODO: Need to add the 'info' dict to the Observation, so we can have
-    # access to the final observation (which gets stored in the info dict at key
-    # 'final_state'.
-    
-    # TODO: Should we also add the 'final state' to the observations as well?
-
-    def __init__(self, env: gym.Env):
-        super().__init__(env)
-        self.is_vectorized = has_wrapper(env, VectorEnv)
-        info_space = spaces.Dict({
-            # What sparsity should we set here though?
-            # TODO: Truth is, we can't guarantee that the observation space will
-            # actually be replicated in this 'info' dict though, because some
-            # wrappers might have changed the observation space after the
-            # batching, and this info dict is populated in the worker
-            # (pre-batch).
-            FINAL_STATE_KEY: Sparse(env.observation_space)
-        })
-        if self.is_vectorized:
-            info_space = spaces.Tuple([
-                spaces.Dict({
-                    FINAL_STATE_KEY: Sparse(env.single_observation_space)
-                }) for _ in range(env.num_envs)
-            ])
-                
-        if isinstance(env.observation_space, spaces.Tuple):
-            new_spaces = list(env.observation_space.spaces)
-            new_spaces.append(info_space)
-            self.observation_space = spaces.Tuple(new_spaces)
-
-        elif isinstance(env.observation_space, spaces.Dict):
-            new_spaces = env.observation_space.spaces.copy()
-            assert "info" not in spaces, f"space shouldn't already have an 'info' key."
-            new_spaces[info] = info_space
-            self.observation_space = spaces.Dict(new_spaces)
-        else:
-            self.observation_space = spaces.Tuple([
-                self.env.observation_space,
-                info_space,
-            ])
-
-    def reset(self, **kwargs):
-        observation = self.env.reset()
-        info = {}
-        if self.is_vectorized:
-            info = [{} for _ in range(self.env.num_envs)]
-        return add_info(observation, info)
-    
-    def step(self, action):
-        observation, reward, done, info = self.env.step(action)
-        observation = add_info(observation, info)
-        return observation, reward, done, info 
-    

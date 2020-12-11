@@ -1,17 +1,19 @@
 from functools import singledispatch, wraps
-from typing import Any, Dict, List, Tuple, TypeVar, Union
+from typing import Any, Dict, List, Tuple, TypeVar, Union, Optional
 
 import gym
 import numpy as np
 import torch
 from gym import Space, spaces
 from torch import Tensor
-from utils.move import move
+from utils.generic_functions import move
 from utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
 S = TypeVar("S", bound=Space)
+
+from utils.generic_functions import to_tensor, from_tensor
 
 
 class ConvertToFromTensors(gym.Wrapper):
@@ -32,10 +34,10 @@ class ConvertToFromTensors(gym.Wrapper):
     def __init__(self, env: gym.Env, device: Union[torch.device, str] = None):
         super().__init__(env=env)
         self.device = device
-        self.observation_space: Space = wrap_space(self.env.observation_space, device=device)
-        self.action_space: Space = wrap_space(self.env.action_space, device=device)
+        self.observation_space: Space = add_tensor_support(self.env.observation_space, device=device)
+        self.action_space: Space = add_tensor_support(self.env.action_space, device=device)
         if hasattr(self.env, "reward_space"):
-            self.reward_space: Space = wrap_space(self.env.reward_space, device=device)
+            self.reward_space: Space = add_tensor_support(self.env.reward_space, device=device)
 
     def reset(self, *args, **kwargs):
         obs = self.env.reset(*args, **kwargs)
@@ -43,7 +45,8 @@ class ConvertToFromTensors(gym.Wrapper):
 
     def step(self, action: Tensor) -> Tuple[Tensor, Tensor, Tensor, List[Dict]]:
         action = from_tensor(self.action_space, action)
-
+        assert action in self.env.action_space, (action, self.env.action_space)
+        
         result = self.env.step(action)
         observation, reward, done, info = result
         
@@ -59,15 +62,29 @@ class ConvertToFromTensors(gym.Wrapper):
         return type(result)([observation, reward, done, info])
 
 
-def wrap_space(space: S, device: torch.device = None) -> S:
-    """Wraps `space` so its `sample()` method produces Tensors, and its
+def supports_tensors(space: S) -> bool:
+    return getattr(space, "__supports_tensors", False)
+
+
+def _mark_supports_tensors(space: S) -> bool:
+    return setattr(space, "__supports_tensors", True)
+
+
+def add_tensor_support(space: S, device: torch.device = None) -> S:
+    """Modifies `space` so its `sample()` method produces Tensors, and its
     `contains` method also accepts Tensors.
     
+    For Dict and Tuple spaces, all the subspaces are also modified recursively.
+            
     Returns the modified Space.
     """
     # Save the original methods so we can use them.
     sample = space.sample
     contains = space.contains
+    if supports_tensors(space):
+        logger.debug(f"Space {space} already supports Tensors.")
+        return space
+    _mark_supports_tensors(space)
     
     @wraps(space.sample)
     def _sample(*args, **kwargs):
@@ -84,69 +101,11 @@ def wrap_space(space: S, device: torch.device = None) -> S:
 
     space.sample = _sample
     space.contains = _contains
-
+    if isinstance(space, (spaces.Tuple, spaces.Dict)):
+        # Also add tensor support to all the subspaces.
+        @wraps(space.__getitem__)
+        def __getitem__(self, index):
+            return add_tensor_support(self.spaces[index])
+        space.__getitem__ = __getitem__
+    
     return space
-
-@singledispatch
-def from_tensor(space: Space, sample: Union[Tensor, Any]) -> Union[np.ndarray, Any]:
-    """ Converts a Tensor into a sample from the given space. """
-    if isinstance(sample, Tensor):
-        return sample.cpu().numpy()
-    return sample
-
-
-@from_tensor.register
-def _(space: spaces.Discrete, sample: Tensor) -> int:
-    if isinstance(sample, Tensor):
-        return sample.item()
-    return sample
-
-
-@from_tensor.register
-def _(space: spaces.Dict, sample: Dict[str, Union[Tensor, Any]]) -> Dict[str, Union[np.ndarray, Any]]:
-    return {
-        key: from_tensor(space[key], value)
-        for key, value in sample.items()
-    }
-
-@from_tensor.register
-def _(space: spaces.Tuple, sample: Tuple[Union[Tensor, Any]]) -> Tuple[Union[np.ndarray, Any]]:
-    return type(sample)(
-        from_tensor(space[i], value)
-        for i, value in enumerate(sample)
-    )
-
-
-@singledispatch
-def to_tensor(space: Space,
-              sample: Union[np.ndarray, Any],
-              device: torch.device = None) -> Union[np.ndarray, Any]:
-    """ Converts a sample from the given space into a Tensor. """
-    return torch.as_tensor(sample, device=device)
-
-
-@to_tensor.register
-def _(space: spaces.MultiBinary,
-      sample: np.ndarray,
-      device: torch.device = None) -> Dict[str, Union[Tensor, Any]]:
-    return torch.as_tensor(sample, device=device, dtype=torch.bool)
-
-
-@to_tensor.register
-def _(space: spaces.Dict,
-      sample: Dict[str, Union[np.ndarray, Any]],
-      device: torch.device = None) -> Dict[str, Union[Tensor, Any]]:
-    return {
-        key: to_tensor(space[key], value, device)
-        for key, value in sample.items()
-    }
-
-
-@to_tensor.register
-def _(space: spaces.Tuple,
-      sample: Tuple[Union[np.ndarray, Any], ...],
-      device: torch.device = None) -> Tuple[Union[Tensor, Any], ...]:
-    return type(sample)(
-        to_tensor(space[i], value, device)
-        for i, value in enumerate(sample)
-    )

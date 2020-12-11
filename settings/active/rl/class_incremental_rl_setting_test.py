@@ -5,8 +5,8 @@ import pytest
 import numpy as np
 from gym import spaces
 
-from common.gym_wrappers.sparse_space import Sparse
 from common.config import Config
+from common.spaces import Sparse
 from common.transforms import ChannelsFirstIfNeeded, ToTensor, Transforms
 from conftest import xfail_param
 from utils.utils import take
@@ -52,30 +52,25 @@ def test_check_iterate_and_step(dataset: str,
         assert obs_space[0] == spaces.Box(0., 1., expected_obs_batch_shape, dtype=np.float32)
         if batch_size:
             assert str(obs_space[1]) == str(spaces.MultiDiscrete([5] * batch_size))
-            # assert str(obs_space[1]) == str(spaces.Tuple([Sparse(spaces.Discrete(5), none_prob=1.) for _ in range(batch_size)]))
+            # assert str(obs_space[1]) == str(spaces.Tuple([Sparse(spaces.Discrete(5), sparsity=1.) for _ in range(batch_size)]))
         else:
             # TODO: Should the task labels be given in the valid dataloader if they arent' during testing?
             assert obs_space[1] == spaces.Discrete(5)
-            # assert obs_space[1] == Sparse(spaces.Discrete(5), none_prob=1.)
+            # assert obs_space[1] == Sparse(spaces.Discrete(5), sparsity=1.)
 
-    with setting.test_dataloader(batch_size=batch_size) as temp_env:
+    # NOTE: Limitting the batch size at test time to None (i.e. a single env)
+    # because of how the Monitor class works atm.
+    
+    with setting.test_dataloader(batch_size=None) as temp_env:
         obs_space = temp_env.observation_space
-        
+        assert obs_space[1] == Sparse(spaces.Discrete(5), sparsity=1.)
         # No task labels:
-        if batch_size:
-            assert str(obs_space[1]) == str(spaces.Tuple([Sparse(spaces.Discrete(5), none_prob=1.) for _ in range(batch_size)]))
-        else:
-            assert obs_space[1] == Sparse(spaces.Discrete(5), none_prob=1.)
-
-    # with setting.val_dataloader(batch_size=batch_size) as valid_env:
-    #     assert str(valid_env.observation_space) == str(spaces.Tuple([
-    #         spaces.Box(0., 1., (batch_size, 3, 210, 160), dtype=np.float32),
-    #         Sparse(spaces.MultiDiscrete([5] * batch_size), none_prob=1.),
-    #     ]))
+        # if batch_size:
+        #     assert str(obs_space[1]) == str(spaces.Tuple([Sparse(spaces.Discrete(5), sparsity=1.) for _ in range(batch_size)]))
 
     def check_obs(obs, task_label: int = None):
         if batch_size is None:
-            assert obs[1] is task_label
+            assert obs[1] == task_label
         else:
             assert isinstance(obs, ClassIncrementalRLSetting.Observations), obs[0].shape
             assert obs.task_labels is task_label or all(task_label == task_label for task_label in obs.task_labels)

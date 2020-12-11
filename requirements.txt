@@ -1,4 +1,5 @@
-gym
+# Fork of gym with more flexible utility functions.
+git+https://github.com/lebrice/gym.git@easier_custom_spaces
 gym[atari]
 pytorch-lightning
 simple_parsing

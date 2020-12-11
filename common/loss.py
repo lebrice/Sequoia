@@ -7,35 +7,41 @@ Loss objects are used to simplify training with multiple "loss signals"
 individual 'task' to the total loss, as well as their corresponding metrics.
 
 For example:
+>>> from pprint import pprint
 >>> loss = Loss("total")
 >>> loss += Loss("task_a", loss=1.23, metrics={"accuracy": 0.95})
->>> loss += Loss("task_b", loss=2.10)
+>>> loss += Loss("task_b", loss=torch.Tensor([2.10]))
 >>> loss += Loss("task_c", loss=3.00)
->>> loss.to_log_dict()
-{'loss': 6.33, 'losses/task_a/loss': 1.23, 'losses/task_a/accuracy': 0.95, \
-'losses/task_b/loss': 2.1, 'losses/task_c/loss': 3.0}
+>>> log_dict = loss.to_log_dict()
+>>> pprint(log_dict)
+{'loss': tensor([6.3300]),
+ 'losses/task_a/accuracy': 0.95,
+ 'losses/task_a/loss': 1.23,
+ 'losses/task_b/loss': tensor([2.1000]),
+ 'losses/task_c/loss': 3.0}
 
-Another cool feature of Loss objects is that they can automatically generate
-relevant metrics when the relevant tensors are passed.
-
+Another feature of Loss objects is that they can automatically generate
+relevant metrics when the associated tensors are passed.
 
 For example, consider a classification problem:
->>> y_pred = torch.eye(3)
->>> y_pred
-tensor([[1., 0., 0.],
-        [0., 1., 0.],
-        [0., 0., 1.]])
+
+>>> # some fake classification logits.
+>>> y_pred = torch.Tensor([
+...     [.8, .1, .1],
+...     [.0, .9, .1],
+...     [.0, .1, .9],
+... ])
 >>> y = [0, 1, 1]
 >>> loss = Loss("test", y_pred=y_pred, y=y)
 >>> loss.metric
-ClassificationMetrics(n_samples=3, accuracy=0.6666666865348816)
+ClassificationMetrics(n_samples=3, accuracy=0.666667)
 
 Or, consider a regression problem:
->>> y = [0.0, 1.0, 2.0, 3.0]
+>>> y_true = [0.0, 1.0, 2.0, 3.0]
 >>> y_pred = [0.0, 1.0, 2.0, 5.0] # mse = 1/4 * (5-3)**2 == 1.0
->>> reg_loss = Loss("test", y_pred=y_pred, y=y)
+>>> reg_loss = Loss("test", y_pred=y_pred, y=y_true)
 >>> reg_loss.metric
-RegressionMetrics(n_samples=4, mse=tensor(1.))
+RegressionMetrics(n_samples=4, mse=tensor(1.), l1_error=tensor(0.5000))
 
 See the `Loss` constructor for more info on which tensors are accepted.
 """
@@ -57,12 +63,13 @@ from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
 
 logger = get_logger(__file__)
 
+
 @dataclass
 class Loss(Serializable):
-    """ Object used to store the losses and metrics for a given 'learning task'. 
-    
+    """ Object used to store the losses and metrics. 
+
     Used to simplify the return type of the different `get_loss` functions and
-    also to help in debugging models that a combination of different loss
+    also to help in debugging models that use a combination of different loss
     signals.
 
     TODO: Add some kind of histogram plot to show the relative contribution of
@@ -99,11 +106,13 @@ class Loss(Serializable):
             metrics = get_metrics(x=x, h_x=h_x, y_pred=y_pred, y=y)
             if metrics:
                 self.metrics[self.name] = metrics
-
+        self._device: torch.device = None
         for name in list(self.tensors.keys()):
             tensor = self.tensors[name]
             if not isinstance(tensor, Tensor):
                 self.tensors[name] = torch.as_tensor(tensor)
+            elif self._device is None:
+                self._device = tensor.device
 
     def to_pl_dict(self, verbose: bool = False) -> Dict:
         """Creates a pytorch-lightning-style dict from this Loss object.
@@ -139,7 +148,17 @@ class Loss(Serializable):
     @property
     def total_loss(self) -> Tensor:
         return self.loss
-
+    
+    @property
+    def requires_grad(self) -> bool:
+        """ Returns wether the loss tensor in this object requires grad. """
+        assert isinstance(self.loss, Tensor)
+        return self.loss.requires_grad
+    
+    def backward(self, *args, **kwargs):
+        """ Calls `self.loss.backward(*args, **kwargs)`. """
+        return self.loss.backward(*args, **kwargs)
+    
     @property
     def metric(self) -> Optional[Metrics]:
         """Shortcut for `self.metrics[self.name]`.
@@ -153,8 +172,7 @@ class Loss(Serializable):
     def accuracy(self) -> float:
         if isinstance(self.metric, ClassificationMetrics):
             return self.metric.accuracy
-        return self.get_supervised_accuracy()
-    
+
     @property
     def mse(self) -> Tensor:
         assert isinstance(self.metric, RegressionMetrics), self
@@ -207,7 +225,7 @@ class Loss(Serializable):
             metrics=metrics,
             _coefficient=self._coefficient,
         )
-    
+
     def __iadd__(self, other: "Loss") -> "Loss":
         """Adds Loss to `self` in-place.
         

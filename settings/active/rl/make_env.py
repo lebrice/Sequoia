@@ -1,6 +1,8 @@
 """Creates an IterableDataset from a gym env by applying different wrappers.
 """
 import copy
+import warnings
+
 import multiprocessing as mp
 from functools import partial
 from typing import Callable, Dict, Iterable, List, Tuple, Type, TypeVar, Union
@@ -10,9 +12,9 @@ from gym import Wrapper
 from gym.envs.classic_control import CartPoleEnv
 from gym.vector import VectorEnv
 from utils.logging_utils import get_logger
-from common.gym_wrappers.sparse_space import Sparse
 from common.gym_wrappers.batch_env import AsyncVectorEnv, BatchedVectorEnv, SyncVectorEnv
 from common.gym_wrappers import ConvertToFromTensors
+from common.spaces import Sparse
 logger = get_logger(__file__)
 
 W = TypeVar("W", bound=Union[gym.Env, gym.Wrapper])
@@ -78,10 +80,11 @@ def make_batched_env(base_env: Union[str, Callable],
     -------
     >>> import gym
     >>> env = gym.vector.make('CartPole-v1', 3)
+    >>> env.seed([123, 456, 789])
     >>> env.reset()
-    array([[-0.04456399,  0.04653909,  0.01326909, -0.02099827],
-           [ 0.03073904,  0.00145001, -0.03088818, -0.03131252],
-           [ 0.03468829,  0.01500225,  0.01230312,  0.01825218]],
+    array([[ 0.02078762, -0.01301236, -0.0209893 , -0.03935255],
+           [ 0.03271029, -0.01839286,  0.00746923,  0.0193136 ],
+           [ 0.01767251,  0.00792448,  0.02225722, -0.03434491]],
           dtype=float32)
     """
     # Get the default wrappers, if needed.
@@ -120,6 +123,13 @@ def make_batched_env(base_env: Union[str, Callable],
         if batch_size != num_workers:
             return BatchedVectorEnv(env_fns, shared_memory=shared_memory, n_workers=num_workers)
         return AsyncVectorEnv(env_fns, shared_memory=shared_memory)
+
+    if batch_size > 1:
+        warnings.warn(UserWarning(
+            f"Running {batch_size} environments in series, which might be "
+            f"slow. Consider setting the `num_workers` argument, perhaps to "
+            f"the number of CPUs on your machine."
+        ))
     return SyncVectorEnv(env_fns)
 
 

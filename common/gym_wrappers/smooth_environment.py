@@ -15,7 +15,7 @@ from gym import spaces
 from utils.logging_utils import get_logger
 
 from .multi_task_environment import MultiTaskEnvironment
-from .sparse_space import Sparse
+from common.spaces.sparse import Sparse
 logger = get_logger(__file__)
 
 
@@ -91,7 +91,7 @@ class SmoothTransitions(MultiTaskEnvironment):
             n_tasks = len(self.task_schedule)
             self.observation_space = spaces.Tuple([
                 self.env.observation_space,
-                Sparse(spaces.Discrete(n=n_tasks), none_prob=1.0),
+                Sparse(spaces.Discrete(n=n_tasks), sparsity=1.0),
             ])
 
     def step(self, *args, **kwargs):
@@ -141,6 +141,6 @@ class SmoothTransitions(MultiTaskEnvironment):
             )
             current_task[attr] = interpolated_value
             # logger.debug(f"interpolated value of {attr} at step {self.step}: {interpolated_value}")
-        logger.debug(f"Updating task at step {self.step}: {current_task}")
+        # logger.debug(f"Updating task at step {self.step}: {current_task}")
         self.current_task = current_task
 

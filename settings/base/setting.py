@@ -117,6 +117,7 @@ class Setting(SettingABC,
     test_transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
 
     # Fraction of training data to use to create the validation set.
+    # (Only applicable in Passive settings.)
     val_fraction: float = 0.2
 
     # TODO: Add support for semi-supervised training.
@@ -133,7 +134,13 @@ class Setting(SettingABC,
         command-line.
         """
         logger.debug(f"__post_init__ of Setting")
-        
+        if len(self.train_transforms) == 1 and isinstance(self.train_transforms[0], list):
+            self.train_transforms = self.train_transforms[0]
+        if len(self.val_transforms) == 1 and isinstance(self.val_transforms[0], list):
+            self.val_transforms = self.val_transforms[0]
+        if len(self.test_transforms) == 1 and isinstance(self.test_transforms[0], list):
+            self.test_transforms = self.test_transforms[0]
+
         # Actually compose the list of Transforms or callables into a single transform.
         self.train_transforms: Compose = Compose(self.train_transforms)
         self.val_transforms: Compose = Compose(self.val_transforms)
@@ -379,20 +386,25 @@ class Setting(SettingABC,
         # Check that the env's spaces are batched versions of the settings'.
         from gym.vector.utils import batch_space
 
-        batch_size = 5
+        batch_size = self.batch_size
         for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
             print(f"\n\nChecking loader method {loader_method.__name__}\n\n")
             env = loader_method(batch_size=batch_size)
+            
             batch_size = env.batch_size
 
             # We could compare the spaces directly, but that's a bit messy, and
             # would be depends on the type of spaces for each. Instead, we could
             # check samples from such spaces on how the spaces are batched. 
+            if batch_size:
+                expected_observation_space = batch_space(self.observation_space, n=batch_size)
+                expected_action_space = batch_space(self.action_space, n=batch_size)
+                expected_reward_space = batch_space(self.reward_space, n=batch_size)
+            else:
+                expected_observation_space = self.observation_space
+                expected_action_space = self.action_space
+                expected_reward_space = self.reward_space
             
-            expected_observation_space = batch_space(self.observation_space, n=batch_size)
-            expected_action_space = batch_space(self.action_space, n=batch_size)
-            expected_reward_space = batch_space(self.reward_space, n=batch_size)
-
             # TODO: Batching the 'Sparse' makes it really ugly, so just
             # comparing the 'image' portion of the space for now.
             assert env.observation_space[0].shape == expected_observation_space[0].shape, (env.observation_space[0], expected_observation_space[0])
@@ -415,7 +427,11 @@ class Setting(SettingABC,
                 step_observations, step_rewards, done, info = env.step(actions)
                 self._check_observations(env, step_observations)
                 self._check_rewards(env, step_rewards)
-                assert not (done if isinstance(done, bool) else any(done))
+                if batch_size:
+                    assert not any(done)
+                else:
+                    assert not done
+                # assert not (done if isinstance(done, bool) else any(done))
 
             for batch in take(env, 5):
                 observations: Observations
@@ -432,13 +448,17 @@ class Setting(SettingABC,
                 if rewards is not None:
                     self._check_rewards(env, rewards)
                 
-                batch_size = observations.batch_size
-                actions = tuple(
-                    self.action_space.sample() for _ in range(batch_size)
-                )
+                if batch_size:
+                    actions = tuple(
+                        self.action_space.sample() for _ in range(batch_size)
+                    )
+                else:
+                    actions = self.action_space.sample()
                 # actions = self.Actions(torch.as_tensor(actions))
                 rewards = env.send(actions)
                 self._check_rewards(env, rewards)
+
+            env.close()
     
     def _check_observations(self, env: Environment, observations: Any):
         """ Check that the given observation makes sense for the given environment.
@@ -465,31 +485,23 @@ class Setting(SettingABC,
     def _check_actions(self, env: Environment, actions: Any):
         if isinstance(actions, Actions):
             assert isinstance(actions, self.Actions)
-            y_pred = actions.y_pred.cpu().numpy()
+            actions = actions.y_pred.cpu().numpy()
         elif isinstance(actions, Tensor):
-            y_pred = actions.cpu().numpy()
+            actions = actions.cpu().numpy()
         elif isinstance(actions, np.ndarray):
-            y_pred = actions
-        else:
-            raise RuntimeError(f"Invalid actions {actions}.")
-        assert y_pred in env.action_space
-        assert y_pred[0] in self.action_space
+            actions = actions
+        assert actions in env.action_space
     
     def _check_rewards(self, env: Environment, rewards: Any):
         if isinstance(rewards, Rewards):
             assert isinstance(rewards, self.Rewards)
-            y = rewards.y.cpu().numpy()
+            rewards = rewards.y.cpu().numpy()
         elif isinstance(rewards, Tensor):
-            y = rewards.cpu().numpy()
+            rewards = rewards.cpu().numpy()
         elif isinstance(rewards, np.ndarray):
-            y = rewards
-        else:
-            raise RuntimeError(f"Invalid rewards {rewards}.")
-        assert isinstance(y, np.ndarray)
-        assert y in env.reward_space
-        assert y[0] in self.reward_space
+            rewards = rewards
+        assert rewards in env.reward_space
 
-    
     # Just to make type hinters stop throwing errors when using the constructor
     # to create a Setting.
     def __new__(cls, *args, **kwargs):

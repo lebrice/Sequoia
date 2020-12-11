@@ -2,7 +2,7 @@
 """
 from functools import singledispatch
 from typing import Dict, Sequence, TypeVar, Union
-
+from ._namedtuple import NamedTuple
 import torch
 
 T = TypeVar("T")
@@ -30,5 +30,10 @@ def move_dict(x: Dict[K, V], device: Union[str, torch.device]) -> Dict[K, V]:
 @move.register(list)
 @move.register(tuple)
 @move.register(set)
-def move_list(x: Sequence[T], device: Union[str, torch.device]) -> Sequence[T]:
+def move_sequence(x: Sequence[T], device: Union[str, torch.device]) -> Sequence[T]:
     return type(x)(move(v, device) for v in x)
+
+
+@move.register(NamedTuple)
+def move_namedtuple(x: NamedTuple, device: Union[str, torch.device]) -> NamedTuple:
+    return type(x)(*[move(v, device) for v in x])

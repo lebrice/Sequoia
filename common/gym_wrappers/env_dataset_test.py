@@ -70,7 +70,7 @@ def test_iterating_with_send():
     # DummyEnvironment will set done=True when the state is state = target = 5 
     # in this case.
     assert observation == 4
-    
+
 
 def test_raise_error_when_missing_action():
     env = DummyEnvironment()

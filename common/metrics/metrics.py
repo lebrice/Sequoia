@@ -5,7 +5,7 @@ as far as I know. Also totally transferable between gpus etc. (Haven't used
 the metrics from PL much yet, to be honest).
 """
 from collections import OrderedDict
-from dataclasses import InitVar, dataclass, field
+from dataclasses import InitVar, dataclass, field, fields
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
@@ -20,11 +20,9 @@ class Metrics(Serializable):
     # This field isn't used in comparisons between Metrics.
     n_samples: int = field(default=0, compare=False)
 
-    
     # TODO: Refactor this to take any kwargs, and then let each metric type
     # specify its own InitVars.
     
-    @torch.no_grad()
     def __post_init__(self, **tensors):
         """Creates metrics given `y_pred` and `y`.
 
@@ -83,6 +81,22 @@ class Metrics(Serializable):
         TODO: Maybe create a `make_plots()` method to get wandb plots from the
         metric?
         """
+        log_dict = {}
+        for field in fields(self):
+            if not (field.repr or verbose):
+                continue  # skip field.
+            value = getattr(self, field.name)
+            if isinstance(value, Metrics):
+                log_dict[field.name] = value.to_log_dict(verbose=verbose)
+            else:
+                log_dict[field.name] = value
+        return log_dict
+
+        return {
+            f.name: getattr(self, f.name) for f in fields(self)
+            if f.repr or verbose
+        }
+        
         if verbose:
             return {"n_samples": self.n_samples}
         return {}

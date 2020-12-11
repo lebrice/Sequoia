@@ -5,6 +5,7 @@ we use pytorch-lightning, and a few little utility classes such as `Metrics` and
 `Loss`, which are basically just like dicts/objects, with some cool other
 methods.
 """
+import warnings
 from collections import OrderedDict
 from dataclasses import dataclass, is_dataclass
 from pathlib import Path
@@ -32,12 +33,14 @@ from settings.base.setting import Setting, SettingType
 from settings.base import Method
 from utils import Parseable, Serializable, get_logger, singledispatchmethod
 from utils.utils import get_path_to_source_file
+from common.gym_wrappers import AddDoneToObservation, AddInfoToObservation
 
 from .models import BaselineModel, ForwardPass
 
 logger = get_logger(__file__)
 
 from methods import register_method
+
 
 @register_method
 @dataclass
@@ -115,35 +118,57 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         method_name: str = self.get_name()
         setting_name: str = setting.get_name()
         dataset: str = setting.dataset
-        
+
+        # Set the batch size on the setting.
         setting.batch_size = self.hparams.batch_size
+
         # TODO: Should we set the 'config' on the setting from here?
-        setting.config = self.config
-        
+        # setting.config = self.config
+        if setting.config == self.config:
+            pass
+        elif self.config != Config():
+            assert setting.config == Config(), "method.config has been modified, and so has setting.config!"
+            setting.config == self.config
+        else:
+            assert setting.config != Config(), "Weird, both configs have default values.."
+            self.config = setting.config
+
         wandb_options: WandbLoggerConfig = self.trainer_options.wandb
         if wandb_options.run_name is None:
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
 
+        if isinstance(setting, ContinualRLSetting):
+            # Configure specifically for a Continual RL setting.
+
+            # TODO: (@lebrice) Fix/remove these restrictions, if possible.
+            # - Doing the backward pass manually (debugging RL output head)
+            # - We only support batch size of 1 for now in RL, because of
+            #   problems with the backward pass.
+            self.trainer_options.automatic_optimization = False
+            # if self.hparams.batch_size != 1:
+            #     warnings.warn(UserWarning(
+            #         "Only supports batch size of 1 in RL for now."
+            #     ))
+            # setting.batch_size = 1
+            # self.hparams.batch_size = 1
+            
+            # TODO: Limit the number of epochs so we never iterate on a closed
+            # env.
+            if setting.max_steps is not None:
+                self.trainer_options.limit_train_batches = setting.max_steps // setting.batch_size - 1
+                self.trainer_options.limit_val_batches = setting.max_steps // setting.batch_size - 1
+                # TODO: Test batch size is set to 1 for now.
+                self.trainer_options.limit_test_batches = setting.max_steps
+   
         self.trainer = self.create_trainer(setting)
         self.model = self.create_model(setting)
+
+        # Save the types to use.
         self.Observations: Type[Observations] = setting.Observations
         self.Actions: Type[Actions] = setting.Actions
         self.Rewards: Type[Rewards] = setting.Rewards
 
-        setting.batch_size = self.hparams.batch_size
-
-        if isinstance(setting, ContinualRLSetting):
-            from settings.active.rl.wrappers import AddDoneToObservation, AddInfoToObservation
-            # Configure specifically for a Continual RL setting.
-            self.additional_train_wrappers.extend([
-                AddDoneToObservation,
-                AddInfoToObservation,
-            ])
-            self.additional_valid_wrappers.extend([
-                AddDoneToObservation,
-                AddInfoToObservation,
-            ])
-            
+        
 
     def fit(self,
             train_env: Environment[Observations, Actions, Rewards] = None,
@@ -155,15 +180,9 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         Overwrite this to customize training.
         """
         assert self.model is not None, (
-            "For now, Setting should have been nice enough to call "
-            "method.configure(setting=self) before calling `fit`!"
+            "Setting should have been called method.configure(setting=self) "
+            "before calling `fit`!"
         )
-
-        for wrapper in self.additional_train_wrappers:
-            train_env = wrapper(train_env)
-        for wrapper in self.additional_valid_wrappers:
-            valid_env = wrapper(valid_env)
-
         return self.trainer.fit(
             model=self.model,
             train_dataloader=train_env,
@@ -217,6 +236,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # We use this here to create loggers!
         callbacks = self.create_callbacks(setting)
         trainer = self.trainer_options.make_trainer(
+            config=self.config,
             callbacks=callbacks,
         )
         return trainer

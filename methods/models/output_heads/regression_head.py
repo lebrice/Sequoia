@@ -15,7 +15,7 @@ from .output_head import OutputHead
 
 class RegressionHead(OutputHead):
     def __init__(self,
-                 input_size: int,
+                 input_space: gym.Space,
                  action_space: gym.Space,
                  reward_space: gym.Space = None,
                  hparams: OutputHead.HParams = None,
@@ -29,7 +29,7 @@ class RegressionHead(OutputHead):
             # TODO: Add support for something like a "decoder head" (maybe as a
             # subclass of RegressionHead)?
         super().__init__(
-            input_size=input_size,
+            input_space=input_space,
             action_space=action_space,
             reward_space=reward_space,
             hparams=hparams,

@@ -22,7 +22,7 @@ from .objects import (Actions, ActionType, Observations, ObservationType,
 
 
 class Environment(gym.Env, Generic[ObservationType, ActionType, RewardType], ABC):
-    """ ABC for a learning 'environment', wether RL, Supervised or CL.
+    """ABC for a learning 'environment' in Reinforcement or Supervised Learning.
 
     Different settings can implement this interface however they want.
     """

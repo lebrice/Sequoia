@@ -54,11 +54,10 @@ class SemiSupervisedModel(BaseModel[SettingType]):
         """
         
         # TODO: We could also just use '-1' instead as the 'no-label' val: this
-        # would make it a bit simpler than having both lists and tensors in the
-        # batch, but then we sometimes might have to check if everything in `y`
-        # is equal to -1, which sounds a bit dumb.
+        # would make it a bit simpler than having both numpy arrays and tensors
+        # in the batch
 
-        y: Union[Optional[Tensor], List[Optional[Tensor]]] = reward.y
+        y: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = reward.y
         if y is None or isinstance(y, Tensor):
             # Fully labeled/unlabeled batch
             labeled_ratio = float(y is not None)

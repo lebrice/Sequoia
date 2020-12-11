@@ -17,6 +17,7 @@ from typing import (Any, ClassVar, Dict, Generic, List, NamedTuple, Optional,
 import numpy as np
 import torch
 from gym import spaces
+from gym.spaces.utils import flatdim
 from pytorch_lightning import LightningDataModule, LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
@@ -30,11 +31,12 @@ from common.transforms import SplitBatch, Transforms
 from common.batch import Batch
 from settings.base.setting import Setting, SettingType, Observations, Actions, Rewards
 from settings.assumptions.incremental import IncrementalSetting
+from settings import ContinualRLSetting
 from settings import Environment, Observations, Actions, Rewards
 from utils.logging_utils import get_logger
 
 from .base_hparams import BaseHParams
-from ..output_heads import OutputHead, RegressionHead, ClassificationHead
+from ..output_heads import OutputHead, RegressionHead, ClassificationHead, PolicyHead
 from ..forward_pass import ForwardPass
 
 
@@ -93,14 +95,30 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # training in pytorch-lightning. Not 100% sure.
         # self.example_input_array = torch.rand(self.batch_size, *self.input_shape)
         
-        # Create the encoder and the output head. 
-        self.encoder, self.hidden_size = self.hp.make_encoder()
+        # Create the encoder and the output head.
+        # Space of our encoder representations.
+        self.representation_space: gym.Space
+        if isinstance(setting, ContinualRLSetting) and setting.observe_state_directly:
+            self.encoder = nn.Sequential()
+            # self.representation_space = self.observation_space
+            self.representation_space = self.observation_space[0]
+            self.hidden_size = flatdim(self.observation_space[0])
+        else:
+            self.encoder, self.hidden_size = self.hp.make_encoder()
+            # TODO: Check that the outputs of the encoders are actually
+            # flattened. I'm not sure they all are, which case the samples
+            # wouldn't match with this space. 
+            self.representation_space = spaces.Box(-np.inf, np.inf, (self.hidden_size,), np.float32)
+
+        from common.gym_wrappers.convert_tensors import add_tensor_support
+        self.representation_space = add_tensor_support(self.representation_space)
+
         self.output_head = self.create_output_head()
 
     @auto_move_data
     def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
         """ Forward pass of the Model.
-        
+
         Returns a ForwardPass object (or a dict)
         """        
         # Encode the observation to get representations.
@@ -157,29 +175,78 @@ class BaseModel(LightningModule, Generic[SettingType]):
         assert isinstance(actions, self.Actions)
         return actions
 
-    def create_output_head(self) -> OutputHead:
-        """ Create an output head for the current action space. """
+    def create_output_head(self, add_to_optimizer: bool = None) -> OutputHead:
+        """Create an output head for the current action and reward spaces.
+        
+        NOTE: This assumes that the input, action and reward spaces don't change
+        between tasks.
+        
+        Parameters
+        ----------
+        add_to_optimizer : bool, optional
+            Wether to add the parameters of the new output head to the optimizer
+            of the model. Defaults to None, in which case we add the output head
+            parameters as long as it doesn't have an `optimizer` attribute of
+            its own.
 
+        Returns
+        -------
+        OutputHead
+            The new output head.
+        """
+        
+        input_space: Space = self.representation_space
+        action_space: Space = self.action_space
+        reward_space: Space = self.reward_space
+        hparams: OutputHead.HParams = self.hp.output_head
+
+        # Choose what type of output head to use depending on the kind of
+        # action/reward space.
+        output_head_type: Type[OutputHead]
+        
         if isinstance(self.action_space, spaces.Discrete):
-            self.output_shape = (self.action_space.n,)
-            return ClassificationHead(
-                input_size=self.hidden_size,
-                action_space=self.action_space,
-                reward_space=self.reward_space,
-            )
-
-        if isinstance(self.action_space, spaces.Box):
-            # Regression problem
-            self.output_shape = self.action_space.shape
-            return RegressionHead(
-                input_size=self.hidden_size,
-                action_space=self.action_space,
-                reward_space=self.reward_space,
-            )
-
-        raise NotImplementedError(
-            f"No output head available for action space {self.action_space}"
+            # Discrete actions: i.e. classification problem.
+            if isinstance(self.reward_space, spaces.Discrete):
+                # Classification problem: Discrete action, Discrete rewards (labels).
+                output_head_type = ClassificationHead
+            else:
+                # Reinforcement learning problem: Discrete action, float rewards.
+                # TODO: There might be some RL environments with discrete
+                # rewards, right? For instance CartPole is, on-paper, a discrete
+                # reward setting, since its always 1.
+                output_head_type = PolicyHead
+        elif isinstance(self.action_space, spaces.Box):
+            # Regression problem: For now there is only RL that has such a
+            # space.
+            output_head_type = RegressionHead
+        else:
+            raise NotImplementedError(f"Unsupported action space: {self.action_space}")
+        
+        output_head = output_head_type(
+            input_space=input_space,
+            action_space=action_space,
+            reward_space=reward_space,
+            hparams=hparams,
         )
+        
+        if add_to_optimizer is None:
+            add_to_optimizer = not hasattr(output_head, "optimizer")
+            # Do not add the output head's parameters to the optimizer of the
+            # whole model.
+
+        if add_to_optimizer:
+            # Add the new parameters to the Optimizer, if it already exists.
+            # If we don't yet have a Trainer, the Optimizer hasn't been created
+            # yet. Once it is created though, it will most likely get the
+            # parameters of this output head from `self.parameters()` is passed
+            # to its constructor, since the output head will be stored in
+            # `self.output_heads`.
+            if self.trainer:
+                optimizer: Optimizer = self.optimizers()
+                optimizer.add_param_group({"params": output_head.parameters()})
+
+        output_head = output_head.to(self.device)
+        return output_head
 
     def training_step(self,
                       batch: Tuple[Observations, Optional[Rewards]],
@@ -238,12 +305,10 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # TODO: It would be nice if we could actually do the same things for
         # both sides of the tree here..
         observations, rewards = self.split_batch(batch)
-
         # Get the forward pass results, containing:
         # - "observation": the augmented/transformed/processed observation.
         # - "representations": the representations for the observations.
         # - "actions": The actions (predictions)
-        
         forward_pass: ForwardPass = self(observations)
         
         # get the actions from the forward pass:
@@ -341,21 +406,9 @@ class BaseModel(LightningModule, Generic[SettingType]):
         return total_loss
 
     def preprocess_observations(self, observations: Observations) -> Observations:
-        if isinstance(observations, Observations):
-            return observations
-        
-        assert False, f"TODO: This is weird.. why aren't the observations instances of Observations? (observations = {observations}) "
-        
-        arrays_or_tensors = [
-            np.asarray(v) if not isinstance(v, Tensor) else v for v in observations
-        ]
-        observations = self.Observations.from_inputs([
-            torch.as_tensor(item, device=self.device) if item.dtype != np.object_
-            else [v_i.item() if isinstance(v_i, np.ndarray) else v_i for v_i in item]
-            for item in arrays_or_tensors
-        ])
+        assert isinstance(observations, Observations)
         return observations
-    
+
     def preprocess_rewards(self, reward: Rewards) -> Rewards:
         return reward
 
@@ -373,34 +426,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
     @property
     def learning_rate(self) -> float:
         return self.hp.learning_rate
-    
-    
-    def backward(self, loss: Tensor, optimizer: Optimizer, optimizer_idx: int, *args, **kwargs) -> None:
-        """
-        Override backward with your own implementation if you need to.
 
-        Args:
-            loss: Loss is already scaled by accumulated grads
-            optimizer: Current optimizer being used
-            optimizer_idx: Index of the current optimizer being used
-
-        Called to perform backward step.
-        Feel free to override as needed.
-        The loss passed in has already been scaled for accumulated gradients if requested.
-
-        Example::
-
-            def backward(self, loss, optimizer, optimizer_idx):
-                loss.backward()
-
-        """
-        # TODO: There might be no loss at some steps, because for instance
-        # we haven't reached the end of an episode yet. Need to figure out
-        # how to do backprop then.
-        if loss != 0.:
-            return loss.backward(retain_graph=True)
-        
-        
     @learning_rate.setter
     def learning_rate(self, value: float) -> None:
         self.hp.learning_rate = value

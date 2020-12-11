@@ -27,7 +27,6 @@ class ClassIncrementalRLSetting(ContinualRLSetting):
     """
     # Number of tasks.
     nb_tasks: int = 10
-
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = constant(False)
     # Wether to give access to the task labels at train time.

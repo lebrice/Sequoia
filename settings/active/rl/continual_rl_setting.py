@@ -1,6 +1,6 @@
 import itertools
-import warnings
 import json
+import warnings
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
@@ -14,42 +14,41 @@ from gym import spaces
 from gym.envs.atari import AtariEnv
 from gym.envs.classic_control import CartPoleEnv
 from gym.wrappers import AtariPreprocessing
+from simple_parsing import choice, list_field
+from simple_parsing.helpers import dict_field
+from stable_baselines3.common.atari_wrappers import AtariWrapper
+from torch import Tensor
 
 from common import Batch, Config
-from common.gym_wrappers import (MultiTaskEnvironment, SmoothTransitions,
+from common.gym_wrappers import (AddDoneToObservation, AddInfoToObservation,
+                                 MultiTaskEnvironment, SmoothTransitions,
                                  TransformAction, TransformObservation,
                                  TransformReward)
-from common.gym_wrappers.batch_env import BatchedVectorEnv, SyncVectorEnv, VectorEnv
+from common.gym_wrappers.batch_env import (BatchedVectorEnv, SyncVectorEnv,
+                                           VectorEnv)
 from common.gym_wrappers.env_dataset import EnvDataset
 from common.gym_wrappers.pixel_observation import PixelObservationWrapper
-from common.gym_wrappers.sparse_space import Sparse
 from common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
 from common.gym_wrappers.utils import (IterableWrapper,
-                                       is_classic_control_env,
-                                       is_atari_env,
-                                       classic_control_envs,
-                                       classic_control_env_prefixes, 
-                                       has_wrapper)
+                                       classic_control_env_prefixes,
+                                       classic_control_envs, has_wrapper,
+                                       is_atari_env, is_classic_control_env)
 from common.metrics import RegressionMetrics
+from common.spaces import Sparse
 from common.transforms import Transforms
 from settings.active import ActiveSetting
 from settings.assumptions.incremental import (IncrementalSetting,
                                               TestEnvironment)
 from settings.base import Method
 from settings.base.results import Results
-from simple_parsing import choice, list_field
-from simple_parsing.helpers import dict_field
-from torch import Tensor
 from utils import dict_union, get_logger
 
 from .. import ActiveEnvironment
 from .gym_dataloader import GymDataLoader
 from .make_env import make_batched_env
 from .rl_results import RLResults
-from .wrappers import (AddDoneToObservation, HideTaskLabelsWrapper,
-                       NoTypedObjectsWrapper, RemoveTaskLabelsWrapper,
-                       TypedObjectsWrapper, AddInfoToObservation)
-from stable_baselines3.common.atari_wrappers import AtariWrapper
+from .wrappers import (HideTaskLabelsWrapper, NoTypedObjectsWrapper,
+                       RemoveTaskLabelsWrapper, TypedObjectsWrapper)
 
 logger = get_logger(__file__)
 
@@ -79,7 +78,7 @@ task_params: Dict[Union[Type[gym.Env], str], List[str]] = {
     ],      
 }
 
-
+# Type alias for the Environment returned by `train/val/test_dataloader`.
 Environment = ActiveEnvironment["ContinualRLSetting.Observations",
                                 "ContinualRLSetting.Observations",
                                 "ContinualRLSetting.Rewards"]
@@ -95,6 +94,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     in cartpole, making the task progressively harder as the agent interacts with
     the environment.
     """
+
+    # The type of results returned by an RL experiment.
     Results: ClassVar[Type[Results]] = RLResults
     
     @dataclass(frozen=True)
@@ -110,7 +111,9 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # they also have access to those (i.e. for the BaselineMethod).
         done: Optional[Sequence[bool]] = None
         # Same, for the 'info' portion of the result of 'step'.
-        info: Optional[Sequence[Dict]] = None
+        # TODO: If we add the 'task space' (with all the attributes, for instance
+        # then add it to the observations using the `AddInfoToObservations`.
+        # info: Optional[Sequence[Dict]] = None
 
     # Image transforms to use.
     transforms: List[Transforms] = list_field()
@@ -127,15 +130,18 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # available_datasets dict), a gym.Env, or a callable that returns a single environment.
     # If self.dataset isn't one of those, an error will be raised.
     dataset: str = choice(available_datasets, default="breakout")
-
-    # Max number of steps ("length" of the training and test "datasets").
+    
+    # Max number of steps per task. ("length" of the training and test "datasets").
     max_steps: int = 10_000
-    # Number of steps per task. When left unset, takes the value of `max_steps`
-    # divided by `nb_tasks`.
+    # Maximum episodes per task.
+    max_episodes: int = 5_000
+    
+    
+    # Number of steps per task. When left unset and when `max_steps` is set,
+    # takes the value of `max_steps` divided by `nb_tasks`.
     steps_per_task: Optional[int] = None
     # Number of episodes per task.
     episodes_per_task: Optional[int] = None
-    
     
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
@@ -229,6 +235,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # This attribute will hold a reference to the `on_task_switch` method of
         # the Method being currently applied on this setting.
         self.on_task_switch_callback: Callable[[Optional[int]], None] = None
+        
+        self.train_env: gym.Env
+        self.valid_env: gym.Env
+        self.test_env: gym.Env
 
     def create_task_schedule(self, temp_env: MultiTaskEnvironment) -> Dict[int, Dict]:
         task_schedule: Dict[int, Dict] = {}
@@ -282,6 +292,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # Run the Test loop (which is defined in IncrementalSetting).
         results: RlResults = self.test_loop(method)
         logger.info("Results summary:")
+        logger.info(results.to_log_dict())
         logger.info(results.summary())
         method.receive_results(self, results=results)
         return results
@@ -298,6 +309,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
     def prepare_data(self, *args, **kwargs) -> None:
         # We don't really download anything atm.
+        if self.config is None:
+            self.config = Config()
         super().prepare_data(*args, **kwargs)
 
     def train_dataloader(self, batch_size: int = None, num_workers: int = None) -> ActiveEnvironment:
@@ -409,8 +422,19 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             self.prepare_data()
         if not self.has_setup_test:
             self.setup("test")
+        # BUG: gym.wrappers.Monitor doesn't want to play nice when applied to
+        # Vectorized env, it seems..
+        if batch_size is not None:
+            raise NotImplementedError(
+                "WIP: Only support batch size of `None` (i.e., a single env) "
+                "for test environments atm, because of how the Monitor class "
+                "from gym works."
+            )
+            batch_size = None
+        # FIXME: Uncomment this when the Monitor class works correctly with
+        # batched environments.
+        # batch_size = batch_size or self.batch_size
 
-        batch_size = batch_size or self.batch_size
         num_workers = num_workers or self.num_workers
         env_factory = partial(self._make_env, base_env=self.dataset,
                                               wrappers=self.test_wrappers)
@@ -422,14 +446,15 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
         # TODO: We should probably change the max_steps depending on the
         # batch size of the env.
-        test_loop_max_steps = self.max_steps
+        test_loop_max_steps = self.max_steps // (batch_size or 1)
         # TODO: Find where to configure this 'test directory' for the outputs of
         # the Monitor.
         test_dir = "results"
         self.test_env = ContinualRLTestEnvironment(
             env_dataloader,
+            task_schedule=self.test_task_schedule,
             directory=test_dir,
-            step_limit=self.max_steps,
+            step_limit=test_loop_max_steps,
             force=True,
         )
         return self.test_env
@@ -455,33 +480,31 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         return env
 
     def _make_env_dataloader(self,
-                            env_factory: Callable[[], gym.Env],
-                            batch_size: Optional[int],
-                            num_workers: Optional[int] = None,
-                            seed: Optional[int] = None,
-                            max_steps: Optional[int] = None,
-                            max_episodes: Optional[int] = None,) -> GymDataLoader:
+                             env_factory: Callable[[], gym.Env],
+                             batch_size: Optional[int],
+                             num_workers: Optional[int] = None,
+                             seed: Optional[int] = None,
+                             max_steps: Optional[int] = None,
+                             max_episodes: Optional[int] = None,) -> GymDataLoader:
         """ Helper function for creating a (possibly vectorized) environment.
         
         """
         logger.debug(f"batch_size: {batch_size}, num_workers: {num_workers}, seed: {seed}")
         if batch_size is None:
             env = env_factory()
-        elif num_workers is None:
-            warnings.warn(UserWarning(
-                f"Running {batch_size} environments in series (very slow!) "
-                f"since the num_workers is None."
-            ))
-            env = SyncVectorEnv([env_factory for _ in range(batch_size)])
         else:
-            env = BatchedVectorEnv(
-                [env_factory for _ in range(batch_size)],
-                n_workers=num_workers,
+            env = make_batched_env(
+                env_factory,
+                batch_size=batch_size,
+                num_workers=num_workers,
                 # TODO: Still debugging shared memory + Sparse spaces.
                 shared_memory=False,
             )
 
-        # Apply the "post-batch" wrappers:
+        ## Apply the "post-batch" wrappers:
+        from common.gym_wrappers import ConvertToFromTensors
+        env = AddDoneToObservation(env)
+        env = ConvertToFromTensors(env, device=self.config.device)
         # Add a wrapper that converts numpy arrays / etc to Observations/Rewards
         # and from Actions objects to numpy arrays.
         env = TypedObjectsWrapper(
@@ -654,6 +677,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # them entirely.
             # wrappers.append(RemoveTaskLabelsWrapper)
             wrappers.append(HideTaskLabelsWrapper)
+        
         return wrappers
 
     def _temp_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
@@ -675,16 +699,19 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             max_steps=self.max_steps,
         )
 
+
 class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
+    def __init__(self, *args,  task_schedule: Dict, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.task_schedule = task_schedule
+
     def get_results(self) -> RLResults:
         # TODO: Create a RLMetrics object?
         rewards = self.get_episode_rewards()
         lengths = self.get_episode_lengths()
         total_steps = self.get_total_steps()
-        
-        assert has_wrapper(self.env, MultiTaskEnvironment), self.env
-        task_steps = sorted(self.task_schedule.keys())
-        
+        task_schedule: Dict[int, Dict] = self.task_schedule
+        task_steps = sorted(task_schedule.keys())
         assert 0 in task_steps
         import bisect
         nb_tasks = len(task_steps)

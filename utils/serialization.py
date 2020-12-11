@@ -18,10 +18,9 @@ from simple_parsing.helpers import Serializable as SerializableBase
 from simple_parsing.helpers import SimpleJsonEncoder, encode
 from simple_parsing.helpers.serialization import encode, register_decoding_fn
 
-from .detach import detach
+from .generic_functions import detach, move
 from .encode import encode
 from .logging_utils import get_logger
-from .move import move
 from .utils import dict_union
 
 T = TypeVar("T")

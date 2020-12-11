@@ -17,13 +17,14 @@ class Compose(List[T], ComposeBase, Transform[InputType, OutputType]):
     
     This can also be passed in members of the `Transforms` enum, which makes it
     possible to do something like this:
-    >>> from transforms import Compose, Transforms
-    >>> transforms = Compose([Transforms.to_tensor, Transforms.fix_channels,])
-    >>> Transforms.fix_channels in transforms
+    >>> from .transform_enum import Compose, Transforms
+    >>> transforms = Compose([Transforms.to_tensor, Transforms.three_channels,])
+    >>> Transforms.three_channels in transforms
     True
     >>> transforms += [Transforms.random_grayscale]
     >>> transforms
-    [<Transforms.to_tensor: ToTensor()>, <Transforms.fix_channels: FixChannels()>, <Transforms.random_grayscale: RandomGrayscale(p=0.1)>]
+    [<Transforms.to_tensor: ToTensor()>, <Transforms.three_channels: ThreeChannels()>, <Transforms.random_grayscale: RandomGrayscale(p=0.1)>]
+
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

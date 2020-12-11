@@ -9,7 +9,9 @@ argument to the AsyncVectorEnv or BatchedVectorEnv wrappers, we'd need to
 test/debug some bugs with shared memory functions below. In the interest of time
 though, I just set that `shared_memory=False`, and it works great.  
 """
-from typing import Any, Dict, Generic, Optional, Tuple, TypeVar, Union
+from collections import OrderedDict
+from typing import (Any, Dict, Generic, Optional, Sequence, Tuple, TypeVar,
+                    Union)
 
 import gym
 import numpy as np
@@ -19,27 +21,30 @@ T = TypeVar("T")
 
 
 class Sparse(gym.Space, Generic[T]):
-    
-    # TODO: Rename 'none_prob' to 'sparsity', because it sounds fancier.
-    def __init__(self, base: gym.Space, none_prob: float = 0.):
+    def __init__(self, base: gym.Space, sparsity: float = 0.):
         self.base = base
-        self.none_prob = none_prob
+        assert 0 <= sparsity <= 1, "invalid spasity, needs to be in [0, 1]"
+        self._sparsity = sparsity
         # Would it ever cause a problem to have different dtypes for different
         # instances of the same space?
-        # dtype = self.base.dtype if none_prob != 0. else np.object_ 
+        # dtype = self.base.dtype if sparsity == 0. else np.object_ 
         super().__init__(shape=self.base.shape, dtype=np.object_)
+
+    @property
+    def sparsity(self) -> float:
+        return self._sparsity
 
     def seed(self, seed=None):
         super().seed(seed)
         return self.base.seed(seed=seed)
 
     def sample(self) -> Optional[T]:
-        if self.none_prob == 0:
+        if self.sparsity == 0:
             return self.base.sample()
-        if self.none_prob == 1.:
+        if self.sparsity == 1.:
             return None
         p = self.np_random.random()
-        if p <= self.none_prob:
+        if p <= self.sparsity:
             return None
         else:
             return self.base.sample()
@@ -52,12 +57,12 @@ class Sparse(gym.Space, Generic[T]):
         return x is None or self.base.contains(x)
 
     def __repr__(self):
-        return f"Sparse({self.base}, none_prob={self.none_prob})"
+        return f"Sparse({self.base}, sparsity={self.sparsity})"
     
     def __eq__(self, other: Any):
         if not isinstance(other, Sparse):
             return NotImplemented
-        return other.base == self.base and other.none_prob == self.none_prob
+        return other.base == self.base and other.sparsity == self.sparsity
 
 
     def to_jsonable(self, sample_n):
@@ -85,9 +90,17 @@ from functools import singledispatch
 
 import gym.spaces.utils
 import gym.vector.utils
+import gym.vector.utils.numpy_utils
 from gym.vector.utils import (batch_space, concatenate, create_empty_array,
                               create_shared_memory)
-import gym.vector.utils.numpy_utils
+
+import multiprocessing as mp
+from ctypes import c_bool
+from multiprocessing import Array, Value
+from multiprocessing.context import BaseContext
+
+import gym.vector.utils.shared_memory
+
 # Customize how these functions handle `Sparse` spaces by making them
 # singledispatch callables and registering a new callable.
 
@@ -138,18 +151,10 @@ def unflatten_sparse(space: Sparse[T], x: np.ndarray) -> Optional[T]:
         return gym.spaces.utils.unflatten(space.base, x)
 
 
-@register_sparse_variant(gym.vector.utils.numpy_utils, "create_empty_array")
+@register_sparse_variant(gym.vector.utils, "create_empty_array")
 def create_empty_array_sparse(space: Sparse, n=1, fn=np.zeros) -> np.ndarray:
     return fn([n], dtype=np.object_)
 
-import multiprocessing as mp
-from multiprocessing import Array, Value
-from multiprocessing.context import BaseContext
-
-import gym.vector.utils.shared_memory
-
-from gym.vector.utils.shared_memory import write_base_to_shared_memory
-from ctypes import c_bool
 
 
 @register_sparse_variant(gym.vector.utils.shared_memory, "create_shared_memory")
@@ -222,22 +227,22 @@ def read_from_shared_memory(shared_memory: Union[Dict, Tuple, BaseContext.Array]
         return read_from_shared_memory_(shared_memory, space.base, n)
     return read_from_shared_memory_(shared_memory, space, n)
 
-    
 
 @register_sparse_variant(gym.vector.utils, "batch_space")
 def batch_sparse_space(space: Sparse, n: int=1) -> gym.Space:
     # NOTE: This means we do something different depending on the sparsity.
     # Could that become an issue?
     assert _is_singledispatch(batch_space)
-    
-    sparsity = space.none_prob
-    if sparsity == 0.:
+
+    sparsity = space.sparsity
+    if sparsity == 0: #or sparsity == 1:
         # If the space has 0 sparsity, then batch it just like you would its
         # base space.
         # TODO: This is convenient, but not very consistent, as the length of
         # the batches changes depending on the sparsity of the space..
-        return Sparse(batch_space(space.base, n), none_prob=0.)
-
+        return Sparse(batch_space(space.base, n), sparsity=sparsity)
+    # elif sparsity == 1.:
+        
     # Sticking to the default behaviour from gym for now, which is to just
     # return a tuple of length n with n copies of the space.
     return spaces.Tuple(tuple(space for _ in range(n)))
@@ -259,7 +264,55 @@ def batch_sparse_space(space: Sparse, n: int=1) -> gym.Space:
     return batch_space(space.base, n)
 
 
-@register_sparse_variant(gym.vector.utils, "concatenate")
-def concatenate_sparse_spaces(space: Sparse, n: int=1) -> gym.Space:
-    assert False, f"Debugging: {space}, {n}"
-    return concatenate(space.base, n)
+@register_sparse_variant(gym.vector.utils.numpy_utils, "concatenate")
+def concatenate_sparse_items(space: Sparse,
+                              items: Sequence[Optional[Any]],
+                              out: Union[tuple, dict, np.ndarray]) -> Union[list, tuple]:
+    # if space.sparsity == 0.:
+    #     # TODO: Convert items to the right dtype maybe?
+    #     return concatenate(space.base, items, out)
+    return np.array([None if v == None else v for v in items])
+    return np.array(items)
+    # for i, item in enumerate(items):
+    #     out[i] = items
+    # return out
+
+from  gym.vector.utils.numpy_utils import concatenate
+
+# @gym.vector.utils.numpy_utils.concatenate.register(spaces.Dict)
+# def concatenate_dict(space: spaces.Dict,
+#                      items: Union[list, tuple],
+#                      out: Union[tuple, dict, np.ndarray]) -> OrderedDict:
+#     return OrderedDict([(
+#         key, concatenate(subspace, [item.get(key) for item in items], out=out[key])
+#         ) for (key, subspace) in space.spaces.items()
+#     ])
+
+from utils.generic_functions.to_from_tensor import to_tensor
+from torch import Tensor
+import torch
+
+@to_tensor.register(Sparse)
+def sparse_sample_to_tensor(space: Sparse,
+                            sample: Union[Optional[Any], np.ndarray],
+                            device: torch.device = None) -> Optional[Union[Tensor, np.ndarray]]:
+    if space.sparsity == 1.:
+        if isinstance(space.base, spaces.MultiDiscrete):
+            assert all(v == None for v in sample)
+            return np.array([
+                None if v == None else v for v in sample
+            ])
+        if sample is not None:
+            assert isinstance(sample, np.ndarray) and sample.dtype == np.object
+            assert not sample.shape
+        return None
+    if space.sparsity == 0.:
+        # Do we need to convert dtypes here though?
+        return to_tensor(space.base, sample, device)
+    # 0 < sparsity < 1
+    if isinstance(sample, np.ndarray) and sample.dtype == np.object:
+        return np.array([
+            None if v == None else v for v in sample
+        ])
+
+    assert False, (space, sample)

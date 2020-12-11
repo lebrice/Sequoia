@@ -7,6 +7,7 @@ from pathlib import Path
 import gym
 import torch
 import tqdm
+from gym.vector import VectorEnv
 from gym import spaces
 from simple_parsing import field
 from torch import Tensor
@@ -127,14 +128,12 @@ class IncrementalSetting(SettingABC):
 
             # Creating the dataloaders ourselves (rather than passing 'self' as
             # the datamodule):
-            # success = trainer.fit(model, datamodule=self)
-            # TODO: Pass the train_dataloader and val_dataloader methods, rather than the envs.
+            # TODO: Pass the train_dataloader and val_dataloader methods, rather than the envs?
             task_train_loader = self.train_dataloader()
             task_valid_loader = self.val_dataloader()
             success = method.fit(
                 train_env=task_train_loader,
                 valid_env=task_valid_loader,
-                # datamodule=self,
             )
             if success != 0:
                 logger.debug(f"Finished Training on task {task_id}.")
@@ -244,15 +243,28 @@ class IncrementalSetting(SettingABC):
 
         # Reset on the last step is causing trouble, since the env is closed.
         pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
+        episode = 0
         for step in pbar:
+            if test_env.is_closed():
+                logger.debug(f"Env is closed")
+                break
+            # logger.debug(f"At step {step}")
             action = method.get_actions(obs, test_env.action_space)
+
+            # logger.debug(f"action: {action}")
+            if isinstance(action, Actions):
+                action = action.y_pred
+            if isinstance(action, Tensor):
+                action = action.cpu().numpy()
+
             obs, reward, done, info = test_env.step(action)
             
-            if test_env.is_closed():
-                break
-            if done:
+            if done and not test_env.is_closed():
+                # logger.debug(f"end of test episode {episode}")
                 obs = test_env.reset()
-
+                episode += 1
+        
+        test_env.close()
         test_results = test_env.get_results()
         
         return test_results
@@ -283,12 +295,18 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
     """ Wrapper around a 'test' environment, which limits the number of steps
     and keeps tracks of the performance.
     """
-    def __init__(self, env: gym.Env, directory: Path, step_limit: int = 1_000, no_rewards: bool = False, *args, **kwargs):
+    def __init__(self,
+                 env: gym.Env,
+                 directory: Path,
+                 step_limit: int = 1_000,
+                 no_rewards: bool = False,
+                 *args, **kwargs):
         super().__init__(env, directory, *args, **kwargs)
         self.step_limit = step_limit
         self.no_rewards = no_rewards
         self._closed = False
-    
+        self._steps = 0
+
     def is_closed(self):
         return self._closed
     
@@ -317,11 +335,13 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
     def step(self, action):
         # TODO: Its A bit uncomfortable that we have to 'unwrap' these here.. 
         from settings.active.rl.wrappers import unwrap_rewards, unwrap_actions, unwrap_observations
-        
+        # logger.debug(f"Step {self._steps}")
         action_for_stats = action.y_pred if isinstance(action, Actions) else action
 
         self._before_step(action_for_stats)
         
+        if isinstance(action, Tensor):
+            action = action.cpu().numpy()
         observation, reward, done, info = self.env.step(action)
         observation_for_stats = unwrap_observations(observation)
         reward_for_stats = unwrap_rewards(reward)
@@ -331,10 +351,12 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
             self.render("human")
         except NotImplementedError:
             pass
-            
-        if not isinstance(done, bool):
+        
+        if isinstance(self.env.unwrapped, VectorEnv):
             done = all(done)
-
+        else:
+            done = bool(done)
+        
         done = self._after_step(observation_for_stats, reward_for_stats, done, info)
     
         if self.get_total_steps() >= self.step_limit:
