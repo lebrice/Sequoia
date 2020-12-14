@@ -1,7 +1,7 @@
-# Fork of gym with more flexible utility functions.
-git+https://github.com/lebrice/gym.git@easier_custom_spaces
-gym[atari]
 pytorch-lightning
+# Fork of gym with more flexible utility functions.
+https://github.com/lebrice/gym.git@easier_custom_spaces
+gym[atari]
 simple_parsing
 matplotlib
 torchvision
@@ -16,7 +16,6 @@ plotly
 pandas
 # Only for python < 3.8
 singledispatchmethod
-#
 pytorch-lightning-bolts
 # Requirements for running tests:
 pytest-timeout

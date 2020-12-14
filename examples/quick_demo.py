@@ -66,7 +66,8 @@ class MyModel(nn.Module):
 
     def forward(self, observations: Observations) -> Tensor:
         # NOTE: here we don't make use of the task labels.
-        x, task_labels = observations
+        x = observations.x
+        task_labels = observations.task_labels
         features = self.encoder(x)
         logits = self.classifier(features)
         return logits

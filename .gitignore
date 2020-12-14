@@ -22,3 +22,6 @@ lightning_logs
 
 *.gz
 *.pt
+build
+dist
+*.egg-info
