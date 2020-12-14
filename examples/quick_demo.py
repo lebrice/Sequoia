@@ -20,10 +20,10 @@ from torch import Tensor, nn
 # This "hack" is required so we can run `python examples/quick_demo.py`
 sys.path.extend([".", ".."])
 
-from settings import Method
-from settings import Setting
-from settings.passive.cl import ClassIncrementalSetting
-from settings.passive.cl.objects import (Actions, Observations,
+from sequoia.settings import Method
+from sequoia.settings import Setting
+from sequoia.settings.passive.cl import ClassIncrementalSetting
+from sequoia.settings.passive.cl.objects import (Actions, Observations,
                                          PassiveEnvironment, Results, Rewards)
 
 
@@ -66,7 +66,8 @@ class MyModel(nn.Module):
 
     def forward(self, observations: Observations) -> Tensor:
         # NOTE: here we don't make use of the task labels.
-        x, task_labels = observations
+        x = observations.x
+        task_labels = observations.task_labels
         features = self.encoder(x)
         logits = self.classifier(features)
         return logits
@@ -196,7 +197,7 @@ class DemoMethod(Method, target_setting=ClassIncrementalSetting):
 
 if __name__ == "__main__":
     # Example: Evaluate a Method on a single CL setting:
-    from settings import TaskIncrementalSetting
+    from sequoia.settings import TaskIncrementalSetting
 
     ## 1. Creating the setting:
     # First option: create the setting manually:

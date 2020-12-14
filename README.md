@@ -1,12 +1,29 @@
-# (placeholder repo name)
-Potential names:
-- (ResearchTree?) (something tree-related?)
+# Sequoia - The Research Tree
+
+A Playground for research at the intersection of Continual, Reinforcement, and Self-Supervised Learning.
+
+## Motivation:
+Most applied ML research generally either proposes new Settings (research problems), new Methods (solutions to such problems), or both.
+
+- When proposing new Settings, researchers almost always have to reimplement or heavily modify existing solutions before they can be applied onto their new problem.
+
+- Likewise, when creating new Methods, it's often necessary to first re-create the experimental setting of other baseline papers, or even the baseline methods themselves, as experimental conditions may be *slightly* different between papers!
+
+The goal of this repo is to:
+
+- Organize various research Settings into an inheritance hierarchy (a tree!), with more *general*, challenging settings with few assumptions at the top, and more constrained problems at the bottom.
+
+- Provide a mechanism for easily reusing existing solutions (Methods) onto new Settings through **Polymorphism**!
+
+- Allow researchers to easily create new, general Methods and quickly gather results on a multitude of Settings, ranging from Supervised to Reinforcement Learning!
 
 
 ## Installation
 Requires python >= 3.7
 
 ```console
+git clone https://www.github.com/lebrice/Sequoia.git
+cd Sequoia
 pip install -r requirements.txt
 ```
 
@@ -87,7 +104,7 @@ pip install -r requirements.txt
     - Add the `@register_method` decorator to your Method definition, for example:
 
         ```python
-        from methods import register_method
+        from sequoia.methods import register_method
 
         @register_method
         class MyNewMethod(Method, target_setting=ClassIncrementalSetting):
