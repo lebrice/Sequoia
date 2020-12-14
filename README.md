@@ -87,7 +87,7 @@ pip install -r requirements.txt
     - Add the `@register_method` decorator to your Method definition, for example:
 
         ```python
-        from methods import register_method
+        from sequoia.methods import register_method
 
         @register_method
         class MyNewMethod(Method, target_setting=ClassIncrementalSetting):

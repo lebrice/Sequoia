@@ -14,12 +14,12 @@ from simple_parsing import ArgumentParser
 # This "hack" is required so we can run `python examples/custom_baseline_demo.py`
 sys.path.extend([".", ".."])
 
-from common.config import Config, TrainerConfig
-from common.loss import Loss
-from methods import BaselineMethod
-from methods.aux_tasks import EWCTask, SimCLRTask
-from methods.models import BaselineModel
-from settings import ClassIncrementalSetting, Setting
+from sequoia.common.config import Config, TrainerConfig
+from sequoia.common.loss import Loss
+from sequoia.methods import BaselineMethod
+from sequoia.methods.aux_tasks import EWCTask, SimCLRTask
+from sequoia.methods.models import BaselineModel
+from sequoia.settings import ClassIncrementalSetting, Setting
 
 from examples.demo_utils import compare_results, demo_all_settings
 
@@ -77,7 +77,7 @@ class CustomMethod(BaselineMethod, target_setting=ClassIncrementalSetting):
 
 
 if __name__ == "__main__":
-    from settings import ClassIncrementalSetting, TaskIncrementalSetting
+    from sequoia.settings import ClassIncrementalSetting, TaskIncrementalSetting
     from simple_parsing import ArgumentParser
 
     ## 1. Create the Setting from the command-line.
