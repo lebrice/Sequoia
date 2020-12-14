@@ -1,6 +1,6 @@
 from typing import NamedTuple
 
-from .namedtuple_patch import is_namedtuple, is_namedtuple_type
+from ._namedtuple import is_namedtuple, is_namedtuple_type
 
 class DummyTuple(NamedTuple):
     a: int

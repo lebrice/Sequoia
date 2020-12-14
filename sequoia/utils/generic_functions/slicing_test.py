@@ -76,10 +76,9 @@ def test_set_slice(target, indices, values, result):
     assert str(target) == str(result)
 
 
-from .slicing import concatenate
 
-
-
+@pytest.mark.xfail(reason="Removed the 'concatenate' generic function, since "
+                          "there wasn't really a use for it anywhere.")
 @pytest.mark.parametrize("a, b, kwargs, expected",
 [
     (np.array([0, 1, 2]), np.array([3, 4, 5, 6]), {}, np.arange(7)),
@@ -115,4 +114,5 @@ from .slicing import concatenate
     ),
 ])
 def test_concat(a, b, kwargs, expected):
+    from .slicing import concatenate
     assert str(concatenate(a, b, **kwargs)) == str(expected)

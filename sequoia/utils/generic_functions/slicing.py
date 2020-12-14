@@ -73,6 +73,7 @@ def _set_tuple_slice(target: Tuple[T, ...], indices: Sequence[int], values: Tupl
         set_slice(target_item, indices, values_item)
 
 
+# TODO: Remove this, unless it gets used somewhere.
 # from collections import namedtuple
 # from typing import NamedTuple
 

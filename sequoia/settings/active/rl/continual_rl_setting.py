@@ -504,7 +504,9 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         ## Apply the "post-batch" wrappers:
         from sequoia.common.gym_wrappers import ConvertToFromTensors
         env = AddDoneToObservation(env)
-        env = ConvertToFromTensors(env, device=self.config.device)
+        # # Convert the samples to tensors and move them to the right device.
+        env = ConvertToFromTensors(env)
+        # env = ConvertToFromTensors(env, device=self.config.device)
         # Add a wrapper that converts numpy arrays / etc to Observations/Rewards
         # and from Actions objects to numpy arrays.
         env = TypedObjectsWrapper(

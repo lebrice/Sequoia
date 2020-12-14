@@ -142,7 +142,7 @@ class RemoveTaskLabelsWrapper(TransformObservation):
     @classmethod
     def space_change(cls, input_space: gym.Space) -> gym.Space:
         assert isinstance(input_space, spaces.Tuple), input_space
-        assert len(input_space) == 2
+        # assert len(input_space) == 2, input_space
         return input_space[0]
 
 from gym import spaces, Space
