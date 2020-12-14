@@ -2,12 +2,11 @@
 
 
 """
-import methods
+import sequoia.methods
 from sequoia.methods import all_methods
 from sequoia.settings import all_settings
 from sequoia.utils import get_logger
-
-from experiment import Experiment
+from sequoia.experiment import Experiment
 
 logger = get_logger(__file__)
 
