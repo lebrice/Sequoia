@@ -443,8 +443,8 @@ class PolicyHead(ClassificationHead):
             "gradient_usage": gradient_usage
         })
 
-
-    def policy_gradient(self, rewards: List[float], log_probs: List[Tensor], gamma: float=0.95):
+    @staticmethod
+    def policy_gradient(rewards: List[float], log_probs: List[Tensor], gamma: float=0.95):
         """Implementation of the REINFORCE algorithm.
 
         Adapted from https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
