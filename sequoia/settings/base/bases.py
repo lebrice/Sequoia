@@ -327,7 +327,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         arguments will be passed to the Setting's from_args method. 
         """
 
-        from main import Experiment
+        from sequoia.main import Experiment
         experiment: Experiment
         # Create the Method object from the command-line:
         method = cls.from_args(argv)
