@@ -13,12 +13,12 @@ from torch import Tensor
 
 # This "hack" is required so we can run `python examples/quick_demo_ewc.py`
 sys.path.extend([".", ".."])
-from settings import ClassIncrementalSetting
-from utils.logging_utils import get_logger
-from utils import dict_intersection
+from sequoia.settings import ClassIncrementalSetting
+from sequoia.utils.logging_utils import get_logger
+from sequoia.utils import dict_intersection
 
 from examples.quick_demo import MyModel, DemoMethod
-from settings.passive.cl.objects import Observations, Rewards
+from sequoia.settings.passive.cl.objects import Observations, Rewards
 
 logger = get_logger(__file__)
 
@@ -121,7 +121,7 @@ class ImprovedDemoMethod(DemoMethod):
 
 
 if __name__ == "__main__":
-    from settings import TaskIncrementalSetting
+    from sequoia.settings import TaskIncrementalSetting
     # Example: Comparing two methods on the same setting:
     
     ## 1. Create the Setting (same as in quick_demo.py)

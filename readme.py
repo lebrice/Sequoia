@@ -7,8 +7,8 @@ from io import StringIO
 from pathlib import Path
 from typing import List, Type
 
-from methods import Method, all_methods
-from settings import Setting, all_settings
+from sequoia.methods import Method, all_methods
+from sequoia.settings import Setting, all_settings
 
 
 def get_relative_path_to(something: Type):

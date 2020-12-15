@@ -1,8 +1,8 @@
 import sys
 # This "hack" is required so we can run `python examples/continual_rl_demo.py`
 sys.path.extend([".", ".."])
-from methods.stable_baselines3_methods import DQNMethod, A2CMethod
-from settings import (ClassIncrementalRLSetting, ContinualRLSetting, RLSetting,
+from sequoia.methods.stable_baselines3_methods import DQNMethod, A2CMethod
+from sequoia.settings import (ClassIncrementalRLSetting, ContinualRLSetting, RLSetting,
                       TaskIncrementalRLSetting)
 
 

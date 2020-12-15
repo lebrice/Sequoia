@@ -1,13 +1,13 @@
 from simple_parsing import ArgumentParser
 from typing import Dict, Type, List
-from common.config import Config
-from settings import Setting, Results, Method
+from sequoia.common.config import Config
+from sequoia.settings import Setting, Results, Method
 from pathlib import Path
 from collections import defaultdict
 import pandas as pd
 
 
-from settings import PassiveSetting, ActiveSetting
+from sequoia.settings import PassiveSetting, ActiveSetting
 
 
 def demo_all_settings(MethodType: Type[Method], datasets: List[str] = ["mnist", "fashionmnist"]):
