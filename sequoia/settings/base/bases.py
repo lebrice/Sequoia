@@ -330,10 +330,10 @@ class Method(Generic[SettingType], Parseable, ABC):
         from sequoia.main import Experiment
         experiment: Experiment
         # Create the Method object from the command-line:
-        method = cls.from_args(argv)
+        method = cls.from_args(argv, strict=False)
         # Then create the 'Experiment' from the command-line, which makes it
         # possible to choose between all the settings.
-        experiment = Experiment.from_args(argv)
+        experiment = Experiment.from_args(argv, strict=False)
         # Set the method attribute to be the one parsed above.
         experiment.method = method
         results: Results = experiment.launch(argv)
