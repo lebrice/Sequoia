@@ -479,8 +479,6 @@ class REINFORCE(nn.Module):
         highest_prob_action = np.random.choice(self.num_actions, p=np.squeeze(probs.detach().numpy()))
         return highest_prob_action
 
-
-
 class A2C_EWC(A2C):
     def __init__(self,
                  policy: Union[str, Type[DQNPolicy]],
