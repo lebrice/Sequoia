@@ -8,7 +8,9 @@ import pytest
 
 from sequoia.conftest import slow
 from sequoia.common.config import Config
-from sequoia.methods import BaselineMethod, Method, RandomBaselineMethod, all_methods
+from sequoia.methods import Method, all_methods
+from sequoia.methods.baseline_method import BaselineMethod
+from sequoia.methods.random_baseline import RandomBaselineMethod
 from sequoia.settings import Results, Setting, all_settings
 
 from .experiment import Experiment

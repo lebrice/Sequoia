@@ -135,7 +135,7 @@ class Experiment(Parseable, Serializable):
             args, unused_args = parser.parse_known_args(argv)
             if unused_args:
                 logger.warning(UserWarning(f"Unused command-line args: {unused_args}"))
-        
+
         if not isinstance(setting, Setting):
             setting = setting.from_argparse_args(args)
         if not isinstance(method, Method):

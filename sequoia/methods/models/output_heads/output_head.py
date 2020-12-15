@@ -1,7 +1,8 @@
+""" Abstract base class for an output head of the BaselineModel. """
+import dataclasses
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, ClassVar, Dict, List
-
+from typing import Any, ClassVar, Dict, List, Type
 import gym
 import numpy as np
 from gym import spaces
@@ -13,12 +14,12 @@ from torch.nn import Flatten  # type: ignore
 from sequoia.common.loss import Loss
 from sequoia.common.metrics import ClassificationMetrics, get_metrics
 from sequoia.settings import Actions, Observations, Rewards
-from sequoia.utils import Parseable
+from sequoia.utils import Parseable, get_logger
 from sequoia.utils.serialization import Serializable
 from sequoia.utils.utils import camel_case, remove_suffix
 
 from ..forward_pass import ForwardPass
-
+logger = get_logger(__file__)
 
 class OutputHead(nn.Module, ABC):
     """Module for the output head of the model.
@@ -99,5 +100,32 @@ class OutputHead(nn.Module, ABC):
         observations, representations and actions, the actions produced by this
         output head and the resulting rewards, returns a Loss to use.
         """
-        
-        
+
+    def upgrade_hparams(self):
+        """Upgrades the hparams at `self.hparams` to the right type for this
+        output head (`type(self).HParams`), filling in any missing values by
+        parsing them from the command-line.
+
+        Returns
+        -------
+        type(self).HParams
+            Hparams of the type `self.HParams`, with the original values
+            preserved and any new values parsed from the command-line.
+        """
+        # NOTE: This (getting the wrong hparams class) could happen for
+        # instance when parsing a BaselineMethod from the command-line, the
+        # default type of hparams on the method is BaselineModel.HParams,
+        # whose `output_head` field doesn't have the right type exactly.
+        current_hparams = self.hparams.to_dict()
+        missing_fields = [f.name for f in dataclasses.fields(self.HParams)
+                        if f.name not in current_hparams]
+        logger.warning(RuntimeWarning(
+            f"Upgrading the hparams from type {type(self.hparams)} to "
+            f"type {self.HParams}. This will try to fetch the values for "
+            f"the missing fields {missing_fields} from the command-line. "
+        ))
+        # Get the missing values
+        hparams = self.HParams.from_args(argv=self.hparams._argv, strict=False)
+        for missing_field in missing_fields:
+            current_hparams[missing_field] = getattr(hparams, missing_field) 
+        return self.HParams.from_dict(current_hparams)  

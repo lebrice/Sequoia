@@ -23,6 +23,10 @@ class ClassificationOutput(Actions):
     logits: Tensor
 
     @property
+    def action(self) -> LongTensor:
+        return self.y_pred
+    
+    @property
     def y_pred_log_prob(self) -> Tensor:
         """ returns the log probabilities for the chosen actions/predictions. """
         return self.logits[:, self.y_pred]
