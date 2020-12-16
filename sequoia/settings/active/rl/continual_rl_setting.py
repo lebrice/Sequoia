@@ -155,6 +155,9 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # `test_steps_per_task * nb_tasks`.
     test_steps: Optional[int] = None
     
+    # Standard deviation of the multiplicative Gaussian noise that is used to
+    # create the values of the env attributes for each task. 
+    task_noise_std: float = 0.2
     
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
@@ -763,6 +766,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # Add a wrapper that creates smooth tasks.
             cl_wrapper = SmoothTransitions
         wrappers.append(partial(cl_wrapper,
+            noise_std=self.task_noise_std,
             task_schedule=task_schedule,
             add_task_id_to_obs=True,
             add_task_dict_to_info=True,
