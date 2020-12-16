@@ -393,7 +393,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         logger.info(results.summary())
         method.receive_results(self, results=results)
         return results
-
+    
     def setup(self, stage: str=None) -> None:
         # Called before the start of each task during training, validation and
         # testing.
@@ -431,8 +431,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         """
         if not self.has_prepared_data:
             self.prepare_data()
-        if not self.has_setup_fit:
-            self.setup("fit")
+        # NOTE: We actually want to call setup every time, so we re-create the
+        # wrappers for each task. 
+        # if not self.has_setup_fit:
+        self.setup("fit")
 
         batch_size = batch_size or self.batch_size
         num_workers = num_workers or self.num_workers
@@ -469,8 +471,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         """
         if not self.has_prepared_data:
             self.prepare_data()
-        if not self.has_setup_fit:
-            self.setup("fit")
+        self.setup("fit")
 
         env_factory = partial(self._make_env, base_env=self.dataset,
                                               wrappers=self.valid_wrappers)
@@ -517,8 +518,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         """
         if not self.has_prepared_data:
             self.prepare_data()
-        if not self.has_setup_test:
-            self.setup("test")
+        self.setup("test")
         # BUG: gym.wrappers.Monitor doesn't want to play nice when applied to
         # Vectorized env, it seems..
         # FIXME: Remove this when the Monitor class works correctly with
