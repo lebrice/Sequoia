@@ -1,2 +1,2 @@
-__version__ = "0.0.1"
-
+""" The Research Tree """
+from .settings import *

@@ -252,6 +252,7 @@ class IncrementalSetting(SettingABC):
             action = method.get_actions(obs, test_env.action_space)
 
             # logger.debug(f"action: {action}")
+            # TODO: Remove this:
             if isinstance(action, Actions):
                 action = action.y_pred
             if isinstance(action, Tensor):

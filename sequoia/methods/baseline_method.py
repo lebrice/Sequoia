@@ -80,15 +80,16 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         
         # Option 2: Try to use the keyword arguments to create the hparams,
         # config and trainer options.
-        self.hparams = hparams or BaselineModel.HParams.from_dict(kwargs, drop_extra_fields=True)
-        self.config = config or Config.from_dict(kwargs, drop_extra_fields=True)
-        self.trainer_options = trainer_options or TrainerConfig.from_dict(kwargs, drop_extra_fields=True)
+        # self.hparams = hparams or BaselineModel.HParams.from_dict(kwargs, drop_extra_fields=True)
+        # self.config = config or Config.from_dict(kwargs, drop_extra_fields=True)
+        # self.trainer_options = trainer_options or TrainerConfig.from_dict(kwargs, drop_extra_fields=True)
         
         # Option 3: Parse them from the command-line.
-        # self.hparams = hparams or BaselineModel.HParams.from_args()
-        # self.config = config or Config.from_args()
-        # self.trainer_options = trainer_options or TrainerConfig.from_args()
-        
+        assert not kwargs, "Don't pass any extra kwargs to the constructor!"
+        self.hparams = hparams or BaselineModel.HParams.from_args()
+        self.config = config or Config.from_args()
+        self.trainer_options = trainer_options or TrainerConfig.from_args()
+
         if self.config.debug:
             # Disable wandb logging if debug is True.
             self.trainer_options.no_wandb = True
@@ -140,37 +141,35 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
 
         if isinstance(setting, ContinualRLSetting):
-            # Configure specifically for a Continual RL setting.
-
-            # TODO: (@lebrice) Fix/remove these restrictions, if possible.
-            # - Doing the backward pass manually (debugging RL output head)
-            # - We only support batch size of 1 for now in RL, because of
-            #   problems with the backward pass.
-            self.trainer_options.automatic_optimization = False
-            # if self.hparams.batch_size != 1:
-            #     warnings.warn(UserWarning(
-            #         "Only supports batch size of 1 in RL for now."
-            #     ))
-            # setting.batch_size = 1
-            # self.hparams.batch_size = 1
-            
-            # TODO: Limit the number of epochs so we never iterate on a closed
-            # env.
+            # Configure the baseline specifically for an RL setting.
+            # TODO: Select which output head to use from the command-line?
+            # Limit the number of epochs so we never iterate on a closed env.
+            # TODO: Would multiple "epochs" be possible? 
             if setting.max_steps is not None:
-                self.trainer_options.limit_train_batches = setting.max_steps // setting.batch_size - 1
-                self.trainer_options.limit_val_batches = setting.max_steps // setting.batch_size - 1
-                # TODO: Test batch size is set to 1 for now.
+                self.trainer_options.max_epochs = 1
+                self.trainer_options.limit_train_batches = setting.max_steps // setting.batch_size
+                self.trainer_options.limit_val_batches = min(setting.max_steps // setting.batch_size, 1000)
+                # TODO: Test batch size is limited to 1 for now.
+                # NOTE: This isn't used, since we don't call `trainer.test()`.
                 self.trainer_options.limit_test_batches = setting.max_steps
-   
-        self.trainer = self.create_trainer(setting)
+
         self.model = self.create_model(setting)
+
+        # The PolicyHead actually does its own backward pass, so we disable
+        # automatic optimization when using it.
+        from .models.output_heads import PolicyHead
+        if isinstance(self.model.output_head, PolicyHead):
+            # Doing the backward pass manually, since there might not be a loss
+            # at each step.
+            self.trainer_options.automatic_optimization = False
+
+
+        self.trainer = self.create_trainer(setting)
 
         # Save the types to use.
         self.Observations: Type[Observations] = setting.Observations
         self.Actions: Type[Actions] = setting.Actions
         self.Rewards: Type[Rewards] = setting.Rewards
-
-        
 
     def fit(self,
             train_env: Environment[Observations, Actions, Rewards] = None,

@@ -24,7 +24,7 @@ from ..output_heads import OutputHead
 logger = get_logger(__file__)
 
 
-SettingType = TypeVar("SettingType", bound=ClassIncrementalSetting)
+SettingType = TypeVar("SettingType", bound=IncrementalSetting)
 
 
 class ClassIncrementalModel(BaseModel[SettingType]):
@@ -42,7 +42,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # have access to task labels. Need to figure out how to manage this between TaskIncremental and Classifier.
         multihead: bool = False
 
-    def __init__(self, setting: ClassIncrementalSetting, hparams: HParams, config: Config):
+    def __init__(self, setting: IncrementalSetting, hparams: HParams, config: Config):
         self._output_head: OutputHead = None
         super().__init__(setting=setting, hparams=hparams, config=config)
         
@@ -97,8 +97,9 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             self._output_head = output_head
             # Return the output head for the current task.
             return output_head
+
         if self._output_head is None:
-            self._output_head = self.create_output_head()
+            self._output_head = self.create_output_head(self.setting)
         return self._output_head
 
     @output_head.setter
@@ -218,7 +219,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         self.current_task = start_task_id
     
     def shared_step(self,
-                    batch: Tuple[Observations, Rewards],
+                    batch: Tuple[Observations, Optional[Rewards]],
                     batch_idx: int,
                     environment: Environment,
                     loss_name: str,
@@ -238,8 +239,9 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             batch=batch,
             batch_idx=batch_idx,
             environment=environment,
-            dataloader_idx=dataloader_idx,
             loss_name=loss_name,
+            dataloader_idx=dataloader_idx,
+            optimizer_idx=optimizer_idx,
         )
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
@@ -330,10 +332,12 @@ def _create_placeholder_tuple(original: Tuple[T], batch_size: int) -> Tuple[T]:
         for value in original
     )
 
+Dataclass = TypeVar("Dataclass", bound=Batch)
 
-@create_placeholder.register(Batch)
+
 # @create_placeholder.register(NamedTuple)
-def _create_placeholder_dataclass(original: Tuple[T], batch_size: int) -> Tuple[T]:
+@create_placeholder.register(Batch)
+def _create_placeholder_dataclass(original: Dataclass, batch_size: int) -> Dataclass:
     return type(original)(**{
         key: create_placeholder(value, batch_size)
         for key, value in original.items()    

@@ -10,7 +10,8 @@ from sequoia.experiment import Experiment
 
 logger = get_logger(__file__)
 
-if __name__ == "__main__":        
+
+if __name__ == "__main__":
     logger.debug("Registered Settings: \n" + "\n".join(
         f"- {setting.get_name()}: {setting} ({setting.get_path_to_source_file()})" for setting in all_settings
     ))

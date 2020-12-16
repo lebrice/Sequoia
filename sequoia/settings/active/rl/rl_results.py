@@ -67,8 +67,10 @@ class RLResults(IncrementalSetting.Results, Results):
         # TODO: Create a dict of useful things to log.
         log_dict = {}
         for task in range(self.num_tasks):
-            episodes = sum(self.episode_lengths[task])
+            steps = sum(self.episode_lengths[task])
+            episodes = len(self.episode_lengths[task])
             task_log_dict = {
+                "Steps": int(steps),
                 "Episodes": int(episodes),
                 "Total reward": float(sum(self.episode_rewards[task])),
                 "Mean reward": float(self.average_metrics_per_task[task].mse),

@@ -25,3 +25,4 @@ lightning_logs
 build
 dist
 *.egg-info
+sequoia/results

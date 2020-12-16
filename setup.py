@@ -1,5 +1,5 @@
 from setuptools import setup, find_packages
-from sequoia import __version__
+
 import os
 
 # TODO: Figure out how to specify 'extras'
@@ -27,7 +27,7 @@ def load_requirements(path_dir=PATH_ROOT, file_name='requirements.txt', comment_
 
 setup(
     name='sequoia',
-    version=__version__,
+    __version__ = "0.0.1",
     description="The Research Tree - A playground for research at the intersection of Continual, Reinforcement, and Self-Supervised Learning.",
     url='https://github.com/lebrice/Sequoia',
     author='Fabrice Normandin',
