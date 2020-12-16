@@ -135,8 +135,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # The dataset could be either a string (env id or a key from the
     # available_datasets dict), a gym.Env, or a callable that returns a single environment.
     # If self.dataset isn't one of those, an error will be raised.
-    dataset: str = choice(available_datasets, default="breakout")
-    
+    dataset: str = choice(available_datasets, default="cartpole")
+
     # The number of tasks. By default 1 for this setting.
     nb_tasks: int = field(1, alias=["n_tasks", "num_tasks"])
     
