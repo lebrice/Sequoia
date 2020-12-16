@@ -16,7 +16,7 @@ from gym.envs.atari import AtariEnv
 from gym.envs.classic_control import CartPoleEnv
 from gym.utils import colorize
 from gym.wrappers import AtariPreprocessing
-from simple_parsing import choice, list_field
+from simple_parsing import choice, list_field, field
 from simple_parsing.helpers import dict_field
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from torch import Tensor
@@ -137,6 +137,9 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # If self.dataset isn't one of those, an error will be raised.
     dataset: str = choice(available_datasets, default="breakout")
     
+    # The number of tasks. By default 1 for this setting.
+    nb_tasks: int = field(1, alias=["n_tasks", "num_tasks"])
+    
     # Max number of steps per task. (Also acts as the "length" of the training
     # and validation "Datasets")
     max_steps: int = 10_000
@@ -154,6 +157,9 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # Total number of steps in the test loop. By default, takes the value of
     # `test_steps_per_task * nb_tasks`.
     test_steps: Optional[int] = None
+    
+    
+    
     
     # Standard deviation of the multiplicative Gaussian noise that is used to
     # create the values of the env attributes for each task. 
@@ -224,14 +230,12 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
         if self.test_task_schedule_path:
             self.test_task_schedule = self.load_task_schedule(self.test_task_schedule_path)
-            
 
         if self.train_task_schedule:
             # A task schedule was passed: infer the number of tasks from it.
-            assert not self.nb_tasks, "For now, don't set nb_tasks when passing a task schedule."
             change_steps = sorted(self.train_task_schedule.keys())
-            assert 0 in change_steps, "Schedule needs to include task at step 0."
-            
+            assert 0 in change_steps, "Schedule needs a task at step 0."
+
             # NOTE: When in a ContinualRLSetting with smooth task boundaries,
             # the last entry in the schedule represents the state of the env at
             # the end of the "task". When there are clear task boundaries (i.e.
@@ -267,20 +271,27 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 self.max_steps = self.nb_tasks * self.steps_per_task
             elif self.max_steps:
                 self.steps_per_task = self.max_steps // self.nb_tasks
-            else:
-                raise RuntimeError(
+
+        elif self.steps_per_task:
+            if self.nb_tasks:
+                self.max_steps = self.nb_tasks * self.steps_per_task
+            elif self.max_steps:
+                self.nb_tasks = self.max_steps // self.steps_per_task
+
+        elif self.max_steps:
+            if self.nb_tasks:
+                self.steps_per_task = self.max_steps // self.nb_tasks
+            elif self.steps_per_task:
+                self.nb_tasks = self.max_steps // self.steps_per_task
+
+        if not all([self.nb_tasks, self.max_steps, self.steps_per_task]):
+            raise RuntimeError(
                     f"You need to provide at least two of 'max_steps', "
                     f"'nb_tasks', or 'steps_per_task'."
                 )
 
-        elif self.steps_per_task:
-            if self.max_steps:
-                self.nb_tasks = self.max_steps // self.steps_per_task
-            elif self.max_steps:
-                self.steps_per_task = self.max_steps // self.steps_per_task            
-        
         assert self.nb_tasks == self.max_steps // self.steps_per_task
-        
+
         if self.test_task_schedule:
             change_steps = sorted(self.test_task_schedule.keys())
             assert 0 in change_steps, "Schedule needs to include task at step 0."
