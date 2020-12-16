@@ -163,9 +163,21 @@ class Loss(Serializable):
         """Shortcut for `self.metrics[self.name]`.
 
         Returns:
-            Optional[Metrics]: The metrics associated with this Loss.
+            Optional[Metrics]: The main metrics associated with this Loss.
         """
         return self.metrics.get(self.name)
+
+    @metric.setter
+    def metric(self, value: Metrics) -> None:
+        """Shortcut for `self.metrics[self.name] = value`.
+
+        Parameters
+        ----------
+        value : Metrics
+            The main metrics associated with this Loss.
+        """
+        assert self.name not in self.metrics, "There's already be a metric?"
+        self.metrics[self.name] = value
 
     @property
     def accuracy(self) -> float:
