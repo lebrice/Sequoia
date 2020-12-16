@@ -217,35 +217,50 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
         # Load the task schedules from the corresponding files, if present.
         if self.train_task_schedule_path:
-            with open(self.train_task_schedule_path) as f:
-                self.train_task_schedule = json.load(f)
+            self.train_task_schedule = self.load_task_schedule(self.train_task_schedule_path)
 
         if self.valid_task_schedule_path:
-            with open(self.valid_task_schedule_path) as f:
-                self.valid_task_schedule = json.load(f)
+            self.valid_task_schedule = self.load_task_schedule(self.valid_task_schedule_path)
 
         if self.test_task_schedule_path:
-            with open(self.test_task_schedule_path) as f:
-                self.test_task_schedule = json.load(f)
+            self.test_task_schedule = self.load_task_schedule(self.test_task_schedule_path)
+            
 
         if self.train_task_schedule:
             # A task schedule was passed: infer the number of tasks from it.
             assert not self.nb_tasks, "For now, don't set nb_tasks when passing a task schedule."
-            self.nb_tasks = len(self.train_task_schedule.keys())
-            # NOTE: Checking against the default value for max_steps.
-            if self.max_steps == type(self).max_steps:
-                # If the default value for max_steps is used, set it to be the
-                # maximum of the  
-                self.max_steps = max(self.train_task_schedule.keys())
-            # TODO: Can't necessarily deduce a 'number of steps per task' if the
-            # tasks aren't equally spaced out.
             change_steps = sorted(self.train_task_schedule.keys())
-            task_lengths = itertools.accumulate(
-                change_steps,
-                func=lambda s1, s2: s2 - s1,
-                initial=change_steps[1]
+            assert 0 in change_steps, "Schedule needs to include task at step 0."
+            
+            # NOTE: When in a ContinualRLSetting with smooth task boundaries,
+            # the last entry in the schedule represents the state of the env at
+            # the end of the "task". When there are clear task boundaries (i.e.
+            # when in 'Class'/Task-Incremental RL), the last entry is the start
+            # of the last task.
+            self.nb_tasks = len(change_steps)
+            if self.smooth_task_boundaries:
+                self.nb_tasks -= 1
+
+            # TODO: @lebrice: I guess we have to assume that the interval
+            # between steps is constant for now? Do we actually depend on this
+            # being the case? I think steps_per_task is only really ever used
+            # for creating the task schedule, which we already have in this
+            # case.
+            assert len(change_steps) >= 2, (
+                "WIP: need a minimum of two tasks in the task schedule for now."
             )
-            assert False, task_lengths
+            self.steps_per_task = change_steps[1] - change_steps[0]
+            
+            for i in range(len(change_steps)-1):
+                if change_steps[i+1] - change_steps[i] != self.steps_per_task:
+                    raise NotImplementedError(
+                        f"WIP: This might not work yet if the tasks aren't "
+                        f"equally spaced out at a fixed interval."
+                    )
+            self.max_steps = max(change_steps)
+            if not self.smooth_task_boundaries:
+                # See above note about the last entry.
+                self.max_steps += self.steps_per_task
 
         elif self.nb_tasks:
             if self.steps_per_task:
@@ -263,23 +278,34 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 self.nb_tasks = self.max_steps // self.steps_per_task
             elif self.max_steps:
                 self.steps_per_task = self.max_steps // self.steps_per_task            
-            
-        # if not self.nb_tasks:
-        #     if self.steps_per_task:
-        #         self.nb_tasks = self.max_steps // self.steps_per_task
-        #     elif self.train_task_schedule:
-        #         self.nb_tasks = len(self.train_task_schedule) - (1 if self.max_steps in self.train_task_schedule else 0)
-        #     else:
-        #         self.nb_tasks = 1
-        #         self.steps_per_task = self.max_steps
-        # elif not self.steps_per_task:
-        #     self.steps_per_task = self.max_steps // self.nb_tasks
-                
+        
         assert self.nb_tasks == self.max_steps // self.steps_per_task
         
-        if self.test_steps is None:
+        if self.test_task_schedule:
+            change_steps = sorted(self.test_task_schedule.keys())
+            assert 0 in change_steps, "Schedule needs to include task at step 0."
+            
+            nb_test_tasks = len(change_steps)
+            if self.smooth_task_boundaries:
+                nb_test_tasks -= 1
+            assert nb_test_tasks == self.nb_tasks, "nb of tasks should be the same for train and test."
+
+            self.test_steps_per_task = change_steps[1] - change_steps[0]
+            for i in range(self.nb_tasks-1):
+                if change_steps[i+1] - change_steps[i] != self.test_steps_per_task:
+                    raise NotImplementedError(
+                        f"WIP: This might not work yet if the test tasks aren't "
+                        f"equally spaced out at a fixed interval."
+                    )
+            self.test_steps = max(change_steps)
+            if not self.smooth_task_boundaries:
+                # See above note about the last entry.
+                self.test_steps += self.test_steps_per_task
+        elif self.test_steps is None:
+            assert self.test_steps_per_task, "need to set one of test_steps or test_steps_per_task"
             self.test_steps = self.test_steps_per_task * self.nb_tasks
         else:
+            assert self.test_steps, "need to set one of test_steps or test_steps_per_task"
             self.test_steps_per_task = self.test_steps // self.nb_tasks
 
         if self.smooth_task_boundaries:
@@ -729,6 +755,14 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             max_steps=self.max_steps,
         )
 
+    def load_task_schedule(self, file_path: Path) -> Dict[int, Dict]:
+        """ Load a task schedule from the given path. """
+        with open(file_path) as f:
+            task_schedule = json.load(f)
+            return {
+                int(k): task_schedule[k] for k in sorted(task_schedule.keys())
+            }
+    
     def _make_wrappers(self,
                        task_schedule: Dict[int, Dict],
                        sharp_task_boundaries: bool,
