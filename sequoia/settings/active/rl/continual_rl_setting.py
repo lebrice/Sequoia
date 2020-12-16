@@ -166,6 +166,14 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # useful to debug environments like CartPole, for instance.
     observe_state_directly: bool = False
 
+    
+    # Path to a json file from which to read the train task schedule. 
+    train_task_schedule_path: Optional[Path] = None
+    # Path to a json file from which to read the validation task schedule. 
+    valid_task_schedule_path: Optional[Path] = None
+    # Path to a json file from which to read the test task schedule. 
+    test_task_schedule_path: Optional[Path] = None
+
     # NOTE: Added this `cmd=False` option to mark that we don't want to generate
     # any command-line arguments for these fields.
     train_task_schedule: Dict[int, Dict] = dict_field(cmd=False)
@@ -206,6 +214,19 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         assert self.max_steps, "assuming this should always be set, for now."
         # TODO: Clean this up, not super clear what options take precedence on
         # which other options.
+
+        # Load the task schedules from the corresponding files, if present.
+        if self.train_task_schedule_path:
+            with open(self.train_task_schedule_path) as f:
+                self.train_task_schedule = json.load(f)
+
+        if self.valid_task_schedule_path:
+            with open(self.valid_task_schedule_path) as f:
+                self.valid_task_schedule = json.load(f)
+
+        if self.test_task_schedule_path:
+            with open(self.test_task_schedule_path) as f:
+                self.test_task_schedule = json.load(f)
 
         if self.train_task_schedule:
             # A task schedule was passed: infer the number of tasks from it.
