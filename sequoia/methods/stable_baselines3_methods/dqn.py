@@ -1,32 +1,30 @@
+""" Method that uses the DQN model from stable-baselines3 and targets the RL
+settings in the tree.
+"""
 import warnings
 from dataclasses import dataclass
-from typing import ClassVar, Type, Union, Callable, Optional, Dict, Any
+from typing import Callable, ClassVar, Optional, Type, Union
 
 import gym
-import numpy as np
-import torch
-from gym import Env, spaces
-from simple_parsing import choice, mutable_field
+from gym import spaces
+from gym.spaces.utils import flatten_space
+from simple_parsing import mutable_field
 from stable_baselines3.dqn import DQN
-from stable_baselines3.dqn.dqn import DQNPolicy
-from stable_baselines3.dqn.policies import CnnPolicy
-from stable_baselines3.common.base_class import BaseAlgorithm, GymEnv
-from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
 
-from sequoia.settings import ContinualRLSetting
-from sequoia.utils import Serializable, Parseable
 from sequoia.methods import register_method
-
-from .base import StableBaselines3Method, SB3BaseHParams
+from sequoia.methods.stable_baselines3_methods.base import (
+    SB3BaseHParams, StableBaselines3Method)
+from sequoia.settings.active import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
 class DQNModel(DQN):
+    """ Customized version of the DQN model from stable-baselines-3. """
     @dataclass
     class HParams(SB3BaseHParams):
         """ Hyper-parameters of the DQN model from `stable_baselines3`.
-        
+
         The command-line arguments for these are created with simple-parsing.
         """
         # The learning rate, it can be a function of the current progress (from
@@ -73,7 +71,7 @@ class DQNModel(DQN):
         # Whether to create a second environment that will be used for
         # evaluating the agent periodically. (Only available when passing string
         # for the environment)
-        create_eval_env: bool = False 
+        create_eval_env: bool = False
         # Whether or not to build the network at the creation
         # of the instance
         _init_setup_model: bool = True
@@ -136,21 +134,19 @@ class DQNModel(DQN):
 class DQNMethod(StableBaselines3Method):
     """ Method that uses a DQN model from the stable-baselines3 package. """
     Model: ClassVar[Type[DQNModel]] = DQNModel
-    
+
     # Hyper-parameters of the DQN model.
     hparams: DQNModel.HParams = mutable_field(DQNModel.HParams)
 
     # Approximate limit on the size of the replay buffer, in megabytes.
     max_buffer_size_megabytes: float = 50.
-    
+
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting)
-        from gym.spaces.utils import flatdim, flatten_space
 
         # The default value for the buffer size in the DQN model is WAY too
-        # large, we can't really have any  
-        
-        observation_dims = flatdim(setting.observation_space)
+        # large, so we re-size it depending on the size of the observations.
+
         flattened_observation_space = flatten_space(setting.observation_space)
         observation_size_bytes = flattened_observation_space.sample().nbytes
 
@@ -159,7 +155,7 @@ class DQNMethod(StableBaselines3Method):
         # the size of the observations.
         max_buffer_size_bytes = self.max_buffer_size_megabytes * 1024 * 1024
         max_buffer_length = max_buffer_size_bytes // observation_size_bytes
-        
+
         if max_buffer_length == 0:
             raise RuntimeError(
                 f"Couldn't even fit a single observation in the buffer, "
@@ -167,7 +163,7 @@ class DQNMethod(StableBaselines3Method):
                 f"({self.max_buffer_size_megabytes}) and the size of a "
                 f"single observation ({observation_size_bytes} bytes)!"
             )
-        
+
         if self.hparams.buffer_size > max_buffer_length:
             calculated_size_bytes = observation_size_bytes * self.hparams.buffer_size
             calculated_size_gb = calculated_size_bytes / 1024 ** 3
@@ -178,7 +174,7 @@ class DQNMethod(StableBaselines3Method):
                 f"The buffer size will be capped at {max_buffer_length} "
                 f"entries."
             ))
-            
+
             self.hparams.buffer_size = max_buffer_length
 
         # Don't use up too many of the observations from the task to fill up the buffer.
@@ -193,16 +189,31 @@ class DQNMethod(StableBaselines3Method):
                 self.hparams.buffer_size = setting.steps_per_task // 10
         logger.info(f"Will use a Replay buffer of size {self.hparams.buffer_size}.")
 
+    def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> DQNModel:
+        return self.Model(env=train_env, **self.hparams.to_dict())
+
+    def fit(self, train_env: gym.Env, valid_env: gym.Env):
+        super().fit(train_env=train_env, valid_env=valid_env)
+
+    def get_actions(self,
+                    observations: ContinualRLSetting.Observations,
+                    action_space: spaces.Space) -> ContinualRLSetting.Actions:
+        return super().get_actions(
+            observations=observations,
+            action_space=action_space,
+        )
+
+    def on_task_switch(self, task_id: Optional[int]) -> None:
+        """ Called when switching tasks in a CL setting.
+
+        If task labels are available, `task_id` will correspond to the index of
+        the new task. Otherwise, if task labels aren't available, `task_id` will
+        be `None`.
+
+        todo: use this to customize how your method handles task transitions.
+        """
+
+
 if __name__ == "__main__":
-    from sequoia.settings import RLSetting
-    # setting = RLSetting(dataset="CartPole-v1", observe_state_directly=True)
-    setting, unused_args = RLSetting.from_known_args()
-    # method = DQNMethod()
-    method = DQNMethod.from_args(unused_args, strict=True)
-
-    results = setting.apply(method)
-    print(results.summary())
-
-    exit()
-    
-    
+    results = DQNMethod.main()
+    print(results)
