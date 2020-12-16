@@ -233,9 +233,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # - Compare the big backward pass vs many small ones
             # - Try to have it learn from pixel input, if possible
             # - Try to have it learn on a multi-task RL setting, 
-            return PolicyHead
+            # return PolicyHead
             # TODO: Finish debugging the ActorCritic Head.
             # return ActorCriticHead
+            from ..output_heads.rl.episodic_a2c import EpisodicA2C
+            return EpisodicA2C
 
         assert isinstance(setting, PassiveSetting)
 

@@ -34,6 +34,9 @@ class EpisodeMetrics(Metrics):
         # IDEA: Maybe use the 'variance' in actions/rewards as a metric?
  
     def __add__(self, other):
+        # IDEA: Adding two EpisodeMetrics together gives you a RLMetrics??
+        # if isinstance(other, EpisodeMetrics):
+        #     return RLMetrics(episodes=[self, other])
         return NotImplemented
     
 @dataclass

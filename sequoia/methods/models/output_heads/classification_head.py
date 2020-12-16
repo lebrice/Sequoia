@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Union
 
 import gym
 import torch
@@ -19,7 +19,7 @@ class ClassificationOutput(Actions):
     classification head, which correspond to the 'actions' to be sent to the
     environment, in the general formulation.
     """
-    y_pred: LongTensor
+    y_pred: Union[LongTensor, Tensor]
     logits: Tensor
 
     @property

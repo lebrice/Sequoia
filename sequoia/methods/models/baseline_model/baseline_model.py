@@ -93,6 +93,7 @@ class BaselineModel(SemiSupervisedModel,
 
     # @auto_move_data
     def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:
+        # NOTE: Implementation is mostly in `base_model.py`.
         return super().forward(observations)
 
     def create_output_head(self, setting: Setting, add_to_optimizer: bool = None) -> OutputHead:
@@ -114,11 +115,13 @@ class BaselineModel(SemiSupervisedModel,
         OutputHead
             The new output head.
         """
+        # NOTE: Implementation is in `base_model.py`.
         return super().create_output_head(setting, add_to_optimizer=add_to_optimizer)
 
     def output_head_type(self, setting: SettingType) -> Type[OutputHead]:
         """ Return the type of output head we should use in a given setting.
         """
+        # NOTE: Implementation is in `base_model.py`.
         return super().output_head_type(setting)
 
     def training_step(self,

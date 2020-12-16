@@ -336,6 +336,19 @@ class PolicyHead(ClassificationHead):
         # In either case, do we want to detach the representations? or not?
         representations = representations.float().detach()
         
+        actions = self.get_actions(representations)
+        
+        for env_index in range(self.batch_size):
+            # Take a slice across the first dimension
+            # env_observations = get_slice(observations, env_index)
+            env_representations = representations[env_index]
+            env_actions = get_slice(actions, env_index)
+            self.representations[env_index].append(env_representations)
+            self.actions[env_index].append(env_actions)
+        
+        return actions
+
+    def get_actions(representations: Tensor) -> PolicyHeadOutput:
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
         policy = Categorical(logits=logits)
@@ -345,14 +358,6 @@ class PolicyHead(ClassificationHead):
             logits=logits,
             policy=policy,
         )
-        for env_index in range(self.batch_size):
-            # Take a slice across the first dimension
-            # env_observations = get_slice(observations, env_index)
-            env_representations = representations[env_index]
-            env_actions = get_slice(actions, env_index)
-            self.representations[env_index].append(env_representations)
-            self.actions[env_index].append(env_actions)
-        
         return actions
 
     def get_loss(self,
@@ -396,7 +401,6 @@ class PolicyHead(ClassificationHead):
         inputs: Tensor
         actions: PolicyHeadOutput
         rewards: ContinualRLSetting.Rewards
-        
         if not done:
             # This particular algorithm (REINFORCE) can't give a loss until the
             # end of the episode is reached.
@@ -531,22 +535,23 @@ class PolicyHead(ClassificationHead):
         We have to do this when we update the model while an episode in one of
         the enviroment isn't done.
         """
-        def detach_buffer(old_buffer) -> deque:
+        # detached_representations = map(detach, )
+        # detached_actions = map(detach, self.actions[env_index])
+        # detached_rewards = map(detach, self.rewards[env_index])
+        self.representations[env_index] = self._detach_buffer(self.representations[env_index])
+        self.actions[env_index] = self._detach_buffer(self.actions[env_index])
+        self.rewards[env_index] = self._detach_buffer(self.rewards[env_index])
+        # assert False, (self.representations[0], self.representations[-1])
+
+    def _detach_buffer(self, old_buffer: Sequence[Tensor]) -> deque:
             new_items = self._make_buffer()
             for item in old_buffer:
                 detached = item.detach()
                 new_items.append(detached)
             return new_items
-        # detached_representations = map(detach, )
-        # detached_actions = map(detach, self.actions[env_index])
-        # detached_rewards = map(detach, self.rewards[env_index])
-        self.representations[env_index] = detach_buffer(self.representations[env_index])
-        self.actions[env_index] = detach_buffer(self.actions[env_index])
-        self.rewards[env_index] = detach_buffer(self.rewards[env_index])
-        # assert False, (self.representations[0], self.representations[-1])
-
+    
     def _make_buffer(self, elements: Sequence[Any] = None) -> deque:
-        buffer = deque(maxlen=self.hparams.max_episode_window_length)
+        buffer: List[Tensor] = deque(maxlen=self.hparams.max_episode_window_length)
         if elements:
             buffer.extend(elements)
         return buffer
