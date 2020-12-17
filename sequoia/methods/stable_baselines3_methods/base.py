@@ -189,13 +189,13 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         if not setting.known_task_boundaries_at_train_time:
             # We are in a ContinualRL setting, where `fit` will only be called
             # once and where the environment can only be traversed once.
-            if self.train_steps_per_task > setting.max_steps:
+            if self.train_steps_per_task > setting.steps_per_task:
                 warnings.warn(RuntimeWarning(
                     f"Can't train for the requested {self.train_steps_per_task} "
                     f"steps, since we're (currently) only allowed one 'pass' "
                     f"through the environment when in a Continual-RL Setting."
                 ))
-            self.train_steps_per_task = setting.max_steps
+            self.train_steps_per_task = setting.steps_per_task
         # Otherwise, we can train basically as long as we want on each task.
 
     def create_model(self,

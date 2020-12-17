@@ -21,7 +21,7 @@ from gym.spaces.utils import flatdim
 from pytorch_lightning import LightningDataModule, LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
-from simple_parsing import list_field
+from simple_parsing import list_field, choice
 from torch import Tensor, nn
 from torch.optim.optimizer import Optimizer
 
@@ -41,6 +41,7 @@ from ..forward_pass import ForwardPass
 from ..output_heads import (ActorCriticHead, ClassificationHead, OutputHead,
                             PolicyHead, RegressionHead)
 from .base_hparams import BaseHParams
+from ..output_heads.rl.episodic_a2c import EpisodicA2C
 
 logger = get_logger(__file__)
 
@@ -60,11 +61,23 @@ class BaseModel(LightningModule, Generic[SettingType]):
     @dataclass
     class HParams(BaseHParams):
         """ HParams of the Model. """
+        # Which algorithm to use for the output head when in an RL setting.
+        # TODO: Run the PolicyHead in the following conditions:
+        # - Compare the big backward pass vs many small ones
+        # - Try to have it learn from pixel input, if possible
+        # - Try to have it learn on a multi-task RL setting,
+        # TODO: Finish the ActorCritic and EpisodicA2C heads.
+        rl_output_head_algo: Optional[str] = choice({
+            "reinforce": PolicyHead,
+            "a2c_online": ActorCriticHead,
+            "a2c_episodic": EpisodicA2C,
+        }, default="reinforce")
+        
 
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__()
         self.setting: SettingType = setting
-        self.hp = hparams
+        self.hp: BaseModel.HParams = hparams
         
         self.Observations: Type[Observations] = setting.Observations
         self.Actions: Type[Actions] = setting.Actions
@@ -192,7 +205,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
         action_space: Space = self.action_space
         reward_space: Space = self.reward_space
         hparams: OutputHead.HParams = self.hp.output_head
-
         # Choose what type of output head to use depending on the kind of
         # Setting.
         output_head_type: Type[OutputHead] = self.output_head_type(setting)
@@ -229,15 +241,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
         if isinstance(setting, ActiveSetting):
             if not isinstance(setting.action_space, spaces.Discrete):
                 raise NotImplementedError(f"Only support discrete actions for now.")
-            # TODO: Run the PolicyHead in the following conditions:
-            # - Compare the big backward pass vs many small ones
-            # - Try to have it learn from pixel input, if possible
-            # - Try to have it learn on a multi-task RL setting, 
-            # return PolicyHead
-            # TODO: Finish debugging the ActorCritic Head.
-            # return ActorCriticHead
-            from ..output_heads.rl.episodic_a2c import EpisodicA2C
-            return EpisodicA2C
+            assert issubclass(self.hp.rl_output_head_algo, OutputHead)
+            return self.hp.rl_output_head_algo
 
         assert isinstance(setting, PassiveSetting)
 

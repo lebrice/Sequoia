@@ -335,7 +335,7 @@ class PolicyHead(ClassificationHead):
 
         # In either case, do we want to detach the representations? or not?
         representations = representations.float().detach()
-        
+
         actions = self.get_actions(representations)
         
         for env_index in range(self.batch_size):

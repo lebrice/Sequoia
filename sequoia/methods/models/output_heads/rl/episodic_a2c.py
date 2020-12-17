@@ -1,6 +1,7 @@
 """ TODO: IDEA: Similar to ActorCriticHead, but episodic, i.e. only gives a Loss at
 the end of the episode, rather than at each step.
 """
+
 from collections import deque
 from dataclasses import dataclass
 from typing import List, Optional
@@ -18,13 +19,54 @@ from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
 from .policy_head import Categorical, PolicyHead, PolicyHeadOutput, GradientUsageMetric
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
 
+
+# TODO: Use this as inspiration: (taken from the ActorCriticPolicy from stable-baselines-3)
+
+# # TODO: avoid second computation of everything because of the gradient
+# values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
+# values = values.flatten()
+
+# # Normalize advantage (not present in the original implementation)
+# advantages = rollout_data.advantages
+# if self.normalize_advantage:
+#     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+# # Policy gradient loss
+# policy_loss = -(advantages * log_prob).mean()
+
+# # Value loss using the TD(gae_lambda) target
+# value_loss = F.mse_loss(rollout_data.returns, values)
+
+# # Entropy loss favor exploration
+# if entropy is None:
+#     # Approximate entropy when no analytical form
+#     entropy_loss = -th.mean(-log_prob)
+# else:
+#     entropy_loss = -th.mean(entropy)
+
+# loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
+
+# # Optimization step
+# self.policy.optimizer.zero_grad()
+# loss.backward()
+
+# # Clip grad norm
+# th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+
 @dataclass(frozen=True)
 class A2CHeadOutput(PolicyHeadOutput):
+    """ Output produced by the A2C output head. """
     # The value estimate coming from the critic.
     value: Tensor 
 
 
 class EpisodicA2C(PolicyHead):
+    """ Advantage-Actor-Critic output head that produces a loss only at end of
+    episode.
+    
+    TODO: This could actually produce a loss every N steps, rather than just at
+    the end of the episode.
+    """
     def __init__(self,
                  input_space: spaces.Box,
                  action_space: spaces.Discrete,
@@ -119,7 +161,8 @@ class EpisodicA2C(PolicyHead):
         dones = torch.zeros(episode_length, dtype=torch.bool)
         dones[-1] = done
         
-        # last_q_val: The estimated value for the final state in the episode.
+        # Construct the 'q' values from the right to the left.
+        # The estimated value for the final state in the episode.
         q_val = values[-1]
         q_vals: List[Tensor] = deque(maxlen=None)
         for reward, done_i in list(zip(episode_rewards, dones))[::-1]:
@@ -127,7 +170,7 @@ class EpisodicA2C(PolicyHead):
             q_vals.appendleft(q_val) # store values from the end to the beginning
 
         advantage = torch.stack(list(q_vals)) - values
-        
+        # assert False, advantage
         loss = Loss(self.name)
         
         critic_loss_tensor = advantage.pow(2).mean()
@@ -199,4 +242,3 @@ class EpisodicA2C(PolicyHead):
             y=stack(self.reward_space, [reward.y for reward in episode_rewards])
         )
         return stacked_inputs, stacked_actions, stacked_rewards
-
