@@ -17,7 +17,7 @@ all_settings: List[Type[Setting]] = [
     TaskIncrementalSetting,
     ClassIncrementalSetting,
     ContinualRLSetting,
-    ClassIncrementalRLSetting,
+    IncrementalRLSetting,
     TaskIncrementalRLSetting,
     RLSetting,
 ]

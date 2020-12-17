@@ -1,33 +1,40 @@
 import itertools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Union, Sequence, Optional, Tuple
 from pathlib import Path
+from typing import List, Optional, Sequence, Tuple, Union
 
 import gym
 import torch
 import tqdm
-from gym.vector import VectorEnv
 from gym import spaces
+from gym.vector import VectorEnv
 from simple_parsing import field
 from torch import Tensor
 
-from sequoia.common import Metrics, ClassificationMetrics, RegressionMetrics
-from sequoia.utils import flag, constant, mean
-from sequoia.utils.logging_utils import get_logger
+from sequoia.settings.base import Setting
+from sequoia.common import ClassificationMetrics, Metrics, RegressionMetrics
+from sequoia.common.gym_wrappers.step_callback_wrapper import (
+    Callback, StepCallbackWrapper)
 from sequoia.common.gym_wrappers.utils import IterableWrapper
-from sequoia.common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper, StepCallback, Callback
-from sequoia.settings.base import SettingABC, Method, Actions, Environment, Observations, Results, Rewards
-from sequoia.settings.active.rl.wrappers import NoTypedObjectsWrapper, RemoveTaskLabelsWrapper, HideTaskLabelsWrapper
-        
+from sequoia.settings.base import (Actions, Environment, Method, Results,
+                                   Rewards, SettingABC)
+from sequoia.utils import constant, flag, mean
+from sequoia.utils.logging_utils import get_logger
+
 logger = get_logger(__file__)
 
-
 @dataclass
-class IncrementalSetting(SettingABC):
-    """ Mixin that defines methods that are common to all 'incremental' settings,
-    where the data is separated into tasks, and where you may not always get the
-    task labels.
+class IncrementalSetting(Setting):
+    """ Mixin that defines methods that are common to all 'incremental'
+    settings, where the data is separated into tasks, and where you may not
+    always get the task labels.
+    
+    Concretely, this holds the train and test loops that are common to the
+    ClassIncrementalSetting (highest node on the Passive side) and ContinualRL
+    (highest node on the Active side), therefore this setting, while abstract,
+    is quite important. 
+    
     """
     @dataclass
     class Results(SettingABC.Results):
@@ -51,7 +58,7 @@ class IncrementalSetting(SettingABC):
             return average_metrics
 
     @dataclass(frozen=True)
-    class Observations(SettingABC.Observations):
+    class Observations(Setting.Observations):
         """ Observations produced by an Incremental setting. 
 
         Adds the 'task labels' to the base Observation.
@@ -85,8 +92,7 @@ class IncrementalSetting(SettingABC):
     _current_task_id: int = field(default=0, init=False)
 
     def __post_init__(self, *args, **kwargs):
-        super().__post_init__(self, *args, **kwargs)
-        # assert False, "This Shouldn't ever be called!"
+        super().__post_init__(*args, **kwargs)
 
     @property
     def current_task_id(self) -> Optional[int]:
@@ -333,8 +339,7 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
         return sum(rewards) / total_steps
 
     def step(self, action):
-        # TODO: Its A bit uncomfortable that we have to 'unwrap' these here.. 
-        from sequoia.settings.active.rl.wrappers import unwrap_rewards, unwrap_actions, unwrap_observations
+        # TODO: Its A bit uncomfortable that we have to 'unwrap' these here..
         # logger.debug(f"Step {self._steps}")
         action_for_stats = action.y_pred if isinstance(action, Actions) else action
 
@@ -343,9 +348,9 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
         if isinstance(action, Tensor):
             action = action.cpu().numpy()
         observation, reward, done, info = self.env.step(action)
-        observation_for_stats = unwrap_observations(observation)
-        reward_for_stats = unwrap_rewards(reward)
-        
+        observation_for_stats = observation.x
+        reward_for_stats = reward.y
+
         # TODO: Maybe render the env with human mode only when debugging?
         try:
             self.render("human")

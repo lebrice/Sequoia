@@ -10,7 +10,7 @@ from sequoia.common.transforms import Transforms
 from .transform_wrappers import TransformObservation
 from .env_dataset import EnvDataset
 
-from sequoia.settings.active.rl.make_env import make_batched_env
+from sequoia.settings.active.continual.make_env import make_batched_env
 
 def test_step_normally_works_fine():
     env = DummyEnvironment()

@@ -27,7 +27,7 @@ from sequoia.common.callbacks import KnnCallback
 from sequoia.common.config import WandbLoggerConfig
 from sequoia.common.gym_wrappers import (AddDoneToObservation,
                                          AddInfoToObservation)
-from sequoia.settings.active.rl import ContinualRLSetting
+from sequoia.settings.active.continual import ContinualRLSetting
 from sequoia.settings.base import Method
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import Actions, Observations, Rewards
@@ -321,15 +321,11 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         logger.debug(f"Hparams for that type of model (from the method): {self.hparams}")
         logger.debug(f"Hparams for that type of model (from command-line): {new_hparams}")
         return new_hparams
-    
+
     def split_batch(self, batch: Any) -> Tuple[Batch, Batch]:
         return self.model.split_batch(batch)
-    
-    def on_task_switch(self, task_id: int) -> None:
-        """
-        TODO: Not sure if it makes sense to put this here. Might have to move
-        it to Class/Task incremental or something like that.
-        """
+
+    def on_task_switch(self, task_id: Optional[int]) -> None:
         model = getattr(self, "model", None)
         if model:
             if hasattr(model, "on_task_switch"):

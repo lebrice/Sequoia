@@ -259,8 +259,7 @@ class Method(Generic[SettingType], Parseable, ABC):
             setting (SettingType): The setting the method will be evaluated on.
         
         TODO: This might be a problem if we're gonna avoid 'cheating'.. we're
-        essentially giving the 'Setting' object
-        directly to the method.. so I guess the object could maybe 
+        essentially giving the 'Setting' object directly to the method.
         """
     
     @abstractmethod

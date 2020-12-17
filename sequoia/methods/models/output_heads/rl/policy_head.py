@@ -50,7 +50,7 @@ from sequoia.common.layers import Lambda
 from sequoia.common.metrics.rl_metrics import (EpisodeMetrics,
                                                GradientUsageMetric, RLMetrics)
 from sequoia.methods.models.forward_pass import ForwardPass
-from sequoia.settings.active.rl.continual_rl_setting import ContinualRLSetting
+from sequoia.settings.active.continual import ContinualRLSetting
 from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
 from sequoia.utils.logging_utils import get_logger
