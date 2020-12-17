@@ -69,10 +69,10 @@ class EWC(Method, target_setting=IncrementalSetting):
         ewc_coefficient: float = 100   
 
         #number of timesteps for learning
-        total_timesteps_train: int = 5000
+        # total_timesteps_train: int = 5000
 
         # #number of episodes for evaluation
-        # n_eval_episodes: int = 10
+        n_eval_episodes: int = 10
 
         #number of timesteps for FIM calculation
         total_timesteps_fim: int = 10000
@@ -81,10 +81,10 @@ class EWC(Method, target_setting=IncrementalSetting):
         # timesteps_demo: int = 100
 
         #how many steps of the model to collect transitions for before learning starts (DQN)
-        learning_starts: int = 50000
+        learning_starts: int = 10000
 
         #replay buffer size (DQN)
-        buffer_size: int = 1000
+        buffer_size: int = 10000000
 
         #maximum number of epochs (supervised)
         max_epochs: int = 10
@@ -128,6 +128,7 @@ class EWC(Method, target_setting=IncrementalSetting):
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
         """
+        self.setting=setting
         FIM_representation: Type[PMatAbstract] = PMatKFAC
         if self.hparams.FIM_representation == 'diagonal':
             FIM_representation = PMatDiag
@@ -194,7 +195,7 @@ class EWC(Method, target_setting=IncrementalSetting):
         valid_env = RemoveTaskLabelsWrapper(valid_env)
         valid_env = NoTypedObjectsWrapper(valid_env)   
 
-        if self.model.observation_space == None:            
+        if self.model.observation_space == None:             
             self.model.observation_space = train_env.observation_space
         if self.model.action_space is None:
             self.model.action_space = train_env.action_space
@@ -202,13 +203,14 @@ class EWC(Method, target_setting=IncrementalSetting):
         # set the new environment and learn from it
         self.model.set_env(train_env)
         if self.model.policy is None:
-            self.model._setup_model()
-        self.model.learn(total_timesteps=self.hparams.total_timesteps_train if not self.config.debug else 100)
+            self.model._setup_model()  
+        self.model.learn(total_timesteps=self.setting.steps_per_task if not self.config.debug else 100)
         ####################################
-        #evaluate 
-        # mean_reward, std_reward = evaluate_policy(self.model, valid_env, n_eval_episodes=self.hparams.n_eval_episodes)
-        # metrics_dict = {'mean_reward':mean_reward,'std_reward':std_reward}
-        ####################################
+        # evaluate        
+        mean_reward, std_reward = evaluate_policy(self.model, valid_env, render=True, n_eval_episodes=self.hparams.n_eval_episodes if not self.config.debug else 10)
+        metrics_dict = {'mean_reward':mean_reward,'std_reward':std_reward}
+        print(metrics_dict)
+        ###################################
 
     def fit(self, train_env: Environment, valid_env: Environment):
         if isinstance(train_env, PassiveEnvironment):
@@ -301,7 +303,7 @@ def FIM(model,
 
     elif variant == 'r2c_critic':
         def function_fim(*d):
-            _, values, _ = model(d[0].squeeze())
+            _, values, _ = model(   d[0].squeeze())
             estimates = model(function(*d))
             return estimates
         # def function_fim(*d):      
@@ -586,20 +588,22 @@ class A2C_EWC(A2C):
             #consolidate
             if isinstance(self.FIM, PMatDiag):
                 self.FIM.data = ((deepcopy(new_FIM.data)) + self.FIM.data * (task)) / (task + 1)
+            if isinstance(self.FIM_critic, PMatDiag):
                 self.FIM_critic.data = ((deepcopy(new_FIM_critic.data)) + self.FIM_critic.data * (task)) / (task + 1)
 
             elif isinstance(self.FIM.data, dict):
                 for (n, p), (n_, p_) in zip(self.FIM.data.items(),new_FIM.data.items()):
                     for item, item_ in zip(p, p_):
                         item.data = ((item.data*(task))+deepcopy(item_.data))/(task+1) #+ self.FIM.data[n]
-                for (n, p), (n_, p_) in zip(self.FIM_critic.data.items(),new_FIM_critic.data.items()):
-                    for item, item_ in zip(p, p_):
-                        item.data = ((item.data*(task))+deepcopy(item_.data))/(task+1) #+ self.FIM.data[n]
+                if new_FIM_critic is not None:        
+                    for (n, p), (n_, p_) in zip(self.FIM_critic.data.items(),new_FIM_critic.data.items()):
+                        for item, item_ in zip(p, p_):
+                            item.data = ((item.data*(task))+deepcopy(item_.data))/(task+1) #+ self.FIM.data[n]
 
     def on_task_switch(self, task_id: Optional[int]):
         """ Executed when the task switches (to either a known or unknown task).
         """
-        if task_id>self._previous_task_id:
+        if task_id>self._previous_task_id or task_id==self._previous_task_id==0:
             if self.previous_model_weights is None and self._n_switches == 0:
                 print("Starting the first task, no EWC update.")
                 
@@ -608,8 +612,8 @@ class A2C_EWC(A2C):
                 print(f"Switching tasks: {self._previous_task_id} -> {task_id}: ")
                 print(f"Updating the EWC 'anchor' weights.")
                     
-                self.previous_model_weights = PVector.from_model(self.policy).clone().detach()
-                observation_collection = torch.cat(list(self.observation_collector)).squeeze().to(self.device)
+                self.previous_model_weights = PVector.from_model(self.policy).clone().detach() 
+                observation_collection = torch.cat(list(self.observation_collector)).squeeze().to(self.device) 
                 dataloader = DataLoader(TensorDataset(observation_collection), batch_size=self.n_steps, shuffle=False)
                 #TODO: keepng to FIMs might be not the optimal way of doing this
                 new_FIM = FIM(model=self.policy,      
@@ -619,12 +623,12 @@ class A2C_EWC(A2C):
                             variant='r2c',
                             device=self.device.type)    
 
-                new_FIM_critic = FIM(model=self.policy,      
-                            loader=dataloader,
-                            representation=self.FIM_representation,
-                            n_output=1, #self.action_space.n,
-                            variant='r2c_critic',
-                            device=self.device.type)   
+                new_FIM_critic = None # FIM(model=self.policy,      
+                            # loader=dataloader,
+                            # representation=self.FIM_representation,
+                            # n_output=1, #self.action_space.n,
+                            # variant='r2c_critic',
+                            # device=self.device.type)   
                 self.consolidate(new_FIM,new_FIM_critic,task=self._previous_task_id) 
 
             self._n_switches += 1
@@ -639,7 +643,9 @@ class A2C_EWC(A2C):
             return torch.tensor(0.)
 
         v_current = PVector.from_model(self.policy)    
-        regularizer = self.FIM.vTMv(v_current - self.previous_model_weights) + self.FIM_critic.vTMv(v_current - self.previous_model_weights)
+        regularizer = self.FIM.vTMv(v_current - self.previous_model_weights)
+        if self.FIM_critic is not None:
+            regularizer+=self.FIM_critic.vTMv(v_current - self.previous_model_weights)
         return regularizer
 
     def forward(self,observation: Observations):
@@ -739,7 +745,7 @@ class DQN_EWC(DQN):
             self.policy.optimizer.step()
 
         # Increase update counter
-        self._n_updates += gradient_step
+        self._n_updates += gradient_steps             
         logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         logger.record("train/loss", np.mean(losses))
         logger.record("train/ewc_loss", np.mean(ewc_regs))
@@ -747,7 +753,7 @@ class DQN_EWC(DQN):
     def on_task_switch(self, task_id: Optional[int]):
         """ Executed when the task switches (to either a known or unknown task).
         """
-        if task_id>self._previous_task_id:
+        if task_id>self._previous_task_id or task_id==self._previous_task_id==0:
             if self.previous_model_weights is None and self._n_switches == 0:
                 print("Starting the first task, no EWC update.")
                 
@@ -1042,14 +1048,15 @@ def demo():
     
     task_schedule = {
         0:      {"gravity": 10, "length": 0.2},
-        100:   {"gravity": 100, "length": 1.2},
-        2000:   {"gravity": 10, "length": 0.2},
+        5000:   {"gravity": 100, "length": 1.2},
+        #2000:   {"gravity": 10, "length": 0.2},
     }
     setting = TaskIncrementalRLSetting(
         dataset="CartPole-v1",
-        task_schedule=task_schedule,
+        train_task_schedule=task_schedule,
+        test_task_schedule=task_schedule,
         observe_state_directly=True,
-        max_steps=2000,
+        max_steps=10000,
     )
 
     #setting = ClassIncrementalSetting(dataset="mnist", nb_tasks=5)
