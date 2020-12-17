@@ -15,7 +15,7 @@ from sequoia.common.gym_wrappers.batch_env.worker import FINAL_STATE_KEY
 from sequoia.common.loss import Loss
 from sequoia.conftest import DummyEnvironment, xfail_param
 from sequoia.methods.models.forward_pass import ForwardPass
-from sequoia.settings.active.rl.continual_rl_setting import ContinualRLSetting
+from sequoia.settings.active.continual import ContinualRLSetting
 
 from .policy_head import Categorical, PolicyHead, PolicyHeadOutput
 from gym.vector import VectorEnv, SyncVectorEnv
@@ -487,7 +487,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
     # assert False, (obs, rewards, done, info)
     # loss: Loss = output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
 from sequoia.common.gym_wrappers import PixelObservationWrapper
-from sequoia.settings.active.rl.make_env import make_batched_env
+from sequoia.settings.active.continual.make_env import make_batched_env
 
 
 def test_sanity_check_cartpole_done_vector(monkeypatch):

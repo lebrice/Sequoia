@@ -21,8 +21,8 @@ from simple_parsing import ArgumentParser
 from sequoia.common.config import Config, TrainerConfig
 from sequoia.common.transforms import Transforms
 from sequoia.settings import ContinualRLSetting, Method
-from sequoia.settings.active.rl import ContinualRLSetting
-from sequoia.settings.active.rl.wrappers import RemoveTaskLabelsWrapper, NoTypedObjectsWrapper
+from sequoia.settings.active.continual import ContinualRLSetting
+from sequoia.settings.active.continual.wrappers import RemoveTaskLabelsWrapper, NoTypedObjectsWrapper
 #  --------- PL BOLTS PATCH ----------
 # Changed this here to also accept envs directly rather than just strings.
 

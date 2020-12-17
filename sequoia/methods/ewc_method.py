@@ -32,9 +32,9 @@ sys.path.extend([".", ".."])
 # Repo imports:
 from sequoia.settings import Method, Setting
 from sequoia.settings.active import ActiveEnvironment, ActiveSetting
-from sequoia.settings.active.rl import (ClassIncrementalRLSetting, ContinualRLSetting,
+from sequoia.settings.active.continual import (IncrementalRLSetting, ContinualRLSetting,
                                 RLSetting, TaskIncrementalRLSetting)
-from sequoia.settings.active.rl.wrappers import (NoTypedObjectsWrapper,
+from sequoia.settings.active.continual.wrappers import (NoTypedObjectsWrapper,
                                          RemoveTaskLabelsWrapper)
 from sequoia.settings.assumptions.incremental import IncrementalSetting
 from sequoia.settings.base import Environment

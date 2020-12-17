@@ -20,8 +20,8 @@ from stable_baselines3.common.vec_env.obs_dict_wrapper import ObsDictWrapper
 
 from sequoia.common.gym_wrappers.batch_env.batched_vector_env import VectorEnv
 from sequoia.settings import Method
-from sequoia.settings.active.rl import ContinualRLSetting
-from sequoia.settings.active.rl.wrappers import (NoTypedObjectsWrapper,
+from sequoia.settings.active.continual import ContinualRLSetting
+from sequoia.settings.active.continual.wrappers import (NoTypedObjectsWrapper,
                                                  RemoveTaskLabelsWrapper)
 from sequoia.utils import Parseable, Serializable
 from sequoia.utils.logging_utils import get_logger

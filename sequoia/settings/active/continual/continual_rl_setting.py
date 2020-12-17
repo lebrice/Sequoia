@@ -91,7 +91,7 @@ Environment = ActiveEnvironment["ContinualRLSetting.Observations",
 
 
 @dataclass
-class ContinualRLSetting(IncrementalSetting, ActiveSetting):
+class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     """ Reinforcement Learning Setting where the environment changes over time.
 
     This is an Active setting which uses gym environments as sources of data.
@@ -105,8 +105,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     Results: ClassVar[Type[Results]] = RLResults
     
     @dataclass(frozen=True)
-    class Observations(IncrementalSetting.Observations,
-                       ActiveSetting.Observations):
+    class Observations(#ActiveSetting.Observations,
+                       IncrementalSetting.Observations):
         """ Observations in a continual RL Setting. """
         # Just as a reminder, these are the fields defined in the base classes:
         # x: Tensor
@@ -609,6 +609,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # TODO: Find where to configure this 'test directory' for the outputs of
         # the Monitor.
         test_dir = "results"
+        
         self.test_env = ContinualRLTestEnvironment(
             env_dataloader,
             task_schedule=self.test_task_schedule,

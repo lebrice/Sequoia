@@ -4,17 +4,17 @@ from typing import Callable, Dict, Iterable, List, Tuple
 import gym
 from pytorch_lightning import LightningModule
 
-from .gym_dataloader import GymDataLoader
 from sequoia.utils import constant, dict_union
 from sequoia.utils.logging_utils import get_logger
 
-from .continual_rl_setting import ContinualRLSetting, HideTaskLabelsWrapper
+from ..gym_dataloader import GymDataLoader
+from ..continual_rl_setting import ContinualRLSetting, HideTaskLabelsWrapper
 
 logger = get_logger(__file__)
 
 
 @dataclass
-class ClassIncrementalRLSetting(ContinualRLSetting):
+class IncrementalRLSetting(ContinualRLSetting):
     """ Continual RL setting the data is divided into 'tasks' with clear boundaries.
 
     By default, the task labels are given at train time, but not at test time.

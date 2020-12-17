@@ -11,7 +11,9 @@ from sequoia.common.transforms import ChannelsFirstIfNeeded, ToTensor, Transform
 from sequoia.conftest import xfail_param
 from sequoia.utils.utils import take
 
-from .class_incremental_rl_setting import ClassIncrementalRLSetting
+from .incremental_rl_setting import IncrementalRLSetting
+from sequoia.settings import Method
+from sequoia.settings.assumptions.incremental import TestEnvironment
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 3])
@@ -26,7 +28,7 @@ from .class_incremental_rl_setting import ClassIncrementalRLSetting
 def test_check_iterate_and_step(dataset: str,
                                 expected_obs_shape: Tuple[int, ...],
                                 batch_size: int):
-    setting = ClassIncrementalRLSetting(dataset=dataset, nb_tasks=5)
+    setting = IncrementalRLSetting(dataset=dataset, nb_tasks=5)
     assert len(setting.train_task_schedule) == 5
     assert not setting.smooth_task_boundaries
     assert setting.task_labels_at_train_time
@@ -72,7 +74,7 @@ def test_check_iterate_and_step(dataset: str,
         if batch_size is None:
             assert obs[1] == task_label
         else:
-            assert isinstance(obs, ClassIncrementalRLSetting.Observations), obs[0].shape
+            assert isinstance(obs, IncrementalRLSetting.Observations), obs[0].shape
             assert obs.task_labels is task_label or all(task_label == task_label for task_label in obs.task_labels)
 
     env = setting.train_dataloader(batch_size=batch_size)
@@ -91,11 +93,9 @@ def test_check_iterate_and_step(dataset: str,
     env.close()
 
 
-from sequoia.settings import Method
-from .continual_rl_setting import TestEnvironment
 
 
-class DummyMethod(Method, target_setting=ClassIncrementalRLSetting):
+class DummyMethod(Method, target_setting=IncrementalRLSetting):
     def __init__(self):
         self.n_task_switches = 0
         self.received_task_ids: List[Optional[int]] = []
@@ -116,7 +116,7 @@ class DummyMethod(Method, target_setting=ClassIncrementalRLSetting):
                 actions = test_env.action_space.sample()
                 obs, _, done, info = test_env.step(actions)
 
-    def get_actions(self, observations: ClassIncrementalRLSetting.Observations, action_space: gym.Space):
+    def get_actions(self, observations: IncrementalRLSetting.Observations, action_space: gym.Space):
         return np.ones(action_space.shape)
 
     def on_task_switch(self, task_id: int=None):
@@ -130,7 +130,7 @@ from sequoia.conftest import DummyEnvironment
 
 def test_on_task_switch_is_called():
     dataset = "Breakout-v0"
-    setting = ClassIncrementalRLSetting(
+    setting = IncrementalRLSetting(
         dataset=DummyEnvironment,
         nb_tasks=5,
         steps_per_task=100,
@@ -146,7 +146,7 @@ def test_on_task_switch_is_called():
     assert method.received_task_ids == list(range(5)) + [None for _ in range(5)]
     
 
-    setting = ClassIncrementalRLSetting(
+    setting = IncrementalRLSetting(
         dataset=DummyEnvironment,
         nb_tasks=5,
         steps_per_task=100,

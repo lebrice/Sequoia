@@ -158,7 +158,8 @@ class Parseable:
         if isinstance(argv, str):
             argv = shlex.split(argv)
 
-        parser = ArgumentParser(description=cls.__doc__)
+        parser = ArgumentParser(description=cls.__doc__,
+                                add_dest_to_option_strings=False)
         cls.add_argparse_args(parser)
         # TODO: Set temporarily on the class, so its accessible in the class constructor
         cls_argv = cls._argv
