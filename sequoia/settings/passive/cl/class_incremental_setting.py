@@ -285,7 +285,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         return results
 
     def prepare_data(self, data_dir: Path = None, **kwargs):
-        self.config = self.config or Config.from_args(self._argv)
+        self.config = self.config or Config.from_args(self._argv, strict=False)
         
         if self.batch_size is None:
             logger.warning(UserWarning(

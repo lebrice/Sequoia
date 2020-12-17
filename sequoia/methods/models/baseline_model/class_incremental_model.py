@@ -59,7 +59,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
 
         self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()
         if self.hp.multihead:
-            output_head = self.create_output_head()
+            output_head = self.create_output_head(self.setting)
             self.output_head = output_head
             self.output_heads[str(self.setting.current_task_id)] = output_head
 
@@ -90,7 +90,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             key = str(current_task_id)
             if key not in self.output_heads:
                 # Create the output head, since it's not already in there.
-                output_head = self.create_output_head()
+                output_head = self.create_output_head(self.setting)
                 self.output_heads[key] = output_head
             else:
                 output_head = self.output_heads[key]
@@ -257,7 +257,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             # TODO: Try to do some kind of task inference here, if possible!
             pass    
         if task_id is not None and self.hp.multihead and str(task_id) not in self.output_heads:
-            self.output_heads[str(task_id)] = self.create_output_head()
+            self.output_heads[str(task_id)] = self.create_output_head(self.setting)
 
     @property
     def current_task_classes(self) -> List[int]:
@@ -285,7 +285,11 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # TODO: Double-check that this makes sense and works properly.
         if self.hp.multihead and unexpected_keys:
             for i in range(self.setting.nb_tasks):
-                new_output_head = self.create_output_head()
+                # Try to load the output head weights
+                new_output_head = self.create_output_head(self.setting)
+                # FIXME: TODO: This is wrong. We should create all the
+                # output heads if they aren't already created, and then try to
+                # load the state_dict again.
                 new_output_head.load_state_dict(
                     {k: state_dict[k] for k in unexpected_keys},
                     strict=False,

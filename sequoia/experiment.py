@@ -131,10 +131,11 @@ class Experiment(Parseable, Serializable):
             # Actually load the setting from the file.
             self.setting = self.setting.load(path=self.benchmark,
                                              drop_extra_fields=drop_extras)
+            
             if self.method is None:
                 raise NotImplementedError(
-                    f"For now, you need to specify a Method to use (using "
-                    f"`--method`)when loading the setting from a preset file. "
+                    f"For now, you need to specify a Method to use using the "
+                    f"`--method` argument when loading the setting from a file."
                 )
 
         if self.setting is not None and self.method is not None:
@@ -188,7 +189,7 @@ class Experiment(Parseable, Serializable):
 
         # TODO: Should we raise an error if an argument appears both in the Setting
         # and the Method?
-        parser = ArgumentParser(description=__doc__)
+        parser = ArgumentParser(description=__doc__, add_dest_to_option_strings=False)
         
         if not isinstance(setting, Setting):
             assert issubclass(setting, Setting)

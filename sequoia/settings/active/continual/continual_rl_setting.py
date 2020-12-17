@@ -182,9 +182,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
     # NOTE: Added this `cmd=False` option to mark that we don't want to generate
     # any command-line arguments for these fields.
-    train_task_schedule: Dict[int, Dict] = dict_field(cmd=False)
-    valid_task_schedule: Dict[int, Dict] = dict_field(cmd=False)
-    test_task_schedule: Dict[int, Dict] = dict_field(cmd=False)
+    train_task_schedule: Dict[int, Dict[str, float]] = dict_field(cmd=False)
+    valid_task_schedule: Dict[int, Dict[str, float]] = dict_field(cmd=False)
+    test_task_schedule: Dict[int, Dict[str, float]] = dict_field(cmd=False)
 
     train_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
     valid_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
@@ -420,7 +420,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         """Apply the given method on this setting to producing some results. """
         # Use the supplied config, or parse one from the arguments that were
         # used to create `self`.
-        self.config = config or Config.from_args(self._argv)
+        self.config = config or Config.from_args(self._argv, strict=False)
         # TODO: Should we really overwrite the method's 'config' attribute here?
         if not getattr(method, "config", None):
             method.config = self.config
@@ -616,6 +616,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             directory=test_dir,
             step_limit=test_loop_max_steps,
             force=True,
+            video_callable=None if self.config.render else False,
         )
         return self.test_env
 

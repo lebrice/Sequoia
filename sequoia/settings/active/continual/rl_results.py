@@ -75,6 +75,7 @@ class RLResults(IncrementalSetting.Results, Results):
                 "Steps": int(steps),
                 "Episodes": int(episodes),
                 "Total reward": float(sum(self.episode_rewards[task])),
+                "Mean reward / episode": float(np.mean(self.episode_rewards[task])),
                 "Mean reward / step": float(self.average_metrics_per_task[task].mse),
             }
             mean_episode_length = 0

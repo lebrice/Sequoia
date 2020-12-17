@@ -26,9 +26,15 @@ logger = get_logger(__file__)
 
 @dataclass
 class IncrementalSetting(Setting):
-    """ Mixin that defines methods that are common to all 'incremental' settings,
-    where the data is separated into tasks, and where you may not always get the
-    task labels.
+    """ Mixin that defines methods that are common to all 'incremental'
+    settings, where the data is separated into tasks, and where you may not
+    always get the task labels.
+    
+    Concretely, this holds the train and test loops that are common to the
+    ClassIncrementalSetting (highest node on the Passive side) and ContinualRL
+    (highest node on the Active side), therefore this setting, while abstract,
+    is quite important. 
+    
     """
     @dataclass
     class Results(SettingABC.Results):
@@ -86,8 +92,7 @@ class IncrementalSetting(Setting):
     _current_task_id: int = field(default=0, init=False)
 
     def __post_init__(self, *args, **kwargs):
-        super().__post_init__(self, *args, **kwargs)
-        # assert False, "This Shouldn't ever be called!"
+        super().__post_init__(*args, **kwargs)
 
     @property
     def current_task_id(self) -> Optional[int]:
