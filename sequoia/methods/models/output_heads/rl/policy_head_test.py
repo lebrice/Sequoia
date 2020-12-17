@@ -71,13 +71,8 @@ class FakeEnvironment(SyncVectorEnv):
 from sequoia.common.layers import Flatten
 from gym.spaces.utils import flatdim, flatten
 
-@pytest.mark.xfail(reason="TODO: Fix this by merging the relevant changes from "
-                          "better_rl_baseline branch.")
-@pytest.mark.parametrize("batch_size",
-[
-    2,
-    5,
-])
+
+@pytest.mark.parametrize("batch_size", [2, 5])
 def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
     """ TODO: Test out the PolicyHead in a very controlled environment, where we
     know exactly the lengths of each episode.
@@ -180,7 +175,6 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             assert loss.loss == 0.
 
 
-@pytest.mark.xfail(reason="Older, confusing test.")
 @pytest.mark.parametrize("batch_size",
 [
     1,
@@ -281,14 +275,7 @@ def test_done_is_sometimes_True_when_iterating_through_env(batch_size: int):
         assert False, "Never encountered done=True!"
 
 
-@pytest.mark.xfail(reason="TODO: Fix this by merging the relevant changes from "
-                          "better_rl_baseline branch.")
-@pytest.mark.parametrize("batch_size",
-[
-    1,
-    xfail_param(2, reason="doesn't work with batched envs yet."),
-    xfail_param(5, reason="doesn't work with batched envs yet."),
-])
+@pytest.mark.parametrize("batch_size", [1, 2, 5])
 def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
     """ Test that when *iterating* through the env (active-dataloader style),
     when the episode ends, a non-zero loss is returned by the output head.
@@ -311,6 +298,7 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
         input_space=obs_space[0],
         action_space=action_space,
         reward_space=reward_space,
+        hparams=PolicyHead.HParams(accumulate_losses_before_backward=False),
     )
 
     env.seed(123)

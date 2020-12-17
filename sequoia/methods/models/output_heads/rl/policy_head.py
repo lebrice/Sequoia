@@ -213,7 +213,7 @@ class PolicyHead(ClassificationHead):
         self.num_episodes_since_update: Sequence[int] = []
 
         self.optimizer = self.configure_optimizers()
-        self._training: bool = False
+        self._training: bool = True
     
     def configure_optimizers(self) -> Union[Optimizer, Tuple[Optimizer, ...]]:
         """ Create the optimizers required by this output head.
@@ -348,7 +348,7 @@ class PolicyHead(ClassificationHead):
         
         return actions
 
-    def get_actions(representations: Tensor) -> PolicyHeadOutput:
+    def get_actions(self, representations: Tensor) -> PolicyHeadOutput:
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
         policy = Categorical(logits=logits)
