@@ -174,6 +174,19 @@ Prerequisites:
 	arguments using `simple_parsing`.
 
 
+	- ## [IncrementalSetting](sequoia/settings/assumptions/incremental.py)
+
+		Mixin that defines methods that are common to all 'incremental'
+		settings, where the data is separated into tasks, and where you may not
+		always get the task labels.
+
+		Concretely, this holds the train and test loops that are common to the
+		ClassIncrementalSetting (highest node on the Passive side) and ContinualRL
+		(highest node on the Active side), therefore this setting, while abstract,
+		is quite important. 
+
+
+
 	- ## [PassiveSetting](sequoia/settings/passive/passive_setting.py)
 
 		Setting where actions have no influence on future observations. 
@@ -205,13 +218,6 @@ Prerequisites:
 
 					Implemented as a variant of Task-Incremental CL, but with only one task.
 
-
-
-	- ## [IncrementalSetting](sequoia/settings/assumptions/incremental.py)
-
-		Mixin that defines methods that are common to all 'incremental' settings,
-		where the data is separated into tasks, and where you may not always get the
-		task labels.
 
 
 	- ## [ActiveSetting](sequoia/settings/active/active_setting.py)
