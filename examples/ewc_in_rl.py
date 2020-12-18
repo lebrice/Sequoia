@@ -88,7 +88,7 @@ class EWC(PolicyWrapper[Policy]):
 
 from sequoia.methods.stable_baselines3_methods import (A2CModel, DDPGModel,
                                                        DQNModel, PPOModel,
-                                                       SACModel)
+                                                       SACModel, TD3Model)
 
 
 @register_method
@@ -97,12 +97,12 @@ class ExampleRegularizationMethod(StableBaselines3Method):
     Model: ClassVar[Type[BaseAlgorithm]]
 
     # You could use any of these 'backbones' from SB3:
-    # Model = A2CModel
-    # Model = DQNModel
-    Model = PPOModel
+    Model = A2CModel
+    # Model = DQNModel  # Bug: the actions aren't integers for some reason?
+    # Model = PPOModel  # Works great!
     # Model = DDPGModel # Doesn't work (policy.optimizer is None)
     # Model = SACModel # Doesn't work (policy.optimizer is None)
-
+    # Model = TD3Model # Doesn't work (policy.optimizer is None)
     # Coefficient for the EWC-like loss.
     reg_coefficient: float = 1.0
     # norm of the 'distance' used in the ewc-like loss above.

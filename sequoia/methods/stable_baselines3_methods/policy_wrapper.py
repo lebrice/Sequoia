@@ -18,6 +18,7 @@ from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.utils import explained_variance
 from torch import Tensor, nn
 from torch.nn import functional as F
+from torch.optim.optimizer import Optimizer
 
 from sequoia.methods.stable_baselines3_methods import StableBaselines3Method
 from sequoia.methods.stable_baselines3_methods.a2c import A2CMethod, A2CModel
@@ -54,26 +55,24 @@ class PolicyWrapper(BasePolicy, ABC, Generic[Policy]):
         
         You can use this to return some kind of loss tensor to use.
         """
-        
-    @classmethod
-    def wrap_policy_class(cls: Type[Wrapper], policy_type: Type[Policy]) -> Type[Union[Policy, Wrapper]]:
-        """ Add the wrapper as a base class to a policy type from SB3. """
-        assert issubclass(policy_type, BasePolicy)
-        if issubclass(policy_type, cls):
-            # It already has the mixin, so return the class unchanged.
-            return policy_type
 
-        # Save the results so we don't create two wrappers for the same class. 
-        if policy_type in cls._wrapped_classes:
-            return cls._wrapped_classes[policy_type]
+    def before_optimizer_step(self: Policy):
+        """ Called before executing `self.policy.optimizer.step()` in the training 
+        loop of the SB3 algos.
+        """
+        pass
+       
+    def after_zero_grad(self: Policy):
+        """ Called after `self.policy.optimizer.zero_grad()` in the training 
+        loop of the SB3 algos.
+        """
+        # Backpropagate the loss here, by default, so that any grad clipping
+        # also affects the grads of the loss, for instance.
+        wrapper_loss = self.get_loss()
+        logger.debug(f"{type(self).__name__} loss: {wrapper_loss}")
+        if isinstance(wrapper_loss, Tensor) and wrapper_loss.requires_grad:
+            wrapper_loss.backward(retain_graph=True)
 
-        class WrappedPolicy(policy_type, cls):  # type: ignore
-            pass
-
-        WrappedPolicy.__name__ = policy_type.__name__ + "With" + cls.__name__
-        cls._wrapped_classes[policy_type] = WrappedPolicy
-        return WrappedPolicy
-    
     @classmethod
     def wrap_policy(cls: Type[Wrapper], policy: Policy, **mixin_init_kwargs) -> Union[Policy, Wrapper]:
         """ IDEA: "Wrap" a Policy, so that every time its optimizer's `step()`
@@ -98,24 +97,50 @@ class PolicyWrapper(BasePolicy, ABC, Generic[Policy]):
             cls.__init__(policy, _already_initialized=True, **mixin_init_kwargs)
 
         assert isinstance(policy, cls)
+        optimizer = policy.optimizer
+        if optimizer is None:
+            assert False, f"TODO: {policy.optimizer_class}"
+            raise NotImplementedError("Need to have an optimizer instance atm")
+            # TODO: Use this maybe:
 
-        # 'Replace' the `policy.optimizer.step` with a function that first
-        # backpropagates the EWC loss.
-        _optimizer_step = policy.optimizer.step
+        # 'Replace' the `policy.optimizer.step` with a function that might first
+        # backpropagates the loss.
+        _step = optimizer.step
         # NOTE: Setting the policy's `optimizer` attribute to a new value will
         # will actually break this. 
-        @wraps(policy.optimizer.step)
+        @wraps(optimizer.step)
         def new_optimizer_step(*args, **kwargs):
-            # Get the loss
-            wrapper_loss = policy.get_loss()
-            sb3_logger.record("{cls.__name__} loss", wrapper_loss)
-            logger.debug(f"{cls.__name__} loss: {wrapper_loss}")
-            if isinstance(wrapper_loss, Tensor) and wrapper_loss.requires_grad:
-                wrapper_loss.backward()
-            return _optimizer_step(*args, **kwargs)
+            policy.before_optimizer_step()
+            return _step(*args, **kwargs)
+        optimizer.step = new_optimizer_step
 
-        policy.optimizer.step = new_optimizer_step
+        _zero_grad = optimizer.zero_grad
+        @wraps(optimizer.zero_grad)
+        def new_zero_grad():
+            _zero_grad()
+            policy.after_zero_grad()
+        optimizer.zero_grad = new_zero_grad
+        
         return policy
+
+    @classmethod
+    def wrap_policy_class(cls: Type[Wrapper], policy_type: Type[Policy]) -> Type[Union[Policy, Wrapper]]:
+        """ Add the wrapper as a base class to a policy type from SB3. """
+        assert issubclass(policy_type, BasePolicy)
+        if issubclass(policy_type, cls):
+            # It already has the mixin, so return the class unchanged.
+            return policy_type
+
+        # Save the results so we don't create two wrappers for the same class. 
+        if policy_type in cls._wrapped_classes:
+            return cls._wrapped_classes[policy_type]
+
+        class WrappedPolicy(policy_type, cls):  # type: ignore
+            pass
+
+        WrappedPolicy.__name__ = policy_type.__name__ + "With" + cls.__name__
+        cls._wrapped_classes[policy_type] = WrappedPolicy
+        return WrappedPolicy
 
     @classmethod
     def wrap_algorithm(cls: Type[Wrapper], algo: SB3Algo, **wrapper_kwargs) -> SB3Algo:
