@@ -138,18 +138,18 @@ if __name__ == "__main__":
         observe_state_directly=True,
         nb_tasks=2,
         train_task_schedule={
-            0:      {"gravity": 10, "length": 0.5},
-            1000:   {"gravity": 10, "length": 0.4},
+            0:      {"gravity": 10, "length": 0.3},
+            1000:   {"gravity": 10, "length": 0.5}, # second task is 'easier' than the first one.
         },
         max_steps = 2000,
     )
     method = EWCRLMethod(ewc_coefficient=0.)
     results_without_ewc = setting.apply(method)
 
-    print(results_without_ewc)
-    
-    method = EWCRLMethod(ewc_coefficient=1.)
+    method = EWCRLMethod(ewc_coefficient=1e-6)
     results_with_ewc = setting.apply(method)
-
+    print("-" * 40)
+    print("WITHOUT EWC ")
     print(results_without_ewc.summary())
+    print(f"With EWC (coefficient={method.ewc_coefficient}):")
     print(results_with_ewc.summary())
