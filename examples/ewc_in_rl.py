@@ -25,6 +25,9 @@ Policy = TypeVar("Policy", bound=BasePolicy)
 class EWC(PolicyWrapper[Policy]):
     """ A Wrapper class that adds a `on_task_switch` and a `ewc_loss` method to
     an nn.Module (in this particular case, a Policy from SB3.)
+    
+    By subclassing PolicyWrapper, this is able to leverage some 'hooks' into the
+    optimizer of the policy. 
     """
     def __init__(self: Policy,
                  *args,
@@ -64,6 +67,22 @@ class EWC(PolicyWrapper[Policy]):
         You can use this to return some kind of loss tensor to use.
         """
         return self.reg_coefficient * self.ewc_loss()
+    
+    def after_zero_grad(self: Policy):
+        """ Called after `self.policy.optimizer.zero_grad()` in the training 
+        loop of the SB3 algos.
+        """
+        # Backpropagate the loss here, by default, so that any grad clipping
+        # also affects the grads of the loss, for instance.
+        wrapper_loss = self.get_loss()
+        if isinstance(wrapper_loss, Tensor) and wrapper_loss.requires_grad:
+            logger.info(f"{type(self).__name__} loss: {wrapper_loss.item()}")
+            wrapper_loss.backward(retain_graph=True)
+    
+    def before_optimizer_step(self: Policy):
+        """ Called before `self.policy.optimizer.step()` in the training 
+        loop of the SB3 algos.
+        """
 
     def ewc_loss(self: Policy) -> Union[float, Tensor]:
         """Gets an 'ewc-like' regularization loss.
@@ -146,7 +165,7 @@ if __name__ == "__main__":
     method = ExampleRegularizationMethod(reg_coefficient=0.)
     results_without_reg = setting.apply(method)
 
-    method = ExampleRegularizationMethod(reg_coefficient=1e-3)
+    method = ExampleRegularizationMethod(reg_coefficient=1.)
     results_with_reg = setting.apply(method)
     print("-" * 40)
     print("WITHOUT EWC ")

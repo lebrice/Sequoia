@@ -97,7 +97,7 @@ class PolicyWrapper(BasePolicy, ABC, Generic[Policy]):
             cls.__init__(policy, _already_initialized=True, **mixin_init_kwargs)
 
         assert isinstance(policy, cls)
-        optimizer = policy.optimizer
+        optimizer = policy.optimizer or policy.optimizer_class
         if optimizer is None:
             assert False, f"TODO: {policy.optimizer_class}"
             raise NotImplementedError("Need to have an optimizer instance atm")
@@ -116,8 +116,8 @@ class PolicyWrapper(BasePolicy, ABC, Generic[Policy]):
 
         _zero_grad = optimizer.zero_grad
         @wraps(optimizer.zero_grad)
-        def new_zero_grad():
-            _zero_grad()
+        def new_zero_grad(*args, **kwargs):
+            _zero_grad(*args, **kwargs)
             policy.after_zero_grad()
         optimizer.zero_grad = new_zero_grad
         
