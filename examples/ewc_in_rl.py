@@ -75,7 +75,7 @@ class EWC(PolicyWrapper[Policy]):
         # Backpropagate the loss here, by default, so that any grad clipping
         # also affects the grads of the loss, for instance.
         wrapper_loss = self.get_loss()
-        if isinstance(wrapper_loss, Tensor) and wrapper_loss.requires_grad:
+        if isinstance(wrapper_loss, Tensor) and wrapper_loss != 0. and wrapper_loss.requires_grad:
             logger.info(f"{type(self).__name__} loss: {wrapper_loss.item()}")
             wrapper_loss.backward(retain_graph=True)
     
@@ -116,12 +116,21 @@ class ExampleRegularizationMethod(StableBaselines3Method):
     Model: ClassVar[Type[BaseAlgorithm]]
 
     # You could use any of these 'backbones' from SB3:
-    Model = A2CModel
-    # Model = DQNModel  # Bug: the actions aren't integers for some reason?
-    # Model = PPOModel  # Works great!
-    # Model = DDPGModel # Doesn't work (policy.optimizer is None)
-    # Model = SACModel # Doesn't work (policy.optimizer is None)
-    # Model = TD3Model # Doesn't work (policy.optimizer is None)
+    # Model = A2CModel  # Works great! (fastest)
+    Model = PPOModel  # Works great! (somewhat fast)
+    # Model = SACModel  # Works (seems to be quite a bit slower).
+    
+    # These two don't yet work, they have the same error, which seems to be
+    # related to the action space being Discrete:
+    #     stable_baselines3/td3/td3.py", line 143, in train
+    #     noise = replay_data.actions.clone().data.normal_(0, self.target_policy_noise)
+    # RuntimeError: "normal_kernel_cuda" not implemented for 'Long'
+    # Model = TD3Model  # TODO
+    # Model = DDPGModel  # TODO
+    # Model = DQNModel  # Doesn't work: predictions have more than one value?!
+
+    
+    
     # Coefficient for the EWC-like loss.
     reg_coefficient: float = 1.0
     # norm of the 'distance' used in the ewc-like loss above.
@@ -165,7 +174,7 @@ if __name__ == "__main__":
     method = ExampleRegularizationMethod(reg_coefficient=0.)
     results_without_reg = setting.apply(method)
 
-    method = ExampleRegularizationMethod(reg_coefficient=1.)
+    method = ExampleRegularizationMethod(reg_coefficient=1e-3)
     results_with_reg = setting.apply(method)
     print("-" * 40)
     print("WITHOUT EWC ")
