@@ -7,25 +7,19 @@ from typing import ClassVar, Dict, Optional, Type, TypeVar, Union
 
 import gym
 import torch
-from stable_baselines3.a2c.policies import (ActorCriticCnnPolicy,
-                                            ActorCriticPolicy)
+from sequoia.methods import register_method
+from sequoia.methods.stable_baselines3_methods import StableBaselines3Method
+from sequoia.methods.stable_baselines3_methods.policy_wrapper import \
+    PolicyWrapper
+from sequoia.settings import TaskIncrementalRLSetting
+from sequoia.utils import dict_intersection, get_logger
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.policies import BasePolicy
 from torch import Tensor
 
-from sequoia.methods.stable_baselines3_methods import StableBaselines3Method
-from sequoia.settings import TaskIncrementalRLSetting
-from sequoia.utils import dict_intersection, get_logger
-
 logger = get_logger(__file__)
 
-T = TypeVar("T")
 Policy = TypeVar("Policy", bound=BasePolicy)
-SB3Algo = TypeVar("SB3Algo", bound=BaseAlgorithm)
-
-Wrapper = TypeVar("Wrapper", bound="PolicyWrapper")
-
-from sequoia.methods.stable_baselines3_methods.policy_wrapper import PolicyWrapper
 
 
 class EWC(PolicyWrapper[Policy]):
@@ -34,11 +28,11 @@ class EWC(PolicyWrapper[Policy]):
     """
     def __init__(self: Policy,
                  *args,
-                 ewc_coefficient: float = 1.0,
+                 reg_coefficient: float = 1.0,
                  ewc_p_norm: int = 2,
                  **kwargs):
         super().__init__(*args, **kwargs)
-        self.ewc_coefficient = ewc_coefficient
+        self.reg_coefficient = reg_coefficient
         self.ewc_p_norm = ewc_p_norm
 
         self.previous_model_weights: Dict[str, Tensor] = {}
@@ -69,7 +63,7 @@ class EWC(PolicyWrapper[Policy]):
         
         You can use this to return some kind of loss tensor to use.
         """
-        return self.ewc_coefficient * self.ewc_loss()
+        return self.reg_coefficient * self.ewc_loss()
 
     def ewc_loss(self: Policy) -> Union[float, Tensor]:
         """Gets an 'ewc-like' regularization loss.
@@ -92,20 +86,26 @@ class EWC(PolicyWrapper[Policy]):
         return loss
 
 
-from stable_baselines3 import A2C, DDPG, DQN, PPO, SAC
+from sequoia.methods.stable_baselines3_methods import (A2CModel, DDPGModel,
+                                                       DQNModel, PPOModel,
+                                                       SACModel)
 
 
-
+@register_method
 @dataclass
-class EWCRLMethod(StableBaselines3Method):
+class ExampleRegularizationMethod(StableBaselines3Method):
     Model: ClassVar[Type[BaseAlgorithm]]
-    # Model = A2C
-    # Model = DQN
-    Model = PPO
-    # Model = DDPG
-    # Model = SAC
 
-    ewc_coefficient: float = 1.0
+    # You could use any of these 'backbones' from SB3:
+    # Model = A2CModel
+    # Model = DQNModel
+    Model = PPOModel
+    # Model = DDPGModel # Doesn't work (policy.optimizer is None)
+    # Model = SACModel # Doesn't work (policy.optimizer is None)
+
+    # Coefficient for the EWC-like loss.
+    reg_coefficient: float = 1.0
+    # norm of the 'distance' used in the ewc-like loss above.
     ewc_p_norm: int = 2
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> BaseAlgorithm:
@@ -114,7 +114,7 @@ class EWCRLMethod(StableBaselines3Method):
         # 'Wrap' the algorithm's policy with the EWC wrapper.
         model = EWC.wrap_algorithm(
             model,
-            ewc_coefficient=self.ewc_coefficient,
+            reg_coefficient=self.reg_coefficient,
             ewc_p_norm=self.ewc_p_norm,
         )
         return model
@@ -143,13 +143,13 @@ if __name__ == "__main__":
         },
         max_steps = 2000,
     )
-    method = EWCRLMethod(ewc_coefficient=0.)
-    results_without_ewc = setting.apply(method)
+    method = ExampleRegularizationMethod(reg_coefficient=0.)
+    results_without_reg = setting.apply(method)
 
-    method = EWCRLMethod(ewc_coefficient=1e-6)
-    results_with_ewc = setting.apply(method)
+    method = ExampleRegularizationMethod(reg_coefficient=1e-3)
+    results_with_reg = setting.apply(method)
     print("-" * 40)
     print("WITHOUT EWC ")
-    print(results_without_ewc.summary())
-    print(f"With EWC (coefficient={method.ewc_coefficient}):")
-    print(results_with_ewc.summary())
+    print(results_without_reg.summary())
+    print(f"With EWC (coefficient={method.reg_coefficient}):")
+    print(results_with_reg.summary())
