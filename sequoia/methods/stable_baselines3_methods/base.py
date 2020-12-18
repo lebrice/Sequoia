@@ -79,7 +79,7 @@ class SB3BaseHParams(Serializable, Parseable):
     # the log location for tensorboard (if None, no logging)
     tensorboard_log: Optional[str] = None
     # The verbosity level: 0 none, 1 training information, 2 debug
-    verbose: int = 0
+    verbose: int = 1
     # Device on which the code should run. By default, it will try to use a Cuda
     # compatible device and fallback to cpu if it is not possible.
     device: Union[torch.device, str] = "auto"
@@ -243,6 +243,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         obs = observations.x
         predictions = self.model.predict(obs)
         action, _ = predictions
+        # BUG: DQN prediction here doesn't work. 
         if action not in action_space:
             assert len(action) == 1, (observations, action, action_space)
             action = action.item()
