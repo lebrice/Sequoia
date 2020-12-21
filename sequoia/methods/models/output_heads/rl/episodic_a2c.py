@@ -21,6 +21,9 @@ from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
 from .policy_head import Categorical, PolicyHead, PolicyHeadOutput, GradientUsageMetric
 from .policy_head import normalize
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
+from sequoia.utils import get_logger
+
+logger = get_logger(__file__)
 
 
 # TODO: Use this as inspiration: (taken from the ActorCriticPolicy from stable-baselines-3)
@@ -85,7 +88,16 @@ class EpisodicA2C(PolicyHead):
 
         actor_loss_coef: float = 0.5
         critic_loss_coef: float = 0.5
-        entropy_loss_coef: float = 0.0
+        entropy_loss_coef: float = 0.1
+
+        # Maximum norm of the policy gradient.
+        max_policy_grad_norm: Optional[float] = 0.5
+
+        # The discount factor.
+        gamma: float = 0.99
+
+        # Learning rate of the optimizer.
+        learning_rate: float = 1e-3
 
     def __init__(self,
                  input_space: spaces.Box,
@@ -116,7 +128,6 @@ class EpisodicA2C(PolicyHead):
         self._current_state: Optional[Tensor] = None
         self._previous_state: Optional[Tensor] = None
         self._step = 0
-        
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
 
     @property
@@ -126,7 +137,9 @@ class EpisodicA2C(PolicyHead):
     def forward(self,
                 observations: ContinualRLSetting.Observations,
                 representations: Tensor) -> A2CHeadOutput:
-        return super().forward(observations, representations)
+        actions = super().forward(observations, representations)
+        assert isinstance(actions, A2CHeadOutput)
+        return actions
 
     def get_actions(self, representations: Tensor) -> A2CHeadOutput:
         # TODO: Shouldn't the critic also take the actor's action as an input?
@@ -149,7 +162,13 @@ class EpisodicA2C(PolicyHead):
 
     def create_buffers(self):
         super().create_buffers()
-        
+
+    def num_stored_steps(self, env_index: int) -> int:
+        """ Returns the number of steps stored in the buffer for the given
+        environment index.
+        """
+        return len(self.actions[env_index])
+
     def get_episode_loss(self, env_index: int, done: bool):
         inputs: Tensor
         actions: A2CHeadOutput
@@ -160,14 +179,18 @@ class EpisodicA2C(PolicyHead):
         # rather than detaching them!
 
         if not done:
+            return None
+
+        # TODO: Add something like a 'num_steps_since_update' for each env? (it
+        # would actually be a num_steps_since_backward)
+        # if self.num_steps_since_update?
+
+        if self.num_stored_steps(env_index) < 5:
             # For now, we only give back a loss at the end of the episode.
             # TODO: Test if giving back a loss at each step or every few steps
             # would work better!
             return None
 
-        if len(self.actions[env_index]) == 0:
-            raise RuntimeError(f"Weird, asked to get episode loss, but there is "
-                               f"nothing in the buffer?")
         inputs, actions, rewards = self.stack_buffers(env_index)
         logits: Tensor = actions.logits
         action_log_probs: Tensor = actions.action_log_prob
@@ -182,8 +205,7 @@ class EpisodicA2C(PolicyHead):
         dones = torch.zeros(episode_length, dtype=torch.bool)
         dones[-1] = done
 
-        
-        returns = self.get_returns(episode_rewards, gamma=self.hparams.gamma)
+        returns = self.get_returns(episode_rewards, gamma=self.hparams.gamma).type_as(values)
         advantages = returns - values
 
         # Normalize advantage (not present in the original implementation)
@@ -192,72 +214,39 @@ class EpisodicA2C(PolicyHead):
 
         # Create the Loss to be returned.
         loss = Loss(self.name)
-        
+
         # Policy gradient loss (actor loss)
         policy_gradient_loss = - (advantages * action_log_probs).mean()
         actor_loss = Loss("actor", policy_gradient_loss)
         loss += self.hparams.actor_loss_coef * actor_loss
         
-        # Value loss: Try to get the critic's values close to the actual return.
-        value_loss_tensor = F.mse_loss(returns, values)
+        # Value loss: Try to get the critic's values close to the actual return,
+        # which means the advantages should be close to zero.
+        value_loss_tensor = F.mse_loss(values, returns)
         critic_loss = Loss("critic", value_loss_tensor)
-        loss += self.hparams.actor_loss_coef * actor_loss
+        loss += self.hparams.critic_loss_coef * critic_loss
 
-        entropy_loss = Loss("entropy", actions.action_dist.entropy().mean())
+        # Entropy loss, to "favor exploration".
+        entropy_loss = Loss("entropy", - actions.action_dist.entropy().mean())
         loss += self.hparams.entropy_loss_coef * entropy_loss
         
-        loss.metric = EpisodeMetrics(rewards=episode_rewards.tolist())
+        if done:
+            episode_metrics = [EpisodeMetrics(rewards=episode_rewards.tolist())]
+            loss.metric = RLMetrics(episodes=episode_metrics)
+        
         loss.metrics["gradient_usage"] = self.get_gradient_usage_metrics(env_index)
 
         return loss
-        # # Value loss using the TD(gae_lambda) target
-        # value_loss = F.mse_loss(rollout_data.returns, values)
 
-        # # Entropy loss favor exploration
-        # if entropy is None:
-        #     # Approximate entropy when no analytical form
-        #     entropy_loss = -th.mean(-log_prob)
-        # else:
-        #     entropy_loss = -th.mean(entropy)
+    def optimizer_step(self):
+        # Clip grad norm if desired.
+        if self.hparams.max_policy_grad_norm is not None:
+            torch.nn.utils.clip_grad_norm_(
+                self.actor.parameters(),
+                self.hparams.max_policy_grad_norm,
+            )
+        super().optimizer_step()
 
-        # loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
-
-        # # Optimization step
-        # self.policy.optimizer.zero_grad()
-        # loss.backward()
-
-        # # Clip grad norm
-        # th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
-
-
-
-        # Construct the 'q' values from the right to the left.
-        # The estimated value for the final state in the episode.
-        # q_val = values[-1]
-        # q_vals: Deque[Tensor] = deque(maxlen=None)
-        # for reward, done_i in list(zip(episode_rewards, dones))[::-1]:
-        #     q_val = reward + (~done_i) * self.hparams.gamma * q_val
-        #     q_vals.appendleft(q_val) # store values from the end to the beginning
-        # advantage = torch.stack(list(q_vals)) - values
-        # assert False, advantage
-        # loss = Loss(self.name)
-        
-        # critic_loss_tensor = advantage.pow(2).mean()
-        # critic_loss = Loss("critic", critic_loss_tensor)
-        # loss += critic_loss
-                
-        # actor_loss_tensor = (- action_log_probs * advantage.detach()).mean()
-        # actor_loss = Loss("actor", actor_loss_tensor)
-        # loss += actor_loss
-        
-        # loss.metric = RLMetrics(episodes=[EpisodeMetrics(rewards=episode_rewards.tolist())])
-        
-        # # Calculate how many of the inputs had gradients.
-        # gradient_usage = self.get_gradient_usage_metrics(env_index)
-        # loss.metrics["gradient_usage"] = gradient_usage
-        # return loss
-    
-    
     def stack_buffers(self, env_index: int):
         """ Stack the observations/actions/rewards for this env and return them.
         """

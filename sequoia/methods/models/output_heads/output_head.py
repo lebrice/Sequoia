@@ -13,7 +13,7 @@ from torch.nn import Flatten  # type: ignore
 
 from sequoia.common.loss import Loss
 from sequoia.common.metrics import ClassificationMetrics, get_metrics
-from sequoia.settings import Actions, Observations, Rewards
+from sequoia.settings import Actions, Observations, Rewards, Setting
 from sequoia.utils import Parseable, get_logger
 from sequoia.utils.serialization import Serializable
 from sequoia.utils.utils import camel_case, remove_suffix
@@ -77,7 +77,7 @@ class OutputHead(nn.Module, ABC):
         self.name = name or type(self).name
 
     @abstractmethod
-    def forward(self, observations: Observations, representations: Tensor) -> Actions:
+    def forward(self, observations: Setting.Observations, representations: Tensor) -> Setting.Actions:
         """Given the observations and their representations, produce "actions".
         
         Parameters

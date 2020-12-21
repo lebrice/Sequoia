@@ -32,7 +32,7 @@ from abc import ABC, abstractmethod
 from collections import deque, namedtuple
 from dataclasses import dataclass
 from typing import (Any, Dict, Iterable, List, NamedTuple, Optional, Sequence,
-                    Tuple, TypeVar, Union)
+                    Tuple, TypeVar, Union, MutableSequence, Deque)
 
 import gym
 import numpy as np
@@ -60,7 +60,7 @@ from ..classification_head import ClassificationHead, ClassificationOutput
 from ..output_head import OutputHead
 
 logger = get_logger(__file__)
-
+T = TypeVar("T")
 
 class Categorical(Categorical_):
     """ Simple little addition to the Categorical class, allowing it to be 'split'
@@ -88,35 +88,26 @@ class PolicyHeadOutput(ClassificationOutput):
     # The distribution over the actions, either as a single
     # (batched) distribution or as a list of distributions, one for each
     # environment in the batch.
-    action_dist: Distribution
+    action_dist: Categorical
     
     @property
-    def policy(self) -> Union[Distribution, List[Distribution]]:
-        return self.action_dist
+    def y_pred_prob(self) -> Tensor:
+        """ returns the probabilities for the chosen actions/predictions. """
+        return self.action_dist.probs(self.y_pred)
 
     @property
     def y_pred_log_prob(self) -> Tensor:
         """ returns the log probabilities for the chosen actions/predictions. """
-        if isinstance(self.policy, list):
-            return torch.stack([
-                policy.log_prob(y_pred)
-                for policy, y_pred in zip(self.policy, self.y_pred)
-            ])
-        return self.policy.log_prob(self.y_pred)
+        return self.action_dist.log_prob(self.y_pred)
 
     @property
     def action_log_prob(self) -> Tensor:
         return self.y_pred_log_prob
     
     @property
-    def y_pred_prob(self) -> Tensor:
-        """ returns the log probabilities for the chosen actions/predictions. """
-        if isinstance(self.policy, list):
-            return torch.stack([
-                policy.probs(y_pred)
-                for policy, y_pred in zip(self.policy, self.y_pred)
-            ])
-        return self.policy.probs(self.y_pred)
+    def action_prob(self) -> Tensor:
+        return self.y_pred_log_prob
+
 
 
 ## NOTE: Since the gym VectorEnvs actually auto-reset the individual
@@ -186,6 +177,7 @@ class PolicyHead(ClassificationHead):
         if not isinstance(self.hparams, self.HParams):
             # Upgrade the hparams to the right type, if needed.
             self.hparams = self.upgrade_hparams()
+        logger.info("Output head hparams: " + self.hparams.dumps_json(indent='\t'))
 
         self.hparams: PolicyHead.HParams
         # Type hints for the spaces;    
@@ -201,10 +193,10 @@ class PolicyHead(ClassificationHead):
         # TODO: Perhaps we should register these as buffers so they get
         # persisted correclty? But then we also need to make sure that the grad
         # stuff would work the same way..
-        self.representations: List[deque] = []
+        self.representations: List[Deque[Tensor]] = []
         # self.representations: List[deque] = []
-        self.actions: List[deque] = []
-        self.rewards: List[deque] = []
+        self.actions: List[Deque[PolicyHeadOutput]] = []
+        self.rewards: List[Deque[ContinualRLSetting.Rewards]] = []
 
         # The actual "internal" loss we use for training.
         self.loss: Loss = Loss(self.name, metrics={self.name: RLMetrics()})
@@ -212,14 +204,14 @@ class PolicyHead(ClassificationHead):
         self.detached_loss: Loss = self.loss.detach()
 
         self.batch_size: int = 0
-        
-        self.has_reached_episode_end: Sequence[bool] = []
-        self.num_episodes_since_update: Sequence[int] = []
+
+        self.has_reached_episode_end: np.ndarray
+        self.num_episodes_since_update: np.ndarray
 
         self.optimizer = self.configure_optimizers()
         self._training: bool = True
-    
-    def configure_optimizers(self) -> Union[Optimizer, Tuple[Optimizer, ...]]:
+
+    def configure_optimizers(self) -> Optimizer:
         """ Create the optimizers required by this output head.
         
         NOTE: Named the same as the `configure_optimizers` in pytorch-lightning,
@@ -240,9 +232,8 @@ class PolicyHead(ClassificationHead):
         self.num_episodes_since_update = np.zeros(self.batch_size, dtype=int)
         self.num_detached_tensors = np.zeros(self.batch_size, dtype=int)
         self.num_grad_tensors = np.zeros(self.batch_size, dtype=int)
-        self.metrics_per_env: List[RLMetrics] = []
         self.optimizer.zero_grad()
- 
+
     def forward(self, observations: ContinualRLSetting.Observations, representations: Tensor) -> PolicyHeadOutput:
         """ Forward pass of a Policy head.
 
@@ -279,6 +270,11 @@ class PolicyHead(ClassificationHead):
             self.batch_size = representations.shape[0]
             self.create_buffers()
 
+        # The detached loss will show the loss that *has* already been
+        # backpropagated during this step (if
+        # `self.hparams.accumulate_losses_before_backward` is False), otherwise
+        # it will always be zero, until it is the detached version of
+        # `self.loss` on the big update step. 
         self.detached_loss = Loss(self.name)
 
         # NOTE: This means we also need it at test-time though.
@@ -301,7 +297,7 @@ class PolicyHead(ClassificationHead):
                 if self.hparams.accumulate_losses_before_backward:
                     # Option 1:
                     self.loss += env_loss
-                    self.detached_loss += env_loss.detach()
+                    # self.detached_loss += env_loss.detach()
                 else:
                     # Option 2:
                     env_loss.backward(retain_graph=True)
@@ -316,18 +312,19 @@ class PolicyHead(ClassificationHead):
                     # Option 1 from above:
                     # NOTE: Need to step as well, since the predictions below will
                     # depend on the model at the current time.
-                    self.optimizer.zero_grad()
+                    self.optimizer_zero_grad()
                     self.loss.backward()
-                    self.optimizer.step()
+                    self.optimizer_step()
                     # Reset the losses.
-                    # self.detached_loss = self.loss.detach()
+                    self.detached_loss = self.loss.detach()
                     
                     self.loss = Loss(self.name)
                 else:
-                    # # Option 2 from above:
-                    logger.debug(f"Updating model: ")
-                    self.optimizer.step()
-                    self.optimizer.zero_grad()
+                    # # Option 2 from above: The losses have already been
+                    # backpropagated, so we only perform the optimizer step.
+                    logger.debug(f"Updating model")
+                    self.optimizer_step()
+                    self.optimizer_zero_grad()
 
                 self.detach_all_buffers()
                 
@@ -352,11 +349,24 @@ class PolicyHead(ClassificationHead):
         
         return actions
 
+    def optimizer_zero_grad(self) -> None:
+        """ Calls `self.optimizer.zero_grad()`.
+        You can override this method to customize the backward pass.
+        """
+        self.optimizer.zero_grad()
+
+    def optimizer_step(self) -> None:
+        """ Calls `self.optimizer.step()`.
+        You can override this method to customize the backward pass.
+        """
+        self.optimizer.step()
+
+
     def get_actions(self, representations: Tensor) -> PolicyHeadOutput:
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
         action_dist = Categorical(logits=logits)
-        sample = policy.sample()
+        sample = action_dist.sample()
         actions = PolicyHeadOutput(
             y_pred=sample,
             logits=logits,
@@ -414,9 +424,9 @@ class PolicyHead(ClassificationHead):
             logger.debug(f"Weird, asked to get episode loss, but there is "
                          f"nothing in the buffer?")
             return None
-            
-        inputs, actions, rewards = self.stack_buffers(env_index) 
-        
+
+        inputs, actions, rewards = self.stack_buffers(env_index)
+
         episode_length = actions.batch_size
         assert len(inputs) == len(actions.y_pred) == len(rewards.y)
 
@@ -572,8 +582,8 @@ class PolicyHead(ClassificationHead):
                 new_items.append(detached)
             return new_items
     
-    def _make_buffer(self, elements: Sequence[Any] = None) -> deque:
-        buffer: List[Tensor] = deque(maxlen=self.hparams.max_episode_window_length)
+    def _make_buffer(self, elements: Sequence[T] = None) -> Deque[T]:
+        buffer: Deque[T] = deque(maxlen=self.hparams.max_episode_window_length)
         if elements:
             buffer.extend(elements)
         return buffer

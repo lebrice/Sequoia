@@ -189,7 +189,7 @@ class Loss(Serializable):
         assert isinstance(self.metric, RegressionMetrics), self
         return self.metric.mse
 
-    def __add__(self, other: Any) -> "Loss":
+    def __add__(self, other: Union["Loss", Any]) -> "Loss":
         """Adds two Loss instances together.
         
         Adds the losses, total loss and metrics. Overwrites the tensors.
@@ -237,7 +237,7 @@ class Loss(Serializable):
             _coefficient=self._coefficient,
         )
 
-    def __iadd__(self, other: "Loss") -> "Loss":
+    def __iadd__(self, other: Union["Loss", Any]) -> "Loss":
         """Adds Loss to `self` in-place.
         
         Adds the losses, total loss and metrics. Overwrites the tensors.

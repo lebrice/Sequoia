@@ -139,34 +139,28 @@ class BaselineModel(SemiSupervisedModel,
         loss: Tensor = step_result["loss"]
         loss_object: Loss = step_result["loss_object"]
         # return step_result
-        # self.log("train loss", loss, on_step=True, prog_bar=True, logger=True)
-
-        if isinstance(self.setting, ContinualRLSetting):
-            # TODO: There might be no loss at some steps, because for instance
-            # we haven't reached the end of an episode yet.
+        
+        if loss != 0.:    
             self.log("train loss", loss, on_step=True, prog_bar=True, logger=True)
             
-            if loss != 0.:
-                logger.debug(f"Train loss: {loss}")
-            
-            for metric_name, metric in loss_object.all_metrics().items():
-                for key, value in metric.to_log_dict().items():
-                    self.log(f"{metric_name}/{key}", value, on_step=True, prog_bar=True, logger=True)
-                    logger.debug(f"{metric_name}/{key}: {value}")
+            for key, value in loss_object.to_pbar_message().items():
+                self.log(key, value, on_step=True, logger=True, prog_bar=True)
+                logger.debug(f"{key}: {value}")
 
-            # TODO: Make sure that this is indeed working when running a manual
-            # backward pass
-            if not isinstance(loss, Tensor):
-                return None
-            elif loss.requires_grad:
-                if self._running_manual_backward:
-                    optimizer = self.optimizers()
-                    self.manual_backward(loss, optimizer)
-                    self.manual_optimizer_step(optimizer)
-                    optimizer.zero_grad()
-                return step_result
-            else:
-                return None
+            for key, value in loss_object.to_log_dict().items():
+                self.log(key, value, on_step=True, logger=True)
+
+        if not isinstance(loss, Tensor) or not loss.requires_grad:
+            # TODO: There might be no loss at some steps, because for instance
+            # we haven't reached the end of an episode in an RL setting.
+            return None
+
+        if loss.requires_grad:
+            if self._running_manual_backward:
+                optimizer = self.optimizers()
+                self.manual_backward(loss, optimizer)
+                self.manual_optimizer_step(optimizer)
+                optimizer.zero_grad()
         return step_result
         
     def validation_step(self,
