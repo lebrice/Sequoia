@@ -24,9 +24,6 @@ class PixelObservationWrapper(PixelObservationWrapper_):
         if isinstance(env, str):
             env = gym.make(env)
         env.reset()
-        from pyvirtualdisplay import Display
-        display = Display(visible=0, size=(1366, 768))
-        display.start()
         super().__init__(env)
         self.observation_space = self.observation_space["pixels"]
         from gym.envs.classic_control.rendering import Viewer
