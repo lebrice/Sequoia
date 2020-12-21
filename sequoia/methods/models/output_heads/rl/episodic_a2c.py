@@ -4,9 +4,10 @@ the end of the episode, rather than at each step.
 
 from collections import deque
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Deque
 import torch
 import gym
+import numpy as np
 from gym import Space, spaces
 from gym.spaces.utils import flatdim
 from sequoia.common.layers import Flatten
@@ -14,15 +15,19 @@ from sequoia.common import Loss
 from sequoia.settings import ContinualRLSetting
 from sequoia.settings.base import Rewards
 from torch import Tensor, nn
+from torch.nn import functional as F
 from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
 
 from .policy_head import Categorical, PolicyHead, PolicyHeadOutput, GradientUsageMetric
+from .policy_head import normalize
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
 
 
 # TODO: Use this as inspiration: (taken from the ActorCriticPolicy from stable-baselines-3)
+# NOTE: I see: so SB3 actually re-computes the values for everything in the
+# rollout_data buffer every time! This is interesting.
 
-# # TODO: avoid second computation of everything because of the gradient
+# # (sb3 TODO): avoid second computation of everything because of the gradient
 # values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
 # values = values.flatten()
 
@@ -57,7 +62,11 @@ from sequoia.common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
 class A2CHeadOutput(PolicyHeadOutput):
     """ Output produced by the A2C output head. """
     # The value estimate coming from the critic.
-    value: Tensor 
+    value: Tensor
+
+    @classmethod
+    def stack(cls, items: List["A2CHeadOutput"]) -> "A2CHeadOutput":
+        """TODO: Add a classmethod to 'stack' these objects. """
 
 
 class EpisodicA2C(PolicyHead):
@@ -67,11 +76,22 @@ class EpisodicA2C(PolicyHead):
     TODO: This could actually produce a loss every N steps, rather than just at
     the end of the episode.
     """
+
+    @dataclass
+    class HParams(PolicyHead.HParams):
+        """ Hyper-parameters of the episodic A2C output head. """
+        # Wether to normalize the advantages for each episode.
+        normalize_advantages: bool = False
+
+        actor_loss_coef: float = 0.5
+        critic_loss_coef: float = 0.5
+        entropy_loss_coef: float = 0.0
+
     def __init__(self,
                  input_space: spaces.Box,
                  action_space: spaces.Discrete,
                  reward_space: spaces.Box,
-                 hparams: "PolicyHead.HParams" = None,
+                 hparams: HParams = None,
                  name: str = "episodic_a2c"):
         super().__init__(
             input_space=input_space,
@@ -80,6 +100,7 @@ class EpisodicA2C(PolicyHead):
             hparams=hparams,
             name=name,
         )
+        self.hparams: EpisodicA2C.HParams
         # Critic takes in state-action pairs? or just state?
         self.critic_input_dims = self.input_size
         # self.critic_input_dims = self.input_size + action_dims
@@ -91,13 +112,16 @@ class EpisodicA2C(PolicyHead):
             nn.ReLU(),
             nn.Linear(32, self.critic_output_dims),
         )
-        
-        self.actions: List[A2CHeadOutput]
+        self.actions: List[Deque[A2CHeadOutput]]
         self._current_state: Optional[Tensor] = None
         self._previous_state: Optional[Tensor] = None
         self._step = 0
         
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
+
+    @property
+    def actor(self) -> nn.Module:
+        return self.dense
 
     def forward(self,
                 observations: ContinualRLSetting.Observations,
@@ -115,20 +139,16 @@ class EpisodicA2C(PolicyHead):
             sample = action_distribution.rsample()
         else:
             sample = action_distribution.sample()
-
         actions = A2CHeadOutput(
             y_pred=sample,
             logits=logits,
-            policy=action_distribution,
+            action_dist=action_distribution,
             value=value,
         )
         return actions
-    
+
     def create_buffers(self):
         super().create_buffers()
-        # self.values = [
-        #     deque(maxlen=self.hparams.max_episode_window_length) for i in range(self.batch_size)
-        # ]
         
     def get_episode_loss(self, env_index: int, done: bool):
         inputs: Tensor
@@ -140,18 +160,19 @@ class EpisodicA2C(PolicyHead):
         # rather than detaching them!
 
         if not done:
-            # This particular algorithm (REINFORCE) can't give a loss until the
-            # end of the episode is reached.
+            # For now, we only give back a loss at the end of the episode.
+            # TODO: Test if giving back a loss at each step or every few steps
+            # would work better!
             return None
 
         if len(self.actions[env_index]) == 0:
             raise RuntimeError(f"Weird, asked to get episode loss, but there is "
                                f"nothing in the buffer?")
-
         inputs, actions, rewards = self.stack_buffers(env_index)
         logits: Tensor = actions.logits
         action_log_probs: Tensor = actions.action_log_prob
         values: Tensor = actions.value
+        assert rewards.y is not None
         episode_rewards: Tensor = rewards.y
         
         # target values are calculated backward
@@ -160,52 +181,81 @@ class EpisodicA2C(PolicyHead):
         episode_length = len(episode_rewards)
         dones = torch.zeros(episode_length, dtype=torch.bool)
         dones[-1] = done
-        
-        # Construct the 'q' values from the right to the left.
-        # The estimated value for the final state in the episode.
-        q_val = values[-1]
-        q_vals: List[Tensor] = deque(maxlen=None)
-        for reward, done_i in list(zip(episode_rewards, dones))[::-1]:
-            q_val = reward + (~done_i) * self.hparams.gamma * q_val
-            q_vals.appendleft(q_val) # store values from the end to the beginning
 
-        advantage = torch.stack(list(q_vals)) - values
-        # assert False, advantage
+        
+        returns = self.get_returns(episode_rewards, gamma=self.hparams.gamma)
+        advantages = returns - values
+
+        # Normalize advantage (not present in the original implementation)
+        if self.hparams.normalize_advantages:
+            advantages = normalize(advantages)
+
+        # Create the Loss to be returned.
         loss = Loss(self.name)
         
-        critic_loss_tensor = advantage.pow(2).mean()
-        # adam_critic.zero_grad()
-        # critic_loss.backward()
-        # adam_critic.step()
-        critic_loss = Loss("critic", critic_loss_tensor)
-        loss += critic_loss
-                
-        actor_loss_tensor = (- action_log_probs * advantage.detach()).mean()
-        # adam_actor.zero_grad()
-        # actor_loss.backward()
-        # adam_actor.step()
-        actor_loss = Loss("actor", actor_loss_tensor)
-        loss += actor_loss
+        # Policy gradient loss (actor loss)
+        policy_gradient_loss = - (advantages * action_log_probs).mean()
+        actor_loss = Loss("actor", policy_gradient_loss)
+        loss += self.hparams.actor_loss_coef * actor_loss
         
-        loss.metric = RLMetrics(episodes=[EpisodeMetrics(rewards=episode_rewards.tolist())])
-        
-        # Calculate how many of the inputs had gradients.
-        episode_actions = self.actions[env_index]
-        n_stored_items = len(self.actions[env_index])
-        n_items_with_grad = sum(v.logits.requires_grad for v in episode_actions)
-        n_items_without_grad = n_stored_items - n_items_with_grad
-        self.num_grad_tensors[env_index] += n_items_with_grad
-        self.num_detached_tensors[env_index] += n_items_without_grad
-        # logger.debug(f"Env {env_index} produces a loss based on "
-        #              f"{n_items_with_grad} tensors with grad and "
-        #              f"{n_items_without_grad} without. ")
+        # Value loss: Try to get the critic's values close to the actual return.
+        value_loss_tensor = F.mse_loss(returns, values)
+        critic_loss = Loss("critic", value_loss_tensor)
+        loss += self.hparams.actor_loss_coef * actor_loss
 
-        gradient_usage = GradientUsageMetric(
-            used_gradients=n_items_with_grad,
-            wasted_gradients=n_items_without_grad,
-        )
-        loss.metrics["gradient_usage"] = gradient_usage
+        entropy_loss = Loss("entropy", actions.action_dist.entropy().mean())
+        loss += self.hparams.entropy_loss_coef * entropy_loss
+        
+        loss.metric = EpisodeMetrics(rewards=episode_rewards.tolist())
+        loss.metrics["gradient_usage"] = self.get_gradient_usage_metrics(env_index)
+
         return loss
+        # # Value loss using the TD(gae_lambda) target
+        # value_loss = F.mse_loss(rollout_data.returns, values)
+
+        # # Entropy loss favor exploration
+        # if entropy is None:
+        #     # Approximate entropy when no analytical form
+        #     entropy_loss = -th.mean(-log_prob)
+        # else:
+        #     entropy_loss = -th.mean(entropy)
+
+        # loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
+
+        # # Optimization step
+        # self.policy.optimizer.zero_grad()
+        # loss.backward()
+
+        # # Clip grad norm
+        # th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+
+
+
+        # Construct the 'q' values from the right to the left.
+        # The estimated value for the final state in the episode.
+        # q_val = values[-1]
+        # q_vals: Deque[Tensor] = deque(maxlen=None)
+        # for reward, done_i in list(zip(episode_rewards, dones))[::-1]:
+        #     q_val = reward + (~done_i) * self.hparams.gamma * q_val
+        #     q_vals.appendleft(q_val) # store values from the end to the beginning
+        # advantage = torch.stack(list(q_vals)) - values
+        # assert False, advantage
+        # loss = Loss(self.name)
+        
+        # critic_loss_tensor = advantage.pow(2).mean()
+        # critic_loss = Loss("critic", critic_loss_tensor)
+        # loss += critic_loss
+                
+        # actor_loss_tensor = (- action_log_probs * advantage.detach()).mean()
+        # actor_loss = Loss("actor", actor_loss_tensor)
+        # loss += actor_loss
+        
+        # loss.metric = RLMetrics(episodes=[EpisodeMetrics(rewards=episode_rewards.tolist())])
+        
+        # # Calculate how many of the inputs had gradients.
+        # gradient_usage = self.get_gradient_usage_metrics(env_index)
+        # loss.metrics["gradient_usage"] = gradient_usage
+        # return loss
     
     
     def stack_buffers(self, env_index: int):
@@ -226,19 +276,63 @@ class EpisodicA2C(PolicyHead):
         stacked_inputs = stack(self.input_space, episode_representations)
         # stacked_actions = stack(self.action_space, episode_actions)
         # stacked_rewards = stack(self.reward_space, episode_rewards)
-
+        episode_length = len(stacked_inputs)
         # TODO: Update this to use 'stack' if we change the action/reward spaces
         y_preds = torch.stack([action.y_pred for action in episode_actions])
         logits = torch.stack([action.logits for action in episode_actions])
         values = torch.stack([action.value for action in episode_actions])
+        values = values.reshape([episode_length])
+
         stacked_actions = A2CHeadOutput(
             y_pred=y_preds,
             logits=logits,
-            policy=Categorical(logits=logits),
+            action_dist=Categorical(logits=logits),
             value=values,
         )
         rewards_type = type(episode_rewards[0])
+        assert all(reward.y is not None for reward in episode_rewards)
         stacked_rewards = rewards_type(
-            y=stack(self.reward_space, [reward.y for reward in episode_rewards])
+            y=torch.stack([reward.y for reward in episode_rewards])  # type: ignore
         )
         return stacked_inputs, stacked_actions, stacked_rewards
+
+
+def compute_returns_and_advantage(self, last_values: Tensor, dones: np.ndarray) -> None:
+    """
+    TODO: Adapting this snippet from SB3's common/buffers.py RolloutBuffer.
+
+    Post-processing step: compute the returns (sum of discounted rewards)
+    and GAE advantage.
+    Adapted from Stable-Baselines PPO2.
+
+    Uses Generalized Advantage Estimation (https://arxiv.org/abs/1506.02438)
+    to compute the advantage. To obtain vanilla advantage (A(s) = R - V(S))
+    where R is the discounted reward with value bootstrap,
+    set ``gae_lambda=1.0`` during initialization.
+
+    :param last_values:
+    :param dones:
+
+    """
+    buffer_size: int = self.buffer_size
+    dones: np.ndarray = self.dones
+    rewards: np.ndarray = self.rewards
+    values: np.ndarray = self.values
+    gamma: float = self.gamma
+    gae_lambda: float = 1.0
+    # convert to numpy
+    last_values = last_values.clone().cpu().numpy().flatten()
+    advantages = np.zeros_like(rewards)
+
+    last_gae_lam = 0
+    for step in reversed(range(buffer_size)):
+        if step == buffer_size - 1:
+            next_non_terminal = 1.0 - dones
+            next_values = last_values
+        else:
+            next_non_terminal = 1.0 - dones[step + 1]
+            next_values = values[step + 1]
+        delta = rewards[step] + gamma * next_values * next_non_terminal - values[step]
+        last_gae_lam = delta + gamma * gae_lambda * next_non_terminal * last_gae_lam
+        self.advantages[step] = last_gae_lam
+    self.returns = self.advantages + self.values

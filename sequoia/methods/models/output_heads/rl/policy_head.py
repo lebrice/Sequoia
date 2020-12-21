@@ -85,10 +85,14 @@ def detach_categorical(v: Categorical) -> Categorical:
 class PolicyHeadOutput(ClassificationOutput):
     """ WIP: Adds the action pdf to ClassificationOutput. """
     
-    # The Policy, as a distribution over the actions, either as a single
+    # The distribution over the actions, either as a single
     # (batched) distribution or as a list of distributions, one for each
-    # environment in the batch. 
-    policy: Union[Distribution, List[Distribution]]
+    # environment in the batch.
+    action_dist: Distribution
+    
+    @property
+    def policy(self) -> Union[Distribution, List[Distribution]]:
+        return self.action_dist
 
     @property
     def y_pred_log_prob(self) -> Tensor:
@@ -351,12 +355,12 @@ class PolicyHead(ClassificationHead):
     def get_actions(self, representations: Tensor) -> PolicyHeadOutput:
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
-        policy = Categorical(logits=logits)
+        action_dist = Categorical(logits=logits)
         sample = policy.sample()
         actions = PolicyHeadOutput(
             y_pred=sample,
             logits=logits,
-            policy=policy,
+            action_dist=action_dist,
         )
         return actions
 
@@ -430,6 +434,19 @@ class PolicyHead(ClassificationHead):
             gamma=self.hparams.gamma,
         )
         
+        gradient_usage = self.get_gradient_usage_metrics(env_index)
+        # TODO: Add 'Metrics' for each episode?
+        return Loss(self.name, loss, metrics={
+            self.name: RLMetrics(episodes=[EpisodeMetrics(rewards=rewards)]),
+            "gradient_usage": gradient_usage
+        })
+
+    def get_gradient_usage_metrics(self, env_index: int) -> GradientUsageMetric:
+        """ Returns a Metrics object that describes how many of the actions
+        from an episode that are used to calculate a loss still have their
+        graphs, versus ones that don't have them (due to being created before
+        the last model update, and therefore having been detached.)
+        """
         episode_actions = self.actions[env_index]
         n_stored_items = len(self.actions[env_index])
         n_items_with_grad = sum(v.logits.requires_grad for v in episode_actions)
@@ -439,20 +456,32 @@ class PolicyHead(ClassificationHead):
         # logger.debug(f"Env {env_index} produces a loss based on "
         #              f"{n_items_with_grad} tensors with grad and "
         #              f"{n_items_without_grad} without. ")
-
-        gradient_usage = GradientUsageMetric(
+        return GradientUsageMetric(
             used_gradients=n_items_with_grad,
             wasted_gradients=n_items_without_grad,
         )
-        
-        # TODO: Add 'Metrics' for each episode?
-        return Loss(self.name, loss, metrics={
-            self.name: RLMetrics(episodes=[EpisodeMetrics(rewards=rewards)]),
-            "gradient_usage": gradient_usage
-        })
 
     @staticmethod
-    def policy_gradient(rewards: List[float], log_probs: List[Tensor], gamma: float=0.95):
+    def get_returns(rewards: Union[Tensor, List[Tensor]], gamma: float) -> Tensor:
+        """ Calculates the returns, as the sum of discounted future rewards at
+        each step.
+        """
+        T = len(rewards)
+        if not isinstance(rewards, Tensor):
+            rewards = torch.as_tensor(rewards)
+        # Construct a reward matrix, with previous rewards masked out (with each
+        # row as a step along the trajectory).
+        reward_matrix = rewards.expand([T, T]).triu()
+        # Get the gamma matrix (upper triangular), see make_gamma_matrix for
+        # more info.
+        gamma_matrix = make_gamma_matrix(gamma, T, device=reward_matrix.device)
+        # Multiplying by the gamma coefficients gives the discounted rewards.
+        discounted_rewards = (reward_matrix * gamma_matrix)
+        # Summing up over time gives the return at each step.
+        return discounted_rewards.sum(-1)
+
+    @staticmethod
+    def policy_gradient(rewards: List[float], log_probs: Union[Tensor, List[Tensor]], gamma: float=0.95):
         """Implementation of the REINFORCE algorithm.
 
         Adapted from https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
@@ -471,24 +500,17 @@ class PolicyHead(ClassificationHead):
         Returns
         -------
         Tensor
-            The "policy gradient" resulting from that episode.
+            The "vanilla policy gradient" / REINFORCE gradient resulting from
+            that episode.
         """
-        T = len(rewards)
-        if not isinstance(log_probs, Tensor):
-            log_probs = torch.stack(log_probs)
-        rewards = torch.as_tensor(rewards).type_as(log_probs)
-        
-        # Construct a reward matrix, with previous rewards masked out (with each
-        # row as a step along the trajectory).
-        reward_matrix = rewards.expand([T, T]).triu()
-        # Get the gamma matrix (upper triangular), see make_gamma_matrix for
-        # more info.
-        gamma_matrix = make_gamma_matrix(gamma, T, device=log_probs.device)
+        if isinstance(log_probs, Tensor):
+            action_log_probs = log_probs
+        else:
+            action_log_probs = torch.stack(log_probs)
+        reward_tensor = torch.as_tensor(rewards).type_as(action_log_probs)
 
-        discounted_rewards = (reward_matrix * gamma_matrix).sum(dim=-1)
-        # normalize discounted rewards
-        discounted_rewards = normalize(discounted_rewards)
-        policy_gradient = - log_probs.dot(discounted_rewards)
+        returns = PolicyHead.get_returns(reward_tensor, gamma=gamma)
+        policy_gradient = - action_log_probs.dot(returns)
         return policy_gradient
 
     @property
