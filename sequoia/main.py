@@ -10,8 +10,7 @@ from sequoia.experiment import Experiment
 
 logger = get_logger(__file__)
 
-
-if __name__ == "__main__":
+def main():
     logger.debug("Registered Settings: \n" + "\n".join(
         f"- {setting.get_name()}: {setting} ({setting.get_path_to_source_file()})" for setting in all_settings
     ))
@@ -24,3 +23,7 @@ if __name__ == "__main__":
         print("\n\n EXPERIMENT IS DONE \n\n")
         # Experiment didn't crash, show results:
         print(f"Results: {results}")
+
+
+if __name__ == "__main__":
+    main()
