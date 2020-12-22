@@ -192,19 +192,16 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
                 self.hparams.policy = "CnnPolicy"
 
         logger.debug(f"Will use {self.hparams.policy} as the policy.")
-
-        self.total_timesteps_per_task = setting.steps_per_task
-
-        if not setting.known_task_boundaries_at_train_time:
-            # We are in a ContinualRL setting, where `fit` will only be called
-            # once and where the environment can only be traversed once.
+        # TODO: Double check that some settings might not impose a limit on
+        # number of training steps per environment (e.g. task-incremental RL?)
+        if setting.steps_per_task:
             if self.train_steps_per_task > setting.steps_per_task:
                 warnings.warn(RuntimeWarning(
                     f"Can't train for the requested {self.train_steps_per_task} "
                     f"steps, since we're (currently) only allowed one 'pass' "
-                    f"through the environment when in a Continual-RL Setting."
+                    f"through the environment (max {setting.steps_per_task} steps.)"
                 ))
-            self.train_steps_per_task = setting.steps_per_task
+                self.train_steps_per_task = setting.steps_per_task
         # Otherwise, we can train basically as long as we want on each task.
 
     def create_model(self,

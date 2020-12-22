@@ -27,6 +27,7 @@ from sequoia.common.config import WandbLoggerConfig
 from sequoia.common.gym_wrappers import (AddDoneToObservation,
                                          AddInfoToObservation)
 from sequoia.settings.active.continual import ContinualRLSetting
+from sequoia.settings.assumptions.incremental import IncrementalSetting
 from sequoia.settings.base import Method
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import Actions, Observations, Rewards
@@ -138,6 +139,11 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         wandb_options: WandbLoggerConfig = self.trainer_options.wandb
         if wandb_options.run_name is None:
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
+
+        # # TODO: Debug multihead model in RL.
+        # if isinstance(setting, IncrementalSetting):
+        #     if setting.task_labels_at_test_time:
+        #         self.hparams.multihead = True
 
         if isinstance(setting, ContinualRLSetting):
             # Configure the baseline specifically for an RL setting.

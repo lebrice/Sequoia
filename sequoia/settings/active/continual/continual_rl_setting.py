@@ -241,9 +241,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             # the end of the "task". When there are clear task boundaries (i.e.
             # when in 'Class'/Task-Incremental RL), the last entry is the start
             # of the last task.
-            self.nb_tasks = len(change_steps)
-            if self.smooth_task_boundaries:
-                self.nb_tasks -= 1
+            if not self.smooth_task_boundaries:
+                self.nb_tasks = len(change_steps)
 
             # TODO: @lebrice: I guess we have to assume that the interval
             # between steps is constant for now? Do we actually depend on this
@@ -290,7 +289,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                     f"'nb_tasks', or 'steps_per_task'."
                 )
 
-        assert self.nb_tasks == self.max_steps // self.steps_per_task
+        if not self.smooth_task_boundaries:
+            assert self.nb_tasks == self.max_steps // self.steps_per_task
 
         if self.test_task_schedule:
             change_steps = sorted(self.test_task_schedule.keys())

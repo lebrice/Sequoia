@@ -364,7 +364,6 @@ class PolicyHead(ClassificationHead):
         """
         self.optimizer.step()
 
-
     def get_actions(self, representations: Tensor) -> PolicyHeadOutput:
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
@@ -391,6 +390,9 @@ class PolicyHead(ClassificationHead):
         """
         observations: ContinualRLSetting.Observations = forward_pass.observations
         representations: Tensor = forward_pass.representations
+        if self.batch_size is None:
+            self.batch_size = forward_pass.batch_size
+            self.create_buffers()
 
         for env_index in range(self.batch_size):
             # Take a slice across the first dimension

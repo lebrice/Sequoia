@@ -156,10 +156,19 @@ class BaselineModel(SemiSupervisedModel,
             return None
 
         if loss.requires_grad:
-            if self._running_manual_backward:
+            
+            if isinstance(self.output_head, PolicyHead):
+                # In this case we don't do the step, since the output head has
+                # its own optimizer. TODO: Should probably improve the
+                # online_a2c such that we can get a loss at each step always,
+                # which would make this much simpler.
+                optimizer = self.optimizers()
+                self.manual_backward(loss, optimizer, retain_graph=True)
+  
+            elif not self.trainer.train_loop.automatic_optimization:
                 optimizer = self.optimizers()
                 self.manual_backward(loss, optimizer)
-                self.manual_optimizer_step(optimizer)
+                optimizer.step()
                 optimizer.zero_grad()
         return step_result
         
