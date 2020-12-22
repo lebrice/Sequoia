@@ -84,7 +84,7 @@ class Loss(Serializable):
     # pytorch-lightning during training? Is there a case where that would be
     # useful?
     tensors: Dict[str, Tensor] = dict_field(repr=False, to_dict=False)
-    metrics: Dict[str, Metrics] = dict_field()
+    metrics: Dict[str, Union[Metrics, Tensor]] = dict_field()
     # When multiplying the Loss by a value, this keep track of the coefficients
     # used, so that if we wanted to we could recover the 'unscaled' loss.
     _coefficient: Union[float, Tensor] = field(1.0, repr=False)
@@ -332,7 +332,22 @@ class Loss(Serializable):
             Dict: A dict containing the things to be logged.
         """
         # TODO: Could also produce some wandb plots and stuff here when verbose?
-        log_dict = self.to_dict()
+        log_dict: Dict[str, Union[str, float, Dict, Tensor]] = OrderedDict()
+        log_dict["Loss"] = float(self.loss)
+
+        for name, metric in self.metrics.items():
+            if isinstance(metric, Serializable):
+                log_dict[name] = metric.to_log_dict(verbose=verbose)
+            else:
+                log_dict[name] = metric
+
+        for name, loss in self.losses.items():
+            if isinstance(loss, Serializable):
+                log_dict[name] = loss.to_log_dict(verbose=verbose)
+            else:
+                log_dict[name] = loss
+
+        log_dict = add_prefix(log_dict, prefix=self.name, sep="/")
         keys_to_remove: List[str] = []
         if not verbose:
             # when NOT verbose, remove any entries with this matching key.
@@ -346,7 +361,7 @@ class Loss(Serializable):
                 "class_accuracy",
                 "_coefficient",
             ]
-        return cleanup(log_dict, keys_to_remove=keys_to_remove)
+        return cleanup(log_dict, keys_to_remove=keys_to_remove, sep="/")
 
     def to_pbar_message(self):
         """ Smaller, less-detailed version of `to_log_dict()` for progress bars.
@@ -354,8 +369,11 @@ class Loss(Serializable):
         message: Dict[str, Union[str, float]] = {}
         message["Loss"] = float(self.loss)
 
-        if self.metric:
-            message[self.name] = self.metric.to_pbar_message()
+        for name, metric in self.metrics.items():
+            if isinstance(metric, Metrics):
+                message[name] = metric.to_pbar_message()
+            else:
+                message[name] = metric
 
         for name, loss_info in self.losses.items():
             message[name] = loss_info.to_pbar_message()

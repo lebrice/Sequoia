@@ -8,6 +8,7 @@ from typing import List, Optional, Deque
 import torch
 import gym
 import numpy as np
+from simple_parsing import mutable_field
 from gym import Space, spaces
 from gym.spaces.utils import flatdim
 from sequoia.common.layers import Flatten
@@ -20,6 +21,7 @@ from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
 
 from .policy_head import Categorical, PolicyHead, PolicyHeadOutput, GradientUsageMetric
 from .policy_head import normalize
+from ..output_head import DenseHParams
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
 from sequoia.utils import get_logger
 
@@ -91,13 +93,13 @@ class EpisodicA2C(PolicyHead):
         entropy_loss_coef: float = 0.1
 
         # Maximum norm of the policy gradient.
-        max_policy_grad_norm: Optional[float] = 0.5
+        max_policy_grad_norm: Optional[float] = None
 
         # The discount factor.
         gamma: float = 0.99
 
         # Learning rate of the optimizer.
-        learning_rate: float = 1e-3
+        learning_rate: float = 1e-2
 
     def __init__(self,
                  input_space: spaces.Box,
@@ -117,12 +119,11 @@ class EpisodicA2C(PolicyHead):
         self.critic_input_dims = self.input_size
         # self.critic_input_dims = self.input_size + action_dims
         self.critic_output_dims = 1
-        self.critic = nn.Sequential(
-            # Lambda(concat_obs_and_action),
-            Flatten(),
-            nn.Linear(self.critic_input_dims, 32),
-            nn.ReLU(),
-            nn.Linear(32, self.critic_output_dims),
+        self.critic = self.make_dense_network(
+            in_features=self.critic_input_dims,
+            hidden_neurons=self.hparams.hidden_neurons,
+            out_features=self.critic_output_dims,
+            activation=self.hparams.activation,
         )
         self.actions: List[Deque[A2CHeadOutput]]
         self._current_state: Optional[Tensor] = None
@@ -216,7 +217,7 @@ class EpisodicA2C(PolicyHead):
         loss = Loss(self.name)
 
         # Policy gradient loss (actor loss)
-        policy_gradient_loss = - (advantages * action_log_probs).mean()
+        policy_gradient_loss = - (advantages.detach() * action_log_probs).mean()
         actor_loss = Loss("actor", policy_gradient_loss)
         loss += self.hparams.actor_loss_coef * actor_loss
         
@@ -241,10 +242,11 @@ class EpisodicA2C(PolicyHead):
     def optimizer_step(self):
         # Clip grad norm if desired.
         if self.hparams.max_policy_grad_norm is not None:
-            torch.nn.utils.clip_grad_norm_(
+            original_norm: Tensor = torch.nn.utils.clip_grad_norm_(
                 self.actor.parameters(),
                 self.hparams.max_policy_grad_norm,
             )
+            self.loss.metrics["policy_gradient_norm"] = original_norm.item()
         super().optimizer_step()
 
     def stack_buffers(self, env_index: int):

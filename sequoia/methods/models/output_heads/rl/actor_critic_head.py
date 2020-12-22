@@ -103,17 +103,17 @@ class ActorCriticHead(ClassificationHead):
         
         logits = self.actor(representations)
         # The policy is the distribution over actions given the current state.
-        policy = Categorical(logits=logits)
+        action_dist = Categorical(logits=logits)
         
-        if policy.has_rsample:
-            sample = policy.rsample()
+        if action_dist.has_rsample:
+            sample = action_dist.rsample()
         else:
-            sample = policy.sample()
+            sample = action_dist.sample()
 
         actions = PolicyHeadOutput(
             y_pred=sample,
             logits=logits,
-            policy=policy,
+            action_dist=action_dist,
         )
         return actions
   
@@ -121,7 +121,7 @@ class ActorCriticHead(ClassificationHead):
                  forward_pass: ForwardPass,
                  actions: PolicyHeadOutput,
                  rewards: ContinualRLSetting.Rewards) -> Loss:
-        policy: Categorical = actions.policy
+        action_dist: Categorical = actions.action_dist
 
         rewards = rewards.to(device=actions.device)
         env_reward = rewards.y
@@ -156,7 +156,7 @@ class ActorCriticHead(ClassificationHead):
 
         if self.training:
             self.optimizer.zero_grad()
-        actor_loss_tensor = - policy.log_prob(actions.action) * advantage.detach()
+        actor_loss_tensor = - action_dist.log_prob(actions.action) * advantage.detach()
         actor_loss_tensor = actor_loss_tensor.mean()
         actor_loss = Loss("actor", loss=actor_loss_tensor)
         if self.training:

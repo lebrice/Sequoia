@@ -100,5 +100,5 @@ class GradientUsageMetric(Metrics):
 
     def to_pbar_message(self) -> Dict[str, Union[str, float]]:
         return {
-            "used_gradients_fraction": self.used_gradients_fraction
+            "used_fraction": self.used_gradients_fraction
         }

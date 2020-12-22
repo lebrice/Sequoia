@@ -71,7 +71,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             "reinforce": PolicyHead,
             "a2c_online": ActorCriticHead,
             "a2c_episodic": EpisodicA2C,
-        }, default="reinforce")
+        }, default="a2c_episodic")
         
 
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):

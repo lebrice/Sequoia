@@ -85,9 +85,9 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         
         # Option 3: Parse them from the command-line.
         assert not kwargs, "Don't pass any extra kwargs to the constructor!"
-        self.hparams = hparams or BaselineModel.HParams.from_args()
-        self.config = config or Config.from_args()
-        self.trainer_options = trainer_options or TrainerConfig.from_args()
+        self.hparams = hparams or BaselineModel.HParams.from_args(strict=False)
+        self.config = config or Config.from_args(strict=False)
+        self.trainer_options = trainer_options or TrainerConfig.from_args(strict=False)
 
         if self.config.debug:
             # Disable wandb logging if debug is True.

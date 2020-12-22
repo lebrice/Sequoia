@@ -134,9 +134,11 @@ class PolicyHead(ClassificationHead):
     
     @dataclass
     class HParams(ClassificationHead.HParams):
+        hidden_layers: int = 2
+
         # The discount factor for the Return term.
-        gamma: float = 0.95
-        
+        gamma: float = 0.99
+
         learning_rate: float = 3e-4
         
         # The maximum length of the buffer that will hold the most recent
@@ -147,6 +149,10 @@ class PolicyHead(ClassificationHead):
         # Minumum number of epidodes that need to be completed in each env
         # before we update the parameters of the output head.
         min_episodes_before_update: int = 1
+
+        # TODO: Add this mechanism, so that this method could work even when
+        # episodes are very long.
+        max_steps_between_updates: Optional[int] = None
 
         # NOTE: Here we have two options:
         # 1- `True`: sum up all the losses and do one larger backward pass,
@@ -174,9 +180,6 @@ class PolicyHead(ClassificationHead):
             hparams=hparams,
             name=name,
         )
-        if not isinstance(self.hparams, self.HParams):
-            # Upgrade the hparams to the right type, if needed.
-            self.hparams = self.upgrade_hparams()
         logger.info("Output head hparams: " + self.hparams.dumps_json(indent='\t'))
 
         self.hparams: PolicyHead.HParams
@@ -612,11 +615,11 @@ class PolicyHead(ClassificationHead):
 
         # TODO: Update this to use 'stack' if we change the action/reward spaces
         y_preds = torch.stack([action.y_pred for action in episode_actions])
-        logits = torch.stack([action.policy.logits for action in episode_actions])
+        logits = torch.stack([action.action_dist.logits for action in episode_actions])
         stacked_actions = PolicyHeadOutput(
             y_pred=y_preds,
             logits=logits,
-            policy=Categorical(logits=logits),
+            action_dist=Categorical(logits=logits),
         )
         rewards_type = type(episode_rewards[0])
         stacked_rewards = rewards_type(

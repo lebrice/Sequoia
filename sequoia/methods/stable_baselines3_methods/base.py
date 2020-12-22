@@ -5,27 +5,29 @@ See https://stable-baselines3.readthedocs.io/en/master/guide/install.html
 import warnings
 from abc import ABC
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, Dict, Optional, Type, Union, List
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
 import torch
 from gym import spaces
 from simple_parsing import choice, mutable_field
-
 from stable_baselines3.common.base_class import (BaseAlgorithm, BasePolicy,
-                                                 DummyVecEnv, GymEnv, VecEnv,
-                                                 VecTransposeImage, MaybeCallback,
-                                                 is_image_space, is_wrapped)
+                                                 DummyVecEnv, GymEnv,
+                                                 MaybeCallback, Monitor,
+                                                 VecEnv, VecTransposeImage,
+                                                 is_image_space,
+                                                 is_image_space_channels_first,
+                                                 is_vecenv_wrapped, is_wrapped)
 from stable_baselines3.common.vec_env.obs_dict_wrapper import ObsDictWrapper
 
 from sequoia.common.gym_wrappers.batch_env.batched_vector_env import VectorEnv
+from sequoia.common.transforms import Transforms
 from sequoia.settings import Method
 from sequoia.settings.active.continual import ContinualRLSetting
-from sequoia.settings.active.continual.wrappers import (NoTypedObjectsWrapper,
-                                                 RemoveTaskLabelsWrapper)
+from sequoia.settings.active.continual.wrappers import (
+    NoTypedObjectsWrapper, RemoveTaskLabelsWrapper)
 from sequoia.utils import Parseable, Serializable
 from sequoia.utils.logging_utils import get_logger
-from sequoia.common.transforms import Transforms
 
 logger = get_logger(__file__)
 
@@ -34,26 +36,33 @@ logger = get_logger(__file__)
 # vectorized environment.
 
 
-def _wrap_env(env: GymEnv, verbose: int = 0) -> VecEnv:
+def _wrap_env(env: gym.Env, verbose: int = 0, monitor_wrapper: bool = False)  -> VecEnv:
     # NOTE: We just want to change this single line here:
     # if not isinstance(env, VecEnv):
     if not (isinstance(env, (VecEnv, VectorEnv)) or
             isinstance(env.unwrapped, (VecEnv, VectorEnv))):
+        # if not is_wrapped(env, Monitor) and not is_wrapped(env, gym.wrappers.Monitor) and monitor_wrapper:
+        #     if verbose >= 1:
+        #         print("Wrapping the env with a `Monitor` wrapper")
+        #     env = Monitor(env)
         if verbose >= 1:
             print("Wrapping the env in a DummyVecEnv.")
         env = DummyVecEnv([lambda: env])
 
-    if is_image_space(env.observation_space) and not is_wrapped(env, VecTransposeImage):
-        if verbose >= 1:
-            print("Wrapping the env in a VecTransposeImage.")
-        env = VecTransposeImage(env)
+        if (
+            is_image_space(env.observation_space)
+            and not is_vecenv_wrapped(env, VecTransposeImage)
+            and not is_image_space_channels_first(env.observation_space)
+        ):
+            if verbose >= 1:
+                print("Wrapping the env in a VecTransposeImage.")
+            env = VecTransposeImage(env)
 
-    # check if wrapper for dict support is needed when using HER
-    if isinstance(env.observation_space, gym.spaces.dict.Dict):
-        env = ObsDictWrapper(env)
+        # check if wrapper for dict support is needed when using HER
+        if isinstance(env.observation_space, gym.spaces.dict.Dict):
+            env = ObsDictWrapper(env)
 
-    return env
-
+        return env
 
 BaseAlgorithm._wrap_env = staticmethod(_wrap_env)
 
