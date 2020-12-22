@@ -138,8 +138,6 @@ class PolicyHead(ClassificationHead):
 
         # The discount factor for the Return term.
         gamma: float = 0.99
-
-        learning_rate: float = 3e-4
         
         # The maximum length of the buffer that will hold the most recent
         # states/actions/rewards of the current episode. When a batched
@@ -181,7 +179,6 @@ class PolicyHead(ClassificationHead):
             name=name,
         )
         logger.info("Output head hparams: " + self.hparams.dumps_json(indent='\t'))
-
         self.hparams: PolicyHead.HParams
         # Type hints for the spaces;    
         self.input_space: spaces.Box
@@ -211,16 +208,16 @@ class PolicyHead(ClassificationHead):
         self.has_reached_episode_end: np.ndarray
         self.num_episodes_since_update: np.ndarray
 
-        self.optimizer = self.configure_optimizers()
+        # self.optimizer = self.configure_optimizers()
         self._training: bool = True
 
-    def configure_optimizers(self) -> Optimizer:
-        """ Create the optimizers required by this output head.
+    # def configure_optimizers(self) -> Optimizer:
+    #     """ Create the optimizers required by this output head.
         
-        NOTE: Named the same as the `configure_optimizers` in pytorch-lightning,
-        but this particular output head isn't optimized with pytorch-lightning.
-        """
-        return torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
+    #     NOTE: Named the same as the `configure_optimizers` in pytorch-lightning,
+    #     but this particular output head isn't optimized with pytorch-lightning.
+    #     """
+    #     return torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
 
     def create_buffers(self):
         """ Creates the buffers to hold the items from each env. """
@@ -235,7 +232,7 @@ class PolicyHead(ClassificationHead):
         self.num_episodes_since_update = np.zeros(self.batch_size, dtype=int)
         self.num_detached_tensors = np.zeros(self.batch_size, dtype=int)
         self.num_grad_tensors = np.zeros(self.batch_size, dtype=int)
-        self.optimizer.zero_grad()
+        self.base_model_optimizer.zero_grad()
 
     def forward(self, observations: ContinualRLSetting.Observations, representations: Tensor) -> PolicyHeadOutput:
         """ Forward pass of a Policy head.
@@ -356,13 +353,13 @@ class PolicyHead(ClassificationHead):
         """ Calls `self.optimizer.zero_grad()`.
         You can override this method to customize the backward pass.
         """
-        self.optimizer.zero_grad()
+        self.base_model_optimizer.zero_grad()
 
     def optimizer_step(self) -> None:
         """ Calls `self.optimizer.step()`.
         You can override this method to customize the backward pass.
         """
-        self.optimizer.step()
+        self.base_model_optimizer.step()
 
     def get_actions(self, representations: Tensor) -> PolicyHeadOutput:
         logits = self.dense(representations)

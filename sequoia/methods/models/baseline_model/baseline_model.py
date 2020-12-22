@@ -91,9 +91,16 @@ class BaselineModel(SemiSupervisedModel,
             logger.debug("Hparams:")
             logger.debug(self.hp.dumps(indent="\t"))
 
+        if self.trainer:
+            OutputHead.base_model_optimizer = self.optimizers()
+            assert False, OutputHead.optimizer
+
     # @auto_move_data
     def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:
         # NOTE: Implementation is mostly in `base_model.py`.
+        # Share the optimizer with the output head, in case the representations
+        # are also learned with them.
+        OutputHead.base_model_optimizer = self.optimizers()
         return super().forward(observations)
 
     def create_output_head(self, setting: Setting, add_to_optimizer: bool = None) -> OutputHead:

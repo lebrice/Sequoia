@@ -10,6 +10,7 @@ from gym.spaces.utils import flatdim
 from simple_parsing import list_field, choice, mutable_field
 from torch import Tensor, nn
 from torch.nn import Flatten  # type: ignore
+from torch.optim.optimizer import Optimizer
 
 from sequoia.common.loss import Loss
 from sequoia.common.metrics import ClassificationMetrics, get_metrics
@@ -69,6 +70,9 @@ class OutputHead(nn.Module, ABC):
     # TODO: Rename this to 'output' and create some ClassificationHead,
     # RegressionHead, ValueHead, etc. subclasses with the corresponding names.
     name: ClassVar[str] = "classification"
+    
+    # Reference to the optimizer of the BaselineModel.
+    base_model_optimizer: ClassVar[Optimizer]
 
     @dataclass
     class HParams(DenseHParams):

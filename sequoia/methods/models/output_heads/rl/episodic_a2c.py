@@ -129,7 +129,6 @@ class EpisodicA2C(PolicyHead):
         self._current_state: Optional[Tensor] = None
         self._previous_state: Optional[Tensor] = None
         self._step = 0
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
 
     @property
     def actor(self) -> nn.Module:
