@@ -32,7 +32,7 @@ setup(
     url='https://github.com/lebrice/Sequoia',
     author='Fabrice Normandin',
     author_email='fabrice.normandin@gmail.com',
-    license='',
+    license='GPLv3',
     packages=[package for package in find_packages()
                 if package.startswith('sequoia')],
     extras_require=extras,
@@ -43,6 +43,7 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
+        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
     ],
     entry_points={
         "console_scripts": [
