@@ -25,7 +25,9 @@ class PixelObservationWrapper(PixelObservationWrapper_):
             env = gym.make(env)
         env.reset()
         super().__init__(env)
-        self.observation_space = self.observation_space["pixels"]
+        pixel_space = self.observation_space["pixels"]
+        from ..spaces.image import Image
+        self.observation_space = Image.from_box(pixel_space)
         from gym.envs.classic_control.rendering import Viewer
         self.viewer: Viewer
         if self.env.viewer is None:

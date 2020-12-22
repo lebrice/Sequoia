@@ -17,7 +17,7 @@ from sequoia.settings import ClassIncrementalSetting
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils import dict_intersection
 
-from examples.quick_demo import MyModel, DemoMethod
+from quick_demo import MyModel, DemoMethod
 from sequoia.settings.passive.cl.objects import Observations, Rewards
 
 logger = get_logger(__file__)

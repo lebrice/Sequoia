@@ -93,7 +93,6 @@ class BaselineModel(SemiSupervisedModel,
 
         if self.trainer:
             OutputHead.base_model_optimizer = self.optimizers()
-            assert False, OutputHead.optimizer
 
     # @auto_move_data
     def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:
@@ -149,9 +148,9 @@ class BaselineModel(SemiSupervisedModel,
         
         if loss != 0.:    
             self.log("train loss", loss, on_step=True, prog_bar=True, logger=True)
-            
+
             for key, value in loss_object.to_pbar_message().items():
-                self.log(key, value, on_step=True, logger=True, prog_bar=True)
+                self.log(key, value, on_step=True, prog_bar=True)
                 logger.debug(f"{key}: {value}")
 
             for key, value in loss_object.to_log_dict().items():

@@ -6,6 +6,11 @@ import numpy as np
 
 
 class Image(spaces.Box):
+    """ Subclass of `gym.spaces.Box` for images.
+    
+    Comes with a few useful attributes, like `h`, `w`, `c`, `channels_first`,
+    `channels_last`, etc.
+    """
     def __init__(self,
                  low: Union[float, np.ndarray],
                  high: Union[float, np.ndarray],
@@ -13,6 +18,8 @@ class Image(spaces.Box):
                  dtype: np.dtype = np.float32):
         super().__init__(low=low, high=high, shape=shape, dtype=dtype)
         self.channels_first: bool = False
+
+        # Optional batch dimension
         self.b: Optional[int] = None
         self.h: int
         self.w: int
@@ -36,7 +43,14 @@ class Image(spaces.Box):
                 f"Shouldn't be using an Image space, since the shape "
                 f"doesn't appear to be an image: {self.shape}"
             )
-    
+
+    @classmethod
+    def from_box(cls, box_space: spaces.Box):
+        return cls(box_space.low, box_space.high, dtype=box_space.dtype)
+
     @property
     def channels_last(self) -> bool:
         return not self.channels_first
+
+    def __repr__(self):
+        return f"Image({self.low.min()}, {self.high.max()}, {self.shape}, {self.dtype})"

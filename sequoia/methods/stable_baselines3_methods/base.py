@@ -28,12 +28,13 @@ from sequoia.settings.active.continual.wrappers import (
     NoTypedObjectsWrapper, RemoveTaskLabelsWrapper)
 from sequoia.utils import Parseable, Serializable
 from sequoia.utils.logging_utils import get_logger
-
+from sequoia.common.gym_wrappers.utils import has_wrapper
 logger = get_logger(__file__)
 
 # "Patch" the _wrap_env function of the BaseAlgorithm class of
 # stable_baselines, to make it recognize the VectorEnv from gym.vector as a
 # vectorized environment.
+## Stable-Baselines3 has a lot of duplicated code from openai gym
 
 
 def _wrap_env(env: gym.Env, verbose: int = 0, monitor_wrapper: bool = False)  -> VecEnv:
@@ -41,10 +42,12 @@ def _wrap_env(env: gym.Env, verbose: int = 0, monitor_wrapper: bool = False)  ->
     # if not isinstance(env, VecEnv):
     if not (isinstance(env, (VecEnv, VectorEnv)) or
             isinstance(env.unwrapped, (VecEnv, VectorEnv))):
-        # if not is_wrapped(env, Monitor) and not is_wrapped(env, gym.wrappers.Monitor) and monitor_wrapper:
-        #     if verbose >= 1:
-        #         print("Wrapping the env with a `Monitor` wrapper")
-        #     env = Monitor(env)
+        if monitor_wrapper and not (is_wrapped(env, Monitor) or
+                                    is_wrapped(env, gym.wrappers.Monitor) or
+                                    has_wrapper(env, gym.wrappers.Monitor)): 
+            if verbose >= 1:
+                print("Wrapping the env with a `Monitor` wrapper")
+            env = Monitor(env)
         if verbose >= 1:
             print("Wrapping the env in a DummyVecEnv.")
         env = DummyVecEnv([lambda: env])

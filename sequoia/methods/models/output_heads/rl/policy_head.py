@@ -321,7 +321,8 @@ class PolicyHead(ClassificationHead):
                     self.loss = Loss(self.name)
                 else:
                     # # Option 2 from above: The losses have already been
-                    # backpropagated, so we only perform the optimizer step.
+                    # backpropagated, so we perform the optimizer step, and then
+                    # zero out the grads.
                     logger.debug(f"Updating model")
                     self.optimizer_step()
                     self.optimizer_zero_grad()
