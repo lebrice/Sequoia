@@ -2,7 +2,7 @@ pytorch-lightning
 # Fork of gym with more flexible utility functions.
 https://github.com/lebrice/gym.git@easier_custom_spaces
 gym[atari]
-simple_parsing==0.0.12.post2
+simple_parsing>=0.0.12.post2
 matplotlib
 torch>=1.7
 torchvision
