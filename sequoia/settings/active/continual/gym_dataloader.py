@@ -221,36 +221,3 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
             action = action.tolist()
         assert action in self.env.action_space, (action, self.env.action_space)
         return self.env.send(action)
-
-    @classmethod
-    def for_env_id(cls,
-                   env: str,
-                   batch_size: Optional[int],
-                   num_workers: int = None,
-                   max_epochs: int = None,
-                   **kwargs) -> "GymDataLoader":
-        """ TODO: The constructor was getting really ugly, because it had to
-        have the arguments needed to make the batched environment, as well as
-        the EnvDataset, etc. Therefore I'm moving the stuff required for
-        creating a Batched EnvDataset here.
-        """ 
-        assert isinstance(env, str), "Can only call this on environment ids (strings)"
-    
-        policy: Optional[Callable] = kwargs.pop("policy", None)
-        if num_workers is None:
-            num_workers = mp.cpu_count()
-        logger.info(f"Creating a vectorized version of {env} with batch size "
-                    f"of {batch_size} and (up to) {num_workers} processes.")
-        
-        # Make the env / VectorEnv.
-        if batch_size:
-            env = make_batched_env(base_env=env, batch_size=batch_size, num_workers=num_workers, **kwargs)
-        else:
-            env = gym.make(env, **kwargs)
-
-        # Make the env iterable.
-        if policy:
-            env = PolicyEnv(env, policy=policy)
-        else:
-            env = EnvDataset(env, max_episodes=max_epochs)
-        return cls(env, **kwargs)
