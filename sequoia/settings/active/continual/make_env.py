@@ -1,42 +1,36 @@
 """Creates an IterableDataset from a gym env by applying different wrappers.
 """
 import copy
-import warnings
-
 import multiprocessing as mp
+import warnings
 from functools import partial
-from typing import Callable, Dict, Iterable, List, Tuple, Type, TypeVar, Union
+from typing import (Callable, Dict, Iterable, List, Optional, Tuple, Type,
+                    TypeVar, Union)
 
 import gym
 from gym import Wrapper
 from gym.envs.classic_control import CartPoleEnv
 from gym.vector import VectorEnv
 
-from sequoia.utils.logging_utils import get_logger
-from sequoia.common.gym_wrappers.batch_env import AsyncVectorEnv, BatchedVectorEnv, SyncVectorEnv
 from sequoia.common.gym_wrappers import ConvertToFromTensors
+from sequoia.common.gym_wrappers.batch_env import (AsyncVectorEnv,
+                                                   BatchedVectorEnv,
+                                                   SyncVectorEnv)
 from sequoia.common.spaces import Sparse
+from sequoia.utils.logging_utils import get_logger
+
 logger = get_logger(__file__)
 
 W = TypeVar("W", bound=Union[gym.Env, gym.Wrapper])
 
 WrapperAndKwargs = Tuple[Type[gym.Wrapper], Dict]
 
-# TODO: @lebrice Not sure if this is a good idea, or that convenient, but
-# we could use a dict like this to save the 'default' wrappers to use before and
-# after batching for each env name or type of env.
-# TODO: Figure out the right ordering to use for the wrappers.
-default_wrappers_for_env: Dict[str, List[Type[gym.Wrapper]]] = {
-    "CartPole-v0": [ConvertToFromTensors],
-}
 
 def make_batched_env(base_env: Union[str, Callable],
                      batch_size: int = 10,
                      wrappers: Iterable[Union[Type[Wrapper], WrapperAndKwargs]] = None,
-                     use_default_wrappers_for_env: bool = True,
-                     asynchronous: bool = True,
                      shared_memory: bool = True,
-                     num_workers: int = None,
+                     num_workers: Optional[int] = None,
                      **kwargs) -> VectorEnv:
     """Create a vectorized environment from multiple copies of an environment.
 
@@ -46,10 +40,6 @@ def make_batched_env(base_env: Union[str, Callable],
     - Allows passing wrappers to be added to the env on
         each worker, as well as wrappers to add on top of the returned (batched) env.
     - Allows passing tuples of (Type[Wrapper, ])
-    - If `asynchronous` is `True` and the batch size is greater than the number
-      of CPU cores on this machine, uses a `BatchedVectorEnv` with chunking 
-      rather than a `AsyncVectorEnv`, to limit the the number of processes to
-      the number of CPUs and increase performance.
 
     Parameters
     ----------
@@ -59,11 +49,13 @@ def make_batched_env(base_env: Union[str, Callable],
 
     batch_size : int
         Number of copies of the environment (as well as batch size). 
-
-    asynchronous : bool (default: `True`)
-        If `True`, wraps the environments in an `AsyncVectorEnv` (which uses 
-        `multiprocessing` to run the environments in parallel). If `False`,
-        wraps the environments in a `SyncVectorEnv`.
+    
+    num_workers : Optional[int]
+        Number of workers to use. When `None` (default), uses as many workers as
+        there are CPUs on this machine. When 0, the returned environment will be
+        a `SyncVectorEnv`. When `num_workers` == `batch_size`, returns an
+        AsyncVectorEnv. When `num_workers` != `batch_size`, returns a
+        `BatchVectorEnv`.
 
     wrappers : Callable or Iterable of Callables (default: `None`)
         If not `None`, then apply the wrappers to each internal environment
@@ -89,8 +81,6 @@ def make_batched_env(base_env: Union[str, Callable],
           dtype=float32)
     """
     # Get the default wrappers, if needed.
-    if isinstance(base_env, str) and not wrappers and use_default_wrappers_for_env:
-        wrappers = default_wrappers_for_env.get(base_env, [])
     wrappers = wrappers or []
     
     base_env_factory: Callable[[], gym.Env]
@@ -117,21 +107,24 @@ def make_batched_env(base_env: Union[str, Callable],
         return pre_batch_env_factory()
     
     env_fns = [pre_batch_env_factory for _ in range(batch_size)]
-
-    if asynchronous:
-        if num_workers is None:
-            num_workers = mp.cpu_count()
-        if batch_size != num_workers:
-            return BatchedVectorEnv(env_fns, shared_memory=shared_memory, n_workers=num_workers)
+    if num_workers is None:
+        num_workers = mp.cpu_count()
+    
+    if num_workers == 0:
+        if batch_size > 1:
+            warnings.warn(UserWarning(
+                f"Running {batch_size} environments in series, which might be "
+                f"slow. Consider setting the `num_workers` argument, perhaps to "
+                f"the number of CPUs on your machine."
+            ))
+        return SyncVectorEnv(env_fns)
+    
+    if num_workers == batch_size:
         return AsyncVectorEnv(env_fns, shared_memory=shared_memory)
+    
+    return BatchedVectorEnv(env_fns, shared_memory=shared_memory, n_workers=num_workers)
 
-    if batch_size > 1:
-        warnings.warn(UserWarning(
-            f"Running {batch_size} environments in series, which might be "
-            f"slow. Consider setting the `num_workers` argument, perhaps to "
-            f"the number of CPUs on your machine."
-        ))
-    return SyncVectorEnv(env_fns)
+   
 
 
 def wrap(env: gym.Env,
