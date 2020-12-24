@@ -61,12 +61,27 @@ def add_done_to_space(observation: Space, done: Space) -> Space:
     )
 
 
+from ..spaces.named_tuple import NamedTuple, NamedTupleSpace
+class ObservationsWithDone(NamedTuple):
+    x: np.ndarray
+    task_labels: np.ndarray
+
+
 @add_done.register
 def _add_done_to_box_space(observation: spaces.Box, done: Space) -> spaces.Tuple:
-    return spaces.Tuple([
-        observation,
-        done,
-    ])
+    return NamedTupleSpace(
+        x=observation,
+        done=done,
+        dtype=ObservationsWithDone,
+    )
+
+
+@add_done.register
+def _add_done_to_box_space(observation: NamedTupleSpace, done: Space) -> NamedTupleSpace:
+    return NamedTupleSpace(
+        **observation._spaces,
+        done=done,
+    )
 
 
 @add_done.register
@@ -110,7 +125,7 @@ class AddDoneToObservation(IterableWrapper):
         self.done_space = done_space
         self.observation_space = add_done(self.env.observation_space,
                                                    self.done_space)
-        
+
 
     def reset(self, **kwargs):
         observation = self.env.reset()

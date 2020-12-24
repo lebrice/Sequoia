@@ -221,9 +221,9 @@ def reshape_space(space: gym.Space, new_shape: Tuple[int, ...]) -> gym.Space:
 def reshape_box(space: spaces.Box, new_shape: Tuple[int, ...]) -> spaces.Box:
     assert isinstance(new_shape, (tuple, list))
     # TODO: For now just assume that all the bounds are the same value.
-    low = space.low if np.isscalar(space.low) else next(space.low.flat)
-    high = space.high if np.isscalar(space.high) else next(space.high.flat)
-    return spaces.Box(low=low, high=high, shape=new_shape)
+    low = space.low.reshape(new_shape)
+    high = space.high.reshape(new_shape)
+    return type(space)(low=low, high=high, dtype=space.dtype)
 
 @reshape_space.register
 def reshape_discrete(space: spaces.Discrete, new_shape: Tuple[int, ...]) -> spaces.Discrete:

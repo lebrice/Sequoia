@@ -2,7 +2,9 @@
 `common/gym_wrappers`.
 """
 from dataclasses import is_dataclass, replace
-from typing import Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union
+from functools import singledispatch
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union
+from collections.abc import Mapping
 
 import gym
 import numpy as np
@@ -43,8 +45,6 @@ class TypedObjectsWrapper(IterableWrapper):
         self.Rewards = rewards_type
         self.Actions = actions_type
         super().__init__(env=env)
-        # if not isinstance(env.unwrapped, VectorEnv):
-        #     raise RuntimeError(f"Expected the env to be vectorized, but it isn't! (env={env})")
         
     def step(self, action: Actions) -> Tuple[Observations, Rewards, bool, Dict]:
         # "unwrap" the actions before passing it to the wrapped environment.
@@ -80,7 +80,7 @@ def unwrap_rewards(rewards: Rewards) -> Union[Tensor, np.ndarray]:
 def unwrap_observations(observations: Observations) -> Union[Tensor, np.ndarray]:
     # This gets rid of everything except just the image.
     if isinstance(observations, Observations):
-        # TODO: Keep the task labels? or no? For now, yes.        
+        # TODO: Keep the task labels? or no? For now, no.        
         return observations.x
     assert False, observations
 
@@ -115,21 +115,31 @@ class NoTypedObjectsWrapper(IterableWrapper):
         return unwrap_observations(observation)
 
 
-def remove_task_labels(observation: Tuple[T, int]) -> T:
+@singledispatch
+def remove_task_labels(observation: Any) -> Any:
+    """ Removes the task labels from an observation / observation space. """
     if is_dataclass(observation):
         return replace(observation, task_labels=None)
-    if isinstance(observation, (tuple, list)):
-        # try:
-        #     # If observation is a namedtuple:
-        #     return observation._replace(task_labels=None)
-        # except:
-        #     pass
-        assert len(observation) == 2, "fix this."
+    raise NotImplementedError(f"No handler registered for value {observation} of type {type(observation)}")
+
+@remove_task_labels.register(spaces.Tuple)
+@remove_task_labels.register(tuple)
+def _(observation: Tuple[T, Any]) -> Tuple[T]:
+    if len(observation) == 2:
+        return observation[1]
+    if len(observation) == 1:
         return observation[0]
-    if isinstance(observation, dict):
-        observation.pop("task_labels")
-        return observation
-    raise NotImplementedError
+    raise NotImplementedError(observation)
+
+
+@remove_task_labels.register(spaces.Dict)
+@remove_task_labels.register(Mapping)
+def _(observation: Dict) -> Dict:
+    assert "task_labels" in observation.keys()
+    return type(observation)(**{
+        key: value for key, value in observation.items() if key != "task_labels"
+    })
+
 
 
 class RemoveTaskLabelsWrapper(TransformObservation):
@@ -137,7 +147,7 @@ class RemoveTaskLabelsWrapper(TransformObservation):
     """
     def __init__(self, env: gym.Env, f=remove_task_labels):
         super().__init__(env, f=f)
-        self.observation_space = self.space_change(self.env.observation_space)
+        self.observation_space = remove_task_labels(self.env.observation_space)
 
     @classmethod
     def space_change(cls, input_space: gym.Space) -> gym.Space:

@@ -127,7 +127,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         """ Forward pass of the Model.
 
         Returns a ForwardPass object (or a dict)
-        """        
+        """
         # Encode the observation to get representations.
         representations = self.encode(observations)
         # Pass the observations and representations to the output head to get
@@ -419,6 +419,9 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def preprocess_observations(self, observations: Observations) -> Observations:
         assert isinstance(observations, Observations)
+        from sequoia.utils.generic_functions import to_tensor
+        tensor_observations = to_tensor(self.observation_space, observations, device=self.device)
+        return tensor_observations
         return observations
 
     def preprocess_rewards(self, reward: Rewards) -> Rewards:

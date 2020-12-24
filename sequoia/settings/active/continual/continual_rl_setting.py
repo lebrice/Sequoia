@@ -31,7 +31,7 @@ from sequoia.common.gym_wrappers.batch_env import (BatchedVectorEnv,
                                                    SyncVectorEnv, VectorEnv)
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
 from sequoia.common.gym_wrappers.pixel_observation import \
-    PixelObservationWrapper
+    PixelObservationWrapper, ImageObservations
 from sequoia.common.gym_wrappers.step_callback_wrapper import \
     StepCallbackWrapper
 from sequoia.common.gym_wrappers.utils import (IterableWrapper,
@@ -40,7 +40,7 @@ from sequoia.common.gym_wrappers.utils import (IterableWrapper,
                                                has_wrapper, is_atari_env,
                                                is_classic_control_env)
 from sequoia.common.metrics import RegressionMetrics
-from sequoia.common.spaces import Sparse
+from sequoia.common.spaces import Sparse, Image
 from sequoia.common.transforms import Transforms
 from sequoia.settings.active import ActiveSetting
 from sequoia.settings.assumptions.incremental import (IncrementalSetting,
@@ -658,15 +658,16 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 env_factory,
                 batch_size=batch_size,
                 num_workers=num_workers,
-                # TODO: Still debugging shared memory + Sparse spaces.
+                # TODO: Still debugging shared memory + custom spaces (e.g. Sparse).
                 shared_memory=False,
             )
 
+
         ## Apply the "post-batch" wrappers:
-        from sequoia.common.gym_wrappers import ConvertToFromTensors
+        # from sequoia.common.gym_wrappers import ConvertToFromTensors
         env = AddDoneToObservation(env)
         # # Convert the samples to tensors and move them to the right device.
-        env = ConvertToFromTensors(env)
+        # env = ConvertToFromTensors(env)
         # env = ConvertToFromTensors(env, device=self.config.device)
         # Add a wrapper that converts numpy arrays / etc to Observations/Rewards
         # and from Actions objects to numpy arrays.
@@ -815,6 +816,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             # AtariWrapper from SB3 and the AtariPreprocessing wrapper from gym.
             wrappers.append(AtariWrapper)
             # wrappers.append(AtariPreprocessing)
+            wrappers.append(ImageObservations)
+            # TODO: Mark the observations as Image spaces.
+            # TODO: convert everything to dict spaces rather than tuples.
 
         if not self.observe_state_directly:
             # Wrapper to apply the image transforms to the env.

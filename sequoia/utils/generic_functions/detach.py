@@ -1,7 +1,10 @@
+from collections.abc import Mapping
 from functools import singledispatch
 from typing import Any, Dict, Sequence, TypeVar
+
+import numpy as np
+
 from ._namedtuple import NamedTuple
-from collections.abc import Mapping
 
 T = TypeVar("T")
 
@@ -14,6 +17,7 @@ def detach(value: T) -> T:
     # else:
     #     return value
 
+@detach.register(np.ndarray)
 @detach.register(type(None))
 @detach.register(str)
 @detach.register(int)

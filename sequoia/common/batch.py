@@ -221,7 +221,7 @@ class Batch(ABC, Mapping[str, T]):
         fields, instead of indexing the "keys" of this object.
         """
         assert len(index) == self.batch_size
-        return self[:][index]
+        return self[:, index]
     
     @__getitem__.register(tuple)
     def _(self, index: Tuple[Union[slice, Tensor, np.ndarray, int], ...]):

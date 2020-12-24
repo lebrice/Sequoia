@@ -386,6 +386,8 @@ class PolicyHead(ClassificationHead):
         `representations` and provide the right (augmented) observations to the
         aux tasks. (Need to design that part later).
         """
+        assert rewards is not None, (forward_pass, actions, rewards)
+
         observations: ContinualRLSetting.Observations = forward_pass.observations
         representations: Tensor = forward_pass.representations
         if self.batch_size is None:
@@ -459,6 +461,8 @@ class PolicyHead(ClassificationHead):
         from an episode that are used to calculate a loss still have their
         graphs, versus ones that don't have them (due to being created before
         the last model update, and therefore having been detached.)
+
+        Does this by inspecting the contents of `self.actions[env_index]`. 
         """
         episode_actions = self.actions[env_index]
         n_stored_items = len(self.actions[env_index])

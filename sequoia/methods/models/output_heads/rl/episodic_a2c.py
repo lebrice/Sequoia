@@ -203,7 +203,7 @@ class EpisodicA2C(PolicyHead):
         # for those cases we want our to target to be equal to the reward only
         episode_length = len(episode_rewards)
         dones = torch.zeros(episode_length, dtype=torch.bool)
-        dones[-1] = done
+        dones[-1] = bool(done)
 
         returns = self.get_returns(episode_rewards, gamma=self.hparams.gamma).type_as(values)
         advantages = returns - values
@@ -280,9 +280,8 @@ class EpisodicA2C(PolicyHead):
             value=values,
         )
         rewards_type = type(episode_rewards[0])
-        assert all(reward.y is not None for reward in episode_rewards)
         stacked_rewards = rewards_type(
-            y=torch.stack([reward.y for reward in episode_rewards])  # type: ignore
+            y=stack(self.reward_space, [reward.y for reward in episode_rewards])
         )
         return stacked_inputs, stacked_actions, stacked_rewards
 

@@ -50,7 +50,7 @@ class BaseHParams(Serializable, Parseable):
     encoder: str = choice(available_encoders.keys(), default="resnet18")
     
     # Batch size to use during training and evaluation.
-    batch_size: int = 32
+    batch_size: Optional[int] = 32
 
     # Number of hidden units (before the output head).
     # When left to None (default), the hidden size from the pretrained

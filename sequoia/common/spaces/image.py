@@ -1,9 +1,13 @@
 """ IDEA: Create a subclass of spaces.Box for images.
 """
-from gym import Space, spaces
-from typing import Union, Tuple, Optional
-import numpy as np
+from typing import Optional, Tuple, Union
 
+import numpy as np
+import torch
+from gym import Space, spaces
+
+from sequoia.utils.generic_functions.to_from_tensor import to_tensor
+from torch import Tensor
 
 class Image(spaces.Box):
     """ Subclass of `gym.spaces.Box` for images.
@@ -48,9 +52,38 @@ class Image(spaces.Box):
     def from_box(cls, box_space: spaces.Box):
         return cls(box_space.low, box_space.high, dtype=box_space.dtype)
 
+    @classmethod
+    def wrap(cls, space: Union["Image", spaces.Box]):
+        if isinstance(space, Image):
+            return space
+        if isinstance(space, spaces.Box):
+            return cls.from_box(space)
+        raise NotImplementedError(space)
+
     @property
     def channels_last(self) -> bool:
         return not self.channels_first
 
     def __repr__(self):
         return f"Image({self.low.min()}, {self.high.max()}, {self.shape}, {self.dtype})"
+
+
+from gym.vector.utils import batch_space
+
+
+@to_tensor.register
+def _(space: Image,
+      sample: Union[np.ndarray, Tensor],
+      device: torch.device = None) -> Union[Tensor]:
+    """ Converts a sample from the given space into a Tensor. """
+    return torch.from_numpy(sample, device=device)
+
+
+@batch_space.register
+def _(space: Image, n: int = 1) -> Image:
+    # This could be ambiguous
+    assert space.b is None, "can't batch an already batched image space"
+    repeats = tuple([n] + [1] * space.low.ndim)
+    low, high = np.tile(space.low, repeats), np.tile(space.high, repeats)
+    img = type(space)(low=low, high=high, dtype=space.dtype)
+    return img

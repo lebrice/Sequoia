@@ -124,11 +124,12 @@ class ActorCriticHead(ClassificationHead):
         action_dist: Categorical = actions.action_dist
 
         rewards = rewards.to(device=actions.device)
-        env_reward = rewards.y
+        env_reward = torch.as_tensor(rewards.y, device=actions.device)
 
         observations: ContinualRLSetting.Observations = forward_pass.observations
         done = observations.done
         assert done is not None, "Need the end-of-episode signal!"
+        done = torch.as_tensor(done, device=actions.device)
         assert self._current_state is not None
         if self._previous_state is None:
             # Only allow this once!

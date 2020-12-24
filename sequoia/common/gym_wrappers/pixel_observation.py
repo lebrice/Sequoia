@@ -8,6 +8,9 @@ from gym.wrappers.pixel_observation import PixelObservationWrapper as PixelObser
 from torch import Tensor
 
 from sequoia.common.transforms import to_tensor
+from sequoia.common.spaces.image import Image
+
+from .utils import IterableWrapper
 
 
 class PixelObservationWrapper(PixelObservationWrapper_):
@@ -26,7 +29,6 @@ class PixelObservationWrapper(PixelObservationWrapper_):
         env.reset()
         super().__init__(env)
         pixel_space = self.observation_space["pixels"]
-        from ..spaces.image import Image
         self.observation_space = Image.from_box(pixel_space)
         from gym.envs.classic_control.rendering import Viewer
         self.viewer: Viewer
@@ -62,3 +64,10 @@ class PixelObservationWrapper(PixelObservationWrapper_):
             return to_tensor(image)
             return np.array(image.copy())
         return image
+
+
+
+class ImageObservations(IterableWrapper):
+    def __init__(self, env: gym.Env):
+        super().__init__(env=env)
+        self.observation_space = Image.wrap(self.env.observation_space)

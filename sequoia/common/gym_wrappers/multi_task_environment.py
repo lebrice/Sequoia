@@ -11,7 +11,10 @@ import numpy as np
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
 from gym.envs.registration import register
+from torch import Tensor
+
 from sequoia.utils.logging_utils import get_logger
+from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 
 task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
     CartPoleEnv: [
@@ -26,6 +29,62 @@ task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
 }
 logger = get_logger(__file__)
 
+
+@singledispatch
+def add_task_labels(observation: Any, task_labels: Any) -> Any:
+    raise NotImplementedError(observation)
+
+X = TypeVar("X")
+T = TypeVar("T")
+K = TypeVar("K")
+V = TypeVar("V")
+
+
+class ObservationsAndTaskLabels(NamedTuple):
+    x: np.ndarray
+    task_labels: np.ndarray
+
+
+@add_task_labels.register(Tensor)
+@add_task_labels.register(np.ndarray)
+def _(observation: X, task_labels: T) -> Tuple[X, T]:
+    return ObservationsAndTaskLabels(observation, task_labels)
+
+@add_task_labels.register(spaces.Box)
+def _(observation: X, task_labels: T) -> spaces.Dict:
+    # TODO: Return a dict or NamedTuple at some point:
+    return NamedTupleSpace(
+        x=observation,
+        task_labels=task_labels,
+        dtype=ObservationsAndTaskLabels,
+    )
+    # return spaces.Dict(OrderedDict({
+    #     "x": observation,
+    #     "task_labels": task_labels,
+    # }))
+
+
+@add_task_labels.register(NamedTupleSpace)
+def _(observation: NamedTupleSpace, task_labels: gym.Space) -> NamedTupleSpace:
+    # IDEA: Create a new NamedTupleSpace, adding in the task labels.
+    return NamedTupleSpace(**observation._spaces, task_labels=task_labels)
+
+
+@add_task_labels.register(spaces.Tuple)
+@add_task_labels.register(tuple)
+def _(observation: Tuple[X, ...], task_labels: T) -> Tuple[X, T]:
+    return type(observation)(*[*observation, task_labels])
+
+
+@add_task_labels.register(spaces.Dict)
+@add_task_labels.register(Mapping)
+def _(observation: Dict[K, V], task_labels: T) -> Dict[K, Union[V, T]]:
+    new = {
+        key: value for key, value in observation.items()
+    }
+    assert "task_labels" not in new
+    new["task_labels"] = task_labels
+    return type(observation)(**new)
 
 class MultiTaskEnvironment(gym.Wrapper):
     """ Creates 'tasks' by modifying attributes of the wrapped environment.
@@ -119,11 +178,14 @@ class MultiTaskEnvironment(gym.Wrapper):
         n_tasks = len(self.task_schedule)
         
         if self.add_task_id_to_obs:
-            self.observation_space = spaces.Tuple([
+            self.observation_space = add_task_labels(
                 self.env.observation_space,
-                spaces.Discrete(n=n_tasks)
-            ])
-        
+                spaces.Discrete(n=n_tasks),
+            )
+            # self.observation_space = spaces.Tuple([
+            #     self.env.observation_space,
+            #     spaces.Discrete(n=n_tasks)
+            # ])
         self._closed = False
         
         self._on_task_switch_callback: Optional[Callable[[int], None]] = None
@@ -168,7 +230,7 @@ class MultiTaskEnvironment(gym.Wrapper):
             
         observation, rewards, done, info = super().step(*args, **kwargs)
         if self.add_task_id_to_obs:
-            observation = (observation, self.current_task_id)
+            observation = add_task_labels(observation, self.current_task_id)
         if self.add_task_dict_to_info:
             info.update(self.current_task)
 
