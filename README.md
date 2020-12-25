@@ -28,13 +28,48 @@ pip install -e .
 pip install -r requirements.txt
 ```
 
-## Getting Started - Adding a new Method:
+## Getting Started
 
-### Prerequisites:
+
+### Running experiments
+
+- Directly in code:
+	```python
+	from sequoia.settings import TaskIncrementalSetting
+	from sequoia.methods import BaselineMethod
+	setting = TaskIncrementalSetting(dataset="mnist")
+	method = BaselineMethod()
+
+	results = setting.apply(method)
+	print(results)
+	```
+
+- (from the command-line)
+	```console
+	sequoia --setting <some_setting> --method <some_method>  (arguments)
+	```
+	For example:
+	```console
+	sequoia --setting incremental_rl --method ppo --steps_per_task 10_000
+	```
+	```console
+	sequoia --setting class_incremental --dataset cifar100 --method baseline
+	```
+
+
+- Running multiple experiments:
+
+	If you leave out the `--method` argument above, the experiment will compare the results of all the methods applicable to the chosen Setting.
+
+	Likewise, if you leave the `--setting` option unset, the experiment will evaluate the performance of the selected method on all its applicable settings (WIP: and a table will be shown).
+
+### Adding a new Method:
+
+#### Prerequisites:
 
 - Take a quick look at the [demo script](examples/quick_demo.py), which can be run using `python examples/quick_demo.py`.
 
-### Steps:
+#### Steps:
 
 1. Choose a target setting from the tree (See the "Available Settings" section below).
 
@@ -133,7 +168,7 @@ pip install -r requirements.txt
     - Create a Pull Request, and you're good to go!
 
 
-## (WIP): Getting Started - Adding a new Setting:
+### (WIP) Adding a new Setting:
 
 Prerequisites:
 
