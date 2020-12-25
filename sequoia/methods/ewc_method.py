@@ -30,19 +30,11 @@ from torch.utils.data import DataLoader, TensorDataset
 
 sys.path.extend([".", ".."])
 # Repo imports:
-<<<<<<< HEAD
-from settings import Method, Setting
-from settings.active import ActiveEnvironment, ActiveSetting
-from settings.active.rl import (ClassIncrementalRLSetting, ContinualRLSetting,
-                                RLSetting, TaskIncrementalRLSetting)
-from settings.active.rl.wrappers import (NoTypedObjectsWrapper,
-=======
 from sequoia.settings import Method, Setting
 from sequoia.settings.active import ActiveEnvironment, ActiveSetting
 from sequoia.settings.active.continual import (IncrementalRLSetting, ContinualRLSetting,
                                 RLSetting, TaskIncrementalRLSetting)
 from sequoia.settings.active.continual.wrappers import (NoTypedObjectsWrapper,
->>>>>>> master
                                          RemoveTaskLabelsWrapper)
 from settings.assumptions.incremental import IncrementalSetting
 from settings.base import Environment
@@ -298,11 +290,6 @@ def FIM(model,
             return (log_probs * probs**.5)
 
     elif variant == 'r2c_critic':
-<<<<<<< HEAD
-        def function_fim(*d):      
-            actions, values, log_probs = model(d[0].squeeze())
-            return values
-=======
         def function_fim(*d):
             _, values, _ = model(d[0].squeeze())
             estimates = values
@@ -310,7 +297,6 @@ def FIM(model,
         # def function_fim(*d):      
         #     actions, values, log_probs = model(d[0].squeeze())
         #     return values
->>>>>>> master
 
     else:
         raise NotImplementedError(variant)
@@ -1048,15 +1034,6 @@ def demo():
     # Create the method using the parsed values.
     method: EWC = EWC.from_argparse_args(args)
     
-<<<<<<< HEAD
-    # task_schedule = {
-    #     0:      {"gravity": 10, "length": 0.2},
-    #     1000:   {"gravity": 100, "length": 1.2},
-    #     2000:   {"gravity": 10, "length": 0.2},
-    # }
-    setting = TaskIncrementalRLSetting(
-        dataset="CartPole-v1",
-=======
     task_schedule = {
         0:      {"gravity": 10, "length": 0.2},
         5000:   {"gravity": 100, "length": 1.2},
@@ -1066,7 +1043,6 @@ def demo():
         dataset="CartPole-v1",
         train_task_schedule=task_schedule,
         test_task_schedule=task_schedule,
->>>>>>> master
         observe_state_directly=True,
         max_steps=10000,
     )
