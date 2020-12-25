@@ -1,0 +1,4 @@
+{              
+    "0":   {"gravity": 5, "length": 0.8},
+    "20000":   {"gravity": 20, "length": 0.2}
+}

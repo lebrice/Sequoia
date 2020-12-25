@@ -49,6 +49,9 @@ from sequoia.settings.passive.cl.objects import (Actions, Observations,
 from sequoia.methods import register_method
 
 
+
+from sequoia.methods.stable_baselines3_methods.a2c import A2CMethod, A2CModel
+
 @register_method
 class EWC(Method, target_setting=IncrementalSetting):  
     """ Minimal example of a Method targetting the Class-Incremental CL setting.
@@ -228,7 +231,6 @@ class EWC(Method, target_setting=IncrementalSetting):
             action = self.model.get_action(observations.to(self.config.device))
         return self.target_setting.Actions(action)
 
-
 #copied from https://github.com/tfjgeorge/nngeometry
 def FIM(model,
         loader,
@@ -286,7 +288,7 @@ def FIM(model,
 
     elif variant == 'regression':
         def function_fim(*d):
-            estimates = model(function(*d))
+            estimates = function(*d)
             return estimates
 
     elif variant == 'dqn':
@@ -303,8 +305,8 @@ def FIM(model,
 
     elif variant == 'r2c_critic':
         def function_fim(*d):
-            _, values, _ = model(   d[0].squeeze())
-            estimates = model(function(*d))
+            _, values, _ = model(d[0].squeeze())
+            estimates = values
             return estimates
         # def function_fim(*d):      
         #     actions, values, log_probs = model(d[0].squeeze())
@@ -446,7 +448,7 @@ class REINFORCE(nn.Module):
                             loader=dataloader,                   
                             representation=self.FIM_representation,
                             n_output=self.action_space.n,
-                            variant='dqn',
+                            variant='clssification',
                             device=self.device.type)     
                 self.consolidate(new_FIM, task=self._previous_task_id)   
             self._n_switches += 1
@@ -623,22 +625,22 @@ class A2C_EWC(A2C):
                             variant='r2c',
                             device=self.device.type)    
 
-                new_FIM_critic = None # FIM(model=self.policy,      
-                            # loader=dataloader,
-                            # representation=self.FIM_representation,
-                            # n_output=1, #self.action_space.n,
-                            # variant='r2c_critic',
-                            # device=self.device.type)   
+                new_FIM_critic = FIM(model=self.policy,      
+                            loader=dataloader,
+                            representation=self.FIM_representation,
+                            n_output=1, #self.action_space.n,
+                            variant='r2c_critic',
+                            device=self.device.type)   
                 self.consolidate(new_FIM,new_FIM_critic,task=self._previous_task_id) 
 
             self._n_switches += 1
             self._previous_task_id = task_id
             self.observation_collector = deque(maxlen=self.total_timesteps_fim)
     
-    def get_ewc_loss(self) -> Tensor:
+    def get_ewc_loss(self) -> Tensor:  
         """Gets an 'ewc-like' regularization loss.
         """
-        if self.previous_model_weights is None:
+        if self.ewc_coefficient==0 or self.previous_model_weights is None:
             # We're in the first task: do nothing.
             return torch.tensor(0.)
 
@@ -1032,7 +1034,7 @@ def demo():
     from simple_parsing import ArgumentParser
 
     # Adding arguments for each group directly:
-    parser = ArgumentParser(description=__doc__)
+    parser = ArgumentParser(description=__doc__) 
     parser.add_arguments(EWC.HParams, dest="hparams")
     args = parser.parse_args()
     hparams: EWC.HParams = args.hparams

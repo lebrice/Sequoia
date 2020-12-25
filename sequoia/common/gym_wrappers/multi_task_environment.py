@@ -56,7 +56,7 @@ class MultiTaskEnvironment(gym.Wrapper):
                  env: gym.Env,
                  task_schedule: Dict[int, Dict[str, float]] = None,
                  task_params: List[str] = None,
-                 noise_std: float = 0.2,
+                 noise_std: float = 1.,
                  add_task_dict_to_info: bool = False,
                  add_task_id_to_obs: bool = False,
                  starting_step: int = 0,
@@ -156,7 +156,6 @@ class MultiTaskEnvironment(gym.Wrapper):
         # that given step.
         if self._closed:
             raise gym.error.ClosedEnvironmentError("Can't step in closed env.")
-        
         if self.steps in self.task_schedule:
             self.current_task = self.task_schedule[self.steps]
             logger.debug(f"New task: {self.current_task}")
