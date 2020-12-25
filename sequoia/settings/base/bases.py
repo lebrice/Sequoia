@@ -259,8 +259,7 @@ class Method(Generic[SettingType], Parseable, ABC):
             setting (SettingType): The setting the method will be evaluated on.
         
         TODO: This might be a problem if we're gonna avoid 'cheating'.. we're
-        essentially giving the 'Setting' object
-        directly to the method.. so I guess the object could maybe 
+        essentially giving the 'Setting' object directly to the method.
         """
     
     @abstractmethod
@@ -327,13 +326,13 @@ class Method(Generic[SettingType], Parseable, ABC):
         arguments will be passed to the Setting's from_args method. 
         """
 
-        from main import Experiment
+        from sequoia.main import Experiment
         experiment: Experiment
         # Create the Method object from the command-line:
-        method = cls.from_args(argv)
+        method = cls.from_args(argv, strict=False)
         # Then create the 'Experiment' from the command-line, which makes it
         # possible to choose between all the settings.
-        experiment = Experiment.from_args(argv)
+        experiment = Experiment.from_args(argv, strict=False)
         # Set the method attribute to be the one parsed above.
         experiment.method = method
         results: Results = experiment.launch(argv)

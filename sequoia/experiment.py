@@ -2,8 +2,10 @@
 Settings).
 """
 import json
+import os
 import shlex
 import sys
+from pathlib import Path
 from collections import defaultdict
 from dataclasses import InitVar, dataclass
 from inspect import isabstract, isclass
@@ -21,6 +23,19 @@ from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
+source_dir = Path(os.path.dirname(__file__))
+presets_dir = source_dir / "settings" / "presets"
+
+setting_presets = {
+    "cartpole_state": presets_dir / "cartpole_state.yaml",
+    "cartpole_pixels": presets_dir / "cartpole_pixels.yaml",
+    "mnist": presets_dir / "mnist.yaml",
+    "fashion_mnist": presets_dir / "fashion_mnist.yaml",
+    "cifar10": presets_dir / "cifar10.yaml",
+    "cifar100": presets_dir / "cifar100.yaml",
+}
+
+
 @dataclass
 class Experiment(Parseable, Serializable):
     """ Applies a Method to an experimental Setting to obtain Results.
@@ -30,7 +45,7 @@ class Experiment(Parseable, Serializable):
 
     When the `method` is not set, this will apply all applicable methods on the
     chosen setting.
-    """
+    """    
     # Which experimental setting to use. When left unset, will evaluate the
     # provided method on all applicable settings.
     setting: Optional[Union[Setting, Type[Setting]]] = choice(
@@ -38,20 +53,18 @@ class Experiment(Parseable, Serializable):
         default=None,
         type=str,
     )
+    # Path to a json/yaml file containing preset options for the chosen setting.
+    # Can also be one of the key from the `setting_presets` dictionary,
+    # for convenience.
+    benchmark: Optional[Union[str, Path]] = None
 
     # Which experimental method to use. When left unset, will evaluate all
     # compatible methods on the provided setting.
-    # NOTE: Some methods can share the same name, for instance, 'baseline' may
-    # refer to the ClassIncrementalMethod or TaskIncrementalMethod.
-    # Therefore, the given `method` is a string (for example when creating this
-    # class from the command-line) and there are multiple methods with the given
-    # name, then the most specific method applicable for the given setting will
-    # be used.
     method: Optional[Union[str, Method, Type[Method]]] = choice(
         set(method.get_name() for method in all_methods),
         default=None,
     )
-    
+
     # All the other configuration options, which are independant of the choice
     # of Setting or of Method, go in this next dataclass here! For example,
     # things like the log directory, wether Cuda is used, etc.
@@ -68,6 +81,62 @@ class Experiment(Parseable, Serializable):
         # Each Method also has a unique name.
         if isinstance(self.method, str):
             self.method = get_class_with_name(self.method, all_methods)
+
+        if self.benchmark:
+            # If the provided benchmark isn't a path, try to get the value from
+            # the `setting_presets` dict. If it isn't in the dict, raise an
+            # error.
+            if not Path(self.benchmark).is_file():
+                if self.benchmark in setting_presets:
+                    self.benchmark = setting_presets[self.benchmark]
+                else:
+                    raise RuntimeError(
+                        f"Could not find benchmark '{self.benchmark}': it "
+                        f"is neither a path to a file or a key of the "
+                        f"`setting_presets` dictionary. \n"
+                        f"(Available presets: {setting_presets}) "
+                    )
+            # Creating an experiment for the given setting, loaded from the
+            # config file.
+            # TODO: IDEA: Do the same thing for loading the Method?
+            logger.info(f"Will load the options for the setting from the file "
+                        f"at path {self.benchmark}.")
+            drop_extras = True
+            if self.setting is None:
+                logger.warn(UserWarning(
+                    f"You didn't specify which setting to use, so this will "
+                    f"try to infer the correct type of setting to use from the "
+                    f"contents of the file, which might not work!\n (Consider "
+                    f"running this with the `--setting` option instead."
+                ))
+                # Find the first type of setting that fits the given file.
+                drop_extras = False
+                self.setting = Setting
+
+            # Raise an error if any of the args in sys.argv would have been used
+            # up by the Setting, just to prevent any ambiguities.
+            _, unused_args = self.setting.from_known_args()
+            ignored_args = list(set(sys.argv[1:]) - set(unused_args))
+            if ignored_args:
+                # TODO: This could also be trigerred if there were arguments
+                # in the method with the same name as some from the Setting. 
+                raise RuntimeError(
+                    f"Cannot pass command-line arguments for the Setting when "
+                    f"loading a preset, since these arguments whould have been "
+                    f"ignored when creating the setting of type {self.setting} "
+                    f"anyway: {ignored_args}"
+                )
+
+            assert isclass(self.setting) and issubclass(self.setting, Setting)
+            # Actually load the setting from the file.
+            self.setting = self.setting.load(path=self.benchmark,
+                                             drop_extra_fields=drop_extras)
+            
+            if self.method is None:
+                raise NotImplementedError(
+                    f"For now, you need to specify a Method to use using the "
+                    f"`--method` argument when loading the setting from a file."
+                )
 
         if self.setting is not None and self.method is not None:
             if not self.method.is_applicable(self.setting):
@@ -112,7 +181,7 @@ class Experiment(Parseable, Serializable):
         Results
             
         """
-        assert not (setting is None or method is None)
+        assert setting is not None and method is not None
         
         if isinstance(setting, Setting) and isinstance(method, Method):
             return setting.apply(method, config=config)
@@ -120,7 +189,7 @@ class Experiment(Parseable, Serializable):
 
         # TODO: Should we raise an error if an argument appears both in the Setting
         # and the Method?
-        parser = ArgumentParser(description=__doc__)
+        parser = ArgumentParser(description=__doc__, add_dest_to_option_strings=False)
         
         if not isinstance(setting, Setting):
             assert issubclass(setting, Setting)
@@ -135,7 +204,7 @@ class Experiment(Parseable, Serializable):
             args, unused_args = parser.parse_known_args(argv)
             if unused_args:
                 logger.warning(UserWarning(f"Unused command-line args: {unused_args}"))
-        
+
         if not isinstance(setting, Setting):
             setting = setting.from_argparse_args(args)
         if not isinstance(method, Method):
@@ -228,7 +297,12 @@ class Experiment(Parseable, Serializable):
         setting: Optional[Type[Setting]] = experiment.setting
         method: Optional[Type[Method]] = experiment.method
         config: Config = experiment.config
-    
+
+        if isinstance(setting, Setting):
+            assert experiment.benchmark
+            assert method is not None
+            return experiment.launch(argv)
+        
         assert setting is None or issubclass(setting, Setting)
         assert method is None or issubclass(method, Method)
 

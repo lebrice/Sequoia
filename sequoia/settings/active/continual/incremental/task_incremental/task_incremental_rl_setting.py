@@ -1,10 +1,11 @@
 from dataclasses import dataclass
-from .class_incremental_rl_setting import ClassIncrementalRLSetting
+from ..incremental_rl_setting import IncrementalRLSetting
 
 from sequoia.utils import constant
 
+
 @dataclass
-class TaskIncrementalRLSetting(ClassIncrementalRLSetting):
+class TaskIncrementalRLSetting(IncrementalRLSetting):
     """ Continual RL setting with clear task boundaries and task labels.
 
     The task labels are given at both train and test time.

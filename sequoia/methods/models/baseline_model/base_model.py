@@ -4,41 +4,43 @@ This is meant
 
 TODO: There is a bunch of work to be done here.
 """
-import gym
 import dataclasses
-import itertools
 import functools
+import itertools
 from abc import ABC
-from dataclasses import dataclass
 from collections import abc as collections_abc
+from dataclasses import dataclass
 from typing import (Any, ClassVar, Dict, Generic, List, NamedTuple, Optional,
                     Sequence, Tuple, Type, TypeVar, Union)
 
+import gym
 import numpy as np
 import torch
-from gym import spaces
+from gym import Space, spaces
 from gym.spaces.utils import flatdim
 from pytorch_lightning import LightningDataModule, LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
 from simple_parsing import list_field
-from torch import nn, Tensor
+from torch import Tensor, nn
 from torch.optim.optimizer import Optimizer
 
+from sequoia.common.batch import Batch
 from sequoia.common.config import Config
 from sequoia.common.loss import Loss
 from sequoia.common.transforms import SplitBatch, Transforms
-from sequoia.common.batch import Batch
-from sequoia.settings.base.setting import Setting, SettingType, Observations, Actions, Rewards
+from sequoia.settings import (Actions, ActiveSetting, ContinualRLSetting,
+                              Environment, Observations, PassiveSetting,
+                              Rewards, Setting)
 from sequoia.settings.assumptions.incremental import IncrementalSetting
-from sequoia.settings import ContinualRLSetting
-from sequoia.settings import Environment, Observations, Actions, Rewards
+from sequoia.settings.base.setting import (Actions, Observations, Rewards,
+                                           Setting, SettingType)
 from sequoia.utils.logging_utils import get_logger
 
-from .base_hparams import BaseHParams
-from ..output_heads import OutputHead, RegressionHead, ClassificationHead, PolicyHead
 from ..forward_pass import ForwardPass
-
+from ..output_heads import (ActorCriticHead, ClassificationHead, OutputHead,
+                            PolicyHead, RegressionHead)
+from .base_hparams import BaseHParams
 
 logger = get_logger(__file__)
 
@@ -82,15 +84,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # fallback to using it instead of the passed datamodules/dataloaders.
         # self.datamodule: LightningDataModule = setting
 
-        # TODO: Debug this, seemed to be causing issues because it was trying to
-        # save the 'setting' argument, which contained some things that weren't
-        # pickleable.
-        all_params_dict = {
-            "hparams": hparams.to_dict(),
-            "config": config.to_dict(),
-        }
-        self.save_hyperparameters(all_params_dict)
-
         # (Testing) Setting this attribute is supposed to help with ddp/etc
         # training in pytorch-lightning. Not 100% sure.
         # self.example_input_array = torch.rand(self.batch_size, *self.input_shape)
@@ -110,10 +103,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # wouldn't match with this space. 
             self.representation_space = spaces.Box(-np.inf, np.inf, (self.hidden_size,), np.float32)
 
-        from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
+        from sequoia.common.gym_wrappers.convert_tensors import \
+            add_tensor_support
         self.representation_space = add_tensor_support(self.representation_space)
 
-        self.output_head = self.create_output_head()
+        self.output_head = self.create_output_head(setting)
 
     @auto_move_data
     def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
@@ -175,7 +169,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         assert isinstance(actions, self.Actions)
         return actions
 
-    def create_output_head(self, add_to_optimizer: bool = None) -> OutputHead:
+    def create_output_head(self, setting: Setting, add_to_optimizer: bool = None) -> OutputHead:
         """Create an output head for the current action and reward spaces.
         
         NOTE: This assumes that the input, action and reward spaces don't change
@@ -194,45 +188,26 @@ class BaseModel(LightningModule, Generic[SettingType]):
         OutputHead
             The new output head.
         """
-        
         input_space: Space = self.representation_space
         action_space: Space = self.action_space
         reward_space: Space = self.reward_space
         hparams: OutputHead.HParams = self.hp.output_head
 
         # Choose what type of output head to use depending on the kind of
-        # action/reward space.
-        output_head_type: Type[OutputHead]
-        
-        if isinstance(self.action_space, spaces.Discrete):
-            # Discrete actions: i.e. classification problem.
-            if isinstance(self.reward_space, spaces.Discrete):
-                # Classification problem: Discrete action, Discrete rewards (labels).
-                output_head_type = ClassificationHead
-            else:
-                # Reinforcement learning problem: Discrete action, float rewards.
-                # TODO: There might be some RL environments with discrete
-                # rewards, right? For instance CartPole is, on-paper, a discrete
-                # reward setting, since its always 1.
-                output_head_type = PolicyHead
-        elif isinstance(self.action_space, spaces.Box):
-            # Regression problem: For now there is only RL that has such a
-            # space.
-            output_head_type = RegressionHead
-        else:
-            raise NotImplementedError(f"Unsupported action space: {self.action_space}")
-        
+        # Setting.
+        output_head_type: Type[OutputHead] = self.output_head_type(setting)
+
         output_head = output_head_type(
             input_space=input_space,
             action_space=action_space,
             reward_space=reward_space,
             hparams=hparams,
-        )
-        
+        ).to(self.device)
+
         if add_to_optimizer is None:
-            add_to_optimizer = not hasattr(output_head, "optimizer")
             # Do not add the output head's parameters to the optimizer of the
-            # whole model.
+            # whole model, if it already has an `optimizer` of its own.
+            add_to_optimizer = not getattr(output_head, "optimizer", None)
 
         if add_to_optimizer:
             # Add the new parameters to the Optimizer, if it already exists.
@@ -243,10 +218,42 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # `self.output_heads`.
             if self.trainer:
                 optimizer: Optimizer = self.optimizers()
+                assert isinstance(optimizer, Optimizer)
                 optimizer.add_param_group({"params": output_head.parameters()})
 
-        output_head = output_head.to(self.device)
         return output_head
+
+    def output_head_type(self, setting: SettingType) -> Type[OutputHead]:
+        """ Return the type of output head we should use in a given setting.
+        """
+        if isinstance(setting, ActiveSetting):
+            if not isinstance(setting.action_space, spaces.Discrete):
+                raise NotImplementedError(f"Only support discrete actions for now.")
+            # TODO: Run the PolicyHead in the following conditions:
+            # - Compare the big backward pass vs many small ones
+            # - Try to have it learn from pixel input, if possible
+            # - Try to have it learn on a multi-task RL setting, 
+            return PolicyHead
+            # TODO: Finish debugging the ActorCritic Head.
+            # return ActorCriticHead
+
+        assert isinstance(setting, PassiveSetting)
+
+        if isinstance(setting.action_space, spaces.Discrete):
+            # Discrete actions: i.e. classification problem.
+            if isinstance(setting.reward_space, spaces.Discrete):
+                # Classification problem: Discrete action, Discrete rewards (labels).
+                return ClassificationHead
+            # Reinforcement learning problem: Discrete action, float rewards.
+            # TODO: There might be some RL environments with discrete
+            # rewards, right? For instance CartPole is, on-paper, a discrete
+            # reward setting, since its always 1.
+        if isinstance(setting.action_space, spaces.Box):
+            # Regression problem: For now there is only RL that has such a
+            # space.
+            return RegressionHead
+
+        raise NotImplementedError(f"Unsupported action space: {setting.action_space}")
 
     def training_step(self,
                       batch: Tuple[Observations, Optional[Rewards]],
@@ -316,7 +323,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         
         if rewards is None:
             # Get the reward from the environment (the dataloader).
-            if self.config.debug:
+            if self.config.debug and self.config.render:
                 environment.render()
                 # import matplotlib.pyplot as plt
                 # plt.waitforbuttonpress(10)
@@ -325,17 +332,17 @@ class BaseModel(LightningModule, Generic[SettingType]):
             assert rewards is not None
 
         loss: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)
-        
+        for key, value in loss.to_pbar_message().items():
+            self.log(key, value, prog_bar=True)
         return {
             "loss": loss.loss,
             "log": loss.to_log_dict(),
-            "progress_bar": loss.to_pbar_message(),
             "loss_object": loss,
         }
         # The above can also easily be retrieved like this:
         result = loss.to_pl_dict()
         return result
-    
+
     @auto_move_data
     def split_batch(self, batch: Any) -> Tuple[Observations, Rewards]:
         """ Splits the batch into the observations and the rewards. 
@@ -354,7 +361,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         return self.split_batch_transform(batch)
 
     def get_loss(self,
-                 forward_pass: Dict[str, Tensor],
+                 forward_pass: ForwardPass,
                  rewards: Rewards = None,
                  loss_name: str = "") -> Loss:
         """Gets a Loss given the results of the forward pass and the reward.
@@ -400,9 +407,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # So far we only use 'y' from the rewards in the output head.
             supervised_loss = self.output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
             total_loss += supervised_loss
-            
-            
-            
+
         return total_loss
 
     def preprocess_observations(self, observations: Observations) -> Observations:

@@ -1,6 +1,7 @@
 import itertools
 import json
 import warnings
+import operator
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
@@ -13,32 +14,37 @@ import numpy as np
 from gym import spaces
 from gym.envs.atari import AtariEnv
 from gym.envs.classic_control import CartPoleEnv
+from gym.utils import colorize
 from gym.wrappers import AtariPreprocessing
-from simple_parsing import choice, list_field
+from simple_parsing import choice, list_field, field
 from simple_parsing.helpers import dict_field
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from torch import Tensor
 
-from sequoia.common import Batch, Config
-from sequoia.common.gym_wrappers import (AddDoneToObservation, AddInfoToObservation,
-                                 MultiTaskEnvironment, SmoothTransitions,
-                                 TransformAction, TransformObservation,
-                                 TransformReward)
-from sequoia.common.gym_wrappers.batch_env import (BatchedVectorEnv, SyncVectorEnv,
-                                           VectorEnv)
+from sequoia.common import Batch, Config, Metrics
+from sequoia.common.gym_wrappers import (AddDoneToObservation,
+                                         AddInfoToObservation,
+                                         MultiTaskEnvironment,
+                                         SmoothTransitions, TransformAction,
+                                         TransformObservation, TransformReward)
+from sequoia.common.gym_wrappers.batch_env import (BatchedVectorEnv,
+                                                   SyncVectorEnv, VectorEnv)
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
-from sequoia.common.gym_wrappers.pixel_observation import PixelObservationWrapper
-from sequoia.common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
+from sequoia.common.gym_wrappers.pixel_observation import \
+    PixelObservationWrapper
+from sequoia.common.gym_wrappers.step_callback_wrapper import \
+    StepCallbackWrapper
 from sequoia.common.gym_wrappers.utils import (IterableWrapper,
-                                       classic_control_env_prefixes,
-                                       classic_control_envs, has_wrapper,
-                                       is_atari_env, is_classic_control_env)
+                                               classic_control_env_prefixes,
+                                               classic_control_envs,
+                                               has_wrapper, is_atari_env,
+                                               is_classic_control_env)
 from sequoia.common.metrics import RegressionMetrics
 from sequoia.common.spaces import Sparse
 from sequoia.common.transforms import Transforms
 from sequoia.settings.active import ActiveSetting
 from sequoia.settings.assumptions.incremental import (IncrementalSetting,
-                                              TestEnvironment)
+                                                      TestEnvironment)
 from sequoia.settings.base import Method
 from sequoia.settings.base.results import Results
 from sequoia.utils import dict_union, get_logger
@@ -85,7 +91,7 @@ Environment = ActiveEnvironment["ContinualRLSetting.Observations",
 
 
 @dataclass
-class ContinualRLSetting(IncrementalSetting, ActiveSetting):
+class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     """ Reinforcement Learning Setting where the environment changes over time.
 
     This is an Active setting which uses gym environments as sources of data.
@@ -99,8 +105,8 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     Results: ClassVar[Type[Results]] = RLResults
     
     @dataclass(frozen=True)
-    class Observations(IncrementalSetting.Observations,
-                       ActiveSetting.Observations):
+    class Observations(#ActiveSetting.Observations,
+                       IncrementalSetting.Observations):
         """ Observations in a continual RL Setting. """
         # Just as a reminder, these are the fields defined in the base classes:
         # x: Tensor
@@ -129,19 +135,35 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # The dataset could be either a string (env id or a key from the
     # available_datasets dict), a gym.Env, or a callable that returns a single environment.
     # If self.dataset isn't one of those, an error will be raised.
-    dataset: str = choice(available_datasets, default="breakout")
+    dataset: str = choice(available_datasets, default="cartpole")
+
+    # The number of tasks. By default 1 for this setting.
+    nb_tasks: int = field(1, alias=["n_tasks", "num_tasks"])
     
-    # Max number of steps per task. ("length" of the training and test "datasets").
+    # Max number of steps per task. (Also acts as the "length" of the training
+    # and validation "Datasets")
     max_steps: int = 10_000
     # Maximum episodes per task.
-    max_episodes: int = 5_000
-    
-    
+    # TODO: Test that the limit on the number of episodes actually works.
+    max_episodes: Optional[int] = None
     # Number of steps per task. When left unset and when `max_steps` is set,
     # takes the value of `max_steps` divided by `nb_tasks`.
     steps_per_task: Optional[int] = None
     # Number of episodes per task.
     episodes_per_task: Optional[int] = None
+
+    # Number of steps per task in the test loop.
+    test_steps_per_task: int = 1_000
+    # Total number of steps in the test loop. By default, takes the value of
+    # `test_steps_per_task * nb_tasks`.
+    test_steps: Optional[int] = None
+    
+    
+    
+    
+    # Standard deviation of the multiplicative Gaussian noise that is used to
+    # create the values of the env attributes for each task. 
+    task_noise_std: float = 0.2
     
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
@@ -150,11 +172,19 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
     # useful to debug environments like CartPole, for instance.
     observe_state_directly: bool = False
 
+    
+    # Path to a json file from which to read the train task schedule. 
+    train_task_schedule_path: Optional[Path] = None
+    # Path to a json file from which to read the validation task schedule. 
+    valid_task_schedule_path: Optional[Path] = None
+    # Path to a json file from which to read the test task schedule. 
+    test_task_schedule_path: Optional[Path] = None
+
     # NOTE: Added this `cmd=False` option to mark that we don't want to generate
     # any command-line arguments for these fields.
-    train_task_schedule: Dict[int, Dict] = dict_field(cmd=False)
-    valid_task_schedule: Dict[int, Dict] = dict_field(cmd=False)
-    test_task_schedule: Dict[int, Dict] = dict_field(cmd=False)
+    train_task_schedule: Dict[int, Dict[str, float]] = dict_field(cmd=False)
+    valid_task_schedule: Dict[int, Dict[str, float]] = dict_field(cmd=False)
+    test_task_schedule: Dict[int, Dict[str, float]] = dict_field(cmd=False)
 
     train_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
     valid_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
@@ -188,20 +218,113 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         # Set the number of tasks depending on the increment, and vice-versa.
         # (as only one of the two should be used).
         assert self.max_steps, "assuming this should always be set, for now."
-        if not self.nb_tasks:
+        # TODO: Clean this up, not super clear what options take precedence on
+        # which other options.
+
+        # Load the task schedules from the corresponding files, if present.
+        if self.train_task_schedule_path:
+            self.train_task_schedule = self.load_task_schedule(self.train_task_schedule_path)
+
+        if self.valid_task_schedule_path:
+            self.valid_task_schedule = self.load_task_schedule(self.valid_task_schedule_path)
+
+        if self.test_task_schedule_path:
+            self.test_task_schedule = self.load_task_schedule(self.test_task_schedule_path)
+
+        if self.train_task_schedule:
+            # A task schedule was passed: infer the number of tasks from it.
+            change_steps = sorted(self.train_task_schedule.keys())
+            assert 0 in change_steps, "Schedule needs a task at step 0."
+
+            # NOTE: When in a ContinualRLSetting with smooth task boundaries,
+            # the last entry in the schedule represents the state of the env at
+            # the end of the "task". When there are clear task boundaries (i.e.
+            # when in 'Class'/Task-Incremental RL), the last entry is the start
+            # of the last task.
+            self.nb_tasks = len(change_steps)
+            if self.smooth_task_boundaries:
+                self.nb_tasks -= 1
+
+            # TODO: @lebrice: I guess we have to assume that the interval
+            # between steps is constant for now? Do we actually depend on this
+            # being the case? I think steps_per_task is only really ever used
+            # for creating the task schedule, which we already have in this
+            # case.
+            assert len(change_steps) >= 2, (
+                "WIP: need a minimum of two tasks in the task schedule for now."
+            )
+            self.steps_per_task = change_steps[1] - change_steps[0]
+            
+            for i in range(len(change_steps)-1):
+                if change_steps[i+1] - change_steps[i] != self.steps_per_task:
+                    raise NotImplementedError(
+                        f"WIP: This might not work yet if the tasks aren't "
+                        f"equally spaced out at a fixed interval."
+                    )
+            self.max_steps = max(change_steps)
+            if not self.smooth_task_boundaries:
+                # See above note about the last entry.
+                self.max_steps += self.steps_per_task
+
+        elif self.nb_tasks:
             if self.steps_per_task:
+                self.max_steps = self.nb_tasks * self.steps_per_task
+            elif self.max_steps:
+                self.steps_per_task = self.max_steps // self.nb_tasks
+
+        elif self.steps_per_task:
+            if self.nb_tasks:
+                self.max_steps = self.nb_tasks * self.steps_per_task
+            elif self.max_steps:
                 self.nb_tasks = self.max_steps // self.steps_per_task
-            elif self.train_task_schedule:
-                self.nb_tasks = len(self.train_task_schedule) - (1 if self.max_steps in self.train_task_schedule else 0)
-            else:
-                self.nb_tasks = 1
-                self.steps_per_task = self.max_steps
-        elif not self.steps_per_task:
-            self.steps_per_task = int(self.max_steps / self.nb_tasks)
+
+        elif self.max_steps:
+            if self.nb_tasks:
+                self.steps_per_task = self.max_steps // self.nb_tasks
+            elif self.steps_per_task:
+                self.nb_tasks = self.max_steps // self.steps_per_task
+
+        if not all([self.nb_tasks, self.max_steps, self.steps_per_task]):
+            raise RuntimeError(
+                    f"You need to provide at least two of 'max_steps', "
+                    f"'nb_tasks', or 'steps_per_task'."
+                )
+
+        assert self.nb_tasks == self.max_steps // self.steps_per_task
+
+        if self.test_task_schedule:
+            change_steps = sorted(self.test_task_schedule.keys())
+            assert 0 in change_steps, "Schedule needs to include task at step 0."
+            
+            nb_test_tasks = len(change_steps)
+            if self.smooth_task_boundaries:
+                nb_test_tasks -= 1
+            assert nb_test_tasks == self.nb_tasks, "nb of tasks should be the same for train and test."
+
+            self.test_steps_per_task = change_steps[1] - change_steps[0]
+            for i in range(self.nb_tasks-1):
+                if change_steps[i+1] - change_steps[i] != self.test_steps_per_task:
+                    raise NotImplementedError(
+                        f"WIP: This might not work yet if the test tasks aren't "
+                        f"equally spaced out at a fixed interval."
+                    )
+            self.test_steps = max(change_steps)
+            if not self.smooth_task_boundaries:
+                # See above note about the last entry.
+                self.test_steps += self.test_steps_per_task
+        elif self.test_steps is None:
+            assert self.test_steps_per_task, "need to set one of test_steps or test_steps_per_task"
+            self.test_steps = self.test_steps_per_task * self.nb_tasks
+        else:
+            assert self.test_steps, "need to set one of test_steps or test_steps_per_task"
+            self.test_steps_per_task = self.test_steps // self.nb_tasks
 
         if self.smooth_task_boundaries:
             # If we're operating in the 'Online/smooth task transitions' "regime",
             # then there is only one "task", and we don't have task labels.
+            # TODO: HOWEVER, the task schedule could/should be able to have more
+            # than one non-stationarity! This indicates a need for a distinction
+            # between 'tasks' and 'non-stationarities' (changes in the env).
             self.known_task_boundaries_at_train_time = False
             self.known_task_boundaries_at_test_time = False
             self.task_labels_at_train_time = False
@@ -211,18 +334,37 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
         # Task schedules for training / validation and testing.
 
-        # Create a temporary environment so we can extract the spaces.
+        # Create a temporary environment so we can extract the spaces and create
+        # the task schedules.
         with self._make_env(self.dataset, self._temp_wrappers()) as temp_env:
             # Populate the task schedules created above.
             if not self.train_task_schedule:
-                self.train_task_schedule = self.create_task_schedule(temp_env)
-            # The validation and test tasks schedules are the same as training
-            # by default.
+                train_change_steps = list(range(0, self.max_steps, self.steps_per_task))
+                if self.smooth_task_boundaries:
+                    # Add a last 'task' at the end of the 'epoch', so that the
+                    # env changes smoothly right until the end.
+                    train_change_steps.append(self.max_steps)
+                self.train_task_schedule = self.create_task_schedule(
+                    temp_env,
+                    train_change_steps,
+                )
+
+            # The validation task schedule is the same as the one used in
+            # training by default.
             if not self.valid_task_schedule:
                 self.valid_task_schedule = deepcopy(self.train_task_schedule)
-            if not self.test_task_schedule:
-                self.test_task_schedule = deepcopy(self.valid_task_schedule)
 
+            if not self.test_task_schedule:
+                # The test task schedule is by default the same as in validation
+                # except that the interval between the tasks may be different,
+                # depending on the value of `self.test_steps_per_task`.
+                valid_steps = sorted(self.valid_task_schedule.keys())
+                valid_tasks = [self.valid_task_schedule[step] for step in valid_steps]
+                self.test_task_schedule = {
+                    i * self.test_steps_per_task: deepcopy(task)
+                    for i, task in enumerate(valid_tasks)
+                }
+            
             # Set the spaces using the temp env.
             self.observation_space = temp_env.observation_space
             self.action_space = temp_env.action_space
@@ -240,11 +382,30 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         self.valid_env: gym.Env
         self.test_env: gym.Env
 
-    def create_task_schedule(self, temp_env: MultiTaskEnvironment) -> Dict[int, Dict]:
+    def create_task_schedule(self,
+                             temp_env: MultiTaskEnvironment,
+                             change_steps: List[int]) -> Dict[int, Dict]:
+        """ Create the task schedule, which maps from a step to the changes that
+        will occur in the environment when that step is reached.
+        
+        Uses the provided `temp_env` to generate the random tasks at the steps
+        given in `change_steps` (a list of integers).
+
+        Returns a dictionary mapping from integers (the steps) to the changes
+        that will occur in the env at that step.
+
+        TODO: IDEA: Instead of just setting env attributes, use the
+        `methodcaller` or `attrsetter` from the `operator` built-in package,
+        that way later when we want to add support for Meta-World, we can just
+        use `partial(methodcaller("set_task"), task="new_task")(env)` or
+        something like that (i.e. generalize from changing an attribute to
+        applying a function on the env, which would allow calling methods in
+        addition to setting attributes.)
+        """        
         task_schedule: Dict[int, Dict] = {}
         # Start with the default task (step 0) and then add a new task at
         # intervals of `self.steps_per_task`
-        for task_step in range(0, self.max_steps, self.steps_per_task):
+        for task_step in change_steps:
             if task_step == 0:
                 # Start with the default task, so that we can recover the 'iid'
                 # case with standard env dynamics when there is only one task
@@ -252,17 +413,14 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
                 task_schedule[task_step] = temp_env.default_task
             else:
                 task_schedule[task_step] = temp_env.random_task()
-        # Add a last 'task' at the end of the 'epoch', so that the env changes
-        # smoothly right until the end.
-        if self.smooth_task_boundaries:
-            task_schedule[self.max_steps] = temp_env.random_task()
+        
         return task_schedule
 
     def apply(self, method: Method, config: Config=None) -> "ContinualRLSetting.Results":
         """Apply the given method on this setting to producing some results. """
         # Use the supplied config, or parse one from the arguments that were
         # used to create `self`.
-        self.config = config or Config.from_args(self._argv)
+        self.config = config or Config.from_args(self._argv, strict=False)
         # TODO: Should we really overwrite the method's 'config' attribute here?
         if not getattr(method, "config", None):
             method.config = self.config
@@ -296,7 +454,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         logger.info(results.summary())
         method.receive_results(self, results=results)
         return results
-
+    
     def setup(self, stage: str=None) -> None:
         # Called before the start of each task during training, validation and
         # testing.
@@ -334,8 +492,10 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         """
         if not self.has_prepared_data:
             self.prepare_data()
-        if not self.has_setup_fit:
-            self.setup("fit")
+        # NOTE: We actually want to call setup every time, so we re-create the
+        # wrappers for each task. 
+        # if not self.has_setup_fit:
+        self.setup("fit")
 
         batch_size = batch_size or self.batch_size
         num_workers = num_workers or self.num_workers
@@ -372,8 +532,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         """
         if not self.has_prepared_data:
             self.prepare_data()
-        if not self.has_setup_fit:
-            self.setup("fit")
+        self.setup("fit")
 
         env_factory = partial(self._make_env, base_env=self.dataset,
                                               wrappers=self.valid_wrappers)
@@ -420,20 +579,20 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
         """
         if not self.has_prepared_data:
             self.prepare_data()
-        if not self.has_setup_test:
-            self.setup("test")
+        self.setup("test")
         # BUG: gym.wrappers.Monitor doesn't want to play nice when applied to
         # Vectorized env, it seems..
-        if batch_size is not None:
-            raise NotImplementedError(
-                "WIP: Only support batch size of `None` (i.e., a single env) "
-                "for test environments atm, because of how the Monitor class "
-                "from gym works."
-            )
-            batch_size = None
-        # FIXME: Uncomment this when the Monitor class works correctly with
+        # FIXME: Remove this when the Monitor class works correctly with
         # batched environments.
-        # batch_size = batch_size or self.batch_size
+        batch_size = batch_size or self.batch_size
+        if batch_size is not None:
+            logger.warn(UserWarning(colorize(
+                "WIP: Only support batch size of `None` (i.e., a single env) "
+                "for the test environments of RL Settings at the moment, "
+                "because the Monitor class from gym doesn't work with "
+                "VectorEnvs.", "yellow"
+            )))
+            batch_size = None
 
         num_workers = num_workers or self.num_workers
         env_factory = partial(self._make_env, base_env=self.dataset,
@@ -446,16 +605,18 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
 
         # TODO: We should probably change the max_steps depending on the
         # batch size of the env.
-        test_loop_max_steps = self.max_steps // (batch_size or 1)
+        test_loop_max_steps = self.test_steps // (batch_size or 1)
         # TODO: Find where to configure this 'test directory' for the outputs of
         # the Monitor.
         test_dir = "results"
+        
         self.test_env = ContinualRLTestEnvironment(
             env_dataloader,
             task_schedule=self.test_task_schedule,
             directory=test_dir,
             step_limit=test_loop_max_steps,
             force=True,
+            video_callable=None if self.config.render else False,
         )
         return self.test_env
 
@@ -607,6 +768,14 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             max_steps=self.max_steps,
         )
 
+    def load_task_schedule(self, file_path: Path) -> Dict[int, Dict]:
+        """ Load a task schedule from the given path. """
+        with open(file_path) as f:
+            task_schedule = json.load(f)
+            return {
+                int(k): task_schedule[k] for k in sorted(task_schedule.keys())
+            }
+    
     def _make_wrappers(self,
                        task_schedule: Dict[int, Dict],
                        sharp_task_boundaries: bool,
@@ -665,6 +834,7 @@ class ContinualRLSetting(IncrementalSetting, ActiveSetting):
             # Add a wrapper that creates smooth tasks.
             cl_wrapper = SmoothTransitions
         wrappers.append(partial(cl_wrapper,
+            noise_std=self.task_noise_std,
             task_schedule=task_schedule,
             add_task_id_to_obs=True,
             add_task_dict_to_info=True,
@@ -718,9 +888,9 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         import bisect
         nb_tasks = len(task_steps)
         assert nb_tasks >= 1
-        episode_rewards: List[float] = [[] for _ in range(nb_tasks)]
-        episode_lengths: List[int] = [[] for _ in range(nb_tasks)]
-        episode_metrics: List[Metrics] = [[] for _ in range(nb_tasks)]
+        episode_rewards: List[List[float]] = [[] for _ in range(nb_tasks)]
+        episode_lengths: List[List[int]] = [[] for _ in range(nb_tasks)]
+        episode_metrics: List[List[Metrics]] = [[] for _ in range(nb_tasks)]
 
         for step, episode_reward, episode_length in zip(itertools.accumulate(lengths), rewards, lengths):
             # Given the step, find the task id.
@@ -738,7 +908,8 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         )
 
     def render(self, mode='human', **kwargs):
-        from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
+        from sequoia.common.gym_wrappers.batch_env.tile_images import \
+            tile_images
         image_batch = super().render(mode=mode, **kwargs)
         if mode == "rgb_array":
             return tile_images(image_batch)

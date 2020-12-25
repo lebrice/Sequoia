@@ -19,9 +19,11 @@ class RLResults(IncrementalSetting.Results, Results):
 
     Similar to ClassIncrementalResults, but here the metrics would be the mean
     reward, something like that.
-    
-    TODO: Actually implement this, making sure that the metrics/plots this creates
-    make sense.
+
+    TODO: Use the metrics from common/metrics/rl_metrics instead of
+    RegressionMetrics.
+    TODO: Actually implement this, making sure that the metrics/plots this
+    creates make sense.
     """
     objective_name: ClassVar[str] = "Mean Reward"
       
@@ -67,11 +69,14 @@ class RLResults(IncrementalSetting.Results, Results):
         # TODO: Create a dict of useful things to log.
         log_dict = {}
         for task in range(self.num_tasks):
-            episodes = sum(self.episode_lengths[task])
+            steps = sum(self.episode_lengths[task])
+            episodes = len(self.episode_lengths[task])
             task_log_dict = {
+                "Steps": int(steps),
                 "Episodes": int(episodes),
                 "Total reward": float(sum(self.episode_rewards[task])),
-                "Mean reward": float(self.average_metrics_per_task[task].mse),
+                "Mean reward / episode": float(np.mean(self.episode_rewards[task])),
+                "Mean reward / step": float(self.average_metrics_per_task[task].mse),
             }
             mean_episode_length = 0
             if episodes:

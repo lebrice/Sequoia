@@ -28,32 +28,37 @@ observations as final, i.e., when episode length == 1
 
 import dataclasses
 import itertools
+from abc import ABC, abstractmethod
+from collections import OrderedDict, deque, namedtuple
 from dataclasses import dataclass
-from typing import Dict, Tuple, Union, List, Optional, TypeVar, Iterable, Any, Sequence, NamedTuple
-from abc import abstractmethod, ABC
-from collections import namedtuple, deque, OrderedDict
+from typing import (Any, Dict, Iterable, List, NamedTuple, Optional, Sequence,
+                    Tuple, TypeVar, Union)
 
 import gym
 import numpy as np
 import torch
-from gym import spaces, Space
+from gym import Space, spaces
 from gym.spaces.utils import flatdim
 from gym.vector.utils.numpy_utils import concatenate, create_empty_array
 from torch import LongTensor, Tensor, nn
-from torch.distributions import Categorical as Categorical_, Distribution
+from torch.distributions import Categorical as Categorical_
+from torch.distributions import Distribution
+from torch.optim.optimizer import Optimizer
 
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics, RLMetrics, GradientUsageMetric
 from sequoia.common import Loss, Metrics
 from sequoia.common.layers import Lambda
-from sequoia.methods.models.forward_pass import ForwardPass 
-from sequoia.utils.utils import prod
-from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.generic_functions import stack, detach, get_slice, set_slice
+from sequoia.common.metrics.rl_metrics import (EpisodeMetrics,
+                                               GradientUsageMetric, RLMetrics)
+from sequoia.methods.models.forward_pass import ForwardPass
+from sequoia.settings.active.continual import ContinualRLSetting
 from sequoia.settings.base.objects import Actions, Observations, Rewards
-from sequoia.settings.active.rl.continual_rl_setting import ContinualRLSetting
+from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
+from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.utils import prod, flag
 
-from ..classification_head import ClassificationOutput, ClassificationHead
+from ..classification_head import ClassificationHead, ClassificationOutput
 from ..output_head import OutputHead
+
 logger = get_logger(__file__)
 
 
@@ -96,6 +101,10 @@ class PolicyHeadOutput(ClassificationOutput):
         return self.policy.log_prob(self.y_pred)
 
     @property
+    def action_log_prob(self) -> Tensor:
+        return self.y_pred_log_prob
+    
+    @property
     def y_pred_prob(self) -> Tensor:
         """ returns the log probabilities for the chosen actions/predictions. """
         if isinstance(self.policy, list):
@@ -131,7 +140,10 @@ class PolicyHead(ClassificationHead):
     @dataclass
     class HParams(ClassificationHead.HParams):
         # The discount factor for the Return term.
-        gamma: float = 0.9
+        gamma: float = 0.95
+        
+        learning_rate: float = 3e-4
+        
         # The maximum length of the buffer that will hold the most recent
         # states/actions/rewards of the current episode. When a batched
         # environment is used
@@ -141,13 +153,24 @@ class PolicyHead(ClassificationHead):
         # before we update the parameters of the output head.
         min_episodes_before_update: int = 1
 
+        # NOTE: Here we have two options:
+        # 1- `True`: sum up all the losses and do one larger backward pass,
+        # and have `retrain_graph=False`, or
+        # 2- `False`: Perform multiple little backward passes, one for each
+        # end-of-episode in a single env, w/ `retain_graph=True`.
+        # Option 1 is maybe more performant, as it might only require
+        # unrolling the graph once, but would use more memory to store all the
+        # intermediate graphs.
+        accumulate_losses_before_backward: bool = flag(True)
+
     def __init__(self,
                  input_space: spaces.Space,
                  action_space: spaces.Discrete,
                  reward_space: spaces.Box,
                  hparams: "PolicyHead.HParams" = None,
                  name: str = "policy"):
-        assert isinstance(action_space, spaces.Discrete), f"Only support discrete action space for now (got {action_space})."
+        assert isinstance(input_space, spaces.Box), f"Only support Tensor (box) input space. (got {input_space})."
+        assert isinstance(action_space, spaces.Discrete), f"Only support discrete action space (got {action_space})."
         assert isinstance(reward_space, spaces.Box), f"Reward space should be a Box (scalar rewards) (got {reward_space})."
         super().__init__(
             input_space=input_space,
@@ -157,23 +180,8 @@ class PolicyHead(ClassificationHead):
             name=name,
         )
         if not isinstance(self.hparams, self.HParams):
-            # NOTE: This (getting the wrong hparams class) could happen for
-            # instance when parsing a BaselineMethod from the command-line, the
-            # default type of hparams on the method is BaselineModel.HParams,
-            # which the `output_head` field doesn't have the right type exactly. 
-            current_hparams = self.hparams.to_dict()
-            missing_fields = [f.name for f in dataclasses.fields(self.HParams)
-                            if f.name not in current_hparams]
-            logger.warning(RuntimeWarning(
-                f"Upgrading the hparams from type {type(self.hparams)} to "
-                f"type {self.HParams}. This will try to fetch the values for "
-                f"the missing fields {missing_fields} from the command-line. "
-            ))
-            # Get the missing values
-            hparams = self.HParams.from_args(strict=False)
-            for missing_field in missing_fields:
-                current_hparams[missing_field] = getattr(hparams, missing_field) 
-            self.hparams = self.HParams.from_dict(current_hparams)
+            # Upgrade the hparams to the right type, if needed.
+            self.hparams = self.upgrade_hparams()
 
         self.hparams: PolicyHead.HParams
         # Type hints for the spaces;    
@@ -200,15 +208,21 @@ class PolicyHead(ClassificationHead):
         self.detached_loss: Loss = self.loss.detach()
 
         self.batch_size: int = 0
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=3e-4)
         
         self.has_reached_episode_end: Sequence[bool] = []
         self.num_episodes_since_update: Sequence[int] = []
+
+        self.optimizer = self.configure_optimizers()
+        self._training: bool = False
+    
+    def configure_optimizers(self) -> Union[Optimizer, Tuple[Optimizer, ...]]:
+        """ Create the optimizers required by this output head.
         
-        # See the two 'options' described below.
-        self.option: int = 1
-        
-        
+        NOTE: Named the same as the `configure_optimizers` in pytorch-lightning,
+        but this particular output head isn't optimized with pytorch-lightning.
+        """
+        return torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
+
     def create_buffers(self):
         """ Creates the buffers to hold the items from each env. """
         logger.debug(f"Creating buffers (batch size={self.batch_size})")
@@ -242,8 +256,7 @@ class PolicyHead(ClassificationHead):
         Would it make sense to maybe re-order the "hierarchy" of the output
         heads, and make the ClassificationHead inherit from this one?
         """
-        
-        
+
         # TODO: (@lebrice) Need to calculate the loss HERE if the episode is
         # done, i.e. before doing the next forward pass!! (otherwise the actions
         # for the initial observation are based on the previous weights, which
@@ -281,14 +294,7 @@ class PolicyHead(ClassificationHead):
                 if env_loss is None:
                     continue
 
-                # TODO: Here we have two options: Either we:
-                # (1): sum up all the losses and do one larger backward pass,
-                # and have `retrain_graph=False`, or
-                # (2): we do multiple little backward passes as soon as an
-                # episode end is reached in a single env, w/ `retain_graph=True`.
-                # Option 1 is maybe more performant, as it might only require
-                # unrolling the graph once, but would use more memory.
-                if self.option == 1:
+                if self.hparams.accumulate_losses_before_backward:
                     # Option 1:
                     self.loss += env_loss
                     self.detached_loss += env_loss.detach()
@@ -301,9 +307,8 @@ class PolicyHead(ClassificationHead):
             if all(self.num_episodes_since_update >= self.hparams.min_episodes_before_update):
                 # TODO: Maybe move this into a 'optimizer_step' method?
                 # self.update_model()
-                
                 # logger.debug(f"Backpropagating loss: {self.loss}")
-                if self.option == 1:    
+                if self.hparams.accumulate_losses_before_backward:    
                     # Option 1 from above:
                     # NOTE: Need to step as well, since the predictions below will
                     # depend on the model at the current time.
@@ -328,9 +333,8 @@ class PolicyHead(ClassificationHead):
                 # self.detached_loss = self.loss.detach()
                 # self.loss = Loss(self.name, metrics={self.name: RLMetrics()})
 
-        
         # In either case, do we want to detach the representations? or not?
-        representations = representations.detach().float()
+        representations = representations.float().detach()
         
         logits = self.dense(representations)
         # The policy is the distribution over actions given the current state.
@@ -482,8 +486,7 @@ class PolicyHead(ClassificationHead):
         discounted_rewards = normalize(discounted_rewards)
         policy_gradient = - log_probs.dot(discounted_rewards)
         return policy_gradient
-    
-    
+
     @property
     def training(self) -> bool:
         return self._training
@@ -552,8 +555,8 @@ class PolicyHead(ClassificationHead):
         return [self._make_buffer() for _ in range(self.batch_size)]
 
     def stack_buffers(self, env_index: int):
-        """Stack the observations/actions/rewards for this env and return them.
-        """ 
+        """ Stack the observations/actions/rewards for this env and return them.
+        """
         # episode_observations = tuple(self.observations[env_index])
         episode_representations = tuple(self.representations[env_index])
         episode_actions = tuple(self.actions[env_index])
@@ -583,8 +586,6 @@ class PolicyHead(ClassificationHead):
             y=stack(self.reward_space, [reward.y for reward in episode_rewards])
         )
         return stacked_inputs, stacked_actions, stacked_rewards
-    
-    
 
 # @torch.jit.script
 # @lru_cache()

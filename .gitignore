@@ -25,3 +25,7 @@ lightning_logs
 build
 dist
 *.egg-info
+<<<<<<< HEAD
+=======
+sequoia/results
+>>>>>>> master

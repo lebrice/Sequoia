@@ -1,0 +1,4 @@
+dataset: fashion_mnist
+# Two classes per task:
+increment: 2
+test_increment: 2

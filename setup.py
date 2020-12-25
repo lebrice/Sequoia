@@ -1,5 +1,5 @@
 from setuptools import setup, find_packages
-from sequoia import __version__
+
 import os
 
 # TODO: Figure out how to specify 'extras'
@@ -27,12 +27,12 @@ def load_requirements(path_dir=PATH_ROOT, file_name='requirements.txt', comment_
 
 setup(
     name='sequoia',
-    version=__version__,
+    __version__ = "0.0.1",
     description="The Research Tree - A playground for research at the intersection of Continual, Reinforcement, and Self-Supervised Learning.",
     url='https://github.com/lebrice/Sequoia',
     author='Fabrice Normandin',
     author_email='fabrice.normandin@gmail.com',
-    license='',
+    license='GPLv3',
     packages=[package for package in find_packages()
                 if package.startswith('sequoia')],
     extras_require=extras,
@@ -43,5 +43,11 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
+        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
     ],
+    entry_points={
+        "console_scripts": [
+            "sequoia = sequoia.main:main",
+        ],
+    }
 )

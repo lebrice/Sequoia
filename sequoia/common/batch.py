@@ -24,7 +24,7 @@ from sequoia.utils.logging_utils import get_logger
 logger = get_logger(__file__)
 
 B = TypeVar("B", bound="Batch")
-T = TypeVar("T", Tensor, np.ndarray, B, Any)
+T = TypeVar("T", Tensor, np.ndarray, "Batch", Any)
 
 
 def hasmethod(obj: Any, method_name: str) -> bool:
@@ -521,7 +521,6 @@ class Batch(ABC, Mapping[str, T]):
         return batch_size
 
 
-T = TypeVar("T")
 
 @get_slice.register(Batch)
 def get_batch_slice(value: Batch, indices: Sequence[int]) -> Batch:

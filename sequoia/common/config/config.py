@@ -38,6 +38,9 @@ class Config(Serializable, Parseable):
     
     # Run in Debug mode: no wandb logging, extra output.
     debug: bool = flag(False)
+    # Wether to render the environment observations. Slows down training.
+    render: bool = flag(False)
+    
     # Enables more verbose logging.
     verbose: bool = flag(False)
     # Number of workers for the dataloaders.

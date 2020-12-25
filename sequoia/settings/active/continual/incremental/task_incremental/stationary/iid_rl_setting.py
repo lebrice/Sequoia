@@ -1,7 +1,7 @@
 """ 'Classical' RL setting.
 """
 from dataclasses import dataclass
-from .task_incremental_rl_setting import TaskIncrementalRLSetting
+from ..task_incremental_rl_setting import TaskIncrementalRLSetting
 from sequoia.utils import constant
 
 

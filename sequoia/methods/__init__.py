@@ -11,7 +11,6 @@ AbstractMethod = Method
 
 all_methods: List[Type[Method]] = []
 
-
 """
 TODO: IDEA: Add arguments to register_method that help configure the tests we
 add the that method! E.g.:
@@ -23,7 +22,6 @@ class MyMethod(Method, target_setting=ContinualRLSetting):
 ```
 """
 
-
 def register_method(new_method: Type[Method]) -> Type[Method]:
     name = new_method.get_name()
     if new_method not in all_methods:
@@ -34,7 +32,12 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
                 # methods.baseline_method.BaselineMethod, for instance, then again
                 # as SSCL.methods.baseline_method.BaselineMethod
                 from os.path import abspath
-                if abspath(inspect.getsourcefile(method)) == abspath(inspect.getsourcefile(new_method)):
+                method_source_file = inspect.getsourcefile(method)
+                assert isinstance(method_source_file, str), f"cant find source file of {method}?"
+                new_method_source_file = inspect.getsourcefile(new_method)
+                assert isinstance(new_method_source_file, str), f"cant find source file of {new_method}?"
+
+                if abspath(method_source_file) == abspath(new_method_source_file):
                     # The two classes have the same name and are both defined in
                     # the same file, so this is basically the 'double-import bug
                     # described above.
@@ -44,13 +47,13 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
             all_methods.append(new_method)
     return new_method
 
-
+# NOTE: Even though these methods would be dynamically registered (see below),
+# we still import them so we can do `from methods import BaselineMethod`.
 from .baseline_method import BaselineMethod
 from .random_baseline import RandomBaselineMethod
-from .experience_replay import ExperienceReplayMethod
 
 
-## Pretty hacky: Dynamically import all the modules/packages defined in this
+## A bit hacky: Dynamically import all the modules/packages defined in this
 # folder. This way, we register the methods as they are declared.
 modules = glob.glob(join(dirname(__file__), "*"))
 
@@ -69,5 +72,3 @@ for module in all_modules:
 
 # TODO: (#17): Add Pl Bolts Models as Methods on IID Setting.
 # from .pl_bolts_methods.cpcv2 import CPCV2Method
-
-# print(" All methods: ", all_methods)

@@ -9,7 +9,7 @@ import pytest
 from sequoia.common import ClassificationMetrics, Config
 from sequoia.conftest import get_dataset_params, parametrize, slow
 from sequoia.settings.assumptions.incremental import IncrementalSetting
-from sequoia.settings import (ClassIncrementalResults, ClassIncrementalRLSetting,
+from sequoia.settings import (ClassIncrementalResults, IncrementalRLSetting,
                       ClassIncrementalSetting, ContinualRLSetting, IIDSetting,
                       Results, RLSetting, Setting, TaskIncrementalResults,
                       TaskIncrementalRLSetting, TaskIncrementalSetting,

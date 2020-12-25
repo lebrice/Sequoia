@@ -12,11 +12,11 @@ from sequoia.utils.utils import camel_case
 from .logging_utils import get_logger
 
 logger = get_logger(__file__)
-P = TypeVar("T", bound="Parseable")
+P = TypeVar("P", bound="Parseable")
 
 
 class Parseable:
-    _argv: Optional[List[str]] = []
+    _argv: Optional[List[str]] = None
 
     @classmethod
     def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
@@ -158,8 +158,12 @@ class Parseable:
         if isinstance(argv, str):
             argv = shlex.split(argv)
 
-        parser = ArgumentParser(description=cls.__doc__)
+        parser = ArgumentParser(description=cls.__doc__,
+                                add_dest_to_option_strings=False)
         cls.add_argparse_args(parser)
+        # TODO: Set temporarily on the class, so its accessible in the class constructor
+        cls_argv = cls._argv
+        cls._argv = argv
 
         instance: P
         if strict:
@@ -175,6 +179,7 @@ class Parseable:
         # Save the argv that were used to create the instance on its `_argv`
         # attribute.
         instance._argv = argv
+        cls._argv = cls_argv
         return instance, unused_args
 
 
