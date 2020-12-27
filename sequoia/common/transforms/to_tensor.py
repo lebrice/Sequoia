@@ -21,7 +21,7 @@ from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.utils import singledispatchmethod
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.generic_functions import to_tensor
-from .channels import ChannelsFirstIfNeeded, ChannelsLastIfNeeded
+from .channels import ChannelsFirstIfNeeded, ChannelsLastIfNeeded, has_channels_first, has_channels_last
 from .transform import Img, Transform
 
 logger = get_logger(__file__)
@@ -84,9 +84,11 @@ def _(image: Union[Image, np.ndarray]) -> Tensor:
         # receive that.
         # TODO: It sucks that we'd have to do this. We should probably figure
         # out how to avoid having to do this. 
-        if len(image.shape) > 2 and image.shape[-1] not in {1, 3}:
-            assert image.shape[0] in {1, 3}
-            image = image.transpose(1, 2, 0)
+        if has_channels_first(image):
+            image = channels_last(image)
+        # if len(image.shape) > 2 and image.shape[-1] not in {1, 3}:
+        #     assert image.shape[0] in {1, 3}, image.shape
+        #     image = image.transpose(1, 2, 0)
     
     image = F.to_tensor(image)
     return image
@@ -96,9 +98,12 @@ def _(image: Union[Image, np.ndarray]) -> Tensor:
 def _(image: Sequence[Img]) -> Tensor:
     return torch.stack(list(map(image_to_tensor, image)))
 
-@image_to_tensor.register(Space)
-def _(image: Sequence[Img]) -> Tensor:
-    return add_tensor_support(channels_first(image))
+@image_to_tensor.register(spaces.Box)
+def _(image: spaces.Box) -> spaces.Box:
+    if image.dtype == np.uint8:
+        return channels_first(type(image)(low=0., high=1., shape=image.shape, dtype=np.float32))
+    raise NotImplementedError(f"image spaces should be np.uint8: {image}")
+    # return add_tensor_support(channels_first(image))
 
 # @image_to_tensor.register(Image)
 # def to_tensor(image: Union[Img, Sequence[Img]]) -> Tensor:

@@ -183,6 +183,27 @@ def channels_first(x: Any) -> Any:
         return x.permute(0, 3, 1, 2).contiguous()
     return x
 
+
+@channels_first.register(np.ndarray)
+def _(x: spaces.Box) -> spaces.Box:
+    if x.ndim == 4:
+        return np.rollaxis(x, 3, 1)  
+    elif x.ndim == 3:
+        return np.rollaxis(x, 2, 0)
+    else:
+        raise NotImplementedError(f"Expected 3-d or 4-d input, got {x}")
+
+
+@channels_first.register(tuple)
+def _(x: Tuple[int, ...]) -> Tuple[int, ...]:
+    if len(x) == 3:
+        # TODO: Re-enable the naming of the dimensions at some point.
+        return type(x)(x[i] for i in (2, 0, 1))
+    if len(x.shape) == 4:
+        return type(x)(x[i] for i in (3, 0, 1, 2))
+    raise NotImplementedError(x)
+
+
 @channels_first.register(spaces.Box)
 def _(x: spaces.Box) -> spaces.Box:
     new_low: np.ndarray
@@ -255,6 +276,41 @@ class ChannelsFirstIfNeeded(ChannelsFirst):
             return super().shape_change(input_shape)
         return input_shape
 
+@singledispatch
+def channels_last(x: Any) -> Any:
+    raise NotImplementedError(f"This doesn't support input {x} of type {type(x)}")
+
+
+@channels_last.register(Tensor)
+def _(x: Tensor) -> Tensor:
+    if len(x.shape) == 3:
+        # TODO: Re-enable the naming of the dimensions at some point.
+        # if not x.names:
+        #     x.rename("C", "H", "W")
+        #     return x.align_to("H", "W", "C")
+        return x.permute(1, 2, 0)
+    if len(x.shape) == 4:
+        return x.permute(0, 2, 3, 1)
+
+
+@channels_last.register(tuple)
+def _(x: Tuple[int, ...]) -> Tuple[int, ...]:
+    if len(x) == 3:
+        # TODO: Re-enable the naming of the dimensions at some point.
+        return type(x)(x[i] for i in (1, 2, 0))
+    if len(x.shape) == 4:
+        return type(x)(x[i] for i in (0, 2, 3, 1))
+    raise NotImplementedError(x)
+
+
+@channels_last.register(np.ndarray)
+def _(x: np.ndarray) -> np.ndarray:
+    if len(x.shape) == 4:
+        return np.rollaxis(x, 1, 3)
+    if len(x.shape) == 3:
+        return np.rollaxis(x, 0, 2)
+    raise NotImplementedError(x.shape)
+
 
 @dataclass
 class ChannelsLast(Transform[Tensor, Tensor]):
@@ -263,7 +319,7 @@ class ChannelsLast(Transform[Tensor, Tensor]):
 
     @classmethod
     def apply(cls, x: Tensor) -> Tensor:
-        
+        return channels_last(x)
         # if has_channels_last(x):
         #     logger.warning(RuntimeWarning(f"Input already seems to have channels last, but this transform will be applied anyway.."))
         
