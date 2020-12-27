@@ -1,7 +1,6 @@
 
-from collections import OrderedDict
 from functools import singledispatch
-from typing import Sequence, Union
+from typing import Sequence, Union, Dict
 
 import numpy as np
 import torch
@@ -56,18 +55,21 @@ def _stack_tuples(space: spaces.Tuple,
         )
         for (i, subspace) in enumerate(space.spaces)
     )
-    if isinstance(items[0], Batch):
-        return type(items[0])(*stacked_items)
+    # TODO: Batch isn't imported here. Should instead be done in batch.py if
+    # it isn't already.
+    # if isinstance(items[0], Batch):
+    #     return type(items[0])(*stacked_items)
     return stacked_items
+
 
 @stack.register(spaces.Dict)
 def _stack_dicts(space: spaces.Dict,
                  items: Union[list, tuple],
-                 out: Union[tuple, dict, Tensor]) -> OrderedDict:
-    return OrderedDict([(
-        key, stack(subspace, [item[key] for item in items], out=out[key])
-        ) for (key, subspace) in space.spaces.items()
-    ])
+                 out: Union[tuple, dict, Tensor]) -> Dict:
+    return {
+        key: stack(subspace, [item[key] for item in items], out=out[key])
+        for (key, subspace) in space.spaces.items()
+    }
 
 
 @stack.register(spaces.Space)

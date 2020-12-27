@@ -1,7 +1,7 @@
 """TODO: Make a wrapper that calls a given function/callback when a given step is reached.
 """
 from abc import ABC, abstractmethod
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from typing import Callable, Dict, List, Tuple, Union
 from .utils import IterableWrapper
 import gym

@@ -1,7 +1,9 @@
 import bisect
 import random
-from collections import OrderedDict
-from typing import Any, Callable, Dict, List, Optional, Sequence, Type, Union
+from collections.abc import Mapping
+from functools import singledispatch
+from typing import (Any, Callable, Dict, List, Optional, Sequence, Tuple, Type,
+                    TypeVar, Union)
 
 import gym
 import matplotlib.pyplot as plt
@@ -9,7 +11,6 @@ import numpy as np
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
 from gym.envs.registration import register
-
 from sequoia.utils.logging_utils import get_logger
 
 task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
@@ -100,7 +101,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         self._steps: int = self._starting_step
 
         self._current_task: Dict = {}
-        self._task_schedule: Dict[int, Dict[str, Any]] = OrderedDict()
+        self._task_schedule: Dict[int, Dict[str, Any]] = {}
         
         self.task_params: List[str] = task_params or []
         self.default_task: np.ndarray = self.current_task.copy()
@@ -225,10 +226,10 @@ class MultiTaskEnvironment(gym.Wrapper):
             # NOTE: We get the attributes from the unwrapped environment, which
             # effectively bypasses any wrappers. Don't know if this is good
             # practice, but oh well.
-            self._current_task = OrderedDict(
-                (name, getattr(self.env.unwrapped, name))
+            self._current_task = {
+                name: getattr(self.env.unwrapped, name)
                 for name in self.task_params
-            )
+            }
         # Double-checking that the attributes didn't change somehow without us
         # knowing.
         # TODO: Maybe remove this when done debugging/testing this since it's a
@@ -287,7 +288,7 @@ class MultiTaskEnvironment(gym.Wrapper):
             Dict: A dict of the attribute name, and the value that would be set
                 for that attribute.
         """
-        task: Dict = OrderedDict()
+        task: Dict = {}
         for attribute, default_value in self.default_task.items():
             new_value = default_value
             if isinstance(default_value, (int, float, np.ndarray)):
@@ -337,7 +338,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         assert len(task_array) == len(self.task_params), (
             "Lengths should match the number of task parameters."
         )
-        return OrderedDict(zip(self.task_params, task_array))
+        return dict(zip(self.task_params, task_array))
 
     @property
     def task_schedule(self):
@@ -345,7 +346,7 @@ class MultiTaskEnvironment(gym.Wrapper):
 
     @task_schedule.setter
     def task_schedule(self, value: Dict[str, Any]):
-        self._task_schedule = OrderedDict()
+        self._task_schedule = {}
         if 0 not in value:
             self._task_schedule[0] = self.default_task.copy()
 

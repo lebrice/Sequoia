@@ -9,7 +9,6 @@ argument to the AsyncVectorEnv or BatchedVectorEnv wrappers, we'd need to
 test/debug some bugs with shared memory functions below. In the interest of time
 though, I just set that `shared_memory=False`, and it works great.  
 """
-from collections import OrderedDict
 from typing import (Any, Dict, Generic, Optional, Sequence, Tuple, TypeVar,
                     Union)
 
@@ -232,7 +231,7 @@ def read_from_shared_memory(shared_memory: Union[Dict, Tuple, BaseContext.Array]
 def batch_sparse_space(space: Sparse, n: int=1) -> gym.Space:
     # NOTE: This means we do something different depending on the sparsity.
     # Could that become an issue?
-    assert _is_singledispatch(batch_space)
+    # assert _is_singledispatch(batch_space)
 
     sparsity = space.sparsity
     if sparsity == 0: #or sparsity == 1:

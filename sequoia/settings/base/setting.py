@@ -24,7 +24,6 @@ import os
 import shlex
 from abc import abstractmethod
 from argparse import Namespace
-from collections import OrderedDict
 from dataclasses import InitVar, dataclass, fields, is_dataclass
 from inspect import getsourcefile, isclass
 from functools import partial
@@ -314,7 +313,7 @@ class Setting(SettingABC,
 
     @classmethod
     def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
-        from main import Experiment
+        from sequoia.main import Experiment
         experiment: Experiment
         # Create the Setting object from the command-line:
         setting = cls.from_args(argv)
@@ -329,7 +328,7 @@ class Setting(SettingABC,
     def apply_all(self, argv: Union[str, List[str]] = None) -> Dict[Type["Method"], Results]:
         applicable_methods = self.get_applicable_methods()
         from sequoia.methods import Method
-        all_results: Dict[Type[Method], Results] = OrderedDict()
+        all_results: Dict[Type[Method], Results] = {}
         config = Config.from_args(argv)
         for method_type in applicable_methods:
             method = method_type.from_args(argv)

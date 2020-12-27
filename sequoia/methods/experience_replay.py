@@ -2,7 +2,7 @@
 
 Should be applicable to any Setting.
 """
-from collections import Iterable, OrderedDict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Optional, Tuple, Dict, Type
 from argparse import ArgumentParser, Namespace
@@ -243,7 +243,7 @@ class Buffer(nn.Module):
                 buffer[idx_buffer] = data
 
     def sample(self, n_samples: int, exclude_task: int = None) -> Dict[str, Tensor]:
-        buffers = OrderedDict()
+        buffers = {}
         if exclude_task is not None:
             assert hasattr(self, 'bt')
             valid_indices = (self.bt != exclude_task).nonzero().squeeze()
@@ -259,7 +259,7 @@ class Buffer(nn.Module):
         else:
             indices_np = self.rng.choice(bx.size(0), n_samples, replace=False)
             indices = torch.from_numpy(indices_np).to(self.bx.device)
-            return OrderedDict({k[1:]: v[indices] for (k,v) in buffers.items()})
+            return {k[1:]: v[indices] for (k,v) in buffers.items()}
 
 
 if __name__ == "__main__":

@@ -45,7 +45,6 @@ RegressionMetrics(n_samples=4, mse=tensor(1.), l1_error=tensor(0.5000))
 
 See the `Loss` constructor for more info on which tensors are accepted.
 """
-from collections import OrderedDict
 from dataclasses import InitVar, dataclass
 from typing import Any, Dict, List, Optional, Union
 
@@ -283,9 +282,9 @@ class Loss(Serializable):
         result = Loss(
             name=self.name,
             loss=self.loss * factor,
-            losses=OrderedDict([
-                (k, value * factor) for k, value in self.losses.items()
-            ]),
+            losses={
+                k: value * factor for k, value in self.losses.items()
+            },
             metrics=self.metrics,
             tensors=self.tensors,
             _coefficient=self._coefficient * factor,
@@ -305,9 +304,9 @@ class Loss(Serializable):
 
         TODO: This isn't used anywhere. We could probably remove it.
         """
-        return OrderedDict([
-            (k, value / self._coefficient) for k, value in self.losses.items()
-        ])
+        return {
+            k: value / self._coefficient for k, value in self.losses.items()
+        }
 
     def to_log_dict(self, verbose: bool = False) -> Dict[str, Union[str, float, Dict]]:
         """Creates a dictionary to be logged (e.g. by `wandb.log`).
@@ -340,7 +339,7 @@ class Loss(Serializable):
     def to_pbar_message(self):
         """ Smaller, less-detailed version of `to_log_dict()` for progress bars.
         """
-        message: Dict[str, Union[str, float]] = OrderedDict()
+        message: Dict[str, Union[str, float]] = {}
         message["Loss"] = float(self.loss)
 
         if self.metric:
@@ -379,12 +378,12 @@ class Loss(Serializable):
         new_other = Loss(name=new_name)
         new_other.loss = other.loss
         # We also replace the name in the keys, if present.
-        new_other.metrics = OrderedDict([
-            (k.replace(old_name, new_name), v) for k, v in other.metrics.items() 
-        ])
-        new_other.losses = OrderedDict([
-            (k.replace(old_name, new_name), v) for k, v in other.losses.items() 
-        ])
+        new_other.metrics = {
+            k.replace(old_name, new_name): v for k, v in other.metrics.items() 
+        }
+        new_other.losses = {
+            k.replace(old_name, new_name): v for k, v in other.losses.items() 
+        }
         self += new_other
 
     def all_metrics(self) -> Dict[str, Metrics]:

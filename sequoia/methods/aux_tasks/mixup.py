@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
-from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Set, Tuple, ClassVar
 
 import numpy as np
 import torch
@@ -104,7 +103,7 @@ def average_models(old: nn.Module, new: nn.Module, old_frac: float = 0.1) -> Non
 
     all_keys: Set[str] = set(old_state.keys()).union(set(new_state.keys()))
 
-    result: Dict[str, Tensor] = OrderedDict()
+    result: Dict[str, Tensor] = {}
     for k in all_keys:
         v_old = old_state.get(k)
         v_new = new_state.get(k)
@@ -213,9 +212,8 @@ class MixupTask(AuxiliaryTask):
         if batch_size % 2 != 0:
             x = x[:-1]
             y_pred = y_pred[:-1]
-
-        from .tasks import Tasks
-        loss = Loss(name=Tasks.MIXUP)
+        
+        loss = Loss(name=self.name)
 
         if self.epoch_in_task < self.options.consistency_rampup_starts:
             mixup_consistency_weight = 0.0
@@ -259,6 +257,8 @@ class MixupTask(AuxiliaryTask):
 
 
 class ManifoldMixupTask(AuxiliaryTask):
+    name: ClassVar[str] = "manifold_mixup"
+
     def get_loss(self, x: Tensor, h_x: Tensor, y_pred: Tensor, y: Tensor=None) -> Loss:
         batch_size = x.shape[0]
         # assert batch_size % 2  == 0, f"Can only mix an even number of samples. (batch size is {batch_size})"
@@ -278,9 +278,8 @@ class ManifoldMixupTask(AuxiliaryTask):
         mix_y_pred = self.classifier(mix_h_x)
 
         loss = torch.dist(y_pred_mix, mix_y_pred)
-        from .tasks import Tasks
         loss_info = Loss(
-            name=Tasks.MANIFOLD_MIXUP,
+            name=self.name,
             total_loss=loss,
             y_pred=y_pred_mix,
             y=mix_y_pred,
