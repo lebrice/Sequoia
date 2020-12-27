@@ -7,7 +7,7 @@ from gym.wrappers import TransformReward as TransformReward_
 from sequoia.utils.logging_utils import get_logger
 from sequoia.common.transforms import Compose, Transform
 
-from .utils import IterableWrapper, reshape_space
+from .utils import IterableWrapper
 
 logger = get_logger(__file__)
 

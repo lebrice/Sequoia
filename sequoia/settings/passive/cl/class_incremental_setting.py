@@ -249,7 +249,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             action_space=action_space,
             reward_space=reward_space, # the labels have shape (1,) always.
         )
-        image_space = self.train_transforms.space_change(image_space)
+        image_space = self.train_transforms(image_space)
         self.observation_space = spaces.Tuple([
             image_space,
             task_label_space,
