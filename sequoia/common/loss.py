@@ -14,11 +14,11 @@ For example:
 >>> loss += Loss("task_c", loss=3.00)
 >>> log_dict = loss.to_log_dict()
 >>> pprint(log_dict)
-{'loss': tensor([6.3300]),
- 'losses/task_a/accuracy': 0.95,
- 'losses/task_a/loss': 1.23,
- 'losses/task_b/loss': tensor([2.1000]),
- 'losses/task_c/loss': 3.0}
+{'total/loss': 6.33,
+ 'total/task_a/accuracy': 0.95,
+ 'total/task_a/loss': 1.23,
+ 'total/task_b/loss': 2.1,
+ 'total/task_c/loss': 3.0}
 
 Another feature of Loss objects is that they can automatically generate
 relevant metrics when the associated tensors are passed.
@@ -332,8 +332,8 @@ class Loss(Serializable):
             Dict: A dict containing the things to be logged.
         """
         # TODO: Could also produce some wandb plots and stuff here when verbose?
-        log_dict: Dict[str, Union[str, float, Dict, Tensor]] = OrderedDict()
-        log_dict["Loss"] = float(self.loss)
+        log_dict: Dict[str, Union[str, float, Dict, Tensor]] = {}
+        log_dict["loss"] = round(float(self.loss), 6)
 
         for name, metric in self.metrics.items():
             if isinstance(metric, Serializable):
