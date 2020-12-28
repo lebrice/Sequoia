@@ -33,6 +33,7 @@ def test_is_applicable_to_all_settings():
 from sequoia.conftest import slow
 
 # This is a very slow test, because it actually iterates through the entire test set for each task.
+@slow
 @pytest.mark.timeout(60)
 @parametrize("setting_type", RandomBaselineMethod.get_applicable_settings())
 def test_fast_dev_run(setting_type: Type[Setting],
@@ -43,7 +44,14 @@ def test_fast_dev_run(setting_type: Type[Setting],
         pytest.skip(msg=f"dataset {dataset} isn't available for this setting.")
 
     # Create the Setting
-    setting: Setting = setting_type(dataset=dataset)
+    kwargs = dict(dataset=dataset)
+    if issubclass(setting_type, ContinualRLSetting):
+        kwargs.update(max_steps=100, test_steps_per_task=100)
+    if issubclass(setting_type, IncrementalRLSetting):
+        kwargs.update(nb_tasks=2)
+    if issubclass(setting_type, ClassIncrementalSetting):
+        kwargs = dict(nb_tasks=5)
+    setting: Setting = setting_type(**kwargs)
     # TODO: Do we need to pass anything else here to 'shorten' the run?
     # Create the Method
     method = RandomBaselineMethod()
