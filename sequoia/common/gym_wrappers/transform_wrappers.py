@@ -57,17 +57,16 @@ class TransformReward(TransformReward_, IterableWrapper):
             ))
 
 class TransformAction(IterableWrapper):
-    def __init__(self, env: gym.Env, f: Union[Callable, Compose]):
+    def __init__(self, env: gym.Env, f: Callable[[Union[gym.Env, Space]], Union[gym.Env, Space]]):
         if isinstance(f, list) and not callable(f):
             f = Compose(f)
         super().__init__(env)
         self.f: Compose = f
-        # Modify the action space, using the 'space_change' method of Transform.
+        # Modify the action space by applying the transform onto it.
         self.action_space = self.env.action_space
 
-        if isinstance(self.f, Transform) or hasattr(self.f, "space_change"):
-            self.space_change = self.f.space_change
-            self.action_space = self.space_change(self.env.action_space)
+        if isinstance(self.f, Transform):
+            self.action_space = self.f(self.env.action_space)
             # logger.debug(f"New action space after transform: {self.observation_space}")
         
 

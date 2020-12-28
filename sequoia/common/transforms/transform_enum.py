@@ -47,10 +47,9 @@ class Transforms(Enum):
     three_channels = ThreeChannels()
     to_tensor = ToTensor()
     random_grayscale = RandomGrayscale()
-    # NOTE: Switching those out, to avoid misleading bugs.
-    channels_first = ChannelsFirstIfNeeded()
+    channels_first = ChannelsFirst()
     channels_first_if_needed = ChannelsFirstIfNeeded()
-    channels_last = ChannelsLastIfNeeded()
+    channels_last = ChannelsLast()
     channels_last_if_needed = ChannelsLastIfNeeded()
     resize_64x64 = Resize((64, 64))
     resize_32x32 = Resize((32, 32))
@@ -61,6 +60,8 @@ class Transforms(Enum):
 
     @classmethod
     def _missing_(cls, value: Any):
+        # called whenever performing something like Transforms[<something>]
+        # with <something> not being one of the enum values.
         for e in cls:
             if e.name == value:
                 return e
@@ -69,14 +70,14 @@ class Transforms(Enum):
         return super()._missing_(value)
     
     def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
+        raise NotImplementedError(f"TODO: Add shape (tuple) support to {self}")
         if isinstance(self.value, Transform):
             return self.value.shape_change(input_shape)
-        raise NotImplementedError(f"TODO: add shape_change to {self}")
 
     def space_change(self, input_space: gym.Space) -> gym.Space:
+        raise NotImplementedError(f"TODO: Add space support to {self}")
         if isinstance(self.value, Transform):
             return self.value.space_change(input_space)
-        raise NotImplementedError(f"TODO: add space_change to {self}")
 
 
 T = TypeVar("T", bound=Callable)
@@ -86,34 +87,42 @@ class Compose(List[T], ComposeBase):
     
     This can also be passed in members of the `Transforms` enum, which makes it
     possible to do something like this:
-    >>> transforms = Compose([Transforms.to_tensor, Transforms.channels_first,])
-    >>> Transforms.channels_first in transforms
+    >>> transforms = Compose([Transforms.to_tensor, Transforms.three_channels,])
+    >>> Transforms.three_channels in transforms
     True
     >>> transforms += [Transforms.resize_32x32]
     >>> from pprint import pprint
     >>> pprint(transforms)
     [<Transforms.to_tensor: ToTensor()>,
-     <Transforms.channels_first: ChannelsFirst()>,
+     <Transforms.three_channels: ThreeChannels()>,
      <Transforms.resize_32x32: Resize(size=(32, 32), interpolation=PIL.Image.BILINEAR)>]
+    
+    NEW: This Compose transform also applies on gym spaces:
+
+    >>> import numpy as np
+    >>> from gym.spaces import Box
+    >>> image_space = Box(0, 255, (28, 28, 1), dtype=np.uint8)
+    >>> transforms(image_space)
+    Box(0.0, 1.0, (3, 32, 32), float32)
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         ComposeBase.__init__(self, transforms=self)
 
-    def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
-        for transform in self:
-            if isinstance(transform, Transforms):
-                transform = transform.value
-            if isinstance(transform, Transform) or hasattr(transform, "shape_change"):
-                input_shape = transform.shape_change(input_shape)
-            else:
-                logger.debug(
-                    f"Unable to detect the change of shape caused by "
-                    f"transform {transform}, assuming its output has same "
-                    f"shape as its input."
-                )
-        logger.debug(f"Final shape: {input_shape}")
-        return input_shape
+    # def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
+    #     for transform in self:
+    #         if isinstance(transform, Transforms):
+    #             transform = transform.value
+    #         if isinstance(transform, Transform) or hasattr(transform, "shape_change"):
+    #             input_shape = transform.shape_change(input_shape)
+    #         else:
+    #             logger.debug(
+    #                 f"Unable to detect the change of shape caused by "
+    #                 f"transform {transform}, assuming its output has same "
+    #                 f"shape as its input."
+    #             )
+    #     logger.debug(f"Final shape: {input_shape}")
+    #     return input_shape
 
 
 

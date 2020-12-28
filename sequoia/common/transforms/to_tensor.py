@@ -84,11 +84,14 @@ def _(image: Union[Image, np.ndarray]) -> Tensor:
     if isinstance(image, np.ndarray):
         # Convert to channels last if needed, because ToTensor expects to
         # receive that.
-        # TODO: It sucks that we'd have to do this.
-        image = channels_last_if_needed(image)
-        # if len(image.shape) > 2 and image.shape[-1] not in {1, 3}:
-        #     assert image.shape[0] in {1, 3}, image.shape
-        #     image = image.transpose(1, 2, 0)
+        image = channels_first_if_needed(image)
+        image = torch.from_numpy(image).contiguous()
+        # backward compatibility
+        if isinstance(image, torch.ByteTensor):
+            image = image.float().div(255)
+        return image
+
+
     if len(image.shape) == 4:
         return channels_first_if_needed(
             torch.stack(list(map(image_to_tensor, image)))
@@ -98,9 +101,16 @@ def _(image: Union[Image, np.ndarray]) -> Tensor:
 
 
 @image_to_tensor.register(list)
-@image_to_tensor.register(tuple)
 def _(image: Sequence[Img]) -> Tensor:
     return torch.stack(list(map(image_to_tensor, image)))
+
+@image_to_tensor.register(tuple)
+def _(image: Tuple[int, ...]) -> Tuple[int, ...]:
+    """ Give the output shape given the input shape of an image. """
+    if len(image) == 3:
+        return channels_first_if_needed(image)
+    return image
+
 
 
 @image_to_tensor.register(spaces.Box)
@@ -163,20 +173,20 @@ class ToTensor(ToTensor_, Transform):
         """
         return image_to_tensor(image)
 
-    @classmethod
-    def shape_change(cls, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
-        from .channels import ChannelsFirstIfNeeded
-        return ChannelsFirstIfNeeded.shape_change(input_shape)
+    # @classmethod
+    # def shape_change(cls, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
+    #     from .channels import ChannelsFirstIfNeeded
+    #     return ChannelsFirstIfNeeded.shape_change(input_shape)
 
-    @classmethod
-    def space_change(cls, input_space: gym.Space) -> gym.Space:
-        if not isinstance(input_space, spaces.Box):
-            logger.warning(UserWarning(f"Transform {cls} is only meant for Box spaces, not {input_space}"))
-            return input_space
-        return spaces.Box(
-            low=0.,
-            high=1.,
-            shape=cls.shape_change(input_space.shape),
-            dtype=np.float32,
-        )
+    # @classmethod
+    # def space_change(cls, input_space: gym.Space) -> gym.Space:
+    #     if not isinstance(input_space, spaces.Box):
+    #         logger.warning(UserWarning(f"Transform {cls} is only meant for Box spaces, not {input_space}"))
+    #         return input_space
+    #     return spaces.Box(
+    #         low=0.,
+    #         high=1.,
+    #         shape=cls.shape_change(input_space.shape),
+    #         dtype=np.float32,
+    #     )
         
