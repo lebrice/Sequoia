@@ -20,7 +20,7 @@ from stable_baselines3.common.policies import BasePolicy
 from torch import Tensor
 
 from nngeometry.generator.jacobian import Jacobian
-from nngeometry.layercollection import LayerCollection    
+from nngeometry.layercollection import LayerCollection
 from nngeometry.object.pspace import (PMatAbstract, PMatKFAC, PMatDiag,
                                       PVector)
 from sequoia.methods.ewc_method import FIM
@@ -116,6 +116,9 @@ class NormRegularizer(PolicyWrapper[Policy]):
         return loss
 
 class EWCPolicy(NormRegularizer):
+    """ A Wrapper class that adds a `on_task_switch` and a `ewc_loss` method to
+    an nn.Module (in this particular case, a Policy from SB3) and implements the EWC method.
+    """
     def __init__(self: Policy,
                  *args,
                  reg_coefficient: float = 1.0,
@@ -127,29 +130,33 @@ class EWCPolicy(NormRegularizer):
         self.previous_model_weights: PVector = None
         self.FIM_representation = fim_representation
     
-    def consolidate(self, new_FIMs:List[PMatAbstract], task:int) -> None:
+    def consolidate(self, new_fims:List[PMatAbstract], task:int) -> None:
+        """
+        Consolidates the previous FIMs and the new onces.
+        See online EWC in https://arxiv.org/pdf/1805.06370.pdf.
+        """
         if self.FIMs is None:
-            self.FIMs = new_FIMs
+            self.FIMs = new_fims
             return 
-        assert len(new_FIMs)==len(self.FIMs)
-        for i, (fim_previous, fim_new) in enumerate(zip(self.FIMs, new_FIMs)):
+        assert len(new_fims)==len(self.FIMs)
+        for i, (fim_previous, fim_new) in enumerate(zip(self.FIMs, new_fims)):
             if fim_previous is None:
                 self.FIMs[i] = fim_new
             else:
                 #consolidate the FIMs
-                self.FIMs[i] = EWCPolicy._consolidate_FIMs(fim_previous,fim_new, task)
+                self.FIMs[i] = EWCPolicy._consolidate_fims(fim_previous,fim_new, task)
 
     @staticmethod
-    def _consolidate_FIMs(FIM_previous: PMatAbstract, FIM_new: PMatAbstract, task:int) -> PMatAbstract:
-        #consolidate the FIM_new into FIM_previous in place
-        if isinstance(FIM_new, PMatDiag):  
-            FIM_previous.data = ((deepcopy(FIM_new.data)) + FIM_previous.data * (task)) / (task + 1)
+    def _consolidate_fims(fim_previous: PMatAbstract, fim_new: PMatAbstract, task:int) -> PMatAbstract:
+        #consolidate the fim_new into fim_previous in place
+        if isinstance(fim_new, PMatDiag):  
+            fim_previous.data = ((deepcopy(fim_new.data)) + fim_previous.data * (task)) / (task + 1)
 
-        elif isinstance(FIM_new.data, dict): 
-            for (n, p), (n_, p_) in zip(FIM_previous.data.items(),FIM_new.data.items()):
+        elif isinstance(fim_new.data, dict): 
+            for (n, p), (n_, p_) in zip(fim_previous.data.items(),fim_new.data.items()):
                 for item, item_ in zip(p, p_):
                     item.data = ((item.data*(task))+deepcopy(item_.data))/(task+1)
-        return FIM_previous
+        return fim_previous
         
     def on_task_switch(self: Policy, task_id: Optional[int], dataloader: DataLoader, method: str = 'a2c')-> None:
         """ Executed when the task switches (to either a known or unknown task).
@@ -168,26 +175,33 @@ class EWCPolicy(NormRegularizer):
             self.previous_model_weights = PVector.from_model(self).clone().detach() 
             
             #TODO: keepng to FIMs might be not the optimal way of doing this
-            new_FIMs=[]
-            new_FIM = FIM(model=self,    
+            new_fims=[]
+            if method=='dqn':
+                function=self.q_net
+                n_output=self.action_space.n
+            else:
+                function=self
+                n_output=1
+
+            new_fim = FIM(model=self,
                         loader=dataloader,   
                         representation=self.FIM_representation,
-                        n_output=1,
+                        n_output=n_output,
                         variant=method,
-                        function = self,
+                        function = function,
                         device=self.device.type)
-            new_FIMs.append(new_FIM)
+            new_fims.append(new_fim)
             if method=='a2c':
                 #apply EWC also to the value net
-                new_FIM_critic = FIM(model=self,    
+                new_fim_critic = FIM(model=self,    
                         loader=dataloader,   
                         representation=self.FIM_representation,
                         n_output=1,
                         variant='regression',
                         function = lambda *x: self(x[0])[1],
                         device=self.device.type)
-                new_FIMs.append(new_FIM_critic)
-            self.consolidate(new_FIMs,task=self._previous_task)
+                new_fims.append(new_fim_critic)
+            self.consolidate(new_fims,task=self._previous_task)
             self._n_switches += 1
     
     def ewc_loss(self: Policy) -> Union[float, Tensor]:
@@ -258,15 +272,16 @@ class ExampleRegularizationMethod(StableBaselines3Method):
             self.model.policy.on_task_switch(task_id)
 
 @register_method
-@dataclass                           
+@dataclass                                 
 class EWCExampleMethod(StableBaselines3Method):
     Model: ClassVar[Type[BaseAlgorithm]]
-    Model = A2CModel  # Works great! (fastest)    
+    #Model = A2CModel  # Works great! (fastest) 
+    Model = DQNModel  # Works great! (fastest)    
     # Coefficient for the EWC-like loss.
     reg_coefficient: float = 1.0
     # Number of observations to use for FIM calculation
     total_steps_fim: int = 1000
-    #Fisher information type  (diagonal or block diagobnal)  
+    #Fisher information type  (diagonal or block diagobnal)                                
     fim_representation: PMatAbstract = choice({'diagonal':PMatDiag, 'block_diagonal':PMatKFAC}, default=PMatKFAC)
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> BaseAlgorithm:
