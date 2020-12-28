@@ -14,7 +14,7 @@ from PIL.Image import Image
 InputType = TypeVar("InputType")
 OutputType = TypeVar("OutputType")
 
-Img = TypeVar("Img", bound=Union[Image, np.ndarray, Tensor])
+Img = TypeVar("Img", Image, np.ndarray, Tensor)
 Shape = TypeVar("Shape", bound=Tuple[int, ...])
 
 class Transform(Generic[InputType, OutputType]):

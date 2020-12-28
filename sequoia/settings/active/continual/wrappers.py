@@ -1,10 +1,11 @@
 """ Wrappers specific to the RL settings, so not exactly as general as those in
 `common/gym_wrappers`.
 """
+from collections.abc import Mapping
 from dataclasses import is_dataclass, replace
 from functools import singledispatch
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union
-from collections.abc import Mapping
+from typing import (Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar,
+                    Union)
 
 import gym
 import numpy as np
@@ -14,6 +15,7 @@ from torch import Tensor
 from sequoia.common import Batch
 from sequoia.common.gym_wrappers import IterableWrapper, TransformObservation
 from sequoia.common.spaces import Sparse
+from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 from sequoia.settings.base.objects import Actions, Observations, Rewards
 
 T = TypeVar("T")
@@ -66,6 +68,8 @@ class TypedObjectsWrapper(IterableWrapper):
 
 
 # TODO: turn unwrap into a single-dispatch callable.
+# TODO: Atm 'unwrap' basically means "get rid of everything apart from the first
+# item", which is a bit ugly.
 
 def unwrap_actions(actions: Actions) -> Union[Tensor, np.ndarray]:
     assert isinstance(actions, Actions), actions
@@ -132,6 +136,13 @@ def _(observation: Tuple[T, Any]) -> Tuple[T]:
     raise NotImplementedError(observation)
 
 
+@remove_task_labels.register
+def _remove_task_labels_in_namedtuple_space(observation: NamedTupleSpace) -> NamedTupleSpace:
+    spaces = observation._spaces.copy()
+    spaces.pop("task_labels")
+    return type(observation)(**spaces)
+
+
 @remove_task_labels.register(spaces.Dict)
 @remove_task_labels.register(Mapping)
 def _(observation: Dict) -> Dict:
@@ -155,9 +166,10 @@ class RemoveTaskLabelsWrapper(TransformObservation):
         # assert len(input_space) == 2, input_space
         return input_space[0]
 
-from gym import spaces, Space
-from functools import singledispatch
 from dataclasses import replace
+from functools import singledispatch
+
+from gym import Space, spaces
 
 
 @singledispatch
@@ -177,8 +189,29 @@ def hide_task_labels_in_space(observation: Space) -> Space:
         f"TODO: Don't know how to remove task labels from space {observation}."
     )
 
+
+
 @hide_task_labels.register
-def hide_task_labels_in_tuple_space(observation: spaces.Tuple) -> spaces.Tuple:
+def _hide_task_labels_in_namedtuple_space(observation: NamedTupleSpace) -> NamedTupleSpace:
+    spaces = observation._spaces.copy()
+    task_label_space = spaces["task_labels"]
+
+    if isinstance(task_label_space, Sparse):
+        if task_label_space.sparsity == 1.0:
+            # No need to change anything:
+            return observation
+        # Replace the existing 'Sparse' space with another one with the same
+        # base but with sparsity = 1.0
+        task_label_space = task_label_space.base
+
+    assert not isinstance(task_label_space, Sparse)
+    task_label_space = Sparse(task_label_space, sparsity=1.)
+    spaces["task_labels"] = task_label_space
+    return type(observation)(**spaces)
+
+
+@hide_task_labels.register
+def _hide_task_labels_in_tuple_space(observation: spaces.Tuple) -> spaces.Tuple:
     assert len(observation.spaces) == 2, "ambiguous"
     
     task_label_space = observation.spaces[1]

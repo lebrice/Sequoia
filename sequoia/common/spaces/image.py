@@ -82,8 +82,16 @@ def _(space: Image,
 @batch_space.register
 def _(space: Image, n: int = 1) -> Image:
     # This could be ambiguous
-    assert space.b is None, "can't batch an already batched image space"
-    repeats = tuple([n] + [1] * space.low.ndim)
+    if space.b is not None:
+        # This might happen in BatchedVectorEnv, for instance.
+        if space.b == 1:
+            if n == 1:
+                return space
+            repeats = [n, 1, 1, 1]
+        else:
+            raise RuntimeError(f"can't batch an already batched image space {space}, n={n}")
+    else:
+        repeats = [n, 1, 1, 1]
     low, high = np.tile(space.low, repeats), np.tile(space.high, repeats)
     img = type(space)(low=low, high=high, dtype=space.dtype)
     return img

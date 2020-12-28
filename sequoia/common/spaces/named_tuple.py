@@ -3,7 +3,7 @@ as a bit of a hybrid between `gym.spaces.Dict` and `gym.spaces.Tuple`.
 """
 from collections import namedtuple
 from collections.abc import Mapping as MappingABC
-from typing import Dict, Mapping, Sequence, Type, Union, Any
+from typing import Any, Dict, Mapping, Sequence, Tuple, Type, Union
 
 import gym
 import numpy as np
@@ -43,16 +43,15 @@ class NamedTupleSpace(spaces.Tuple):
             #         names = [getattr(space, "__name") for space in spaces]
             #     except AttributeError:
             #         pass
-
             assert names is not None, "need to pass names when spaces isn't a mapping."
-            assert len(names) == len(spaces), "need to pass a name for each space"
+            assert spaces and len(names) == len(spaces), "need to pass a name for each space"
             self._spaces = dict(zip(names, spaces))
 
         # NOTE: dict.values() is ordered since python 3.7.
         spaces = tuple(self._spaces.values())
         super().__init__(spaces)
-        self.names: Sequence[str] = self._spaces.keys()
-        self.dtype = dtype or namedtuple("NamedTuple", self.names)
+        self.names: Sequence[str] = tuple(self._spaces.keys())
+        self.dtype: Type[Tuple] = dtype or namedtuple("NamedTuple", self.names)
         # idea: could use this _name attribute to change the __repr__ first part
         self._name = self.dtype.__name__
     
@@ -96,7 +95,6 @@ from gym.vector.utils import batch_space
 
 @batch_space.register(NamedTupleSpace)
 def batch_namedtuple_space(space: NamedTupleSpace, n: int = 1):
-    assert False, "HEYO"
     return NamedTupleSpace(spaces={
         key: batch_space(value, n) for key, value in space._spaces.items()
     }, dtype=space.dtype)

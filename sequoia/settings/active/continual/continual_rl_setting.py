@@ -41,6 +41,7 @@ from sequoia.common.gym_wrappers.utils import (IterableWrapper,
                                                is_classic_control_env)
 from sequoia.common.metrics import RegressionMetrics
 from sequoia.common.spaces import Sparse, Image
+from sequoia.common.spaces.named_tuple import NamedTupleSpace, NamedTuple
 from sequoia.common.transforms import Transforms
 from sequoia.settings.active import ActiveSetting
 from sequoia.settings.assumptions.incremental import (IncrementalSetting,
@@ -651,6 +652,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         
         """
         logger.debug(f"batch_size: {batch_size}, num_workers: {num_workers}, seed: {seed}")
+        
+        env: Union[gym.Env, gym.vector.VectorEnv]
         if batch_size is None:
             env = env_factory()
         else:

@@ -1,7 +1,10 @@
-from .named_tuple import NamedTupleSpace, NamedTuple
+import gym
 import numpy as np
-from gym import spaces, Space
+from gym import Space, spaces
 from gym.spaces import Box, Discrete
+from gym.vector.utils import batch_space
+
+from .named_tuple import NamedTuple, NamedTupleSpace
 
 
 def test_basic():
@@ -80,6 +83,49 @@ def test_equals_tuple_space_with_same_items():
     ])
     assert named_tuple_space == tuple_space
     assert tuple_space == named_tuple_space
+
+
+
+def test_equals_tuple_space_with_same_items():
+    """ Test that a NamedTupleSpace is considered equal to a Tuple space if
+    the spaces are in the same order and all equal (regardless of the names).
+    """
+    named_tuple_space = NamedTupleSpace(
+        current_state=Box(0, 1, (2,2)),
+        action=Discrete(2),
+        next_state=Box(0, 1, (2,2)),
+        dtype=StateTransition,
+    )
+    tuple_space = spaces.Tuple([
+        Box(0, 1, (2,2)),
+        Discrete(2),
+        Box(0, 1, (2,2)),
+    ])
+    assert named_tuple_space == tuple_space
+    assert tuple_space == named_tuple_space
+
+
+def test_batch_space_is_singledispatch():
+    import gym
+    from gym.vector.utils import batch_space
+
+    from .named_tuple import NamedTupleSpace
+    assert hasattr(gym.vector.utils.batch_space, "registry")
+
+
+def test_batch_space():
+    named_tuple_space = NamedTupleSpace(
+        current_state=Box(0, 1, (2,2)),
+        action=Discrete(2),
+        next_state=Box(0, 1, (2,2)),
+        dtype=StateTransition,
+    )
+    assert batch_space(named_tuple_space, n=5) == NamedTupleSpace(
+        current_state=Box(0, 1, (5, 2, 2)),
+        action=spaces.MultiDiscrete([2, 2, 2, 2, 2]),
+        next_state=Box(0, 1, (5, 2, 2)),
+        dtype=StateTransition,
+    )
 
 
 ## IDEA: Creating a space like this, using the same syntax as with NamedTuple

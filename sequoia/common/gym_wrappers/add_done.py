@@ -62,6 +62,7 @@ def add_done_to_space(observation: Space, done: Space) -> Space:
 
 
 from ..spaces.named_tuple import NamedTuple, NamedTupleSpace
+
 class ObservationsWithDone(NamedTuple):
     x: np.ndarray
     task_labels: np.ndarray
@@ -77,7 +78,7 @@ def _add_done_to_box_space(observation: spaces.Box, done: Space) -> spaces.Tuple
 
 
 @add_done.register
-def _add_done_to_box_space(observation: NamedTupleSpace, done: Space) -> NamedTupleSpace:
+def _add_done_to_namedtuple_space(observation: NamedTupleSpace, done: Space) -> NamedTupleSpace:
     return NamedTupleSpace(
         **observation._spaces,
         done=done,
