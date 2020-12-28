@@ -30,11 +30,11 @@ def test_space_with_tuple_observations(batch_size: int, n_workers: Optional[int]
     # env = AsyncVectorEnv(env_fns)
     env.seed(123)
     
-    assert str(env.observation_space) == str(spaces.Tuple([
+    assert env.observation_space == spaces.Tuple([
         spaces.Box(0, 255, (batch_size, 210, 160, 3), np.uint8),
         spaces.MultiDiscrete(np.ones(batch_size)),
-    ]))
-    
+    ])
+
     assert env.single_observation_space == spaces.Tuple([
         spaces.Box(0, 255, (210, 160, 3), np.uint8),
         spaces.Discrete(1),

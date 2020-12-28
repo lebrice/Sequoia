@@ -62,6 +62,26 @@ def test_isinstance_namedtuple():
     assert isinstance(named_tuple_space.sample(), NamedTuple)
 
 
+
+def test_equals_tuple_space_with_same_items():
+    """ Test that a NamedTupleSpace is considered equal to a Tuple space if
+    the spaces are in the same order and all equal (regardless of the names).
+    """
+    named_tuple_space = NamedTupleSpace(
+        current_state=Box(0, 1, (2,2)),
+        action=Discrete(2),
+        next_state=Box(0, 1, (2,2)),
+        dtype=StateTransition,
+    )
+    tuple_space = spaces.Tuple([
+        Box(0, 1, (2,2)),
+        Discrete(2),
+        Box(0, 1, (2,2)),
+    ])
+    assert named_tuple_space == tuple_space
+    assert tuple_space == named_tuple_space
+
+
 ## IDEA: Creating a space like this, using the same syntax as with NamedTuple
 # class StateTransitionSpace(NamedTupleSpace):
 #     current_state: Box = Box(0, 1, (2,2))
