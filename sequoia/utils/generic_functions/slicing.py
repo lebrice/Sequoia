@@ -3,13 +3,13 @@ nested objects.
 
 """
 from functools import singledispatch
-from typing import Any, Dict, List, NamedTuple, Sequence, Tuple, TypeVar
+from typing import Any, Dict, List, Sequence, Tuple, TypeVar
 
 import numpy as np
 import torch
 from torch import Tensor
 
-from ._namedtuple import is_namedtuple
+from ._namedtuple import is_namedtuple, NamedTuple
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -48,6 +48,16 @@ def _get_tuple_slice(value: Tuple[T, ...], indices: Sequence[int]) -> Tuple[T, .
     return type(value)([
         get_slice(v, indices) for v in value
     ])
+
+
+@get_slice.register(NamedTuple)
+def _get_namedtuple_slice(value: Tuple[T, ...], indices: Sequence[int]) -> Tuple[T, ...]:
+    # NOTE: we use type(value)( ... ) to create the output dicts or tuples, in
+    # case a subclass of tuple or dict is being used (e.g. NamedTuples). 
+    return type(value)(*[
+        get_slice(v, indices) for v in value
+    ])
+
 
 
 @singledispatch

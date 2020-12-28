@@ -101,6 +101,8 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
                                    min_episodes_before_update=1,
                                    accumulate_losses_before_backward=False)
     )
+    # TODO: Simulating as if the output head were attached to a BaselineModel. 
+    PolicyHead.base_model_optimizer = torch.optim.Adam(output_head.parameters(), lr=1e-3)
 
     # Simplify the loss function so we know exactly what the loss should be at
     # each step.
@@ -201,7 +203,10 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
         input_space=obs_space[0],
         action_space=action_space,
         reward_space=reward_space,
+        hparams=PolicyHead.HParams(accumulate_losses_before_backward = False),
     )
+    # TODO: Simulating as if the output head were attached to a BaselineModel. 
+    PolicyHead.base_model_optimizer = torch.optim.Adam(head.parameters(), lr=1e-3)
     head.train()
 
     env.seed(123)
@@ -245,6 +250,7 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
         loss = head.get_loss(forward_pass, actions=head_output, rewards=rewards)
         print("loss:", loss)
 
+        assert observations.done is not None
         for env_index, env_is_done in enumerate(observations.done):
             if env_is_done:
                 print(f"Episode ended for env {env_index} at step {i}")
@@ -300,6 +306,9 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
         reward_space=reward_space,
         hparams=PolicyHead.HParams(accumulate_losses_before_backward=False),
     )
+    # TODO: Simulating as if the output head were attached to a BaselineModel. 
+    PolicyHead.base_model_optimizer = torch.optim.Adam(head.parameters(), lr=1e-3)
+
 
     env.seed(123)
     non_zero_losses = 0
@@ -482,7 +491,7 @@ from sequoia.common.gym_wrappers import PixelObservationWrapper
 from sequoia.settings.active.continual.make_env import make_batched_env
 
 
-def test_sanity_check_cartpole_done_vector(monkeypatch):
+def test_sanity_check_cartpole_done_vector():
     """TODO: Sanity check, make sure that cartpole has done=True at some point
     when using a BatchedEnv.
     """

@@ -68,16 +68,15 @@ class Image(spaces.Box):
         return f"Image({self.low.min()}, {self.high.max()}, {self.shape}, {self.dtype})"
 
 
+# @to_tensor.register
+# def _(space: Image,
+#       sample: Union[np.ndarray, Tensor],
+#       device: torch.device = None) -> Union[Tensor]:
+#     """ Converts a sample from the given space into a Tensor. """
+#     return torch.as_tensor(sample, device=device)
+
+
 from gym.vector.utils import batch_space
-
-
-@to_tensor.register
-def _(space: Image,
-      sample: Union[np.ndarray, Tensor],
-      device: torch.device = None) -> Union[Tensor]:
-    """ Converts a sample from the given space into a Tensor. """
-    return torch.from_numpy(sample).to(device=device)
-
 
 @batch_space.register
 def _batch_image_space(space: Image, n: int = 1) -> Union[Image, spaces.Box]:

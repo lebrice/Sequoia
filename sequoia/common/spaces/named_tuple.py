@@ -8,7 +8,7 @@ from typing import Any, Dict, Mapping, Sequence, Tuple, Type, Union
 import gym
 import numpy as np
 from gym import Space, spaces
-from sequoia.utils import NamedTuple
+from sequoia.utils.generic_functions._namedtuple import NamedTuple
 
 
 class NamedTupleSpace(spaces.Tuple):
@@ -105,6 +105,6 @@ from sequoia.utils.generic_functions.to_from_tensor import to_tensor
 
 @to_tensor.register(NamedTupleSpace)
 def _to_tensor(space: NamedTupleSpace, sample: NamedTuple, device: torch.device = None):
-    return type(sample)(**{
+    return space.dtype(**{
         key: to_tensor(space[i], sample[i], device=device) for i, key in enumerate(space._spaces.keys())
     })

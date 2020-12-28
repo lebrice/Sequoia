@@ -49,6 +49,7 @@ from sequoia.common import ClassificationMetrics, Metrics, get_metrics
 from sequoia.common.config import Config
 from sequoia.common.loss import Loss
 from sequoia.common.spaces import Sparse
+from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.transforms import Transforms, SplitBatch, Compose
 from sequoia.settings.assumptions.incremental import IncrementalSetting, TestEnvironment
 from sequoia.settings.base import Method, Results, ObservationType, RewardType
@@ -250,11 +251,11 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             reward_space=reward_space, # the labels have shape (1,) always.
         )
         image_space = self.train_transforms(image_space)
-        self.observation_space = spaces.Tuple([
-            image_space,
-            task_label_space,
-        ])
-        
+        self.observation_space = NamedTupleSpace(
+            x=image_space,
+            task_labels=task_label_space,
+            dtype=self.Observations,
+        )
 
         self.train_datasets: List[_ContinuumDataset] = []
         self.val_datasets: List[_ContinuumDataset] = []

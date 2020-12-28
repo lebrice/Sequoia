@@ -78,18 +78,18 @@ class BaseModel(LightningModule, Generic[SettingType]):
         super().__init__()
         self.setting: SettingType = setting
         self.hp: BaseModel.HParams = hparams
-        
+
         self.Observations: Type[Observations] = setting.Observations
         self.Actions: Type[Actions] = setting.Actions
         self.Rewards: Type[Rewards] = setting.Rewards
-        
+
         self.observation_space: gym.Space = setting.observation_space
         self.action_space: gym.Space = setting.action_space
         self.reward_space: gym.Space = setting.reward_space
-        
+
         self.input_shape  = self.observation_space[0].shape
         self.reward_shape = self.reward_space.shape
-        
+
         self.split_batch_transform = SplitBatch(observation_type=self.Observations,
                                                 reward_type=self.Rewards)
         self.config: Config = config
@@ -100,7 +100,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # (Testing) Setting this attribute is supposed to help with ddp/etc
         # training in pytorch-lightning. Not 100% sure.
         # self.example_input_array = torch.rand(self.batch_size, *self.input_shape)
-        
+
         # Create the encoder and the output head.
         # Space of our encoder representations.
         self.representation_space: gym.Space
@@ -420,9 +420,15 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def preprocess_observations(self, observations: Observations) -> Observations:
         assert isinstance(observations, Observations)
+        
         from sequoia.utils.generic_functions import to_tensor
         tensor_observations = to_tensor(self.observation_space, observations, device=self.device)
+        assert isinstance(tensor_observations, Observations), (
+            type(tensor_observations), self.observation_space,
+        )
+
         return tensor_observations
+        
         return observations
 
     def preprocess_rewards(self, reward: Rewards) -> Rewards:
