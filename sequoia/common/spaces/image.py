@@ -76,19 +76,24 @@ def _(space: Image,
       sample: Union[np.ndarray, Tensor],
       device: torch.device = None) -> Union[Tensor]:
     """ Converts a sample from the given space into a Tensor. """
-    return torch.from_numpy(sample, device=device)
+    return torch.from_numpy(sample).to(device=device)
 
 
 @batch_space.register
-def _(space: Image, n: int = 1) -> Image:
-    # This could be ambiguous
+def _batch_image_space(space: Image, n: int = 1) -> Union[Image, spaces.Box]:
     if space.b is not None:
-        # This might happen in BatchedVectorEnv, for instance.
+        # This might happen in BatchedVectorEnv, when creating env_a and env_b,
+        # which have an extra batch/chunk dimension.
         if space.b == 1:
             if n == 1:
                 return space
             repeats = [n, 1, 1, 1]
         else:
+            # instead maybe we should just fall back to a Box Space?
+            repeats = [n] + [1] * space.low.ndim
+            low, high = np.tile(space.low, repeats), np.tile(space.high, repeats)
+            return spaces.Box(low=low, high=high, dtype=space.dtype)
+
             raise RuntimeError(f"can't batch an already batched image space {space}, n={n}")
     else:
         repeats = [n, 1, 1, 1]

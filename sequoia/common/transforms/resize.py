@@ -1,5 +1,5 @@
 from functools import singledispatch
-from typing import Any, Callable, Sequence, Tuple, TypeVar, Union
+from typing import Any, Callable, Sequence, Tuple, TypeVar, Union, List
 
 import gym
 import numpy as np
@@ -20,7 +20,7 @@ from .transform import Img, Transform
 logger = get_logger(__file__)
 
 @singledispatch
-def resize(x: Any, size: Tuple[int, ...], **kwargs) -> Any:
+def resize(x: Img, size: Tuple[int, ...], **kwargs) -> Img:
     """ Resizes a PIL.Image, a Tensor, ndarray, or a Box space. """
     raise NotImplementedError(f"Transform doesn't support input {x} of type {type(x)}")
 
@@ -30,7 +30,7 @@ def _(x: Image.Image, size: Tuple[int, ...], **kwargs) -> Image.Image:
 
 @resize.register(np.ndarray)
 @resize.register(Tensor)
-def _(x: np.ndarray, size: Tuple[int, ...], **kwargs) -> np.ndarray:
+def _resize_array_or_tensor(x: np.ndarray, size: Tuple[int, ...], **kwargs) -> np.ndarray:
     """ TODO: This resizes numpy arrays by converting them to tensors and then
     using the `interpolate` function. There is for sure a more efficient way to
     do this.
@@ -59,9 +59,9 @@ def _(x: np.ndarray, size: Tuple[int, ...], **kwargs) -> np.ndarray:
 
 
 @resize.register(tuple)
-def _(x: Tuple[int, ...], size: Tuple[int, ...], **kwargs) -> Tuple[int, ...]:
+def _resize_image_shape(x: Tuple[int, ...], size: Tuple[int, ...], **kwargs) -> Tuple[int, ...]:
     """ Give the resized image shape, given the input shape. """
-    new_shape: Tuple[int, ...] = size
+    new_shape: List[int] = list(size)
     if len(size) == 2:
         # Preserve the number of channels.
         if len(x) == 4:
@@ -75,7 +75,6 @@ def _(x: Tuple[int, ...], size: Tuple[int, ...], **kwargs) -> Tuple[int, ...]:
             if has_channels_first(x):
                 new_shape = [x[0], *size]
             elif has_channels_last(x):
-                new_shape = x[0]
                 new_shape = [*size, x[-1]]
             else:
                 raise NotImplementedError(x)
@@ -85,7 +84,7 @@ def _(x: Tuple[int, ...], size: Tuple[int, ...], **kwargs) -> Tuple[int, ...]:
 
 
 @resize.register(spaces.Box)
-def _(x: spaces.Box, size: Tuple[int, ...], **kwargs) -> spaces.Box:
+def _resize_space(x: spaces.Box, size: Tuple[int, ...], **kwargs) -> spaces.Box:
     # Hmm, not sure if the bounds would actually also be respected though.
     return type(x)(
         low=resize(x.low, size, **kwargs),
@@ -97,6 +96,8 @@ def _(x: spaces.Box, size: Tuple[int, ...], **kwargs) -> spaces.Box:
 class Resize(Resize_, Transform[Img, Img]):
     def __init__(self, size: Tuple[int, ...], interpolation=Image.BILINEAR):
         super().__init__(size, interpolation)
+        # self.size = size
+        # self.interpolation = interpolation
 
-    def __call__(self, img: Img) -> Img:
+    def forward(self, img: Img) -> Img:
         return resize(img, size=self.size)

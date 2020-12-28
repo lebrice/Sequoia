@@ -43,6 +43,8 @@ def copy_if_negative_strides(image: Img) -> Img:
         strides = image.strides
     else:
         raise NotImplementedError(f"Can't get strides of object {image}")
+    
+    assert not isinstance(image, Tensor)
     if any(s < 0 for s in strides):
         return image.copy()
     return image
@@ -68,11 +70,11 @@ def image_to_tensor(image: Union[Img, Sequence[Img], gym.Space]) -> Union[Tensor
     """
     raise NotImplementedError(f"Don't know how to convert {image} to a Tensor.")
 
+# @image_to_tensor.register
+# def _(image: Tensor) -> Tensor:
+#     return channels_first_if_needed(image)
 
-@image_to_tensor.register
-def _(image: Tensor) -> Tensor:
-    return channels_first_if_needed(image)
-
+@image_to_tensor.register(Tensor)
 @image_to_tensor.register(np.ndarray)
 @image_to_tensor.register(Image)
 def _(image: Union[Image, np.ndarray]) -> Tensor:
@@ -80,6 +82,9 @@ def _(image: Union[Image, np.ndarray]) -> Tensor:
     to channels_first format (because ToTensor from torchvision does it also).
     """
     image = copy_if_negative_strides(image)
+
+    if len(image.shape) == 2:
+        return F.to_tensor(image)
 
     if isinstance(image, np.ndarray):
         # Convert to channels last if needed, because ToTensor expects to
@@ -101,16 +106,16 @@ def _(image: Union[Image, np.ndarray]) -> Tensor:
 
 
 @image_to_tensor.register(list)
-def _(image: Sequence[Img]) -> Tensor:
+def _list_of_images_to_tensor(image: Sequence[Img]) -> Tensor:
     return torch.stack(list(map(image_to_tensor, image)))
 
+
 @image_to_tensor.register(tuple)
-def _(image: Tuple[int, ...]) -> Tuple[int, ...]:
+def _to_tensor_effect_on_image_shape(image: Tuple[int, ...]) -> Tuple[int, ...]:
     """ Give the output shape given the input shape of an image. """
     if len(image) == 3:
         return channels_first_if_needed(image)
     return image
-
 
 
 @image_to_tensor.register(spaces.Box)

@@ -104,6 +104,11 @@ slow = pytest.mark.skipif(
     reason="This test is slow so we only run it when necessary."
 )
 
+
+def slow_param(*args):
+    return pytest.param(*args, marks=slow)
+
+
 def find_class_under_test(module,
                             function,
                             name: str = "method",

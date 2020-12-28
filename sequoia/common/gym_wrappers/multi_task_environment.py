@@ -3,7 +3,7 @@ import random
 from collections.abc import Mapping
 from functools import singledispatch
 from typing import (Any, Callable, Dict, List, Optional, Sequence, Tuple, Type,
-                    TypeVar, Union)
+                    TypeVar, Union, MutableMapping)
 
 import gym
 import matplotlib.pyplot as plt
@@ -30,9 +30,6 @@ task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
 logger = get_logger(__file__)
 
 
-@singledispatch
-def add_task_labels(observation: Any, task_labels: Any) -> Any:
-    raise NotImplementedError(observation)
 
 X = TypeVar("X")
 T = TypeVar("T")
@@ -41,50 +38,55 @@ V = TypeVar("V")
 
 
 class ObservationsAndTaskLabels(NamedTuple):
-    x: np.ndarray
-    task_labels: np.ndarray
+    x: Any
+    task_labels: Any
 
 
+@singledispatch
+def add_task_labels(observation: Any, task_labels: Any) -> Any:
+    raise NotImplementedError(observation, task_labels)
+
+
+@add_task_labels.register(int)
+@add_task_labels.register(float)
 @add_task_labels.register(Tensor)
 @add_task_labels.register(np.ndarray)
-def _(observation: X, task_labels: T) -> Tuple[X, T]:
+def _add_task_labels_to_single_obs(observation: X, task_labels: T) -> Tuple[X, T]:
     return ObservationsAndTaskLabels(observation, task_labels)
 
-@add_task_labels.register(spaces.Box)
-def _(observation: X, task_labels: T) -> spaces.Dict:
+
+@add_task_labels.register(spaces.Space)
+def _add_task_labels_to_space(observation: X, task_labels: T) -> spaces.Dict:
     # TODO: Return a dict or NamedTuple at some point:
     return NamedTupleSpace(
         x=observation,
         task_labels=task_labels,
         dtype=ObservationsAndTaskLabels,
     )
-    # return spaces.Dict(OrderedDict({
-    #     "x": observation,
-    #     "task_labels": task_labels,
-    # }))
 
 
 @add_task_labels.register(NamedTupleSpace)
-def _(observation: NamedTupleSpace, task_labels: gym.Space) -> NamedTupleSpace:
-    # IDEA: Create a new NamedTupleSpace, adding in the task labels.
-    return NamedTupleSpace(**observation._spaces, task_labels=task_labels)
+def _add_task_labels_to_namedtuple(observation: NamedTupleSpace, task_labels: gym.Space) -> NamedTupleSpace:
+    return type(observation)(**observation._spaces, task_labels=task_labels)
 
 
 @add_task_labels.register(spaces.Tuple)
 @add_task_labels.register(tuple)
-def _(observation: Tuple[X, ...], task_labels: T) -> Tuple[X, T]:
-    return type(observation)(*[*observation, task_labels])
+def _add_task_labels_to_tuple(observation: Tuple, task_labels: T) -> Tuple:
+    return type(observation)([*observation, task_labels])
 
 
 @add_task_labels.register(spaces.Dict)
-@add_task_labels.register(Mapping)
-def _(observation: Dict[K, V], task_labels: T) -> Dict[K, Union[V, T]]:
-    new = {
+@add_task_labels.register(dict)
+def _add_task_labels_to_dict(observation: Union[Dict[str, V], spaces.Dict],
+                             task_labels: T) -> Union[Dict[str, Union[V, T]], spaces.Dict]:
+    new: Dict[str, Union[V, T]] = {
         key: value for key, value in observation.items()
     }
     assert "task_labels" not in new
     new["task_labels"] = task_labels
-    return type(observation)(**new)
+    return type(observation)(**new)  # type: ignore
+
 
 class MultiTaskEnvironment(gym.Wrapper):
     """ Creates 'tasks' by modifying attributes of the wrapped environment.

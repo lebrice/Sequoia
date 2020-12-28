@@ -162,6 +162,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         if isinstance(h_x, list) and len(h_x) == 1:
             # Some pretrained encoders sometimes give back a list with one tensor. (?)
             h_x = h_x[0]
+        assert isinstance(h_x, Tensor)
         return h_x
 
     
