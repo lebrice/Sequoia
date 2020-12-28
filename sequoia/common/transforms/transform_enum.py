@@ -47,9 +47,10 @@ class Transforms(Enum):
     three_channels = ThreeChannels()
     to_tensor = ToTensor()
     random_grayscale = RandomGrayscale()
-    channels_first = ChannelsFirst()
+    # NOTE: Switching those out, to avoid misleading bugs.
+    channels_first = ChannelsFirstIfNeeded()
     channels_first_if_needed = ChannelsFirstIfNeeded()
-    channels_last = ChannelsLast()
+    channels_last = ChannelsLastIfNeeded()
     channels_last_if_needed = ChannelsLastIfNeeded()
     resize_64x64 = Resize((64, 64))
     resize_32x32 = Resize((32, 32))

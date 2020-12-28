@@ -13,7 +13,7 @@ from torchvision.transforms import Resize as Resize_
 from torchvision.transforms import ToTensor as ToTensor_
 from torchvision.transforms import functional as F
 
-from .channels import (ChannelsFirst, ChannelsLast, has_channels_first,
+from .channels import (channels_first, channels_last, has_channels_first,
                        has_channels_last)
 from .transform import Img, Transform
 
@@ -35,26 +35,26 @@ def _(x: np.ndarray, size: Tuple[int, ...]) -> np.ndarray:
     using the `interpolate` function. There is for sure a more efficient way to
     do this.
     """
-    original = img
+    original = x
     if isinstance(original, np.ndarray):
-        img = torch.as_tensor(img)
+        x = torch.as_tensor(x)
     if len(original.shape) == 3:
         # Need to add a batch dimension.
-        img = img.unsqueeze(0)
+        x = x.unsqueeze(0)
     if has_channels_last(original):
         # Need to make it channels first (for interpolate to work).
-        img = ChannelsFirst.apply(img)
+        x = channels_first(x)
                 
-    assert has_channels_first(img), f"Image needs to have channels first (shape is {img.shape})"
+    assert has_channels_first(x), f"Image needs to have channels first (shape is {x.shape})"
             
-    img = interpolate(img, self.size, mode="area")
+    x = interpolate(x, size, mode="area")
     if isinstance(original, np.ndarray):
-        img = img.numpy()
+        x = x.numpy()
     if len(original.shape) == 3:
-        img = img[0]
+        x = x[0]
     if has_channels_last(original):
-        img = ChannelsLast.apply(img)
-    return img
+        x = channels_last(x)
+    return x
 
 
 @resize.register(spaces.Box)

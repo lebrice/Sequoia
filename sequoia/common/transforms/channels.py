@@ -184,6 +184,16 @@ def channels_first(x: Any) -> Any:
     return x
 
 
+@channels_first.register(tuple)
+def _(x: Tuple[int, ...]) -> Tuple[int, ...]:
+    if len(x) == 3:
+        # TODO: Re-enable the naming of the dimensions at some point.
+        return type(x)(x[i] for i in (2, 0, 1))
+    if len(x.shape) == 4:
+        return type(x)(x[i] for i in (0, 3, 1, 2))
+    raise NotImplementedError(x)
+
+
 @channels_first.register(np.ndarray)
 def _(x: spaces.Box) -> spaces.Box:
     if x.ndim == 4:
@@ -310,6 +320,17 @@ def _(x: np.ndarray) -> np.ndarray:
     if len(x.shape) == 3:
         return np.rollaxis(x, 0, 2)
     raise NotImplementedError(x.shape)
+
+def channels_last_if_needed(x: Any) -> Any:
+    if not has_channels_last(x):
+        return channels_last(x)
+    return x
+
+
+def channels_first_if_needed(x: Any) -> Any:
+    if not has_channels_first(x):
+        return channels_first(x)
+    return x
 
 
 @dataclass

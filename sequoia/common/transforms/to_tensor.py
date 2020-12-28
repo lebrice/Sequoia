@@ -5,29 +5,27 @@ images' errors when converting PIL images from some gym environments when
 using `ToTensor` from torchvision.
 """
 from dataclasses import dataclass
+from functools import singledispatch
 from typing import Callable, Sequence, Tuple, TypeVar, Union, overload
 
 import gym
 import numpy as np
 import torch
-from functools import singledispatch
 from gym import Space, spaces
 from PIL.Image import Image
+from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
+from sequoia.utils import singledispatchmethod
+from sequoia.utils.generic_functions import to_tensor
+from sequoia.utils.logging_utils import get_logger
 from torch import Tensor
 from torchvision.transforms import ToTensor as ToTensor_
 from torchvision.transforms import functional as F
 
-from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
-from sequoia.utils import singledispatchmethod
-from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.generic_functions import to_tensor
-from .channels import ChannelsFirstIfNeeded, ChannelsLastIfNeeded, has_channels_first, has_channels_last
+from .channels import (channels_first_if_needed, channels_last_if_needed, has_channels_first,
+                       has_channels_last)
 from .transform import Img, Transform
 
 logger = get_logger(__file__)
-
-channels_first = ChannelsFirstIfNeeded()
-channels_last = ChannelsLastIfNeeded()
 
 
 def copy_if_negative_strides(image: Img) -> Img:
@@ -70,38 +68,47 @@ def image_to_tensor(image: Union[Img, Sequence[Img], gym.Space]) -> Union[Tensor
     """
     raise NotImplementedError(f"Don't know how to convert {image} to a Tensor.")
 
+
 @image_to_tensor.register
 def _(image: Tensor) -> Tensor:
-    return channels_first(image)
+    return channels_first_if_needed(image)
 
 @image_to_tensor.register(np.ndarray)
 @image_to_tensor.register(Image)
 def _(image: Union[Image, np.ndarray]) -> Tensor:
+    """ Converts a PIL Image, or np.uint8 ndarray to a Tensor. Also reshapes it
+    to channels_first format (because ToTensor from torchvision does it also).
+    """
     image = copy_if_negative_strides(image)
 
     if isinstance(image, np.ndarray):
         # Convert to channels last if needed, because ToTensor expects to
         # receive that.
-        # TODO: It sucks that we'd have to do this. We should probably figure
-        # out how to avoid having to do this. 
-        if has_channels_first(image):
-            image = channels_last(image)
+        # TODO: It sucks that we'd have to do this.
+        image = channels_last_if_needed(image)
         # if len(image.shape) > 2 and image.shape[-1] not in {1, 3}:
         #     assert image.shape[0] in {1, 3}, image.shape
         #     image = image.transpose(1, 2, 0)
-    
+    if len(image.shape) == 4:
+        return channels_first_if_needed(
+            torch.stack(list(map(image_to_tensor, image)))
+        )
     image = F.to_tensor(image)
-    return image
+    return channels_first_if_needed(image)
+
 
 @image_to_tensor.register(list)
 @image_to_tensor.register(tuple)
 def _(image: Sequence[Img]) -> Tensor:
     return torch.stack(list(map(image_to_tensor, image)))
 
+
 @image_to_tensor.register(spaces.Box)
 def _(image: spaces.Box) -> spaces.Box:
     if image.dtype == np.uint8:
-        return channels_first(type(image)(low=0., high=1., shape=image.shape, dtype=np.float32))
+        return channels_first_if_needed(type(image)(low=0., high=1., shape=image.shape, dtype=np.float32))
+    if image.high.max() == 1. and image.low.min() == 0.:
+        return add_tensor_support(image)
     raise NotImplementedError(f"image spaces should be np.uint8: {image}")
     # return add_tensor_support(channels_first(image))
 
