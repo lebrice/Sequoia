@@ -36,18 +36,14 @@ from sequoia.settings.active.continual import (IncrementalRLSetting, ContinualRL
                                 RLSetting, TaskIncrementalRLSetting)
 from sequoia.settings.active.continual.wrappers import (NoTypedObjectsWrapper,
                                          RemoveTaskLabelsWrapper)
-from settings.assumptions.incremental import IncrementalSetting
-from settings.base import Environment
-from settings.passive import PassiveEnvironment, PassiveSetting
-from settings.passive.cl import ClassIncrementalSetting, TaskIncrementalSetting
-from settings.passive.cl.objects import (Actions, Observations,
+from sequoia.settings.assumptions.incremental import IncrementalSetting
+from sequoia.settings.base import Environment
+from sequoia.settings.passive import PassiveEnvironment, PassiveSetting
+from sequoia.settings.passive.cl import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.passive.cl.objects import (Actions, Observations,
                                          PassiveEnvironment, Results, Rewards)
 
-from methods import register_method
-
-
-
-from sequoia.methods.stable_baselines3_methods.a2c import A2CMethod, A2CModel
+from sequoia.methods import register_method
 
 @register_method
 class EWC(Method, target_setting=IncrementalSetting):  
@@ -62,24 +58,18 @@ class EWC(Method, target_setting=IncrementalSetting):
         # Learning rate of the optimizer.
         learning_rate: float = 0.001
             
-        # Fisher information type   
+        # Fisher information type     
         FIM_representation: str = choice('diagonal', 'block_diagonal', default='block_diagonal')
             
         # Coeficient of EWC regularizer
         ewc_coefficient: float = 100   
 
-        #number of timesteps for learning
-        # total_timesteps_train: int = 5000
-
         # #number of episodes for evaluation
         n_eval_episodes: int = 10
 
         #number of timesteps for FIM calculation
-        total_timesteps_fim: int = 10000
+        total_steps_fim: int = 10000
         
-        # #number of timesteps for demonstration of agents performance
-        # timesteps_demo: int = 100
-
         #how many steps of the model to collect transitions for before learning starts (DQN)
         learning_starts: int = 10000
 
@@ -88,6 +78,9 @@ class EWC(Method, target_setting=IncrementalSetting):
 
         #maximum number of epochs (supervised)
         max_epochs: int = 10
+
+        #wether to apply EWC on critic (A2C)
+        ewc_critic: bool = False
 
         #RL algo to use
         rl_algo: str = choice('DQN', 'A2C', default='A2C')
@@ -154,7 +147,7 @@ class EWC(Method, target_setting=IncrementalSetting):
                     learning_rate=self.hparams.learning_rate,
                     ewc_coefficient=self.hparams.ewc_coefficient,
                     learning_starts = self.hparams.learning_starts if not self.config.debug else 0,
-                    total_timesteps_fim=self.hparams.total_timesteps_fim if not self.config.debug else 100,
+                    total_steps_fim=self.hparams.total_steps_fim if not self.config.debug else 100,
                     buffer_size = self.hparams.buffer_size if not self.config.debug else 100,
                     policy=MlpPolicy,
                     device=self.config.device,
@@ -167,9 +160,10 @@ class EWC(Method, target_setting=IncrementalSetting):
                     fim_representation=FIM_representation,
                     learning_rate=self.hparams.learning_rate,
                     ewc_coefficient=self.hparams.ewc_coefficient,
-                    total_timesteps_fim=self.hparams.total_timesteps_fim if not self.config.debug else 100,
+                    total_steps_fim=self.hparams.total_steps_fim if not self.config.debug else 100,
                     policy=MlpPolicy_A2C, #MlpPolicy,
                     device=self.config.device,
+                    ewc_critic=self.hparams.ewc_critic
                 )
             else:
                 raise NotImplementedError
@@ -214,7 +208,7 @@ class EWC(Method, target_setting=IncrementalSetting):
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         """ Get a batch of predictions (aka actions) for these observations. """ 
         with torch.no_grad():
-            action = self.model.get_action(observations.to(self.config.device))
+            action = self.model.get_actions(observations.to(self.config.device))
         return self.target_setting.Actions(action)
 
 #copied from https://github.com/tfjgeorge/nngeometry
@@ -283,20 +277,11 @@ def FIM(model,
             probs = torch.exp(log_probs).detach()
             return (log_probs * probs**.5)
 
-    elif variant == 'r2c':
+    elif variant == 'a2c':
         def function_fim(*d):      
-            actions, values, log_probs = model(d[0].squeeze())
+            actions, values, log_probs = function(d[0])
             probs = torch.exp(log_probs).detach()
             return (log_probs * probs**.5)
-
-    elif variant == 'r2c_critic':
-        def function_fim(*d):
-            _, values, _ = model(d[0].squeeze())
-            estimates = values
-            return estimates
-        # def function_fim(*d):      
-        #     actions, values, log_probs = model(d[0].squeeze())
-        #     return values
 
     else:
         raise NotImplementedError(variant)
@@ -308,182 +293,23 @@ def FIM(model,
                          n_output=n_output)
     return representation(generator)
 
-class REINFORCE(nn.Module):
-    def __init__(self,      
-                 policy: Type[BasePolicy],
-                 env: Union[GymEnv, str], 
-                 fim_representation: Type[PMatAbstract],
-                 ewc_coefficient: float,
-                 total_timesteps_fim: int,
-                 verbose: int = 0,
-                 _init_setup_model=False,
-                 learning_rate=0.01,
-                 *args, **kwargs) -> None:
-        super().__init__()
-        self.policy_class = policy
-        self.optimizer = None
-        self.env=None
-
-        self.set_env(env)   
-        self.learning_rate = learning_rate
-        self._setup_model()
-
-        ########################################
-        ######### EWC specific things ##########
-        self.FIM: Jacobian = None
-        self.ewc_coefficient: float = ewc_coefficient
-        self.last_task_train_env:ActiveEnvironment = None
-
-        self._previous_task_id = 0
-        self.previous_model_weights: PVector = None
-        self._n_switches: int = 0 
-        self.total_timesteps_fim = total_timesteps_fim
-        ########################################
-    
-    def _setup_model(self):
-        if self.env is not None:
-            #self.policy = self.policy_class(self.observation_space, self.action_space, lr_schedule=lambda x: 1)
-            from torchvision.models import resnet18
-            encoder = resnet18(pretrained=False, num_classes=128)
-            self.policy = nn.Sequential(encoder, nn.ReLU(), nn.Linear(128,self.num_actions)
-                )
-            self.optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
-        else:
-            self.policy = None
-
-    def set_env(self, env: GymEnv) -> None:
-        if env is not None:
-            self.last_task_train_env=env
-            self.env = env
-            self.observation_space = env.observation_space
-            self.action_space = env.action_space
-            self.num_actions = self.action_space.n
-        else:
-            self.env = None
-            self.observation_space = None
-            self.action_space = None
-            self.num_actions = None
-    
-    def consolidate(self, new_FIM, task):
-        if self.FIM is None:
-            self.FIM = new_FIM
-        else:
-            #consolidate
-            if isinstance(self.FIM, PMatDiag):
-                self.FIM.data = ((deepcopy(new_FIM.data)) + self.FIM.data * (task)) / (task + 1)
-
-            elif isinstance(self.FIM.data, dict):
-                for (n, p), (n_, p_) in zip(self.FIM.data.items(),new_FIM.data.items()):
-                    for item, item_ in zip(p, p_):
-                        item.data = ((item.data*(task))+deepcopy(item_.data))/(task+1) #+ self.FIM.data[n]
-    
-    def update_policy(self, rewards, log_probs):
-        policy_gradient = PolicyHead.policy_gradient(rewards, log_probs)
-        self.optimizer.zero_grad()
-        policy_gradient.backward()
-        self.optimizer.step()
-
-    def learn(self, total_timesteps: int):
-        max_episode_num = total_timesteps
-        max_steps = 10000
-        numsteps = []
-        avg_numsteps = []
-        all_rewards = []   
-        for episode in range(max_episode_num):
-            state = self.env.reset()
-            log_probs = []
-            rewards = []
-
-            for steps in range(max_steps):
-                self.env.render()
-                action, log_prob = self.get_action_and_log_probs(state)
-                new_state, reward, done, _ = self.env.step(action)
-                log_probs.append(log_prob)
-                rewards.append(reward)
-
-                if done:
-                    self.update_policy(rewards, log_probs)
-                    numsteps.append(steps)
-                    avg_numsteps.append(np.mean(numsteps[-10:]))
-                    all_rewards.append(np.sum(rewards))
-                    if episode % 1 == 0:
-                        sys.stdout.write("episode: {}, total reward: {}, average_reward: {}, length: {}\n".format(episode, np.round(np.sum(rewards), decimals = 3),  np.round(np.mean(all_rewards[-10:]), decimals = 3), steps))
-                    break
-                
-                state = new_state
-
-
-
-    def on_task_switch(self, task_id: Optional[int]):
-        """ Executed when the task switches (to either a known or unknown task).
-        """
-        if task_id>self._previous_task_id:
-            if self.previous_model_weights is None and self._n_switches == 0:
-                print("Starting the first task, no EWC update.")
-                
-            elif task_id is None or task_id != self._previous_task_id:
-                # NOTE: We also switch between unknown tasks.
-                print(f"Switching tasks: {self._previous_task_id} -> {task_id}: ")
-                print(f"Updating the EWC 'anchor' weights.")
-                    
-                self.previous_model_weights = PVector.from_model(self.policy.q_net).clone().detach() 
-                observation_collection = torch.Tensor(self.replay_buffer.observations[:self.total_timesteps_fim]).squeeze().to(self.device)
-                #create a dataloader from the observations in the replay buffer of DQN
-                dataloader = DataLoader(TensorDataset(observation_collection), batch_size=100)
-                new_FIM = FIM(model=self.policy.q_net,      
-                            loader=dataloader,                   
-                            representation=self.FIM_representation,
-                            n_output=self.action_space.n,
-                            variant='clssification',
-                            device=self.device.type)     
-                self.consolidate(new_FIM, task=self._previous_task_id)   
-            self._n_switches += 1
-            self._previous_task_id = task_id
-    
-    def get_ewc_loss(self) -> Tensor:
-        """Gets an 'ewc-like' regularization loss.
-        """
-        if self.previous_model_weights is None:
-            # We're in the first task: do nothing.
-            return torch.tensor(0.)
-
-        v_current = PVector.from_model(self.q_net)      
-        regularizer = self.FIM.vTMv(v_current - self.previous_model_weights)
-        return regularizer
-
-    def forward(self,observation: Observations):
-        x = self.policy(observation)
-        x = F.softmax(x, dim=1)
-        return x 
-    
-    def get_action_and_log_probs(self, observations: Observations, task_id: int = None):
-        state = observations.float().unsqueeze(0)
-        probs = self.forward(torch.autograd.Variable(state))
-        highest_prob_action = np.random.choice(self.num_actions, p=np.squeeze(probs.detach().numpy()))
-        log_prob = torch.log(probs.squeeze(0)[highest_prob_action])
-        return highest_prob_action, log_prob
-
-    def get_action(self, observations: Observations, task_id: int = None):
-        state = observations.float().unsqueeze(0)
-        probs = self.forward(torch.autograd.Variable(state))
-        highest_prob_action = np.random.choice(self.num_actions, p=np.squeeze(probs.detach().numpy()))
-        return highest_prob_action
-
 class A2C_EWC(A2C):
     def __init__(self,
                  policy: Union[str, Type[DQNPolicy]],
                  env: Union[GymEnv, str],
                  fim_representation: Type[PMatAbstract],
                  ewc_coefficient: float,
-                 total_timesteps_fim: int,
+                 total_steps_fim: int,
                  verbose: int = 0,
                  _init_setup_model=False,
+                 ewc_critic=False,
                  *args, **kwargs) -> None:
         super().__init__(policy, None, verbose=1, _init_setup_model=False, *args, **kwargs)
 
         ########################################
-        ######### EWC specific things ##########
+        ######### EWC specific ##########
         self.FIM: Jacobian = None
+        self.ewc_critic = ewc_critic
         self.FIM_representation = fim_representation
         self.ewc_coefficient: float = ewc_coefficient
         self.last_task_train_env:ActiveEnvironment = None
@@ -491,8 +317,8 @@ class A2C_EWC(A2C):
         self._previous_task_id = 0
         self.previous_model_weights: PVector = None
         self._n_switches: int = 0 
-        self.total_timesteps_fim = total_timesteps_fim
-        self.observation_collector = deque(maxlen=total_timesteps_fim)
+        self.total_steps_fim = total_steps_fim
+        self.observation_collector = deque(maxlen=total_steps_fim)
 
         ########################################
     
@@ -567,7 +393,7 @@ class A2C_EWC(A2C):
         logger.record("train/value_loss", value_loss.item())
         if hasattr(self.policy, "log_std"):
             logger.record("train/std", torch.exp(self.policy.log_std).mean().item())
-
+            
     def consolidate(self, new_FIM, new_FIM_critic, task):
         if self.FIM is None:
             self.FIM = new_FIM
@@ -601,30 +427,33 @@ class A2C_EWC(A2C):
                 print(f"Updating the EWC 'anchor' weights.")
                     
                 self.previous_model_weights = PVector.from_model(self.policy).clone().detach() 
-                observation_collection = torch.cat(list(self.observation_collector)).squeeze().to(self.device) 
+                observation_collection = torch.cat(list(self.observation_collector)).squeeze().to(self.device)  
                 dataloader = DataLoader(TensorDataset(observation_collection), batch_size=self.n_steps, shuffle=False)
-                #TODO: keepng to FIMs might be not the optimal way of doing this
                 new_FIM = FIM(model=self.policy,      
-                            loader=dataloader,
+                            loader=dataloader,   
                             representation=self.FIM_representation,
-                            n_output=1, #self.action_space.n,
-                            variant='r2c',
+                            n_output=1,
+                            variant='a2c',
+                            function=self.policy,
                             device=self.device.type)    
-
-                new_FIM_critic = FIM(model=self.policy,      
-                            loader=dataloader,
-                            representation=self.FIM_representation,
-                            n_output=1, #self.action_space.n,
-                            variant='r2c_critic',
-                            device=self.device.type)   
+                if self.ewc_critic:
+                    new_FIM_critic = FIM(model=self.policy,      
+                                loader=dataloader,   
+                                representation=self.FIM_representation,
+                                n_output=1, 
+                                variant='regression',
+                                function=lambda *x: self.policy(x[0])[1],
+                                device=self.device.type)   
+                else:
+                    new_FIM_critic = None
                 self.consolidate(new_FIM,new_FIM_critic,task=self._previous_task_id) 
 
             self._n_switches += 1
             self._previous_task_id = task_id
-            self.observation_collector = deque(maxlen=self.total_timesteps_fim)
+            self.observation_collector = deque(maxlen=self.total_steps_fim)
     
     def get_ewc_loss(self) -> Tensor:  
-        """Gets an 'ewc-like' regularization loss.
+        """Gets an ewc regularization loss.
         """
         if self.ewc_coefficient==0 or self.previous_model_weights is None:
             # We're in the first task: do nothing.
@@ -639,7 +468,7 @@ class A2C_EWC(A2C):
     def forward(self,observation: Observations):
         return self.q_net(observation)
 
-    def get_action(self, observations: Observations, task_id: int = None):
+    def get_actions(self, observations: Observations, task_id: int = None):
         #TODO: multihead DQN that would make use of task id
         observation = observations[0]
         #task_id = observation[1]
@@ -652,7 +481,7 @@ class DQN_EWC(DQN):
                  env: Union[GymEnv, str],
                  fim_representation: Type[PMatAbstract],
                  ewc_coefficient: float,
-                 total_timesteps_fim: int,
+                 total_steps_fim: int,
                  verbose: int = 0,
                  _init_setup_model=False,
                  *args, **kwargs) -> None:
@@ -668,7 +497,7 @@ class DQN_EWC(DQN):
         self._previous_task_id = 0
         self.previous_model_weights: PVector = None
         self._n_switches: int = 0 
-        self.total_timesteps_fim = total_timesteps_fim
+        self.total_steps_fim = total_steps_fim
         ########################################
     
     def set_env(self, env: GymEnv) -> None:
@@ -751,13 +580,14 @@ class DQN_EWC(DQN):
                 print(f"Updating the EWC 'anchor' weights.")
                     
                 self.previous_model_weights = PVector.from_model(self.policy.q_net).clone().detach() 
-                observation_collection = torch.Tensor(self.replay_buffer.observations[:self.total_timesteps_fim]).squeeze().to(self.device)
+                observation_collection = torch.Tensor(self.replay_buffer.observations[:self.total_steps_fim]).squeeze().to(self.device)
                 #create a dataloader from the observations in the replay buffer of DQN
                 dataloader = DataLoader(TensorDataset(observation_collection), batch_size=100)
                 new_FIM = FIM(model=self.policy.q_net,      
                             loader=dataloader,                   
                             representation=self.FIM_representation,
                             n_output=self.action_space.n,
+                            function=self.policy.q_net,
                             variant='dqn',
                             device=self.device.type)     
                 self.consolidate(new_FIM, task=self._previous_task_id)   
@@ -765,7 +595,7 @@ class DQN_EWC(DQN):
             self._previous_task_id = task_id
     
     def get_ewc_loss(self) -> Tensor:
-        """Gets an 'ewc-like' regularization loss.
+        """Gets an ewc regularization loss.
         """
         if self.previous_model_weights is None:
             # We're in the first task: do nothing.
@@ -778,7 +608,7 @@ class DQN_EWC(DQN):
     def forward(self,observation: Observations):
         return self.q_net(observation)
 
-    def get_action(self, observations: Observations, task_id: int = None):
+    def get_actions(self, observations: Observations, task_id: int = None):
         #TODO: multihead DQN that would make use of task id
         observation = observations[0]
         #task_id = observation[1]
@@ -1007,11 +837,11 @@ class Supervised_EWC(nn.Module):
             # We're in the first task: do nothing.
             return torch.tensor(0.)
         
-        v_current = PVector.from_model(self)     
+        v_current = PVector.from_model(self)           
         regularizer = self.FIM.vTMv(v_current - self.previous_model_weights)
         return regularizer
 
-    def get_action(self, observations: IncrementalSetting.Observations) -> IncrementalSetting.Actions:    
+    def get_actions(self, observations: IncrementalSetting.Observations) -> IncrementalSetting.Actions:    
         logits = self(observations)
         y_pred = logits.argmax(dim=-1)
         return y_pred
