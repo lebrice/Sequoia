@@ -327,7 +327,7 @@ class PolicyHead(ClassificationHead):
             # Take a slice across the first dimension
             # env_observations = get_slice(observations, env_index)
             env_representations = representations[env_index]
-            env_actions = get_slice(actions, env_index)
+            env_actions = actions.slice(env_index)
             self.representations[env_index].append(env_representations)
             self.actions[env_index].append(env_actions)
         

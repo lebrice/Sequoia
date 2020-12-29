@@ -340,16 +340,10 @@ class BaseModel(LightningModule, Generic[SettingType]):
             assert rewards is not None
 
         loss: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)
-        for key, value in loss.to_pbar_message().items():
-            self.log(key, value, prog_bar=True)
         return {
             "loss": loss.loss,
-            "log": loss.to_log_dict(),
             "loss_object": loss,
         }
-        # The above can also easily be retrieved like this:
-        result = loss.to_pl_dict()
-        return result
 
     @auto_move_data
     def split_batch(self, batch: Any) -> Tuple[Observations, Rewards]:

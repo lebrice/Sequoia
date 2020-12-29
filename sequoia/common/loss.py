@@ -361,11 +361,13 @@ class Loss(Serializable):
                 "class_accuracy",
                 "_coefficient",
             ]
-        return cleanup(log_dict, keys_to_remove=keys_to_remove, sep="/")
-
-    def to_pbar_message(self):
+        result = cleanup(log_dict, keys_to_remove=keys_to_remove, sep="/") 
+        return result
+ 
+    def to_pbar_message(self) -> Dict[str, float]:
         """ Smaller, less-detailed version of `to_log_dict()` for progress bars.
         """
+        # NOTE: PL actually doesn't seem to accept strings as values 
         message: Dict[str, Union[str, float]] = {}
         message["Loss"] = float(self.loss)
 

@@ -112,7 +112,11 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         """ Forward pass of the Model. Returns a dict."""
         # Just testing things out here.
         assert isinstance(observations, self.Observations), observations
-        
+        single_observation_space = self.observation_space
+        if observations in single_observation_space:
+            raise RuntimeError(
+                f"Observations should be batched! (shapes: {observations.shapes}, space: {single_observation_space})"
+            )
         # Get the task labels from the observation.
         task_labels = observations.task_labels
         

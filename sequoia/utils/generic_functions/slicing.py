@@ -58,6 +58,17 @@ def _get_namedtuple_slice(value: Tuple[T, ...], indices: Sequence[int]) -> Tuple
         get_slice(v, indices) for v in value
     ])
 
+from sequoia.common.batch import Batch
+
+@get_slice.register(Batch)
+def _get_batch_slice(value: Batch, indices: Sequence[int]) -> Batch:
+    return value[:, indices]
+    # assert False, f"Removing this in favor of just doing Batch[:, indices]. "
+    # return type(value)(**{
+    #     field_name: get_slice(field_value, indices) if field_value is not None else None
+    #     for field_name, field_value in value.as_dict().items()
+    # })
+
 
 
 @singledispatch
@@ -82,6 +93,11 @@ def _set_tuple_slice(target: Tuple[T, ...], indices: Sequence[int], values: Tupl
     for target_item, values_item in zip(target, values):
         set_slice(target_item, indices, values_item)
 
+
+@set_slice.register(Batch)
+def set_batch_slice(target: Batch, indices: Sequence[int], values: Batch) -> None:
+    for key, target_values in target.items():
+        set_slice(target_values, indices, values[key])
 
 # TODO: Remove this, unless it gets used somewhere.
 # from collections import namedtuple

@@ -144,25 +144,13 @@ class BaselineModel(SemiSupervisedModel,
         )
         loss: Tensor = step_result["loss"]
         loss_object: Loss = step_result["loss_object"]
-        # return step_result
         
-        if loss != 0.:    
-            self.log("train loss", loss, on_step=True, prog_bar=True, logger=True)
-
-            for key, value in loss_object.to_pbar_message().items():
-                self.log(key, value, on_step=True, prog_bar=True)
-                logger.debug(f"{key}: {value}")
-
-            for key, value in loss_object.to_log_dict().items():
-                self.log(key, value, on_step=True, logger=True)
-
         if not isinstance(loss, Tensor) or not loss.requires_grad:
             # TODO: There might be no loss at some steps, because for instance
             # we haven't reached the end of an episode in an RL setting.
             return None
 
         if loss.requires_grad:
-            
             if isinstance(self.output_head, PolicyHead):
                 # In this case we don't do the step, since the output head has
                 # its own optimizer. TODO: Should probably improve the
@@ -170,7 +158,6 @@ class BaselineModel(SemiSupervisedModel,
                 # which would make this much simpler.
                 optimizer = self.optimizers()
                 self.manual_backward(loss, optimizer, retain_graph=True)
-  
             elif not self.trainer.train_loop.automatic_optimization:
                 optimizer = self.optimizers()
                 self.manual_backward(loss, optimizer)
@@ -205,3 +192,23 @@ class BaselineModel(SemiSupervisedModel,
             loss_name="test",
             **kwargs,
         )
+
+    def shared_step(self,
+                    batch,
+                    batch_idx,
+                    environment,
+                    loss_name,
+                    dataloader_idx=None,
+                    optimizer_idx=None):
+        results = super().shared_step(batch, batch_idx, environment, loss_name, dataloader_idx=dataloader_idx, optimizer_idx=optimizer_idx)
+        loss = results["loss_object"]
+        if loss != 0.:    
+            for key, value in loss.to_pbar_message().items():
+                assert not isinstance(value, (dict, str)), "shouldn't be nested at this point!"
+                self.log(key, value, prog_bar=True)
+                logger.debug(f"{key}: {value}")
+            
+            for key, value in loss.to_log_dict(verbose=self.config.verbose).items():
+                assert not isinstance(value, (dict, str)), "shouldn't be nested at this point!"
+                self.log(key, value, logger=True)
+        return results

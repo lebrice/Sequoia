@@ -33,6 +33,7 @@ from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.settings.base.results import Results
 from sequoia.settings.base.setting import Setting, SettingType
+from sequoia.settings import PassiveSetting, ActiveSetting
 from sequoia.utils import (Parseable, Serializable, get_logger,
                            singledispatchmethod)
 from sequoia.utils.utils import get_path_to_source_file
@@ -122,8 +123,20 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         setting_name: str = setting.get_name()
         dataset: str = setting.dataset
 
-        # Set the batch size on the setting.
-        setting.batch_size = self.hparams.batch_size
+        # Set the default batch size to use.
+        if self.hparams.batch_size is None:
+            if isinstance(setting, ActiveSetting):
+                # Default batch size of 1 in RL
+                self.hparams.batch_size = 1
+            elif isinstance(setting, PassiveSetting):
+                self.hparams.batch_size = 32
+            else:
+                warnings.warn(UserWarning(
+                    f"Dont know what batch size to use by default for setting "
+                    f"{setting}, will try 16."
+                ))
+                self.hparams.batch_size = 16
+
 
         # TODO: Should we set the 'config' on the setting from here?
         # setting.config = self.config
@@ -146,9 +159,9 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         #         self.hparams.multihead = True
 
         if isinstance(setting, ContinualRLSetting):
-            if self.hparams.batch_size == type(self.hparams).batch_size:
-                # Using default batch size.
-                self.hparams.batch_size = None
+            if self.hparams.batch_size is None:
+                # Using default batch size of 32, which is huge for RL!
+                self.hparams.batch_size = 1
 
             # Configure the baseline specifically for an RL setting.
             # TODO: Select which output head to use from the command-line?
@@ -162,6 +175,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                 # NOTE: This isn't used, since we don't call `trainer.test()`.
                 self.trainer_options.limit_test_batches = setting.max_steps
 
+        # Set the batch size on the setting.
+        setting.batch_size = self.hparams.batch_size
         self.model = self.create_model(setting)
 
         # The PolicyHead actually does its own backward pass, so we disable
@@ -181,8 +196,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
     def fit(self,
             train_env: Environment[Observations, Actions, Rewards] = None,
-            valid_env: Environment[Observations, Actions, Rewards] = None,
-            datamodule: LightningDataModule = None):
+            valid_env: Environment[Observations, Actions, Rewards] = None):
         """Called by the Setting to train the method.
         Could be called more than once before training is 'over', for instance
         when training on a series of tasks.
@@ -192,12 +206,10 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             "Setting should have been called method.configure(setting=self) "
             "before calling `fit`!"
         )
-        self.model.train()
         return self.trainer.fit(
             model=self.model,
             train_dataloader=train_env,
             val_dataloaders=valid_env,
-            datamodule=datamodule,
         )
 
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:

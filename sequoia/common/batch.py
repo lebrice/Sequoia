@@ -18,8 +18,7 @@ import gym
 import numpy as np
 import torch
 from gym import spaces
-from sequoia.utils.generic_functions import (get_slice, set_slice,
-                                             singledispatchmethod)
+from sequoia.utils.generic_functions import singledispatchmethod
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import zip_dicts
 from sequoia.utils.categorical import Categorical
@@ -623,20 +622,6 @@ class Batch(ABC, Mapping[str, T]):
                 continue
             func(value, *args, **kwargs)  # type: ignore
 
-
-@get_slice.register(Batch)
-def get_batch_slice(value: Batch, indices: Sequence[int]) -> Batch:
-    return value.slice(indices)
-    # return type(value)(**{
-    #     field_name: get_slice(field_value, indices) if field_value is not None else None
-    #     for field_name, field_value in value.as_dict().items()
-    # })
-
-
-@set_slice.register(Batch)
-def set_batch_slice(target: Batch, indices: Sequence[int], values: Batch) -> None:
-    for key, target_values in target.items():
-        set_slice(target_values, indices, values[key])
 
 
 if __name__ == "__main__":

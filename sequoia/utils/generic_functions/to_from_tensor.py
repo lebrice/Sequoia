@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from gym import Space, spaces
 from torch import Tensor
-from ._namedtuple import NamedTuple
+from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 
 
 @singledispatch
@@ -21,7 +21,7 @@ def _(space: spaces.Discrete, sample: Tensor) -> int:
     if isinstance(sample, Tensor):
         return sample.item()
     elif isinstance(sample, np.ndarray):
-        assert sample.size == 1
+        assert sample.size == 1, sample
         return int(sample)
     return sample
 
@@ -47,6 +47,24 @@ def _(space: spaces.Tuple, sample: Tuple[Union[Tensor, Any]]) -> Tuple[Union[np.
     if isinstance(sample, NamedTuple):
         return type(sample)(values_gen)
     return tuple(values_gen)
+
+from collections.abc import Mapping
+
+@from_tensor.register
+def _(space: NamedTupleSpace, sample: NamedTuple) -> NamedTuple:
+    sample_dict: Dict
+    if isinstance(sample, NamedTuple):
+        sample_dict = sample._asdict()
+    elif isinstance(sample, Mapping):
+        sample_dict = sample
+    else:
+        assert len(sample) == len(space.spaces)
+        sample_dict = dict(zip(space.names, sample)) 
+    
+    return space.dtype(**{
+        key: from_tensor(space[key], value) if key in space.names else value
+        for key, value in sample_dict.items()
+    })
 
 
 @singledispatch
@@ -82,4 +100,9 @@ def _(space: spaces.Tuple,
         to_tensor(subspace, sample[i], device)
         for i, subspace in enumerate(space.spaces)
     )
-    
+
+@to_tensor.register
+def _(space: NamedTupleSpace, sample: NamedTuple, device: torch.device = None):
+    return space.dtype(**{
+        key: to_tensor(space[i], sample[i], device=device) for i, key in enumerate(space._spaces.keys())
+    })
