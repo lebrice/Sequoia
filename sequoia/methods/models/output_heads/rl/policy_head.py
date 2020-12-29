@@ -41,7 +41,6 @@ from gym import Space, spaces
 from gym.spaces.utils import flatdim
 from gym.vector.utils.numpy_utils import concatenate, create_empty_array
 from torch import LongTensor, Tensor, nn
-from torch.distributions import Categorical as Categorical_
 from torch.distributions import Distribution
 from torch.optim.optimizer import Optimizer
 
@@ -55,6 +54,7 @@ from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import prod, flag
+from sequoia.utils.categorical import Categorical
 
 from ..classification_head import ClassificationHead, ClassificationOutput
 from ..output_head import OutputHead
@@ -62,23 +62,6 @@ from ..output_head import OutputHead
 logger = get_logger(__file__)
 T = TypeVar("T")
 
-class Categorical(Categorical_):
-    """ Simple little addition to the Categorical class, allowing it to be 'split'
-    into a sequence of distributions (to help with the splitting in the output
-    head below)
-    """ 
-    def __getitem__(self, index: int) -> "Categorical":
-        return Categorical(logits=self.logits[index])
-        # return Categorical(probs=self.probs[index])
-
-    def __iter__(self) -> Iterable["Categorical"]:
-        for index in range(self.logits.shape[0]):
-            yield self[index]
-
-
-@detach.register
-def detach_categorical(v: Categorical) -> Categorical:
-    return type(v)(logits=v.logits.detach())
 
 
 @dataclass(frozen=True)

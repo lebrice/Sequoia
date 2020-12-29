@@ -67,7 +67,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # - Try to have it learn from pixel input, if possible
         # - Try to have it learn on a multi-task RL setting,
         # TODO: Finish the ActorCritic and EpisodicA2C heads.
-        rl_output_head_algo: Optional[str] = choice({
+        rl_output_head_algo: Type[OutputHead] = choice({
             "reinforce": PolicyHead,
             "a2c_online": ActorCriticHead,
             "a2c_episodic": EpisodicA2C,
@@ -419,17 +419,14 @@ class BaseModel(LightningModule, Generic[SettingType]):
         return total_loss
 
     def preprocess_observations(self, observations: Observations) -> Observations:
-        assert isinstance(observations, Observations)
-        
+        assert isinstance(observations, self.Observations)
+
+        # TODO: Make sure this also works in the supervised setting.
         from sequoia.utils.generic_functions import to_tensor
         tensor_observations = to_tensor(self.observation_space, observations, device=self.device)
-        assert isinstance(tensor_observations, Observations), (
-            type(tensor_observations), self.observation_space,
-        )
+        assert isinstance(tensor_observations, self.Observations)
 
         return tensor_observations
-        
-        return observations
 
     def preprocess_rewards(self, reward: Rewards) -> Rewards:
         return reward

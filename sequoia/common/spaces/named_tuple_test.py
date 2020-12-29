@@ -85,12 +85,30 @@ def test_equals_tuple_space_with_same_items():
     assert tuple_space == named_tuple_space
 
 
-def test_batch_space_is_singledispatch():
-    import gym
-    from gym.vector.utils import batch_space
+def test_batch_objets_considered_valid_samples():
+    from dataclasses import dataclass, field
+    from sequoia.common.batch import Batch
+    import numpy as np
+    @dataclass(frozen=True)
+    class StateTransitionDataclass(Batch):
+        current_state: np.ndarray
+        action: int
+        next_state: np.ndarray
 
-    from .named_tuple import NamedTupleSpace
-    assert hasattr(gym.vector.utils.batch_space, "registry")
+    named_tuple_space = NamedTupleSpace(
+        current_state=Box(0, 1, (2,2)),
+        action=Discrete(2),
+        next_state=Box(0, 1, (2,2)),
+        dtype=StateTransitionDataclass,
+    )
+    obs = StateTransitionDataclass(
+        current_state=np.ones([2, 2]) / 2,
+        action=1,
+        next_state=np.zeros([2,2]),
+    )
+    assert obs in named_tuple_space
+    assert named_tuple_space.sample() in named_tuple_space
+    assert isinstance(named_tuple_space.sample(), StateTransitionDataclass)
 
 
 def test_batch_space():

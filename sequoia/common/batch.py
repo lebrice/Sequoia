@@ -4,28 +4,32 @@ different models expect.
 """
 import dataclasses
 import itertools
+import operator
 from abc import ABC
 from collections import abc as collections_abc
 from collections import namedtuple
 from dataclasses import dataclass
-from typing import (Any, ClassVar, Dict, Generic, Iterable, Iterator, KeysView,
-                    List, Mapping, NamedTuple, Optional, Sequence, Set, Tuple,
-                    Type, TypeVar, Union)
+from functools import singledispatch
+from typing import (Any, Callable, ClassVar, Dict, Generic, Iterable, Iterator,
+                    KeysView, List, Mapping, NamedTuple, Optional, Sequence,
+                    Set, Tuple, Type, TypeVar, Union)
 
 import gym
 import numpy as np
 import torch
 from gym import spaces
-from torch import Tensor
-
-from sequoia.utils.generic_functions import get_slice, set_slice, singledispatchmethod
+from sequoia.utils.generic_functions import (get_slice, set_slice,
+                                             singledispatchmethod)
 from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.utils import zip_dicts
+from sequoia.utils.categorical import Categorical
+from torch import Tensor
 
 logger = get_logger(__file__)
 
 B = TypeVar("B", bound="Batch")
-T = TypeVar("T", Tensor, np.ndarray, "Batch", Any)
-
+T = TypeVar("T", Tensor, np.ndarray, "Batch")
+V = TypeVar("V")
 
 def hasmethod(obj: Any, method_name: str) -> bool:
     return hasattr(obj, method_name) and callable(getattr(obj, method_name))
@@ -154,7 +158,7 @@ class Batch(ABC, Mapping[str, T]):
         if "_named_tuple" not in cls.__dict__:
             type(self)._namedtuple = namedtuple(type(self).__name__ + "Tuple", self.field_names)
 
-    def __iter__(self) -> Iterable[str]:
+    def __iter__(self) -> Iterator[str]:
         """ Yield the 'keys' of this object, i.e. the names of the fields. """
         return iter(self.field_names)
 
@@ -184,20 +188,28 @@ class Batch(ABC, Mapping[str, T]):
     @singledispatchmethod
     def __getitem__(self, index: Any) -> T:
         """ Select a subset of the fields of this object. Can also be indexed
-        with tuples, numpy arrays, or tensors. 
+        with tuples, boolean numpy arrays or tensors, as well as None. 
         """
         raise KeyError(index)
-
-    @__getitem__.register
-    def _(self, index: str) -> Union[Tensor, Any]:
+    
+    @__getitem__.register(type(None))
+    def _getitem_none(self, index: None) -> "Batch":
+        """ Indexing with 'None' gives back a copy with all the items having an
+        extra batch dimension.
+        """
+        return self.with_batch_dimension()
         return getattr(self, index)
 
     @__getitem__.register
-    def _(self, index: int) -> Union[Tensor, Any]:
+    def _getitem_by_name(self, index: str) -> Union[Tensor, Any]:
+        return getattr(self, index)
+
+    @__getitem__.register
+    def _getitem_by_index(self, index: int) -> Union[Tensor, Any]:
         return getattr(self, self.field_names[index])
 
     @__getitem__.register(slice)
-    def _(self, index: slice) -> "Batch":
+    def _getitem_with_slice(self, index: slice) -> "Batch":
         # NOTE: I don't think it would be a good idea to support slice indexing,
         # as it could be confusing and give the user the impression that it
         # is slicing into the tensors, rather than into the fields.
@@ -207,7 +219,6 @@ class Batch(ABC, Mapping[str, T]):
         )
         if index == slice(None, None, None) or index == slice(0, len(self), 1):
             return self
-        
 
     @__getitem__.register(type(Ellipsis))
     def _(self: B, index) -> B:
@@ -215,7 +226,7 @@ class Batch(ABC, Mapping[str, T]):
 
     @__getitem__.register(np.ndarray)
     @__getitem__.register(Tensor)
-    def _(self, index: np.ndarray) -> B:
+    def _getitem_with_array(self, index: np.ndarray) -> B:
         """
         NOTE: Indexing with just an array uses the array as a 'mask' on all
         fields, instead of indexing the "keys" of this object.
@@ -224,7 +235,7 @@ class Batch(ABC, Mapping[str, T]):
         return self[:, index]
     
     @__getitem__.register(tuple)
-    def _(self, index: Tuple[Union[slice, Tensor, np.ndarray, int], ...]):
+    def _getitem_with_tuple(self, index: Tuple[Union[slice, Tensor, np.ndarray, int], ...]):
         """ When slicing with a tuple, if the first item is an integer, we get
         the attribute at that index and slice it with the rest.
         For now, the first item in the tuple can only be either an int or an
@@ -270,11 +281,12 @@ class Batch(ABC, Mapping[str, T]):
         """
         if not isinstance(index, (int, slice, np.ndarray, Tensor)):
             raise NotImplementedError("can't slice")
-        return type(self)(**{
-            k: v.slice(index) if isinstance(v, Batch) else
-            v[index] if v is not None else None
-            for k, v in self.items()
-        })
+        return self._map(operator.itemgetter(index), recursive=True)
+        # return type(self)(**{
+        #     k: v.slice(index) if isinstance(v, Batch) else
+        #     v[index] if v is not None else None
+        #     for k, v in self.items()
+        # })
 
     def __setitem__(self, index: Union[int, str], value: Any):
         """ Set a value in slices of one or more of the fields.
@@ -411,10 +423,11 @@ class Batch(ABC, Mapping[str, T]):
     #     }
 
     def to(self, *args, **kwargs):
-        return type(self)(**{
-            name: item.to(*args, **kwargs) if isinstance(item, (Tensor, Batch)) else item
-            for name, item in self.items()
-        })
+        def _to(item, *args_, **kwargs_):
+            if hasattr(item, "to") and callable(item.to):
+                return item.to(*args_, **kwargs_)
+            return item
+        return self._map(_to, *args, **kwargs, recursive=True)
 
     def float(self, dtype=torch.float):
         return self.to(dtype=dtype)
@@ -437,10 +450,15 @@ class Batch(ABC, Mapping[str, T]):
         [type]
             [description]
         """
-        return type(self)(**{
-            k: v.detach().cpu().numpy() if isinstance(v, (Tensor, Batch)) else v
-            for k, v in self.items()
-        })
+        def _numpy(v):
+            if isinstance(v, (Tensor, Batch)):
+                return v.detach().cpu().numpy()
+            return v
+        return self._map(_numpy, recursive=True)
+        # return type(self)(**{
+        #     k: v.detach().cpu().numpy() if isinstance(v, (Tensor, Batch)) else v
+        #     for k, v in self.items()
+        # })
 
     def detach(self):
         """Returns a new Batch object of the same type, with all Tensors
@@ -452,9 +470,10 @@ class Batch(ABC, Mapping[str, T]):
             New object of the same type, but with all tensors detached.
         """
         from sequoia.utils.generic_functions import detach
-        return type(self)(**detach({
-            k: v.detach() if isinstance(v, (Tensor, Batch)) else v for k, v in self.items()
-        }))
+        return self._map(detach)
+        # return type(self)(**detach({
+        #     k: v.detach() if isinstance(v, (Tensor, Batch)) else v for k, v in self.items()
+        # }))
 
     def cpu(self, **kwargs):
         """Returns a new Batch object of the same type, with all Tensors
@@ -520,6 +539,89 @@ class Batch(ABC, Mapping[str, T]):
                     return None
         return batch_size
 
+    def with_batch_dimension(self: B) -> B:
+        """ Returns a copy of `self` where all numpy arrays / tensors have an
+        extra `batch` dimension of size 1.
+        """
+        # TODO: Do we 'wrap' the `None` values? or keep them as-is?
+        @singledispatch
+        def unsqueeze(v: Any) -> Any:
+            if v is None:
+                return v
+            return np.asarray([v])
+
+        @unsqueeze.register(Categorical)
+        @unsqueeze.register(np.ndarray)
+        @unsqueeze.register(Tensor)
+        def _unsqueeze_array(v: Union[np.ndarray, Tensor, Categorical]) -> Union[np.ndarray, Tensor, Categorical]:
+            return v[None]
+
+        return self._map(unsqueeze)
+
+    def remove_batch_dimension(self: B) -> B:
+        """ Returns a copy of `self` where all numpy arrays / tensors have an
+        the extra `batch` dimension removed.
+
+        Raises an error if any non-None value doesn't have a batch dimension of
+        size 1. 
+        """
+        @singledispatch
+        def squeeze(v: Any) -> Any:
+            if v is None:
+                return v
+            raise NotImplementedError(v)
+
+        @squeeze.register(Categorical)
+        def _squeeze_categorical(v: Categorical) -> Categorical:
+            return type(v)(logits=v.logits[0])
+
+        @squeeze.register(np.ndarray)
+        @squeeze.register(Tensor)
+        def _squeeze_array(v: Union[np.ndarray, Tensor]) -> Union[np.ndarray, Tensor]:
+            if not v.shape or v.shape[0] != 1:
+                raise RuntimeError(f"value {v} doesn't have a batch dimension of size 1.")
+            return v[0]
+
+        return self._map(squeeze)
+
+    def _map(self: B,
+             func: Callable,
+             *args,
+             recursive: bool = True,
+             **kwargs) -> B:
+        """ Returns an object of the same type as `self`, where function `func`
+        has been applied (with positional args `args` and keyword-arguments
+        `kwargs`) to all its values, (inluding the values of nested `Batch`
+        objects if `recursive` is True). 
+        """
+        new_items = {}
+        for key, value in self.items():
+            if isinstance(value, Batch):
+                if not recursive:
+                    # don't apply the function to nested Batch objects unless
+                    # `recursive` is True.
+                    new_items[key] = value
+                else:
+                    new_items[key] = value._map(func, *args, recursive=recursive, **kwargs)
+            else:
+                new_items[key] = func(value, *args, **kwargs)  # type: ignore
+        return type(self)(**new_items)
+
+    def _apply(self: B,
+               func: Callable[[T, Any], None],
+               *args,
+               recursive: bool = True,
+               **kwargs) -> None:
+        """ Applies function `func` to all the values in `self`, and optionally
+        to all its nested values when `recursive` is True. 
+        
+        Returns None, as this assumes that `func` modifies the values in-place.
+        """
+        for key, value in self.items():
+            if isinstance(value, Batch) and not recursive:
+                # Skip any Batch objects if `recursive` is False.
+                continue
+            func(value, *args, **kwargs)  # type: ignore
 
 
 @get_slice.register(Batch)

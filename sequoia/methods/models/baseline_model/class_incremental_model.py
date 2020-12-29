@@ -140,6 +140,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         if isinstance(task_labels, Tensor):
             unique_task_labels = torch.unique(task_labels).tolist()
         else:
+
             # In case task_labels is a list of numpy arrays, convert it to a
             # list of elements (optional ints).
             task_labels = [int(label) if label != None else None for label in task_labels]

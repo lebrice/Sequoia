@@ -82,7 +82,6 @@ class ActorCriticHead(ClassificationHead):
 
         self.optimizer = torch.optim.Adam(self.actor.parameters(), lr=self.hparams.learning_rate)
         self.optimizer_critic = torch.optim.Adam(self.critic.parameters(), lr=self.hparams.learning_rate)
-        
 
     def forward(self,
                 observations: ContinualRLSetting.Observations,

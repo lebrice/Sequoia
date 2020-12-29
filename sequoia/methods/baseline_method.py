@@ -172,7 +172,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             # at each step.
             self.trainer_options.automatic_optimization = False
 
-
         self.trainer = self.create_trainer(setting)
 
         # Save the types to use.
@@ -193,6 +192,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             "Setting should have been called method.configure(setting=self) "
             "before calling `fit`!"
         )
+        self.model.train()
         return self.trainer.fit(
             model=self.model,
             train_dataloader=train_env,
@@ -204,13 +204,41 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         """ Get a batch of predictions (actions) for a batch of observations.
         
         This gets called by the Setting during the test loop.
+        
+        TODO: There is a mismatch here between the type of the output of this
+        method (`Actions`) and the type of `action_space`: we should either have
+        a `Discrete` action space, and this method should return ints, or this
+        method should return `Actions`, and the `action_space` should be a
+        `NamedTupleSpace` or something similar.
+        Either way, `get_actions(obs, action_space) in action_space` should
+        always be `True`.
         """
         self.model.eval()
+
+        # Check if the observation is batched or not. If it isn't, add a
+        # batch dimension to the inputs, and later remove any batch
+        # dimension from the produced actions before they get sent back to
+        # the Setting.
+        single_obs_space = self.model.observation_space
+
+        model_inputs = observations
+        if observations in single_obs_space:
+            model_inputs = observations.with_batch_dimension()
+
         with torch.no_grad():
-            forward_pass = self.model(observations)
+            forward_pass = self.model(model_inputs)
         # Simplified this for now, but we could add more flexibility later.
         assert isinstance(forward_pass, ForwardPass)
-        return forward_pass.actions
+
+        # If the original observations didn't have a batch dimension,
+        # Remove the batch dimension from the results.
+        if observations in single_obs_space:
+            forward_pass = forward_pass.remove_batch_dimension()
+
+        model_outputs: Actions = forward_pass.actions
+        actions = model_outputs.actions_np
+        assert actions in action_space, (actions, action_space)
+        return actions
 
     def create_model(self, setting: SettingType) -> BaselineModel[SettingType]:
         """Creates the BaselineModel (a LightningModule) for the given Setting.

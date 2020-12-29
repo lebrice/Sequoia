@@ -158,10 +158,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # Total number of steps in the test loop. By default, takes the value of
     # `test_steps_per_task * nb_tasks`.
     test_steps: Optional[int] = None
-    
-    
-    
-    
+
     # Standard deviation of the multiplicative Gaussian noise that is used to
     # create the values of the env attributes for each task. 
     task_noise_std: float = 0.2
@@ -338,6 +335,14 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # Create a temporary environment so we can extract the spaces and create
         # the task schedules.
         with self._make_env(self.dataset, self._temp_wrappers()) as temp_env:
+            # FIXME: Replacing the observation space dtypes from their original
+            # 'generated' NamedTuples to self.Observations. The alternative
+            # would be to add another argument to the MultiTaskEnv wrapper, to
+            # pass down a dtype to be set on its observation_space's `dtype`
+            # attribute, which would be ugly.
+            assert isinstance(temp_env.observation_space, NamedTupleSpace)
+            temp_env.observation_space.dtype = self.Observations
+
             # Populate the task schedules created above.
             if not self.train_task_schedule:
                 train_change_steps = list(range(0, self.max_steps, self.steps_per_task))

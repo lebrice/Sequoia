@@ -232,7 +232,11 @@ class MultiTaskEnvironment(gym.Wrapper):
             
         observation, rewards, done, info = super().step(*args, **kwargs)
         if self.add_task_id_to_obs:
-            observation = add_task_labels(observation, self.current_task_id)
+            # TODO: Not actually using the add_task_labels in this case.
+            if isinstance(self.observation_space, NamedTupleSpace):
+                observation = self.observation_space.dtype(x=observation, task_labels=self.current_task_id)
+            else:
+                observation = add_task_labels(observation, self.current_task_id)
         if self.add_task_dict_to_info:
             info.update(self.current_task)
 

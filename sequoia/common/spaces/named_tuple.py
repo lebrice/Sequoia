@@ -75,9 +75,12 @@ class NamedTupleSpace(spaces.Tuple):
         return self.dtype(*super().sample())
 
     def contains(self, x) -> bool:
-        # TODO: Should we accept dataclasses as valid namedtuple space items?
         if isinstance(x, MappingABC):
-            x = tuple(x.values())
+            # TODO: If a namedtuple/dataclass has more items than those required
+            # by this space, should we consider it valid if all its items are
+            # contained in their respective spaces in `self`?
+            x = tuple(x[k] for k in self.names)
+            # x = tuple(x.values())
         return super().contains(x)
 
 
