@@ -1,7 +1,7 @@
 pytorch-lightning
-# gym[atari]
 # Fork of gym with more flexible utility functions.
 git+https://www.github.com/lebrice/gym@easier_custom_spaces
+gym[atari]
 simple_parsing>=0.0.12.post2
 matplotlib
 torch>=1.7
@@ -16,7 +16,7 @@ wandb
 plotly
 pandas
 # Only for python < 3.8
-singledispatchmethod
+singledispatchmethod;python_version<'3.8'
 pytorch-lightning-bolts
 # Requirements for running tests:
 pytest-timeout
