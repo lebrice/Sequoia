@@ -8,8 +8,7 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader
 from pytorch_lightning.core.decorators import auto_move_data
 
-from sequoia.common.config import Config
-from sequoia.common.batch import Batch
+from sequoia.common import Config, Batch, Loss
 
 from sequoia.settings import ClassIncrementalSetting, Environment, Observations, Actions, Rewards
 from sequoia.settings.assumptions.incremental import IncrementalSetting
@@ -17,7 +16,7 @@ from sequoia.settings.assumptions.incremental import IncrementalSetting
 from sequoia.utils import dict_intersection, zip_dicts, prod
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.generic_functions import get_slice, set_slice
-
+from ..forward_pass import ForwardPass
 # from .semi_supervised_model import SemiSupervisedModel
 from .base_model import BaseModel
 from ..output_heads import OutputHead
@@ -40,7 +39,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # Wether to create one output head per task.
         # TODO: Does it make no sense to have multihead=True when the model doesn't
         # have access to task labels. Need to figure out how to manage this between TaskIncremental and Classifier.
-        multihead: bool = False
+        multihead: Optional[bool] = None
 
     def __init__(self, setting: IncrementalSetting, hparams: HParams, config: Config):
         self._output_head: OutputHead = None
@@ -113,10 +112,9 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # Just testing things out here.
         assert isinstance(observations, self.Observations), observations
         single_observation_space = self.observation_space
-        if observations in single_observation_space:
-            raise RuntimeError(
-                f"Observations should be batched! (shapes: {observations.shapes}, space: {single_observation_space})"
-            )
+        if observations[0].shape == single_observation_space[0].shape:
+            raise RuntimeError("Observations should be batched!")
+        
         # Get the task labels from the observation.
         task_labels = observations.task_labels
         
@@ -141,10 +139,9 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             # the current output head (at attribute `self.output_head`).
             return super().forward(observations)
 
-        if isinstance(task_labels, Tensor):
-            unique_task_labels = torch.unique(task_labels).tolist()
+        if isinstance(task_labels, (Tensor, np.ndarray)):
+            unique_task_labels = list(set(task_labels.tolist()))
         else:
-
             # In case task_labels is a list of numpy arrays, convert it to a
             # list of elements (optional ints).
             task_labels = [int(label) if label != None else None for label in task_labels]
@@ -212,17 +209,86 @@ class ClassIncrementalModel(BaseModel[SettingType]):
            
         return merged_forward_pass
 
-    @contextmanager
-    def temporarily_in_task(self, task_id: Optional[int]):
-        """WIP: This would be used to temporarily change the 'output_head'
-        attribute,
-        """
-        start_task_id = self.current_task
-        assert isinstance(task_id, int) or task_id is None, task_id
-        self.current_task = task_id
-        yield
-        self.current_task = start_task_id
-    
+    def output_head_loss(self,
+                         forward_pass: ForwardPass,
+                         actions: Actions,
+                         rewards: Rewards) -> Loss:
+        # TODO: WIP: Ask each output head for its contribution to the loss.
+        observations: IncrementalSetting.Observations = forward_pass.observations
+        task_labels = observations.task_labels
+        batch_size = forward_pass.batch_size
+        assert batch_size is not None
+
+        if not self.hp.multihead:
+            # Default behaviour: use the (only) output head.
+            return super().output_head_loss(forward_pass, actions=actions, rewards=rewards)
+
+        if task_labels is None:
+            if self.task_inference_module:
+                # TODO: Predict the task ids using some kind of task
+                # inference mechanism.
+                task_labels = self.task_inference_module(forward_pass)
+            else:
+                raise NotImplementedError(
+                    f"Multihead model doesn't have access to task labels and "
+                    f"doesn't have a task inference module!"
+                )
+                # TODO: Maybe use the last trained output head, by default.
+
+        assert task_labels is not None
+        unique_task_labels: List[Optional[int]] = list(set(task_labels.tolist()))
+
+        if len(unique_task_labels) == 1:
+            # If everything is in the same task, no need to split/merge.
+            task_id = unique_task_labels[0]
+            with self.temporarily_in_task(task_id):
+                # Only one loss to fetch, since all items are from the same task.
+                # Default behaviour: use the (only) output head.
+                return super().output_head_loss(forward_pass, actions=actions, rewards=rewards)
+
+        all_task_indices: Dict[Any, Tensor] = {}
+        
+        # Get the indices for each task.
+        for task_id in unique_task_labels:
+            if isinstance(task_labels, (Tensor, np.ndarray)):
+                task_indices = np.arange(batch_size)[task_labels == task_id]
+            else:
+                task_indices = torch.as_tensor([
+                    i for i, task_label in enumerate(task_labels)
+                    if task_label == task_id
+                ])
+            all_task_indices[task_id] = task_indices
+
+        total_loss = Loss("")
+
+        # Split off the input batch, do a forward pass for each sub-task.
+        # (could be done in parallel but whatever.)
+        # TODO: Also, not sure if this will play well with DP, DDP, etc.
+        for task_id, task_indices in all_task_indices.items():
+            # # Make a partial observation without the task labels, so that
+            # # super().forward will use the current output head.
+            forward_pass_slice = get_slice(forward_pass, task_indices)
+            actions_slice = get_slice(actions, task_indices)
+            rewards_slice = get_slice(rewards, task_indices)
+
+            logger.debug(
+                f"Getting output head loss"
+                f"{len(task_indices)/batch_size:.0%} of the batch which "
+                f"has task_id of '{task_id}'."
+            )
+            
+            with self.temporarily_in_task(task_id):
+                task_output_head_loss = super().output_head_loss(
+                    forward_pass_slice,
+                    actions=actions_slice,
+                    rewards=rewards_slice,
+                )
+                logger.debug(f"Task {task_id} loss: {task_output_head_loss}")
+                total_loss += task_output_head_loss
+
+        return total_loss
+
+
     def shared_step(self,
                     batch: Tuple[Observations, Optional[Rewards]],
                     batch_idx: int,
@@ -263,6 +329,17 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             pass    
         if task_id is not None and self.hp.multihead and str(task_id) not in self.output_heads:
             self.output_heads[str(task_id)] = self.create_output_head(self.setting)
+
+    @contextmanager
+    def temporarily_in_task(self, task_id: Optional[int]):
+        """WIP: This would be used to temporarily change the 'output_head'
+        attribute,
+        """
+        start_task_id = self.current_task
+        assert isinstance(task_id, int) or task_id is None, task_id
+        self.current_task = task_id
+        yield
+        self.current_task = start_task_id
 
     @property
     def current_task_classes(self) -> List[int]:

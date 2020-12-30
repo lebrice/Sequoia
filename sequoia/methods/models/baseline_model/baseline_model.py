@@ -20,7 +20,7 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from torchvision import models as tv_models
 
-from sequoia.settings import Setting, ActiveSetting, PassiveSetting
+from sequoia.settings import Setting, ActiveSetting, PassiveSetting, Environment
 from sequoia.common.config import Config
 from sequoia.common.loss import Loss
 from sequoia.methods.aux_tasks.auxiliary_task import AuxiliaryTask
@@ -50,8 +50,8 @@ from .semi_supervised_model import SemiSupervisedModel
 
 
 class BaselineModel(SemiSupervisedModel,
-                    ClassIncrementalModel,
                     SelfSupervisedModel,
+                    ClassIncrementalModel,
                     Generic[SettingType]):
     """ Base model LightningModule (nn.Module extended by pytorch-lightning)
     
@@ -194,15 +194,17 @@ class BaselineModel(SemiSupervisedModel,
         )
 
     def shared_step(self,
-                    batch,
-                    batch_idx,
-                    environment,
-                    loss_name,
-                    dataloader_idx=None,
-                    optimizer_idx=None):
+                    batch: Tuple[Observations, Optional[Rewards]],
+                    batch_idx: int,
+                    environment: Environment,
+                    loss_name: str,
+                    dataloader_idx: int = None,
+                    optimizer_idx: int = None) -> Dict:
         results = super().shared_step(batch, batch_idx, environment, loss_name, dataloader_idx=dataloader_idx, optimizer_idx=optimizer_idx)
+        loss_tensor = results["loss"]
         loss = results["loss_object"]
-        if loss != 0.:    
+        
+        if loss_tensor != 0.:
             for key, value in loss.to_pbar_message().items():
                 assert not isinstance(value, (dict, str)), "shouldn't be nested at this point!"
                 self.log(key, value, prog_bar=True)

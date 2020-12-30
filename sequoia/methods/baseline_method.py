@@ -120,9 +120,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         """
         # Note: this here is temporary, just tinkering with wandb atm.
         method_name: str = self.get_name()
-        setting_name: str = setting.get_name()
-        dataset: str = setting.dataset
-
+        
         # Set the default batch size to use.
         if self.hparams.batch_size is None:
             if isinstance(setting, ActiveSetting):
@@ -137,7 +135,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                 ))
                 self.hparams.batch_size = 16
 
-
         # TODO: Should we set the 'config' on the setting from here?
         # setting.config = self.config
         if setting.config == self.config:
@@ -148,15 +145,20 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         else:
             assert setting.config != Config(), "Weird, both configs have default values.."
             self.config = setting.config
-
+        
+        setting_name: str = setting.get_name()
+        dataset: str = setting.dataset
         wandb_options: WandbLoggerConfig = self.trainer_options.wandb
         if wandb_options.run_name is None:
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
 
-        # # TODO: Debug multihead model in RL.
-        # if isinstance(setting, IncrementalSetting):
-        #     if setting.task_labels_at_test_time:
-        #         self.hparams.multihead = True
+        # TODO: Debug multihead model in RL.
+        if isinstance(setting, IncrementalSetting):
+            if self.hparams.multihead is None:
+                # Use a multi-head model by default if the task labels are
+                # available at both train and test time.
+                assert setting.task_labels_at_train_time
+                self.hparams.multihead = setting.task_labels_at_test_time
 
         if isinstance(setting, ContinualRLSetting):
             if self.hparams.batch_size is None:
@@ -234,7 +236,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         single_obs_space = self.model.observation_space
 
         model_inputs = observations
-        if observations in single_obs_space:
+        if observations[0].shape == single_obs_space[0].shape:
             model_inputs = observations.with_batch_dimension()
 
         with torch.no_grad():
@@ -244,7 +246,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         # If the original observations didn't have a batch dimension,
         # Remove the batch dimension from the results.
-        if observations in single_obs_space:
+        if observations[0].shape == single_obs_space[0].shape:
             forward_pass = forward_pass.remove_batch_dimension()
 
         model_outputs: Actions = forward_pass.actions

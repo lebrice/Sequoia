@@ -405,12 +405,22 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
             # For now though, we only have one "prediction" in the actions:
             actions = forward_pass.actions
-
             # So far we only use 'y' from the rewards in the output head.
-            supervised_loss = self.output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
+            supervised_loss = self.output_head_loss(forward_pass, actions=actions, rewards=rewards)
             total_loss += supervised_loss
 
         return total_loss
+
+    def output_head_loss(self,
+                         forward_pass: ForwardPass,
+                         actions: Actions,
+                         rewards: Rewards) -> Loss:
+        """ Gets the Loss of the output head. """
+        return self.output_head.get_loss(
+            forward_pass,
+            actions=actions,
+            rewards=rewards,
+        )
 
     def preprocess_observations(self, observations: Observations) -> Observations:
         assert isinstance(observations, self.Observations)
@@ -444,12 +454,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
     def learning_rate(self, value: float) -> None:
         self.hp.learning_rate = value
 
-    def on_task_switch(self, task_id: int, training: bool = False) -> None:
+    def on_task_switch(self, task_id: Optional[int]) -> None:
         """Called when switching between tasks.
         
         Args:
-            task_id (int): the Id of the task.
-            training (bool): Wether we are currently training or valid/testing.
+            task_id (Optional[int]): the Id of the task.
         """
 
     def summarize(self, mode: str = ModelSummary.MODE_DEFAULT) -> ModelSummary:

@@ -112,7 +112,7 @@ class SelfSupervisedModel(BaseModel[SettingType]):
 
         return tasks
     
-    def on_task_switch(self, task_id: int) -> None:
+    def on_task_switch(self, task_id: Optional[int]) -> None:
         """Called when switching between tasks.
 
         Args:
