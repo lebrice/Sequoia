@@ -106,3 +106,30 @@ def _(space: NamedTupleSpace, sample: NamedTuple, device: torch.device = None):
     return space.dtype(**{
         key: to_tensor(space[i], sample[i], device=device) for i, key in enumerate(space._spaces.keys())
     })
+
+from sequoia.common.spaces.sparse import Sparse
+
+@to_tensor.register(Sparse)
+def sparse_sample_to_tensor(space: Sparse,
+                            sample: Union[Optional[Any], np.ndarray],
+                            device: torch.device = None) -> Optional[Union[Tensor, np.ndarray]]:
+    if space.sparsity == 1.:
+        if isinstance(space.base, spaces.MultiDiscrete):
+            assert all(v == None for v in sample)
+            return np.array([
+                None if v == None else v for v in sample
+            ])
+        if sample is not None:
+            assert isinstance(sample, np.ndarray) and sample.dtype == np.object
+            assert not sample.shape
+        return None
+    if space.sparsity == 0.:
+        # Do we need to convert dtypes here though?
+        return to_tensor(space.base, sample, device)
+    # 0 < sparsity < 1
+    if isinstance(sample, np.ndarray) and sample.dtype == np.object:
+        return np.array([
+            None if v == None else v for v in sample
+        ])
+
+    assert False, (space, sample)
