@@ -116,8 +116,8 @@ class Batch(ABC, Mapping[str, T]):
     
     >>> observations.device  
     device(type='cpu')
-    >>> observations.to("cuda").device
-    device(type='cuda', index=0)
+    >>> # observations.to("cuda").device
+    >>> # device(type='cuda', index=0)
     
     >>> observations[0]
     tensor([[0, 1, 2, 3, 4],

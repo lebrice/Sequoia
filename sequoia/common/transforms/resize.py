@@ -98,6 +98,14 @@ class Resize(Resize_, Transform[Img, Img]):
         super().__init__(size, interpolation)
         # self.size = size
         # self.interpolation = interpolation
+    def __call__(self, img):
+        # TODO: (@lebrice) Weirdly enough, it seems that even though we
+        # implement forward below, and __call__ is supposed to just use
+        # `forward`, the base class somehow doesn't use our implementation, so
+        # the test
+        # env_dataset_test.py::test_iteration_with_more_than_one_wrapper would
+        # fail if we don't have this __call__ explicitly implemented,
+        return self.forward(img)
 
     def forward(self, img: Img) -> Img:
         return resize(img, size=self.size)

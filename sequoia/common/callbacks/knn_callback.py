@@ -294,7 +294,8 @@ def get_hidden_codes_array(model: LightningModule, dataloader: DataLoader, descr
     y_list: List[np.ndarray] = []
 
     for batch in pbar(dataloader, description, leave=False):
-        x, y = model.preprocess_batch(batch)
+        # TODO: Debug this, make sure this callback still works.
+        x, y = batch
         assert isinstance(x, Tensor), type(x)
 
         # We only do KNN with examples that have a label.

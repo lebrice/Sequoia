@@ -190,7 +190,6 @@ def hide_task_labels_in_space(observation: Space) -> Space:
     )
 
 
-
 @hide_task_labels.register
 def _hide_task_labels_in_namedtuple_space(observation: NamedTupleSpace) -> NamedTupleSpace:
     spaces = observation._spaces.copy()

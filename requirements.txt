@@ -1,6 +1,8 @@
 pytorch-lightning
 # Fork of gym with more flexible utility functions.
 git+https://www.github.com/lebrice/gym@easier_custom_spaces
+# nngeometry module used in the EWC method
+git+https://github.com/oleksost/nngeometry.git
 gym[atari]
 simple_parsing>=0.0.12.post2
 matplotlib

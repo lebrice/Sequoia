@@ -120,7 +120,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             add_tensor_support
         self.representation_space = add_tensor_support(self.representation_space)
 
-        self.output_head = self.create_output_head(setting)
+        self.output_head: OutputHead = self.create_output_head(setting)
 
     @auto_move_data
     def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
@@ -162,6 +162,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
         if isinstance(h_x, list) and len(h_x) == 1:
             # Some pretrained encoders sometimes give back a list with one tensor. (?)
             h_x = h_x[0]
+        if not isinstance(h_x, Tensor):
+            h_x = torch.as_tensor(h_x, device=self.device)
         assert isinstance(h_x, Tensor)
         return h_x
 
@@ -424,11 +426,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def preprocess_observations(self, observations: Observations) -> Observations:
         assert isinstance(observations, self.Observations)
-
+        return observations
         # TODO: Make sure this also works in the supervised setting.
         from sequoia.utils.generic_functions import to_tensor
-        tensor_observations = to_tensor(self.observation_space, observations, device=self.device)
-        assert isinstance(tensor_observations, self.Observations)
+        # tensor_observations = to_tensor(self.observation_space, observations, device=self.device)
+        # assert isinstance(tensor_observations, self.Observations)
 
         return tensor_observations
 

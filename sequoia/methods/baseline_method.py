@@ -26,6 +26,7 @@ from sequoia.common.callbacks import KnnCallback
 from sequoia.common.config import WandbLoggerConfig
 from sequoia.common.gym_wrappers import (AddDoneToObservation,
                                          AddInfoToObservation)
+from sequoia.settings import ActiveSetting, PassiveSetting
 from sequoia.settings.active.continual import ContinualRLSetting
 from sequoia.settings.assumptions.incremental import IncrementalSetting
 from sequoia.settings.base import Method
@@ -33,7 +34,6 @@ from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.settings.base.results import Results
 from sequoia.settings.base.setting import Setting, SettingType
-from sequoia.settings import PassiveSetting, ActiveSetting
 from sequoia.utils import (Parseable, Serializable, get_logger,
                            singledispatchmethod)
 from sequoia.utils.utils import get_path_to_source_file
@@ -74,22 +74,29 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # should we expect the hparams to be passed? Should we create them from
         # the **kwargs? Should we parse them from the command-line? 
         
-        # Option 1: Use the default values:
-        # self.hparams = hparams or BaselineModel.HParams()
-        # self.config = config or Config()
-        # self.trainer_options = trainer_options or TrainerConfig()
         
         # Option 2: Try to use the keyword arguments to create the hparams,
         # config and trainer options.
-        # self.hparams = hparams or BaselineModel.HParams.from_dict(kwargs, drop_extra_fields=True)
-        # self.config = config or Config.from_dict(kwargs, drop_extra_fields=True)
-        # self.trainer_options = trainer_options or TrainerConfig.from_dict(kwargs, drop_extra_fields=True)
+        if kwargs:    
+            self.hparams = hparams or BaselineModel.HParams.from_dict(kwargs, drop_extra_fields=True)
+            self.config = config or Config.from_dict(kwargs, drop_extra_fields=True)
+            self.trainer_options = trainer_options or TrainerConfig.from_dict(kwargs, drop_extra_fields=True)
         
-        # Option 3: Parse them from the command-line.
-        assert not kwargs, "Don't pass any extra kwargs to the constructor!"
-        self.hparams = hparams or BaselineModel.HParams.from_args(strict=False)
-        self.config = config or Config.from_args(strict=False)
-        self.trainer_options = trainer_options or TrainerConfig.from_args(strict=False)
+        elif self._argv:
+            # Since the method was parsed from the command-line, parse those as
+            # well from the argv that were used to create the Method.
+            # Option 3: Parse them from the command-line.
+            # assert not kwargs, "Don't pass any extra kwargs to the constructor!"
+            self.hparams = hparams or BaselineModel.HParams.from_args(self._argv, strict=False)
+            self.config = config or Config.from_args(self._argv, strict=False)
+            self.trainer_options = trainer_options or TrainerConfig.from_args(self._argv, strict=False)
+        
+        else:
+            # Option 1: Use the default values:
+            self.hparams = hparams or BaselineModel.HParams()
+            self.config = config or Config()
+            self.trainer_options = trainer_options or TrainerConfig()
+
 
         if self.config.debug:
             # Disable wandb logging if debug is True.
@@ -313,7 +320,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
     def create_callbacks(self, setting: SettingType) -> List[Callback]:
         # TODO: Move this to something like a `configure_callbacks` method 
         # in the model, once PL adds it.
-        from sequoia.common.callbacks.vae_callback import SaveVaeSamplesCallback
+        from sequoia.common.callbacks.vae_callback import \
+            SaveVaeSamplesCallback
         return [
             # self.hparams.knn_callback,
             # SaveVaeSamplesCallback(),
@@ -353,27 +361,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             ))
         super().__init_subclass__(*args, **kwargs)
 
-    def upgrade_hparams(self, new_type: Type[BaselineModel.HParams]) -> BaselineModel.HParams:
-        """Upgrades the current hparams to the new type, filling in the new
-        values from the command-line.
-
-        Args:
-            new_type (Type[HParams]): Type of HParams to upgrade to.
-            argv (Union[str, List[str]], optional): Command-line arguments to
-            use to set the missing values. Defaults to None, in which case the
-            values in `sys.argv` are used.
-
-        Returns:
-            HParams: [description]
-        """
-        argv = self._argv
-        logger.debug(f"Current method was originally created from args {argv}")
-        new_hparams: BaselineModel.HParams = new_type.from_args(argv)
-        logger.debug(f"Hparams for that type of model (from the method): {self.hparams}")
-        logger.debug(f"Hparams for that type of model (from command-line): {new_hparams}")
-        return new_hparams
-
-    def split_batch(self, batch: Any) -> Tuple[Batch, Batch]:
+    def split_batch(self, batch: Any) -> Tuple[Observations, Optional[Rewards]]:
         return self.model.split_batch(batch)
 
     def on_task_switch(self, task_id: Optional[int]) -> None:

@@ -42,69 +42,46 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         multihead: Optional[bool] = None
 
     def __init__(self, setting: IncrementalSetting, hparams: HParams, config: Config):
-        self._output_head: OutputHead = None
         super().__init__(setting=setting, hparams=hparams, config=config)
-        
-
+        self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()
         self.hp: ClassIncrementalModel.HParams
         self.setting: SettingType
 
         # TODO: Add an optional task inference mechanism for ClassIncremental
         # methods!
-        self.task_inference_module: nn.Module = None
-        
+        self.task_inference_module: Optional[nn.Module] = None
+
         self.previous_task: Optional[int] = None
         self.current_task: Optional[int] = None
 
-        self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()
-        if self.hp.multihead:
-            output_head = self.create_output_head(self.setting)
-            self.output_head = output_head
-            self.output_heads[str(self.setting.current_task_id)] = output_head
-
     @property
-    def output_head(self) -> OutputHead:
-        """ Get the output head for the current task.
+    def default_output_head(self) -> OutputHead:
+        return self.output_heads[str(None)]
 
-        FIXME: It's generally bad practice to do heavy computation on a property
-        so we should probably add something like a get_output_head(task) method.
-        """
-        if self.hp.multihead:
-            if ((self.training and self.setting.task_labels_at_train_time) or
-                (not self.training and self.setting.task_labels_at_test_time)):
-                current_task_id = self.current_task
-                # current_task_id = self.setting.current_task_id
+    # @property
+    # def output_head(self) -> OutputHead:
+    #     """ Get the output head for the current task.
 
-            elif self.task_inference_module is not None:
-                # current_task_id = self.task_inference_module(...)
-                raise NotImplementedError("TODO")
-            
-            # TODO: Look into this, seems a bit weird.
-            elif self._output_head is not None:
-                # Just return the current output head.
-                return self._output_head
-            else:
-                raise RuntimeError("No way of determining the task id and output head is None!")
+    #     FIXME: It's generally bad practice to do heavy computation on a property
+    #     so we should probably add something like a get_output_head(task) method.
+    #     """
+    #     if self.setting.nb_tasks == 1 or not self.hp.multihead:
+    #         return self.output_heads[str(None)]
+        
+    #     # We have a multi-headed model (often means we have task labels, but not
+    #     # necessarily).
+    #     key = str(self.current_task)
+    #     if key not in self.output_heads:
+    #         self.output_heads[key] = self.create_output_head(self.setting)
+    #     return self.output_heads[key]
 
-            key = str(current_task_id)
-            if key not in self.output_heads:
-                # Create the output head, since it's not already in there.
-                output_head = self.create_output_head(self.setting)
-                self.output_heads[key] = output_head
-            else:
-                output_head = self.output_heads[key]
-            self._output_head = output_head
-            # Return the output head for the current task.
-            return output_head
-
-        if self._output_head is None:
-            self._output_head = self.create_output_head(self.setting)
-        return self._output_head
-
-    @output_head.setter
-    def output_head(self, value: OutputHead) -> None:
-        # logger.debug(f"Setting output head to {value}")
-        self._output_head = value
+    # @output_head.setter
+    # def output_head(self, value: OutputHead) -> None:
+    #     # logger.debug(f"Setting output head to {value}")
+    #     # TODO: There's a problem here with multiheaded models. This setter gets
+    #     # 'bypassed' somehow.
+    #     assert False, value
+    #     self._output_head = value
 
     @auto_move_data
     def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
@@ -324,11 +301,32 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             knowing what task we're switching to.
         """
         super().on_task_switch(task_id=task_id)
+        logger.info(f"Switching from task {self.current_task} -> {task_id}.")
+        self.previous_task = self.current_task
+        self.current_task = task_id
+
         if task_id is None:
             # TODO: Try to do some kind of task inference here, if possible!
-            pass    
-        if task_id is not None and self.hp.multihead and str(task_id) not in self.output_heads:
-            self.output_heads[str(task_id)] = self.create_output_head(self.setting)
+            # TODO: Should we revert back to using a 'default' output head?
+            # ('None' key?) or just use the last trained output head?
+            # self.output_head = self.output_heads[str(None)]
+            pass
+        
+        # TODO: Do we need to 'save' the output head back into
+        # `self.output_heads`? do `self.output_head` and
+        # `self.output_heads[str(self.previous_task)]` reference the same
+        # object? or does assigning a new value to self.output_head perform a
+        # copy under the hood in nn.Module?
+        if str(self.previous_task) in self.output_heads:
+            assert id(self.output_head) == id(self.output_heads[str(self.previous_task)])
+        self.output_heads[str(self.previous_task)] = self.output_head
+
+        key = str(task_id)
+        if self.hp.multihead:
+            if key not in self.output_heads:
+                self.output_heads[key] = self.create_output_head(self.setting)
+            # Update `self.output_head` to be the one for the current task.
+            self.output_head = self.output_heads[key]
 
     @contextmanager
     def temporarily_in_task(self, task_id: Optional[int]):
@@ -336,19 +334,22 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         attribute,
         """
         start_task_id = self.current_task
+        start_output_head = self.output_head
         assert isinstance(task_id, int) or task_id is None, task_id
         self.current_task = task_id
+        self.output_head = self.output_heads[str(task_id)]
+
         yield
+        # TODO: Not sure we need to do this, but just to be safe:
+        self.output_heads[str(task_id)] = self.output_head
+
         self.current_task = start_task_id
+        self.output_head = start_output_head
 
     @property
     def current_task_classes(self) -> List[int]:
         # TODO: detect wether we are training or testing.
         return self.setting.current_task_classes(self.training)
-
-    def preprocess_batch(self, *batch) -> Tuple[Tensor, Optional[Tensor]]:
-        # TODO: Clean this up.
-        assert False, batch
    
     def load_state_dict(self, state_dict: Union[Dict[str, Tensor], Dict[str, Tensor]],
                         strict: bool = True):

@@ -269,7 +269,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
     def apply(self, method: Method, config: Config=None) -> ClassIncrementalResults:
         """Apply the given method on this setting to producing some results."""
-        self.config = config or Config.from_args(self._argv)
+        # TODO: It still isn't super clear what should be in charge of creating
+        # the config, and how to create it, when it isn't passed explicitly.
+        self.config = self.config or config or (Config.from_args(self._argv) if self._argv else Config())
         method.config = self.config
 
         self.configure(method)

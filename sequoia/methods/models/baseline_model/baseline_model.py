@@ -50,8 +50,8 @@ from .semi_supervised_model import SemiSupervisedModel
 
 
 class BaselineModel(SemiSupervisedModel,
-                    SelfSupervisedModel,
                     ClassIncrementalModel,
+                    SelfSupervisedModel,
                     Generic[SettingType]):
     """ Base model LightningModule (nn.Module extended by pytorch-lightning)
     
@@ -94,11 +94,26 @@ class BaselineModel(SemiSupervisedModel,
         if self.trainer:
             OutputHead.base_model_optimizer = self.optimizers()
 
+        # Upgrade the type of hparams for the output head, based on the setting.
+        self.hp.output_head = self.hp.output_head.upgrade(target_type=self.output_head_type(setting).HParams)
+        
+        self.output_head: OutputHead = self.create_output_head(setting)
+
+        self.tasks: Dict[str, AuxiliaryTask] = self.create_auxiliary_tasks()
+
+        for task_name, task in self.tasks.items():
+            logger.debug("Auxiliary tasks:")
+            assert isinstance(task, AuxiliaryTask), f"Task {task} should be a subclass of {AuxiliaryTask}."
+            if task.coefficient != 0:
+                logger.debug(f"\t {task_name}: {task.coefficient}")
+                logger.info(f"enabling the '{task_name}' auxiliary task (coefficient of {task.coefficient})")
+                task.enable()
+
     # @auto_move_data
-    def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:
+    def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:  # type: ignore
         # NOTE: Implementation is mostly in `base_model.py`.
-        # Share the optimizer with the output head, in case the representations
-        # are also learned with them.
+        # Sharing the optimizer with the output head, in case the
+        # representations are also learned using the output head.
         OutputHead.base_model_optimizer = self.optimizers()
         return super().forward(observations)
 
@@ -208,7 +223,7 @@ class BaselineModel(SemiSupervisedModel,
             for key, value in loss.to_pbar_message().items():
                 assert not isinstance(value, (dict, str)), "shouldn't be nested at this point!"
                 self.log(key, value, prog_bar=True)
-                logger.debug(f"{key}: {value}")
+                # logger.debug(f"{key}: {value}")
             
             for key, value in loss.to_log_dict(verbose=self.config.verbose).items():
                 assert not isinstance(value, (dict, str)), "shouldn't be nested at this point!"
