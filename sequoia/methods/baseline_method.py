@@ -6,7 +6,6 @@ we use pytorch-lightning, and a few little utility classes such as `Metrics` and
 methods.
 """
 import warnings
-from collections import OrderedDict
 from dataclasses import dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, Callable, ClassVar, Dict, Generic, List, Optional,
@@ -271,7 +270,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
     def apply_all(self, argv: Union[str, List[str]] = None) -> Dict[Type["Method"], Results]:
         applicable_settings = self.get_applicable_settings()
 
-        all_results: Dict[Type[Setting], Results] = OrderedDict()
+        all_results: Dict[Type[Setting], Results] = {}
         for setting_type in applicable_settings:
             setting = setting_type.from_args(argv)
             results = setting.apply(self)

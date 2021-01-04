@@ -4,7 +4,6 @@ This is a bit like the Metrics from pytorch-lightning, but seems easier to use,
 as far as I know. Also totally transferable between gpus etc. (Haven't used
 the metrics from PL much yet, to be honest).
 """
-from collections import OrderedDict
 from dataclasses import InitVar, dataclass, field, fields
 from typing import Any, Dict, Optional, Union
 
@@ -102,7 +101,7 @@ class Metrics(Serializable):
         return {}
 
     def to_pbar_message(self) -> Dict[str, Union[str, float]]:
-        return OrderedDict()
+        return {}
 
     def numpy(self):
         """Returns a new object with all the tensor fields converted to numpy arrays."""
