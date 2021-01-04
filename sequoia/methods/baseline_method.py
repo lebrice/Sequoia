@@ -168,6 +168,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                 self.hparams.multihead = setting.task_labels_at_test_time
 
         if isinstance(setting, ContinualRLSetting):
+            setting.add_done_to_observations = True
+            
             if self.hparams.batch_size is None:
                 # Using default batch size of 32, which is huge for RL!
                 self.hparams.batch_size = 1

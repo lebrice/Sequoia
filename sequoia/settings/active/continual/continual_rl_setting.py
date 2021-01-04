@@ -188,6 +188,12 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     valid_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
     test_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
     
+    # Wether observations from the environments whould include
+    # the end-of-episode signal. Only really useful if your method will iterate
+    # over the environments in the dataloader style
+    # (as does the baseline method).
+    add_done_to_observations: bool = False
+
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
         
@@ -673,7 +679,10 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
         ## Apply the "post-batch" wrappers:
         # from sequoia.common.gym_wrappers import ConvertToFromTensors
-        env = AddDoneToObservation(env)
+        # TODO: Only the BaselineMethod requires this, we should enable it only
+        # from the BaselineMethod, and leave it 'off' by default.
+        if self.add_done_to_observations:
+            env = AddDoneToObservation(env)
         # # Convert the samples to tensors and move them to the right device.
         # env = ConvertToFromTensors(env)
         # env = ConvertToFromTensors(env, device=self.config.device)

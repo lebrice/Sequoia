@@ -9,7 +9,7 @@ from typing import (Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar,
 
 import gym
 import numpy as np
-from gym import spaces
+from gym import spaces, Space
 from torch import Tensor
 
 from sequoia.common import Batch
@@ -51,7 +51,7 @@ class TypedObjectsWrapper(IterableWrapper):
     def step(self, action: Actions) -> Tuple[Observations, Rewards, bool, Dict]:
         # "unwrap" the actions before passing it to the wrapped environment.
         if isinstance(action, Actions):
-            action = unwrap_actions(action)
+            action = unwrap(action)
         
         observation, reward, done, info = self.env.step(action)
         # TODO: Make the observation space a Dict
@@ -71,22 +71,33 @@ class TypedObjectsWrapper(IterableWrapper):
 # TODO: Atm 'unwrap' basically means "get rid of everything apart from the first
 # item", which is a bit ugly.
 
-def unwrap_actions(actions: Actions) -> Union[Tensor, np.ndarray]:
-    assert isinstance(actions, Actions), actions
-    return actions.y_pred
+@singledispatch
+def unwrap(obj: Any) -> Any:
+    raise NotImplementedError(obj)
 
 
-def unwrap_rewards(rewards: Rewards) -> Union[Tensor, np.ndarray]:
-    assert isinstance(rewards, Rewards), rewards
-    return rewards.y
+@unwrap.register(Actions)
+def _unwrap_actions(obj: Actions) -> Union[Tensor, np.ndarray]:
+    return obj.y_pred
 
 
-def unwrap_observations(observations: Observations) -> Union[Tensor, np.ndarray]:
+@unwrap.register(Rewards)
+def _unwrap_rewards(obj: Rewards) -> Union[Tensor, np.ndarray]:
+    return obj.y
+
+
+@unwrap.register(Observations)
+def _unwrap_observations(obj: Observations) -> Union[Tensor, np.ndarray]:
     # This gets rid of everything except just the image.
-    if isinstance(observations, Observations):
-        # TODO: Keep the task labels? or no? For now, no.        
-        return observations.x
-    assert False, observations
+    # TODO: Keep the task labels? or no? For now, no.        
+    return obj.x
+
+
+@unwrap.register(NamedTupleSpace)
+def _unwrap_space(obj: NamedTupleSpace) -> Space:
+    # This gets rid of everything except just the first item in the space.
+    # TODO: Keep the task labels? or no? For now, no.
+    return obj[0]
 
 
 class NoTypedObjectsWrapper(IterableWrapper):
@@ -95,6 +106,9 @@ class NoTypedObjectsWrapper(IterableWrapper):
     Can be added on top of that wrapper to strip off the typed objects it
     returns and just returns tensors/np.ndarrays instead.
 
+    This is used for example when applying a method from stable-baselines3, as
+    they only want to get np.ndarrays as inputs.
+
     Parameters
     ----------
     IterableWrapper : [type]
@@ -102,21 +116,22 @@ class NoTypedObjectsWrapper(IterableWrapper):
     """
     def __init__(self, env: gym.Env):
         super().__init__(env)
+        self.observation_space = unwrap(self.env.observation_space)
     
     def step(self, action):
         if isinstance(action, Actions):
-            action = unwrap_actions(action)
+            action = unwrap(action)
         if hasattr(action, "detach"):
             action = action.detach()
         assert action in self.action_space, (action, type(action), self.action_space)        
         observation, reward, done, info = self.env.step(action)
-        observation = unwrap_observations(observation)
-        reward = unwrap_rewards(reward)
+        observation = unwrap(observation)
+        reward = unwrap(reward)
         return observation, reward, done, info
 
     def reset(self, **kwargs):
         observation = self.env.reset(**kwargs)
-        return unwrap_observations(observation)
+        return unwrap(observation)
 
 
 @singledispatch

@@ -218,12 +218,12 @@ class BaselineModel(SemiSupervisedModel,
         results = super().shared_step(batch, batch_idx, environment, loss_name, dataloader_idx=dataloader_idx, optimizer_idx=optimizer_idx)
         loss_tensor = results["loss"]
         loss = results["loss_object"]
-        
+
         if loss_tensor != 0.:
             for key, value in loss.to_pbar_message().items():
                 assert not isinstance(value, (dict, str)), "shouldn't be nested at this point!"
                 self.log(key, value, prog_bar=True)
-                # logger.debug(f"{key}: {value}")
+                logger.debug(f"{key}: {value}")
             
             for key, value in loss.to_log_dict(verbose=self.config.verbose).items():
                 assert not isinstance(value, (dict, str)), "shouldn't be nested at this point!"

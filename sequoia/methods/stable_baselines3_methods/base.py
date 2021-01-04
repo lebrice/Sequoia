@@ -14,10 +14,12 @@ from simple_parsing import choice, mutable_field
 from stable_baselines3.common.base_class import (BaseAlgorithm, BasePolicy,
                                                  DummyVecEnv, GymEnv,
                                                  MaybeCallback, Monitor,
-                                                 VecEnv, VecTransposeImage, is_wrapped)
+                                                 VecEnv, VecTransposeImage,
+                                                 is_image_space, is_wrapped)
 from stable_baselines3.common.vec_env.obs_dict_wrapper import ObsDictWrapper
 
 from sequoia.common.gym_wrappers.batch_env.batched_vector_env import VectorEnv
+from sequoia.common.gym_wrappers.utils import has_wrapper
 from sequoia.common.transforms import Transforms
 from sequoia.settings import Method
 from sequoia.settings.active.continual import ContinualRLSetting
@@ -25,7 +27,7 @@ from sequoia.settings.active.continual.wrappers import (
     NoTypedObjectsWrapper, RemoveTaskLabelsWrapper)
 from sequoia.utils import Parseable, Serializable
 from sequoia.utils.logging_utils import get_logger
-from sequoia.common.gym_wrappers.utils import has_wrapper
+
 logger = get_logger(__file__)
 
 # "Patch" the _wrap_env function of the BaseAlgorithm class of
@@ -60,11 +62,7 @@ def _wrap_env(env: GymEnv, verbose: int = 0, monitor_wrapper: bool = True) -> Ve
             print("Wrapping the env in a DummyVecEnv.")
         env = DummyVecEnv([lambda: env])
 
-    if (
-        is_image_space(env.observation_space)
-        and not is_vecenv_wrapped(env, VecTransposeImage)
-        and not is_image_space_channels_first(env.observation_space)
-    ):
+    if is_image_space(env.observation_space) and not is_wrapped(env, VecTransposeImage):
         if verbose >= 1:
             print("Wrapping the env in a VecTransposeImage.")
         env = VecTransposeImage(env)
@@ -74,6 +72,7 @@ def _wrap_env(env: GymEnv, verbose: int = 0, monitor_wrapper: bool = True) -> Ve
         env = ObsDictWrapper(env)
 
     return env
+
 
 # def _wrap_env(env: gym.Env, verbose: int = 0, monitor_wrapper: bool = False)  -> VecEnv:
 #     # NOTE: We just want to change this single line here:
