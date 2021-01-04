@@ -7,8 +7,6 @@ from numpy import inf
 import tqdm
 import gym
 
-from examples.quick_demo import DemoMethod
-
 from sequoia.settings import Method
 from sequoia.settings.passive.cl import ClassIncrementalSetting
 from sequoia.settings.passive.cl.objects import (Actions, PassiveEnvironment)
@@ -26,12 +24,16 @@ class HatNet(torch.nn.Module):
       pages={4548--4557},
       year={2018}
     }
+
+    The model is where the model weights are initialized.
+    Just like a classic PyTorch, here the different layers and components of the model are defined
     """
-    def __init__(self, observation_space, taskcla):
+    def __init__(self, observation_space, taskcla, s_hat=50):
         super(HatNet,self).__init__()
 
         ncha,size,_ = observation_space
         self.taskcla = taskcla
+        self.s_hat=s_hat
 
         self.c1=torch.nn.Conv2d(ncha,64,kernel_size=size//8)
         s=compute_conv_output_size(size,size//8)
@@ -61,36 +63,31 @@ class HatNet(torch.nn.Module):
         self.ec3=torch.nn.Embedding(len(self.taskcla),256)
         self.efc1=torch.nn.Embedding(len(self.taskcla),2048)
         self.efc2=torch.nn.Embedding(len(self.taskcla),2048)
-        """ (e.g., used in the compression experiments)
-        lo,hi=0,2
-        self.ec1.weight.data.uniform_(lo,hi)
-        self.ec2.weight.data.uniform_(lo,hi)
-        self.ec3.weight.data.uniform_(lo,hi)
-        self.efc1.weight.data.uniform_(lo,hi)
-        self.efc2.weight.data.uniform_(lo,hi)
-        #"""
+
         self.loss = torch.nn.CrossEntropyLoss()
         self.current_task = 0
 
-    def forward(self,observations,s=50):
+    def forward(self,observations):
         x = observations.x
         t = observations.task_labels
-        # Gates
-        masks=self.mask(t,s=s)
+
+        masks=self.mask(t,s=self.s_hat)
         gc1,gc2,gc3,gfc1,gfc2=masks
         # Gated
         h=self.maxpool(self.drop1(self.relu(self.c1(x))))
-        h=h*gc1.unsqueeze(2).unsqueeze(3)#.view(1,-1,1,1).expand_as(h)
+        h=h*gc1.unsqueeze(2).unsqueeze(3)
         h=self.maxpool(self.drop1(self.relu(self.c2(h))))
-        h=h*gc2.unsqueeze(2).unsqueeze(3)#.view(1,-1,1,1).expand_as(h)
+        h=h*gc2.unsqueeze(2).unsqueeze(3)
         h=self.maxpool(self.drop2(self.relu(self.c3(h))))
-        h=h*gc3.unsqueeze(2).unsqueeze(3)#.view(1,-1,1,1).expand_as(h)
+        h=h*gc3.unsqueeze(2).unsqueeze(3)
         h=h.view(x.size(0),-1)
         h=self.drop2(self.relu(self.fc1(h)))
         h=h*gfc1.expand_as(h)
         h=self.drop2(self.relu(self.fc2(h)))
         h=h*gfc2.expand_as(h)
     
+        # Each batch can have elements of more than one Task (in test)
+        # In Task Incremental Learning, each task have it own classification head. 
         y = None
         task_mask = {}
         for e in set(t.tolist()):
@@ -129,14 +126,17 @@ class HatNet(torch.nn.Module):
         return loss, metrics_dict
 
 class HatMethod(Method, target_setting=ClassIncrementalSetting):
-    """ Minimal example of a Method targetting the Class-Incremental CL setting.
+    """ 
+    Here we implement the method according to the characteristics and methodology of the current proposal. 
+    It should be as much as possible agnostic to the model and setting we are going to use. 
     
-    For a quick intro to dataclasses, see examples/dataclasses_example.py    
+    The method proposed can be specific to a setting to make comparisons easier. 
+    Here what we control is the model's training process, given a setting that delivers data in a certain way.
     """
 
     @dataclass
     class HParams:
-        """ Hyper-parameters of the demo model. """
+        """ Hyper-parameters of the Settings. """
         # Learning rate of the optimizer.
         learning_rate: float = 0.001
         
@@ -166,18 +166,27 @@ class HatMethod(Method, target_setting=ClassIncrementalSetting):
         # assert False, setting
         setting.batch_size = 128
         taskcla = [ [i+1,int(len(setting.class_order)/setting.nb_tasks)] for i in range(setting.nb_tasks)  ]
-        #assert False, taskcla
+
         self.model = HatNet(
-            observation_space = setting.observation_space[0].shape, #Change this
-            taskcla = taskcla #Change this
+            observation_space=setting.observation_space[0].shape,
+            taskcla=taskcla,
+            s_hat=50
         )
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
 
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
-        """ Example train loop.
-        You can do whatever you want with train_env and valid_env here.
+        """ 
+        Train loop 
+
+        Different Settings can return elements from tasks in an other  way, 
+        be it class incremental, task incremental, etc.
+
+        Batch can have information about en environment, rewards, input, task labels, etc.
+        And we call the forward training function of our method, independent of the settings
         """
-        # configure() will have been called by the setting before we get here.
+        
+        # configure() will have been called by the setting before we get here,
+
         best_val_loss = inf
         best_epoch = 0
         for epoch in range(self.max_epochs):
@@ -232,11 +241,21 @@ class HatMethod(Method, target_setting=ClassIncrementalSetting):
 
 if __name__ == "__main__":
     # Example: Evaluate a Method on a single CL setting:
-    from sequoia.settings import TaskIncrementalSetting
-    # from sequoia.settings import TaskIncrementalRLSetting
+    from sequoia.settings import TaskIncrementalSetting # For Supervised Learning (SL)
+    # from sequoia.settings import TaskIncrementalRLSetting # For Reinforcment Learning (RL)
 
+    """
+    We must define 3 main components:
+     1.- Setting: It is the continual learning escenario that we are working, SL or RL, TI or CI
+                  Each settings has it own hyper parameters that needed to be define.
+     2.- Model: Is the parameters and layers of the model, just like in PyTorch.
+                We can use a define model or define your own
+     3.- Method: It is how we are going to use what the settings give us to train our model.
+                 Same as before, we can define our own or use pre-define Methods.
+    """
+
+    # Stages:
     ## 1. Creating the setting:
-    # First option: create the setting manually:
     setting = TaskIncrementalSetting(dataset="fashionmnist", nb_tasks=5)
     # setting = TaskIncrementalRLSetting(dataset="cartpole", nb_tasks=5)
     # Second option: create the setting from the command-line:
@@ -252,19 +271,3 @@ if __name__ == "__main__":
     print(f"objective: {results.objective}")
     
     exit()
-    
-    # Optionally, second part of the demo: Compare the performances of the two
-    # methods on all their applicable settings:
-
-    base_method = DemoMethod()
-    from examples.demo_utils import compare_results, demo_all_settings
-    
-    base_results = demo_all_settings(base_method, datasets=["mnist", "fashionmnist"])
-    
-    new_method = HatMethod()
-    improved_results = demo_all_settings(new_method, datasets=["mnist", "fashionmnist"])
-
-    compare_results({
-        DemoMethod: base_results,
-        ImprovedDemoMethod: improved_results,
-    })
