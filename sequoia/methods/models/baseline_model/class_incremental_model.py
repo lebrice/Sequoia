@@ -328,6 +328,10 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             # Update `self.output_head` to be the one for the current task.
             self.output_head = self.output_heads[key]
 
+        # NOTE: IF the model *isn't* multi-headed, then we always use the output
+        # head at key 'None' anyway, so we don't create a new head here.
+
+        
     @contextmanager
     def temporarily_in_task(self, task_id: Optional[int]):
         """WIP: This would be used to temporarily change the 'output_head'
@@ -335,14 +339,26 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         """
         start_task_id = self.current_task
         start_output_head = self.output_head
-        assert isinstance(task_id, int) or task_id is None, task_id
+        assert isinstance(task_id, int) or task_id is None
+        
+        output_head_key = str(task_id)
+        if self.hp.multihead and task_id is None:
+            # Multi-headed model, but we don't know the task id: need to use
+            # some kind of task inference module?
+            raise NotImplementedError("todo")
+        elif not self.hp.multihead:
+            # We are using a single-head model, so we will use the 'default'
+            # output head. 
+            output_head_key = str(None)
+
         self.current_task = task_id
-        self.output_head = self.output_heads[str(task_id)]
+        self.output_head = self.output_heads[output_head_key]
 
         yield
         # TODO: Not sure we need to do this, but just to be safe:
-        self.output_heads[str(task_id)] = self.output_head
+        self.output_heads[output_head_key] = self.output_head
 
+        # Restore the previous task id and output head.
         self.current_task = start_task_id
         self.output_head = start_output_head
 

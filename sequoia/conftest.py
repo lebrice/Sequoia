@@ -46,7 +46,7 @@ def trainer_config(tmp_path_factory):
 
 @pytest.fixture()
 def config(tmp_path: Path):
-    return Config(debug=True, data_dir=Path("data"))
+    return Config(debug=True, data_dir=Path("data"), seed=123)
 
 
 def id_fn(params: Any) -> str:
