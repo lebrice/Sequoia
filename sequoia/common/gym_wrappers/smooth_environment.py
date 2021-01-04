@@ -5,7 +5,6 @@ the task, rather than setting a brand new random task.
 There could also be some kind of 'task_duration' parameter, and the model does
 linear or smoothed-out transitions between them depending on the step number?
 """
-from collections import OrderedDict
 from typing import Dict, List, Optional
 
 import gym
@@ -125,7 +124,7 @@ class SmoothTransitions(MultiTaskEnvironment):
         task schedule, we update the 'prev_task_step' and 'next_task_step'
         attributes.
         """
-        current_task: Dict[str, float] = OrderedDict()
+        current_task: Dict[str, float] = {}
         for attr in self.task_params:
             steps: List[int] = []
             # list of the

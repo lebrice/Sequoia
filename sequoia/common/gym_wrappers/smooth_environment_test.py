@@ -1,4 +1,3 @@
-from collections import OrderedDict
 from typing import Dict, List
 
 import gym
@@ -36,7 +35,7 @@ def test_task_schedule():
     assert env.length == starting_length
     # plt.ion()
 
-    params: Dict[int, Dict[str, float]] = OrderedDict()
+    params: Dict[int, Dict[str, float]] = {}
 
     for step in range(total_steps):
         expected_steps = starting_length + (step / total_steps) * (end_length - starting_length)

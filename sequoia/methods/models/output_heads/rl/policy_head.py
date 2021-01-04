@@ -29,7 +29,7 @@ observations as final, i.e., when episode length == 1
 import dataclasses
 import itertools
 from abc import ABC, abstractmethod
-from collections import OrderedDict, deque, namedtuple
+from collections import deque, namedtuple
 from dataclasses import dataclass
 from typing import (Any, Dict, Iterable, List, NamedTuple, Optional, Sequence,
                     Tuple, TypeVar, Union)
