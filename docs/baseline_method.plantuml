@@ -1,0 +1,18 @@
+@startuml Diagram
+
+!include gym.plantuml
+
+package methods {
+    package models{
+            abstract class BaseModel {
+            encoder: nn.Module
+
+            + train_step()
+            + val_step()
+            + test_step()
+            Loss get_loss()
+        }
+    }
+}
+
+@enduml

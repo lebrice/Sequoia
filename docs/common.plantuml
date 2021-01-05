@@ -1,0 +1,20 @@
+@startuml common
+package common {
+    class Batch {}
+
+    package transforms as common.transforms {
+        enum Transforms {
+            to_tensor: ToTensor
+            three_channels: ThreeChannels
+            random_grayscale: RandomGrayscale
+            channels_first: ChannelsFirst
+            channels_last: ChannelsLast
+            resize_64x64: Resize
+            resize_32x32: Resize
+            ...
+        }
+        abstract class Transform
+    }
+}
+
+@enduml
