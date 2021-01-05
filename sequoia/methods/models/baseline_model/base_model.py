@@ -158,6 +158,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # to pass transforms to the settings from the method side.
         preprocessed_observations = self.preprocess_observations(observations)
         # Here in this base model the encoder only takes the 'x' from the observations.
+        assert isinstance(preprocessed_observations.x, Tensor)
+        
         h_x = self.encoder(preprocessed_observations.x)
         if isinstance(h_x, list) and len(h_x) == 1:
             # Some pretrained encoders sometimes give back a list with one tensor. (?)
@@ -426,13 +428,15 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def preprocess_observations(self, observations: Observations) -> Observations:
         assert isinstance(observations, self.Observations)
-        return observations
         # TODO: Make sure this also works in the supervised setting.
+        # Convert all numpy arrays to tensors if possible.
+        # TODO: Make sure this still works in settings without task labels (
+        # None in numpy arrays)
         from sequoia.utils.generic_functions import to_tensor
-        # tensor_observations = to_tensor(self.observation_space, observations, device=self.device)
-        # assert isinstance(tensor_observations, self.Observations)
-
-        return tensor_observations
+        observations = to_tensor(self.observation_space, observations, device=self.device)
+        assert isinstance(observations, self.Observations)
+        assert isinstance(observations.x, Tensor)
+        return observations
 
     def preprocess_rewards(self, reward: Rewards) -> Rewards:
         return reward

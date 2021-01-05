@@ -159,16 +159,24 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         if wandb_options.run_name is None:
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
 
-        # TODO: Debug multihead model in RL.
         if isinstance(setting, IncrementalSetting):
             if self.hparams.multihead is None:
                 # Use a multi-head model by default if the task labels are
                 # available at both train and test time.
-                assert setting.task_labels_at_train_time
+                if setting.task_labels_at_test_time:
+                    assert setting.task_labels_at_train_time
                 self.hparams.multihead = setting.task_labels_at_test_time
 
         if isinstance(setting, ContinualRLSetting):
             setting.add_done_to_observations = True
+            
+            if not setting.observe_state_directly:
+                self.hparams.encoder = "simple_convnet"
+                # TODO: Add 'proper' transforms for cartpole, specifically?
+                from sequoia.common.transforms import Transforms
+                setting.train_transforms.append(Transforms.resize_32x32)
+                setting.val_transforms.append(Transforms.resize_32x32)
+                setting.test_transforms.append(Transforms.resize_32x32)
             
             if self.hparams.batch_size is None:
                 # Using default batch size of 32, which is huge for RL!
