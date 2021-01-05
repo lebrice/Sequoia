@@ -21,7 +21,7 @@ from gym.spaces.utils import flatdim
 from pytorch_lightning import LightningDataModule, LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
-from simple_parsing import list_field
+from simple_parsing import list_field, choice
 from torch import Tensor, nn
 from torch.optim.optimizer import Optimizer
 
@@ -41,6 +41,7 @@ from ..forward_pass import ForwardPass
 from ..output_heads import (ActorCriticHead, ClassificationHead, OutputHead,
                             PolicyHead, RegressionHead)
 from .base_hparams import BaseHParams
+from ..output_heads.rl.episodic_a2c import EpisodicA2C
 
 logger = get_logger(__file__)
 
@@ -60,23 +61,35 @@ class BaseModel(LightningModule, Generic[SettingType]):
     @dataclass
     class HParams(BaseHParams):
         """ HParams of the Model. """
+        # Which algorithm to use for the output head when in an RL setting.
+        # TODO: Run the PolicyHead in the following conditions:
+        # - Compare the big backward pass vs many small ones
+        # - Try to have it learn from pixel input, if possible
+        # - Try to have it learn on a multi-task RL setting,
+        # TODO: Finish the ActorCritic and EpisodicA2C heads.
+        rl_output_head_algo: Type[OutputHead] = choice({
+            "reinforce": PolicyHead,
+            "a2c_online": ActorCriticHead,
+            "a2c_episodic": EpisodicA2C,
+        }, default=EpisodicA2C)
+        
 
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__()
         self.setting: SettingType = setting
-        self.hp = hparams
-        
+        self.hp: BaseModel.HParams = hparams
+
         self.Observations: Type[Observations] = setting.Observations
         self.Actions: Type[Actions] = setting.Actions
         self.Rewards: Type[Rewards] = setting.Rewards
-        
+
         self.observation_space: gym.Space = setting.observation_space
         self.action_space: gym.Space = setting.action_space
         self.reward_space: gym.Space = setting.reward_space
-        
+
         self.input_shape  = self.observation_space[0].shape
         self.reward_shape = self.reward_space.shape
-        
+
         self.split_batch_transform = SplitBatch(observation_type=self.Observations,
                                                 reward_type=self.Rewards)
         self.config: Config = config
@@ -87,7 +100,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # (Testing) Setting this attribute is supposed to help with ddp/etc
         # training in pytorch-lightning. Not 100% sure.
         # self.example_input_array = torch.rand(self.batch_size, *self.input_shape)
-        
+
         # Create the encoder and the output head.
         # Space of our encoder representations.
         self.representation_space: gym.Space
@@ -107,14 +120,14 @@ class BaseModel(LightningModule, Generic[SettingType]):
             add_tensor_support
         self.representation_space = add_tensor_support(self.representation_space)
 
-        self.output_head = self.create_output_head(setting)
+        self.output_head: OutputHead = self.create_output_head(setting)
 
     @auto_move_data
     def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
         """ Forward pass of the Model.
 
         Returns a ForwardPass object (or a dict)
-        """        
+        """
         # Encode the observation to get representations.
         representations = self.encode(observations)
         # Pass the observations and representations to the output head to get
@@ -145,10 +158,15 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # to pass transforms to the settings from the method side.
         preprocessed_observations = self.preprocess_observations(observations)
         # Here in this base model the encoder only takes the 'x' from the observations.
+        assert isinstance(preprocessed_observations.x, Tensor)
+        
         h_x = self.encoder(preprocessed_observations.x)
         if isinstance(h_x, list) and len(h_x) == 1:
             # Some pretrained encoders sometimes give back a list with one tensor. (?)
             h_x = h_x[0]
+        if not isinstance(h_x, Tensor):
+            h_x = torch.as_tensor(h_x, device=self.device)
+        assert isinstance(h_x, Tensor)
         return h_x
 
     
@@ -192,7 +210,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
         action_space: Space = self.action_space
         reward_space: Space = self.reward_space
         hparams: OutputHead.HParams = self.hp.output_head
-
         # Choose what type of output head to use depending on the kind of
         # Setting.
         output_head_type: Type[OutputHead] = self.output_head_type(setting)
@@ -229,13 +246,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
         if isinstance(setting, ActiveSetting):
             if not isinstance(setting.action_space, spaces.Discrete):
                 raise NotImplementedError(f"Only support discrete actions for now.")
-            # TODO: Run the PolicyHead in the following conditions:
-            # - Compare the big backward pass vs many small ones
-            # - Try to have it learn from pixel input, if possible
-            # - Try to have it learn on a multi-task RL setting, 
-            return PolicyHead
-            # TODO: Finish debugging the ActorCritic Head.
-            # return ActorCriticHead
+            assert issubclass(self.hp.rl_output_head_algo, OutputHead)
+            return self.hp.rl_output_head_algo
 
         assert isinstance(setting, PassiveSetting)
 
@@ -332,16 +344,10 @@ class BaseModel(LightningModule, Generic[SettingType]):
             assert rewards is not None
 
         loss: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)
-        for key, value in loss.to_pbar_message().items():
-            self.log(key, value, prog_bar=True)
         return {
             "loss": loss.loss,
-            "log": loss.to_log_dict(),
             "loss_object": loss,
         }
-        # The above can also easily be retrieved like this:
-        result = loss.to_pl_dict()
-        return result
 
     @auto_move_data
     def split_batch(self, batch: Any) -> Tuple[Observations, Rewards]:
@@ -403,15 +409,33 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
             # For now though, we only have one "prediction" in the actions:
             actions = forward_pass.actions
-
             # So far we only use 'y' from the rewards in the output head.
-            supervised_loss = self.output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
+            supervised_loss = self.output_head_loss(forward_pass, actions=actions, rewards=rewards)
             total_loss += supervised_loss
 
         return total_loss
 
+    def output_head_loss(self,
+                         forward_pass: ForwardPass,
+                         actions: Actions,
+                         rewards: Rewards) -> Loss:
+        """ Gets the Loss of the output head. """
+        return self.output_head.get_loss(
+            forward_pass,
+            actions=actions,
+            rewards=rewards,
+        )
+
     def preprocess_observations(self, observations: Observations) -> Observations:
-        assert isinstance(observations, Observations)
+        assert isinstance(observations, self.Observations)
+        # TODO: Make sure this also works in the supervised setting.
+        # Convert all numpy arrays to tensors if possible.
+        # TODO: Make sure this still works in settings without task labels (
+        # None in numpy arrays)
+        from sequoia.utils.generic_functions import to_tensor
+        observations = to_tensor(self.observation_space, observations, device=self.device)
+        assert isinstance(observations, self.Observations)
+        assert isinstance(observations.x, Tensor)
         return observations
 
     def preprocess_rewards(self, reward: Rewards) -> Rewards:
@@ -436,12 +460,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
     def learning_rate(self, value: float) -> None:
         self.hp.learning_rate = value
 
-    def on_task_switch(self, task_id: int, training: bool = False) -> None:
+    def on_task_switch(self, task_id: Optional[int]) -> None:
         """Called when switching between tasks.
         
         Args:
-            task_id (int): the Id of the task.
-            training (bool): Wether we are currently training or valid/testing.
+            task_id (Optional[int]): the Id of the task.
         """
 
     def summarize(self, mode: str = ModelSummary.MODE_DEFAULT) -> ModelSummary:

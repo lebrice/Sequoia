@@ -68,12 +68,32 @@ def has_wrapper(env: gym.Wrapper, wrapper_type: Type[gym.Wrapper]) -> bool:
     return isinstance(env, wrapper_type)
 
 
-def remove_wrapper(env: gym.Wrapper, wrapper_type: Type[gym.Wrapper]) -> gym.Wrapper:
-    """ IDEA: remove a given wrapper. """
-    raise NotImplementedError
-
 from .env_dataset import EnvDataset
 from .policy_env import PolicyEnv
+
+from abc import ABC
+
+
+class MayCloseEarly(gym.Wrapper, ABC):
+    """ ABC for Wrappers that may close an environment early depending on some
+    conditions.
+    """
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        self._is_closed: bool = False
+
+    def is_closed(self) -> bool:
+        # First, make sure that we're not 'overriding' the 'is_closed' of the
+        # wrapped environment.
+        if hasattr(self.env, "is_closed"):
+            assert callable(self.env.is_closed)
+            self._is_closed = self.env.is_closed()
+        return self._is_closed
+
+    def close(self) -> None:
+        self.env.close()
+        self._is_closed = True
+
 
 class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
     """ ABC that allows iterating over the wrapped env, if it is iterable.
@@ -201,9 +221,9 @@ def reshape_space(space: gym.Space, new_shape: Tuple[int, ...]) -> gym.Space:
 def reshape_box(space: spaces.Box, new_shape: Tuple[int, ...]) -> spaces.Box:
     assert isinstance(new_shape, (tuple, list))
     # TODO: For now just assume that all the bounds are the same value.
-    low = space.low if np.isscalar(space.low) else next(space.low.flat)
-    high = space.high if np.isscalar(space.high) else next(space.high.flat)
-    return spaces.Box(low=low, high=high, shape=new_shape)
+    low = space.low.reshape(new_shape)
+    high = space.high.reshape(new_shape)
+    return type(space)(low=low, high=high, dtype=space.dtype)
 
 @reshape_space.register
 def reshape_discrete(space: spaces.Discrete, new_shape: Tuple[int, ...]) -> spaces.Discrete:

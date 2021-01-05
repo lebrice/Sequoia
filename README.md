@@ -77,7 +77,7 @@ pip install -r requirements.txt
 
     Your class should implement the following methods:
     - `fit(train_env, valid_env)`
-    - `get_actions(observations, observation_space) -> Actions`
+    - `get_actions(observations, action_space) -> Actions`
     
     The following methods are optional, but can be very useful to help customize how your method is used at train/test time:
     - `configure(setting: Setting)`

@@ -5,40 +5,59 @@ See https://stable-baselines3.readthedocs.io/en/master/guide/install.html
 import warnings
 from abc import ABC
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, Dict, Optional, Type, Union, List
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
 import torch
 from gym import spaces
 from simple_parsing import choice, mutable_field
-
 from stable_baselines3.common.base_class import (BaseAlgorithm, BasePolicy,
-                                                 DummyVecEnv, GymEnv, VecEnv,
-                                                 VecTransposeImage, MaybeCallback,
+                                                 DummyVecEnv, GymEnv,
+                                                 MaybeCallback, Monitor,
+                                                 VecEnv, VecTransposeImage,
                                                  is_image_space, is_wrapped)
 from stable_baselines3.common.vec_env.obs_dict_wrapper import ObsDictWrapper
 
 from sequoia.common.gym_wrappers.batch_env.batched_vector_env import VectorEnv
+from sequoia.common.gym_wrappers.utils import has_wrapper
+from sequoia.common.transforms import Transforms
 from sequoia.settings import Method
 from sequoia.settings.active.continual import ContinualRLSetting
-from sequoia.settings.active.continual.wrappers import (NoTypedObjectsWrapper,
-                                                 RemoveTaskLabelsWrapper)
+from sequoia.settings.active.continual.wrappers import (
+    NoTypedObjectsWrapper, RemoveTaskLabelsWrapper)
 from sequoia.utils import Parseable, Serializable
 from sequoia.utils.logging_utils import get_logger
-from sequoia.common.transforms import Transforms
 
 logger = get_logger(__file__)
 
 # "Patch" the _wrap_env function of the BaseAlgorithm class of
 # stable_baselines, to make it recognize the VectorEnv from gym.vector as a
 # vectorized environment.
+## Stable-Baselines3 has a lot of duplicated code from openai gym
 
 
-def _wrap_env(env: GymEnv, verbose: int = 0) -> VecEnv:
-    # NOTE: We just want to change this single line here:
+def _wrap_env(env: GymEnv, verbose: int = 0, monitor_wrapper: bool = True) -> VecEnv:
+    """ "
+    Wrap environment with the appropriate wrappers if needed.
+    For instance, to have a vectorized environment
+    or to re-order the image channels.
+
+    :param env:
+    :param verbose:
+    :param monitor_wrapper: Whether to wrap the env in a ``Monitor`` when possible.
+    :return: The wrapped environment.
+    """
+    
     # if not isinstance(env, VecEnv):
     if not (isinstance(env, (VecEnv, VectorEnv)) or
             isinstance(env.unwrapped, (VecEnv, VectorEnv))):
+        # if not is_wrapped(env, Monitor) and monitor_wrapper:
+        if monitor_wrapper and not (is_wrapped(env, Monitor) or
+                                    is_wrapped(env, gym.wrappers.Monitor) or
+                                    has_wrapper(env, gym.wrappers.Monitor)): 
+            if verbose >= 1:
+                print("Wrapping the env with a `Monitor` wrapper")
+            env = Monitor(env)
         if verbose >= 1:
             print("Wrapping the env in a DummyVecEnv.")
         env = DummyVecEnv([lambda: env])
@@ -54,6 +73,36 @@ def _wrap_env(env: GymEnv, verbose: int = 0) -> VecEnv:
 
     return env
 
+
+# def _wrap_env(env: gym.Env, verbose: int = 0, monitor_wrapper: bool = False)  -> VecEnv:
+#     # NOTE: We just want to change this single line here:
+#     # if not isinstance(env, VecEnv):
+#     if not (isinstance(env, (VecEnv, VectorEnv)) or
+#             isinstance(env.unwrapped, (VecEnv, VectorEnv))):
+#         if monitor_wrapper and not (is_wrapped(env, Monitor) or
+#                                     is_wrapped(env, gym.wrappers.Monitor) or
+#                                     has_wrapper(env, gym.wrappers.Monitor)): 
+#             if verbose >= 1:
+#                 print("Wrapping the env with a `Monitor` wrapper")
+#             env = Monitor(env)
+#         if verbose >= 1:
+#             print("Wrapping the env in a DummyVecEnv.")
+#         env = DummyVecEnv([lambda: env])
+
+#         if (
+#             is_image_space(env.observation_space)
+#             and not is_vecenv_wrapped(env, VecTransposeImage)
+#             and not is_image_space_channels_first(env.observation_space)
+#         ):
+#             if verbose >= 1:
+#                 print("Wrapping the env in a VecTransposeImage.")
+#             env = VecTransposeImage(env)
+
+#         # check if wrapper for dict support is needed when using HER
+#         if isinstance(env.observation_space, gym.spaces.dict.Dict):
+#             env = ObsDictWrapper(env)
+
+#         return env
 
 BaseAlgorithm._wrap_env = staticmethod(_wrap_env)
 
@@ -183,19 +232,16 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
                 self.hparams.policy = "CnnPolicy"
 
         logger.debug(f"Will use {self.hparams.policy} as the policy.")
-
-        self.total_timesteps_per_task = setting.steps_per_task
-
-        if not setting.known_task_boundaries_at_train_time:
-            # We are in a ContinualRL setting, where `fit` will only be called
-            # once and where the environment can only be traversed once.
-            if self.train_steps_per_task > setting.max_steps:
+        # TODO: Double check that some settings might not impose a limit on
+        # number of training steps per environment (e.g. task-incremental RL?)
+        if setting.steps_per_task:
+            if self.train_steps_per_task > setting.steps_per_task:
                 warnings.warn(RuntimeWarning(
                     f"Can't train for the requested {self.train_steps_per_task} "
                     f"steps, since we're (currently) only allowed one 'pass' "
-                    f"through the environment when in a Continual-RL Setting."
+                    f"through the environment (max {setting.steps_per_task} steps.)"
                 ))
-            self.train_steps_per_task = setting.max_steps
+                self.train_steps_per_task = setting.steps_per_task
         # Otherwise, we can train basically as long as we want on each task.
 
     def create_model(self,

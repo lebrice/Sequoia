@@ -182,6 +182,47 @@ class Parseable:
         cls._argv = cls_argv
         return instance, unused_args
 
+    def upgrade(self, target_type: Type[P]) -> P:
+        """Upgrades the hparams `self` to the given `target_type`, filling in
+        any missing values by parsing them from the command-line.
+
+        If `self` was created from the command-line, then the same argv that
+        were used to create `self` will be used to create the new object.
+
+        Returns
+        -------
+        type(self).HParams
+            Hparams of the type `self.HParams`, with the original values
+            preserved and any new values parsed from the command-line.
+        """
+        # NOTE: This (getting the wrong hparams class) could happen for
+        # instance when parsing a BaselineMethod from the command-line, the
+        # default type of hparams on the method is BaselineModel.HParams,
+        # whose `output_head` field doesn't have the right type exactly.
+        current_type = type(self)
+        current_hparams = dataclasses.asdict(self)
+        # NOTE: If a value is not at its current default, keep it.
+        default_hparams = target_type()
+        missing_fields = [
+            f.name for f in dataclasses.fields(target_type)
+            if f.name not in current_hparams
+            or current_hparams[f.name] == getattr(current_type(), f.name, None)
+            or current_hparams[f.name] == getattr(default_hparams, f.name)
+        ]
+        logger.warning(RuntimeWarning(
+            f"Upgrading the hparams from type {current_type} to "
+            f"type {target_type}. This will try to fetch the values for "
+            f"the missing fields {missing_fields} from the command-line. "
+        ))
+        # Get the missing values
+
+        if self._argv:
+            return target_type.from_args(argv=self._argv, strict=False)
+        hparams = target_type.from_args(argv=self._argv, strict=False)
+        for missing_field in missing_fields:
+            current_hparams[missing_field] = getattr(hparams, missing_field)
+        return target_type(**current_hparams)  
+
 
     # @classmethod
     # def fields(cls) -> Dict[str, Field]:

@@ -31,7 +31,7 @@ from sequoia.common.gym_wrappers.batch_env import (BatchedVectorEnv,
                                                    SyncVectorEnv, VectorEnv)
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
 from sequoia.common.gym_wrappers.pixel_observation import \
-    PixelObservationWrapper
+    PixelObservationWrapper, ImageObservations
 from sequoia.common.gym_wrappers.step_callback_wrapper import \
     StepCallbackWrapper
 from sequoia.common.gym_wrappers.utils import (IterableWrapper,
@@ -40,7 +40,8 @@ from sequoia.common.gym_wrappers.utils import (IterableWrapper,
                                                has_wrapper, is_atari_env,
                                                is_classic_control_env)
 from sequoia.common.metrics import RegressionMetrics
-from sequoia.common.spaces import Sparse
+from sequoia.common.spaces import Sparse, Image
+from sequoia.common.spaces.named_tuple import NamedTupleSpace, NamedTuple
 from sequoia.common.transforms import Transforms
 from sequoia.settings.active import ActiveSetting
 from sequoia.settings.assumptions.incremental import (IncrementalSetting,
@@ -157,10 +158,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # Total number of steps in the test loop. By default, takes the value of
     # `test_steps_per_task * nb_tasks`.
     test_steps: Optional[int] = None
-    
-    
-    
-    
+
     # Standard deviation of the multiplicative Gaussian noise that is used to
     # create the values of the env attributes for each task. 
     task_noise_std: float = 0.2
@@ -190,6 +188,12 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     valid_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
     test_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
     
+    # Wether observations from the environments whould include
+    # the end-of-episode signal. Only really useful if your method will iterate
+    # over the environments in the dataloader style
+    # (as does the baseline method).
+    add_done_to_observations: bool = False
+
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
         
@@ -241,9 +245,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             # the end of the "task". When there are clear task boundaries (i.e.
             # when in 'Class'/Task-Incremental RL), the last entry is the start
             # of the last task.
-            self.nb_tasks = len(change_steps)
-            if self.smooth_task_boundaries:
-                self.nb_tasks -= 1
+            if not self.smooth_task_boundaries:
+                self.nb_tasks = len(change_steps)
 
             # TODO: @lebrice: I guess we have to assume that the interval
             # between steps is constant for now? Do we actually depend on this
@@ -290,7 +293,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                     f"'nb_tasks', or 'steps_per_task'."
                 )
 
-        assert self.nb_tasks == self.max_steps // self.steps_per_task
+        if not self.smooth_task_boundaries:
+            assert self.nb_tasks == self.max_steps // self.steps_per_task
 
         if self.test_task_schedule:
             change_steps = sorted(self.test_task_schedule.keys())
@@ -337,6 +341,14 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # Create a temporary environment so we can extract the spaces and create
         # the task schedules.
         with self._make_env(self.dataset, self._temp_wrappers()) as temp_env:
+            # FIXME: Replacing the observation space dtypes from their original
+            # 'generated' NamedTuples to self.Observations. The alternative
+            # would be to add another argument to the MultiTaskEnv wrapper, to
+            # pass down a dtype to be set on its observation_space's `dtype`
+            # attribute, which would be ugly.
+            assert isinstance(temp_env.observation_space, NamedTupleSpace)
+            temp_env.observation_space.dtype = self.Observations
+
             # Populate the task schedules created above.
             if not self.train_task_schedule:
                 train_change_steps = list(range(0, self.max_steps, self.steps_per_task))
@@ -651,6 +663,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         
         """
         logger.debug(f"batch_size: {batch_size}, num_workers: {num_workers}, seed: {seed}")
+        
+        env: Union[gym.Env, gym.vector.VectorEnv]
         if batch_size is None:
             env = env_factory()
         else:
@@ -658,15 +672,19 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 env_factory,
                 batch_size=batch_size,
                 num_workers=num_workers,
-                # TODO: Still debugging shared memory + Sparse spaces.
+                # TODO: Still debugging shared memory + custom spaces (e.g. Sparse).
                 shared_memory=False,
             )
 
+
         ## Apply the "post-batch" wrappers:
-        from sequoia.common.gym_wrappers import ConvertToFromTensors
-        env = AddDoneToObservation(env)
+        # from sequoia.common.gym_wrappers import ConvertToFromTensors
+        # TODO: Only the BaselineMethod requires this, we should enable it only
+        # from the BaselineMethod, and leave it 'off' by default.
+        if self.add_done_to_observations:
+            env = AddDoneToObservation(env)
         # # Convert the samples to tensors and move them to the right device.
-        env = ConvertToFromTensors(env)
+        # env = ConvertToFromTensors(env)
         # env = ConvertToFromTensors(env, device=self.config.device)
         # Add a wrapper that converts numpy arrays / etc to Observations/Rewards
         # and from Actions objects to numpy arrays.
@@ -815,6 +833,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             # AtariWrapper from SB3 and the AtariPreprocessing wrapper from gym.
             wrappers.append(AtariWrapper)
             # wrappers.append(AtariPreprocessing)
+            wrappers.append(ImageObservations)
+            # TODO: Mark the observations as Image spaces.
+            # TODO: convert everything to dict spaces rather than tuples.
 
         if not self.observe_state_directly:
             # Wrapper to apply the image transforms to the env.
