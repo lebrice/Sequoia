@@ -171,12 +171,13 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             setting.add_done_to_observations = True
             
             if not setting.observe_state_directly:
-                self.hparams.encoder = "simple_convnet"
+                if self.hparams.encoder is None:
+                    self.hparams.encoder = "simple_convnet"
                 # TODO: Add 'proper' transforms for cartpole, specifically?
                 from sequoia.common.transforms import Transforms
-                setting.train_transforms.append(Transforms.resize_32x32)
-                setting.val_transforms.append(Transforms.resize_32x32)
-                setting.test_transforms.append(Transforms.resize_32x32)
+                setting.train_transforms.append(Transforms.resize_64x64)
+                setting.val_transforms.append(Transforms.resize_64x64)
+                setting.test_transforms.append(Transforms.resize_64x64)
             
             if self.hparams.batch_size is None:
                 # Using default batch size of 32, which is huge for RL!
