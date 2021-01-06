@@ -1,24 +1,17 @@
 @startuml Settings
+
 !include gym.plantuml
 !include common.plantuml
+!include pytorch_lightning.plantuml
+
 remove gym.spaces
 remove Wrapper
 hide common
 
+
 namespace torch {
     class DataLoader
     class Tensor
-}
-
-package pytorch_lightning {
-    abstract class LightningDataModule {
-        + prepare_data()
-        + setup()
-        + train_dataloader(): torch.DataLoader
-        + val_dataloader(): torch.DataLoader
-        + test_dataloader(): torch.DataLoader
-    }
-    abstract class LightningModule {}
 }
 
 

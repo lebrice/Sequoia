@@ -1,0 +1,73 @@
+@startuml output_heads
+
+class Actions
+
+package output_heads {
+    package output_head {
+        abstract class OutputHead {
+            + hparams: OutputHead.HParams
+            {abstract} + forward(observations: Observations representations: Tensor): Actions
+            {abstract} + get_loss(ForwardPass, Actions, Rewards) -> Loss
+        }
+        abstract class OutputHead.HParams {
+            + {static} available_activations: ClassVar[Dict[str, Type[nn.Module]]]
+            + hidden_layers: int
+            + hidden_neurons: List[int]
+            + activation: Type[nn.Module] = "tanh"
+        }
+        OutputHead *-- Actions : outputs
+        OutputHead *-- OutputHead.HParams
+    }
+
+    BaseModel "1" *-- "1" OutputHead
+    ClassIncrementalModel "1" *-- "many" OutputHead
+    package classification {
+        class ClassificationHead implements OutputHead {
+            + forward(Observations representations: Tensor): ClassificationHeadOutput
+            + get_loss(ForwardPass, ClassificationOutput, Rewards): Loss
+        }
+        class ClassificationHead.HParams extends OutputHead.HParams {}
+        class ClassificationHeadOutput extends Actions {
+            + y_pred: Tensor
+            + logits: Tensor
+        }
+        ClassificationHead *-- ClassificationHeadOutput : outputs
+        ClassificationHead *-- ClassificationHead.HParams
+
+    }
+    package regression {
+        class RegressionHead implements OutputHead {}
+    }
+
+    package rl {
+        package policy_head {
+            class PolicyHead extends ClassificationHead {
+                + forward(observations: Observations representations: Tensor): PolicyHeadOutput
+                + hparams: PolicyHead.HParams
+            }
+            class PolicyHead.HParams extends ClassificationHead.HParams {
+                + forward(observations: Observations representations: Tensor): PolicyHeadOutput
+            }
+            class PolicyHeadOutput extends ClassificationHeadOutput {
+                action_dist: Distribution
+            }
+            PolicyHead *-- PolicyHeadOutput : outputs
+            PolicyHead *-- PolicyHead.HParams
+
+        }
+        package episodic_a2c {
+            class EpisodicA2C extends PolicyHead {
+            }
+            class EpisodicA2C.HParams extends PolicyHead.HParams {
+
+            }
+            class A2CHeadOutput extends PolicyHeadOutput{
+                + value: Tensor
+            }
+            EpisodicA2C *-- A2CHeadOutput : outputs
+            EpisodicA2C *-- EpisodicA2C.HParams
+        }
+    }
+}
+
+@enduml

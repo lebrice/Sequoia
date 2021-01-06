@@ -1,6 +1,10 @@
 @startuml common
+
+!include gym.plantuml
+
+
 package common {
-    class Batch {}
+    abstract class Batch {}
 
     package transforms as common.transforms {
         enum Transforms {
@@ -15,6 +19,9 @@ package common {
         }
         abstract class Transform
     }
+
+    package gym_wrappers as common.gym_wrappers {}
+    package spaces as common.spaces {}
 }
 
 @enduml

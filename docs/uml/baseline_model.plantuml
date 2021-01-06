@@ -1,0 +1,86 @@
+@startuml baseline_model
+
+package baseline_model {
+
+    package base_model {
+        abstract class BaseModel {
+            + hparams: BaseModel.HParams
+            + encoder: nn.Module
+            + output_head: OutputHead
+            + forward(Observations): ForwardPass
+            + get_loss(ForwardPass, Rewards): Loss
+            + get_actions(observations: Observations, action_space: Space): Actions
+        }
+        ' class BaseModel.HParams extends BaseHParams {}
+        ' class BaseHParams {
+        class BaseModel.HParams {
+            {static} + available_optimizers: Dict[str, Type[Optimizer]]
+            {static} + available_encoders: Dict[str, Type[nn.Module]]
+
+            + learning_rate: float = 0.001
+            + weight_decay: float = 1e-6
+            + optimizer: str = "adam"
+            + encoder: str = "resnet18"
+            + batch_size: Optional[int]
+            + train_from_scratch: bool = False
+            + freeze_pretrained_encoder_weights: bool = False
+            + output_head: OutputHead.HParams
+            + detach_output_head: bool = False
+        }
+        BaseModel *-- BaseModel.HParams
+    }
+
+    together {
+        package semi_supervised_model {
+            abstract class SemiSupervisedModel extends BaseModel {
+                + forward(Observations): ForwardPass
+                + get_loss(ForwardPass, Optional[Rewards]): Loss
+            }
+            abstract class SemiSupervisedModel.HParams extends BaseModel.HParams {
+                + knn_callback: KnnCallback note (todo: unused atm)
+            }
+            SemiSupervisedModel *-- SemiSupervisedModel.HParams
+        }
+        package self_supervised_model {
+            abstract class SelfSupervisedModel extends BaseModel {
+                + hparams: SelfSupervisedModel.HParams
+                + tasks: dict[str, AuxiliaryTask]
+                + add_auxiliary_task(task AuxiliaryTask)
+            }
+            abstract class SelfSupervisedModel.HParams extends BaseModel.HParams {
+
+                + simclr: Optional[SimCLRTask.Options]
+                + vae: Optional[VAEReconstructionTask.Options]
+                + ae: Optional[AEReconstructionTask.Options]
+                + ewc: Optional[EWCTask.Options]
+            }
+
+            SelfSupervisedModel *-- SelfSupervisedModel.HParams
+        }
+
+        package class_incremental_model {
+            abstract class ClassIncrementalModel extends BaseModel {
+                + output_heads: dict[str, OutputHead]
+                + forward(Observations): ForwardPass
+                + on_task_switch(task_id: Optional[int])
+            }
+
+            abstract class ClassIncrementalModel.HParams extends BaseModel.HParams {
+                + multihead: Optional[bool]
+            }
+            ClassIncrementalModel *-- ClassIncrementalModel.HParams
+        }
+    }
+    package baseline_model as baseline_model.baseline_model {
+        class BaselineModel extends SemiSupervisedModel, SelfSupervisedModel, ClassIncrementalModel
+        {
+            + hparams: BaselineModel.HParams
+        }
+        class BaselineModel.HParams extends SelfSupervisedModel.HParams, ClassIncrementalModel.HParams, SemiSupervisedModel.HParams
+        {
+        }
+        BaselineMethod "1" *--> "1" BaselineModel : uses
+        BaselineModel *-- BaselineModel.HParams
+    }
+}
+@enduml
