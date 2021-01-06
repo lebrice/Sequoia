@@ -21,6 +21,7 @@ from .generic_functions import detach, move
 from .encode import encode
 from .logging_utils import get_logger
 from .utils import dict_union
+from sequoia.utils.generic_functions import detach
 
 T = TypeVar("T")
 logger = get_logger(__file__)
@@ -62,7 +63,10 @@ class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  
         save_path_tmp.replace(path)
 
     def detach(self: S) -> S:
-        return type(self).from_dict(detach(self.to_dict()))
+        return type(self)(**detach({
+            field.name: getattr(self, field.name) for field in fields(self)
+            if field.metadata.get("to_dict", True)
+        }))
 
     def to(self, device: Union[str, torch.device]):
         """Returns a new object with all the attributes 'moved' to `device`.

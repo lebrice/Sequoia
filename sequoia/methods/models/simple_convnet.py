@@ -14,7 +14,8 @@ class SimpleConvNet(nn.Module):
             nn.Flatten(),
         )
         self.fc = nn.Sequential(
-            nn.Linear(256, 120),
+            nn.Linear(256, 120), # NOTE: This '256' is what gets used as the
+            # hidden size of the encoder.
             nn.ReLU(),
             nn.Linear(120, 84),
             nn.ReLU(),

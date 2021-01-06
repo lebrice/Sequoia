@@ -20,7 +20,7 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from torchvision import models as tv_models
 
-from sequoia.settings import Setting, ActiveSetting, PassiveSetting
+from sequoia.settings import Setting, ActiveSetting, PassiveSetting, Environment
 from sequoia.common.config import Config
 from sequoia.common.loss import Loss
 from sequoia.methods.aux_tasks.auxiliary_task import AuxiliaryTask
@@ -91,8 +91,30 @@ class BaselineModel(SemiSupervisedModel,
             logger.debug("Hparams:")
             logger.debug(self.hp.dumps(indent="\t"))
 
+        if self.trainer:
+            OutputHead.base_model_optimizer = self.optimizers()
+
+        # Upgrade the type of hparams for the output head, based on the setting.
+        self.hp.output_head = self.hp.output_head.upgrade(target_type=self.output_head_type(setting).HParams)
+        
+        self.output_head: OutputHead = self.create_output_head(setting)
+
+        self.tasks: Dict[str, AuxiliaryTask] = self.create_auxiliary_tasks()
+
+        for task_name, task in self.tasks.items():
+            logger.debug("Auxiliary tasks:")
+            assert isinstance(task, AuxiliaryTask), f"Task {task} should be a subclass of {AuxiliaryTask}."
+            if task.coefficient != 0:
+                logger.debug(f"\t {task_name}: {task.coefficient}")
+                logger.info(f"enabling the '{task_name}' auxiliary task (coefficient of {task.coefficient})")
+                task.enable()
+
     # @auto_move_data
-    def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:
+    def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:  # type: ignore
+        # NOTE: Implementation is mostly in `base_model.py`.
+        # Sharing the optimizer with the output head, in case the
+        # representations are also learned using the output head.
+        OutputHead.base_model_optimizer = self.optimizers()
         return super().forward(observations)
 
     def create_output_head(self, setting: Setting, add_to_optimizer: bool = None) -> OutputHead:
@@ -114,11 +136,13 @@ class BaselineModel(SemiSupervisedModel,
         OutputHead
             The new output head.
         """
+        # NOTE: Implementation is in `base_model.py`.
         return super().create_output_head(setting, add_to_optimizer=add_to_optimizer)
 
     def output_head_type(self, setting: SettingType) -> Type[OutputHead]:
         """ Return the type of output head we should use in a given setting.
         """
+        # NOTE: Implementation is in `base_model.py`.
         return super().output_head_type(setting)
 
     def training_step(self,
@@ -135,35 +159,25 @@ class BaselineModel(SemiSupervisedModel,
         )
         loss: Tensor = step_result["loss"]
         loss_object: Loss = step_result["loss_object"]
-        # return step_result
-        # self.log("train loss", loss, on_step=True, prog_bar=True, logger=True)
-
-        if isinstance(self.setting, ContinualRLSetting):
+        
+        if not isinstance(loss, Tensor) or not loss.requires_grad:
             # TODO: There might be no loss at some steps, because for instance
-            # we haven't reached the end of an episode yet.
-            self.log("train loss", loss, on_step=True, prog_bar=True, logger=True)
-            
-            if loss != 0.:
-                logger.debug(f"Train loss: {loss}")
-            
-            for metric_name, metric in loss_object.all_metrics().items():
-                for key, value in metric.to_log_dict().items():
-                    self.log(f"{metric_name}/{key}", value, on_step=True, prog_bar=True, logger=True)
-                    logger.debug(f"{metric_name}/{key}: {value}")
+            # we haven't reached the end of an episode in an RL setting.
+            return None
 
-            # TODO: Make sure that this is indeed working when running a manual
-            # backward pass
-            if not isinstance(loss, Tensor):
-                return None
-            elif loss.requires_grad:
-                if self._running_manual_backward:
-                    optimizer = self.optimizers()
-                    self.manual_backward(loss, optimizer)
-                    self.manual_optimizer_step(optimizer)
-                    optimizer.zero_grad()
-                return step_result
-            else:
-                return None
+        if loss.requires_grad:
+            if isinstance(self.output_head, PolicyHead):
+                # In this case we don't do the step, since the output head has
+                # its own optimizer. TODO: Should probably improve the
+                # online_a2c such that we can get a loss at each step always,
+                # which would make this much simpler.
+                optimizer = self.optimizers()
+                self.manual_backward(loss, optimizer, retain_graph=True)
+            elif not self.trainer.train_loop.automatic_optimization:
+                optimizer = self.optimizers()
+                self.manual_backward(loss, optimizer)
+                optimizer.step()
+                optimizer.zero_grad()
         return step_result
         
     def validation_step(self,
@@ -193,3 +207,25 @@ class BaselineModel(SemiSupervisedModel,
             loss_name="test",
             **kwargs,
         )
+
+    def shared_step(self,
+                    batch: Tuple[Observations, Optional[Rewards]],
+                    batch_idx: int,
+                    environment: Environment,
+                    loss_name: str,
+                    dataloader_idx: int = None,
+                    optimizer_idx: int = None) -> Dict:
+        results = super().shared_step(batch, batch_idx, environment, loss_name, dataloader_idx=dataloader_idx, optimizer_idx=optimizer_idx)
+        loss_tensor = results["loss"]
+        loss = results["loss_object"]
+
+        if loss_tensor != 0.:
+            for key, value in loss.to_pbar_message().items():
+                assert not isinstance(value, (dict, str)), "shouldn't be nested at this point!"
+                self.log(key, value, prog_bar=True)
+                logger.debug(f"{key}: {value}")
+            
+            for key, value in loss.to_log_dict(verbose=self.config.verbose).items():
+                assert not isinstance(value, (dict, str)), "shouldn't be nested at this point!"
+                self.log(key, value, logger=True)
+        return results

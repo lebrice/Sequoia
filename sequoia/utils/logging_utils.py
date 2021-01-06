@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Iterable, List, TypeVar, Union
 
 import torch.multiprocessing as mp
 import tqdm
+from torch import Tensor
 
 from sequoia.utils.utils import unique_consecutive
 
@@ -108,7 +109,7 @@ def get_new_file(file: Path) -> Path:
 
 def cleanup(message: Dict[str, Union[Dict, str, float, Any]],
             sep: str="/",
-            keys_to_remove: List[str]=None) -> Dict[str, Union[str, float, Any]]:
+            keys_to_remove: List[str]=None) -> Dict[str, Union[float, Tensor]]:
     """Cleanup a message dict before it is logged to wandb.
 
     TODO: Describe what this does in more detail.
@@ -118,7 +119,7 @@ def cleanup(message: Dict[str, Union[Dict, str, float, Any]],
         sep (str, optional): [description]. Defaults to "/".
 
     Returns:
-        Dict[str, Union[str, float, Any]]: [description]
+        Dict[str, Union[float, Tensor]]: Cleaned up dict.
     """
     # Flatten the log dictionary
     from sequoia.utils.utils import flatten_dict

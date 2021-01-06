@@ -232,7 +232,7 @@ class ExampleRegularizationMethod(StableBaselines3Method):
     # Model = PPOModel  # Works great! (somewhat fast)
     # Model = SACModel  # Works (seems to be quite a bit slower).
     
-    # These two don't yet work, they have the same error, which seems to be
+    # These don't yet work, they have the same error, which seems to be
     # related to the action space being Discrete:
     #     stable_baselines3/td3/td3.py", line 143, in train
     #     noise = replay_data.actions.clone().data.normal_(0, self.target_policy_noise)

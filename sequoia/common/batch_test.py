@@ -204,7 +204,35 @@ def test_masking():
     assert (expected.x == bob.x).all()
     assert expected.task_labels == bob.task_labels
 
- 
+
+def test_newaxis():
+    """ WIP: Trying out np.newaxis as a way to add an extra batch dimension. """
+    x = Observations(
+        x = torch.arange(5),
+        task_labels = 1,
+    )
+    # Test out different ways of 'unsqueezing' the object.
+    for expanded in [x[np.newaxis], x.with_batch_dimension()]:
+        assert str(expanded) == str(Observations(
+            x=torch.tensor([[0, 1, 2, 3, 4]], dtype=int),
+            task_labels=np.array([1]),
+        ))
+
+
+def test_remove_batch_dim():
+    """ Removing an extra batch dimension. """
+    bob = Observations(
+        x=torch.tensor([[0, 1, 2, 3, 4]], dtype=int),
+        task_labels=np.array([1]),
+    )
+    expected = Observations(
+        x = torch.arange(5),
+        task_labels = 1,
+    )
+    for expanded in [bob.remove_batch_dimension(), bob[:, 0]]:
+        assert str(expanded) == str(expected)
+
+
 @dataclass(frozen=True)
 class ForwardPass(Batch):
     observations: Observations

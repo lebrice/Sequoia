@@ -361,14 +361,14 @@ class Experiment(Parseable, Serializable):
                 argv=argv,
                 strict_args=False,
             )
-            logger.info(f"Results for setting {setting_type}, method {method_type}: {result.summary()}")
+            logger.info(f"Results for setting {setting_type}, method {method_type}: {result}")
             all_results[(setting_type, method_type)] = result
         
         logger.info(f"All results: ")
-        logger.info("\n" + json.dumps({
-            f"{setting_type.get_name()} - {method_type.get_name()}": results.to_log_dict()
+        logger.info("\n" + str({
+            f"{setting_type.get_name()} - {method_type.get_name()}": results
             for (setting_type, method_type), results in all_results.items()
-        }, indent="\t"))
+        }))
         return all_results
 
 

@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pytest
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
-
+from sequoia.common.spaces.named_tuple import NamedTupleSpace, NamedTuple
 from sequoia.utils.utils import dict_union
 from .multi_task_environment import MultiTaskEnvironment
 supported_environments: List[str] = ["CartPole-v0"]
@@ -176,10 +176,10 @@ def test_add_task_id_to_obs():
     env.seed(123)
     env.reset()
     
-    assert env.observation_space == spaces.Tuple([
-        original.observation_space,
-        spaces.Discrete(4),   
-    ])
+    assert env.observation_space == NamedTupleSpace(
+        x=original.observation_space,
+        task_labels=spaces.Discrete(4),   
+    )
     
     
     for step in range(100):
@@ -235,10 +235,10 @@ def test_starting_step_and_max_step():
     env.seed(123)
     env.reset()
     
-    assert env.observation_space == spaces.Tuple([
-        original.observation_space,
-        spaces.Discrete(4),
-    ])
+    assert env.observation_space == NamedTupleSpace(
+        x=original.observation_space,
+        task_labels=spaces.Discrete(4),
+    )
 
     # Trying to set the 'steps' to something smaller than the starting step
     # doesn't work.
@@ -290,10 +290,10 @@ def test_task_id_is_added_even_when_no_known_task_schedule():
     env.seed(123)
     env.reset()
     
-    assert env.observation_space == spaces.Tuple([
-        original.observation_space,
-        spaces.Discrete(1),
-    ])
+    assert env.observation_space == NamedTupleSpace(
+        x=original.observation_space,
+        task_labels=spaces.Discrete(1),
+    )
     for step in range(0, 100):
         obs, _, done, info = env.step(env.action_space.sample())
         # env.render()

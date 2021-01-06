@@ -13,11 +13,11 @@ def test_demo():
     # Get a dict to be logged, for example with wandb.
     loss_dict = loss.to_log_dict()
     assert loss_dict == {
-        'loss': 6.33,
-        'losses/task_a/loss': 1.23,
-        'losses/task_a/accuracy': 0.95,
-        'losses/task_b/loss': 2.1,
-        'losses/task_c/loss': 3.0
+        'total/loss': 6.33,
+        'total/task_a/loss': 1.23,
+        'total/task_a/accuracy': 0.95,
+        'total/task_b/loss': 2.1,
+        'total/task_c/loss': 3.0
     }
 
 
@@ -41,9 +41,9 @@ def test_to_log_dict_order():
     total_loss = Loss("total") + task_a_loss + task_b_loss + task_c_loss
     loss_dict = total_loss.to_log_dict()
     assert loss_dict == {
-        'loss': 6.33,
-        'losses/task_a/loss': 1.23,
-        'losses/task_a/accuracy': 0.95,
-        'losses/task_b/loss': 2.1,
-        'losses/task_c/loss': 3.0
+        'total/loss': 6.33,
+        'total/task_a/loss': 1.23,
+        'total/task_a/accuracy': 0.95,
+        'total/task_b/loss': 2.1,
+        'total/task_c/loss': 3.0
     }

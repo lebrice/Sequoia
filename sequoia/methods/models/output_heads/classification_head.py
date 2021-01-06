@@ -1,10 +1,11 @@
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Union
 
 import gym
 import torch
 from gym import spaces
 from torch import Tensor, nn, LongTensor
+from simple_parsing import list_field
 
 from sequoia.common import Batch, ClassificationMetrics, Loss
 from sequoia.common.layers import Flatten
@@ -19,7 +20,7 @@ class ClassificationOutput(Actions):
     classification head, which correspond to the 'actions' to be sent to the
     environment, in the general formulation.
     """
-    y_pred: LongTensor
+    y_pred: Union[LongTensor, Tensor]
     logits: Tensor
 
     @property
@@ -45,6 +46,12 @@ class ClassificationOutput(Actions):
 
 
 class ClassificationHead(OutputHead):
+
+    @dataclass
+    class HParams(OutputHead.HParams):
+        hidden_layers: int = 1
+        hidden_neurons: List[int] = list_field(64)
+
     def __init__(self,
                  input_space: gym.Space,
                  action_space: gym.Space,
@@ -60,19 +67,11 @@ class ClassificationHead(OutputHead):
         )
         assert isinstance(action_space, spaces.Discrete)
         output_size = action_space.n
-        
-        hidden_layers: List[nn.Module] = []
-        in_features = self.input_size
-        for i, neurons in enumerate(self.hparams.hidden_neurons):
-            out_features = neurons
-            hidden_layers.append(nn.Linear(in_features, out_features))
-            hidden_layers.append(nn.ReLU())
-            in_features = out_features # next input size is output size of prev.
-
-        self.dense = nn.Sequential(
-            Flatten(),
-            *hidden_layers,
-            nn.Linear(in_features, output_size)
+        self.dense = self.make_dense_network(
+            in_features=self.input_size,
+            hidden_neurons=self.hparams.hidden_neurons,
+            out_features=output_size,
+            activation=self.hparams.activation,
         )
         # if output_size == 2:
         #     # TODO: Should we be using this loss instead?

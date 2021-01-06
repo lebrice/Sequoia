@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from gym import Space, spaces
 from torch import Tensor
-from ._namedtuple import NamedTuple
+from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 
 
 @singledispatch
@@ -21,7 +21,7 @@ def _(space: spaces.Discrete, sample: Tensor) -> int:
     if isinstance(sample, Tensor):
         return sample.item()
     elif isinstance(sample, np.ndarray):
-        assert sample.size == 1
+        assert sample.size == 1, sample
         return int(sample)
     return sample
 
@@ -47,6 +47,24 @@ def _(space: spaces.Tuple, sample: Tuple[Union[Tensor, Any]]) -> Tuple[Union[np.
     if isinstance(sample, NamedTuple):
         return type(sample)(values_gen)
     return tuple(values_gen)
+
+from collections.abc import Mapping
+
+@from_tensor.register
+def _(space: NamedTupleSpace, sample: NamedTuple) -> NamedTuple:
+    sample_dict: Dict
+    if isinstance(sample, NamedTuple):
+        sample_dict = sample._asdict()
+    elif isinstance(sample, Mapping):
+        sample_dict = sample
+    else:
+        assert len(sample) == len(space.spaces)
+        sample_dict = dict(zip(space.names, sample)) 
+    
+    return space.dtype(**{
+        key: from_tensor(space[key], value) if key in space.names else value
+        for key, value in sample_dict.items()
+    })
 
 
 @singledispatch
@@ -82,4 +100,36 @@ def _(space: spaces.Tuple,
         to_tensor(subspace, sample[i], device)
         for i, subspace in enumerate(space.spaces)
     )
-    
+
+@to_tensor.register
+def _(space: NamedTupleSpace, sample: NamedTuple, device: torch.device = None):
+    return space.dtype(**{
+        key: to_tensor(space[i], sample[i], device=device) for i, key in enumerate(space._spaces.keys())
+    })
+
+from sequoia.common.spaces.sparse import Sparse
+
+@to_tensor.register(Sparse)
+def sparse_sample_to_tensor(space: Sparse,
+                            sample: Union[Optional[Any], np.ndarray],
+                            device: torch.device = None) -> Optional[Union[Tensor, np.ndarray]]:
+    if space.sparsity == 1.:
+        if isinstance(space.base, spaces.MultiDiscrete):
+            assert all(v == None for v in sample)
+            return np.array([
+                None if v == None else v for v in sample
+            ])
+        if sample is not None:
+            assert isinstance(sample, np.ndarray) and sample.dtype == np.object
+            assert not sample.shape
+        return None
+    if space.sparsity == 0.:
+        # Do we need to convert dtypes here though?
+        return to_tensor(space.base, sample, device)
+    # 0 < sparsity < 1
+    if isinstance(sample, np.ndarray) and sample.dtype == np.object:
+        return np.array([
+            None if v == None else v for v in sample
+        ])
+
+    assert False, (space, sample)

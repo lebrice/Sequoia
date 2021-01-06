@@ -35,19 +35,19 @@ class SemiSupervisedModel(BaseModel[SettingType]):
 
     def get_loss(self,
                  forward_pass: Dict[str, Tensor],
-                 reward: Optional[Rewards] = None,
+                 rewards: Optional[Rewards] = None,
                  loss_name: str="") -> Loss:
         """Trains the model on a batch of (potentially partially labeled) data. 
 
         Args:
             forward_pass (Dict[str, Tensor]): WIP: The results of the forward
                 pass (processed input, predictions, etc.)
-                target (Union[Optional[Tensor], List[Optional[Tensor]]]):
-                    Labels associated with the data. Can either be:
-                    - None: fully unlabeled batch
-                    - Tensor: fully labeled batch
-                    - List[Optional[Tensor]]: Partially labeled batch.
-            name (str, optional): Name of the resulting loss object. Defaults to
+            rewards (Union[Optional[Tensor], List[Optional[Tensor]]]):
+                Labels associated with the data. Can either be:
+                - None: fully unlabeled batch
+                - Tensor: fully labeled batch
+                - List[Optional[Tensor]]: Partially labeled batch.
+            loss_name (str, optional): Name of the resulting loss object. Defaults to
                 "Train".
 
         Returns:
@@ -59,20 +59,22 @@ class SemiSupervisedModel(BaseModel[SettingType]):
         # would make it a bit simpler than having both numpy arrays and tensors
         # in the batch
 
-        y: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = reward.y
-        if y is None or isinstance(y, Tensor):
+        y: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = rewards.y
+        if y is None or all(y_i is not None for y_i in y):
             # Fully labeled/unlabeled batch
+            # NOTE: Tensors can't have None items, so if we get a Tensor that
+            # means that we have all task labels. 
             labeled_ratio = float(y is not None)
-            return super().get_loss(forward_pass, reward, loss_name=loss_name)
+            return super().get_loss(forward_pass, rewards, loss_name=loss_name)
 
-        is_labeled: np.ndarray = np.asarray([y_i is None for y_i in y])
+        is_labeled: np.ndarray = np.asarray([y_i is not None for y_i in y])
 
         # Batch is maybe a mix of labeled / unlabeled data.
         labeled_y = y[is_labeled]
         # TODO: Might have to somehow re-order the results based on the indices?
         # TODO: Join (merge) the metrics? or keep them separate?
-        labeled_forward_pass = {k: v[is_labeled] for k, v in forward_pass}
-        unlabeled_forward_pass = {k: v[~is_labeled] for k, v in forward_pass}
+        labeled_forward_pass = {k: v[is_labeled] for k, v in forward_pass.items()}
+        unlabeled_forward_pass = {k: v[~is_labeled] for k, v in forward_pass.items()}
         
         labeled_ratio = len(labeled_y) / len(y)
         logger.debug(f"Labeled ratio: {labeled_ratio}")
@@ -89,15 +91,15 @@ class SemiSupervisedModel(BaseModel[SettingType]):
             # TODO: Setting a different loss name for the for this is definitely going to cause trouble! 
             unsupervised_loss = super().get_loss(
                 unlabeled_forward_pass,
-                y=None,
+                rewards=None,
                 loss_name="unsupervised",
             )
             loss += unsupervised_loss
 
         if labeled_forward_pass:
-            supervised_loss = self.model.get_loss(
+            supervised_loss = super().get_loss(
                 labeled_forward_pass,
-                y=labeled_y,
+                rewards=labeled_y,
                 loss_name="supervised",
             )
             loss += supervised_loss

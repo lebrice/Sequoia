@@ -28,7 +28,7 @@ class AuxiliaryTask(nn.Module):
     hidden_size: ClassVar[int] = -1
 
     _model: ClassVar[BaseModel]
-    # Class variables for holding the Modules shared with with the classifier. 
+    # Class variables for holding the Modules shared with the classifier. 
     encoder: ClassVar[nn.Module]
     output_head: ClassVar[nn.Module]  # type: ignore
 
@@ -147,7 +147,7 @@ class AuxiliaryTask(nn.Module):
     def disabled(self) -> bool:
         return self._disabled or self.coefficient == 0.
 
-    def on_task_switch(self, task_id: int) -> None:
+    def on_task_switch(self, task_id: Optional[int]) -> None:
         """ Executed when the task switches (to either a new or known task). """
 
     @property

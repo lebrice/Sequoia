@@ -277,12 +277,14 @@ class Setting(SettingABC,
         of the `size()` method from LightningDataModule.
         """
         if not isinstance(value, gym.Space):
-            raise RuntimeError("Value must be a `gym.Space`.")
+            raise RuntimeError(f"Value must be a `gym.Space` (got {value})")
         if not self._dims:
             if isinstance(value, spaces.Box):
                 self.dims = value.shape
             elif isinstance(value, spaces.Tuple):
                 self.dims = tuple(space.shape for space in value.spaces)
+            elif isinstance(value, spaces.Dict) and "x" in value.spaces:
+                self.dims = value.spaces["x"].shape
             else:
                 raise NotImplementedError(
                     f"Don't know how to set the 'dims' attribute using "
@@ -403,7 +405,7 @@ class Setting(SettingABC,
                 expected_observation_space = self.observation_space
                 expected_action_space = self.action_space
                 expected_reward_space = self.reward_space
-            
+
             # TODO: Batching the 'Sparse' makes it really ugly, so just
             # comparing the 'image' portion of the space for now.
             assert env.observation_space[0].shape == expected_observation_space[0].shape, (env.observation_space[0], expected_observation_space[0])
@@ -494,11 +496,13 @@ class Setting(SettingABC,
     def _check_rewards(self, env: Environment, rewards: Any):
         if isinstance(rewards, Rewards):
             assert isinstance(rewards, self.Rewards)
-            rewards = rewards.y.cpu().numpy()
-        elif isinstance(rewards, Tensor):
+            rewards = rewards.y
+        if isinstance(rewards, Tensor):
             rewards = rewards.cpu().numpy()
-        elif isinstance(rewards, np.ndarray):
+        if isinstance(rewards, np.ndarray):
             rewards = rewards
+        if isinstance(rewards, float):
+            rewards = np.asarray(rewards)
         assert rewards in env.reward_space
 
     # Just to make type hinters stop throwing errors when using the constructor

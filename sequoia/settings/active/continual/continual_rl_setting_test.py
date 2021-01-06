@@ -76,12 +76,13 @@ def test_check_iterate_and_step(dataset: str,
     # because of how the Monitor class works atm.
     with setting.test_dataloader(batch_size=None) as temp_env:
         assert temp_env.observation_space[0] == spaces.Box(0., 1., expected_obs_shape, dtype=np.float32)
+        assert type(temp_env.observation_space)
         # assert temp_env.observation_space[0] == spaces.Box(0., 1., expected_obs_batch_shape, dtype=np.float32)
 
     def check_obs(obs):
         assert isinstance(obs, ContinualRLSetting.Observations), obs[0].shape
         assert obs.x.shape == expected_obs_batch_shape
-        assert obs.task_labels is None or all(task_label is None for task_label in obs.task_labels)
+        assert obs.task_labels is None or all(task_label == None for task_label in obs.task_labels)
     
     # FIXME: Same a temp copy
     expected_obs_batch_shape_ = expected_obs_batch_shape
