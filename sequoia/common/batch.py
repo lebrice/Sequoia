@@ -564,25 +564,60 @@ class Batch(ABC, Mapping[str, T]):
         Raises an error if any non-None value doesn't have a batch dimension of
         size 1. 
         """
+        return self[:, 0]
+
+    def split(self: B) -> List[B]:
+        """Returns an iterable of the items in the 'batch', each item as a
+        object of the same type as `self`.
+        """
+        # If one of the fields is None, then we convert it into a list of Nones,
+        # so we can zip all the fields to create a list of tuples.
+        return [self[:, i] for i in range(self.batch_size)]
+
+    @classmethod
+    def stack(cls: Type[B], items: List[B]) -> B:
+        items = list(items)
+        
         @singledispatch
-        def squeeze(v: Any) -> Any:
-            if v is None:
+        def _stack(first_item, *others):
+            # By default, if we don't know how to handle the item type, just
+            # return an ndarray with with all the items.
+            # note: We could also try to return a tensor, rather than an ndarray
+            # but I'd rather keep it simple for now.
+            return np.asarray([first_item, *others])
+
+        @_stack.register(np.ndarray)
+        def _stack_ndarrays(first_item: np.ndarray, *others: np.ndarray) -> np.ndarray:
+            return np.stack([first_item, *others])
+        
+        @_stack.register(Tensor)
+        def _stack_ndarrays(first_item: Tensor, *others: Tensor) -> Tensor:
+            return torch.stack([first_item, *others])
+        
+        @_stack.register(Batch)
+        @_stack.register(dict)
+        def _stack_dicts(first_item: Dict, *others: Dict) -> Dict:
+            return type(first_item)(**{
+                key: _stack(first_item[key], *(other[key] for other in others))
+                for key in first_item.keys()
+            })
+        # Just to make sure that the items
+        assert isinstance(items[0], cls)
+        return _stack(items[0], *items[1:])
+    
+    def torch(self, device: Union[str, torch.device] = None):
+        """ Converts any ndarrays to Tensors if possible and returns a new
+        object of the same type.
+        
+        NOTE: This is the opposite of `self.numpy()`
+        """
+        def _from_numpy(v: Union[np.ndarray, Any]) -> Union[Tensor, Any]:
+            try:
+                return torch.as_tensor(v, device=device)
+            except:
                 return v
-            raise NotImplementedError(v)
-
-        @squeeze.register(Categorical)
-        def _squeeze_categorical(v: Categorical) -> Categorical:
-            return type(v)(logits=v.logits[0])
-
-        @squeeze.register(np.ndarray)
-        @squeeze.register(Tensor)
-        def _squeeze_array(v: Union[np.ndarray, Tensor]) -> Union[np.ndarray, Tensor]:
-            if not v.shape or v.shape[0] != 1:
-                raise RuntimeError(f"value {v} doesn't have a batch dimension of size 1.")
-            return v[0]
-
-        return self._map(squeeze)
-
+        return self._map(_from_numpy, recursive=True)
+    
     def _map(self: B,
              func: Callable,
              *args,
