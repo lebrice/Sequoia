@@ -1,7 +1,8 @@
 @startuml common
 
-!include gym.plantuml
+!include gym.puml
 
+' class List
 
 package common {
     abstract class Batch {}
@@ -18,10 +19,11 @@ package common {
             ...
         }
         abstract class Transform
+        class Compose extends torchvision.transforms.Compose {
+        }
     }
 
     package gym_wrappers as common.gym_wrappers {}
     package spaces as common.spaces {}
 }
-
 @enduml

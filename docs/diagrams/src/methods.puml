@@ -1,18 +1,16 @@
-@startuml Diagram
+@startuml methods
 
 ' !include gym.plantuml
 ' remove gym.spaces
 ' TODO: There must be a simpler way to only keep a single node, right?
-!include settings.plantuml
+!include settings.puml
 remove settings.active
 remove settings.assumptions
 remove settings.passive
 remove SettingABC
-remove SettingABC
 
 
 package methods {
-
     package baseline_method {
         class BaselineMethod implements Method {
             + hparams: BaselineModel.HParams
@@ -21,9 +19,6 @@ package methods {
             + trainer: Trainer
         }
     }
-    
-    !include baseline_model.plantuml
-
     package aux_tasks{
         package auxiliary_task {
             abstract class AuxiliaryTask {
@@ -34,7 +29,7 @@ package methods {
             abstract class AuxiliaryTask.Options {
                 + coefficient: float
             }
-            EpisodicA2C *-- EpisodicA2C.HParams
+            AuxiliaryTask *-- AuxiliaryTask.Options
         }
 
         package simclr {
@@ -45,9 +40,9 @@ package methods {
             class SimCLRTask.Options extends AuxiliaryTask.Options {
 
             }
+            SimCLRTask *-- SimCLRTask.Options
         }
 
-        SelfSupervisedModel "1" o-- "many" AuxiliaryTask
     }
     
 
@@ -58,13 +53,7 @@ package methods {
             + actions: Actions
         }
     
-        !include baseline_model.plantuml
-        
-        !include output_heads.plantuml
+        !include baseline_model.puml
+        !include output_heads.puml
     }
-@enduml
-
-
-@startuml models
-
 @enduml

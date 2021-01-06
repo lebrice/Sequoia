@@ -1,5 +1,7 @@
 @startuml baseline_model
 
+!include output_heads.puml
+
 package baseline_model {
 
     package base_model {
@@ -28,6 +30,8 @@ package baseline_model {
             + detach_output_head: bool = False
         }
         BaseModel *-- BaseModel.HParams
+        ClassIncrementalModel "1" *-- "1" OutputHead
+
     }
 
     together {
@@ -48,14 +52,13 @@ package baseline_model {
                 + add_auxiliary_task(task AuxiliaryTask)
             }
             abstract class SelfSupervisedModel.HParams extends BaseModel.HParams {
-
                 + simclr: Optional[SimCLRTask.Options]
                 + vae: Optional[VAEReconstructionTask.Options]
                 + ae: Optional[AEReconstructionTask.Options]
                 + ewc: Optional[EWCTask.Options]
             }
-
             SelfSupervisedModel *-- SelfSupervisedModel.HParams
+            SelfSupervisedModel "1" o-- "many" AuxiliaryTask
         }
 
         package class_incremental_model {
@@ -69,6 +72,7 @@ package baseline_model {
                 + multihead: Optional[bool]
             }
             ClassIncrementalModel *-- ClassIncrementalModel.HParams
+            ClassIncrementalModel "1" *-- "many" OutputHead
         }
     }
     package baseline_model as baseline_model.baseline_model {

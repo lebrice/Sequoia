@@ -1,4 +1,4 @@
-@startuml Gym
+@startuml gym
 
 package gym {
     package spaces as gym.spaces {

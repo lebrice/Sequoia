@@ -20,6 +20,8 @@ checkpoints
 lightning_logs
 .pylintrc
 
+**.png
+
 *.gz
 *.pt
 build

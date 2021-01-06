@@ -1,13 +1,14 @@
-@startuml Settings
+@startuml settings
 
-!include gym.plantuml
-!include common.plantuml
-!include pytorch_lightning.plantuml
-
+!include gym.puml
+!include common.puml
+!include pytorch_lightning.puml
+'  TODO: there must be a better way to show only one thing from a
+' package, without having to import all the package and then 
+' remove everything but that one thing!
 remove gym.spaces
 remove Wrapper
-hide common
-
+remove common
 
 namespace torch {
     class DataLoader
@@ -83,12 +84,12 @@ package settings {
 
             ' - is_applicable(setting: SettingABC): bool
         }
-        Method -> SettingABC : targets
+        Method ..> SettingABC : targets
         Method -> Environment : interacts with
         
-        SettingABC -> Environment : uses
+        SettingABC -> Environment : provides
         SettingABC -> Results : produces
-        SettingABC -> Method : uses
+        ' SettingABC -> Method : uses
 
 
        
@@ -195,7 +196,7 @@ package settings {
             {abstract} + val_dataloader(): ActiveEnvironment
             {abstract} + test_dataloader(): ActiveEnvironment
         }
-        ActiveSetting -right-> ActiveEnvironment : uses
+        ActiveSetting *-- ActiveEnvironment
 
         package continual as settings.active.continual {
             class ContinualRLSetting implements ActiveSetting, IncrementalSetting {

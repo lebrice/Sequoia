@@ -1,7 +1,5 @@
 @startuml output_heads
 
-class Actions
-
 package output_heads {
     package output_head {
         abstract class OutputHead {
@@ -20,7 +18,6 @@ package output_heads {
     }
 
     BaseModel "1" *-- "1" OutputHead
-    ClassIncrementalModel "1" *-- "many" OutputHead
     package classification {
         class ClassificationHead implements OutputHead {
             + forward(Observations representations: Tensor): ClassificationHeadOutput
@@ -57,9 +54,18 @@ package output_heads {
         }
         package episodic_a2c {
             class EpisodicA2C extends PolicyHead {
+                + actor: nn.Module
+                + critic: nn.Module
+                + get_episode_loss(Observations, Actions, Rewards, done: bool): Loss
             }
             class EpisodicA2C.HParams extends PolicyHead.HParams {
-
+                + normalize_advantages: bool = False
+                + actor_loss_coef: float = 0.5
+                + critic_loss_coef: float = 0.5
+                + entropy_loss_coef: float = 0.1
+                + max_policy_grad_norm: Optional[float] = None
+                + gamma: float = 0.99
+                + learning_rate: float = 1e-2
             }
             class A2CHeadOutput extends PolicyHeadOutput{
                 + value: Tensor
@@ -67,7 +73,22 @@ package output_heads {
             EpisodicA2C *-- A2CHeadOutput : outputs
             EpisodicA2C *-- EpisodicA2C.HParams
         }
+        package actor_critic_head {
+            class ActorCriticHead extends ClassificationHead {
+                + hparams: ActorCriticHead.HParams
+                + actor: nn.Module
+                + critic: nn.Module 
+            }
+            class ActorCriticHead.HParams extends ClassificationHead.HParams {
+                + gamma: float = 0.95
+                + learning_rate: float = 1e-3
+            }
+            ActorCriticHead *-- ActorCriticHead.HParams
+        }
+    ' remove PolicyHeadOutput
+    ' remove A2CHeadOutput
     }
+    
 }
 
 @enduml

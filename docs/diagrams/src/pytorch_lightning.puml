@@ -1,4 +1,4 @@
-@startuml PL
+@startuml pytorch_lightning
 package pytorch_lightning {
     abstract class LightningDataModule {
         {abstract} + prepare_data()
