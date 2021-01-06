@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field, fields
-from typing import List, Optional, Union, Any, ClassVar
+from typing import List, Optional, Union, Any, ClassVar, Dict
 
 from simple_parsing import list_field
 import numpy as np
@@ -34,16 +34,25 @@ class EpisodeMetrics(Metrics):
         # IDEA: Maybe use the 'variance' in actions/rewards as a metric?
  
     def __add__(self, other):
+        # IDEA: Adding two EpisodeMetrics together gives you a RLMetrics??
+        # if isinstance(other, EpisodeMetrics):
+        #     return RLMetrics(episodes=[self, other])
         return NotImplemented
-    
+
+    def to_pbar_message(self) -> Dict[str, Union[str, float]]:
+        log_dict = self.to_log_dict()
+        log_dict.pop("rewards")
+        return log_dict
+    # def to_log_dict(self):
+
+
 @dataclass
 class RLMetrics(Metrics):
-    decode_into_subclasses: ClassVar[bool] = True
     # Dict mapping from starting step to episode.
     episodes: List[EpisodeMetrics] = field(default_factory=list, repr=False)
     
-    average_episode_length: int =    field(default=0.)
-    average_episode_reward: float =  field(default=0.)
+    average_episode_length: int = field(default=0)
+    average_episode_reward: float = field(default=0.)
 
     def __post_init__(self):
         if self.episodes:
@@ -60,6 +69,12 @@ class RLMetrics(Metrics):
             self.episodes.append(other)
             return self
         return NotImplemented
+
+    def to_pbar_message(self) -> Dict[str, Union[str, float]]:
+        log_dict = self.to_log_dict()
+        # Rename "n_samples" to "episodes":
+        log_dict["episodes"] = log_dict.pop("n_samples")
+        return log_dict
 
 
 @dataclass
@@ -82,4 +97,8 @@ class GradientUsageMetric(Metrics):
             used_gradients=self.used_gradients + other.used_gradients,
             wasted_gradients=self.wasted_gradients + other.wasted_gradients,
         )
-             
+
+    def to_pbar_message(self) -> Dict[str, Union[str, float]]:
+        return {
+            "used_fraction": self.used_gradients_fraction
+        }

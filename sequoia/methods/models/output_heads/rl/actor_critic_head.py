@@ -82,7 +82,6 @@ class ActorCriticHead(ClassificationHead):
 
         self.optimizer = torch.optim.Adam(self.actor.parameters(), lr=self.hparams.learning_rate)
         self.optimizer_critic = torch.optim.Adam(self.critic.parameters(), lr=self.hparams.learning_rate)
-        
 
     def forward(self,
                 observations: ContinualRLSetting.Observations,
@@ -103,17 +102,17 @@ class ActorCriticHead(ClassificationHead):
         
         logits = self.actor(representations)
         # The policy is the distribution over actions given the current state.
-        policy = Categorical(logits=logits)
+        action_dist = Categorical(logits=logits)
         
-        if policy.has_rsample:
-            sample = policy.rsample()
+        if action_dist.has_rsample:
+            sample = action_dist.rsample()
         else:
-            sample = policy.sample()
+            sample = action_dist.sample()
 
         actions = PolicyHeadOutput(
             y_pred=sample,
             logits=logits,
-            policy=policy,
+            action_dist=action_dist,
         )
         return actions
   
@@ -121,14 +120,15 @@ class ActorCriticHead(ClassificationHead):
                  forward_pass: ForwardPass,
                  actions: PolicyHeadOutput,
                  rewards: ContinualRLSetting.Rewards) -> Loss:
-        policy: Categorical = actions.policy
+        action_dist: Categorical = actions.action_dist
 
         rewards = rewards.to(device=actions.device)
-        env_reward = rewards.y
+        env_reward = torch.as_tensor(rewards.y, device=actions.device)
 
         observations: ContinualRLSetting.Observations = forward_pass.observations
         done = observations.done
         assert done is not None, "Need the end-of-episode signal!"
+        done = torch.as_tensor(done, device=actions.device)
         assert self._current_state is not None
         if self._previous_state is None:
             # Only allow this once!
@@ -156,7 +156,7 @@ class ActorCriticHead(ClassificationHead):
 
         if self.training:
             self.optimizer.zero_grad()
-        actor_loss_tensor = - policy.log_prob(actions.action) * advantage.detach()
+        actor_loss_tensor = - action_dist.log_prob(actions.action) * advantage.detach()
         actor_loss_tensor = actor_loss_tensor.mean()
         actor_loss = Loss("actor", loss=actor_loss_tensor)
         if self.training:

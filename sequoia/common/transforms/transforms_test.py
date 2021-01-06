@@ -2,6 +2,7 @@ import gym
 from gym import spaces
 import pytest
 import numpy as np
+from typing import Tuple
 import torch
 import PIL.Image
 
@@ -51,8 +52,6 @@ from . import (ChannelsFirst, ChannelsFirstIfNeeded, ChannelsLast, Compose,
     # Axes do NOT get permuted when the channels are already 'last':
     (Transforms.channels_last_if_needed, (5, 6, 1), (5, 6, 1)),
     (Transforms.channels_last_if_needed, (12, 13, 3), (12, 13, 3)),
-    # Does nothing when the channel dim isn't in {1, 3}:
-    (Transforms.channels_last_if_needed, (7, 12, 13), (7, 12, 13)),
     
     # Test out the 'ThreeChannels' transform
     (Transforms.three_channels, (7, 12, 13), (7, 12, 13)),
@@ -69,14 +68,16 @@ from . import (ChannelsFirst, ChannelsFirstIfNeeded, ChannelsLast, Compose,
 ])
 def test_transform(transform: Transforms, input_shape, output_shape):
     x = torch.rand(input_shape)
-    y = transform(x)
-    assert y.shape == output_shape
-    assert y.shape == transform.shape_change(input_shape)
+    assert transform(x).shape == output_shape, transform
     
+    # Apply the transform onto the input shape directly: 
+    assert transform(input_shape) == output_shape
+
     input_space = spaces.Box(low=0, high=1, shape=input_shape)
     output_space = spaces.Box(low=0, high=1, shape=output_shape)
     
-    actual_output_space = transform.space_change(input_space)
+    # Apply the transform onto the input space directly: 
+    actual_output_space = transform(input_space)
     assert actual_output_space == output_space
 
 from PIL.Image import Image
@@ -94,23 +95,37 @@ def test_to_tensor(transform: Transforms, input_shape, output_shape):
     # x = PIL.Image.fromarray(x, mode="RGB")
     y = transform(x)
     assert y.shape == output_shape
-    assert y.shape == transform.shape_change(input_shape)
+    assert transform(input_shape) == output_shape
     assert isinstance(y, torch.Tensor)
     
     input_space = spaces.Box(low=0, high=255, shape=input_shape, dtype=np.uint8)
     output_space = spaces.Box(low=0, high=1, shape=output_shape, dtype=np.float32)
     
-    actual_output_space = transform.space_change(input_space)
-    assert actual_output_space == output_space
+    assert transform(input_space) == output_space
 
 
-def test_compose_shape_change_same_as_result_shape():
+@pytest.mark.parametrize("transform, input_shape", [
+    (Transforms.channels_last_if_needed, (7, 12, 13)),
+])
+def test_applying_transforms_on_weird_input_raises_error(transform: Transforms, input_shape: Tuple[int, ...]):
+    with pytest.raises(Exception):
+        transform(input_shape)
+
+    input_space = spaces.Box(low=0, high=255, shape=input_shape, dtype=np.uint8)
+    with pytest.raises(Exception):
+        transform(input_space)
+
+    with pytest.raises(Exception):
+        transform(input_space.sample())
+
+
+def test_compose_applied_on_shape():
     transform = Compose([Transforms.channels_first])
     start_shape = (9, 9, 3)
     x = transform(torch.rand(start_shape))
     assert x.shape == (3, 9, 9)
-    assert x.shape == transform.shape_change(start_shape)
-    assert x.shape == transform.shape_change(start_shape) == (3, 9, 9)
+    assert x.shape == transform(start_shape)
+    assert x.shape == transform(start_shape) == (3, 9, 9)
 
 import gym
 from sequoia.common.gym_wrappers import PixelObservationWrapper, TransformObservation

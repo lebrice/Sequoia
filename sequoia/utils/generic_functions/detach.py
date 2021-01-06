@@ -1,7 +1,11 @@
+from collections.abc import Mapping
 from functools import singledispatch
 from typing import Any, Dict, Sequence, TypeVar
+
+import numpy as np
+
+from ..categorical import Categorical
 from ._namedtuple import NamedTuple
-from collections.abc import Mapping
 
 T = TypeVar("T")
 
@@ -14,6 +18,7 @@ def detach(value: T) -> T:
     # else:
     #     return value
 
+@detach.register(np.ndarray)
 @detach.register(type(None))
 @detach.register(str)
 @detach.register(int)
@@ -43,3 +48,7 @@ def _detach_dict(d: Dict[str, Any]) -> Dict[str, Any]:
         detach(k): detach(v)
         for k, v in d.items()
     })
+
+@detach.register
+def _detach_categorical(v: Categorical) -> Categorical:
+    return type(v)(logits=v.logits.detach())

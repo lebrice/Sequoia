@@ -21,7 +21,7 @@ from sequoia.methods.aux_tasks import EWCTask, SimCLRTask
 from sequoia.methods.models import BaselineModel
 from sequoia.settings import ClassIncrementalSetting, Setting
 
-from examples.demo_utils import compare_results, demo_all_settings
+from demo_utils import compare_results, demo_all_settings
 
 
 class MyFancyEWCVariant(EWCTask):

@@ -1,17 +1,21 @@
 """ Wrappers specific to the RL settings, so not exactly as general as those in
 `common/gym_wrappers`.
 """
+from collections.abc import Mapping
 from dataclasses import is_dataclass, replace
-from typing import Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union
+from functools import singledispatch
+from typing import (Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar,
+                    Union)
 
 import gym
 import numpy as np
-from gym import spaces
+from gym import spaces, Space
 from torch import Tensor
 
 from sequoia.common import Batch
 from sequoia.common.gym_wrappers import IterableWrapper, TransformObservation
 from sequoia.common.spaces import Sparse
+from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 from sequoia.settings.base.objects import Actions, Observations, Rewards
 
 T = TypeVar("T")
@@ -43,13 +47,11 @@ class TypedObjectsWrapper(IterableWrapper):
         self.Rewards = rewards_type
         self.Actions = actions_type
         super().__init__(env=env)
-        # if not isinstance(env.unwrapped, VectorEnv):
-        #     raise RuntimeError(f"Expected the env to be vectorized, but it isn't! (env={env})")
         
     def step(self, action: Actions) -> Tuple[Observations, Rewards, bool, Dict]:
         # "unwrap" the actions before passing it to the wrapped environment.
         if isinstance(action, Actions):
-            action = unwrap_actions(action)
+            action = unwrap(action)
         
         observation, reward, done, info = self.env.step(action)
         # TODO: Make the observation space a Dict
@@ -66,23 +68,36 @@ class TypedObjectsWrapper(IterableWrapper):
 
 
 # TODO: turn unwrap into a single-dispatch callable.
+# TODO: Atm 'unwrap' basically means "get rid of everything apart from the first
+# item", which is a bit ugly.
 
-def unwrap_actions(actions: Actions) -> Union[Tensor, np.ndarray]:
-    assert isinstance(actions, Actions), actions
-    return actions.y_pred
-
-
-def unwrap_rewards(rewards: Rewards) -> Union[Tensor, np.ndarray]:
-    assert isinstance(rewards, Rewards), rewards
-    return rewards.y
+@singledispatch
+def unwrap(obj: Any) -> Any:
+    raise NotImplementedError(obj)
 
 
-def unwrap_observations(observations: Observations) -> Union[Tensor, np.ndarray]:
+@unwrap.register(Actions)
+def _unwrap_actions(obj: Actions) -> Union[Tensor, np.ndarray]:
+    return obj.y_pred
+
+
+@unwrap.register(Rewards)
+def _unwrap_rewards(obj: Rewards) -> Union[Tensor, np.ndarray]:
+    return obj.y
+
+
+@unwrap.register(Observations)
+def _unwrap_observations(obj: Observations) -> Union[Tensor, np.ndarray]:
     # This gets rid of everything except just the image.
-    if isinstance(observations, Observations):
-        # TODO: Keep the task labels? or no? For now, yes.        
-        return observations.x
-    assert False, observations
+    # TODO: Keep the task labels? or no? For now, no.        
+    return obj.x
+
+
+@unwrap.register(NamedTupleSpace)
+def _unwrap_space(obj: NamedTupleSpace) -> Space:
+    # This gets rid of everything except just the first item in the space.
+    # TODO: Keep the task labels? or no? For now, no.
+    return obj[0]
 
 
 class NoTypedObjectsWrapper(IterableWrapper):
@@ -91,6 +106,9 @@ class NoTypedObjectsWrapper(IterableWrapper):
     Can be added on top of that wrapper to strip off the typed objects it
     returns and just returns tensors/np.ndarrays instead.
 
+    This is used for example when applying a method from stable-baselines3, as
+    they only want to get np.ndarrays as inputs.
+
     Parameters
     ----------
     IterableWrapper : [type]
@@ -98,38 +116,56 @@ class NoTypedObjectsWrapper(IterableWrapper):
     """
     def __init__(self, env: gym.Env):
         super().__init__(env)
+        self.observation_space = unwrap(self.env.observation_space)
     
     def step(self, action):
         if isinstance(action, Actions):
-            action = unwrap_actions(action)
+            action = unwrap(action)
         if hasattr(action, "detach"):
             action = action.detach()
         assert action in self.action_space, (action, type(action), self.action_space)        
         observation, reward, done, info = self.env.step(action)
-        observation = unwrap_observations(observation)
-        reward = unwrap_rewards(reward)
+        observation = unwrap(observation)
+        reward = unwrap(reward)
         return observation, reward, done, info
 
     def reset(self, **kwargs):
         observation = self.env.reset(**kwargs)
-        return unwrap_observations(observation)
+        return unwrap(observation)
 
 
-def remove_task_labels(observation: Tuple[T, int]) -> T:
+@singledispatch
+def remove_task_labels(observation: Any) -> Any:
+    """ Removes the task labels from an observation / observation space. """
     if is_dataclass(observation):
         return replace(observation, task_labels=None)
-    if isinstance(observation, (tuple, list)):
-        # try:
-        #     # If observation is a namedtuple:
-        #     return observation._replace(task_labels=None)
-        # except:
-        #     pass
-        assert len(observation) == 2, "fix this."
+    raise NotImplementedError(f"No handler registered for value {observation} of type {type(observation)}")
+
+@remove_task_labels.register(spaces.Tuple)
+@remove_task_labels.register(tuple)
+def _(observation: Tuple[T, Any]) -> Tuple[T]:
+    if len(observation) == 2:
+        return observation[1]
+    if len(observation) == 1:
         return observation[0]
-    if isinstance(observation, dict):
-        observation.pop("task_labels")
-        return observation
-    raise NotImplementedError
+    raise NotImplementedError(observation)
+
+
+@remove_task_labels.register
+def _remove_task_labels_in_namedtuple_space(observation: NamedTupleSpace) -> NamedTupleSpace:
+    spaces = observation._spaces.copy()
+    spaces.pop("task_labels")
+    return type(observation)(**spaces)
+
+
+@remove_task_labels.register(spaces.Dict)
+@remove_task_labels.register(Mapping)
+def _(observation: Dict) -> Dict:
+    assert "task_labels" in observation.keys()
+    return type(observation)(**{
+        key: value for key, value in observation.items() if key != "task_labels"
+    })
+
 
 
 class RemoveTaskLabelsWrapper(TransformObservation):
@@ -137,7 +173,7 @@ class RemoveTaskLabelsWrapper(TransformObservation):
     """
     def __init__(self, env: gym.Env, f=remove_task_labels):
         super().__init__(env, f=f)
-        self.observation_space = self.space_change(self.env.observation_space)
+        self.observation_space = remove_task_labels(self.env.observation_space)
 
     @classmethod
     def space_change(cls, input_space: gym.Space) -> gym.Space:
@@ -145,9 +181,10 @@ class RemoveTaskLabelsWrapper(TransformObservation):
         # assert len(input_space) == 2, input_space
         return input_space[0]
 
-from gym import spaces, Space
-from functools import singledispatch
 from dataclasses import replace
+from functools import singledispatch
+
+from gym import Space, spaces
 
 
 @singledispatch
@@ -167,8 +204,28 @@ def hide_task_labels_in_space(observation: Space) -> Space:
         f"TODO: Don't know how to remove task labels from space {observation}."
     )
 
+
 @hide_task_labels.register
-def hide_task_labels_in_tuple_space(observation: spaces.Tuple) -> spaces.Tuple:
+def _hide_task_labels_in_namedtuple_space(observation: NamedTupleSpace) -> NamedTupleSpace:
+    spaces = observation._spaces.copy()
+    task_label_space = spaces["task_labels"]
+
+    if isinstance(task_label_space, Sparse):
+        if task_label_space.sparsity == 1.0:
+            # No need to change anything:
+            return observation
+        # Replace the existing 'Sparse' space with another one with the same
+        # base but with sparsity = 1.0
+        task_label_space = task_label_space.base
+
+    assert not isinstance(task_label_space, Sparse)
+    task_label_space = Sparse(task_label_space, sparsity=1.)
+    spaces["task_labels"] = task_label_space
+    return type(observation)(**spaces)
+
+
+@hide_task_labels.register
+def _hide_task_labels_in_tuple_space(observation: spaces.Tuple) -> spaces.Tuple:
     assert len(observation.spaces) == 2, "ambiguous"
     
     task_label_space = observation.spaces[1]

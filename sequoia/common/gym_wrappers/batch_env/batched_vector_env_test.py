@@ -10,12 +10,12 @@ import pytest
 
 from .batched_vector_env import BatchedVectorEnv
 
-    
-from sequoia.conftest import DummyEnvironment
+from sequoia.conftest import DummyEnvironment, slow_param, slow
 
 from sequoia.common.gym_wrappers.multi_task_environment import MultiTaskEnvironment
 
-@pytest.mark.parametrize("batch_size", [1, 5, 11, 24])
+
+@pytest.mark.parametrize("batch_size", [1, 5, slow_param(11), slow_param(24)])
 @pytest.mark.parametrize("n_workers", [1, 3, None])
 def test_space_with_tuple_observations(batch_size: int, n_workers: Optional[int]):
     def make_env():
@@ -30,11 +30,11 @@ def test_space_with_tuple_observations(batch_size: int, n_workers: Optional[int]
     # env = AsyncVectorEnv(env_fns)
     env.seed(123)
     
-    assert str(env.observation_space) == str(spaces.Tuple([
+    assert env.observation_space == spaces.Tuple([
         spaces.Box(0, 255, (batch_size, 210, 160, 3), np.uint8),
         spaces.MultiDiscrete(np.ones(batch_size)),
-    ]))
-    
+    ])
+
     assert env.single_observation_space == spaces.Tuple([
         spaces.Box(0, 255, (210, 160, 3), np.uint8),
         spaces.Discrete(1),
@@ -55,7 +55,7 @@ def test_space_with_tuple_observations(batch_size: int, n_workers: Optional[int]
     assert len(info) == batch_size
 
 
-@pytest.mark.parametrize("batch_size", [1, 5, 11, 24])
+@pytest.mark.parametrize("batch_size", [1, 5, slow_param(11), slow_param(24)])
 @pytest.mark.parametrize("n_workers", [1, 3, None])
 def test_right_shapes(batch_size: int, n_workers: Optional[int]):
     env_fn = partial(gym.make, "CartPole-v0")
@@ -82,8 +82,7 @@ def test_right_shapes(batch_size: int, n_workers: Optional[int]):
     env.close()
 
 
-
-@pytest.mark.parametrize("batch_size", [1, 2, 5, 10, 24])
+@pytest.mark.parametrize("batch_size", [1, 2, 5, slow_param(10), slow_param(24)])
 def test_ordering_of_env_fns_preserved(batch_size):
     """ Test that the order of the env_fns is also reproduced in the order of
     the observations, and that the actions are sent to the right environments.
@@ -114,13 +113,13 @@ def test_ordering_of_env_fns_preserved(batch_size):
     env.close()
 
 
-# @pytest.mark.xfail(
-#     reason="TODO: Need to think a bit about the 'reset' behaviour of the "
-#     " 'worker', currently it resets for us and gives us the new initial "
-#     "observation when 'done'=True. "
-# )
-def test_done_reset_behaviour():
-    batch_size = 10
+@pytest.mark.xfail(
+    reason="TODO: Removed the 'final_state' part of the PR on the gym repo, so "
+    "maybe it would be better to get rid of all this `batch_env` folder and "
+    "just use the fork as a submodule."
+)
+@pytest.mark.parametrize("batch_size", [10])
+def test_done_reset_behaviour(batch_size: int):
     n_workers = 4
     target = batch_size
     starting_values = np.arange(batch_size)
@@ -187,7 +186,7 @@ def test_with_pixelobservationwrapper_before_batch(env_name: str):
     """ Test out what happens if we put the PixelObservationWrapper before the 
     batching, i.e. in each of the environments.
     """
-    batch_size = 32
+    batch_size = 5
     n_steps = 100
     n_workers = None
     
@@ -205,7 +204,7 @@ def test_with_pixelobservationwrapper_after_batch(env_name: str):
     """ Test out what happens if we put the PixelObservationWrapper *after* the 
     batching, i.e. wrapping the batched environment.
     """
-    batch_size = 32
+    batch_size = 5
     n_steps = 100
     n_workers = None
     
@@ -225,7 +224,7 @@ def test_with_pixelobservationwrapper_after_batch(env_name: str):
 
 
 def benchmark(batch_size: int,
-              n_workers: int,
+              n_workers: Optional[int],
               env_fn: Callable,
               wrappers: List[Callable]=None,
               n_steps: int = 100):

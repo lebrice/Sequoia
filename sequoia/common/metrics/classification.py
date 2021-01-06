@@ -109,7 +109,7 @@ class ClassificationMetrics(Metrics):
 
     def to_pbar_message(self) -> Dict[str, Union[str, float]]:
         message = super().to_pbar_message()
-        message["acc"] = f"{self.accuracy:.2%}"
+        message["acc"] = float(self.accuracy)
         return message
 
     def detach(self) -> "ClassificationMetrics":

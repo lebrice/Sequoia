@@ -49,6 +49,7 @@ from sequoia.common import ClassificationMetrics, Metrics, get_metrics
 from sequoia.common.config import Config
 from sequoia.common.loss import Loss
 from sequoia.common.spaces import Sparse
+from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.transforms import Transforms, SplitBatch, Compose
 from sequoia.settings.assumptions.incremental import IncrementalSetting, TestEnvironment
 from sequoia.settings.base import Method, Results, ObservationType, RewardType
@@ -249,12 +250,12 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             action_space=action_space,
             reward_space=reward_space, # the labels have shape (1,) always.
         )
-        image_space = self.train_transforms.space_change(image_space)
-        self.observation_space = spaces.Tuple([
-            image_space,
-            task_label_space,
-        ])
-        
+        image_space = self.train_transforms(image_space)
+        self.observation_space = NamedTupleSpace(
+            x=image_space,
+            task_labels=task_label_space,
+            dtype=self.Observations,
+        )
 
         self.train_datasets: List[_ContinuumDataset] = []
         self.val_datasets: List[_ContinuumDataset] = []
@@ -268,7 +269,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
     def apply(self, method: Method, config: Config=None) -> ClassIncrementalResults:
         """Apply the given method on this setting to producing some results."""
-        self.config = config or Config.from_args(self._argv)
+        # TODO: It still isn't super clear what should be in charge of creating
+        # the config, and how to create it, when it isn't passed explicitly.
+        self.config = self.config or config or (Config.from_args(self._argv) if self._argv else Config())
         method.config = self.config
 
         self.configure(method)

@@ -25,13 +25,10 @@ def _stack_base(space: Space,
                 out: Union[tuple, dict, Tensor] = None) -> Tensor:
     if None in items:
         return np.array(items)
-    # if isinstance(items[0], Batch):
-    #     # FIXME: THis happens when the action space is simple, but the items are
-    #     # Batch objects of some kind.
-    #     assert False, (space, items)
-    #     return stack(space, [item[0] for item in items], out=out)
-    return torch.stack(items, axis=0, out=out)
-
+    try:
+        return torch.stack(items, axis=0, out=out)
+    except TypeError:
+        return np.stack(items, axis=0, out=out)
 
 @stack.register
 def _stack_sparse(space: Sparse,

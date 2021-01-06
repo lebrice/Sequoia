@@ -23,7 +23,7 @@ from sequoia.utils.logging_utils import get_logger
 from .base_model import BaseModel
 
 logger = get_logger(__file__)
-HParamsType = TypeVar("HparamsType", bound="SelfSupervisedModel.HParams")
+HParamsType = TypeVar("HParamsType", bound="SelfSupervisedModel.HParams")
 
 class SelfSupervisedModel(BaseModel[SettingType]):
     """
@@ -42,17 +42,10 @@ class SelfSupervisedModel(BaseModel[SettingType]):
 
     def __init__(self, setting: Setting, hparams: HParams, config: Config):
         super().__init__(setting, hparams, config)
-        self.hp: HParamsType
+        self.hp: SelfSupervisedModel.HParams
         # Dictionary of auxiliary tasks.
-        self.tasks: Dict[str, AuxiliaryTask] = self.create_auxiliary_tasks()
-
-        for task_name, task in self.tasks.items():
-            logger.debug("Auxiliary tasks:")
-            assert isinstance(task, AuxiliaryTask), f"Task {task} should be a subclass of {AuxiliaryTask}."
-            if task.coefficient != 0:
-                logger.debug(f"\t {task_name}: {task.coefficient}")
-                logger.info(f"enabling the '{task_name}' auxiliary task (coefficient of {task.coefficient})")
-                task.enable()
+        self.tasks: Dict[str, AuxiliaryTask] = nn.ModuleDict()
+        
 
     def get_loss(self, forward_pass: Dict[str, Tensor], rewards: Rewards = None, loss_name: str = "") -> Loss:
         # Get the output task loss (the loss of the base model)
@@ -93,10 +86,9 @@ class SelfSupervisedModel(BaseModel[SettingType]):
         AuxiliaryTask.input_shape = self.input_shape
         AuxiliaryTask.encoder = self.encoder
         AuxiliaryTask.output_head = self.output_head
-        AuxiliaryTask.preprocessing = self.preprocess_batch
+        # AuxiliaryTask.preprocessing = self.preprocess_batch
 
         tasks: Dict[str, AuxiliaryTask] = nn.ModuleDict()
-
         # TODO(@lebrice): Should we create the tasks even if they aren't used,
         # and then 'enable' them when they are needed? (I'm thinking that maybe
         # being enable/disable auxiliary tasks when needed might be useful
@@ -112,7 +104,7 @@ class SelfSupervisedModel(BaseModel[SettingType]):
 
         return tasks
     
-    def on_task_switch(self, task_id: int) -> None:
+    def on_task_switch(self, task_id: Optional[int]) -> None:
         """Called when switching between tasks.
 
         Args:

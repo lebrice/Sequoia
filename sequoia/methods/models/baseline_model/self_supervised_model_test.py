@@ -43,7 +43,7 @@ def test_get_applicable_settings():
     ],
     ids=id_fn,
 )
-def method_and_coefficients(request, tmp_path_factory: Callable[[str], Path]):
+def method_and_coefficients(request, tmp_path_factory):
     """ Fixture that creates a method to be reused for the tests below as well
     as return the coefficients for each auxiliary task.
     """
@@ -63,7 +63,7 @@ def method_and_coefficients(request, tmp_path_factory: Callable[[str], Path]):
     for aux_task_name, coef in aux_task_coefficients.items():
         args += f"--{aux_task_name}.coef {coef} "
 
-    return Method.from_args(args), aux_task_coefficients
+    return Method.from_args(args, strict=False), aux_task_coefficients
 
 
 # @parametrize("dataset", get_dataset_params(Method, supported_datasets))
@@ -81,10 +81,8 @@ def test_fast_dev_run(
     if test_dataset not in setting_type.available_datasets:
         pytest.skip(msg=f"dataset {test_dataset} isn't available for this setting.")
     # Instantiate the setting
-    setting: Setting = setting_type.from_args(f"""
-        --dataset {test_dataset} --nb_tasks 5
-    """)
-    results: Results = method.apply_to(setting)
+    setting: Setting = setting_type(dataset=test_dataset, nb_tasks=2)
+    results: Results = setting.apply(method)
     validate_results(results, aux_task_coefficients)
 
 

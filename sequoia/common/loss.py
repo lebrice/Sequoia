@@ -14,11 +14,11 @@ For example:
 >>> loss += Loss("task_c", loss=3.00)
 >>> log_dict = loss.to_log_dict()
 >>> pprint(log_dict)
-{'loss': tensor([6.3300]),
- 'losses/task_a/accuracy': 0.95,
- 'losses/task_a/loss': 1.23,
- 'losses/task_b/loss': tensor([2.1000]),
- 'losses/task_c/loss': 3.0}
+{'total/loss': 6.33,
+ 'total/task_a/accuracy': 0.95,
+ 'total/task_a/loss': 1.23,
+ 'total/task_b/loss': 2.1,
+ 'total/task_c/loss': 3.0}
 
 Another feature of Loss objects is that they can automatically generate
 relevant metrics when the associated tensors are passed.
@@ -84,7 +84,7 @@ class Loss(Serializable):
     # pytorch-lightning during training? Is there a case where that would be
     # useful?
     tensors: Dict[str, Tensor] = dict_field(repr=False, to_dict=False)
-    metrics: Dict[str, Metrics] = dict_field()
+    metrics: Dict[str, Union[Metrics, Tensor]] = dict_field()
     # When multiplying the Loss by a value, this keep track of the coefficients
     # used, so that if we wanted to we could recover the 'unscaled' loss.
     _coefficient: Union[float, Tensor] = field(1.0, repr=False)
@@ -163,9 +163,21 @@ class Loss(Serializable):
         """Shortcut for `self.metrics[self.name]`.
 
         Returns:
-            Optional[Metrics]: The metrics associated with this Loss.
+            Optional[Metrics]: The main metrics associated with this Loss.
         """
         return self.metrics.get(self.name)
+
+    @metric.setter
+    def metric(self, value: Metrics) -> None:
+        """Shortcut for `self.metrics[self.name] = value`.
+
+        Parameters
+        ----------
+        value : Metrics
+            The main metrics associated with this Loss.
+        """
+        assert self.name not in self.metrics, "There's already be a metric?"
+        self.metrics[self.name] = value
 
     @property
     def accuracy(self) -> float:
@@ -177,7 +189,7 @@ class Loss(Serializable):
         assert isinstance(self.metric, RegressionMetrics), self
         return self.metric.mse
 
-    def __add__(self, other: Any) -> "Loss":
+    def __add__(self, other: Union["Loss", Any]) -> "Loss":
         """Adds two Loss instances together.
         
         Adds the losses, total loss and metrics. Overwrites the tensors.
@@ -225,7 +237,7 @@ class Loss(Serializable):
             _coefficient=self._coefficient,
         )
 
-    def __iadd__(self, other: "Loss") -> "Loss":
+    def __iadd__(self, other: Union["Loss", Any]) -> "Loss":
         """Adds Loss to `self` in-place.
         
         Adds the losses, total loss and metrics. Overwrites the tensors.
@@ -320,7 +332,22 @@ class Loss(Serializable):
             Dict: A dict containing the things to be logged.
         """
         # TODO: Could also produce some wandb plots and stuff here when verbose?
-        log_dict = self.to_dict()
+        log_dict: Dict[str, Union[str, float, Dict, Tensor]] = {}
+        log_dict["loss"] = round(float(self.loss), 6)
+
+        for name, metric in self.metrics.items():
+            if isinstance(metric, Serializable):
+                log_dict[name] = metric.to_log_dict(verbose=verbose)
+            else:
+                log_dict[name] = metric
+
+        for name, loss in self.losses.items():
+            if isinstance(loss, Serializable):
+                log_dict[name] = loss.to_log_dict(verbose=verbose)
+            else:
+                log_dict[name] = loss
+
+        log_dict = add_prefix(log_dict, prefix=self.name, sep="/")
         keys_to_remove: List[str] = []
         if not verbose:
             # when NOT verbose, remove any entries with this matching key.
@@ -334,16 +361,21 @@ class Loss(Serializable):
                 "class_accuracy",
                 "_coefficient",
             ]
-        return cleanup(log_dict, keys_to_remove=keys_to_remove)
-
-    def to_pbar_message(self):
+        result = cleanup(log_dict, keys_to_remove=keys_to_remove, sep="/") 
+        return result
+ 
+    def to_pbar_message(self) -> Dict[str, float]:
         """ Smaller, less-detailed version of `to_log_dict()` for progress bars.
         """
+        # NOTE: PL actually doesn't seem to accept strings as values 
         message: Dict[str, Union[str, float]] = {}
         message["Loss"] = float(self.loss)
 
-        if self.metric:
-            message[self.name] = self.metric.to_pbar_message()
+        for name, metric in self.metrics.items():
+            if isinstance(metric, Metrics):
+                message[name] = metric.to_pbar_message()
+            else:
+                message[name] = metric
 
         for name, loss_info in self.losses.items():
             message[name] = loss_info.to_pbar_message()

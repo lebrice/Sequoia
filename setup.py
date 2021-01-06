@@ -4,7 +4,8 @@ import os
 
 # TODO: Figure out how to specify 'extras'
 extras = {
-#     "ewc": "git+https://github.com/oleksost/nngeometry.git"
+#     "ewc": "git+https://github.com/oleksost/nngeometry.git",
+#     "rl": "gym[atari]",
 }
 
 PATH_ROOT = os.path.dirname(__file__)
@@ -18,7 +19,7 @@ def load_requirements(path_dir=PATH_ROOT, file_name='requirements.txt', comment_
     for ln in lines:
         if comment_char in ln:  # filer all comments
             ln = ln[:ln.index(comment_char)].strip()
-        if ln.startswith('http'):  # skip directly installed dependencies
+        if ln.startswith(('http', "git", "https")):  # skip directly installed dependencies
             continue
         if ln:  # if requirement is not empty
             reqs.append(ln)
