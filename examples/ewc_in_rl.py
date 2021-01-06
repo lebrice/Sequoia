@@ -268,7 +268,7 @@ class ExampleRegularizationMethod(StableBaselines3Method):
 
         todo: use this to customize how your method handles task transitions.
         """
-        if self.model:
+        if self.model:                    
             self.model.policy.on_task_switch(task_id)
 
 @register_method
