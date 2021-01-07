@@ -44,8 +44,6 @@ package methods {
         }
 
     }
-    namespace models {
-        !include ./methods/models.puml
-    }
+    !include ./methods/models.puml
 }
 @enduml

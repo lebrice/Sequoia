@@ -2,13 +2,13 @@
 
 package base as settings.base {
     together {
-        abstract class Observations extends common.batch.Batch {
+        abstract class Observations extends Batch {
             + x: Tensor
         }
-        abstract class Actions extends common.batch.Batch {
+        abstract class Actions extends Batch {
             + y_pred: Tensor
         }
-        abstract class Rewards extends common.batch.Batch {
+        abstract class Rewards extends Batch {
             + y: Tensor
         }
     }

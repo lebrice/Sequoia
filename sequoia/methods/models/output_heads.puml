@@ -1,0 +1,92 @@
+@startuml output_heads
+
+package output_heads {
+    package output_head {
+        abstract class OutputHead {
+            + hparams: OutputHead.HParams
+            {abstract} + forward(observations: Observations representations: Tensor): Actions
+            {abstract} + get_loss(ForwardPass, Actions, Rewards) -> Loss
+        }
+        abstract class OutputHead.HParams {
+            + {static} available_activations: ClassVar[Dict[str, Type[nn.Module]]]
+            + hidden_layers: int
+            + hidden_neurons: List[int]
+            + activation: Type[nn.Module] = "tanh"
+        }
+    }
+
+    package classification {
+        class ClassificationHead implements OutputHead {
+            + forward(Observations representations: Tensor): ClassificationHeadOutput
+            + get_loss(ForwardPass, ClassificationOutput, Rewards): Loss
+        }
+        class ClassificationHead.HParams extends OutputHead.HParams {}
+        class ClassificationHeadOutput extends settings.base.Actions {
+            + y_pred: Tensor
+            + logits: Tensor
+        }
+
+    }
+
+    package regression {
+        class RegressionHead implements OutputHead {}
+    }
+
+    package rl {
+        package policy_head {
+            class PolicyHead extends ClassificationHead {
+                + forward(observations: Observations representations: Tensor): PolicyHeadOutput
+                + hparams: PolicyHead.HParams
+            }
+            class PolicyHead.HParams extends ClassificationHead.HParams {
+                + forward(observations: Observations representations: Tensor): PolicyHeadOutput
+            }
+            class PolicyHeadOutput extends ClassificationHeadOutput {
+                action_dist: Distribution
+            }
+        }
+        package episodic_a2c {
+            class EpisodicA2C extends PolicyHead {
+                + actor: nn.Module
+                + critic: nn.Module
+                + get_episode_loss(Observations, Actions, Rewards, done: bool): Loss
+            }
+            class EpisodicA2C.HParams extends PolicyHead.HParams {
+                + normalize_advantages: bool = False
+                + actor_loss_coef: float = 0.5
+                + critic_loss_coef: float = 0.5
+                + entropy_loss_coef: float = 0.1
+                + max_policy_grad_norm: Optional[float] = None
+                + gamma: float = 0.99
+                + learning_rate: float = 1e-2
+            }
+            class A2CHeadOutput extends PolicyHeadOutput {
+                + value: Tensor
+            }
+        }
+        package actor_critic_head {
+            class ActorCriticHead extends ClassificationHead {
+                + hparams: ActorCriticHead.HParams
+                + actor: nn.Module
+                + critic: nn.Module 
+            }
+            class ActorCriticHead.HParams extends ClassificationHead.HParams {
+                + gamma: float = 0.95
+                + learning_rate: float = 1e-3
+            }
+        }
+    }
+
+' OutputHead *-- OutputHead.HParams
+' ClassificationHead *-- ClassificationHead.HParams
+' PolicyHead *-- PolicyHead.HParams
+' ActorCriticHead *-- ActorCriticHead.HParams
+' EpisodicA2C *-- EpisodicA2C.HParams
+
+' OutputHead *-- Actions : outputs
+' ClassificationHead *-- ClassificationHeadOutput : outputs
+' PolicyHead *-- PolicyHeadOutput : outputs
+' EpisodicA2C *-- A2CHeadOutput : outputs
+}
+
+@enduml
