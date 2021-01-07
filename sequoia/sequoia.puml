@@ -1,0 +1,4 @@
+@startuml sequoia
+!include ./settings/settings.puml
+!include ./methods/methods.puml
+@enduml

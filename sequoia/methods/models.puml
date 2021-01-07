@@ -1,0 +1,13 @@
+@startuml models
+package models {
+    class ForwardPass extends Batch {
+        + observations: Observations
+        + representations: Tensor
+        + actions: Actions
+    }
+    !include ./models/baseline_model.puml
+    ' TODO: Idk why, but this doesn't work if placed inside the 'models' package
+    ' above.
+    !include ./models/output_heads.puml
+}
+@enduml

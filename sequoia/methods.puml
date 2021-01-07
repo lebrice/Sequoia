@@ -3,12 +3,12 @@
 ' !include gym.plantuml
 ' remove gym.spaces
 ' TODO: There must be a simpler way to only keep a single node, right?
-!include settings.puml
-remove settings.active
-remove settings.assumptions
-remove settings.passive
-remove SettingABC
-
+' !include settings.puml
+' remove settings.active
+' remove settings.assumptions
+' remove settings.passive
+' remove SettingABC
+' !include settings/base.puml
 
 package methods {
     package baseline_method {
@@ -19,7 +19,7 @@ package methods {
             + trainer: Trainer
         }
     }
-    package aux_tasks{
+    package aux_tasks {
         package auxiliary_task {
             abstract class AuxiliaryTask {
                 + options: AuxiliaryTask.Options
@@ -44,16 +44,8 @@ package methods {
         }
 
     }
-    
-
-    package models {
-        class ForwardPass extends Batch {
-            + observations: Observations
-            + representations: Tensor
-            + actions: Actions
-        }
-    
-        !include baseline_model.puml
-        !include output_heads.puml
+    namespace models {
+        !include ./methods/models.puml
     }
+}
 @enduml
