@@ -17,7 +17,8 @@ from simple_parsing.helpers import Serializable as SerializableBase
 from simple_parsing.helpers import SimpleJsonEncoder, encode
 from simple_parsing.helpers.serialization import encode, register_decoding_fn
 
-from .generic_functions import detach, move
+from .generic_functions.detach import detach
+from .generic_functions.move import move
 from .encode import encode
 from .logging_utils import get_logger
 from .utils import dict_union

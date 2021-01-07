@@ -69,11 +69,6 @@ class A2CHeadOutput(PolicyHeadOutput):
     # The value estimate coming from the critic.
     value: Tensor
 
-    @classmethod
-    def stack(cls, items: List["A2CHeadOutput"]) -> "A2CHeadOutput":
-        """TODO: Add a classmethod to 'stack' these objects. """
-
-
 class EpisodicA2C(PolicyHead):
     """ Advantage-Actor-Critic output head that produces a loss only at end of
     episode.
@@ -247,43 +242,6 @@ class EpisodicA2C(PolicyHead):
             )
             self.loss.metrics["policy_gradient_norm"] = original_norm.item()
         super().optimizer_step()
-
-    def stack_buffers(self, env_index: int):
-        """ Stack the observations/actions/rewards for this env and return them.
-        """
-        # episode_observations = tuple(self.observations[env_index])
-        episode_representations: List[Tensor] = list(self.representations[env_index])
-        episode_actions: List[A2CHeadOutput] = list(self.actions[env_index])
-        episode_rewards: List[Rewards] = list(self.rewards[env_index])
-        # TODO: Could maybe use out=<some parameter on this module> to
-        # prevent having to create new 'container' tensors at each step?
-
-        # Make sure this all still works (should work even better) once we
-        # change the obs spaces to dicts instead of Tuples.
-        assert len(episode_representations)
-        assert len(episode_actions)
-        assert len(episode_rewards)
-        stacked_inputs = stack(self.input_space, episode_representations)
-        # stacked_actions = stack(self.action_space, episode_actions)
-        # stacked_rewards = stack(self.reward_space, episode_rewards)
-        episode_length = len(stacked_inputs)
-        # TODO: Update this to use 'stack' if we change the action/reward spaces
-        y_preds = torch.stack([action.y_pred for action in episode_actions])
-        logits = torch.stack([action.logits for action in episode_actions])
-        values = torch.stack([action.value for action in episode_actions])
-        values = values.reshape([episode_length])
-
-        stacked_actions = A2CHeadOutput(
-            y_pred=y_preds,
-            logits=logits,
-            action_dist=Categorical(logits=logits),
-            value=values,
-        )
-        rewards_type = type(episode_rewards[0])
-        stacked_rewards = rewards_type(
-            y=stack(self.reward_space, [reward.y for reward in episode_rewards])
-        )
-        return stacked_inputs, stacked_actions, stacked_rewards
 
 
 def compute_returns_and_advantage(self, last_values: Tensor, dones: np.ndarray) -> None:
