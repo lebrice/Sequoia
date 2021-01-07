@@ -109,10 +109,12 @@ class PolicyHead(ClassificationHead):
     
     Uses the REINFORCE algorithm to calculate its loss. 
     
-    TODOs/issues:
-    - Only currently works with batch_size == 1
-    - The buffers are common to training/validation/testing atm..
+    NOTE: The buffers are common to training/validation/testing atm, so whenever
+    we switch from train to test or vice versa we just clear all the buffers.
     
+    TODO: When using 'accumulate_losses_before_backward' mode, we should just
+    detach the current buffer contents. and give back the loss, and let the
+    Trainer perform the optimization, rather than do it manually here.
     """
     name: ClassVar[str] = "policy"
 

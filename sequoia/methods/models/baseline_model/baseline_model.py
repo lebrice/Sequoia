@@ -309,3 +309,13 @@ class BaselineModel(
             knowing what task we're switching to.
         """
         return super().on_task_switch(task_id)
+
+    @property
+    def automatic_optimization(self) -> bool:
+        # The PolicyHead actually does its own backward pass, so we disable
+        # automatic optimization when using it.
+        if isinstance(self.output_head, PolicyHead):
+            # Doing the backward pass manually, since there might not be a loss
+            # at each step.
+            return False
+        return super().automatic_optimization

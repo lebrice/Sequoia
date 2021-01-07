@@ -151,7 +151,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # The model and Trainer objects will be created in `self.configure`.
         # NOTE: This right here doesn't create the fields, it just gives some
         # type information for static type checking.
-        self.trainer: Trainer
         self.model: BaselineModel
 
         self.additional_train_wrappers: List[Callable] = []
@@ -250,7 +249,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                 )
                 # TODO: Test batch size is limited to 1 for now.
                 # NOTE: This isn't used, since we don't call `trainer.test()`.
-                self.trainer_options.limit_test_batches = setting.max_steps
+                self.trainer.limit_test_batches = setting.max_steps
 
         self.model = self.create_model(setting)
         assert self.hparams is self.model.hp
@@ -352,6 +351,9 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         Returns:
             Trainer: the Trainer object.
         """
+        # TODO: Replace this trainer_options with self.trainer? can we change
+        # the callbacks and stuff even after the instance is created?
+
         # We use this here to create loggers!
         callbacks = self.create_callbacks(setting)
         loggers = []
