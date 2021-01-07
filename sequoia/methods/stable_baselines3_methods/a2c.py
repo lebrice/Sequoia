@@ -26,7 +26,7 @@ class A2CModel(A2C):
 @register_method
 @dataclass
 class A2CMethod(StableBaselines3Method):
-    """ Method that uses the DDPG model from stable-baselines3. """
+    """ Method that uses the A2C model from stable-baselines3. """
     # changing the 'name' in this case here, because the default name would be
     # 'a_2_c'.
     name: ClassVar[str] = "a2c"

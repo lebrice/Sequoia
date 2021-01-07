@@ -113,7 +113,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # x: Tensor
         # task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
         
-        # The 'done' part of the 'step' method. We add these two here in case a
+        # The 'done' part of the 'step' method. We add this here in case a
         # method were to iterate on the environments in the dataloader-style so
         # they also have access to those (i.e. for the BaselineMethod).
         done: Optional[Sequence[bool]] = None
