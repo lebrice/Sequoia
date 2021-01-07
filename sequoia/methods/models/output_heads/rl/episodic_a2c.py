@@ -28,40 +28,6 @@ from sequoia.utils import get_logger
 logger = get_logger(__file__)
 
 
-# TODO: Use this as inspiration: (taken from the ActorCriticPolicy from stable-baselines-3)
-# NOTE: I see: so SB3 actually re-computes the values for everything in the
-# rollout_data buffer every time! This is interesting.
-
-# # (sb3 TODO): avoid second computation of everything because of the gradient
-# values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
-# values = values.flatten()
-
-# # Normalize advantage (not present in the original implementation)
-# advantages = rollout_data.advantages
-# if self.normalize_advantage:
-#     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-# # Policy gradient loss
-# policy_loss = -(advantages * log_prob).mean()
-
-# # Value loss using the TD(gae_lambda) target
-# value_loss = F.mse_loss(rollout_data.returns, values)
-
-# # Entropy loss favor exploration
-# if entropy is None:
-#     # Approximate entropy when no analytical form
-#     entropy_loss = -th.mean(-log_prob)
-# else:
-#     entropy_loss = -th.mean(entropy)
-
-# loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
-
-# # Optimization step
-# self.policy.optimizer.zero_grad()
-# loss.backward()
-
-# # Clip grad norm
-# th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
 
 @dataclass(frozen=True)
 class A2CHeadOutput(PolicyHeadOutput):
