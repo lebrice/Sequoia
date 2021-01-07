@@ -577,33 +577,17 @@ class Batch(ABC, Mapping[str, T]):
     @classmethod
     def stack(cls: Type[B], items: List[B]) -> B:
         items = list(items)
-        
-        @singledispatch
-        def _stack(first_item, *others):
-            # By default, if we don't know how to handle the item type, just
-            # return an ndarray with with all the items.
-            # note: We could also try to return a tensor, rather than an ndarray
-            # but I'd rather keep it simple for now.
-            return np.asarray([first_item, *others])
-
-        @_stack.register(np.ndarray)
-        def _stack_ndarrays(first_item: np.ndarray, *others: np.ndarray) -> np.ndarray:
-            return np.stack([first_item, *others])
-        
-        @_stack.register(Tensor)
-        def _stack_ndarrays(first_item: Tensor, *others: Tensor) -> Tensor:
-            return torch.stack([first_item, *others])
-        
-        @_stack.register(Batch)
-        @_stack.register(dict)
-        def _stack_dicts(first_item: Dict, *others: Dict) -> Dict:
-            return type(first_item)(**{
-                key: _stack(first_item[key], *(other[key] for other in others))
-                for key in first_item.keys()
-            })
-        # Just to make sure that the items
+        from sequoia.utils.generic_functions import stack
+        # Just to make sure that the returned item will be of the type `cls`.
         assert isinstance(items[0], cls)
-        return _stack(items[0], *items[1:])
+        return stack(items)
+
+    @classmethod
+    def concatenate(cls: Type[B], items: List[B], **kwargs) -> B:
+        items = list(items)
+        from sequoia.utils.generic_functions import concatenate
+        assert isinstance(items[0], cls)
+        return concatenate(items, **kwargs)
     
     def torch(self, device: Union[str, torch.device] = None):
         """ Converts any ndarrays to Tensors if possible and returns a new
@@ -656,7 +640,6 @@ class Batch(ABC, Mapping[str, T]):
                 # Skip any Batch objects if `recursive` is False.
                 continue
             func(value, *args, **kwargs)  # type: ignore
-
 
 
 if __name__ == "__main__":
