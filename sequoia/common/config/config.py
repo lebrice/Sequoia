@@ -4,6 +4,7 @@
 """
 import os
 import sys
+import warnings
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -13,11 +14,11 @@ import torch
 import wandb
 from pytorch_lightning import Callback, Trainer, seed_everything
 from pytorch_lightning.loggers import LightningLoggerBase, WandbLogger
-
+from pyvirtualdisplay import Display
 from simple_parsing import (Serializable, choice, field, flag, list_field,
                             mutable_field)
-from sequoia.utils.parseable import Parseable
 
+from sequoia.utils.parseable import Parseable
 # from .trainer_config import TrainerConfig
 # from .wandb_config import WandbLoggerConfig
 
@@ -52,6 +53,20 @@ class Config(Serializable, Parseable):
     
     def __post_init__(self):
         self.seed_everything()
+
+        if not self.render:
+            # If `--render` isn't set, then try to create a virtual display.
+            # This has the same effect as running the script with xvfb-run 
+            try:
+                display = Display(visible=0, size=(1366, 768))
+                display.start()
+            except Exception as e:
+                raise RuntimeError(
+                    f"Rendering is disabled, but we were unable to start the "
+                    f"virtual display! {e}\n"
+                    f"Make sure that xvfb is installed on your machine if you "
+                    f"want to prevent rendering the environment's observations."
+                )
 
     def seed_everything(self) -> None:
         if self.seed is not None:

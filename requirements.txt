@@ -28,4 +28,6 @@ pytest-timeout
 pytest-xdist
 pytest-xvfb # Prevents the gym popups from displaying during tests.
 # Required for the RL methods
+# TODO: Move this to an 'extras' in setup.py?
 stable-baselines3
+pyvirtualdisplay
