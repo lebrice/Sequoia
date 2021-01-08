@@ -107,7 +107,10 @@ class Setting(SettingABC,
     
     ##
     ##   -------------
-    
+    # Transforms to be applied to the observatons of the train/valid/test
+    # environments.
+    transforms: List[Transforms] = list_field()
+
     # Transforms to be applied to the training datasets.
     train_transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
     # Transforms to be applied to the validation datasets. 

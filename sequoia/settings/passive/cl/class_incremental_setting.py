@@ -38,9 +38,9 @@ from continuum.datasets import *
 from continuum.datasets import _ContinuumDataset
 from continuum.scenarios.base import _BaseCLLoader
 from continuum.tasks import split_train_val
-from gym import spaces
+from gym import spaces, Space
 from pytorch_lightning import LightningModule, Trainer
-from simple_parsing import choice, list_field
+from simple_parsing import choice, list_field, field
 from torch import Tensor
 from torch.utils.data import DataLoader, ConcatDataset
 from tqdm import tqdm
@@ -48,7 +48,7 @@ from tqdm import tqdm
 from sequoia.common import ClassificationMetrics, Metrics, get_metrics
 from sequoia.common.config import Config
 from sequoia.common.loss import Loss
-from sequoia.common.spaces import Sparse
+from sequoia.common.spaces import Sparse, Image
 from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.transforms import Transforms, SplitBatch, Compose
 from sequoia.settings.assumptions.incremental import IncrementalSetting, TestEnvironment
@@ -82,24 +82,75 @@ num_classes_in_dataset: Dict[str, int] = {
     "core50-v2-391": 50,
 }
 
+
 dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
-    "mnist": (28, 28, 1),
-    "fashionmnist": (28, 28, 1),
-    "kmnist": (28, 28, 1),
-    "emnist": (28, 28, 1),
-    "qmnist": (28, 28, 1),
-    "mnistfellowship": (28, 28, 1),
-    "cifar10": (32, 32, 3),
-    "cifar100": (32, 32, 3),
-    "cifarfellowship": (32, 32, 3),
-    "imagenet100": (224, 224, 3),
-    "imagenet1000": (224, 224, 3),
+    "mnist": (1, 28, 28),
+    "fashionmnist": (1, 28, 28),
+    "kmnist": (1, 28, 28),
+    "emnist": (1, 28, 28),
+    "qmnist": (1, 28, 28),
+    "mnistfellowship": (1, 28, 28),
+    "cifar10": (3, 32, 32),
+    "cifar100": (3, 32, 32),
+    "cifarfellowship": (3, 32, 32),
+    "imagenet100": (3, 224, 224),
+    "imagenet1000": (3, 224, 224),
     # "permutedmnist": (28, 28, 1),
     # "rotatedmnist": (28, 28, 1),
-    "core50": (224, 224, 3),
-    "core50-v2-79": (224, 224, 3),
-    "core50-v2-196": (224, 224, 3),
-    "core50-v2-391": (224, 224, 3),
+    "core50": (3, 224, 224),
+    "core50-v2-79": (3, 224, 224),
+    "core50-v2-196": (3, 224, 224),
+    "core50-v2-391": (3, 224, 224),
+}
+
+from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
+
+# NOTE: This dict reflects the observation space of the different datasets
+# *BEFORE* any transforms are applied. The resulting property on the Setting is
+# based on this 'base' observation space, passed through the transforms.
+
+base_observation_spaces: Dict[str, Space] = {
+    dataset_name: add_tensor_support(Image(0, 1, image_shape, np.float32))
+    for dataset_name, image_shape in
+    {
+        "mnist": (1, 28, 28),
+        "fashionmnist": (1, 28, 28),
+        "kmnist": (28, 28, 1),
+        "emnist": (28, 28, 1),
+        "qmnist": (28, 28, 1),
+        "mnistfellowship": (28, 28, 1),
+        "cifar10": (32, 32, 3),
+        "cifar100": (32, 32, 3),
+        "cifarfellowship": (32, 32, 3),
+        "imagenet100": (224, 224, 3),
+        "imagenet1000": (224, 224, 3),
+        # "permutedmnist": (28, 28, 1),
+        # "rotatedmnist": (28, 28, 1),
+        "core50": (224, 224, 3),
+        "core50-v2-79": (224, 224, 3),
+        "core50-v2-196": (224, 224, 3),
+        "core50-v2-391": (224, 224, 3),
+    }.items()
+}
+
+reward_spaces: Dict[str, Space] = {
+    "mnist": spaces.Discrete(10),
+    "fashionmnist": spaces.Discrete(10),
+    "kmnist": spaces.Discrete(10),
+    "emnist": spaces.Discrete(10),
+    "qmnist": spaces.Discrete(10),
+    "mnistfellowship": spaces.Discrete(30),
+    "cifar10": spaces.Discrete(10),
+    "cifar100": spaces.Discrete(100),
+    "cifarfellowship": spaces.Discrete(110),
+    "imagenet100": spaces.Discrete(100),
+    "imagenet1000": spaces.Discrete(1000),
+    "permutedmnist": spaces.Discrete(10),
+    "rotatedmnist": spaces.Discrete(10),
+    "core50": spaces.Discrete(50),
+    "core50-v2-79": spaces.Discrete(50),
+    "core50-v2-196": spaces.Discrete(50),
+    "core50-v2-391": spaces.Discrete(50),
 }
 
 
@@ -115,14 +166,29 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     
     Results: ClassVar[Type[Results]] = ClassIncrementalResults
 
+    # (NOTE: commenting out PassiveSetting.Observations as it is the same class
+    # as Setting.Observations, and we want a consistent method resolution order.
     @dataclass(frozen=True)
-    class Observations(IncrementalSetting.Observations,
-                       PassiveSetting.Observations):
-        """Incremental Observations, in a supervised context.""" 
+    class Observations(#PassiveSetting.Observations,
+                       IncrementalSetting.Observations):
+        """ Incremental Observations, in a supervised context. """
         pass
+
+    # @dataclass(frozen=True)
+    # class Actions(PassiveSetting.Actions,
+    #               IncrementalSetting.Actions):
+    #     """Incremental Actions, in a supervised (passive) context.""" 
+    #     pass
+
+    # @dataclass(frozen=True)
+    # class Rewards(PassiveSetting.Rewards,
+    #               IncrementalSetting.Rewards):
+    #     """Incremental Rewards, in a supervised context.""" 
+    #     pass
 
     # Class variable holding a dict of the names and types of all available
     # datasets.
+    # TODO: Issue #43: Support other datasets than just classification
     available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = {
         c.__name__.lower(): c
         for c in [
@@ -167,45 +233,35 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     # Defaults to the value of `class_order`.
     test_class_order: Optional[List[int]] = None
 
+    batch_size: int = field(default=32, cmd=False)
+    
     def __post_init__(self):
         """Initializes the fields of the Setting (and LightningDataModule),
         including the transforms, shapes, etc.
         """
-        if not hasattr(self, "num_classes") and not hasattr(self.dataset, "num_classes"):
-            # In some concrete LightningDataModule's like MnistDataModule,
-            # num_classes is a read-only property. Therefore we check if it
-            # is already defined. This is just in case something tries to
-            # inherit from both IIDSetting and MnistDataModule, for instance.
-            if self.dataset not in num_classes_in_dataset:
-                self.dataset = self.dataset.lower().replace("_", "")
-            if self.dataset not in num_classes_in_dataset:
-                raise NotImplementedError(
-                    f"Can't tell how many classes there are in dataset "
-                    f"{self.dataset}, as it isn't in the "
-                    f"num_classes_in_dataset dict, and doesn't have a "
-                    f"'num_classes' attribute. (num_classes_in_dataset "
-                    f"keys: {num_classes_in_dataset.keys()}"
-                )
-            self.num_classes: int = num_classes_in_dataset[self.dataset]
-        if hasattr(self, "dims"):
-            # NOTE This sould only happen if we subclass both a concrete
-            # LightningDataModule like MnistDataModule and a Setting (e.g.
-            # IIDSetting) like above.
-            image_shape = self.dims
-        else:
-            image_shape: Tuple[int, int, int] = dims_for_dataset[self.dataset]
-
         if isinstance(self.increment, list) and len(self.increment) == 1:
             # This can happen when parsing a list from the command-line.
             self.increment = self.increment[0]
 
-        # Set the number of tasks depending on the increment, and vice-versa.
-        # (as only one of the two should be used).
-        if self.nb_tasks == 0:
-            self.nb_tasks = self.num_classes // self.increment
-        else:
-            self.increment = self.num_classes // self.nb_tasks
+        base_observations_space = base_observation_spaces[self.dataset]
+        base_reward_space = reward_spaces[self.dataset]
+        # action space = reward space by default
+        base_action_space = base_reward_space
+        
+        if isinstance(base_action_space, spaces.Discrete):
+            # Classification dataset
 
+            self.num_classes = base_action_space.n
+            # Set the number of tasks depending on the increment, and vice-versa.
+            # (as only one of the two should be used).
+            if self.nb_tasks == 0:
+                self.nb_tasks = self.num_classes // self.increment
+            else:
+                self.increment = self.num_classes // self.nb_tasks
+        else:
+            raise NotImplementedError(f"TODO: (issue #43)")
+        
+        
         if not self.class_order:
             self.class_order = list(range(self.num_classes))
 
@@ -217,19 +273,20 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # TODO: For now we assume a fixed, equal number of classes per task, for
         # sake of simplicity. We could take out this assumption, but it might
         # make things a bit more complicated.
-        assert isinstance(self.increment, int) and isinstance(self.test_increment, int)
-        self.n_classes_per_task: int = self.increment
-        from sequoia.common.spaces import DictSpace, Image
+        assert isinstance(self.increment, int)
+        assert isinstance(self.test_increment, int)
         
-        image_space = Image(low=0, high=1, shape=image_shape, dtype=np.float32)
-        task_label_space = spaces.Discrete(self.nb_tasks)
-        if not self.task_labels_at_train_time:
-            task_label_space = Sparse(task_label_space, 1.0)
-        observation_space = DictSpace(
-            x=image_space,
-            task_labels=task_label_space,
-            dataclass_type=self.Observations,
-        )
+        self.n_classes_per_task: int = self.increment
+        # base_obs_space = Image(low=0, high=1, shape=base_observation_spaces[self.dataset], dtype=np.float32)
+        # task_label_space = spaces.Discrete(self.nb_tasks)
+        # if not self.task_labels_at_train_time:
+        #     task_label_space = Sparse(task_label_space, 1.0)
+
+        # observation_space = NamedTupleSpace(
+        #     x=image_space,
+        #     task_labels=task_label_space,
+        #     dtype=self.Observations,
+        # )
         # assert False, image_space
         # TODO: Change the actions from logits to predicted labels.
         action_space = spaces.Discrete(self.n_classes_per_task)
@@ -239,23 +296,24 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # )
         # self.action_space = Box(low=-np.inf, high=np.inf, shape=(self.n_classes_per_task,))
         reward_space = spaces.Discrete(self.n_classes_per_task)
-        
+
         # reward_space = DictSpace(
         #     y=spaces.Discrete(self.n_classes_per_task),
         #     dataclass_type=self.Rewards,
-        # ) 
-        
+        # )
+
         super().__post_init__(
-            observation_space=observation_space,
+            # observation_space=observation_space,
             action_space=action_space,
             reward_space=reward_space, # the labels have shape (1,) always.
         )
-        image_space = self.train_transforms(image_space)
-        self.observation_space = NamedTupleSpace(
-            x=image_space,
-            task_labels=task_label_space,
-            dtype=self.Observations,
-        )
+
+        # image_space = self.train_transforms(image_space)
+        # self.observation_space = NamedTupleSpace(
+        #     x=image_space,
+        #     task_labels=task_label_space,
+        #     dtype=self.Observations,
+        # )
 
         self.train_datasets: List[_ContinuumDataset] = []
         self.val_datasets: List[_ContinuumDataset] = []
@@ -266,6 +324,33 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         self.config: Config
         # Default path to which the datasets will be downloaded.
         self.data_dir: Optional[Path] = None
+
+    @property
+    def observation_space(self) -> NamedTupleSpace:
+        """ The un-batched observation space, based on the choice of dataset and
+        the transforms at `self.transforms` (which apply to the train/valid/test
+        environments).
+        
+        The returned spaces is a NamedTupleSpace, with the following properties:
+        - `x`: observation space (e.g. `Image` space)
+        - `task_labels`: Union[Discrete, Sparse[Discrete]]
+           The task labels for each sample. When task labels are not available,
+           the task labels space is Sparse, and entries will be `None`. 
+        """
+        x_space = base_observation_spaces[self.dataset]
+        # apply the transforms to the observation space.
+        for transform in self.transforms:
+            x_space = transform(x_space)
+
+        task_label_space = spaces.Discrete(self.nb_tasks)
+        if not self.task_labels_at_train_time:
+            task_label_space = Sparse(task_label_space, 1.0)
+
+        return NamedTupleSpace(
+            x=x_space,
+            task_labels=task_label_space,
+            dtype=self.Observations,
+        )
 
     def apply(self, method: Method, config: Config=None) -> ClassIncrementalResults:
         """Apply the given method on this setting to producing some results."""
@@ -290,13 +375,13 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     def prepare_data(self, data_dir: Path = None, **kwargs):
         self.config = self.config or Config.from_args(self._argv, strict=False)
         
-        if self.batch_size is None:
-            logger.warning(UserWarning(
-                f"Using the default batch size of 32. (You can set the "
-                f"batch size attribute of the setting inside your 'configure' "
-                f"method) "
-            ))
-            self.batch_size = 32
+        # if self.batch_size is None:
+        #     logger.warning(UserWarning(
+        #         f"Using the default batch size of 32. (You can set the "
+        #         f"batch size attribute of the setting inside your 'configure' "
+        #         f"method) "
+        #     ))
+        #     self.batch_size = 32
         
         data_dir = data_dir or self.data_dir or self.config.data_dir
         self.make_dataset(data_dir, download=True)
@@ -333,7 +418,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
         super().setup(stage, *args, **kwargs)
 
-    def train_dataloader(self, batch_size: int = None, num_workers: int = None) -> PassiveEnvironment:
+    def train_dataloader(self, batch_size: int = 32, num_workers: int = None) -> PassiveEnvironment:
         """Returns a DataLoader for the train dataset of the current task. """
         if not self.has_prepared_data:
             self.prepare_data()
@@ -343,7 +428,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         num_workers = num_workers or self.config.num_workers
         dataset = self.train_datasets[self.current_task_id]
         # TODO: Add some kind of Wrapper around the dataset to make it
-        # semi-supervised.        
+        # semi-supervised.
         self.train_env = PassiveEnvironment(
             dataset,
             split_batch_fn=self.split_batch_function(training=True),

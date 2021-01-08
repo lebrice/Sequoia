@@ -23,9 +23,10 @@ from sequoia.utils import constant, flag, mean
 from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
+from .continual import ContinualSetting
 
 @dataclass
-class IncrementalSetting(Setting):
+class IncrementalSetting(ContinualSetting):
     """ Mixin that defines methods that are common to all 'incremental'
     settings, where the data is separated into tasks, and where you may not
     always get the task labels.
@@ -59,7 +60,7 @@ class IncrementalSetting(Setting):
 
     @dataclass(frozen=True)
     class Observations(Setting.Observations):
-        """ Observations produced by an Incremental setting. 
+        """ Observations produced by an Incremental setting.
 
         Adds the 'task labels' to the base Observation.
         """

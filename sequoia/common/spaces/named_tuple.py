@@ -54,12 +54,18 @@ class NamedTupleSpace(spaces.Tuple):
         self.dtype: Type[Tuple] = dtype or namedtuple("NamedTuple", self.names)
         # idea: could use this _name attribute to change the __repr__ first part
         self._name = self.dtype.__name__
+        assert all(name == key for name, key in zip(self.names, self._spaces.keys()))
     
     def __getitem__(self, index: Union[int, str]) -> Space:
         if isinstance(index, str):
             return self._spaces[index]
         return super().__getitem__(index)
 
+    def __getattr__(self, attr: str) -> Space:
+        if attr in self._spaces:
+            return self._spaces[attr]
+        raise AttributeError(attr)
+    
     def __repr__(self):
         # TODO: Tricky: decide what name to show for the space class:
         cls_name = type(self).__name__
@@ -98,6 +104,6 @@ from gym.vector.utils import batch_space
 
 @batch_space.register(NamedTupleSpace)
 def batch_namedtuple_space(space: NamedTupleSpace, n: int = 1):
-    return NamedTupleSpace(spaces={
-        key: batch_space(value, n) for key, value in space._spaces.items()
+    return NamedTupleSpace(**{
+        key: batch_space(space[key], n) for key in space.names
     }, dtype=space.dtype)
