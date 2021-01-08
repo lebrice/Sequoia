@@ -1,12 +1,14 @@
 """
 Tests for the SemiSupervisedEnv wrapper.
 """
-from .semi_supervised_env import SemiSupervisedEnv
+import itertools
+from collections.abc import Sequence
+from typing import Generator, Iterable, List, Optional, Tuple
+
 import gym
 import pytest
-from typing import List, Optional, Tuple, Generator, Iterable
-from collections.abc import Sequence
-import itertools
+
+from .semi_supervised_env import SemiSupervisedEnv
 
 
 def reward_iterator(env: gym.Env, total_rewards: int) -> Iterable[Optional[float]]:
@@ -153,8 +155,9 @@ def test_max_labeled_samples_and_labeled_fraction_batched(env_name: str,
                                                           max_labeled_samples: int,
                                                           labeled_fraction: float,
                                                           seed: int):
-    from .batch_env import AsyncVectorEnv
     from functools import partial
+
+    from .batch_env import AsyncVectorEnv
     batch_size: int = 4
     env = gym.make(env_name)
     env = AsyncVectorEnv([partial(gym.make, env_name) for i in range(batch_size)])

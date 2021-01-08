@@ -8,7 +8,7 @@ from gym import Env, RewardWrapper, Wrapper
 from gym.wrappers import TransformReward
 from collections import abc
 import sys
-from utils.logging_utils import get_logger
+from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
