@@ -14,7 +14,8 @@ from .class_incremental_setting import (ClassIncrementalSetting,
 @pytest.mark.parametrize("dataset_name", ["mnist"])
 def test_observation_spaces_match_dataset(dataset_name: str):
     """ Test to check that the `observation_spaces` and `reward_spaces` dict
-    really correspond to the entries of the corresponding datasets.
+    really correspond to the entries of the corresponding datasets, before we do
+    anything with them.
     """
     # CIFARFellowship, MNISTFellowship, ImageNet100,
     # ImageNet1000, CIFAR10, CIFAR100, EMNIST, KMNIST, MNIST,
@@ -67,6 +68,13 @@ def test_setting_obs_space_changes_when_transforms_change(dataset_name: str):
     train_env = setting.train_dataloader(batch_size=None)
     from gym.vector.utils import batch_space
     assert train_env.observation_space == setting.observation_space
+
+    # Debugging this statement:
+    # assert train_env.reset() in train_env.observation_space
+    reset_obs = train_env.reset()
+    assert reset_obs[0] in train_env.observation_space[0], reset_obs[0].shape
+    assert reset_obs[1] in train_env.observation_space[1]
+
     assert train_env.reset() in train_env.observation_space
     assert train_env.reset() in setting.observation_space
     assert isinstance(train_env.reset(), ClassIncrementalSetting.Observations)

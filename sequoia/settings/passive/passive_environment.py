@@ -15,7 +15,9 @@ from torch.utils.data.dataloader import _BaseDataLoaderIter
 
 from sequoia.common.batch import Batch
 from sequoia.common.gym_wrappers.utils import reshape_space
+from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.transforms import Compose
+from sequoia.common.spaces import Image
 from sequoia.utils.logging_utils import get_logger
 from ..base.environment import (Actions, ActionType, Environment, Observations,
                                 ObservationType, Rewards, RewardType)
@@ -75,9 +77,28 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         super().__init__(dataset=dataset, **kwargs)
         self.split_batch_fn = split_batch_fn
         
-        self.observation_space: gym.Space = observation_space
-        self.action_space: gym.Space = action_space
-        self.reward_space: gym.Space = reward_space
+        if not observation_space:
+            observation_space = Image(0., 1., self.dataset[0][0].shape)
+        if not action_space:
+            assert n_classes, "must pass either `action_space`, or `n_classes`"
+            action_space = spaces.Discrete(n_classes)
+        if not reward_space:
+            reward_space = action_space
+            # reward_space = spaces.Discrete(n_classes)
+        
+        assert observation_space
+        assert action_space
+        assert reward_space
+
+        if self.batch_size:
+            observation_space = batch_space(observation_space, self.batch_size)
+            action_space = batch_space(action_space, self.batch_size)
+            reward_space = batch_space(reward_space, self.batch_size)
+        
+        self.observation_space: gym.Space = add_tensor_support(observation_space)
+        self.action_space: gym.Space = add_tensor_support(action_space)
+        self.reward_space: gym.Space = add_tensor_support(reward_space)
+
         self.n_classes: Optional[int] = n_classes
         self._iterator: Optional[_BaseDataLoaderIter] = None
         # NOTE: These here are never processed with self.observation or self.reward. 
@@ -86,118 +107,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self._next_batch: Optional[Tuple[ObservationType, RewardType]] = None
         self._done: Optional[bool] = None
         self._closed: bool = False
-        
-        if not self.observation_space:
-            self.observation_space = spaces.Box(0., 1., self.dataset[0][0].shape)
-        if not self.action_space:
-            self.action_space = spaces.Discrete(n_classes)
-        if not self.reward_space:
-            self.reward_space = spaces.Discrete(n_classes) 
-        
-        if self.batch_size:
-            self.observation_space = batch_space(self.observation_space, self.batch_size)
-            self.action_space = batch_space(self.action_space, self.batch_size)
-            self.reward_space = batch_space(self.reward_space, self.batch_size)
-        # if adjust_spaces_with_data:
-        #     self._adjust_spaces_using_data()
 
-    def _adjust_spaces_using_data(self) -> None:
-        """ Adjust the observation / reward spaces to reflect the data, if
-        possible.
-        
-        TODO: This isn't pretty. It might be more elegant to use an approach more
-        similar to the ContinualRLSetting, where the transforms/etc actually
-        dictate the 'shape' of the environment.
-        """ 
-        observation_space = self.observation_space
-        action_space = self.action_space
-        reward_space = self.reward_space
-        n_classes = self.n_classes
-        
-        # Temporarily create an iterator to get a batch of data.
-        temp_iterator = iter(self)
-        sample_batch = next(temp_iterator)
-        del temp_iterator
-
-        if not isinstance(sample_batch, (tuple, list, Batch)):
-            raise RuntimeError(f"Batches should be lists, tuples or Batch "
-                               f"objects, not {type(sample_batch)}.")
-        
-        if len(sample_batch) != 2:
-            raise RuntimeError("Need to pass a split_batch_fn since batches "
-                               "don't have length 2.")
-
-        observations, rewards = sample_batch
-        # assert isinstance(observations, Observations), "Assuming this for now."
-        # assert isinstance(rewards, Rewards), "Assuming this for now."
-        
-        if isinstance(observations, (Tensor, np.ndarray)):
-            observations = (observations,)
-        if isinstance(rewards, (Tensor, np.ndarray)):
-            rewards = (rewards,)
-
-        
-        image_batch = observations[0]
-        image = image_batch[0]
-        if not observation_space:
-            assert image.min() >= 0., "Assuming this for now."
-            assert image.max() <= 1., "Assuming this for now."
-            assert len(image.shape) >= 3, image.shape
-            if len(observations) == 1:
-                observation_space = spaces.Box(low=0, high=1, shape=image.shape)
-            else:
-                raise RuntimeError(f"Can't infer the space when observations have more than one tensor.")
-        else:
-            # Adjust the obs space to match the shape of the real observations.
-            # BUG: When a tensor is None, then what do we do?
-            # TODO: Fix this.
-            observation_space = observation_space
-            assert False, (observation_space, observations[0].shape, observations[1])
-            observation_space = reshape_space(
-                observation_space,
-                observations[0].shape
-            )
-        # TODO: Change this so that the observation/action/reward spaces dont
-        # have a batch dimension.
-        self.observation_space = spaces.Tuple([
-            observation_space for _ in range(self.batch_size)
-        ])
-        
-        reward_batch = rewards[0]
-        reward = reward_batch[0]
-        if not reward_space:
-            if action_space:
-                reward_space = action_space
-            elif n_classes is not None:
-                reward_space = spaces.Discrete(n=n_classes)
-            else:
-                raise RuntimeError("Need n_classes or action_space when "
-                                   "reward_space isn't given.")
-        else:
-            # Adjust the reward space to match the shape of the actual rewards.
-            reward_space = reshape_space(
-                reward_space,
-                reward.shape if len(rewards) == 1 else
-                tuple(tensor.shape[1:] for tensor in rewards)
-            )
-
-        self.reward_space = spaces.Tuple([
-            reward_space for _ in range(self.batch_size)
-        ])
-
-        if not action_space:
-            assert reward_space
-            action_space = reward_space
-        self.action_space = spaces.Tuple([
-            action_space for _ in range(self.batch_size)
-        ])
-        # Batch these spaces to reflect the batch size.
-        # TODO: Should we be doing this? This is so we match the AsyncVectorEnv
-        # from the gym.vector API.
-        # NOTE: On the last batch, if drop_last = False, the observations/actions
-        # will not reflect the spaces. Not sure if this could be a problem later.
-        # NOTE: Since we set the same object instance at each index, then
-        # modifying just one would modify all of them.    
 
     def reset(self) -> ObservationType:
         """ Resets the env by deleting and re-creating the iterator.
@@ -226,7 +136,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         
         if mode == "rgb_array":
             return tile_images(image_batch)
-        
+
         if mode == "human":
             tiled_version = tile_images(image_batch)
             import matplotlib.pyplot as plt
@@ -364,25 +274,32 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         """Iterate over the dataset, yielding batches of Observations and
         Rewards, just like a regular DataLoader.
         """
-        if self.split_batch_fn:
-            return map(self.split_batch_fn, super().__iter__())
-        else:
-            return super().__iter__()
-        # for batch in super().__iter__():
-        #     batch = self.batch_transforms(batch)
-            
-        #     # For now, just to simplify, we assume that the batch has already
-        #     # been split into Observations and Actions by a SplitBatch transform.
-        #     assert len(batch) == 2
-        #     assert isinstance(batch[0], Observations)
-        #     assert isinstance(batch[1], Rewards)
-        #     self.observations, self.rewards = batch
-            
-        #     if self.pretend_to_be_active:
-        #         # TODO: Should we yield one item, or two?
-        #         yield self.observations, None
-        #     else:
-        #         yield self.observations, self.rewards
+        # if self.split_batch_fn:
+        #     return map(self.split_batch_fn, super().__iter__())
+        # else:
+        #     return super().__iter__()
+        for batch in super().__iter__():
+            if self.split_batch_fn:
+                observations, rewards = self.split_batch_fn(batch)
+            else:
+                if len(batch) != 2:
+                    raise RuntimeError(
+                        f"You need to pass a `split_batch_fn` to create "
+                        f"observations and rewards, since batch doesn't have "
+                        f"2 items: {batch}"
+                    )
+                observations, rewards = batch
+
+            # Apply any transformations (in case this is wrapped with
+            # TransformObservation or something similar)
+            self._observations = self.observation(observations)
+            self._rewards = self.reward(rewards)
+
+            # if self.pretend_to_be_active:
+            #     # TODO: Should we yield one item, or two?
+            #     yield self._observations, None
+            # else:
+            yield self._observations, self._rewards
 
     def send(self, action: Actions) -> Rewards:
         """ Return the last latch of rewards from the dataset (which were

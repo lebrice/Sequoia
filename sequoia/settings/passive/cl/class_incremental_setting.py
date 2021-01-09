@@ -341,10 +341,13 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # apply the transforms to the observation space.
         for transform in self.transforms:
             x_space = transform(x_space)
+        x_space = add_tensor_support(x_space)
+        
 
         task_label_space = spaces.Discrete(self.nb_tasks)
         if not self.task_labels_at_train_time:
             task_label_space = Sparse(task_label_space, 1.0)
+        task_label_space = add_tensor_support(task_label_space)
 
         return NamedTupleSpace(
             x=x_space,

@@ -10,16 +10,21 @@ from torchvision.datasets import MNIST
 
 from sequoia.common.transforms import Compose, Transforms
 from .passive_environment import PassiveEnvironment
-
+from sequoia.common.spaces import Image
 
 
 def test_passive_environment_as_dataloader():
     batch_size = 1
-    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
+    dataset = MNIST("data", transform=transforms)
+    obs_space = Image(0, 255, (1, 28, 28), np.uint8)
+    obs_space = transforms(obs_space)
+
     env: Iterable[Tuple[Tensor, Tensor]] = PassiveEnvironment(
         dataset,
         batch_size=batch_size,
         n_classes=10,
+        observation_space=obs_space,
     )
 
     for x, y in env:
@@ -298,7 +303,7 @@ def test_split_batch_fn():
         assert env.observation_space[0].shape == (batch_size, 3, 28, 28)
         assert env.observation_space[1].shape == (batch_size,)
         assert env.action_space.shape == (batch_size, 1)
-        assert env.reward_space.shape == (batch_size,)
+        assert env.reward_space.shape == (batch_size, 1)
         
         env.seed(123)
         
@@ -315,3 +320,75 @@ def test_split_batch_fn():
         assert not done
 
         env.close()
+
+
+from sequoia.common.spaces import NamedTupleSpace
+from sequoia.common.gym_wrappers import TransformObservation
+
+
+def check_env(env: PassiveEnvironment):
+    """ Perform a step gym-style and dataloader-style and check that items
+    fit their respective spaces.
+    """
+    reset_obs = env.reset()
+    # Test out the reset & step methods (gym style)
+    assert reset_obs in env.observation_space, reset_obs.shape
+    assert env.observation_space.sample() in env.observation_space
+    assert env.action_space.sample() in env.action_space
+    assert env.reward_space == env.action_space
+    step_obs, step_rewards, done, info = env.step(env.action_space.sample())
+    assert step_obs in env.observation_space
+    assert step_rewards in env.reward_space
+    # TODO: Should passive environments return a single 'done' value? or a list
+    # like vectorized environments in RL?
+    assert not done # shouldn't be `done`.
+
+    for iter_obs, iter_rewards in env:
+        assert iter_obs in env.observation_space, iter_obs.shape
+        assert iter_rewards in env.reward_space
+        break
+    else:
+        assert False, "should have iterated"
+
+
+def test_observation_wrapper_applied_to_passive_environment():
+    """ Test that when we apply a gym wrapper to a PassiveEnvironment, it also
+    affects the observations / actions / rewards produced when iterating on the
+    env.
+    """
+    batch_size = 5
+    
+    transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
+    dataset = MNIST("data", transform=transforms)
+    obs_space = Image(0, 255, (1, 28, 28), np.uint8)
+    obs_space = transforms(obs_space)
+    dataset.classes
+    env = PassiveEnvironment(
+        dataset,
+        n_classes=10,
+        batch_size=batch_size,
+        observation_space=obs_space,
+    )
+
+    assert env.observation_space == Image(0, 1, (batch_size, 3, 28, 28))
+    assert env.action_space.shape == (batch_size,)
+    assert env.reward_space == env.action_space
+
+    env.seed(123)
+    
+    check_env(env)
+    
+    # Apply a transformation that changes the observation space.
+    env = TransformObservation(env=env, f=Compose([Transforms.resize_64x64]))
+    assert env.observation_space == Image(0, 1, (batch_size, 3, 64, 64))
+    assert env.action_space.shape == (batch_size,)
+    assert env.reward_space.shape == (batch_size,)
+    
+    env.seed(123)
+    check_env(env)
+    
+    env.close()
+
+    # from continuum import ClassIncremental
+    # from continuum.datasets import MNIST
+    # from continuum.tasks import split_train_val

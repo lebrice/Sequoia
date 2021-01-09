@@ -29,7 +29,7 @@ class NamedTupleSpace(spaces.Tuple):
                  names: Sequence[str] = None,
                  dtype: Type[NamedTuple] = None,
                  **kwargs):
-        self._spaces: Dict[str, Space]
+        self._spaces: Dict[str, Space] = {}
         if isinstance(spaces, MappingABC):
             assert names is None
             self._spaces = dict(spaces.items())
@@ -62,6 +62,8 @@ class NamedTupleSpace(spaces.Tuple):
         return super().__getitem__(index)
 
     def __getattr__(self, attr: str) -> Space:
+        if attr == "_spaces":
+            raise AttributeError(attr)
         if attr in self._spaces:
             return self._spaces[attr]
         raise AttributeError(attr)
