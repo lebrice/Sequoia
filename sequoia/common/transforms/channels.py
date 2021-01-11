@@ -1,15 +1,19 @@
+# from torchvision.transforms import Lambda
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Callable, Iterable, Tuple, Union, Any
 from functools import singledispatch
+from typing import Any, Callable, Iterable, Tuple, Union
+
 import gym
 import numpy as np
 import torch
 from gym import spaces
-from torch import Tensor
+from sequoia.common.spaces import NamedTupleSpace
 from sequoia.utils.logging_utils import get_logger
-# from torchvision.transforms import Lambda
+from torch import Tensor
 
-from .transform import Transform, Img
+from .transform import Img, Transform
+from .utils import is_image
 
 logger = get_logger(__file__)
 
@@ -142,6 +146,17 @@ def _(x: Tuple[int, ...]) -> Tuple[int, ...]:
         elif x[-1] == 1:
             return (*x[:-1], 3)
     return x
+
+
+
+@three_channels.register(NamedTupleSpace)
+@three_channels.register(spaces.Dict)
+@three_channels.register(Mapping)
+def _three_channels(x: Any) -> Any:
+    return type(x)(**{
+        key: three_channels(value) if is_image(value) else value
+        for key, value in x.items()
+    })
 
 
 @dataclass

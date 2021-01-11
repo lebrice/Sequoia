@@ -21,18 +21,8 @@ from sequoia.common.spaces.image import Image as ImageSpace
 from sequoia.common.gym_wrappers.convert_tensors import has_tensor_support, add_tensor_support
 from collections.abc import Mapping
 from sequoia.settings.base import Observations
+from .utils import is_image
 
-def is_image(v: Any) -> bool:
-    """ Returns wether the value is an Image, an image tensor, or an image
-    space.
-    """
-    return (
-        isinstance(v, Image.Image) or
-        (isinstance(v, (Tensor, np.ndarray)) and len(v.shape) >= 3) or
-        isinstance(v, ImageSpace) or
-        isinstance(v, spaces.Box) and len(v.shape) >= 3
-    )
-    
 logger = get_logger(__file__)
 
 @singledispatch

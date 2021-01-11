@@ -120,5 +120,20 @@ def test_setting_obs_space_changes_when_transforms_change(dataset_name: str):
     assert test_env.reset() in test_env.observation_space
 
 
+def test_render():
+    setting = ClassIncrementalSetting(dataset="mnist")
+    import matplotlib.pyplot as plt
+    plt.ion()
+    for task_id in range(setting.nb_tasks):
+        setting.current_task_id = task_id
+        env = setting.train_dataloader(batch_size=16, num_workers=0)
+        obs = env.reset()
+        done = False
+        while not done:
+            obs, rewards, done, info = env.step(env.action_space.sample())
+            env.render("human")
+        env.close()
+
+
 def test_class_incremental_random_baseline():
     pass

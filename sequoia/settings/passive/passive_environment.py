@@ -9,6 +9,7 @@ import numpy as np
 import torch
 from gym import spaces
 from gym.vector.utils import batch_space
+from gym.envs.classic_control import rendering
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data.dataloader import _BaseDataLoaderIter
@@ -107,6 +108,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self._next_batch: Optional[Tuple[ObservationType, RewardType]] = None
         self._done: Optional[bool] = None
         self._closed: bool = False
+        self.viewer: Optional[rendering.SimpleImageViewer] = None
 
 
     def reset(self) -> ObservationType:
@@ -123,6 +125,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
 
     def close(self) -> None:
         if not self._closed:
+            del self.viewer
             del self._iterator
             del self.dataset
             self._closed = True
@@ -144,28 +147,25 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             image_batch = tile_images(image_batch)
         
         image_batch = Transforms.channels_last_if_needed(image_batch)
-        
+        assert image_batch.shape[-1] in {3, 4}
+        if image_batch.dtype == np.float32:
+            assert (0 <= image_batch).all() and (image_batch <= 1).all()
+            image_batch = (256 * image_batch).astype(np.uint8)
+        assert image_batch.dtype == np.uint8
+
         if mode == "rgb_array":
             # NOTE: Need to create a single image, channels_last format, and
-            # possibly even of dtype uint8.
-            assert image_batch.shape[-1] in {3, 4}
-            if image_batch.dtype == np.float32:
-                assert (0 <= image_batch).all() and (image_batch <= 1).all()
-                image_batch = (256 * image_batch).astype(np.uint8)
-            assert image_batch.dtype == np.uint8
+            # possibly even of dtype uint8, in order for things like Monitor to
+            # work.
             return image_batch
-
-
-
+        
         if mode == "human":
-            assert False, "todo"
-            tiled_version = tile_images(image_batch)
             import matplotlib.pyplot as plt
-            return plt.imshow(tiled_version)
-            # if self.viewer is None:
-            #     from gym.envs.classic_control import rendering
-            # self.viewer.imshow(tiled_version)
-            # return self.viewer.isopen
+            # return plt.imshow(image_batch)
+            if self.viewer is None:
+                self.viewer = rendering.SimpleImageViewer()
+            self.viewer.imshow(image_batch)
+            return self.viewer.isopen
 
         raise NotImplementedError(f"Unsuported mode {mode}")
     

@@ -4,25 +4,27 @@
 images' errors when converting PIL images from some gym environments when
 using `ToTensor` from torchvision.
 """
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Callable, Sequence, Tuple, TypeVar, Union, overload
+from typing import Callable, Dict, Sequence, Tuple, TypeVar, Union, overload
 
 import gym
 import numpy as np
 import torch
 from gym import Space, spaces
 from PIL.Image import Image
-from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support, has_tensor_support
-from sequoia.utils import singledispatchmethod
-from sequoia.utils.generic_functions import to_tensor
-from sequoia.utils.logging_utils import get_logger
 from torch import Tensor
 from torchvision.transforms import ToTensor as ToTensor_
 from torchvision.transforms import functional as F
 
-from .channels import (channels_first_if_needed, channels_last_if_needed, has_channels_first,
-                       has_channels_last)
+from sequoia.common.gym_wrappers.convert_tensors import (add_tensor_support,
+                                                         has_tensor_support)
+from sequoia.common.spaces import NamedTuple, NamedTupleSpace
+from sequoia.utils import singledispatchmethod
+from sequoia.utils.generic_functions import to_tensor
+from sequoia.utils.logging_utils import get_logger
+
 from .transform import Img, Transform
 
 logger = get_logger(__file__)
@@ -43,8 +45,6 @@ def copy_if_negative_strides(image: Img) -> Img:
         strides = image.strides
     else:
         raise NotImplementedError(f"Can't get strides of object {image}")
-    
-    assert not isinstance(image, Tensor)
     if any(s < 0 for s in strides):
         return image.copy()
     return image
@@ -80,7 +80,9 @@ def image_to_tensor(image: Union[Img, Sequence[Img], gym.Space]) -> Union[Tensor
 def _(image: Union[Image, np.ndarray]) -> Tensor:
     """ Converts a PIL Image, or np.uint8 ndarray to a Tensor. Also reshapes it
     to channels_first format (because ToTensor from torchvision does it also).
-    """
+    """    
+    from .channels import (channels_first_if_needed, channels_last_if_needed,
+                           has_channels_first, has_channels_last)
     image = copy_if_negative_strides(image)
 
     if len(image.shape) == 2:
@@ -101,7 +103,9 @@ def _(image: Union[Image, np.ndarray]) -> Tensor:
         return channels_first_if_needed(
             torch.stack(list(map(image_to_tensor, image)))
         )
-    image = F.to_tensor(image)
+
+    if not isinstance(image, Tensor):
+        image = F.to_tensor(image)
     return channels_first_if_needed(image)
 
 
@@ -113,7 +117,8 @@ def _list_of_images_to_tensor(image: Sequence[Img]) -> Tensor:
 @image_to_tensor.register(tuple)
 def _to_tensor_effect_on_image_shape(image: Tuple[int, ...]) -> Tuple[int, ...]:
     """ Give the output shape given the input shape of an image. """
-    if len(image) == 3:
+    if len(image) == 3:        
+        from .channels import channels_first_if_needed
         return channels_first_if_needed(image)
     return image
 
@@ -133,6 +138,18 @@ def _(image: spaces.Box) -> spaces.Box:
     # images!
     image = add_tensor_support(image)
     return image
+
+
+@image_to_tensor.register(Mapping)
+@image_to_tensor.register(spaces.Dict)
+@image_to_tensor.register(NamedTupleSpace)
+def _space_with_images_to_tensor(space: Dict, device: torch.device = None) -> Dict:
+    from .resize import is_image
+    return type(space)(**{
+        key: image_to_tensor(value) if is_image(value) else value 
+        for key, value in space.items()
+    })
+
 
 # @image_to_tensor.register(Image)
 # def to_tensor(image: Union[Img, Sequence[Img]]) -> Tensor:
