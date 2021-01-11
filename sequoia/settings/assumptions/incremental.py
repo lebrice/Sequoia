@@ -94,6 +94,10 @@ class IncrementalSetting(ContinualSetting):
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
+        
+        self.train_env: gym.Env = None  # type: ignore
+        self.val_env: gym.Env = None  # type: ignore
+        self.test_env: gym.Env = None  # type: ignore
 
     @property
     def current_task_id(self) -> Optional[int]:

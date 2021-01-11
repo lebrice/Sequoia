@@ -19,8 +19,8 @@ TODO: I'm not sure this fits the "Class-Incremental" definition from
         bounded, or at least grow very slowly, with respect to the number of classes
         seen so far."
 """
-import itertools
 import dataclasses
+import itertools
 import warnings
 from abc import abstractmethod
 from collections import defaultdict
@@ -31,34 +31,37 @@ from typing import (Callable, ClassVar, Dict, List, Optional, Sequence, Tuple,
 
 import gym
 import matplotlib.pyplot as plt
-import torch
 import numpy as np
+import torch
 from continuum import ClassIncremental
 from continuum.datasets import *
 from continuum.datasets import _ContinuumDataset
 from continuum.scenarios.base import _BaseCLLoader
 from continuum.tasks import split_train_val
-from gym import spaces, Space
+from gym import Space, spaces
 from pytorch_lightning import LightningModule, Trainer
-from simple_parsing import choice, list_field, field
+from simple_parsing import choice, field, list_field
 from torch import Tensor
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import ConcatDataset, DataLoader
 from tqdm import tqdm
 
 from sequoia.common import ClassificationMetrics, Metrics, get_metrics
 from sequoia.common.config import Config
+from sequoia.common.gym_wrappers import TransformObservation
+from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.loss import Loss
-from sequoia.common.spaces import Sparse, Image
+from sequoia.common.spaces import Image, Sparse
 from sequoia.common.spaces.named_tuple import NamedTupleSpace
-from sequoia.common.transforms import Transforms, SplitBatch, Compose
-from sequoia.settings.assumptions.incremental import IncrementalSetting, TestEnvironment
-from sequoia.settings.base import Method, Results, ObservationType, RewardType
-from sequoia.utils import dict_union, get_logger, constant, mean, take
+from sequoia.common.transforms import Compose, SplitBatch, Transforms
+from sequoia.settings.assumptions.incremental import (IncrementalSetting,
+                                                      TestEnvironment)
+from sequoia.settings.base import Method, ObservationType, Results, RewardType
+from sequoia.utils import constant, dict_union, get_logger, mean, take
 
-from .class_incremental_results import ClassIncrementalResults
+from ..passive_environment import (Actions, ActionType, Observations,
+                                   PassiveEnvironment, Rewards)
 from ..passive_setting import PassiveSetting
-from ..passive_environment import PassiveEnvironment, Actions, ActionType, Observations, Rewards
-
+from .class_incremental_results import ClassIncrementalResults
 
 logger = get_logger(__file__)
 
@@ -233,7 +236,11 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     # Defaults to the value of `class_order`.
     test_class_order: Optional[List[int]] = None
 
+    # TODO: Still not sure where exactly we should be adding the 'batch_size'
+    # and 'num_workers' arguments. Adding it here for now with cmd=False, so
+    # that they can be passed to the constructor of the Setting.
     batch_size: int = field(default=32, cmd=False)
+    num_workers: int = field(default=0, cmd=False)
     
     def __post_init__(self):
         """Initializes the fields of the Setting (and LightningDataModule),
@@ -324,6 +331,11 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         self.config: Config
         # Default path to which the datasets will be downloaded.
         self.data_dir: Optional[Path] = None
+        
+        self.train_env: PassiveEnvironment = None  # type: ignore
+        self.val_env: PassiveEnvironment = None  # type: ignore
+        self.test_env: PassiveEnvironment = None  # type: ignore
+        
 
     @property
     def observation_space(self) -> NamedTupleSpace:
@@ -338,6 +350,11 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
            the task labels space is Sparse, and entries will be `None`. 
         """
         x_space = base_observation_spaces[self.dataset]
+        if not self.transforms:
+            # NOTE: When we don't pass any transforms, continuum scenarios still
+            # at least use 'to_tensor'.
+            x_space = Transforms.to_tensor(x_space)
+
         # apply the transforms to the observation space.
         for transform in self.transforms:
             x_space = transform(x_space)
@@ -432,7 +449,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         dataset = self.train_datasets[self.current_task_id]
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised.
-        self.train_env = PassiveEnvironment(
+        env = PassiveEnvironment(
             dataset,
             split_batch_fn=self.split_batch_function(training=True),
             observation_space=self.observation_space,
@@ -442,12 +459,11 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             batch_size=batch_size,
             num_workers=num_workers,
         )
-        # TODO: Do we want to update self.observation_space here?
-        # We want to keep the spaces 'un-batched', so we keep a slice across the
-        # first dimension.
-        # self.observation_space = self.train_env.observation_space[0]
-        # self.action_space = self.train_env.action_space[0]
-        # self.reward_space = self.train_env.reward_space[0]
+        if self.train_transforms:
+            env = TransformObservation(env, f=self.train_transforms)
+        if self.train_env:
+            self.train_env.close()
+        self.train_env = env
         return self.train_env
 
     def val_dataloader(self, batch_size: int = None, num_workers: int = None) -> PassiveEnvironment:
@@ -460,18 +476,24 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
         dataset = self.val_datasets[self.current_task_id]
         batch_size = batch_size or self.batch_size
-        num_workers = num_workers or self.num_workers
-
-        # batch_transforms: List[Callable] = self.val_batch_transforms()
-        self.val_env = PassiveEnvironment(
+        num_workers = num_workers or self.config.num_workers
+        env = PassiveEnvironment(
             dataset,
-            batch_size=batch_size,
-            num_workers=num_workers,
             split_batch_fn=self.split_batch_function(training=True),
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
+            pin_memory=True,
+            batch_size=batch_size,
+            num_workers=num_workers,
         )
+        if self.val_transforms:
+            env = TransformObservation(env, f=self.val_transforms)
+
+        if self.val_env:
+            self.val_env.close()
+            del self.val_env
+        self.val_env = env
         return self.val_env
 
     def test_dataloader(self, batch_size: int = None, num_workers: int = None) -> PassiveEnvironment["ClassIncrementalSetting.Observations", Actions, Rewards]:
@@ -482,19 +504,15 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         if not self.has_setup_test:
             self.setup("test")
 
-        # Testing this out, we're gonna have a "test schedule" like this!
+        # Testing this out, we're gonna have a "test schedule" like this to try
+        # to imitate the MultiTaskEnvironment in RL. 
         transition_steps = [0] + list(itertools.accumulate(map(len, self.test_datasets)))[:-1]
-        
+        # Join all the test datasets.        
         dataset = ConcatDataset(self.test_datasets)
         batch_size = batch_size or self.batch_size
-        assert batch_size, "batch size is None?"
-        num_workers = num_workers or self.num_workers
+        num_workers = num_workers or self.config.num_workers
         
-        # batch_transforms: List[Callable] = self.test_batch_transforms()
-        # FIXME: the transform that splits the batch is actually changing the
-        # shape of the observation space of the environment!
-
-        dataloader = PassiveEnvironment(
+        env = PassiveEnvironment(
             dataset,
             batch_size=batch_size,
             num_workers=num_workers,
@@ -503,25 +521,41 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             action_space=self.action_space,
             reward_space=self.reward_space,
         )
+        if self.test_transforms:
+            env = TransformObservation(env, f=self.test_transforms)
+
+        # NOTE: Two ways of removing the task labels: Either using a different
+        # 'split_batch_fn' at train and test time, or by using this wrapper
+        # which is also used in the RL side of the tree:
+        # TODO: Maybe remove/simplify the 'split_batch_function'.
+        from sequoia.settings.active.continual.wrappers import HideTaskLabelsWrapper
+        if not self.task_labels_at_test_time:
+            env = HideTaskLabelsWrapper(env)
+
         self.test_task_schedule = dict.fromkeys(
-            [step // (dataloader.batch_size or 1) for step in transition_steps],
+            [step // (env.batch_size or 1) for step in transition_steps],
             range(len(transition_steps)),
         )
         # a bit hacky, but it works.
-        dataloader.task_schedule = self.test_task_schedule
+        env.task_schedule = self.test_task_schedule
         # TODO: Would this mislead the Method into not observing/getting the last batch ?
-        dataloader.max_steps = self.max_steps = len(dataset) // dataloader.batch_size
-        
+        env.max_steps = self.max_steps = len(dataset) // (env.batch_size or 1)
+
         # TODO: Configure the 'monitoring' dir properly.
         test_dir = "results"
-        test_loop_max_steps = len(dataset) // dataloader.batch_size
+        test_loop_max_steps = len(dataset) // (env.batch_size or 1)
         # TODO: Fix this: iteration doesn't ever end for some reason.
-        self.test_env = ClassIncrementalTestEnvironment(
-            dataloader,
+
+        test_env = ClassIncrementalTestEnvironment(
+            env,
             directory=test_dir,
             step_limit=test_loop_max_steps,
             force=True,
         )
+
+        if self.test_env:
+            self.test_env.close()
+        self.test_env = test_env
         return self.test_env
 
     def split_batch_function(self, training: bool) -> Callable[[Tuple[Tensor, ...]], Tuple[Observations, Rewards]]:
@@ -531,7 +565,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             i: self.task_classes(i, train=training)
             for i in range(self.nb_tasks)
         }
-        
+
         def split_batch(batch: Tuple[Tensor, ...]) -> Tuple[Observations, Rewards]:
             """Splits the batch into a tuple of Observations and Rewards.
 
@@ -574,7 +608,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             increment=self.increment,
             initial_increment=self.initial_increment,
             class_order=self.class_order,
-            transformations=self.train_transforms,
+            transformations=self.transforms,
         )
 
     def make_test_cl_loader(self, test_dataset: _ContinuumDataset) -> _BaseCLLoader:
@@ -585,7 +619,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             increment=self.test_increment,
             initial_increment=self.test_initial_increment,
             class_order=self.test_class_order,
-            transformations=self.test_transforms,
+            transformations=self.transforms,
         )
 
     @property
@@ -772,18 +806,29 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
     
     def _after_reset(self, observation: ClassIncrementalSetting.Observations):
         image_batch = observation.numpy().x
-        from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
-        big_image = tile_images(image_batch)
-        return super()._after_reset(big_image)
+        # Need to create a single image with the right dtype for the Monitor
+        # from gym to create gifs / videos with it.
+        if self.batch_size:
+            # Need to tile the image batch so it can be seen as a single image
+            # by the Monitor.
+            image_batch = tile_images(image_batch)
+
+        image_batch = Transforms.channels_last_if_needed(image_batch)
+        if image_batch.dtype == np.float32:
+            assert (0 <= image_batch).all() and (image_batch <= 1).all()
+            image_batch = (256 * image_batch).astype(np.uint8)
+        
+        assert image_batch.dtype == np.uint8
+        super()._after_reset(image_batch)
 
     def render(self, mode='human', **kwargs):
-        from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
+        # NOTE: This doesn't get called, because the video recorder uses
+        # self.env.render(), rather than self.render()
+        assert False, mode
         image_batch = super().render(mode=mode, **kwargs)
-        if mode == "rgb_array":
-            return tile_images(image_batch)
+        if mode == "rgb_array" and self.batch_size:
+            image_batch = tile_images(image_batch)
         return image_batch
-        
-
 
 if __name__ == "__main__":
     import doctest

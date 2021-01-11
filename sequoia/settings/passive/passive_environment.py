@@ -16,7 +16,7 @@ from torch.utils.data.dataloader import _BaseDataLoaderIter
 from sequoia.common.batch import Batch
 from sequoia.common.gym_wrappers.utils import reshape_space
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
-from sequoia.common.transforms import Compose
+from sequoia.common.transforms import Compose, Transforms
 from sequoia.common.spaces import Image
 from sequoia.utils.logging_utils import get_logger
 from ..base.environment import (Actions, ActionType, Environment, Observations,
@@ -122,22 +122,43 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         return self.observation(obs)
 
     def close(self) -> None:
-        del self._iterator
-        self._closed = True
+        if not self._closed:
+            del self._iterator
+            del self.dataset
+            self._closed = True
 
+    def __del__(self):
+        # TODO: Weird issue, tests don't 'terminate' cleanly for some reason.
+        if not self._closed:
+            self.close()
+    
     def render(self, mode: str = "rgb_array") -> np.ndarray:
         observations = self._current_batch[0]
         assert isinstance(observations, Observations)
         image_batch = observations[0]
         if isinstance(image_batch, Tensor):
             image_batch = image_batch.cpu().numpy()
-        
+                
         from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
+        if self.batch_size:
+            image_batch = tile_images(image_batch)
+        
+        image_batch = Transforms.channels_last_if_needed(image_batch)
         
         if mode == "rgb_array":
-            return tile_images(image_batch)
+            # NOTE: Need to create a single image, channels_last format, and
+            # possibly even of dtype uint8.
+            assert image_batch.shape[-1] in {3, 4}
+            if image_batch.dtype == np.float32:
+                assert (0 <= image_batch).all() and (image_batch <= 1).all()
+                image_batch = (256 * image_batch).astype(np.uint8)
+            assert image_batch.dtype == np.uint8
+            return image_batch
+
+
 
         if mode == "human":
+            assert False, "todo"
             tiled_version = tile_images(image_batch)
             import matplotlib.pyplot as plt
             return plt.imshow(tiled_version)
@@ -310,6 +331,3 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         # for now.
         # assert self.action_space.contains(action), action
         return None
-
-    def close(self):
-        pass

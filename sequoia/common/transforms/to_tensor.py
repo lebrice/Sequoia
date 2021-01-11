@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from gym import Space, spaces
 from PIL.Image import Image
-from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
+from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support, has_tensor_support
 from sequoia.utils import singledispatchmethod
 from sequoia.utils.generic_functions import to_tensor
 from sequoia.utils.logging_utils import get_logger
@@ -121,11 +121,18 @@ def _to_tensor_effect_on_image_shape(image: Tuple[int, ...]) -> Tuple[int, ...]:
 @image_to_tensor.register(spaces.Box)
 def _(image: spaces.Box) -> spaces.Box:
     if image.dtype == np.uint8:
-        return channels_first_if_needed(type(image)(low=0., high=1., shape=image.shape, dtype=np.float32))
-    if image.high.max() == 1. and image.low.min() == 0.:
-        return add_tensor_support(image)
-    raise NotImplementedError(f"image spaces should be np.uint8: {image}")
-    # return add_tensor_support(channels_first(image))
+        # images get their bounds changed to [0. 1.] and their shape changed to
+        # channels_first.
+        image = type(image)(low=0., high=1., shape=channels_first_if_needed(image.shape), dtype=np.float32)
+    # TODO: it sometimes happens that the `image` space has already been
+    # through 'to_tensor`, not sure what to do in that case.
+    # elif not has_tensor_support(image):
+    #     raise RuntimeError(f"image spaces should have dtype np.uint8!: {image}")
+    # Since the transform would convert images / ndarrays to tensors, then we
+    # add 'Tensor' support when applying the same transform on the Space of
+    # images!
+    image = add_tensor_support(image)
+    return image
 
 # @image_to_tensor.register(Image)
 # def to_tensor(image: Union[Img, Sequence[Img]]) -> Tensor:

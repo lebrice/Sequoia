@@ -3,7 +3,7 @@ as a bit of a hybrid between `gym.spaces.Dict` and `gym.spaces.Tuple`.
 """
 from collections import namedtuple
 from collections.abc import Mapping as MappingABC
-from typing import Any, Dict, Mapping, Sequence, Tuple, Type, Union
+from typing import Any, Dict, Mapping, Sequence, Tuple, Type, Union, List, Iterable
 
 import gym
 import numpy as np
@@ -13,7 +13,7 @@ from sequoia.utils.generic_functions._namedtuple import NamedTuple
 
 class NamedTupleSpace(spaces.Tuple):
     """
-    A tuple (i.e., product) of simpler spaces, with namedtuple samples.
+    A tuple (i.e., product) of simpler (named) spaces. Samples are namedtuples.
 
     Example usage:
     
@@ -76,6 +76,16 @@ class NamedTupleSpace(spaces.Tuple):
             str(k) + "=" + str(s) for k, s in self._spaces.items()
         ]) + ")"
 
+    def _replace(self, **kwargs):
+        """ replaces the given subspaces with newer ones, maintaining the
+        current ordering.
+        """
+        from sequoia.utils.utils import dict_union
+        spaces = self._spaces.copy()
+        assert all(k in spaces for k in kwargs), "no new keys allowed"
+        spaces.update(kwargs)
+        return type(self)(**spaces)
+
     def __eq__(self, other: Union["NamedTupleSpace", Any]) -> bool:
         return isinstance(other, spaces.Tuple) and tuple(self.spaces) == tuple(other.spaces)
 
@@ -90,6 +100,15 @@ class NamedTupleSpace(spaces.Tuple):
             x = tuple(x[k] for k in self.names)
             # x = tuple(x.values())
         return super().contains(x)
+    
+    def keys(self) -> List[str]:
+        return self._spaces.keys()
+    
+    def values(self) -> List[Space]:
+        return self._spaces.values()
+    
+    def items(self) -> Iterable[Tuple[str, Space]]:
+        yield from self._spaces.items()
 
 
 # See https://github.com/openai/gym/issues/2140 : Fix __eq__ of gym.spaces.Tuple
