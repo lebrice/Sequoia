@@ -106,7 +106,13 @@ def add_tensor_support(space: S, device: torch.device = None) -> S:
 
 from sequoia.common.spaces.named_tuple import NamedTupleSpace, NamedTuple
 
-@add_tensor_support.register(spaces.Dict)
+@add_tensor_support.register
+def _add_tensor_support(space: spaces.Dict, device: torch.device = None) -> spaces.Dict:
+    return type(space)(**{
+        key: add_tensor_support(value, device=device)
+        for key, value in space.spaces.items()
+    })
+
 @add_tensor_support.register(NamedTupleSpace)
 def _add_tensor_support(space: Dict, device: torch.device = None) -> Dict:
     return type(space)(**{

@@ -26,7 +26,7 @@ from sequoia.utils.generic_functions import to_tensor
 from sequoia.utils.logging_utils import get_logger
 
 from .transform import Img, Transform
-
+from .channels import channels_first_if_needed
 logger = get_logger(__file__)
 
 
