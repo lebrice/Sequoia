@@ -236,9 +236,6 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     # Defaults to the value of `class_order`.
     test_class_order: Optional[List[int]] = None
 
-    # TODO: Still not sure where exactly we should be adding the 'batch_size'
-    # and 'num_workers' arguments. Adding it here for now with cmd=False, so
-    # that they can be passed to the constructor of the Setting.
     batch_size: int = field(default=32, cmd=False)
     num_workers: int = field(default=0, cmd=False)
     
@@ -398,8 +395,8 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # if self.batch_size is None:
         #     logger.warning(UserWarning(
         #         f"Using the default batch size of 32. (You can set the "
-        #         f"batch size attribute of the setting inside your 'configure' "
-        #         f"method) "
+        #         f"batch size by passing a value to the Setting constructor, or "
+        #         f"by setting the attribute inside your 'configure' method) "
         #     ))
         #     self.batch_size = 32
         
@@ -459,6 +456,11 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             batch_size=batch_size,
             num_workers=num_workers,
         )
+        
+        if self.config.render:
+            # TODO: Add a callback wrapper that calls 'env.render' at each step?
+            env = env
+            
         if self.train_transforms:
             env = TransformObservation(env, f=self.train_transforms)
         if self.train_env:
@@ -551,6 +553,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             directory=test_dir,
             step_limit=test_loop_max_steps,
             force=True,
+            config=self.config,
         )
 
         if self.test_env:
@@ -824,7 +827,7 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
     def render(self, mode='human', **kwargs):
         # NOTE: This doesn't get called, because the video recorder uses
         # self.env.render(), rather than self.render()
-        assert False, mode
+        # TODO: Render when the 'render' argument in config is set to True.        
         image_batch = super().render(mode=mode, **kwargs)
         if mode == "rgb_array" and self.batch_size:
             image_batch = tile_images(image_batch)

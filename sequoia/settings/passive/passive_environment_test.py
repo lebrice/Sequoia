@@ -392,3 +392,6 @@ def test_observation_wrapper_applied_to_passive_environment():
     # from continuum import ClassIncremental
     # from continuum.datasets import MNIST
     # from continuum.tasks import split_train_val
+
+def test_render():
+    pass

@@ -44,6 +44,8 @@ def check_only_right_classes_present(env: TaskIncrementalSetting):
             reward = train_loader.send([4 for _ in range(batch_size)])
             assert reward is None
 
+        train_loader.close()
+
 
 def test_class_incremental_mnist_setup():
     env = TaskIncrementalSetting(dataset="mnist", increment=2)

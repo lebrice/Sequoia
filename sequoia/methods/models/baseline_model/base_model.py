@@ -336,7 +336,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         if rewards is None:
             # Get the reward from the environment (the dataloader).
             if self.config.debug and self.config.render:
-                environment.render()
+                environment.render("human")
                 # import matplotlib.pyplot as plt
                 # plt.waitforbuttonpress(10)
             

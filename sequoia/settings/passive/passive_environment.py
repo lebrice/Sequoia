@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from gym import spaces
 from gym.vector.utils import batch_space
-from gym.envs.classic_control import rendering
+from gym.envs.classic_control.rendering import SimpleImageViewer
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data.dataloader import _BaseDataLoaderIter
@@ -108,8 +108,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self._next_batch: Optional[Tuple[ObservationType, RewardType]] = None
         self._done: Optional[bool] = None
         self._closed: bool = False
-        self.viewer: Optional[rendering.SimpleImageViewer] = None
-
+        self.viewer: Optional[SimpleImageViewer] = None
 
     def reset(self) -> ObservationType:
         """ Resets the env by deleting and re-creating the iterator.
@@ -125,6 +124,8 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
 
     def close(self) -> None:
         if not self._closed:
+            if self.viewer:
+                self.viewer.close()
             del self.viewer
             del self._iterator
             del self.dataset
@@ -160,10 +161,12 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             return image_batch
         
         if mode == "human":
+            
             import matplotlib.pyplot as plt
             # return plt.imshow(image_batch)
             if self.viewer is None:
-                self.viewer = rendering.SimpleImageViewer()
+                display = None
+                self.viewer = SimpleImageViewer(display=display)
             self.viewer.imshow(image_batch)
             return self.viewer.isopen
 

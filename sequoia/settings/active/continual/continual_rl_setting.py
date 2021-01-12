@@ -1,7 +1,7 @@
 import itertools
 import json
-import warnings
 import operator
+import warnings
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
@@ -16,7 +16,7 @@ from gym.envs.atari import AtariEnv
 from gym.envs.classic_control import CartPoleEnv
 from gym.utils import colorize
 from gym.wrappers import AtariPreprocessing
-from simple_parsing import choice, list_field, field
+from simple_parsing import choice, field, list_field
 from simple_parsing.helpers import dict_field
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from torch import Tensor
@@ -29,9 +29,10 @@ from sequoia.common.gym_wrappers import (AddDoneToObservation,
                                          TransformObservation, TransformReward)
 from sequoia.common.gym_wrappers.batch_env import (BatchedVectorEnv,
                                                    SyncVectorEnv, VectorEnv)
+from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
-from sequoia.common.gym_wrappers.pixel_observation import \
-    PixelObservationWrapper, ImageObservations
+from sequoia.common.gym_wrappers.pixel_observation import (
+    ImageObservations, PixelObservationWrapper)
 from sequoia.common.gym_wrappers.step_callback_wrapper import \
     StepCallbackWrapper
 from sequoia.common.gym_wrappers.utils import (IterableWrapper,
@@ -40,8 +41,8 @@ from sequoia.common.gym_wrappers.utils import (IterableWrapper,
                                                has_wrapper, is_atari_env,
                                                is_classic_control_env)
 from sequoia.common.metrics import RegressionMetrics
-from sequoia.common.spaces import Sparse, Image
-from sequoia.common.spaces.named_tuple import NamedTupleSpace, NamedTuple
+from sequoia.common.spaces import Image, Sparse
+from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 from sequoia.common.transforms import Transforms
 from sequoia.settings.active import ActiveSetting
 from sequoia.settings.assumptions.incremental import (IncrementalSetting,
@@ -599,10 +600,10 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         batch_size = batch_size or self.batch_size
         if batch_size is not None:
             logger.warn(UserWarning(colorize(
-                "WIP: Only support batch size of `None` (i.e., a single env) "
-                "for the test environments of RL Settings at the moment, "
-                "because the Monitor class from gym doesn't work with "
-                "VectorEnvs.", "yellow"
+                f"WIP: Only support batch size of `None` (i.e., a single env) "
+                f"for the test environments of RL Settings at the moment, "
+                f"because the Monitor class from gym doesn't work with "
+                f"VectorEnvs. (batch size was {batch_size})", "yellow"
             )))
             batch_size = None
 
@@ -627,6 +628,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             task_schedule=self.test_task_schedule,
             directory=test_dir,
             step_limit=test_loop_max_steps,
+            config=self.config,
             force=True,
             video_callable=None if self.config.render else False,
         )
@@ -929,10 +931,9 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         )
 
     def render(self, mode='human', **kwargs):
-        from sequoia.common.gym_wrappers.batch_env.tile_images import \
-            tile_images
+        # TODO: This might not be setup right. Need to check.
         image_batch = super().render(mode=mode, **kwargs)
-        if mode == "rgb_array":
+        if mode == "rgb_array" and self.batch_size:
             return tile_images(image_batch)
         return image_batch
         

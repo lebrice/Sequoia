@@ -94,7 +94,7 @@ class RLResults(IncrementalSetting.Results, Results):
 
     def make_plots(self):
         results = {
-            "mean_reward": self.mean_reward_plot()
+            # "mean_reward": self.mean_reward_plot()
         }
         return results
 

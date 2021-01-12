@@ -104,22 +104,25 @@ def test_setting_obs_space_changes_when_transforms_change(dataset_name: str):
     ##  ---------- Same tests for the test_environment --------------
     ##
 
-    test_env = setting.test_dataloader(batch_size=None)
-    if setting.task_labels_at_test_time:
-        assert test_env.observation_space == setting.observation_space
-    else:
-        assert isinstance(test_env.observation_space["task_labels"], Sparse)
-    assert test_env.reset() in test_env.observation_space
+    with setting.test_dataloader(batch_size=None) as test_env:
+        if setting.task_labels_at_test_time:
+            assert test_env.observation_space == setting.observation_space
+        else:
+            assert isinstance(test_env.observation_space["task_labels"], Sparse)
+        assert test_env.reset() in test_env.observation_space
     
-    # When we add a transform to `setting.test_transforms` the observation
-    # space of the Setting and of the test dataloader are different:
     setting.test_transforms = [Transforms.resize_64x64]
-    test_env = setting.test_dataloader(batch_size=None)
-    assert test_env.observation_space != setting.observation_space
-    assert test_env.observation_space.x.shape == (3, 64, 64)
-    assert test_env.reset() in test_env.observation_space
+    with setting.test_dataloader(batch_size=None) as test_env:
+        # When we add a transform to `setting.test_transforms` the observation
+        # space of the Setting and of the test dataloader are different:
+        assert test_env.observation_space != setting.observation_space
+        assert test_env.observation_space.x.shape == (3, 64, 64)
+        assert test_env.reset() in test_env.observation_space
 
 
+# TODO: This renders, even when we're using the pytest-xvfb plugin, which might
+# mean that it's actually creating a Display somewhere?
+@pytest.mark.timeout(30)
 def test_render():
     setting = ClassIncrementalSetting(dataset="mnist")
     import matplotlib.pyplot as plt
@@ -132,6 +135,7 @@ def test_render():
         while not done:
             obs, rewards, done, info = env.step(env.action_space.sample())
             env.render("human")
+            # break
         env.close()
 
 
