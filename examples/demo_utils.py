@@ -50,7 +50,6 @@ def demo_all_settings(MethodType: Type[Method], datasets: List[str] = ["mnist", 
 
     # Create a pandas dataframe with all the results:
 
-    from .demo_utils import make_result_dataframe
     result_df: pd.DataFrame = make_result_dataframe(all_results)
 
     csv_path = Path(f"examples/results/results_{method.get_name()}.csv")

@@ -1,6 +1,4 @@
 """ Demo: Creates a simple new method and applies it to a single CL setting.
-
-Optionally, this also shows how you can 
 """
 import sys
 from dataclasses import dataclass
@@ -16,13 +14,14 @@ import torch
 from numpy import inf
 from gym import spaces
 from torch import Tensor, nn
+from simple_parsing import ArgumentParser
+
 
 # This "hack" is required so we can run `python examples/quick_demo.py`
 sys.path.extend([".", ".."])
-
-from sequoia.settings import Method
-from sequoia.settings import Setting
-from sequoia.settings.passive.cl import ClassIncrementalSetting
+from sequoia import Method, Setting
+from sequoia.common import Config
+from sequoia.settings import ClassIncrementalSetting
 from sequoia.settings.passive.cl.objects import (Actions, Observations,
                                          PassiveEnvironment, Results, Rewards)
 
@@ -111,7 +110,6 @@ class DemoMethod(Method, target_setting=ClassIncrementalSetting):
         @classmethod
         def from_args(cls) -> "HParams":
             """ Get the hparams of the method from the command-line. """
-            from simple_parsing import ArgumentParser
             parser = ArgumentParser(description=cls.__doc__)
             parser.add_arguments(cls, dest="hparams")
             args, _ = parser.parse_known_args()
@@ -193,30 +191,83 @@ class DemoMethod(Method, target_setting=ClassIncrementalSetting):
         y_pred = logits.argmax(dim=-1)
         return self.target_setting.Actions(y_pred)
 
+    @classmethod
+    def add_argparse_args(cls, parser: ArgumentParser, dest: str = ""):
+        """Adds command-line arguments for this Method to an argument parser."""
+        parser.add_arguments(cls.HParams, "hparams")
+        
+    @classmethod
+    def from_argparse_args(cls, args, dest=None):
+        """Creates an instance of this Method from the parsed arguments."""
+        hparams: cls.HParams = args.hparams
+        return cls(hparams=hparams)
+
+
+def demo_simple():
+    """ Simple demo: Creating and applying a Method onto a Setting. """
+    from sequoia.settings import TaskIncrementalSetting
+    
+    ## 1. Creating the setting:
+    setting = TaskIncrementalSetting(dataset="fashionmnist", batch_size=32)
+    ## 2. Creating the Method
+    method = DemoMethod()
+    # (Optional): You can also create a Config, which holds other fields like
+    # `log_dir`, `debug`, `device`, etc. which aren't specific to either the
+    # Setting or the Method.
+    config = Config(debug=True, render=True)
+    ## 3. Applying the method to the setting: (optionally passing a Config to
+    # use for that run)
+    results = setting.apply(method, config=config)
+    print(results.summary())
+    print(f"objective: {results.objective}")
+    exit()
+
+
+def demo_command_line():
+    """ Run this quick demo from the command-line. """
+    from sequoia.settings import ClassIncrementalSetting, TaskIncrementalSetting
+    parser = ArgumentParser(description=__doc__)
+    # Add command-line arguments for the Method and the Setting.
+    DemoMethod.add_argparse_args(parser)
+    # Add command-line arguments for the Setting and the Config (an object with
+    # options like log_dir, debug, etc, which are not part of the Setting or the
+    # Method) using simple-parsing.
+    parser.add_arguments(TaskIncrementalSetting, "setting")
+    parser.add_arguments(Config, "config")
+    args = parser.parse_args()
+    
+    # Create the Method from the parsed arguments
+    method: DemoMethod = DemoMethod.from_argparse_args(args)
+    # Extract the Setting and Config from the args.
+    setting: TaskIncrementalSetting = args.setting
+    config: Config = args.config
+    
+    # Run the demo, applying that DemoMethod on the given setting.
+    results: Results = setting.apply(method, config=config)
+    print(results.summary())
+    print(f"objective: {results.objective}")
+    results.save_to_dir(config.log_dir)
 
 
 if __name__ == "__main__":
     # Example: Evaluate a Method on a single CL setting:
-    from sequoia.settings import TaskIncrementalSetting
-
-    ## 1. Creating the setting:
-    # First option: create the setting manually:
-    # setting = TaskIncrementalSetting(dataset="fashionmnist")
-    # Second option: create the setting from the command-line:
-    setting = TaskIncrementalSetting.from_args()
     
-    ## 2. Creating the Method
-    method = DemoMethod()
+    ###
+    ### First option: Run the demo, creating the Setting and Method directly.
+    ###
+    demo_simple()
     
-    ## 3. Applying the method to the setting:
-    results = setting.apply(method)
+    ##
+    ## Second part of the demo: Same as before, but customize the options for
+    ## the Setting and the Method from the command-line.
+    ##
     
-    print(results.summary())
-    print(f"objective: {results.objective}")
+    # demo_command_line()
     
-    exit()
+    ##
+    ## As a little bonus: Evaluate on *ALL* the applicable settings, and
+    ## aggregate the results in a nice little LaTeX-formatted table.
+    ##
     
-    # Optionally, other demo: Evaluate on *ALL* the applicable
-    # settings, and aggregate the results in a nice little LaTeX table.
-    from .demo_utils import demo_all_settings
-    all_results = demo_all_settings(DemoMethod)
+    # from examples.demo_utils import demo_all_settings
+    # all_results = demo_all_settings(DemoMethod)
