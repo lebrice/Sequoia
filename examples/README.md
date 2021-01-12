@@ -14,16 +14,15 @@ Here's a brief description of the examples in this folder:
     from scratch that targets a Supervised CL `Setting`, as well as how to
     improve this simple Method using a simple regularization loss.
 
-- [quick_demo.py](basic/quick_demo.py): First part of the above
-    notebook: simple demo showing how to create a Method from scratch that
-    targets a Supervised CL Setting.
-
-- [quick_demo_ewc.py](basic/quick_demo_ewc.py): Second part of the
-    above notebook: shows how to improve upon an existing Method by adding a
-    CL regularization loss.
+    - [quick_demo.py](basic/quick_demo.py): First part of the above
+        notebook: shows how to create a Method from scratch that
+        targets a Supervised CL Setting.
+    - [quick_demo_ewc.py](basic/quick_demo_ewc.py): Second part of the
+        above notebook: shows how to improve upon an existing Method by adding a
+        CL regularization loss.
 
 - [baseline_demo.py](basic/baseline_demo.py): Shows how the
-    BaselineMethod can be easily applied to get results in both RL and SL Settings.
+    BaselineMethod can be applied to get results in both RL and SL Settings.
 
 
 ## Advanced examples:
