@@ -104,7 +104,7 @@ def make_result_dataframe(all_results):
     return df
 
 
-def compare_results(all_results: Dict[Type[Method], Dict[Type[Setting], Dict[str, Results]]]):
+def compare_results(all_results: Dict[Type[Method], Dict[Type[Setting], Dict[str, Results]]]) -> None:
     """Helper function, compares the results of the different methods by
     arranging them in a table (pandas dataframe).
     """

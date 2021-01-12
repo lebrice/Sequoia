@@ -31,6 +31,9 @@ pip install -r requirements.txt
 ## Getting Started
 
 
+**First, take a look at the [Examples folder](/examples)**
+
+
 ### Running experiments
 
 - Directly in code:
