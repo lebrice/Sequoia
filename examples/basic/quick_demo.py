@@ -220,7 +220,6 @@ def demo_simple():
     results = setting.apply(method, config=config)
     print(results.summary())
     print(f"objective: {results.objective}")
-    exit()
 
 
 def demo_command_line():

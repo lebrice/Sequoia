@@ -70,7 +70,7 @@ pip install -r requirements.txt
 
 #### Prerequisites:
 
-- Take a quick look at the [demo script](examples/quick_demo.py), which can be run using `python examples/quick_demo.py`.
+- First, please take a look at the [examples folder](examples/)
 
 #### Steps:
 
