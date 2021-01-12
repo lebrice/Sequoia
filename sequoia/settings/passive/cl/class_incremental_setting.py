@@ -38,6 +38,7 @@ from continuum.datasets import *
 from continuum.datasets import _ContinuumDataset
 from continuum.scenarios.base import _BaseCLLoader
 from continuum.tasks import split_train_val
+from datasets.synbols import Synbols
 from gym import spaces
 from pytorch_lightning import LightningModule, Trainer
 from simple_parsing import choice, list_field
@@ -80,6 +81,7 @@ num_classes_in_dataset: Dict[str, int] = {
     "core50-v2-79": 50,
     "core50-v2-196": 50,
     "core50-v2-391": 50,
+    "synbols": 48,
 }
 
 dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
@@ -100,6 +102,7 @@ dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
     "core50-v2-79": (224, 224, 3),
     "core50-v2-196": (224, 224, 3),
     "core50-v2-391": (224, 224, 3),
+    "synbols": (32, 32, 3),
 }
 
 
@@ -128,7 +131,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         for c in [
             CIFARFellowship, MNISTFellowship, ImageNet100,
             ImageNet1000, CIFAR10, CIFAR100, EMNIST, KMNIST, MNIST,
-            QMNIST, FashionMNIST,
+            QMNIST, FashionMNIST, Synbols,
         ]
     }
     # A continual dataset to use. (Should be taken from the continuum package).
