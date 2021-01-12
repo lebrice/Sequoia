@@ -15,6 +15,13 @@ import h5py
 
 class Synbols(InMemoryDataset):
     def __init__(self, data_path, download, train, **kwargs):
+        """Wraps Synbols in a Continuum dataset for compatibility with Sequoia  
+
+        Args:
+            data_path (str): Path where the dataset will be saved
+            download (bool): Whether to download the dataset
+            train (bool): Whether to use the train split
+        """
         full_path = get_data_path_or_download("default_n=100000_2020-Oct-19.h5py",
                                                 data_root=data_path)
 
