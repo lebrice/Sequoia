@@ -194,7 +194,10 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # over the environments in the dataloader style
     # (as does the baseline method).
     add_done_to_observations: bool = False
-
+    
+    batch_size: Optional[int] = field(default=None, cmd=False)
+    num_workers: Optional[int] = field(default=None, cmd=False)
+    
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
         
