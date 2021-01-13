@@ -244,9 +244,31 @@ def test_remove_batch_dim():
         x = torch.arange(5),
         task_labels = None,
     )
-    for expanded in [bob.remove_batch_dimension(), bob[:, 0]]:
+    for expanded in [bob.remove_batch_dimension(), bob[:, 0,]]:
         assert str(expanded) == str(expected)
 
+def test_remove_batch_dim_with_nested_objects():
+    obj = ForwardPass(
+        observations=Observations(
+            x=torch.arange(5).reshape([1, 5]),
+            task_labels=None,
+        ),
+        h_x=torch.arange(4).reshape([1, 4]),
+        actions=Actions(
+            y_pred=torch.tensor(1).reshape([1,]),
+        )
+    )
+    actual = obj.remove_batch_dimension()
+    assert str(actual) == str(ForwardPass(
+        observations=Observations(
+            x=torch.arange(5),
+            task_labels=None,
+        ),
+        h_x=torch.arange(4),
+        actions=Actions(
+            y_pred=torch.tensor(1),
+        )
+    ))
 
 
 def test_split():

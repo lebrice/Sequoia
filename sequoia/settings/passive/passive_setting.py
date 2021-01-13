@@ -19,6 +19,20 @@ class PassiveSetting(Setting[PassiveEnvironment[ObservationType, ActionType, Rew
     label has no effect on the reward you're given (the label) or on the next
     samples you observe.
     """
+    
+    # @dataclass(frozen=True)
+    # class Observations(Setting.Observations):
+    #     pass
+    
+    # @dataclass(frozen=True)
+    # class Actions(Setting.Actions):
+    #     pass
+        
+    # @dataclass(frozen=True)
+    # class Rewards(Setting.Rewards):
+    #     pass
+
+    
     # TODO: rename/remove this, as it isn't used, and there could be some
     # confusion with the available_datasets in task-incremental and iid.
     # Also, since those are already LightningDataModules, what should we do?

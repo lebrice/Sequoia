@@ -45,7 +45,7 @@ class Config(Serializable, Parseable):
     # Enables more verbose logging.
     verbose: bool = flag(False)
     # Number of workers for the dataloaders.
-    num_workers: Optional[int] = torch.get_num_threads()
+    num_workers: Optional[int] = None
     # Random seed.
     seed: Optional[int] = None
     # Which device to use. Defaults to 'cuda' if available.

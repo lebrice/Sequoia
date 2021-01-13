@@ -2,10 +2,10 @@
 quick_demo.py script, adding an EWC-like loss to prevent the weights from
 changing too much between tasks.
 """
+import sys
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Dict, Tuple, ClassVar, Optional
-import sys
+from typing import ClassVar, Dict, Optional, Tuple
 
 import gym
 import torch
@@ -14,11 +14,11 @@ from torch import Tensor
 # This "hack" is required so we can run `python examples/quick_demo_ewc.py`
 sys.path.extend([".", ".."])
 from sequoia.settings import ClassIncrementalSetting
-from sequoia.utils.logging_utils import get_logger
-from sequoia.utils import dict_intersection
-
-from quick_demo import MyModel, DemoMethod
 from sequoia.settings.passive.cl.objects import Observations, Rewards
+from sequoia.utils import dict_intersection
+from sequoia.utils.logging_utils import get_logger
+
+from examples.quick_demo import DemoMethod, MyModel
 
 logger = get_logger(__file__)
 
@@ -117,12 +117,34 @@ class ImprovedDemoMethod(DemoMethod):
     def on_task_switch(self, task_id: Optional[int]):
         self.model.on_task_switch(task_id)
 
+
+def demo_ewc():
+    """ Demo: Comparing two methods on the same setting: """
+    from sequoia.settings import ClassIncrementalSetting
+
+    ## 1. Create the Setting (same as in quick_demo.py)
+    setting = ClassIncrementalSetting(dataset="fashionmnist", nb_tasks=5, batch_size=64)
+    # setting = ClassIncrementalSetting.from_args()
+
+    # 2.1: Get the results for the base method
+    base_method = DemoMethod()
+    base_results = setting.apply(base_method)
     
+    # 2.2: Get the results for the 'improved' method:
+    new_method = ImprovedDemoMethod()
+    new_results = setting.apply(new_method)
+    
+    # Compare the two results:
+    print(f"\n\nComparison: DemoMethod vs ImprovedDemoMethod - (ClassIncrementalSetting, dataset=fashionmnist):")
+    print(base_results.summary())
+    print(new_results.summary())
+    
+    exit()
 
 
 if __name__ == "__main__":
-    from sequoia.settings import TaskIncrementalSetting
     # Example: Comparing two methods on the same setting:
+    from sequoia.settings import TaskIncrementalSetting
     
     ## 1. Create the Setting (same as in quick_demo.py)
     setting = TaskIncrementalSetting(dataset="fashionmnist", nb_tasks=5)
@@ -140,18 +162,17 @@ if __name__ == "__main__":
     print(base_results.summary())
     print(new_results.summary())
     
-    exit()
+    # exit()
     
-    # Optionally, second part of the demo: Compare the performances of the two
-    # methods on all their applicable settings:
-
-    base_method = DemoMethod()
+      
+    ##
+    ## As a little bonus: Evaluate *both* methods on *ALL* their applicable
+    ## settings, and aggregate the results in a nice LaTeX-formatted table.
+    ##
     from examples.demo_utils import compare_results, demo_all_settings
     
-    base_results = demo_all_settings(base_method, datasets=["mnist", "fashionmnist"])
-    
-    new_method = ImprovedDemoMethod()
-    improved_results = demo_all_settings(new_method, datasets=["mnist", "fashionmnist"])
+    base_results = demo_all_settings(DemoMethod, datasets=["mnist", "fashionmnist"])
+    improved_results = demo_all_settings(ImprovedDemoMethod, datasets=["mnist", "fashionmnist"])
 
     compare_results({
         DemoMethod: base_results,

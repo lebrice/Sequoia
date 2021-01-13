@@ -47,6 +47,8 @@ class WandbLoggerConfig(Serializable, Parseable):
     # Save checkpoints in wandb dir to upload on W&B servers.
     log_model: bool = False
     
+    monitor_gym: bool = True
+    
     def make_logger(self, wandb_parent_dir: Path) -> WandbLogger:
         wandb_logger = WandbLogger(
             name=self.run_name,
@@ -60,6 +62,7 @@ class WandbLoggerConfig(Serializable, Parseable):
             log_model=self.log_model,
             entity=self.entity,
             group=self.group,
+            monitor_gym=self.monitor_gym,
         )
         return wandb_logger
 
@@ -100,7 +103,7 @@ class WandbConfig(Serializable):
     # Root Logging directory.
     log_dir_root: Path = Path("results")
 
-
+    monitor_gym: bool = True
 
     @property
     def log_dir(self):
@@ -150,6 +153,7 @@ class WandbConfig(Serializable):
             reinit=True,
             tags=self.tags,
             resume="allow",
+            monitor_gym=self.monitor_gym,
         )
         logger.info(f"Run: {run}")
         run.save()

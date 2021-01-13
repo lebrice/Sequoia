@@ -183,7 +183,7 @@ class EpisodicA2C(PolicyHead):
         
         # Value loss: Try to get the critic's values close to the actual return,
         # which means the advantages should be close to zero.
-        value_loss_tensor = F.mse_loss(values, returns)
+        value_loss_tensor = F.mse_loss(values, returns.reshape(values.shape))
         critic_loss = Loss("critic", value_loss_tensor)
         loss += self.hparams.critic_loss_coef * critic_loss
 

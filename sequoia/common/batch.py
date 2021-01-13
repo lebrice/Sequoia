@@ -257,7 +257,10 @@ class Batch(ABC, Mapping[str, T]):
             if field_index == slice(None):
                 # logger.debug(f"Indexing all fields {field_index} with index: {item_index}")
                 return type(self)(**{
-                    key: value[item_index] if value is not None else None 
+                    key: (
+                        value[index] if isinstance(value, Batch) else
+                        value[item_index] if value is not None else None
+                    )
                     for key, value in self.items()
                 })
 

@@ -7,12 +7,12 @@ from typing import Callable, Union
 import gym
 import pytest
 import torch
-
+from sequoia.conftest import slow_param
 from .make_env import make_batched_env
 
 
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
-@pytest.mark.parametrize("batch_size", [1, 5, 10])
+@pytest.mark.parametrize("batch_size", [1, 5, slow_param(10)])
 def test_make_batched_env(env_name: str, batch_size: int):
     env = make_batched_env(base_env=env_name, batch_size=batch_size)
     start_state = env.reset()
@@ -27,7 +27,7 @@ def test_make_batched_env(env_name: str, batch_size: int):
 
 
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
-@pytest.mark.parametrize("batch_size", [1, 5, 10])
+@pytest.mark.parametrize("batch_size", [1, 5, slow_param(10)])
 def test_make_env_with_wrapper(env_name: str, batch_size: int):
     env = make_batched_env(
         base_env=env_name,
@@ -52,7 +52,7 @@ from sequoia.common.gym_wrappers.batch_env import AsyncVectorEnv
 
 @pytest.mark.xfail(reason=f"TODO: Haven't added the env_method or env_attribute or set_attr methods on the BatchedVectorEnv.")
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
-@pytest.mark.parametrize("batch_size", [1, 5, 10])
+@pytest.mark.parametrize("batch_size", [1, 5, slow_param(10)])
 def test_make_env_with_wrapper_and_kwargs(env_name: str, batch_size: int):
     env = make_batched_env(
         base_env=env_name,

@@ -3,7 +3,7 @@ as a bit of a hybrid between `gym.spaces.Dict` and `gym.spaces.Tuple`.
 """
 from collections import namedtuple
 from collections.abc import Mapping as MappingABC
-from typing import Any, Dict, Mapping, Sequence, Tuple, Type, Union
+from typing import Any, Dict, Mapping, Sequence, Tuple, Type, Union, List, Iterable
 
 import gym
 import numpy as np
@@ -13,7 +13,7 @@ from sequoia.utils.generic_functions._namedtuple import NamedTuple
 
 class NamedTupleSpace(spaces.Tuple):
     """
-    A tuple (i.e., product) of simpler spaces, with namedtuple samples.
+    A tuple (i.e., product) of simpler (named) spaces. Samples are namedtuples.
 
     Example usage:
     
@@ -29,7 +29,7 @@ class NamedTupleSpace(spaces.Tuple):
                  names: Sequence[str] = None,
                  dtype: Type[NamedTuple] = None,
                  **kwargs):
-        self._spaces: Dict[str, Space]
+        self._spaces: Dict[str, Space] = {}
         if isinstance(spaces, MappingABC):
             assert names is None
             self._spaces = dict(spaces.items())
@@ -54,12 +54,20 @@ class NamedTupleSpace(spaces.Tuple):
         self.dtype: Type[Tuple] = dtype or namedtuple("NamedTuple", self.names)
         # idea: could use this _name attribute to change the __repr__ first part
         self._name = self.dtype.__name__
+        assert all(name == key for name, key in zip(self.names, self._spaces.keys()))
     
     def __getitem__(self, index: Union[int, str]) -> Space:
         if isinstance(index, str):
             return self._spaces[index]
         return super().__getitem__(index)
 
+    def __getattr__(self, attr: str) -> Space:
+        if attr == "_spaces":
+            raise AttributeError(attr)
+        if attr in self._spaces:
+            return self._spaces[attr]
+        raise AttributeError(attr)
+    
     def __repr__(self):
         # TODO: Tricky: decide what name to show for the space class:
         cls_name = type(self).__name__
@@ -67,6 +75,16 @@ class NamedTupleSpace(spaces.Tuple):
         return f"{cls_name}(" + ", ".join([
             str(k) + "=" + str(s) for k, s in self._spaces.items()
         ]) + ")"
+
+    def _replace(self, **kwargs):
+        """ replaces the given subspaces with newer ones, maintaining the
+        current ordering.
+        """
+        from sequoia.utils.utils import dict_union
+        spaces = self._spaces.copy()
+        assert all(k in spaces for k in kwargs), "no new keys allowed"
+        spaces.update(kwargs)
+        return type(self)(**spaces)
 
     def __eq__(self, other: Union["NamedTupleSpace", Any]) -> bool:
         return isinstance(other, spaces.Tuple) and tuple(self.spaces) == tuple(other.spaces)
@@ -82,6 +100,15 @@ class NamedTupleSpace(spaces.Tuple):
             x = tuple(x[k] for k in self.names)
             # x = tuple(x.values())
         return super().contains(x)
+    
+    def keys(self) -> List[str]:
+        return self._spaces.keys()
+    
+    def values(self) -> List[Space]:
+        return self._spaces.values()
+    
+    def items(self) -> Iterable[Tuple[str, Space]]:
+        yield from self._spaces.items()
 
 
 # See https://github.com/openai/gym/issues/2140 : Fix __eq__ of gym.spaces.Tuple
@@ -98,6 +125,6 @@ from gym.vector.utils import batch_space
 
 @batch_space.register(NamedTupleSpace)
 def batch_namedtuple_space(space: NamedTupleSpace, n: int = 1):
-    return NamedTupleSpace(spaces={
-        key: batch_space(value, n) for key, value in space._spaces.items()
+    return NamedTupleSpace(**{
+        key: batch_space(space[key], n) for key in space.names
     }, dtype=space.dtype)
