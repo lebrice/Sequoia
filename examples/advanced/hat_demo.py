@@ -280,8 +280,6 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
-    assert False, args
-
     setting: TaskIncrementalSetting = TaskIncrementalSetting.from_argparse_args(args, dest="setting")
     method: HatMethod = HatMethod.from_argparse_args(args, dest="method")
     config: Config = args.config
