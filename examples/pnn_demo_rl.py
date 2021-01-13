@@ -175,6 +175,16 @@ class PNN(nn.Module):
     def transfor_img(self, img):
         return lambda img: imresize(img[35:195].mean(2), (80,80)).astype(np.float32).reshape(1,80,80)/255.
 
+
+
+# class PNNMethod(Method, target_setting=Setting):
+#     def configure(self, setting: Setting):
+#         if isinstance(setting, ContinualRLSetting):
+#             self.model = PNNA2CModel()
+#         else:
+#             self.model = PNNResNetClassifier()
+
+
 class ImproveMethod(Method, target_setting=ContinualRLSetting):
 
     def configure(self, setting: ContinualRLSetting):
@@ -251,7 +261,17 @@ class ImproveMethod(Method, target_setting=ContinualRLSetting):
     def print_results(self, step, loss, reward):
         print("Task: {}\n Step:{}\n Average Loss: {}\n Average Reward: {}\n".format(self.task_id,
                             step, loss, reward))
+    
+    # def fit(self, train_env: gym.Env, valid_env: gym.Env):
+    #     if self.model is None:
+    #         self.model = self.create_model(train_env, valid_env)
 
+    #     self.model.freeze_columns()
+    #     self.model.new_task(self.device, self.num_actions)
+    #     self.set_optimizer()
+    #     # self.model.float()
+    
+    
     def fit(self, train_env: gym.Env, valid_env: gym.Env):
         if self.model is None:
             self.model = self.create_model(train_env, valid_env)
@@ -329,6 +349,7 @@ class ImproveMethod(Method, target_setting=ContinualRLSetting):
 if __name__ == "__main__":
     # Stages:
     ## 1. Creating the setting:
+    from sequoia.settings import RLSetting
     setting = TaskIncrementalRLSetting(
         dataset="cartpole",
         observe_state_directly=True,

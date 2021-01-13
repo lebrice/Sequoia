@@ -1,23 +1,23 @@
 import sys
-import torch
-import numpy as np
-from typing import Dict, Tuple, Optional
 from dataclasses import dataclass
-from numpy import inf
-import tqdm
+from typing import Dict, Optional, Tuple
+
 import gym
-
-from sequoia.settings import Method
-from sequoia.settings.passive.cl import ClassIncrementalSetting
-from sequoia.settings.passive.cl.objects import (Actions, PassiveEnvironment)
-from sequoia.settings.passive.cl.objects import Observations, Rewards
-
-from sequoia.settings import TaskIncrementalSetting, TaskIncrementalRLSetting
-
-from sequoia.methods.stable_baselines3_methods import A2CModel
-
+import numpy as np
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import tqdm
+from numpy import inf
+from simple_parsing import ArgumentParser
+
+from sequoia.common import Config
+from sequoia.methods.stable_baselines3_methods import A2CModel
+from sequoia.settings import (Method, TaskIncrementalRLSetting,
+                              TaskIncrementalSetting)
+from sequoia.settings.passive.cl import ClassIncrementalSetting
+from sequoia.settings.passive.cl.objects import (Actions, Observations,
+                                                 PassiveEnvironment, Rewards)
 
 class PNNConvLayer(nn.Module):
     def __init__(self, col, depth, n_in, n_out):
@@ -195,6 +195,7 @@ class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
         # We will create those when `configure` will be called, before training.
         self.model: PNN
         self.optimizer: torch.optim.Optimizer
+        self.config: Optional[Config] = None
 
     def configure(self, setting: ClassIncrementalSetting):
         """ Called before the method is applied on a setting (before training). 
@@ -202,7 +203,6 @@ class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
         """
-
         # assert False, setting.observation_space.device
         # setting.batch_size = self.hparams.batch_size
 
@@ -219,6 +219,9 @@ class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
 
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
+        observations: ClassIncrementalSetting.Observations = train_env.reset()
+        cuda_observations = observations.to(device="cuda:0")       
+        
         self.model.freeze_columns()
         self.model.new_task(self.layer_size, self.device)
         self.set_optimizer()
@@ -270,7 +273,49 @@ class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
         # For example, you could do something like this:
         self.model.current_task = task_id
 
-if __name__ == "__main__":
+    @classmethod
+    def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
+        parser.add_arguments(cls.HParams, dest="hparams")
+        parser.add_argument("--foo", default=123)
+
+    @classmethod
+    def from_argparse_args(cls, args: Namespace, dest: str = None) -> "ImproveMethod":
+        hparams: ImproveMethod.HParams = args.hparams
+        foo: int = args.foo
+        method = cls(hparams=hparams)
+        return method
+
+
+def main_command_line():
+    from sequoia.settings import TaskIncrementalSetting
+    parser = ArgumentParser(description=__doc__, add_dest_to_option_strings=False)
+    
+    # Add arguments for the Setting
+    
+    parser.add_arguments(TaskIncrementalSetting, dest="setting")
+    # TaskIncrementalSetting.add_argparse_args(parser, dest="setting")
+    Config.add_argparse_args(parser, dest="config")
+    
+    # Add arguments for the Method:
+    ImproveMethod.add_argparse_args(parser, dest="method")
+    
+    args = parser.parse_args()
+
+    # setting: TaskIncrementalSetting = args.setting
+    setting: TaskIncrementalSetting = TaskIncrementalSetting.from_argparse_args(args, dest="setting")
+    config: Config = Config.from_argparse_args(args, dest="config")
+
+    method: ImproveMethod = ImproveMethod.from_argparse_args(args, dest="method")
+    
+    method.config = config
+    
+    
+    results = setting.apply(method, config=config)
+    print(results.summary())
+
+
+def main():
+    
     # Example: Evaluate a Method on a single CL setting:
     # from sequoia.settings import TaskIncrementalSetting # For Supervised Learning (SL)
     # from sequoia.settings import TaskIncrementalRLSetting # For Reinforcment Learning (RL)
@@ -291,3 +336,7 @@ if __name__ == "__main__":
     print(f"objective: {results.objective}")
     
     exit()
+
+if __name__ == "__main__":
+    main_command_line()
+    # main()
