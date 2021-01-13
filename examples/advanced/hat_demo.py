@@ -7,6 +7,9 @@ from numpy import inf
 import tqdm
 import gym
 
+from simple_parsing import ArgumentParser
+
+from sequoia.common import Config
 from sequoia.settings import Method
 from sequoia.settings.passive.cl import ClassIncrementalSetting
 from sequoia.settings.passive.cl.objects import (Actions, PassiveEnvironment)
@@ -238,11 +241,23 @@ class HatMethod(Method, target_setting=ClassIncrementalSetting):
         # For example, you could do something like this:
         self.model.current_task = task_id
 
+    @classmethod
+    def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
+        parser.add_arguments(cls.HParams, dest="hparams")
+        # parser.add_argument("--foo", default=123)
+
+    @classmethod
+    def from_argparse_args(cls, args, dest: str = None) -> "HatMethod":
+        hparams: HatMethod.HParams = args.hparams
+        # foo: int = args.foo
+        method = cls(hparams=hparams)
+        return method
+
 
 if __name__ == "__main__":
     # Example: Evaluate a Method on a single CL setting:
     from sequoia.settings import TaskIncrementalSetting # For Supervised Learning (SL)
-    # from sequoia.settings import TaskIncrementalRLSetting # For Reinforcment Learning (RL)
+    parser = ArgumentParser(description=__doc__, add_dest_to_option_strings=False)
 
     """
     We must define 3 main components:
@@ -256,16 +271,23 @@ if __name__ == "__main__":
 
     # Stages:
     ## 1. Creating the setting:
-    setting = TaskIncrementalSetting(dataset="fashionmnist", nb_tasks=5)
+    HatMethod.add_argparse_args(parser, dest="method")
+    parser.add_arguments(TaskIncrementalSetting, dest="setting")
+    parser.add_arguments(Config, "config")
     # setting = TaskIncrementalRLSetting(dataset="cartpole", nb_tasks=5)
     # Second option: create the setting from the command-line:
     # setting = TaskIncrementalSetting.from_args()
     
-    ## 2. Creating the Method
-    method = HatMethod()
-    
+    args = parser.parse_args()
+
+    assert False, args
+
+    setting: TaskIncrementalSetting = TaskIncrementalSetting.from_argparse_args(args, dest="setting")
+    method: HatMethod = HatMethod.from_argparse_args(args, dest="method")
+    config: Config = args.config
+
     ## 3. Applying the method to the setting:
-    results = setting.apply(method)
+    results = setting.apply(method, config=config)
     
     print(results.summary())
     print(f"objective: {results.objective}")
