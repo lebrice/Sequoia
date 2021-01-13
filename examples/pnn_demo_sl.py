@@ -12,28 +12,62 @@ from sequoia.settings.passive.cl import ClassIncrementalSetting
 from sequoia.settings.passive.cl.objects import (Actions, PassiveEnvironment)
 from sequoia.settings.passive.cl.objects import Observations, Rewards
 
-import torch
+from sequoia.settings import TaskIncrementalSetting, TaskIncrementalRLSetting
+
+from sequoia.methods.stable_baselines3_methods import A2CModel
+
 import torch.nn as nn
 import torch.nn.functional as F
 
+class PNNConvLayer(nn.Module):
+    def __init__(self, col, depth, n_in, n_out):
+        super(PNNConvLayer, self).__init__()
+        self.col = col
+        self.layer = nn.Conv2d(n_in, n_out, 3, stride=2, padding=1)
+
+        self.u = nn.ModuleList()
+        if depth > 0:
+            self.u.extend([ nn.Conv2d(n_in, n_out, 3, stride=2, padding=1) for _ in range(col) ])
+
+    def forward(self, inputs):
+        if not isinstance(inputs, list):
+            inputs = [inputs]
+
+        cur_column_out = self.layer(inputs[-1])
+        prev_columns_out = [mod(x) for mod, x in zip(self.u, inputs)]
+
+        return F.elu(cur_column_out + sum(prev_columns_out))
+
+class PNNGruLayer(nn.Module):
+    def __init__(self, col, depth, n_in, n_out):
+        super(PNNGruLayer, self).__init__()
+        self.layer = nn.GRUCell(n_in, n_out) #nn.GRUCell(32 * 5 * 5, 256)
+
+        #self.u = nn.ModuleList()
+        #if depth > 0:
+        #    self.u.extend([ nn.GRUCell(n_in, n_out) for _ in range(col) ])
+
+    def forward(self, inputs, hx):
+        #if not isinstance(inputs, list):
+        #    inputs = [inputs]
+        cur_column_out = self.layer(inputs, hx)
+        # prev_columns_out = [mod(x, hx) for mod, x in zip(self.u, inputs)]
+
+        return cur_column_out
 
 class PNNLinearBlock(nn.Module):
     def __init__(self, col, depth, n_in, n_out):
         super(PNNLinearBlock, self).__init__()
-        self.col = col
-        self.depth = depth
-        self.n_in = n_in
-        self.n_out = n_out
-        self.w = nn.Linear(n_in, n_out)
+        self.layer = nn.Linear(n_in, n_out)
 
         self.u = nn.ModuleList()
-        if self.depth > 0:
+        if depth > 0:
             self.u.extend([nn.Linear(n_in, n_out) for _ in range(col)])
 
     def forward(self, inputs):
         if not isinstance(inputs, list):
             inputs = [inputs]
-        cur_column_out = self.w(inputs[-1])
+        cur_column_out = self.layer(inputs[-1])
         prev_columns_out = [mod(x) for mod, x in zip(self.u, inputs)]
 
         return F.relu(cur_column_out + sum(prev_columns_out))
@@ -53,13 +87,14 @@ class PNN(nn.Module):
         self.columns = nn.ModuleList([])
 
         self.loss = torch.nn.CrossEntropyLoss()
+        self.device = None
 
     def forward(self, observations):
         assert self.columns, 'PNN should at least have one column (missing call to `new_task` ?)'
         x = observations.x
         x = torch.flatten(x, start_dim=1)
-        inputs = [c[0](x) for c in self.columns]
 
+        inputs = [c[0](x) for c in self.columns]
         for l in range(1, self.n_layers):
             outputs = []
 
@@ -78,6 +113,7 @@ class PNN(nn.Module):
         # assert False, print(inputs.size())
         return y
 
+
     def new_task(self, sizes, device):
         msg = "Should have the out size for each layer + input size (got {} sizes but {} layers)."
         assert len(sizes) == self.n_layers + 1, msg.format(len(sizes), self.n_layers)
@@ -86,8 +122,10 @@ class PNN(nn.Module):
         modules = []
         for i in range(0, self.n_layers):
             modules.append(PNNLinearBlock(task_id, i, sizes[i], sizes[i+1]))
+
         new_column = nn.ModuleList(modules).to(device)
         self.columns.append(new_column)
+        self.device = device
 
         print("Add column of the new task")
 
@@ -105,9 +143,9 @@ class PNN(nn.Module):
     def shared_step(self, batch: Tuple[Observations, Rewards], *args, **kwargs):
         # Since we're training on a Passive environment, we get both
         # observations and rewards.
-        observations: Observations = batch[0]
+        observations: Observations = batch[0].to(self.device)
         rewards: Rewards = batch[1]
-        image_labels = rewards.y
+        image_labels = rewards.y.to(self.device)
 
         # Get the predictions:
         logits = self(observations)
@@ -118,6 +156,9 @@ class PNN(nn.Module):
         accuracy = (y_pred == image_labels).sum().float() / len(image_labels)
         metrics_dict = {"accuracy": accuracy}
         return loss, metrics_dict
+
+    def parameters(self):
+        return self.columns[-1].parameters()
 
 class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
     """ 
@@ -162,10 +203,13 @@ class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
         where you get access to the observation & action spaces.
         """
 
-        # assert False, setting.observation_space
-        setting.batch_size = self.hparams.batch_size
+        # assert False, setting.observation_space.device
+        # setting.batch_size = self.hparams.batch_size
+
         self.layer_size = [np.prod(setting.observation_space[0].shape), 256, setting.increment]
-        self.device = "cpu"#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        setting.batch_size = 32
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.model = PNN(
             n_layers=self.hparams.n_layers,
@@ -211,14 +255,10 @@ class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
                     val_pbar.set_postfix(postfix)
             torch.set_grad_enabled(True)
 
-            if epoch_val_loss < best_val_loss:
-                best_val_loss = epoch_val_loss
-                best_epoch = i
-
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         """ Get a batch of predictions (aka actions) for these observations. """ 
         with torch.no_grad():
-            logits = self.model(observations)
+            logits = self.model(observations.to(self.device))
         # Get the predicted classes
         y_pred = logits.argmax(dim=-1)
         return self.target_setting.Actions(y_pred)
@@ -232,13 +272,12 @@ class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
 
 if __name__ == "__main__":
     # Example: Evaluate a Method on a single CL setting:
-    from sequoia.settings import TaskIncrementalSetting # For Supervised Learning (SL)
+    # from sequoia.settings import TaskIncrementalSetting # For Supervised Learning (SL)
     # from sequoia.settings import TaskIncrementalRLSetting # For Reinforcment Learning (RL)
 
     # Stages:
     ## 1. Creating the setting:
     setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
-    # setting = TaskIncrementalRLSetting(dataset="cartpole", nb_tasks=5)
     # Second option: create the setting from the command-line:
     # setting = TaskIncrementalSetting.from_args()
     
