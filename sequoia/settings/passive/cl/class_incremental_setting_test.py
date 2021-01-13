@@ -2,13 +2,12 @@ from pathlib import Path
 
 import pytest
 from continuum import InstanceIncremental
-from sequoia.methods import RandomBaselineMethod
-from sequoia.common.spaces import Sparse
 from sequoia.common.gym_wrappers.convert_tensors import has_tensor_support
+from sequoia.common.spaces import Sparse
+from sequoia.methods import RandomBaselineMethod
 
 from .class_incremental_setting import (ClassIncrementalSetting,
-                                        base_observation_spaces,
-                                        dims_for_dataset, reward_spaces)
+                                        base_observation_spaces, reward_spaces)
 
 # TODO: Add a fixture that specifies a data folder common to all tests.
 

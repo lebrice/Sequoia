@@ -236,8 +236,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     # Defaults to the value of `class_order`.
     test_class_order: Optional[List[int]] = None
 
+    # TODO: Need to put num_workers in only one place.
     batch_size: int = field(default=32, cmd=False)
-    num_workers: int = field(default=0, cmd=False)
+    num_workers: int = field(default=4, cmd=False)
     
     def __post_init__(self):
         """Initializes the fields of the Setting (and LightningDataModule),
@@ -435,14 +436,17 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
         super().setup(stage, *args, **kwargs)
 
-    def train_dataloader(self, batch_size: int = 32, num_workers: int = None) -> PassiveEnvironment:
+    def train_dataloader(self, batch_size: int = None, num_workers: int = None) -> PassiveEnvironment:
         """Returns a DataLoader for the train dataset of the current task. """
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_fit:
             self.setup("fit")
+
+        # TODO: Clean this up: decide where num_workers should be stored.
         batch_size = batch_size or self.batch_size
-        num_workers = num_workers or self.config.num_workers
+        num_workers = num_workers or self.num_workers
+
         dataset = self.train_datasets[self.current_task_id]
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised.
@@ -478,7 +482,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
         dataset = self.val_datasets[self.current_task_id]
         batch_size = batch_size or self.batch_size
-        num_workers = num_workers or self.config.num_workers
+        num_workers = num_workers or self.num_workers
         env = PassiveEnvironment(
             dataset,
             split_batch_fn=self.split_batch_function(training=True),
@@ -512,7 +516,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # Join all the test datasets.        
         dataset = ConcatDataset(self.test_datasets)
         batch_size = batch_size or self.batch_size
-        num_workers = num_workers or self.config.num_workers
+        num_workers = num_workers or self.num_workers
         
         env = PassiveEnvironment(
             dataset,

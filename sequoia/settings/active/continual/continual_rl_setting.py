@@ -625,7 +625,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # TODO: Find where to configure this 'test directory' for the outputs of
         # the Monitor.
         test_dir = "results"
-        
+        # TODO: Debug wandb Monitor integration.
         self.test_env = ContinualRLTestEnvironment(
             env_dataloader,
             task_schedule=self.test_task_schedule,

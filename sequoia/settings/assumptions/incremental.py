@@ -7,6 +7,7 @@ from typing import List, Optional, Sequence, Tuple, Union, ClassVar, Type
 import gym
 import torch
 import tqdm
+import wandb
 from gym import spaces
 from gym.vector import VectorEnv
 from simple_parsing import field
@@ -320,6 +321,10 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
         self._closed = False
         self._steps = 0
         self.config = config
+        # if self.config.render:
+        #     if wandb.run:
+        #         wandb.gym.monitor()
+            
 
     def is_closed(self):
         return self._closed
@@ -362,7 +367,7 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
         # TODO: Always render when debugging? or only when the corresponding
         # flag is set in self.config? 
         try:
-            if self.config.render and self.config.debug:
+            if self.config and self.config.render and self.config.debug:
                 self.render("human")
         except NotImplementedError:
             pass
