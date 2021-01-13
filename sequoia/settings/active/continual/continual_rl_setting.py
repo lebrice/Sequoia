@@ -1,7 +1,7 @@
 import itertools
 import json
-import warnings
 import operator
+import warnings
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
@@ -16,7 +16,7 @@ from gym.envs.atari import AtariEnv
 from gym.envs.classic_control import CartPoleEnv
 from gym.utils import colorize
 from gym.wrappers import AtariPreprocessing
-from simple_parsing import choice, list_field, field
+from simple_parsing import choice, field, list_field
 from simple_parsing.helpers import dict_field
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from torch import Tensor
@@ -29,9 +29,10 @@ from sequoia.common.gym_wrappers import (AddDoneToObservation,
                                          TransformObservation, TransformReward)
 from sequoia.common.gym_wrappers.batch_env import (BatchedVectorEnv,
                                                    SyncVectorEnv, VectorEnv)
+from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
-from sequoia.common.gym_wrappers.pixel_observation import \
-    PixelObservationWrapper
+from sequoia.common.gym_wrappers.pixel_observation import (
+    ImageObservations, PixelObservationWrapper)
 from sequoia.common.gym_wrappers.step_callback_wrapper import \
     StepCallbackWrapper
 from sequoia.common.gym_wrappers.utils import (IterableWrapper,
@@ -40,7 +41,8 @@ from sequoia.common.gym_wrappers.utils import (IterableWrapper,
                                                has_wrapper, is_atari_env,
                                                is_classic_control_env)
 from sequoia.common.metrics import RegressionMetrics
-from sequoia.common.spaces import Sparse
+from sequoia.common.spaces import Image, Sparse
+from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 from sequoia.common.transforms import Transforms
 from sequoia.settings.active import ActiveSetting
 from sequoia.settings.assumptions.incremental import (IncrementalSetting,
@@ -112,7 +114,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # x: Tensor
         # task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
         
-        # The 'done' part of the 'step' method. We add these two here in case a
+        # The 'done' part of the 'step' method. We add this here in case a
         # method were to iterate on the environments in the dataloader-style so
         # they also have access to those (i.e. for the BaselineMethod).
         done: Optional[Sequence[bool]] = None
@@ -157,10 +159,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # Total number of steps in the test loop. By default, takes the value of
     # `test_steps_per_task * nb_tasks`.
     test_steps: Optional[int] = None
-    
-    
-    
-    
+
     # Standard deviation of the multiplicative Gaussian noise that is used to
     # create the values of the env attributes for each task. 
     task_noise_std: float = 0.2
@@ -189,6 +188,15 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     train_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
     valid_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
     test_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
+    
+    # Wether observations from the environments whould include
+    # the end-of-episode signal. Only really useful if your method will iterate
+    # over the environments in the dataloader style
+    # (as does the baseline method).
+    add_done_to_observations: bool = False
+    
+    batch_size: Optional[int] = field(default=None, cmd=False)
+    num_workers: Optional[int] = field(default=None, cmd=False)
     
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
@@ -241,9 +249,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             # the end of the "task". When there are clear task boundaries (i.e.
             # when in 'Class'/Task-Incremental RL), the last entry is the start
             # of the last task.
-            self.nb_tasks = len(change_steps)
-            if self.smooth_task_boundaries:
-                self.nb_tasks -= 1
+            if not self.smooth_task_boundaries:
+                self.nb_tasks = len(change_steps)
 
             # TODO: @lebrice: I guess we have to assume that the interval
             # between steps is constant for now? Do we actually depend on this
@@ -290,7 +297,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                     f"'nb_tasks', or 'steps_per_task'."
                 )
 
-        assert self.nb_tasks == self.max_steps // self.steps_per_task
+        if not self.smooth_task_boundaries:
+            assert self.nb_tasks == self.max_steps // self.steps_per_task
 
         if self.test_task_schedule:
             change_steps = sorted(self.test_task_schedule.keys())
@@ -337,6 +345,14 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # Create a temporary environment so we can extract the spaces and create
         # the task schedules.
         with self._make_env(self.dataset, self._temp_wrappers()) as temp_env:
+            # FIXME: Replacing the observation space dtypes from their original
+            # 'generated' NamedTuples to self.Observations. The alternative
+            # would be to add another argument to the MultiTaskEnv wrapper, to
+            # pass down a dtype to be set on its observation_space's `dtype`
+            # attribute, which would be ugly.
+            assert isinstance(temp_env.observation_space, NamedTupleSpace)
+            temp_env.observation_space.dtype = self.Observations
+
             # Populate the task schedules created above.
             if not self.train_task_schedule:
                 train_change_steps = list(range(0, self.max_steps, self.steps_per_task))
@@ -587,10 +603,10 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         batch_size = batch_size or self.batch_size
         if batch_size is not None:
             logger.warn(UserWarning(colorize(
-                "WIP: Only support batch size of `None` (i.e., a single env) "
-                "for the test environments of RL Settings at the moment, "
-                "because the Monitor class from gym doesn't work with "
-                "VectorEnvs.", "yellow"
+                f"WIP: Only support batch size of `None` (i.e., a single env) "
+                f"for the test environments of RL Settings at the moment, "
+                f"because the Monitor class from gym doesn't work with "
+                f"VectorEnvs. (batch size was {batch_size})", "yellow"
             )))
             batch_size = None
 
@@ -609,12 +625,13 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # TODO: Find where to configure this 'test directory' for the outputs of
         # the Monitor.
         test_dir = "results"
-        
+        # TODO: Debug wandb Monitor integration.
         self.test_env = ContinualRLTestEnvironment(
             env_dataloader,
             task_schedule=self.test_task_schedule,
             directory=test_dir,
             step_limit=test_loop_max_steps,
+            config=self.config,
             force=True,
             video_callable=None if self.config.render else False,
         )
@@ -651,6 +668,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         
         """
         logger.debug(f"batch_size: {batch_size}, num_workers: {num_workers}, seed: {seed}")
+        
+        env: Union[gym.Env, gym.vector.VectorEnv]
         if batch_size is None:
             env = env_factory()
         else:
@@ -658,15 +677,19 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 env_factory,
                 batch_size=batch_size,
                 num_workers=num_workers,
-                # TODO: Still debugging shared memory + Sparse spaces.
+                # TODO: Still debugging shared memory + custom spaces (e.g. Sparse).
                 shared_memory=False,
             )
 
+
         ## Apply the "post-batch" wrappers:
-        from sequoia.common.gym_wrappers import ConvertToFromTensors
-        env = AddDoneToObservation(env)
+        # from sequoia.common.gym_wrappers import ConvertToFromTensors
+        # TODO: Only the BaselineMethod requires this, we should enable it only
+        # from the BaselineMethod, and leave it 'off' by default.
+        if self.add_done_to_observations:
+            env = AddDoneToObservation(env)
         # # Convert the samples to tensors and move them to the right device.
-        env = ConvertToFromTensors(env)
+        # env = ConvertToFromTensors(env)
         # env = ConvertToFromTensors(env, device=self.config.device)
         # Add a wrapper that converts numpy arrays / etc to Observations/Rewards
         # and from Actions objects to numpy arrays.
@@ -815,6 +838,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             # AtariWrapper from SB3 and the AtariPreprocessing wrapper from gym.
             wrappers.append(AtariWrapper)
             # wrappers.append(AtariPreprocessing)
+            wrappers.append(ImageObservations)
+            # TODO: Mark the observations as Image spaces.
+            # TODO: convert everything to dict spaces rather than tuples.
 
         if not self.observe_state_directly:
             # Wrapper to apply the image transforms to the env.
@@ -908,10 +934,9 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         )
 
     def render(self, mode='human', **kwargs):
-        from sequoia.common.gym_wrappers.batch_env.tile_images import \
-            tile_images
+        # TODO: This might not be setup right. Need to check.
         image_batch = super().render(mode=mode, **kwargs)
-        if mode == "rgb_array":
+        if mode == "rgb_array" and self.batch_size:
             return tile_images(image_batch)
         return image_batch
         

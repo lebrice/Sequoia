@@ -4,7 +4,7 @@ This object basically calculates the 'objective' specific to this setting as
 well as provide a set of methods for making useful plots and utilities for
 logging results to wandb.
 """ 
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from io import StringIO

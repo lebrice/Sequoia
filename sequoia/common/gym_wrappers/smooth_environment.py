@@ -5,17 +5,20 @@ the task, rather than setting a brand new random task.
 There could also be some kind of 'task_duration' parameter, and the model does
 linear or smoothed-out transitions between them depending on the step number?
 """
-from collections import OrderedDict
-from typing import Dict, List, Optional
+from functools import singledispatch
+from typing import Dict, List, Optional, TypeVar
 
 import gym
 import numpy as np
 from gym import spaces
 
-from sequoia.utils.logging_utils import get_logger
+from torch import Tensor
 from sequoia.common.spaces.sparse import Sparse
+from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
+from sequoia.utils.logging_utils import get_logger
 
-from .multi_task_environment import MultiTaskEnvironment
+from .multi_task_environment import MultiTaskEnvironment, add_task_labels
+
 logger = get_logger(__file__)
 
 
@@ -49,7 +52,6 @@ class SmoothTransitions(MultiTaskEnvironment):
     """
     def __init__(self,
                  env: gym.Env,
-                 *args,
                  add_task_dict_to_info: bool = False,
                  add_task_id_to_obs: bool = False,
                  only_update_on_episode_end: bool = False,
@@ -80,19 +82,26 @@ class SmoothTransitions(MultiTaskEnvironment):
                 step. When `True`, only update at the end of episodes (when
                 `reset()` is called).
         """
-        super().__init__(env, *args, add_task_dict_to_info=add_task_dict_to_info,
+        super().__init__(env, add_task_dict_to_info=add_task_dict_to_info,
                          add_task_id_to_obs=add_task_id_to_obs, **kwargs)
         self.only_update_on_episode_end: bool = only_update_on_episode_end
         if self._max_steps is None and len(self.task_schedule) > 1:
             # TODO: DO we want to prevent going past the 'task step' in the task schedule?
             pass
         
+        if isinstance(self.env.unwrapped, gym.vector.VectorEnv):
+            raise NotImplementedError(
+                "This isn't really supposed to be applied on top of a "
+                "vectorized environment, rather, it should be used within each"
+                " individual env."
+            )
+
         if self.add_task_id_to_obs:
             n_tasks = len(self.task_schedule)
-            self.observation_space = spaces.Tuple([
+            self.observation_space = add_task_labels(
                 self.env.observation_space,
                 Sparse(spaces.Discrete(n=n_tasks), sparsity=1.0),
-            ])
+            )
 
     def step(self, *args, **kwargs):
         if not self.only_update_on_episode_end:
@@ -125,7 +134,7 @@ class SmoothTransitions(MultiTaskEnvironment):
         task schedule, we update the 'prev_task_step' and 'next_task_step'
         attributes.
         """
-        current_task: Dict[str, float] = OrderedDict()
+        current_task: Dict[str, float] = {}
         for attr in self.task_params:
             steps: List[int] = []
             # list of the

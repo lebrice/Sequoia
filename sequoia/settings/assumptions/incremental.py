@@ -2,11 +2,12 @@ import itertools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import List, Optional, Sequence, Tuple, Union, ClassVar, Type
 
 import gym
 import torch
 import tqdm
+import wandb
 from gym import spaces
 from gym.vector import VectorEnv
 from simple_parsing import field
@@ -17,15 +18,17 @@ from sequoia.common import ClassificationMetrics, Metrics, RegressionMetrics
 from sequoia.common.gym_wrappers.step_callback_wrapper import (
     Callback, StepCallbackWrapper)
 from sequoia.common.gym_wrappers.utils import IterableWrapper
+from sequoia.common.config import Config
 from sequoia.settings.base import (Actions, Environment, Method, Results,
                                    Rewards, SettingABC)
 from sequoia.utils import constant, flag, mean
 from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
+from .continual import ContinualSetting
 
 @dataclass
-class IncrementalSetting(Setting):
+class IncrementalSetting(ContinualSetting):
     """ Mixin that defines methods that are common to all 'incremental'
     settings, where the data is separated into tasks, and where you may not
     always get the task labels.
@@ -59,7 +62,7 @@ class IncrementalSetting(Setting):
 
     @dataclass(frozen=True)
     class Observations(Setting.Observations):
-        """ Observations produced by an Incremental setting. 
+        """ Observations produced by an Incremental setting.
 
         Adds the 'task labels' to the base Observation.
         """
@@ -93,6 +96,10 @@ class IncrementalSetting(Setting):
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
+        
+        self.train_env: Environment = None  # type: ignore
+        self.val_env: Environment = None  # type: ignore
+        self.test_env: TestEnvironment = None  # type: ignore
 
     @property
     def current_task_id(self) -> Optional[int]:
@@ -306,12 +313,18 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
                  directory: Path,
                  step_limit: int = 1_000,
                  no_rewards: bool = False,
+                 config: Config = None,
                  *args, **kwargs):
         super().__init__(env, directory, *args, **kwargs)
         self.step_limit = step_limit
         self.no_rewards = no_rewards
         self._closed = False
         self._steps = 0
+        self.config = config
+        # if self.config.render:
+        #     if wandb.run:
+        #         wandb.gym.monitor()
+            
 
     def is_closed(self):
         return self._closed
@@ -351,9 +364,11 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
         observation_for_stats = observation.x
         reward_for_stats = reward.y
 
-        # TODO: Maybe render the env with human mode only when debugging?
+        # TODO: Always render when debugging? or only when the corresponding
+        # flag is set in self.config? 
         try:
-            self.render("human")
+            if self.config and self.config.render and self.config.debug:
+                self.render("human")
         except NotImplementedError:
             pass
         

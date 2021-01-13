@@ -64,11 +64,13 @@ class ConvertToFromTensors(gym.Wrapper):
 def supports_tensors(space: S) -> bool:
     return getattr(space, "__supports_tensors", False)
 
+def has_tensor_support(space: S) -> bool:
+    return supports_tensors(space)
 
 def _mark_supports_tensors(space: S) -> bool:
     return setattr(space, "__supports_tensors", True)
 
-
+@singledispatch
 def add_tensor_support(space: S, device: torch.device = None) -> S:
     """Modifies `space` so its `sample()` method produces Tensors, and its
     `contains` method also accepts Tensors.
@@ -100,11 +102,25 @@ def add_tensor_support(space: S, device: torch.device = None) -> S:
 
     space.sample = _sample
     space.contains = _contains
-    if isinstance(space, (spaces.Tuple, spaces.Dict)):
-        # Also add tensor support to all the subspaces.
-        @wraps(space.__getitem__)
-        def __getitem__(self, index):
-            return add_tensor_support(self.spaces[index])
-        space.__getitem__ = __getitem__
-    
     return space
+
+from sequoia.common.spaces.named_tuple import NamedTupleSpace, NamedTuple
+
+@add_tensor_support.register
+def _add_tensor_support(space: spaces.Dict, device: torch.device = None) -> spaces.Dict:
+    return type(space)(**{
+        key: add_tensor_support(value, device=device)
+        for key, value in space.spaces.items()
+    })
+
+@add_tensor_support.register(NamedTupleSpace)
+def _add_tensor_support(space: Dict, device: torch.device = None) -> Dict:
+    return type(space)(**{
+        key: add_tensor_support(value, device=device) for key, value in space.items()
+    })
+
+@add_tensor_support.register(spaces.Tuple)
+def _add_tensor_support(space: Dict, device: torch.device = None) -> Dict:
+    return type(space)([
+        add_tensor_support(value, device=device) for value in space.spaces
+    ])

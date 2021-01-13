@@ -1,3 +1,5 @@
+from functools import partial
+
 import gym
 import numpy as np
 import pytest
@@ -5,12 +7,13 @@ import torch
 from gym import spaces
 from gym.spaces import Discrete
 
-from sequoia.conftest import DummyEnvironment
 from sequoia.common.transforms import Transforms
-from .transform_wrappers import TransformObservation
-from .env_dataset import EnvDataset
-
+from sequoia.conftest import DummyEnvironment
 from sequoia.settings.active.continual.make_env import make_batched_env
+
+from .env_dataset import EnvDataset
+from .transform_wrappers import TransformObservation
+
 
 def test_step_normally_works_fine():
     env = DummyEnvironment()
@@ -166,8 +169,9 @@ def test_max_steps_per_episode():
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
 @pytest.mark.parametrize("batch_size", [1, 2, 5, 10])
 def test_not_setting_max_steps_per_episode_with_vector_env_raises_warning(env_name: str, batch_size: int):
-    from gym.vector import SyncVectorEnv
     from functools import partial
+
+    from gym.vector import SyncVectorEnv
 
     env = SyncVectorEnv([partial(gym.make, env_name) for i in range(batch_size)])
     with pytest.warns(UserWarning):
@@ -198,15 +202,15 @@ def test_observation_wrapper_applies_to_yielded_objects():
     batch_size = 10
     num_workers = 4
     max_steps_per_episode = 100
-    wrapper = DummyWrapper
+    wrapper = partial(TransformObservation, f=Transforms.channels_first)
 
     vector_env = make_batched_env(env_name, batch_size=batch_size, num_workers=num_workers)
     env = EnvDataset(vector_env, max_steps_per_episode=max_steps_per_episode)
     
     assert env.observation_space == spaces.Box(0, 255, (10, 210, 160, 3), np.uint8) 
 
-    # env = TransformObservation(env, f=[torch.from_numpy, Transforms.channels_first, lambda t: t.numpy()])
-    env = DummyWrapper(env)
+    env = TransformObservation(env, f=Transforms.channels_first)
+    # env = wrapper(env)
     assert env.observation_space == spaces.Box(0, 255, (10, 3, 210, 160), np.uint8)
 
     # env = DummyWrapper(env)
@@ -250,14 +254,13 @@ def test_iteration_with_more_than_one_wrapper():
     batch_size = 10
     num_workers = 4
     max_steps_per_episode = 100
-    wrapper = DummyWrapper
     
     vector_env = make_batched_env(env_name, batch_size=batch_size, num_workers=num_workers)
     env = EnvDataset(vector_env, max_steps_per_episode=max_steps_per_episode)
 
     assert env.observation_space == spaces.Box(0, 255, (10, 210, 160, 3), np.uint8) 
 
-    env = DummyWrapper(env)
+    env = TransformObservation(env, f=Transforms.channels_first)
     assert env.observation_space == spaces.Box(0, 255, (10, 3, 210, 160), np.uint8)
 
     env = TransformObservation(env, f=[Transforms.to_tensor, Transforms.resize_64x64])

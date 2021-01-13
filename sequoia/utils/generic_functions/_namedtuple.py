@@ -28,14 +28,14 @@ def _instance_check_for_namedtuples(self: Type[Type[NamedTuple]], instance: Type
     # print(self, instance)
     if self is NamedTuple:
         return is_namedtuple(instance)
-    return super().__instancecheck__(instance)
+    return super().__instancecheck__(instance)  # type: ignore
 
 
 def _subclass_check_for_namedtuples(self: Type[Type[NamedTuple]], subclass: Type[NamedTuple]):
     # print(self, subclass)
     if self is NamedTuple:
         return is_namedtuple_type(subclass)
-    return super().__subclasscheck__(subclass)
+    return super().__subclasscheck__(subclass)  # type: ignore
 
 
 type(NamedTuple).__instancecheck__ = _instance_check_for_namedtuples

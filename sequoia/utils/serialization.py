@@ -1,6 +1,5 @@
 import inspect
 import json
-from collections import OrderedDict
 from dataclasses import asdict, dataclass, fields, is_dataclass
 from enum import Enum
 from functools import singledispatch
@@ -18,10 +17,12 @@ from simple_parsing.helpers import Serializable as SerializableBase
 from simple_parsing.helpers import SimpleJsonEncoder, encode
 from simple_parsing.helpers.serialization import encode, register_decoding_fn
 
-from .generic_functions import detach, move
+from .generic_functions.detach import detach
+from .generic_functions.move import move
 from .encode import encode
 from .logging_utils import get_logger
 from .utils import dict_union
+from sequoia.utils.generic_functions import detach
 
 T = TypeVar("T")
 logger = get_logger(__file__)
@@ -63,7 +64,10 @@ class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  
         save_path_tmp.replace(path)
 
     def detach(self: S) -> S:
-        return type(self).from_dict(detach(self.to_dict()))
+        return type(self)(**detach({
+            field.name: getattr(self, field.name) for field in fields(self)
+            if field.metadata.get("to_dict", True)
+        }))
 
     def to(self, device: Union[str, torch.device]):
         """Returns a new object with all the attributes 'moved' to `device`.

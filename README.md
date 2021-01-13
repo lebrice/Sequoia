@@ -31,6 +31,9 @@ pip install -r requirements.txt
 ## Getting Started
 
 
+**First, take a look at the [Examples folder](/examples)**
+
+
 ### Running experiments
 
 - Directly in code:
@@ -67,7 +70,7 @@ pip install -r requirements.txt
 
 #### Prerequisites:
 
-- Take a quick look at the [demo script](examples/quick_demo.py), which can be run using `python examples/quick_demo.py`.
+- First, please take a look at the [examples folder](examples/)
 
 #### Steps:
 
@@ -77,7 +80,7 @@ pip install -r requirements.txt
 
     Your class should implement the following methods:
     - `fit(train_env, valid_env)`
-    - `get_actions(observations, observation_space) -> Actions`
+    - `get_actions(observations, action_space) -> Actions`
     
     The following methods are optional, but can be very useful to help customize how your method is used at train/test time:
     - `configure(setting: Setting)`
@@ -166,6 +169,31 @@ pip install -r requirements.txt
         - (WIP) To debug/run the "integration tests" locally, use the following command: `pytest -x methods/my_new_method_test.py --slow`
 
     - Create a Pull Request, and you're good to go!
+
+
+### Current Settings & Assumptions:
+
+| Setting | Active/Passive? | clear task boundaries? | task labels at train time | task labels at test time | # of tasks ? |
+| -----   | --------------  | ---------------------- | ------------------------- | ------------------------ | ------------ |
+| [ContinualRLSetting](sequoia/settings/active/continual/continual_rl_setting.py) | Active | no | no | no | 1* |
+| [IncrementalRLSetting](sequoia/settings/active/continual/incremental/incremental_rl_setting.py) | Active | **yes** | **yes** | no | ≥1 |
+| [TaskIncrementalRLSetting](sequoia/settings/active/continual/incremental/task_incremental/task_incremental_rl_setting.py) | Active | **yes** | **yes** | **yes** | ≥1 |
+| [RLSetting](sequoia/settings/active/continual/incremental/task_incremental/stationary/iid_rl_setting.py) | Active | **yes** | **yes** | **yes** | **1** |
+| [ClassIncrementalSetting](sequoia/settings/passive/cl/class_incremental_setting.py) | Passive | **yes** | **yes** | no | ≥1 |
+| [TaskIncrementalSetting](sequoia/settings/passive/cl/task_incremental/task_incremental_setting.py) | Passive | **yes** | **yes** | **yes** | ≥1 |
+| [IIDSetting](sequoia/settings/passive/cl/task_incremental/iid/iid_setting.py) | Passive | **yes** | **yes** | **yes** | **1** |
+
+#### Notes
+
+- **Active / Passive**:
+	Active settings are Settings where the next observation depends on the current action, i.e. where actions influence future observations, e.g. Reinforcement Learning.
+	Passive settings are Settings where the current actions don't influence the next observations (e.g. Supervised Learning.)
+
+- **Bold entries** in the table mark constant attributes which cannot be
+   changed from their default value.
+
+- \*: The environment is changing constantly over time in `ContinualRLSetting`, so
+    there aren't really "tasks" to speak of.
 
 
 ### (WIP) Adding a new Setting:

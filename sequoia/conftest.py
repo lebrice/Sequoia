@@ -46,7 +46,7 @@ def trainer_config(tmp_path_factory):
 
 @pytest.fixture()
 def config(tmp_path: Path):
-    return Config(debug=True, data_dir=Path("data"))
+    return Config(debug=True, data_dir=Path("data"), seed=123)
 
 
 def id_fn(params: Any) -> str:
@@ -103,6 +103,11 @@ slow = pytest.mark.skipif(
     "--slow" not in sys.argv,
     reason="This test is slow so we only run it when necessary."
 )
+
+
+def slow_param(*args):
+    return pytest.param(*args, marks=slow)
+
 
 def find_class_under_test(module,
                             function,

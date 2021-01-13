@@ -141,11 +141,25 @@ def test_batching_works(base_space: gym.Space, sparsity: float, n: int = 10):
 
 from gym.spaces.utils import flatten_space, flatdim, flatten
 
-
-def test_change_persists_after_import():
+@pytest.mark.xfail(reason="When using the normal gym repo rather than the "
+                          "fork, the change doesn't persist through an import.")
+def test_change_doesnt_persist_after_import():
+    """ When re-importing the `concatenate` function from `gym.vector.utils`,
+    the changes aren't preserved.
+    """
     from gym.vector.utils import concatenate
     from .sparse import Sparse
-    assert hasattr(gym.vector.utils.concatenate, "registry")
+    assert hasattr(gym.vector.utils.numpy_utils.concatenate, "registry")
+    assert hasattr(gym.vector.utils.batch_space, "registry")
+
+
+def test_change_persists_after_full_import():
+    """ When re-importing the `concatenate` function from
+    `gym.vector.utils.numpy_utils`, the changes are preserved.
+    """
+    from gym.vector.utils.numpy_utils import concatenate
+    from .sparse import Sparse
+    assert hasattr(gym.vector.utils.numpy_utils.concatenate, "registry")
     assert hasattr(gym.vector.utils.batch_space, "registry")
 
 

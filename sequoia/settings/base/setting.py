@@ -24,7 +24,6 @@ import os
 import shlex
 from abc import abstractmethod
 from argparse import Namespace
-from collections import OrderedDict
 from dataclasses import InitVar, dataclass, fields, is_dataclass
 from inspect import getsourcefile, isclass
 from functools import partial
@@ -108,7 +107,10 @@ class Setting(SettingABC,
     
     ##
     ##   -------------
-    
+    # Transforms to be applied to the observatons of the train/valid/test
+    # environments.
+    transforms: List[Transforms] = list_field()
+
     # Transforms to be applied to the training datasets.
     train_transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
     # Transforms to be applied to the validation datasets. 
@@ -119,6 +121,12 @@ class Setting(SettingABC,
     # Fraction of training data to use to create the validation set.
     # (Only applicable in Passive settings.)
     val_fraction: float = 0.2
+
+    # TODO: Still not sure where exactly we should be adding the 'batch_size'
+    # and 'num_workers' arguments. Adding it here for now with cmd=False, so
+    # that they can be passed to the constructor of the Setting.
+    batch_size: int = field(default=0, cmd=False)
+    num_workers: int = field(default=0, cmd=False)
 
     # TODO: Add support for semi-supervised training.
     # Fraction of the dataset that is labeled.
@@ -163,9 +171,6 @@ class Setting(SettingABC,
         #     x_shape: Tuple[int, ...] = self.transforms.shape_change(x_shape)
         #     logger.debug(f"x shape after transforms: {x_shape}")
         # self.observation_space = x_shape
-
-        self.batch_size: Optional[int] = None
-        self.num_workers: Optional[int] = None
         # TODO: We have to set the 'dims' property from LightningDataModule so
         # that models know the input dimensions.
         # This should probably be set on `self` inside of `apply` call.
@@ -278,12 +283,14 @@ class Setting(SettingABC,
         of the `size()` method from LightningDataModule.
         """
         if not isinstance(value, gym.Space):
-            raise RuntimeError("Value must be a `gym.Space`.")
+            raise RuntimeError(f"Value must be a `gym.Space` (got {value})")
         if not self._dims:
             if isinstance(value, spaces.Box):
                 self.dims = value.shape
             elif isinstance(value, spaces.Tuple):
                 self.dims = tuple(space.shape for space in value.spaces)
+            elif isinstance(value, spaces.Dict) and "x" in value.spaces:
+                self.dims = value.spaces["x"].shape
             else:
                 raise NotImplementedError(
                     f"Don't know how to set the 'dims' attribute using "
@@ -314,7 +321,7 @@ class Setting(SettingABC,
 
     @classmethod
     def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
-        from main import Experiment
+        from sequoia.main import Experiment
         experiment: Experiment
         # Create the Setting object from the command-line:
         setting = cls.from_args(argv)
@@ -329,7 +336,7 @@ class Setting(SettingABC,
     def apply_all(self, argv: Union[str, List[str]] = None) -> Dict[Type["Method"], Results]:
         applicable_methods = self.get_applicable_methods()
         from sequoia.methods import Method
-        all_results: Dict[Type[Method], Results] = OrderedDict()
+        all_results: Dict[Type[Method], Results] = {}
         config = Config.from_args(argv)
         for method_type in applicable_methods:
             method = method_type.from_args(argv)
@@ -372,9 +379,9 @@ class Setting(SettingABC,
 
         # Debugging: Run a quick check to see that what is returned by the
         # dataloaders is of the right type and shape etc.
+        # TODO: Should probably remove this and just do that in tests only.
         if self.config.debug:
             self._check_environments()
-
 
     def _check_environments(self):
         """ Do a quick check to make sure that interacting with the envs/dataloaders
@@ -404,7 +411,7 @@ class Setting(SettingABC,
                 expected_observation_space = self.observation_space
                 expected_action_space = self.action_space
                 expected_reward_space = self.reward_space
-            
+
             # TODO: Batching the 'Sparse' makes it really ugly, so just
             # comparing the 'image' portion of the space for now.
             assert env.observation_space[0].shape == expected_observation_space[0].shape, (env.observation_space[0], expected_observation_space[0])
@@ -495,11 +502,13 @@ class Setting(SettingABC,
     def _check_rewards(self, env: Environment, rewards: Any):
         if isinstance(rewards, Rewards):
             assert isinstance(rewards, self.Rewards)
-            rewards = rewards.y.cpu().numpy()
-        elif isinstance(rewards, Tensor):
+            rewards = rewards.y
+        if isinstance(rewards, Tensor):
             rewards = rewards.cpu().numpy()
-        elif isinstance(rewards, np.ndarray):
+        if isinstance(rewards, np.ndarray):
             rewards = rewards
+        if isinstance(rewards, float):
+            rewards = np.asarray(rewards)
         assert rewards in env.reward_space
 
     # Just to make type hinters stop throwing errors when using the constructor

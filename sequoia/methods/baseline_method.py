@@ -6,7 +6,6 @@ we use pytorch-lightning, and a few little utility classes such as `Metrics` and
 methods.
 """
 import warnings
-from collections import OrderedDict
 from dataclasses import dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, Callable, ClassVar, Dict, Generic, List, Optional,
@@ -27,7 +26,9 @@ from sequoia.common.callbacks import KnnCallback
 from sequoia.common.config import WandbLoggerConfig
 from sequoia.common.gym_wrappers import (AddDoneToObservation,
                                          AddInfoToObservation)
+from sequoia.settings import ActiveSetting, PassiveSetting
 from sequoia.settings.active.continual import ContinualRLSetting
+from sequoia.settings.assumptions.incremental import IncrementalSetting
 from sequoia.settings.base import Method
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import Actions, Observations, Rewards
@@ -73,22 +74,29 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # should we expect the hparams to be passed? Should we create them from
         # the **kwargs? Should we parse them from the command-line? 
         
-        # Option 1: Use the default values:
-        # self.hparams = hparams or BaselineModel.HParams()
-        # self.config = config or Config()
-        # self.trainer_options = trainer_options or TrainerConfig()
         
         # Option 2: Try to use the keyword arguments to create the hparams,
         # config and trainer options.
-        # self.hparams = hparams or BaselineModel.HParams.from_dict(kwargs, drop_extra_fields=True)
-        # self.config = config or Config.from_dict(kwargs, drop_extra_fields=True)
-        # self.trainer_options = trainer_options or TrainerConfig.from_dict(kwargs, drop_extra_fields=True)
+        if kwargs:    
+            self.hparams = hparams or BaselineModel.HParams.from_dict(kwargs, drop_extra_fields=True)
+            self.config = config or Config.from_dict(kwargs, drop_extra_fields=True)
+            self.trainer_options = trainer_options or TrainerConfig.from_dict(kwargs, drop_extra_fields=True)
         
-        # Option 3: Parse them from the command-line.
-        assert not kwargs, "Don't pass any extra kwargs to the constructor!"
-        self.hparams = hparams or BaselineModel.HParams.from_args()
-        self.config = config or Config.from_args()
-        self.trainer_options = trainer_options or TrainerConfig.from_args()
+        elif self._argv:
+            # Since the method was parsed from the command-line, parse those as
+            # well from the argv that were used to create the Method.
+            # Option 3: Parse them from the command-line.
+            # assert not kwargs, "Don't pass any extra kwargs to the constructor!"
+            self.hparams = hparams or BaselineModel.HParams.from_args(self._argv, strict=False)
+            self.config = config or Config.from_args(self._argv, strict=False)
+            self.trainer_options = trainer_options or TrainerConfig.from_args(self._argv, strict=False)
+        
+        else:
+            # Option 1: Use the default values:
+            self.hparams = hparams or BaselineModel.HParams()
+            self.config = config or Config()
+            self.trainer_options = trainer_options or TrainerConfig()
+
 
         if self.config.debug:
             # Disable wandb logging if debug is True.
@@ -119,11 +127,20 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         """
         # Note: this here is temporary, just tinkering with wandb atm.
         method_name: str = self.get_name()
-        setting_name: str = setting.get_name()
-        dataset: str = setting.dataset
-
-        # Set the batch size on the setting.
-        setting.batch_size = self.hparams.batch_size
+        
+        # Set the default batch size to use.
+        if self.hparams.batch_size is None:
+            if isinstance(setting, ActiveSetting):
+                # Default batch size of 1 in RL
+                self.hparams.batch_size = 1
+            elif isinstance(setting, PassiveSetting):
+                self.hparams.batch_size = 32
+            else:
+                warnings.warn(UserWarning(
+                    f"Dont know what batch size to use by default for setting "
+                    f"{setting}, will try 16."
+                ))
+                self.hparams.batch_size = 16
 
         # TODO: Should we set the 'config' on the setting from here?
         # setting.config = self.config
@@ -135,24 +152,51 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         else:
             assert setting.config != Config(), "Weird, both configs have default values.."
             self.config = setting.config
-
+        
+        setting_name: str = setting.get_name()
+        dataset: str = setting.dataset
         wandb_options: WandbLoggerConfig = self.trainer_options.wandb
         if wandb_options.run_name is None:
             wandb_options.run_name = f"{method_name}-{setting_name}" + (f"-{dataset}" if dataset else "")
 
+        if isinstance(setting, IncrementalSetting):
+            if self.hparams.multihead is None:
+                # Use a multi-head model by default if the task labels are
+                # available at both train and test time.
+                if setting.task_labels_at_test_time:
+                    assert setting.task_labels_at_train_time
+                self.hparams.multihead = setting.task_labels_at_test_time
+
         if isinstance(setting, ContinualRLSetting):
+            setting.add_done_to_observations = True
+            
+            if not setting.observe_state_directly:
+                if self.hparams.encoder is None:
+                    self.hparams.encoder = "simple_convnet"
+                # TODO: Add 'proper' transforms for cartpole, specifically?
+                from sequoia.common.transforms import Transforms
+                setting.train_transforms.append(Transforms.resize_64x64)
+                setting.val_transforms.append(Transforms.resize_64x64)
+                setting.test_transforms.append(Transforms.resize_64x64)
+            
+            if self.hparams.batch_size is None:
+                # Using default batch size of 32, which is huge for RL!
+                self.hparams.batch_size = 1
+
             # Configure the baseline specifically for an RL setting.
             # TODO: Select which output head to use from the command-line?
             # Limit the number of epochs so we never iterate on a closed env.
             # TODO: Would multiple "epochs" be possible? 
             if setting.max_steps is not None:
                 self.trainer_options.max_epochs = 1
-                self.trainer_options.limit_train_batches = setting.max_steps // setting.batch_size
-                self.trainer_options.limit_val_batches = min(setting.max_steps // setting.batch_size, 1000)
+                self.trainer_options.limit_train_batches = setting.max_steps // (setting.batch_size or 1)
+                self.trainer_options.limit_val_batches = min(setting.max_steps // (setting.batch_size or 1), 1000)
                 # TODO: Test batch size is limited to 1 for now.
                 # NOTE: This isn't used, since we don't call `trainer.test()`.
                 self.trainer_options.limit_test_batches = setting.max_steps
 
+        # Set the batch size on the setting.
+        setting.batch_size = self.hparams.batch_size
         self.model = self.create_model(setting)
 
         # The PolicyHead actually does its own backward pass, so we disable
@@ -163,7 +207,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             # at each step.
             self.trainer_options.automatic_optimization = False
 
-
         self.trainer = self.create_trainer(setting)
 
         # Save the types to use.
@@ -173,8 +216,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
     def fit(self,
             train_env: Environment[Observations, Actions, Rewards] = None,
-            valid_env: Environment[Observations, Actions, Rewards] = None,
-            datamodule: LightningDataModule = None):
+            valid_env: Environment[Observations, Actions, Rewards] = None):
         """Called by the Setting to train the method.
         Could be called more than once before training is 'over', for instance
         when training on a series of tasks.
@@ -188,20 +230,47 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             model=self.model,
             train_dataloader=train_env,
             val_dataloaders=valid_env,
-            datamodule=datamodule,
         )
 
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         """ Get a batch of predictions (actions) for a batch of observations.
         
         This gets called by the Setting during the test loop.
+        
+        TODO: There is a mismatch here between the type of the output of this
+        method (`Actions`) and the type of `action_space`: we should either have
+        a `Discrete` action space, and this method should return ints, or this
+        method should return `Actions`, and the `action_space` should be a
+        `NamedTupleSpace` or something similar.
+        Either way, `get_actions(obs, action_space) in action_space` should
+        always be `True`.
         """
         self.model.eval()
+
+        # Check if the observation is batched or not. If it isn't, add a
+        # batch dimension to the inputs, and later remove any batch
+        # dimension from the produced actions before they get sent back to
+        # the Setting.
+        single_obs_space = self.model.observation_space
+
+        model_inputs = observations
+        if observations[0].shape == single_obs_space[0].shape:
+            model_inputs = observations.with_batch_dimension()
+
         with torch.no_grad():
-            forward_pass = self.model(observations)
+            forward_pass = self.model(model_inputs)
         # Simplified this for now, but we could add more flexibility later.
         assert isinstance(forward_pass, ForwardPass)
-        return forward_pass.actions
+
+        # If the original observations didn't have a batch dimension,
+        # Remove the batch dimension from the results.
+        if observations[0].shape == single_obs_space[0].shape:
+            forward_pass = forward_pass.remove_batch_dimension()
+
+        model_outputs: Actions = forward_pass.actions
+        actions = model_outputs.actions_np
+        assert actions in action_space, (actions, action_space)
+        return actions
 
     def create_model(self, setting: SettingType) -> BaselineModel[SettingType]:
         """Creates the BaselineModel (a LightningModule) for the given Setting.
@@ -262,7 +331,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
     def create_callbacks(self, setting: SettingType) -> List[Callback]:
         # TODO: Move this to something like a `configure_callbacks` method 
         # in the model, once PL adds it.
-        from sequoia.common.callbacks.vae_callback import SaveVaeSamplesCallback
+        from sequoia.common.callbacks.vae_callback import \
+            SaveVaeSamplesCallback
         return [
             # self.hparams.knn_callback,
             # SaveVaeSamplesCallback(),
@@ -271,7 +341,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
     def apply_all(self, argv: Union[str, List[str]] = None) -> Dict[Type["Method"], Results]:
         applicable_settings = self.get_applicable_settings()
 
-        all_results: Dict[Type[Setting], Results] = OrderedDict()
+        all_results: Dict[Type[Setting], Results] = {}
         for setting_type in applicable_settings:
             setting = setting_type.from_args(argv)
             results = setting.apply(self)
@@ -302,27 +372,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             ))
         super().__init_subclass__(*args, **kwargs)
 
-    def upgrade_hparams(self, new_type: Type[BaselineModel.HParams]) -> BaselineModel.HParams:
-        """Upgrades the current hparams to the new type, filling in the new
-        values from the command-line.
-
-        Args:
-            new_type (Type[HParams]): Type of HParams to upgrade to.
-            argv (Union[str, List[str]], optional): Command-line arguments to
-            use to set the missing values. Defaults to None, in which case the
-            values in `sys.argv` are used.
-
-        Returns:
-            HParams: [description]
-        """
-        argv = self._argv
-        logger.debug(f"Current method was originally created from args {argv}")
-        new_hparams: BaselineModel.HParams = new_type.from_args(argv)
-        logger.debug(f"Hparams for that type of model (from the method): {self.hparams}")
-        logger.debug(f"Hparams for that type of model (from command-line): {new_hparams}")
-        return new_hparams
-
-    def split_batch(self, batch: Any) -> Tuple[Batch, Batch]:
+    def split_batch(self, batch: Any) -> Tuple[Observations, Optional[Rewards]]:
         return self.model.split_batch(batch)
 
     def on_task_switch(self, task_id: Optional[int]) -> None:

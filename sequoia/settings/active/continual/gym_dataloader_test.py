@@ -17,7 +17,7 @@ from sequoia.common.gym_wrappers import (AsyncVectorEnv, ConvertToFromTensors,
                                  TransformObservation)
 from sequoia.common.transforms import ChannelsFirstIfNeeded, Transforms
 from .gym_dataloader import GymDataLoader
-from .make_env import default_wrappers_for_env, make_batched_env
+from .make_env import make_batched_env
 from sequoia.utils import take
 from sequoia.utils.logging_utils import get_logger
 
