@@ -207,7 +207,7 @@ class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
         # setting.batch_size = self.hparams.batch_size
 
         self.layer_size = [np.prod(setting.observation_space[0].shape), 256, setting.increment]
-        setting.batch_size = 32
+        setting.batch_size = self.hparams.batch_size
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -279,7 +279,7 @@ class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
         parser.add_argument("--foo", default=123)
 
     @classmethod
-    def from_argparse_args(cls, args: Namespace, dest: str = None) -> "ImproveMethod":
+    def from_argparse_args(cls, args, dest: str = None) -> "ImproveMethod":
         hparams: ImproveMethod.HParams = args.hparams
         foo: int = args.foo
         method = cls(hparams=hparams)
@@ -314,28 +314,28 @@ def main_command_line():
     print(results.summary())
 
 
-def main():
+# def main():
     
-    # Example: Evaluate a Method on a single CL setting:
-    # from sequoia.settings import TaskIncrementalSetting # For Supervised Learning (SL)
-    # from sequoia.settings import TaskIncrementalRLSetting # For Reinforcment Learning (RL)
+#     # Example: Evaluate a Method on a single CL setting:
+#     # from sequoia.settings import TaskIncrementalSetting # For Supervised Learning (SL)
+#     # from sequoia.settings import TaskIncrementalRLSetting # For Reinforcment Learning (RL)
 
-    # Stages:
-    ## 1. Creating the setting:
-    setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
-    # Second option: create the setting from the command-line:
-    # setting = TaskIncrementalSetting.from_args()
+#     # Stages:
+#     ## 1. Creating the setting:
+#     setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
+#     # Second option: create the setting from the command-line:
+#     # setting = TaskIncrementalSetting.from_args()
     
-    ## 2. Creating the Method
-    method = ImproveMethod()
+#     ## 2. Creating the Method
+#     method = ImproveMethod()
     
-    ## 3. Applying the method to the setting:
-    results = setting.apply(method)
+#     ## 3. Applying the method to the setting:
+#     results = setting.apply(method)
     
-    print(results.summary())
-    print(f"objective: {results.objective}")
+#     print(results.summary())
+#     print(f"objective: {results.objective}")
     
-    exit()
+#     exit()
 
 if __name__ == "__main__":
     main_command_line()
