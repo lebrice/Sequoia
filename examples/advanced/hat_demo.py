@@ -170,11 +170,12 @@ class HatMethod(Method, target_setting=TaskIncrementalSetting):
         # Batch size
         batch_size: int = 128
         # weight/importance of the task embedding to the gate function
-        s_hat: int = 50
+        s_hat: float = 50.
+        # Maximum number of training epochs per task
+        max_epochs_per_task: int = 2
 
     def __init__(self, hparams: HParams = None):
         self.hparams: HatMethod.HParams = hparams or self.HParams()
-        self.max_epochs: int = 2
 
         # We will create those when `configure` will be called, before training.
         self.model: HatNet
@@ -212,12 +213,12 @@ class HatMethod(Method, target_setting=TaskIncrementalSetting):
         Batch can have information about en environment, rewards, input, task labels, etc.
         And we call the forward training function of our method, independent of the settings
         """
-        
+
         # configure() will have been called by the setting before we get here,
 
         best_val_loss = inf
         best_epoch = 0
-        for epoch in range(self.max_epochs):
+        for epoch in range(self.hparams.max_epochs_per_task):
             self.model.train()
             print(f"Starting epoch {epoch}")
             # Training loop:
