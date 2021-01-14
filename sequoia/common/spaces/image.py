@@ -9,6 +9,7 @@ from gym import Space, spaces
 from sequoia.utils.generic_functions.to_from_tensor import to_tensor
 from torch import Tensor
 
+
 class Image(spaces.Box):
     """ Subclass of `gym.spaces.Box` for images.
     
@@ -47,6 +48,22 @@ class Image(spaces.Box):
                 f"Shouldn't be using an Image space, since the shape "
                 f"doesn't appear to be an image: {self.shape}"
             )
+
+    @property
+    def channels(self) -> int:
+        return self.c
+
+    @property
+    def height(self) -> int:
+        return self.h
+
+    @property
+    def width(self) -> int:
+        return self.w
+
+    @property
+    def batch_size(self) -> Optional[int]:
+        return self.b
 
     @classmethod
     def from_box(cls, box_space: spaces.Box):
