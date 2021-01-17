@@ -1,3 +1,7 @@
+""" Example describing dataclasses and how simple-parsing can be used to create
+command-line arguments from them.
+"""
+
 from dataclasses import dataclass
 
 
@@ -12,8 +16,8 @@ class Point:
     #     self.y = y
 
 p1 = Point(0, 0)
-print(p1) # -> Point(x=0, y=0)
-
+print(p1)
+expected = "Point(x=0, y=0)"
 
 # 
 # Second example: HyperParameters with simple-parsing:
@@ -35,7 +39,7 @@ class HParams:
 parser = ArgumentParser()
 parser.add_arguments(HParams, "hparams")
 parser.print_help()
-"""
+expected += """\
 usage: dataclasses_example.py [-h] [--learning_rate float]
                               [--weight_decay float]
                               [--optimizer {adam,sgd,rmsprop}]
@@ -57,6 +61,6 @@ HParams ['hparams']:
 args = parser.parse_args()
 hparams: HParams = args.hparams
 print(hparams)
-"""
+expected += """\
 HParams(learning_rate=0.0003, weight_decay=1e-06, optimizer='sgd')
 """

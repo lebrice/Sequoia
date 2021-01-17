@@ -31,8 +31,8 @@ import itertools
 from abc import ABC, abstractmethod
 from collections import deque, namedtuple
 from dataclasses import dataclass
-from typing import (Any, Dict, Iterable, List, NamedTuple, Optional, Sequence,
-                    Tuple, TypeVar, Union, MutableSequence, Deque)
+from typing import (Any, Deque, Dict, Iterable, List, MutableSequence,
+                    NamedTuple, Optional, Sequence, Tuple, TypeVar, Union)
 
 import gym
 import numpy as np
@@ -51,10 +51,10 @@ from sequoia.common.metrics.rl_metrics import (EpisodeMetrics,
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.settings.active.continual import ContinualRLSetting
 from sequoia.settings.base.objects import Actions, Observations, Rewards
+from sequoia.utils.categorical import Categorical
 from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
 from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.utils import prod, flag
-from sequoia.utils.categorical import Categorical
+from sequoia.utils.utils import flag, prod
 
 from ..classification_head import ClassificationHead, ClassificationOutput
 from ..output_head import OutputHead
@@ -72,7 +72,7 @@ class PolicyHeadOutput(ClassificationOutput):
     # (batched) distribution or as a list of distributions, one for each
     # environment in the batch.
     action_dist: Categorical
-    
+
     @property
     def y_pred_prob(self) -> Tensor:
         """ returns the probabilities for the chosen actions/predictions. """
@@ -114,7 +114,7 @@ class PolicyHead(ClassificationHead):
     - The buffers are common to training/validation/testing atm..
     
     """
-    
+
     @dataclass
     class HParams(ClassificationHead.HParams):
         hidden_layers: int = 2
@@ -588,30 +588,12 @@ class PolicyHead(ClassificationHead):
         episode_representations = tuple(self.representations[env_index])
         episode_actions = tuple(self.actions[env_index])
         episode_rewards = tuple(self.rewards[env_index])
-        # TODO: Could maybe use out=<some parameter on this module> to
-        # prevent having to create new 'container' tensors at each step?
-
-        # Make sure this all still works (should work even better) once we
-        # change the obs spaces to dicts instead of Tuples.
         assert len(episode_representations)
         assert len(episode_actions)
         assert len(episode_rewards)
-        stacked_inputs = stack(self.input_space, episode_representations)
-        # stacked_actions = stack(self.action_space, episode_actions)
-        # stacked_rewards = stack(self.reward_space, episode_rewards)
-
-        # TODO: Update this to use 'stack' if we change the action/reward spaces
-        y_preds = torch.stack([action.y_pred for action in episode_actions])
-        logits = torch.stack([action.action_dist.logits for action in episode_actions])
-        stacked_actions = PolicyHeadOutput(
-            y_pred=y_preds,
-            logits=logits,
-            action_dist=Categorical(logits=logits),
-        )
-        rewards_type = type(episode_rewards[0])
-        stacked_rewards = rewards_type(
-            y=stack(self.reward_space, [reward.y for reward in episode_rewards])
-        )
+        stacked_inputs = stack(episode_representations)
+        stacked_actions = stack(episode_actions)
+        stacked_rewards = stack(episode_rewards)
         return stacked_inputs, stacked_actions, stacked_rewards
 
 # @torch.jit.script

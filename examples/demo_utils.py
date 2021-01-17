@@ -50,7 +50,6 @@ def demo_all_settings(MethodType: Type[Method], datasets: List[str] = ["mnist", 
 
     # Create a pandas dataframe with all the results:
 
-    from .demo_utils import make_result_dataframe
     result_df: pd.DataFrame = make_result_dataframe(all_results)
 
     csv_path = Path(f"examples/results/results_{method.get_name()}.csv")
@@ -105,7 +104,7 @@ def make_result_dataframe(all_results):
     return df
 
 
-def compare_results(all_results: Dict[Type[Method], Dict[Type[Setting], Dict[str, Results]]]):
+def compare_results(all_results: Dict[Type[Method], Dict[Type[Setting], Dict[str, Results]]]) -> None:
     """Helper function, compares the results of the different methods by
     arranging them in a table (pandas dataframe).
     """

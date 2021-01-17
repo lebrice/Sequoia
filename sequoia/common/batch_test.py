@@ -1,5 +1,4 @@
-""" TODO: Write tests that demonstrate / verify that the `Batch` class works
-correctly.
+""" Tests for the `Batch` class.
 """
 
 
@@ -14,7 +13,8 @@ from .batch import Batch
 from torch import Tensor
 import torch
 from torch import Tensor
-from typing import Optional
+from typing import Optional, List
+from sequoia.utils.categorical import Categorical
 
 
 @dataclass(frozen=True)
@@ -26,6 +26,10 @@ class Observations(Batch):
 class Actions(Batch):
     y_pred: Tensor
 
+
+@dataclass(frozen=True)
+class RLActions(Actions):
+    action_dist: Categorical
 
 @dataclass(frozen=True)
 class Rewards(Batch):
@@ -231,6 +235,207 @@ def test_remove_batch_dim():
     )
     for expanded in [bob.remove_batch_dimension(), bob[:, 0]]:
         assert str(expanded) == str(expected)
+
+    bob = Observations(
+        x=torch.tensor([[0, 1, 2, 3, 4]], dtype=int),
+        task_labels=None,
+    )
+    expected = Observations(
+        x = torch.arange(5),
+        task_labels = None,
+    )
+    for expanded in [bob.remove_batch_dimension(), bob[:, 0,]]:
+        assert str(expanded) == str(expected)
+
+def test_remove_batch_dim_with_nested_objects():
+    obj = ForwardPass(
+        observations=Observations(
+            x=torch.arange(5).reshape([1, 5]),
+            task_labels=None,
+        ),
+        h_x=torch.arange(4).reshape([1, 4]),
+        actions=Actions(
+            y_pred=torch.tensor(1).reshape([1,]),
+        )
+    )
+    actual = obj.remove_batch_dimension()
+    assert str(actual) == str(ForwardPass(
+        observations=Observations(
+            x=torch.arange(5),
+            task_labels=None,
+        ),
+        h_x=torch.arange(4),
+        actions=Actions(
+            y_pred=torch.tensor(1),
+        )
+    ))
+
+
+def test_split():
+    """ Split a batch into a list of Batch objects """
+    bob = Observations(
+        x=torch.tensor([[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]], dtype=int),
+        task_labels=np.array([0, 1]),
+    )
+    expected = [
+        Observations(
+            x = torch.arange(5) + i * 5,
+            task_labels = i,
+        )
+        for i in range(2)
+    ]
+    assert str(bob.split()) == str(expected)
+
+
+@pytest.mark.parametrize("items, expected", [
+    (
+        [
+            Observations(
+                x=torch.tensor([0, 1, 2, 3, 4], dtype=int),
+                task_labels=np.array(0),
+            ),
+            Observations(
+                x=torch.tensor([5, 6, 7, 8, 9], dtype=int),
+                task_labels=np.array(1),
+            )
+        ],
+        Observations(
+            x=torch.tensor([[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]], dtype=int),
+            task_labels=np.array([0, 1]),
+        )
+    ),
+    (
+        [
+            Observations(
+                x=torch.tensor([0, 1, 2, 3, 4], dtype=int),
+                task_labels=None,
+            ),
+            Observations(
+                x=torch.tensor([5, 6, 7, 8, 9], dtype=int),
+                task_labels=None,
+            )
+        ],
+        Observations(
+            x=torch.tensor([[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]], dtype=int),
+            task_labels=np.array([None, None]),
+        )
+    ),
+    (
+        [
+            RLActions(
+                y_pred=torch.tensor([0, 1, 2, 3, 4], dtype=int),
+                action_dist=Categorical(logits=torch.ones([5, 5], dtype=float) / 5),
+            ),
+            RLActions(
+                y_pred=torch.tensor([0, 1, 2, 3, 4], dtype=int),
+                action_dist=Categorical(logits=torch.ones([5, 5], dtype=float) / 5),
+            ),
+        ],
+        RLActions(
+            y_pred=torch.tensor([[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]], dtype=int),
+            action_dist=Categorical(logits=torch.ones([2, 5, 5], dtype=float) / 5),
+        ),
+    ),
+])
+def test_stack(items: List[Batch], expected: Batch):
+    """ Split a batch into a list of Batch objects """
+    assert str(type(items[0]).stack(items)) == str(expected)
+    # Same test, but with only numpy arrays as items:
+    assert str(type(items[0]).stack(map(lambda i: i.numpy(), items))) == str(expected.numpy())
+    # Same test, but with Tensor items:
+    assert str(type(items[0]).stack(map(lambda i: i.torch(), items))) == str(expected.torch())
+
+
+
+@pytest.mark.parametrize("items, expected", [
+    (
+        [
+            Observations(
+                x=torch.tensor([0, 1, 2, 3, 4], dtype=int),
+                task_labels=0,
+            ),
+            Observations(
+                x=torch.tensor([5, 6, 7, 8, 9], dtype=int),
+                task_labels=1,
+            )
+        ],
+        Observations(
+            x=torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], dtype=int),
+            task_labels=np.array([0, 1]),
+        )
+    ),
+    (
+        [
+            Observations(
+                x=torch.tensor([0, 1, 2, 3, 4], dtype=int),
+                task_labels=None,
+            ),
+            Observations(
+                x=torch.tensor([5, 6, 7, 8, 9], dtype=int),
+                task_labels=None,
+            )
+        ],
+        Observations(
+            x=torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], dtype=int),
+            task_labels=np.array([None, None]),
+        )
+    ),
+    (
+        [
+            RLActions(
+                y_pred=torch.tensor([0, 1, 2, 3, 4], dtype=int),
+                action_dist=Categorical(logits=torch.ones([5, 5], dtype=float) / 5),
+            ),
+            RLActions(
+                y_pred=torch.tensor([0, 1, 2, 3, 4], dtype=int),
+                action_dist=Categorical(logits=torch.ones([5, 5], dtype=float) / 5),
+            ),
+        ],
+        RLActions(
+            y_pred=torch.tensor([0, 1, 2, 3, 4, 0, 1, 2, 3, 4], dtype=int),
+            action_dist=Categorical(logits=torch.ones([10, 5], dtype=float) / 5),
+        ),
+    ),
+])
+def test_concatenate(items: List[Batch], expected: Batch):
+    """ Split a batch into a list of Batch objects """
+    assert str(type(items[0]).concatenate(items)) == str(expected)
+    # Same test, but with only numpy arrays as items:
+    assert str(type(items[0]).concatenate(map(lambda i: i.numpy(), items))) == str(expected.numpy())
+    # Same test, but with Tensor items:
+    assert str(type(items[0]).concatenate(map(lambda i: i.torch(), items))) == str(expected.torch())
+
+
+
+@pytest.mark.parametrize("numpy_batch, torch_batch",
+[
+    (
+        Observations(
+            x=np.array([[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]),
+            task_labels=np.array([None, None]),
+        ),
+        Observations(
+            x=torch.tensor([[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]], dtype=int),
+            task_labels=np.array([None, None]),
+        )
+    ),
+])
+def test_convert_between_ndarrays_and_tensors(numpy_batch: Batch, torch_batch: Batch):
+    assert str(numpy_batch.torch()) == str(torch_batch)
+    assert str(numpy_batch.torch().numpy()) == str(numpy_batch)
+    
+    assert str(torch_batch.numpy()) == str(numpy_batch)
+    assert str(torch_batch.numpy().torch()) == str(torch_batch)
+    
+    if torch.cuda.is_available():
+        torch_batch = torch_batch.cuda()
+        assert torch_batch.device.type == "cuda"
+    
+        assert str(numpy_batch.torch(device="cuda")) == str(torch_batch)
+        assert str(numpy_batch.torch(device="cuda").numpy()) == str(numpy_batch)
+        
+        assert str(torch_batch.numpy()) == str(numpy_batch)
+        assert str(torch_batch.numpy().torch(device="cuda")) == str(torch_batch)
 
 
 @dataclass(frozen=True)

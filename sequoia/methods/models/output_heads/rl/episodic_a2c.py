@@ -28,51 +28,12 @@ from sequoia.utils import get_logger
 logger = get_logger(__file__)
 
 
-# TODO: Use this as inspiration: (taken from the ActorCriticPolicy from stable-baselines-3)
-# NOTE: I see: so SB3 actually re-computes the values for everything in the
-# rollout_data buffer every time! This is interesting.
-
-# # (sb3 TODO): avoid second computation of everything because of the gradient
-# values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
-# values = values.flatten()
-
-# # Normalize advantage (not present in the original implementation)
-# advantages = rollout_data.advantages
-# if self.normalize_advantage:
-#     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-# # Policy gradient loss
-# policy_loss = -(advantages * log_prob).mean()
-
-# # Value loss using the TD(gae_lambda) target
-# value_loss = F.mse_loss(rollout_data.returns, values)
-
-# # Entropy loss favor exploration
-# if entropy is None:
-#     # Approximate entropy when no analytical form
-#     entropy_loss = -th.mean(-log_prob)
-# else:
-#     entropy_loss = -th.mean(entropy)
-
-# loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
-
-# # Optimization step
-# self.policy.optimizer.zero_grad()
-# loss.backward()
-
-# # Clip grad norm
-# th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
 
 @dataclass(frozen=True)
 class A2CHeadOutput(PolicyHeadOutput):
     """ Output produced by the A2C output head. """
     # The value estimate coming from the critic.
     value: Tensor
-
-    @classmethod
-    def stack(cls, items: List["A2CHeadOutput"]) -> "A2CHeadOutput":
-        """TODO: Add a classmethod to 'stack' these objects. """
-
 
 class EpisodicA2C(PolicyHead):
     """ Advantage-Actor-Critic output head that produces a loss only at end of
@@ -222,7 +183,7 @@ class EpisodicA2C(PolicyHead):
         
         # Value loss: Try to get the critic's values close to the actual return,
         # which means the advantages should be close to zero.
-        value_loss_tensor = F.mse_loss(values, returns)
+        value_loss_tensor = F.mse_loss(values, returns.reshape(values.shape))
         critic_loss = Loss("critic", value_loss_tensor)
         loss += self.hparams.critic_loss_coef * critic_loss
 
@@ -247,43 +208,6 @@ class EpisodicA2C(PolicyHead):
             )
             self.loss.metrics["policy_gradient_norm"] = original_norm.item()
         super().optimizer_step()
-
-    def stack_buffers(self, env_index: int):
-        """ Stack the observations/actions/rewards for this env and return them.
-        """
-        # episode_observations = tuple(self.observations[env_index])
-        episode_representations: List[Tensor] = list(self.representations[env_index])
-        episode_actions: List[A2CHeadOutput] = list(self.actions[env_index])
-        episode_rewards: List[Rewards] = list(self.rewards[env_index])
-        # TODO: Could maybe use out=<some parameter on this module> to
-        # prevent having to create new 'container' tensors at each step?
-
-        # Make sure this all still works (should work even better) once we
-        # change the obs spaces to dicts instead of Tuples.
-        assert len(episode_representations)
-        assert len(episode_actions)
-        assert len(episode_rewards)
-        stacked_inputs = stack(self.input_space, episode_representations)
-        # stacked_actions = stack(self.action_space, episode_actions)
-        # stacked_rewards = stack(self.reward_space, episode_rewards)
-        episode_length = len(stacked_inputs)
-        # TODO: Update this to use 'stack' if we change the action/reward spaces
-        y_preds = torch.stack([action.y_pred for action in episode_actions])
-        logits = torch.stack([action.logits for action in episode_actions])
-        values = torch.stack([action.value for action in episode_actions])
-        values = values.reshape([episode_length])
-
-        stacked_actions = A2CHeadOutput(
-            y_pred=y_preds,
-            logits=logits,
-            action_dist=Categorical(logits=logits),
-            value=values,
-        )
-        rewards_type = type(episode_rewards[0])
-        stacked_rewards = rewards_type(
-            y=stack(self.reward_space, [reward.y for reward in episode_rewards])
-        )
-        return stacked_inputs, stacked_actions, stacked_rewards
 
 
 def compute_returns_and_advantage(self, last_values: Tensor, dones: np.ndarray) -> None:
