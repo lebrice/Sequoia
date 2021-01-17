@@ -2,12 +2,12 @@ pytorch-lightning>=1.1.2
 # TODO: Weird installation bug: downloads all previous versions of gym?
 # For now though, seems to work fine when installed manually with
 # `pip install gym[atari]` after.
-gym[atari]
+atari_py
 # Fork of gym with more flexible utility functions.
 git+https://www.github.com/lebrice/gym@easier_custom_spaces
 # nngeometry module used in the EWC method
 git+https://github.com/oleksost/nngeometry.git
-simple_parsing>=0.0.12.post2
+simple_parsing>=0.0.12.post4
 matplotlib
 torch>=1.7
 torchvision
@@ -28,4 +28,6 @@ pytest-timeout
 pytest-xdist
 pytest-xvfb # Prevents the gym popups from displaying during tests.
 # Required for the RL methods
+# TODO: Move this to an 'extras' in setup.py?
 stable-baselines3
+pyvirtualdisplay

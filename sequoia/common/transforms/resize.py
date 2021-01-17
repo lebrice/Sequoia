@@ -1,5 +1,5 @@
 from functools import singledispatch
-from typing import Any, Callable, Sequence, Tuple, TypeVar, Union, List
+from typing import Any, Callable, Sequence, Tuple, TypeVar, Union, List, Dict
 
 import gym
 import numpy as np
@@ -16,6 +16,12 @@ from torchvision.transforms import functional as F
 from .channels import (channels_first, channels_last, has_channels_first,
                        has_channels_last)
 from .transform import Img, Transform
+from sequoia.common.spaces import NamedTupleSpace, NamedTuple
+from sequoia.common.spaces.image import Image as ImageSpace
+from sequoia.common.gym_wrappers.convert_tensors import has_tensor_support, add_tensor_support
+from collections.abc import Mapping
+from sequoia.settings.base import Observations
+from .utils import is_image
 
 logger = get_logger(__file__)
 
@@ -57,6 +63,25 @@ def _resize_array_or_tensor(x: np.ndarray, size: Tuple[int, ...], **kwargs) -> n
         x = channels_last(x)
     return x
 
+@resize.register
+def _resize_namedtuple_space(x: NamedTupleSpace, size: Tuple[int, ...], **kwargs) -> NamedTupleSpace:
+    """ When presented with a NamedTupleSpace input, this transform will be
+    applied to all 'Image' spaces.
+    """
+    return type(x)(**{
+        key: resize(v, size, **kwargs) if isinstance(v, ImageSpace) else v
+        for key, v in x._spaces.items()
+    })
+
+@resize.register(Mapping)
+def _resize_namedtuple(x: Dict, size: Tuple[int, ...], **kwargs) -> Dict:
+    """ When presented with a NamedTupleSpace input, this transform will be
+    applied to all 'Image' spaces.
+    """
+    return type(x)(**{
+        key: resize(value, size, **kwargs) if is_image(value) else value
+        for key, value in x.items()
+    })
 
 @resize.register(tuple)
 def _resize_image_shape(x: Tuple[int, ...], size: Tuple[int, ...], **kwargs) -> Tuple[int, ...]:
@@ -86,12 +111,15 @@ def _resize_image_shape(x: Tuple[int, ...], size: Tuple[int, ...], **kwargs) -> 
 @resize.register(spaces.Box)
 def _resize_space(x: spaces.Box, size: Tuple[int, ...], **kwargs) -> spaces.Box:
     # Hmm, not sure if the bounds would actually also be respected though.
-    return type(x)(
+    new_space = type(x)(
         low=resize(x.low, size, **kwargs),
         high=resize(x.high, size, **kwargs),
         dtype=x.dtype,
     )
-
+    # If the 'old' space supported tensors as samples, then so will the new space.
+    if has_tensor_support(x):
+        return add_tensor_support(new_space)
+    return new_space
 
 class Resize(Resize_, Transform[Img, Img]):
     def __init__(self, size: Tuple[int, ...], interpolation=Image.BILINEAR):

@@ -107,7 +107,10 @@ class Setting(SettingABC,
     
     ##
     ##   -------------
-    
+    # Transforms to be applied to the observatons of the train/valid/test
+    # environments.
+    transforms: List[Transforms] = list_field()
+
     # Transforms to be applied to the training datasets.
     train_transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
     # Transforms to be applied to the validation datasets. 
@@ -118,6 +121,12 @@ class Setting(SettingABC,
     # Fraction of training data to use to create the validation set.
     # (Only applicable in Passive settings.)
     val_fraction: float = 0.2
+
+    # TODO: Still not sure where exactly we should be adding the 'batch_size'
+    # and 'num_workers' arguments. Adding it here for now with cmd=False, so
+    # that they can be passed to the constructor of the Setting.
+    batch_size: int = field(default=0, cmd=False)
+    num_workers: int = field(default=0, cmd=False)
 
     # TODO: Add support for semi-supervised training.
     # Fraction of the dataset that is labeled.
@@ -162,9 +171,6 @@ class Setting(SettingABC,
         #     x_shape: Tuple[int, ...] = self.transforms.shape_change(x_shape)
         #     logger.debug(f"x shape after transforms: {x_shape}")
         # self.observation_space = x_shape
-
-        self.batch_size: Optional[int] = None
-        self.num_workers: Optional[int] = None
         # TODO: We have to set the 'dims' property from LightningDataModule so
         # that models know the input dimensions.
         # This should probably be set on `self` inside of `apply` call.
@@ -373,9 +379,9 @@ class Setting(SettingABC,
 
         # Debugging: Run a quick check to see that what is returned by the
         # dataloaders is of the right type and shape etc.
+        # TODO: Should probably remove this and just do that in tests only.
         if self.config.debug:
             self._check_environments()
-
 
     def _check_environments(self):
         """ Do a quick check to make sure that interacting with the envs/dataloaders

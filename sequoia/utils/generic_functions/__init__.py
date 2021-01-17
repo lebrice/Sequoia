@@ -8,4 +8,5 @@ from .detach import detach
 from .replace import replace
 from .slicing import get_slice, set_slice
 from .stack import stack
+from .concatenate import concatenate
 from .to_from_tensor import to_tensor, from_tensor
