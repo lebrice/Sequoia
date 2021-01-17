@@ -35,6 +35,7 @@ from nngeometry.object.pspace import (PMatAbstract, PMatKFAC, PMatDiag,
 
 from sequoia.settings.base.objects import Observations
 from typing import ClassVar, Dict, Optional, Type, TypeVar, Union, List
+from torch.autograd import Variable
 
 
 logger = get_logger(__file__)
@@ -43,6 +44,8 @@ logger = get_logger(__file__)
 class EWCTask(AuxiliaryTask):
     """ Elastic Weight Consolidation, implemented as a 'self-supervision-style' 
     Auxiliary Task.
+
+    some functions are taken from this repo: https://github.com/kuc2477/pytorch-ewc/tree/master
     """
     name: str = "ewc"
 
@@ -76,34 +79,39 @@ class EWCTask(AuxiliaryTask):
         self.FIM_representation = self.options.fim_representation
         self.observation_collector = deque(maxlen=self.options.total_steps_fim)
 
-    def consolidate(self, new_fims:List[PMatAbstract], task:int) -> None:
-        """
-        Consolidates the previous FIMs and the new onces.
-        See online EWC in https://arxiv.org/pdf/1805.06370.pdf.
-        """
-        if self.FIMs is None:
-            self.FIMs = new_fims
-            return 
-        assert len(new_fims)==len(self.FIMs)
-        for i, (fim_previous, fim_new) in enumerate(zip(self.FIMs, new_fims)):
-            if fim_previous is None:
-                self.FIMs[i] = fim_new
-            else:
-                #consolidate the FIMs
-                self.FIMs[i] = EWCPolicy._consolidate_fims(fim_previous,fim_new, task)
+    def estimate_fisher(self, dataset, sample_size, batch_size=32):
+        # sample loglikelihoods from the dataset.
+        data_loader = DataLoader(dataset, batch_size)
+        loglikelihoods = []
+        for x in data_loader:
+            # x = x.view(batch_size, -1)
+            # x = Variable(x).cuda() if self._is_on_cuda() else Variable(x)
+            # y = Variable(y).cuda() if self._is_on_cuda() else Variable(y)
+            observation = self.observation_collector[0].__class__(*x)
+            loglikelihoods.append(
+                torch.log_softmax(self._model(observation).logits, dim=1).max(1).values #[range(batch_size), y.data]
+            )
+            if len(loglikelihoods) >= sample_size // batch_size:
+                break
+        # estimate the fisher information of the parameters.
+        loglikelihoods = torch.cat(loglikelihoods).unbind()
+        loglikelihood_grads = zip(*[torch.autograd.grad(
+            l, self._shared_net.parameters(),
+            retain_graph=(i < len(loglikelihoods)), allow_unused=True,
+        ) for i, l in enumerate(loglikelihoods, 1)])
+        loglikelihood_grads = [torch.stack(gs) for gs in loglikelihood_grads]
+        fisher_diagonals = [(g ** 2).mean(0) for g in loglikelihood_grads]
+        param_names = [
+            n.replace('.', '__') for n, p in self._shared_net.named_parameters()
+        ]
+        return {n: f.detach() for n, f in zip(param_names, fisher_diagonals)}
 
-    @staticmethod
-    def _consolidate_fims(fim_previous: PMatAbstract, fim_new: PMatAbstract, task:int) -> PMatAbstract:
-        #consolidate the fim_new into fim_previous in place
-        if isinstance(fim_new, PMatDiag):  
-            fim_previous.data = ((deepcopy(fim_new.data)) + fim_previous.data * (task)) / (task + 1)
-
-        elif isinstance(fim_new.data, dict):  
-            for (n, p), (n_, p_) in zip(fim_previous.data.items(),fim_new.data.items()):
-                for item, item_ in zip(p, p_):
-                    item.data = ((item.data*(task))+deepcopy(item_.data))/(task+1)
-        return fim_previous
-        
+    def consolidate(self, fisher):
+        for n, p in self._shared_net.named_parameters():
+            n = n.replace('.', '__')
+            self._model.register_buffer('{}_mean'.format(n), p.data.clone())
+            self._model.register_buffer('{}_fisher'
+                                 .format(n), fisher[n].data.clone())
     def on_task_switch(self, task_id: Optional[int]): #, dataloader: DataLoader, method: str = 'a2c')-> None:
         """ Executed when the task switches (to either a known or unknown task).
         """
@@ -111,8 +119,11 @@ class EWCTask(AuxiliaryTask):
             return
         logger.info(f"On task switch called: task_id={task_id}")
 
-        #TODO: deal with situation hen task_id is None
-        if self.previous_task is None and self.n_switches == 0 and not task_id:
+        if self._shared_net is None:
+            logger.info(f"On task switch called: task_id={task_id}, EWC can not be applied as the used net has no shared part.")
+
+        #TODO: deal with situation when task_id is None
+        elif self.previous_task is None and self.n_switches == 0 and not task_id:
             self.previous_task = task_id
             logger.info("Starting the first task, no EWC update.")
             self.n_switches += 1
@@ -123,57 +134,57 @@ class EWCTask(AuxiliaryTask):
             logger.info(f"Switching tasks: {self.previous_task} -> {task_id}: "
                          f"Updating the EWC 'anchor' weights.")
             self.previous_task = task_id
-            self.previous_model_weights = PVector.from_model(self._model).clone().detach()
+            self.previous_model_weights = PVector.from_model(self._shared_net).clone().detach()
 
             def splitbatch(x: List[Observations]) -> List[Observations]:
                 """ Splits a list of batched observatins into a list of observations with batch size 1
                 """
                 res = []
                 for obs in x:
-                    res2 = []
+                    res2 = []    
                     for i in range(len(obs)):
                         res2.append([obs[:,i][f] for f in obs.field_names])
                     res +=res2                    
                 return res
-            #observation_collection = list(map(splitbatch, self.observation_collector))
-            dataloader = DataLoader(splitbatch(self.observation_collector)) #self._model.setting.train_env #DataLoader(TensorDataset(observation_collection), batch_size=self.options.batch_size_fim, shuffle=False)
-            
-            new_fims=[]
-            if self.method=='dqn':
-                function=self._model.q_net
-                n_output=self.action_space.n
-                method = 'dqn'
-            elif self.method=='a2c':
-                function=self._model
-                n_output=1
-                method = 'a2c'
-            else:
-                function=lambda *x: self._model(self.observation_collector[0].__class__(*x)).logits
-                n_output=self._model.action_space.n
-                method = 'classifimlogits'
-
-            new_fim = FIM(model=self._model,
-                        loader=dataloader,   
-                        representation=self.FIM_representation,
-                        n_output=n_output,
-                        variant=method,
-                        function = function,
-                        device=self.device.type)
-            new_fims.append(new_fim)
-            if self.method=='a2c':
-                #apply EWC also to the value net
-                new_fim_critic = FIM(model=self,    
-                        loader=dataloader,   
-                        representation=self.FIM_representation,
-                        n_output=1,
-                        variant='regression',
-                        function = lambda *x: self(x[0])[1],
-                        device=self.device.type)
-                new_fims.append(new_fim_critic)
-            self.consolidate(new_fims,task=self.previous_task)
+            new_fim = self.estimate_fisher(splitbatch(self.observation_collector), 100)
+            self.consolidate(new_fim) #,task=self.previous_task)
             self.n_switches += 1
             self.observation_collector = deque(maxlen=self.options.total_steps_fim)
-    
+
+    def ewc_loss(self):
+        try:
+            losses = []
+            for n, p in self._shared_net.named_parameters():
+                # retrieve the consolidated mean and fisher information.
+                n = n.replace('.', '__')
+                mean = getattr(self._model, '{}_mean'.format(n))
+                fisher = getattr(self._model, '{}_fisher'.format(n))
+                # wrap mean and fisher in variables.
+                mean = Variable(mean)
+                fisher = Variable(fisher)
+                # calculate a ewc loss. (assumes the parameter's prior as
+                # gaussian distribution with the estimated mean and the
+                # estimated cramer-rao lower bound variance, which is
+                # equivalent to the inverse of fisher information)
+                losses.append((fisher * (p-mean)**2).sum())
+            return sum(losses)
+        except AttributeError:
+            # ewc loss is 0 if there's no consolidated parameters.
+            return (
+                Variable(torch.zeros(1)).to(self.device)
+            )
+    @property
+    def _shared_net(self):
+        """
+        Returns 'None' if there is not shared network part, othervise returns the shared net
+        """
+        if self._model.encoder is None:
+            return None
+        elif isinstance(self._model.encoder, Iterable):
+            if len(self._model.encoder)==0:
+                return None
+        return self._model.encoder
+
     def get_loss(self, x: Union[Tensor, Observations], *args, **kwargs) -> Loss:
         """Gets the 'EWC' loss. 
         """
@@ -184,15 +195,15 @@ class EWCTask(AuxiliaryTask):
                 self.observation_collector.append(x)
             else:
                 self.observation_collector.append(x.observations)
-        if self.previous_task is None or not self.enabled or self.FIMs is None:
+        if self.previous_task is None or not self.enabled or self._shared_net is None:
             # We're in the first task: do nothing.
             return Loss(name=self.name)
         
-        loss = 0. 
-        v_current = PVector.from_model(self._model)
-        for fim in self.FIMs:
-            loss += fim.vTMv(v_current - self.previous_model_weights)
-
+        # loss = 0. 
+        # v_current = PVector.from_model(self._shared_net)
+        # for fim in self.FIMs:
+        #     loss += fim.vTMv(v_current - self.previous_model_weights)
+        loss = self.ewc_loss()
         self._i += 1
         ewc_loss = Loss(
             name=self.name,

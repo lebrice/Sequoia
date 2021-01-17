@@ -628,8 +628,8 @@ class Supervised_EWC(nn.Module):
                  multihead: bool,
                  device: Union[str, torch.device]):
         super().__init__()
-        image_shape = observation_space[0].shape
-        assert image_shape == (3, 28, 28)
+        # image_shape = observation_space[0].shape
+        image_shape = (3, 28, 28)
         assert isinstance(action_space, spaces.Discrete)
         assert action_space == reward_space
         self.n_classes = action_space.n
@@ -642,16 +642,16 @@ class Supervised_EWC(nn.Module):
         
         self.encoder = nn.Sequential(
             nn.Conv2d(image_channels, 6, 5),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             nn.MaxPool2d(2),
             nn.Conv2d(6, 16, 5),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             nn.MaxPool2d(2),
             nn.Flatten(),
             nn.Linear(256, 120),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             nn.Linear(120, 84),
-            nn.ReLU()
+            nn.ReLU(inplace=True)
         )
         self.classifier = nn.Sequential(
             nn.Linear(84, self.n_classes),
