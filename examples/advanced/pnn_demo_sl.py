@@ -12,10 +12,9 @@ from numpy import inf
 from simple_parsing import ArgumentParser
 
 from sequoia.common import Config
-from sequoia.methods.stable_baselines3_methods import A2CModel
-from sequoia.settings import (Method, TaskIncrementalRLSetting,
-                              TaskIncrementalSetting)
-from sequoia.settings.passive.cl import ClassIncrementalSetting
+from sequoia.common.spaces import Image
+
+from sequoia.settings import (Method, TaskIncrementalSetting)
 from sequoia.settings.passive.cl.objects import (Actions, Observations,
                                                  PassiveEnvironment, Rewards)
 
@@ -93,6 +92,7 @@ class PNN(nn.Module):
         assert self.columns, 'PNN should at least have one column (missing call to `new_task` ?)'
         x = observations.x
         x = torch.flatten(x, start_dim=1)
+        labels = observations.task_labels
 
         inputs = [c[0](x) for c in self.columns]
         for l in range(1, self.n_layers):
@@ -103,14 +103,18 @@ class PNN(nn.Module):
 
             inputs = outputs
 
-        y = None
-        for t in set(observations.task_labels.tolist()):
-            mask = (observations.task_labels == t)
+        y: Optional[Tensor] = None
+        task_masks = {}
+        for task_id in set(labels.tolist()):
+            task_mask = (labels == task_id)
+            task_masks[task_id] = task_mask
+
             if y is None:
-                y = inputs[t]
+                y = inputs[task_id]
             else:
-                y[mask] = inputs[t][mask]
-        # assert False, print(inputs.size())
+                y[task_mask] = inputs[task_id][task_mask]
+
+        assert y is not None, "Can't get prediction in model PNN"
         return y
 
 
@@ -160,7 +164,7 @@ class PNN(nn.Module):
     def parameters(self):
         return self.columns[-1].parameters()
 
-class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
+class ImproveMethod(Method, target_setting=TaskIncrementalSetting):
     """ 
     Here we implement the method according to the characteristics and methodology of the current proposal. 
     It should be as much as possible agnostic to the model and setting we are going to use. 
@@ -174,17 +178,8 @@ class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
         """ Hyper-parameters of the Settings. """
         # Learning rate of the optimizer.
         learning_rate: float = 0.0001
-        n_layers: int = 2
+        # Batch size
         batch_size: int = 32
-        
-        @classmethod
-        def from_args(cls) -> "HParams":
-            """ Get the hparams of the method from the command-line. """
-            from simple_parsing import ArgumentParser
-            parser = ArgumentParser(description=cls.__doc__)
-            parser.add_arguments(cls, dest="hparams")
-            args, _ = parser.parse_known_args()
-            return args.hparams
 
     def __init__(self, hparams: HParams = None):
         self.hparams: ImproveMethod.HParams = hparams or self.HParams.from_args()
@@ -197,7 +192,7 @@ class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
         self.optimizer: torch.optim.Optimizer
         self.config: Optional[Config] = None
 
-    def configure(self, setting: ClassIncrementalSetting):
+    def configure(self, setting: TaskIncrementalSetting):
         """ Called before the method is applied on a setting (before training). 
 
         You can use this to instantiate your model, for instance, since this is
@@ -205,22 +200,26 @@ class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
         """
         # assert False, setting.observation_space.device
         # setting.batch_size = self.hparams.batch_size
+        assert setting.increment == setting.test_increment, (
+            "Assuming same number of classes per task for training and testing."
+        )
 
-        self.layer_size = [np.prod(setting.observation_space[0].shape), 256, setting.increment]
+        image_space: Image = setting.observation_space[0]
+        self.layer_size = [np.prod(image_space.shape), 256, setting.increment]
+        
         setting.batch_size = self.hparams.batch_size
-
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.model = PNN(
-            n_layers=self.hparams.n_layers,
+            n_layers = len(self.layer_size)-1,
         )
 
     def set_optimizer(self):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
 
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
-        observations: ClassIncrementalSetting.Observations = train_env.reset()
-        cuda_observations = observations.to(device="cuda:0")       
+        observations: TaskIncrementalSetting.Observations = train_env.reset()
+        cuda_observations = observations.to(self.device)       
         
         self.model.freeze_columns()
         self.model.new_task(self.layer_size, self.device)
@@ -287,7 +286,6 @@ class ImproveMethod(Method, target_setting=ClassIncrementalSetting):
 
 
 def main_command_line():
-    from sequoia.settings import TaskIncrementalSetting
     parser = ArgumentParser(description=__doc__, add_dest_to_option_strings=False)
     
     # Add arguments for the Setting
@@ -313,30 +311,5 @@ def main_command_line():
     results = setting.apply(method, config=config)
     print(results.summary())
 
-
-# def main():
-    
-#     # Example: Evaluate a Method on a single CL setting:
-#     # from sequoia.settings import TaskIncrementalSetting # For Supervised Learning (SL)
-#     # from sequoia.settings import TaskIncrementalRLSetting # For Reinforcment Learning (RL)
-
-#     # Stages:
-#     ## 1. Creating the setting:
-#     setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
-#     # Second option: create the setting from the command-line:
-#     # setting = TaskIncrementalSetting.from_args()
-    
-#     ## 2. Creating the Method
-#     method = ImproveMethod()
-    
-#     ## 3. Applying the method to the setting:
-#     results = setting.apply(method)
-    
-#     print(results.summary())
-#     print(f"objective: {results.objective}")
-    
-#     exit()
-
 if __name__ == "__main__":
     main_command_line()
-    # main()
