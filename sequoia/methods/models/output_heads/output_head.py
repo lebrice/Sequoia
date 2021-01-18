@@ -22,43 +22,6 @@ from sequoia.utils.utils import camel_case, remove_suffix
 from ..forward_pass import ForwardPass
 logger = get_logger(__file__)
 
-@dataclass
-class DenseHParams(Serializable, Parseable):
-    available_activations: ClassVar[Dict[str, Type[nn.Module]]] = {
-        "relu": nn.ReLU,
-        "tanh": nn.Tanh,
-    }
-
-    # Number of hidden layers in the output head.
-    hidden_layers: int = 1
-    # Number of neurons in each hidden layer of the output head.
-    # If a single value is given, than each of the `hidden_layers` layers
-    # will have that number of neurons. 
-    # If `n > 1` values are given, then `hidden_layers` must either be 0 or
-    # `n`, otherwise a RuntimeError will be raised.
-    hidden_neurons: List[int] = list_field(64)
-    activation: Type[nn.Module] = choice(available_activations, default="tanh")
-
-    def __post_init__(self):
-        # no value passed to --hidden_layers
-        if isinstance(self.activation, str):
-            self.activation = self.available_activations[self.activation.lower()]
-        if self.hidden_layers == 0:
-            if len(self.hidden_neurons) == 1:
-                # Default Setting: No hidden layers.
-                self.hidden_neurons = []
-            elif len(self.hidden_neurons) > 1:
-                # Set the number of hidden layers to the number of passed values.
-                self.hidden_layers = len(self.hidden_neurons)
-        elif self.hidden_layers > 0 and len(self.hidden_neurons) == 1:
-            # Duplicate that value for each of the `hidden_layers` layers.
-            self.hidden_neurons *= self.hidden_layers
-        if self.hidden_layers != len(self.hidden_neurons):
-            raise RuntimeError(
-                f"Invalid values: hidden_layers ({self.hidden_layers}) != "
-                f"len(hidden_neurons) ({len(self.hidden_neurons)})."
-            )
-
 
 class OutputHead(nn.Module, ABC):
     """Module for the output head of the model.
@@ -75,7 +38,7 @@ class OutputHead(nn.Module, ABC):
     base_model_optimizer: ClassVar[Optimizer]
 
     @dataclass
-    class HParams(DenseHParams):
+    class HParams(Serializable, Parseable):
         """ Hyperparameters of the output head. """
         
     def __init__(self,

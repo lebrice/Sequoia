@@ -12,9 +12,16 @@ from sequoia.utils import prod
 
 from ..forward_pass import ForwardPass
 from .output_head import OutputHead
-
+from ..fcnet import FCNet
 
 class RegressionHead(OutputHead):
+    """ Output head used for regression problems. """
+
+    @dataclass
+    class HParams(FCNet.HParams, OutputHead.HParams):
+        """ Hyper-parameters of the regression output head. """
+
+
     def __init__(self,
                  input_space: gym.Space,
                  action_space: gym.Space,
