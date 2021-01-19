@@ -13,6 +13,8 @@ from sequoia.settings import Observations, Actions, Rewards
 
 from .output_head import OutputHead
 from ..forward_pass import ForwardPass
+from ..fcnet import FCNet
+
 
 @dataclass(frozen=True)
 class ClassificationOutput(Actions):
@@ -48,7 +50,7 @@ class ClassificationOutput(Actions):
 class ClassificationHead(OutputHead):
 
     @dataclass
-    class HParams(OutputHead.HParams):
+    class HParams(FCNet.HParams, OutputHead.HParams):
         hidden_layers: int = 1
         hidden_neurons: List[int] = list_field(64)
 
@@ -67,10 +69,10 @@ class ClassificationHead(OutputHead):
         )
         assert isinstance(action_space, spaces.Discrete)
         output_size = action_space.n
-        self.dense = self.make_dense_network(
+        self.dense = FCNet(
             in_features=self.input_size,
-            hidden_neurons=self.hparams.hidden_neurons,
             out_features=output_size,
+            hidden_neurons=self.hparams.hidden_neurons,
             activation=self.hparams.activation,
         )
         # if output_size == 2:

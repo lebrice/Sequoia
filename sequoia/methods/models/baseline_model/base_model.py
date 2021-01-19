@@ -21,12 +21,13 @@ from gym.spaces.utils import flatdim
 from pytorch_lightning import LightningDataModule, LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
-from simple_parsing import list_field, choice
+from simple_parsing import choice, list_field
 from torch import Tensor, nn
 from torch.optim.optimizer import Optimizer
 
 from sequoia.common.batch import Batch
 from sequoia.common.config import Config
+from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.loss import Loss
 from sequoia.common.transforms import SplitBatch, Transforms
 from sequoia.settings import (Actions, ActiveSetting, ContinualRLSetting,
@@ -37,11 +38,12 @@ from sequoia.settings.base.setting import (Actions, Observations, Rewards,
                                            Setting, SettingType)
 from sequoia.utils.logging_utils import get_logger
 
+from ..fcnet import FCNet
 from ..forward_pass import ForwardPass
 from ..output_heads import (ActorCriticHead, ClassificationHead, OutputHead,
                             PolicyHead, RegressionHead)
-from .base_hparams import BaseHParams
 from ..output_heads.rl.episodic_a2c import EpisodicA2C
+from .base_hparams import BaseHParams
 
 logger = get_logger(__file__)
 
@@ -105,19 +107,31 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # Space of our encoder representations.
         self.representation_space: gym.Space
         if isinstance(setting, ContinualRLSetting) and setting.observe_state_directly:
-            self.encoder = nn.Sequential()
-            # self.representation_space = self.observation_space
-            self.representation_space = self.observation_space[0]
-            self.hidden_size = flatdim(self.observation_space[0])
+            # ISSUE # 62: Need to add a dense network instead of no encoder, and
+            # change the PolicyHead to have only one layer.
+            # Only pass the image, not the task labels to the encoder (for now).
+            input_dims = flatdim(self.observation_space[0])
+            output_dims = 128
+            self.encoder = FCNet(
+                in_features=input_dims,
+                out_features=output_dims,
+                hidden_layers=3,
+                hidden_neurons=[256, 128, output_dims],
+                activation=nn.ReLU,
+            )
+            self.representation_space = add_tensor_support(
+                spaces.Box(low=-np.inf, high=np.inf, shape=[output_dims])
+            )
+            self.hidden_size = output_dims
         else:
+            # TODO: Refactor this 'make_encoder' being on the hparams, its a bit
+            # weird.
             self.encoder, self.hidden_size = self.hp.make_encoder()
             # TODO: Check that the outputs of the encoders are actually
             # flattened. I'm not sure they all are, which case the samples
             # wouldn't match with this space. 
             self.representation_space = spaces.Box(-np.inf, np.inf, (self.hidden_size,), np.float32)
 
-        from sequoia.common.gym_wrappers.convert_tensors import \
-            add_tensor_support
         self.representation_space = add_tensor_support(self.representation_space)
 
         self.output_head: OutputHead = self.create_output_head(setting)
