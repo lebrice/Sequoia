@@ -599,9 +599,10 @@ class Batch(ABC, Mapping[str, T]):
         NOTE: This is the opposite of `self.numpy()`
         """
         def _from_numpy(v: Union[np.ndarray, Any]) -> Union[Tensor, Any]:
-            if isinstance(v, (np.ndarray, Tensor, int, float, bool)):
+            try:
                 return torch.as_tensor(v, device=device, dtype=dtype)
-            return v
+            except (TypeError, RuntimeError):
+                return v
         return self._map(_from_numpy, recursive=True)
     
     def _map(self: B,

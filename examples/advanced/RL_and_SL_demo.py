@@ -290,9 +290,8 @@ def demo_command_line():
     
     setting: ClassIncrementalSetting = args.setting
     config: Config = args.config
-    method = CustomMethod.from_argparse_args(args, dest="method")
-    # Here we create the arguments to be passed to our Method's constructor.
-    # Get the results for the base method:
+    
+    # Get the results of the BaselineMethod:
     base_method = BaselineMethod.from_argparse_args(args, dest="method")
     base_results = setting.apply(base_method, config=config)
 
