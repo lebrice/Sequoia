@@ -49,15 +49,15 @@ class EWCTask(AuxiliaryTask):
     """
     name: str = "ewc"
 
-    @dataclass    
+    @dataclass
     class Options(AuxiliaryTask.Options):
         """ Options of the EWC auxiliary task. """
 
         #Batchsize to be used when computing FIM
         batch_size_fim: int = 64
         # Number of observations to use for FIM calculation
-        total_steps_fim: int = 1000
-        #Fisher information type  (diagonal or block diagobnal)                                
+        sample_size_fim: int = 100
+        #Fisher information type  (diagonal or block diagobnal)
         fim_representation: PMatAbstract = choice({'diagonal':PMatDiag, 'block_diagonal':PMatKFAC}, default=PMatKFAC)
 
     def __init__(self,
@@ -77,17 +77,15 @@ class EWCTask(AuxiliaryTask):
         self.FIMs: List[PMatAbstract] = None
         self.previous_model_weights: PVector = None
         self.FIM_representation = self.options.fim_representation
-        self.observation_collector = deque(maxlen=self.options.total_steps_fim)
+        self.observation_collector = deque(maxlen=self.options.sample_size_fim)
 
     def estimate_fisher(self, dataset, sample_size, batch_size=32):
         # sample loglikelihoods from the dataset.
         data_loader = DataLoader(dataset, batch_size)
         loglikelihoods = []
         for x in data_loader:
-            # x = x.view(batch_size, -1)
-            # x = Variable(x).cuda() if self._is_on_cuda() else Variable(x)
-            # y = Variable(y).cuda() if self._is_on_cuda() else Variable(y)
-            observation = self.observation_collector[0].__class__(*x)
+            # x.values() - since x returned from uterating over the Dataloader is a dictionary.
+            observation = self.observation_collector[0].__class__(*x.values())
             loglikelihoods.append(
                 torch.log_softmax(self._model(observation).logits, dim=1).max(1).values #[range(batch_size), y.data]
             )
@@ -99,6 +97,7 @@ class EWCTask(AuxiliaryTask):
             l, self._shared_net.parameters(),
             retain_graph=(i < len(loglikelihoods)), allow_unused=True,
         ) for i, l in enumerate(loglikelihoods, 1)])
+        #here an error might be raised, in case grads dont backprop into the encoder
         loglikelihood_grads = [torch.stack(gs) for gs in loglikelihood_grads]
         fisher_diagonals = [(g ** 2).mean(0) for g in loglikelihood_grads]
         param_names = [
@@ -141,15 +140,12 @@ class EWCTask(AuxiliaryTask):
                 """
                 res = []
                 for obs in x:
-                    res2 = []    
-                    for i in range(len(obs)):
-                        res2.append([obs[:,i][f] for f in obs.field_names])
-                    res +=res2                    
+                    res +=obs.split()
                 return res
-            new_fim = self.estimate_fisher(splitbatch(self.observation_collector), 100)
+            new_fim = self.estimate_fisher(splitbatch(self.observation_collector), self.options.sample_size_fim)
             self.consolidate(new_fim) #,task=self.previous_task)
             self.n_switches += 1
-            self.observation_collector = deque(maxlen=self.options.total_steps_fim)
+            self.observation_collector = deque(maxlen=self.options.sample_size_fim)
 
     def ewc_loss(self):
         try:
@@ -197,12 +193,7 @@ class EWCTask(AuxiliaryTask):
                 self.observation_collector.append(x.observations)
         if self.previous_task is None or not self.enabled or self._shared_net is None:
             # We're in the first task: do nothing.
-            return Loss(name=self.name)
-        
-        # loss = 0. 
-        # v_current = PVector.from_model(self._shared_net)
-        # for fim in self.FIMs:
-        #     loss += fim.vTMv(v_current - self.previous_model_weights)
+            return Loss(name=self.name)        
         loss = self.ewc_loss()
         self._i += 1
         ewc_loss = Loss(
