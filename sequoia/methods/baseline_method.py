@@ -254,7 +254,10 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         single_obs_space = self.model.observation_space
 
         model_inputs = observations
-        if observations[0].shape == single_obs_space[0].shape:
+        
+        # Check if the observations aren't batched.
+        not_batched = observations[0].shape == single_obs_space[0].shape
+        if not_batched:
             model_inputs = observations.with_batch_dimension()
 
         with torch.no_grad():
@@ -264,12 +267,12 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         # If the original observations didn't have a batch dimension,
         # Remove the batch dimension from the results.
-        if observations[0].shape == single_obs_space[0].shape:
+        if not_batched:
             forward_pass = forward_pass.remove_batch_dimension()
 
-        model_outputs: Actions = forward_pass.actions
-        actions = model_outputs.actions_np
-        assert actions in action_space, (actions, action_space)
+        actions: Actions = forward_pass.actions
+        action_numpy = actions.actions_np
+        assert action_numpy in action_space, (action_numpy, action_space)
         return actions
 
     def create_model(self, setting: SettingType) -> BaselineModel[SettingType]:

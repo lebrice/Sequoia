@@ -592,17 +592,16 @@ class Batch(ABC, Mapping[str, T]):
         assert isinstance(items[0], cls)
         return concatenate(items, **kwargs)
     
-    def torch(self, device: Union[str, torch.device] = None):
+    def torch(self, device: Union[str, torch.device] = None, dtype: torch.dtype = None):
         """ Converts any ndarrays to Tensors if possible and returns a new
         object of the same type.
         
         NOTE: This is the opposite of `self.numpy()`
         """
         def _from_numpy(v: Union[np.ndarray, Any]) -> Union[Tensor, Any]:
-            try:
-                return torch.as_tensor(v, device=device)
-            except:
-                return v
+            if isinstance(v, (np.ndarray, Tensor, int, float, bool)):
+                return torch.as_tensor(v, device=device, dtype=dtype)
+            return v
         return self._map(_from_numpy, recursive=True)
     
     def _map(self: B,
