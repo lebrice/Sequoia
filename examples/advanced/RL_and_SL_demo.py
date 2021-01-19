@@ -40,19 +40,13 @@ class SimpleRegularizationAuxTask(AuxiliaryTask):
     return a `Loss` for the given forward pass and resulting rewards/labels.
     Take a look at the `AuxiliaryTask` class for more info.    
     """
-<<<<<<< HEAD
 
-=======
->>>>>>> Added better demo for RL + CL
     name: ClassVar[str] = "simple_regularization"
 
     @dataclass
     class Options(AuxiliaryTask.Options):
         """Hyper-parameters / configuration options of this auxiliary task."""
-<<<<<<< HEAD
 
-=======
->>>>>>> Added better demo for RL + CL
         # Coefficient used to scale this regularization loss before it gets
         # added to the 'base' loss of the model.
         coefficient: float = 0.01
@@ -202,6 +196,7 @@ class CustomMethod(BaselineMethod, target_setting=Setting):
             self.hparams.simple_reg.coefficient = 0.01
         else:
             self.hparams.simple_reg.coefficient = 1.0
+
     def fit(self, train_env: Environment, valid_env: Environment):
         """ Called by the Setting to let the Method train on a given task.
         
