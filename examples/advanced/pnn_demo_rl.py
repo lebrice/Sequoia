@@ -1,5 +1,6 @@
 import sys
 import torch
+import torch.nn.functional as F
 import numpy as np
 from typing import Dict, Tuple, Optional
 from dataclasses import dataclass
@@ -84,77 +85,93 @@ class PNN(nn.Module):
       year={2016}
     }
     """
-    def __init__(self, arch='mlp'):
+    def __init__(self, arch='mlp', hidden_size=256):
         super(PNN, self).__init__()
-        self.columns = nn.ModuleList([])
-        self.loss = torch.nn.CrossEntropyLoss()
-        self.device = None
+        self.columns_actor = nn.ModuleList([])
+        self.columns_critic = nn.ModuleList([])
         self.arch = arch
+        self.hidden_size = hidden_size
 
     def forward(self, observations, hx):
-        assert self.columns, 'PNN should at least have one column (missing call to `new_task` ?)'
-        x = observations.x.unsqueeze(0).float()
+        assert self.columns_actor, 'PNN should at least have one column (missing call to `new_task` ?)'
+        x = torch.from_numpy(observations.x).unsqueeze(0).float()
         t = observations.task_labels
 
         if self.arch == 'mlp':
-            inputs = [c[0](x) for c in self.columns]
-            for l in range(1, 2):
-                outputs = []
-                for i, column in enumerate(self.columns):
-                    outputs.append(column[l](inputs[:i+1]))
+            inputs_critic = [c[1](c[0](x)) for c in self.columns_critic]
+            inputs_actor = [c[1](c[0](x)) for c in self.columns_actor]
 
-                inputs = outputs
-            ind_depth = 2
+            outputs_critic = []
+            outputs_actor = []
+            for i, column in enumerate(self.columns_critic):
+                outputs_critic.append(column[2](inputs_critic[:i+1]))
+                outputs_actor.append(self.columns_actor[i][2](inputs_actor[:i+1]))
+
+            #for l in range(1, 2):
+            #    outputs = []
+            #    for i, column in enumerate(self.columns):
+            #        outputs.append(column[l](inputs[:i+1]))
+
+            ind_depth = 3
 
         else:
-            hx = [ hx ]
-            inputs = [c[0](x) for c in self.columns]
-            for l in range(1, 3):
-                outputs = []
-                for i, column in enumerate(self.columns):
-                    outputs.append(column[l](inputs[:i+1]))
+            pass
+            # hx = [ hx ]
+            # inputs = [c[0](x) for c in self.columns]
+            # for l in range(1, 3):
+            #     outputs = []
+            #     for i, column in enumerate(self.columns):
+            #         outputs.append(column[l](inputs[:i+1]))
 
-            inputs = [ torch.flatten(o, start_dim=1) for o in outputs ]    
-            outputs = []
-            for i, column in enumerate(self.columns):
-                hx = column[4](inputs[i], hx)
-                outputs.append(hx)
-            inputs = outputs
-            ind_depth = 5
+            # inputs = [ torch.flatten(o, start_dim=1) for o in outputs ]    
+            # outputs = []
+            # for i, column in enumerate(self.columns):
+            #     hx = column[4](inputs[i], hx)
+            #     outputs.append(hx)
+            # inputs = outputs
+            # ind_depth = 5
 
         critic = []
-        for i, column in enumerate(self.columns):
-            critic.append(column[ind_depth](inputs[:i+1]))
+        for i, column in enumerate(self.columns_critic):
+            critic.append(column[ind_depth](outputs_critic[i]))
 
         actor = []
-        for i, column in enumerate(self.columns):
-            actor.append(column[ind_depth+1](inputs[:i+1]))
-        
-        return critic[t], actor[t], outputs[-1]
+        for i, column in enumerate(self.columns_actor):
+            actor.append(F.softmax(column[ind_depth](outputs_actor[i]),dim=1))
 
-    def new_task(self, device, num_actions = 5):
-        task_id = len(self.columns)
+        return critic[t], actor[t], None #outputs[-1]
+
+    def new_task(self, device, num_inputs, num_actions = 5):
+        task_id = len(self.columns_actor)
+
         if self.arch == 'mlp':
-            sizes = [4, 32, 32]
-            modules = []
-            for i in range(0, 2):
-                modules.append(PNNLinearBlock(task_id, i, sizes[i], sizes[i+1]))
-            modules.append(PNNLinearBlock(task_id, 2, sizes[2], 1))
-            modules.append(PNNLinearBlock(task_id, 2, sizes[2], num_actions))
+            modules_actor = nn.Sequential()
+            modules_critic = nn.Sequential()
+
+            modules_actor.add_module('linAc1',nn.Linear(num_inputs, self.hidden_size))
+            modules_actor.add_module('relAc',nn.ReLU(inplace=True))
+            modules_actor.add_module('linAc2',PNNLinearBlock(task_id, 1, self.hidden_size, self.hidden_size))
+            modules_actor.add_module('linAc3',nn.Linear(self.hidden_size, num_actions))
+
+            modules_critic.add_module('linCr1',nn.Linear(num_inputs, self.hidden_size))
+            modules_critic.add_module('relCr',nn.ReLU(inplace=True))
+            modules_critic.add_module('linCr2',PNNLinearBlock(task_id, 1, self.hidden_size, self.hidden_size))
+            modules_critic.add_module('linCr3',nn.Linear(self.hidden_size, 1))
+
         else:
-            sizes = [1, 32, 32, 32, 32, 32 * 5 * 5, 256]
-            modules = [ PNNConvLayer(task_id, 0, sizes[0], sizes[1]) ]
+            pass
+            # sizes = [1, 32, 32, 32, 32, 32 * 5 * 5, 256]
+            # modules = [ PNNConvLayer(task_id, 0, sizes[0], sizes[1]) ]
 
-            for depth in range(2,4):
-                modules.append(PNNConvLayer(task_id, depth, sizes[depth-1], sizes[depth]))
+            # for depth in range(2,4):
+            #     modules.append(PNNConvLayer(task_id, depth, sizes[depth-1], sizes[depth]))
 
-            modules.append(PNNGruLayer(task_id, 4, sizes[5], sizes[6]))
-            modules.append(PNNLinearBlock(task_id, 5, sizes[6], 1))
-            modules.append(PNNLinearBlock(task_id, 5, sizes[6], num_actions))
+            # modules.append(PNNGruLayer(task_id, 4, sizes[5], sizes[6]))
+            # modules.append(PNNLinearBlock(task_id, 5, sizes[6], 1))
+            # modules.append(PNNLinearBlock(task_id, 5, sizes[6], num_actions))
 
-        new_column = nn.ModuleList(modules).to(device)
-        self.columns.append(new_column)
-        self.device = device
+        self.columns_actor.append(modules_actor)
+        self.columns_critic.append(modules_critic)
 
         print("Add column of the new task")
 
@@ -162,15 +179,24 @@ class PNN(nn.Module):
         if skip == None:
             skip = []
 
-        for i, c in enumerate(self.columns):
+        for i, c in enumerate(self.columns_actor):
             if i not in skip:
                 for params in c.parameters():
+                    params.requires_grad = False
+
+                for params in self.columns_critic[i].parameters():
                     params.requires_grad = False
 
         print("Freeze columns from previous tasks")
 
     def parameters(self):
-        return self.columns[-1].parameters()
+        param = []
+        for p in self.columns_critic[-1].parameters():
+            param.append(p)
+        for p in self.columns_actor[-1].parameters():
+            param.append(p)
+
+        return param
 
     def transfor_img(self, img):
         return lambda img: imresize(img[35:195].mean(2), (80,80)).astype(np.float32).reshape(1,80,80)/255.
@@ -191,30 +217,29 @@ class ImproveMethod(Method, target_setting=ContinualRLSetting):
         # Delete the model, if present.
         self.model = None
         setting.batch_size = None
-        setting.transforms = []
-        setting.train_transforms = []
-        setting.val_transforms = []
-        setting.test_transforms = []
 
         self.num_actions = setting.action_space.n
+        image_space: Image = setting.observation_space[0]
+        self.num_inputs = np.prod(image_space.shape)
+
         self.device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
 
-        self.learning_rate = 0.0001
-        self.total_timesteps_per_task = setting.steps_per_task
-        self.train_steps_per_task = setting.max_steps
+        self.learning_rate = 3e-4
+        self.train_steps_per_task = 500 #setting.max_steps
+        self.num_steps = 200
         # Otherwise, we can train basically as long as we want on each task.
 
         self.loss_function = {
             'gamma': 0.99,
-            'tau': 1.0,
         }
 
         self.task_id = 0
         self.arch = 'mlp'
+        self.hidden_size = 256
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> BaseAlgorithm:
         # Create the model, as usual:
-        model = PNN(self.arch)
+        model = PNN(self.arch, self.hidden_size)
         self.task_trained = []
         return model
 
@@ -232,31 +257,8 @@ class ImproveMethod(Method, target_setting=ContinualRLSetting):
         hx = torch.zeros(1, 256)
         predictions = self.model(observations, hx)
         _, logit, _ = predictions
-        logp = F.log_softmax(logit, dim=-1)[0]
-        action = torch.argmax(logp)
-        # BUG: DQN prediction here doesn't work. 
-        if action not in action_space:
-            assert len(action) == 1, (observations, action, action_space)
-            action = action.item()
+        action = torch.argmax(logit).item()
         return action
-
-    def cost_func(self, values, logps, actions, rewards):
-        discount = lambda x, gamma: lfilter([1],[1,-gamma],x[::-1])[::-1]
-
-        np_values = values.view(-1).data.numpy()
-
-        delta_t = np.asarray(rewards) + self.loss_function['gamma'] * np_values[1:] - np_values[:-1]
-        logpys = logps.gather(1, torch.tensor(actions).view(-1,1))
-        gen_adv_est = discount(delta_t, self.loss_function['gamma'] * self.loss_function['tau'])
-        policy_loss = -(logpys.view(-1) * torch.FloatTensor(gen_adv_est.copy())).sum()
-        
-        rewards[-1] += self.loss_function['gamma'] * np_values[-1]
-        discounted_r = discount(np.asarray(rewards), self.loss_function['gamma'])
-        discounted_r = torch.tensor(discounted_r.copy(), dtype=torch.float32)
-        value_loss = .5 * (discounted_r - values[:-1,0]).pow(2).sum()
-
-        entropy_loss = -(-logps * torch.exp(logps)).sum()
-        return policy_loss + 0.5 * value_loss + 0.01 * entropy_loss
 
     def print_results(self, step, loss, reward):
         print("Task: {}\n Step:{}\n Average Loss: {}\n Average Reward: {}\n".format(self.task_id,
@@ -277,74 +279,72 @@ class ImproveMethod(Method, target_setting=ContinualRLSetting):
             self.model = self.create_model(train_env, valid_env)
 
         self.model.freeze_columns()
-        self.model.new_task(self.device, self.num_actions)
+        self.model.new_task(self.device, self.num_inputs, self.num_actions)
         self.set_optimizer()
         # self.model.float()
         
-        task_reward = []
-        task_loss = []
-        done = True
+        all_lengths = []
+        average_lengths = []
+        all_rewards = []
+        entropy_term = 0
 
-        total_episodes = 0
-        for i in range(int(self.train_steps_per_task/20)):
+        for episode in range(int(self.train_steps_per_task)):
             values = []
-            logps = []
-            actions = []
             rewards = []
-            for _ in range(20):
-                if done:
-                    hx = torch.zeros(1, 256)
-                    episode_length, episode_reward, episode_loss = 0, 0, 0
-                    env = train_env.reset()
-                    if self.arch != 'mlp':
-                        env.x = torch.tensor(self.model.transfor_img(env.x))
-                else:
-                    hx = hx.detach()
+            log_probs = []
 
-                episode_length += 1
-                value, logit, hx = self.model(env, hx)
-                logp = F.log_softmax(logit, dim=-1)
+            state = train_env.reset()
+            hx = torch.zeros(1, 256)
+            for steps in range(self.num_steps):
+                # value, policy_dist = actor_critic.forward(state)
+                value, policy_dist, hx = self.model(state, hx)
 
-                action = torch.exp(logp).multinomial(num_samples=1)
+                value = value.item() #detach().numpy()[0,0]
+                dist = policy_dist.detach().numpy() 
 
-                env = train_env.step(action.item())
-                reward = env.reward.y
-                done = env.done.item()
-                env = env.state
+                action = np.random.choice(self.num_actions, p=np.squeeze(dist))
+                log_prob = torch.log(policy_dist.squeeze(0)[action])
+                entropy = -np.sum(np.mean(dist) * np.log(dist))
+                new_state, reward, done, _ = train_env.step(action)
+                # state = train_env.step(action.item())
+                # reward = env.reward.y
+                # done = env.done.item()
+                # env = env.state
 
-                if self.arch != 'mlp':
-                    env.x = torch.tensor(self.model.transfor_img(env.x))
-                episode_reward += reward
-                reward = np.clip(reward, -1, 1)
-                # done = done or episode_length >= 1e4
+                rewards.append(reward.y)
+                values.append(value)
+                log_probs.append(log_prob)
+                entropy_term += entropy
+                state = new_state
 
-                values.append(value.detach())
-                logps.append(logp)
-                actions.append(action.detach())
-                rewards.append(reward)
-                
-                if total_episodes % 100 == 0:
-                    self.print_results(i, np.mean(task_loss), np.mean(task_reward))
+                if done or steps == self.num_steps-1:
+                    Qval, _, _ = self.model(state, hx)
+                    Qval = Qval.item() #.detach().numpy()[0,0]
+                    all_rewards.append(np.sum(rewards))
+                    all_lengths.append(steps)
+                    average_lengths.append(np.mean(all_lengths[-10:]))
+                    if episode % 10 == 0:                    
+                        sys.stdout.write("episode: {}, reward: {}, total length: {}, average length: {} \n".format(episode, np.sum(rewards), steps, average_lengths[-1]))
+                    break
 
-                total_episodes += 1
+            Qvals = np.zeros_like(values)
+            for t in reversed(range(len(rewards))):
+                Qval = rewards[t] + self.loss_function['gamma'] * Qval
+                Qvals[t] = Qval
 
-            if done:
-                next_value = torch.zeros(1,1)
-            else:
-                next_value = self.model(env, hx)[0]
-            values.append(next_value.detach())
+            #update actor critic
+            values = torch.FloatTensor(values)
+            Qvals = torch.FloatTensor(Qvals)
+            log_probs = torch.stack(log_probs)
 
-            loss = self.cost_func(torch.cat(values), torch.cat(logps), torch.cat(actions), np.asarray(rewards))
-            episode_loss += loss.item()
-            task_loss.append(loss.item())
-            task_reward.append(reward.item())
+            advantage = Qvals - values
+            actor_loss = (-log_probs * advantage).mean()
+            critic_loss = 0.5 * advantage.pow(2).mean()
+            ac_loss = actor_loss + critic_loss + 0.001 * entropy_term
 
             self.optimizer.zero_grad()
-            loss.backward()
-
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 40)
+            ac_loss.backward()
             self.optimizer.step()
-
 
 if __name__ == "__main__":
     # Stages:
@@ -358,7 +358,6 @@ if __name__ == "__main__":
             0:      {"gravity": 10, "length": 0.3},
             1000:   {"gravity": 10, "length": 0.5},
         },
-        max_steps = 2000,
     )
     
     ## 2. Creating the Method
