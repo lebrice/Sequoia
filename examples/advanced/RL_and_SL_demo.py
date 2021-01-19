@@ -40,11 +40,13 @@ class SimpleRegularizationAuxTask(AuxiliaryTask):
     return a `Loss` for the given forward pass and resulting rewards/labels.
     Take a look at the `AuxiliaryTask` class for more info.    
     """
+
     name: ClassVar[str] = "simple_regularization"
 
     @dataclass
     class Options(AuxiliaryTask.Options):
         """Hyper-parameters / configuration options of this auxiliary task."""
+
         # Coefficient used to scale this regularization loss before it gets
         # added to the 'base' loss of the model.
         coefficient: float = 0.01
@@ -54,11 +56,13 @@ class SimpleRegularizationAuxTask(AuxiliaryTask):
         # The norm term for the 'distance' between the current and old weights.
         distance_norm: int = 2
 
-    def __init__(self,
-                 *args,
-                 name: str = None,
-                 options: "SimpleRegularizationAuxTask.Options" = None,
-                 **kwargs):
+    def __init__(
+        self,
+        *args,
+        name: str = None,
+        options: "SimpleRegularizationAuxTask.Options" = None,
+        **kwargs,
+    ):
         super().__init__(*args, options=options, name=name, **kwargs)
         self.options: SimpleRegularizationAuxTask.Options
         self.previous_task: int = None
@@ -84,17 +88,16 @@ class SimpleRegularizationAuxTask(AuxiliaryTask):
         old_weights: Dict[str, Tensor] = self.previous_model_weights
         new_weights: Dict[str, Tensor] = dict(self.model.named_parameters())
 
-        loss = 0.
+        loss = 0.0
         for weight_name, (new_w, old_w) in dict_intersection(new_weights, old_weights):
-            loss += torch.dist(new_w, old_w.type_as(new_w), p=self.options.distance_norm)
+            loss += torch.dist(
+                new_w, old_w.type_as(new_w), p=self.options.distance_norm
+            )
 
-        ewc_loss = Loss(
-            name=self.name,
-            loss=loss,
-        )
+        ewc_loss = Loss(name=self.name, loss=loss)
         return ewc_loss
 
-    def on_task_switch(self, task_id: int)-> None:
+    def on_task_switch(self, task_id: int) -> None:
         """ Executed when the task switches (to either a new or known task).
         """
         if not self.enabled:
@@ -103,32 +106,41 @@ class SimpleRegularizationAuxTask(AuxiliaryTask):
             logger.debug(f"Starting the first task, no update.")
             pass
         elif task_id is None or task_id != self.previous_task:
-            logger.debug(f"Switching tasks: {self.previous_task} -> {task_id}: "
-                         f"Updating the 'anchor' weights.")
+            logger.debug(
+                f"Switching tasks: {self.previous_task} -> {task_id}: "
+                f"Updating the 'anchor' weights."
+            )
             self.previous_task = task_id
             self.previous_model_weights.clear()
-            self.previous_model_weights.update(copy.deepcopy({
-                k: v.detach() for k, v in self.model.named_parameters()
-            }))
+            self.previous_model_weights.update(
+                copy.deepcopy({k: v.detach() for k, v in self.model.named_parameters()})
+            )
         self.n_switches += 1
 
 
 class CustomizedBaselineModel(BaselineModel):
-    
     @dataclass
     class HParams(BaselineModel.HParams):
         """ Hyper-parameters of our customized baseline model.
         """
-        # Hyper-parameters of our simple new auxiliary task.
-        simple_reg: SimpleRegularizationAuxTask.Options = field(default_factory=SimpleRegularizationAuxTask.Options)
 
-    def __init__(self, setting: Setting, hparams: "CustomizedBaselineModel.HParams", config: Config):
+        # Hyper-parameters of our simple new auxiliary task.
+        simple_reg: SimpleRegularizationAuxTask.Options = field(
+            default_factory=SimpleRegularizationAuxTask.Options
+        )
+
+    def __init__(
+        self,
+        setting: Setting,
+        hparams: "CustomizedBaselineModel.HParams",
+        config: Config,
+    ):
         super().__init__(setting=setting, hparams=hparams, config=config)
         self.hp: CustomizedBaselineModel.HParams
 
         # Here we add our new auxiliary task:
         self.add_auxiliary_task(SimpleRegularizationAuxTask(options=self.hp.simple_reg))
-        # You could also add other auxiliary tasks, for example SimCLR: 
+        # You could also add other auxiliary tasks, for example SimCLR:
         # self.add_auxiliary_task(SimCLRTask(coefficient=1.))
 
         # Or, add replay buffers of some sort:
@@ -150,25 +162,28 @@ class CustomMethod(BaselineMethod, target_setting=Setting):
     argument above to limit this to any particular subtree (only SL, only RL,
     only when task labels are present, etc).
     """
-    
+
     # Hyper-parameters of the customized Baseline Model used by this method.
-    hparams: CustomizedBaselineModel.HParams = field(default_factory=CustomizedBaselineModel.HParams)
-    
-    def __init__(self,
-                 hparams: CustomizedBaselineModel.HParams = None,
-                 config: Config = None,
-                 trainer_options: TrainerConfig = None,
-                 **kwargs):
+    hparams: CustomizedBaselineModel.HParams = field(
+        default_factory=CustomizedBaselineModel.HParams
+    )
+
+    def __init__(
+        self,
+        hparams: CustomizedBaselineModel.HParams = None,
+        config: Config = None,
+        trainer_options: TrainerConfig = None,
+        **kwargs,
+    ):
         super().__init__(
-            hparams=hparams,
-            config=config,
-            trainer_options=trainer_options,
-            **kwargs,
+            hparams=hparams, config=config, trainer_options=trainer_options, **kwargs,
         )
 
     def create_model(self, setting: Setting) -> CustomizedBaselineModel:
         """ Creates the Model to be used for the given `Setting`. """
-        return CustomizedBaselineModel(setting=setting, hparams=self.hparams, config=self.config)
+        return CustomizedBaselineModel(
+            setting=setting, hparams=self.hparams, config=self.config
+        )
 
     def configure(self, setting: Setting):
         """ Configure this Method before being trained / tested on this Setting.
@@ -181,8 +196,7 @@ class CustomMethod(BaselineMethod, target_setting=Setting):
             self.hparams.simple_reg.coefficient = 0.01
         else:
             self.hparams.simple_reg.coefficient = 1.0
-        
-    
+
     def fit(self, train_env: Environment, valid_env: Environment):
         """ Called by the Setting to let the Method train on a given task.
         
@@ -194,7 +208,7 @@ class CustomMethod(BaselineMethod, target_setting=Setting):
         return super().fit(train_env=train_env, valid_env=valid_env)
 
     @classmethod
-    def add_argparse_args(cls, parser: ArgumentParser, dest: str=""):
+    def add_argparse_args(cls, parser: ArgumentParser, dest: str = ""):
         """Adds command-line arguments for this Method to an argument parser.
         
         NOTE: This doesn't do anything differently than the base implementation,
@@ -205,11 +219,11 @@ class CustomMethod(BaselineMethod, target_setting=Setting):
         # Add all command-line arguments. This adds arguments for all fields of
         # this dataclass.
         parser.add_arguments(cls, dest=dest)
-        # You could add arguments here if you wanted to: 
+        # You could add arguments here if you wanted to:
         # parser.add_argument("--foo", default=1.23, help="example argument")
 
     @classmethod
-    def from_argparse_args(cls, args: Namespace, dest: str=""):
+    def from_argparse_args(cls, args: Namespace, dest: str = ""):
         """ Create an instance of this class from the parsed arguments. """
         # Retrieve the parsed arguments:
         dest = dest or camel_case(cls.__qualname__)
@@ -218,45 +232,49 @@ class CustomMethod(BaselineMethod, target_setting=Setting):
         # foo: int = args.foo
         return method
 
-def demo_simple():
-    """ Runs the demo, creating a Setting from the tree and applying the 
-    """
+
+def demo_manual():
+    """ Apply the custom method to a Setting, creating both manually in code. """
     # Create any Setting from the tree:
-    from sequoia.settings import (TaskIncrementalRLSetting, TaskIncrementalSetting)
+    from sequoia.settings import TaskIncrementalRLSetting, TaskIncrementalSetting
+
     # setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)  # SL
     setting = TaskIncrementalRLSetting(  # RL
         dataset="cartpole",
         train_task_schedule={
-            0:      {"gravity": 10, "length": 0.5},
-            5000:   {"gravity": 10, "length": 1.0},
+            0: {"gravity": 10, "length": 0.5},
+            5000: {"gravity": 10, "length": 1.0},
         },
-        observe_state_directly=True, # state input, rather than pixel input.
+        observe_state_directly=True,  # state input, rather than pixel input.
         max_steps=10_000,
     )
-    
+
+    ## Create the BaselineMethod:
     config = Config(debug=True)
     trainer_options = TrainerConfig(max_epochs=1)
     hparams = BaselineModel.HParams()
-    # Here we create the arguments to be passed to our Method's constructor.
-    
-    # Get the results for the base method:
-    base_method = BaselineMethod(hparams=hparams, config=config, trainer_options=trainer_options)
+    base_method = BaselineMethod(
+        hparams=hparams, config=config, trainer_options=trainer_options
+    )
+
+    ## Get the results of the baseline method:
     base_results = setting.apply(base_method, config=config)
-    # print("\n BaselineMethod results: ")
-    # print(base_results.summary())
-    
-    # Get the results for the 'improved' method:    
+
+    ## Create the CustomMethod:
     config = Config(debug=True)
     trainer_options = TrainerConfig(max_epochs=1)
     hparams = CustomizedBaselineModel.HParams()
+    new_method = CustomMethod(
+        hparams=hparams, config=config, trainer_options=trainer_options
+    )
 
-    new_method = CustomMethod(hparams=hparams, config=config, trainer_options=trainer_options)
+    ## Get the results for the 'improved' method:
     new_results = setting.apply(new_method, config=config)
-    
-    print(f"\n\nComparison: BaselineMethod vs CustomMethod - (TaskIncrementalSetting, dataset=fashionmnist):")
+
+    print(f"\n\nComparison: BaselineMethod vs CustomMethod")
     print("\n BaselineMethod results: ")
     print(base_results.summary())
-    
+
     print("\n CustomMethod results: ")
     print(new_results.summary())
 
@@ -271,39 +289,38 @@ def demo_command_line():
     ## Create the `Setting` and the `Config` from the command-line, like in
     ## the other examples.
     parser = ArgumentParser(description=__doc__)
-    
+
     ## Add command-line arguments for any Setting in the tree:
-    from sequoia.settings import (TaskIncrementalRLSetting,
-                                    TaskIncrementalSetting)
+    from sequoia.settings import TaskIncrementalRLSetting, TaskIncrementalSetting
+
     # parser.add_arguments(TaskIncrementalSetting, dest="setting")
     parser.add_arguments(TaskIncrementalRLSetting, dest="setting")
     parser.add_arguments(Config, dest="config")
-    
-    # Add the command-line arguments for our Custom Method (including the
-    # arguments for our SimpleRegularization aux task).
-    # NOTE: We could just do parser.add_arguments(CustomMethod, "method") since
-    # CustomMethod is a dataclass, but we do it manually here just so its a bit
-    # clearer how to add new arguments.
+
+    # Add the command-line arguments for our CustomMethod (including the
+    # arguments for our simple regularization aux task).
     CustomMethod.add_argparse_args(parser, dest="method")
-    
+
     args = parser.parse_args()
-    
+
     setting: ClassIncrementalSetting = args.setting
     config: Config = args.config
-    
-    # Get the results of the BaselineMethod:
+
+    # Create the BaselineMethod:
     base_method = BaselineMethod.from_argparse_args(args, dest="method")
+    # Get the results of the BaselineMethod:
     base_results = setting.apply(base_method, config=config)
 
-    # Get the results for the 'improved' method:
+    ## Create the CustomMethod:
     new_method = CustomMethod.from_argparse_args(args, dest="method")
+    # Get the results for the CustomMethod:
     new_results = setting.apply(new_method, config=config)
 
-    print(f"\n\nComparison: BaselineMethod vs CustomMethod - (TaskIncrementalSetting, dataset=fashionmnist):")
+    print(f"\n\nComparison: BaselineMethod vs CustomMethod:")
     print(base_results.summary())
     print(new_results.summary())
 
 
 if __name__ == "__main__":
-    demo_simple()
+    demo_manual()
     # demo_command_line()
