@@ -21,7 +21,6 @@ from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
 
 from .policy_head import Categorical, PolicyHead, PolicyHeadOutput, GradientUsageMetric
 from .policy_head import normalize
-from ..output_head import DenseHParams
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
 from sequoia.utils import get_logger
 

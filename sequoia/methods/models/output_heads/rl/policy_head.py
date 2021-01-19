@@ -40,6 +40,7 @@ import torch
 from gym import Space, spaces
 from gym.spaces.utils import flatdim
 from gym.vector.utils.numpy_utils import concatenate, create_empty_array
+from simple_parsing import list_field
 from torch import LongTensor, Tensor, nn
 from torch.distributions import Distribution
 from torch.optim.optimizer import Optimizer
@@ -55,7 +56,6 @@ from sequoia.utils.categorical import Categorical
 from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import flag, prod
-
 from ..classification_head import ClassificationHead, ClassificationOutput
 from ..output_head import OutputHead
 
@@ -117,8 +117,8 @@ class PolicyHead(ClassificationHead):
 
     @dataclass
     class HParams(ClassificationHead.HParams):
-        hidden_layers: int = 2
-
+        hidden_layers: int = 0
+        hidden_neurons: List[int] = list_field()
         # The discount factor for the Return term.
         gamma: float = 0.99
         
@@ -193,14 +193,6 @@ class PolicyHead(ClassificationHead):
 
         # self.optimizer = self.configure_optimizers()
         self._training: bool = True
-
-    # def configure_optimizers(self) -> Optimizer:
-    #     """ Create the optimizers required by this output head.
-        
-    #     NOTE: Named the same as the `configure_optimizers` in pytorch-lightning,
-    #     but this particular output head isn't optimized with pytorch-lightning.
-    #     """
-    #     return torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
 
     def create_buffers(self):
         """ Creates the buffers to hold the items from each env. """
