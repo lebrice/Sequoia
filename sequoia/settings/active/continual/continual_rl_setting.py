@@ -60,7 +60,7 @@ from .wrappers import (HideTaskLabelsWrapper, NoTypedObjectsWrapper,
 
 logger = get_logger(__file__)
 
-import monsterkong_randomensemble
+from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
 
 
 # TODO: Implement a get_metrics (ish) in the Environment, not on the Setting!

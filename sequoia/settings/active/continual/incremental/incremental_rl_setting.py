@@ -1,17 +1,21 @@
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, List, Tuple
+from functools import partial
+from typing import Callable, ClassVar, Dict, Iterable, List, Tuple
 
 import gym
+from gym.wrappers import TimeLimit
+from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
 from pytorch_lightning import LightningModule
 
+from sequoia.common.gym_wrappers import MultiTaskEnvironment
+from sequoia.common.transforms import Transforms
 from sequoia.utils import constant, dict_union
 from sequoia.utils.logging_utils import get_logger
 
-from ..gym_dataloader import GymDataLoader
 from ..continual_rl_setting import ContinualRLSetting, HideTaskLabelsWrapper
+from ..gym_dataloader import GymDataLoader
 
 logger = get_logger(__file__)
-
 
 @dataclass
 class IncrementalRLSetting(ContinualRLSetting):
@@ -25,6 +29,7 @@ class IncrementalRLSetting(ContinualRLSetting):
     implement a custom `fit` procedure in the CLTrainer class, that loops over
     the tasks and calls the `on_task_switch` when needed.
     """
+
     # Number of tasks.
     nb_tasks: int = 10
     # Wether the task boundaries are smooth or sudden.
@@ -34,8 +39,42 @@ class IncrementalRLSetting(ContinualRLSetting):
     # Wether to give access to the task labels at test time.
     task_labels_at_test_time: bool = False
 
-    def __post_init__(self, *args, **kwargs):
-        if self.train_task_schedule:
-            self.nb_tasks = len(self.train_task_schedule)
-        super().__post_init__(*args, **kwargs)
-        assert not self.smooth_task_boundaries
+    # Class variable that holds the dict of available environments.
+    available_datasets: ClassVar[Dict[str, str]] = dict_union(
+        ContinualRLSetting.available_datasets, {"monsterkong": "MetaMonsterKong-v0",},
+    )
+
+    # def __post_init__(self, *args, **kwargs):
+    #     super().__post_init__(*args, **kwargs)
+
+    def _make_wrappers(
+        self,
+        task_schedule: Dict[int, Dict],
+        sharp_task_boundaries: bool,
+        task_labels_available: bool,
+        transforms: List[Transforms],
+        starting_step: int,
+        max_steps: int,
+    ) -> List[Callable[[gym.Env], gym.Env]]:
+        wrappers = super()._make_wrappers(
+            task_schedule,
+            sharp_task_boundaries,
+            task_labels_available,
+            transforms,
+            starting_step,
+            max_steps,
+        )
+
+        if self.dataset == "MetaMonsterKong-v0":
+            wrappers.insert(0, partial(TimeLimit, max_episode_steps=100))
+        return wrappers
+
+    def create_task_schedule(
+        self, temp_env: MultiTaskEnvironment, change_steps: List[int]
+    ) -> Dict[int, Dict]:
+        task_schedule: Dict[int, Dict] = {}
+        if isinstance(temp_env.unwrapped, MetaMonsterKongEnv):
+            for i, task_step in enumerate(change_steps):
+                task_schedule[task_step] = {"level": i}
+        else:
+            return super().create_task_schedule()
