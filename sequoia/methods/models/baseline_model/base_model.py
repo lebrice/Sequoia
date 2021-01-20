@@ -137,17 +137,27 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.output_head: OutputHead = self.create_output_head(setting)
 
     @auto_move_data
-    def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
+    def forward(self, observations:  IncrementalSetting.Observations) -> ForwardPass:
         """ Forward pass of the Model.
 
-        Returns a ForwardPass object (or a dict)
+        Returns a ForwardPass object (acts like a dict of Tensors.)
         """
+        # If there's any additional 'input preprocessing' to do, do it here.
+        # NOTE (@lebrice): This is currently done this way so that we don't have
+        # to pass transforms to the settings from the method side.
+        observations = self.preprocess_observations(observations)
         # Encode the observation to get representations.
         representations = self.encode(observations)
         # Pass the observations and representations to the output head to get
         # the 'action' (prediction).
-        actions = self.get_actions(observations, representations)
+        
+        if self.hp.detach_output_head:
+            representations = representations.detach()
 
+        actions = self.output_head(
+            observations=observations,
+            representations=representations
+        )
         forward_pass = ForwardPass(
             observations=observations,
             representations=representations,
@@ -164,42 +174,18 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
         Returns:
             Tensor: The hidden vector / embedding for that sample, with size
-                [<batch_size>, `self.hp.hidden_size`].
+                [B, `self.hidden_size`].
         """
-        assert isinstance(observations, self.Observations)
-        # If there's any additional 'input preprocessing' to do, do it here.
-        # NOTE (@lebrice): This is currently done this way so that we don't have
-        # to pass transforms to the settings from the method side.
-        preprocessed_observations = self.preprocess_observations(observations)
-        # Here in this base model the encoder only takes the 'x' from the observations.
-        assert isinstance(preprocessed_observations.x, Tensor)
-        
-        h_x = self.encoder(preprocessed_observations.x)
+        # Here in this base model the encoder only takes the 'x' from the
+        # observations.
+        x = observations.x.to(device=self.device, dtype=self.dtype)
+        h_x = self.encoder(x)
         if isinstance(h_x, list) and len(h_x) == 1:
             # Some pretrained encoders sometimes give back a list with one tensor. (?)
             h_x = h_x[0]
         if not isinstance(h_x, Tensor):
-            h_x = torch.as_tensor(h_x, device=self.device)
-        assert isinstance(h_x, Tensor)
+            h_x = torch.as_tensor(h_x, device=self.device, dtype=self.dtype)
         return h_x
-
-    
-    def get_actions(self, observations: Observations, representations: Tensor) -> Actions:
-        """ Pass the required inputs to the output head and get predictions.
-        
-        NOTE: This method is basically just here so we can customize what we
-        pass to the output head, or what we take from it, similar to the
-        `encode` method.
-        """
-        if self.hp.detach_output_head:
-            representations = representations.detach()
-
-        actions = self.output_head(
-            observations=observations,
-            representations=representations
-        )
-        assert isinstance(actions, self.Actions)
-        return actions
 
     def create_output_head(self, setting: Setting, add_to_optimizer: bool = None) -> OutputHead:
         """Create an output head for the current action and reward spaces.
@@ -446,10 +432,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # Convert all numpy arrays to tensors if possible.
         # TODO: Make sure this still works in settings without task labels (
         # None in numpy arrays)
-        from sequoia.utils.generic_functions import to_tensor
-        observations = to_tensor(self.observation_space, observations, device=self.device)
-        assert isinstance(observations, self.Observations)
-        assert isinstance(observations.x, Tensor)
+        observations = observations.torch(device=self.device)
         return observations
 
     def preprocess_rewards(self, reward: Rewards) -> Rewards:
