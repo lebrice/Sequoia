@@ -60,6 +60,9 @@ from .wrappers import (HideTaskLabelsWrapper, NoTypedObjectsWrapper,
 
 logger = get_logger(__file__)
 
+import monsterkong_randomensemble
+
+
 # TODO: Implement a get_metrics (ish) in the Environment, not on the Setting!
 # TODO: The validation environment will also call the on_task_switch when it
 # reaches a task boundary, and there isn't currently a way to distinguish if
@@ -132,6 +135,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         "pendulum": "Pendulum-v0",
         "breakout": "Breakout-v0",
         # "duckietown": "Duckietown-straight_road-v0"
+        "monsterkong": "MetaMonsterKong-v1",
     }
     # Which environment (a.k.a. "dataset") to learn on.
     # The dataset could be either a string (env id or a key from the
