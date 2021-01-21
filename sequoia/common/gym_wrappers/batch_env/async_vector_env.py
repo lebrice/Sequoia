@@ -98,6 +98,11 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
     def __len__(self) -> int:
         return self.num_envs
 
+    def close(self):
+        super().close()
+        if self.viewer:
+            self.viewer.close()
+            
     def render(self, mode: str = "rgb_array") -> np.ndarray:
         self._assert_is_running()
         for pipe in self.parent_pipes:

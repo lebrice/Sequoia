@@ -2,11 +2,6 @@ from setuptools import setup, find_packages
 
 import os
 
-# TODO: Figure out how to specify 'extras'
-extras = {
-#     "ewc": "git+https://github.com/oleksost/nngeometry.git",
-#     "rl": "gym[atari]",
-}
 
 PATH_ROOT = os.path.dirname(__file__)
 
@@ -17,14 +12,11 @@ def load_requirements(path_dir=PATH_ROOT, file_name='requirements.txt', comment_
         lines = [ln.strip() for ln in file.readlines()]
     reqs = []
     for ln in lines:
-        if comment_char in ln:  # filer all comments
-            ln = ln[:ln.index(comment_char)].strip()
-        if ln.startswith(('http', "git", "https")):  # skip directly installed dependencies
+        if ln.startswith(comment_char):
             continue
         if ln:  # if requirement is not empty
             reqs.append(ln)
     return reqs
-
 
 setup(
     name='sequoia',
@@ -36,7 +28,7 @@ setup(
     license='GPLv3',
     packages=[package for package in find_packages()
                 if package.startswith('sequoia')],
-    extras_require=extras,
+    extras_require={},
     install_requires=load_requirements(),
     python_requires='>=3.7',
     tests_require=['pytest'],

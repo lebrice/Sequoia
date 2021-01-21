@@ -305,3 +305,57 @@ def test_task_id_is_added_even_when_no_known_task_schedule():
             x, task_id = env.reset()
             assert task_id == 0
     env.close()
+
+
+try:
+    from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
+except ImportError:
+    monsterkong_installed = False
+else:
+    monsterkong_installed = True
+
+
+@pytest.mark.skip_if(not monsterkong_installed, reason="monsterkong is required for this test.")
+def test_task_schedule_monsterkong():
+    env: MetaMonsterKongEnv = gym.make("MetaMonsterKong-v1")
+    from gym.wrappers import TimeLimit
+    env = TimeLimit(env, max_episode_steps=10)
+    env = MultiTaskEnvironment(env, task_schedule={
+        0: {"level": 0},
+        100: {"level": 1},
+        200: {"level": 2},
+        300: {"level": 3},
+        400: {"level": 4},
+    }, add_task_id_to_obs=True)
+    obs = env.reset()
+    
+    # img, task_labels = obs
+    assert obs[1] == 0
+    assert env.get_level() == 0
+    
+    for i in range(500):
+        obs, reward, done, info = env.step(env.action_space.sample())
+        assert obs[1] == i // 100
+        assert env.level == i // 100
+        env.render()
+        if done:
+            print(f"End of episode at step {i}")
+            obs = env.reset()
+    
+    assert obs[1] == 4
+    assert env.level == 4
+    # level stays the same even after reaching that objective.
+    for i in range(500):
+        obs, reward, done, info = env.step(env.action_space.sample())
+        assert obs[1] == 4
+        assert env.level == 4
+        env.render()
+        if done:
+            print(f"End of episode at step {i}")
+            obs = env.reset()
+
+
+def test_task_schedule_with_callables():
+    """ TODO: apply functions to the env at a given step. """
+    
+    

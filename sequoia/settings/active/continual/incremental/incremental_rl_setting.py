@@ -1,14 +1,20 @@
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, List, Tuple
+from functools import partial
+from typing import Callable, ClassVar, Dict, Iterable, List, Tuple
 
 import gym
+from gym.wrappers import TimeLimit
+from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
 from pytorch_lightning import LightningModule
+from simple_parsing import choice
 
+from sequoia.common.gym_wrappers import MultiTaskEnvironment
+from sequoia.common.transforms import Transforms
 from sequoia.utils import constant, dict_union
 from sequoia.utils.logging_utils import get_logger
 
-from ..gym_dataloader import GymDataLoader
 from ..continual_rl_setting import ContinualRLSetting, HideTaskLabelsWrapper
+from ..gym_dataloader import GymDataLoader
 
 logger = get_logger(__file__)
 
@@ -25,6 +31,7 @@ class IncrementalRLSetting(ContinualRLSetting):
     implement a custom `fit` procedure in the CLTrainer class, that loops over
     the tasks and calls the `on_task_switch` when needed.
     """
+
     # Number of tasks.
     nb_tasks: int = 10
     # Wether the task boundaries are smooth or sudden.
@@ -34,8 +41,30 @@ class IncrementalRLSetting(ContinualRLSetting):
     # Wether to give access to the task labels at test time.
     task_labels_at_test_time: bool = False
 
+    # Class variable that holds the dict of available environments.
+    available_datasets: ClassVar[Dict[str, str]] = dict_union(
+        ContinualRLSetting.available_datasets, {"monsterkong": "MetaMonsterKong-v0",},
+    )
+    dataset: str = choice(available_datasets, default="cartpole")
+
     def __post_init__(self, *args, **kwargs):
-        if self.train_task_schedule:
-            self.nb_tasks = len(self.train_task_schedule)
         super().__post_init__(*args, **kwargs)
-        assert not self.smooth_task_boundaries
+
+        if self.dataset == "MetaMonsterKong-v0":
+            # TODO: Limit the episode length in monsterkong?
+            # TODO: Actually end episodes when reaching a task boundary, to force the
+            # level to change?
+            self.max_episode_steps = self.max_episode_steps or 500
+    
+    def create_task_schedule(
+        self, temp_env: MultiTaskEnvironment, change_steps: List[int]
+    ) -> Dict[int, Dict]:
+        task_schedule: Dict[int, Dict] = {}
+        if isinstance(temp_env.unwrapped, MetaMonsterKongEnv):
+            for i, task_step in enumerate(change_steps):
+                task_schedule[task_step] = {"level": i}
+            return task_schedule
+        else:
+            return super().create_task_schedule(
+                temp_env=temp_env, change_steps=change_steps
+            )

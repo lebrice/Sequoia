@@ -240,3 +240,15 @@ class DummyEnvironment(gym.Env):
         self._reset = True
         self.i = self.start
         return self.i
+
+
+try:
+    from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
+except ImportError:
+    monsterkong_installed = False
+else:
+    monsterkong_installed = True
+
+monsterkong_required = pytest.mark.skipif(
+    not monsterkong_installed, reason="monsterkong is required for this test."
+)
