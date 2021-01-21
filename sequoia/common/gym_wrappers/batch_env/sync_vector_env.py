@@ -58,3 +58,7 @@ class SyncVectorEnv(SyncVectorEnv_):
         
         raise NotImplementedError(f"Unsupported mode {mode}")
 
+    def close_extras(self, **kwargs):
+        super().close_extras(**kwargs)
+        if self.viewer:
+            self.viewer.close()

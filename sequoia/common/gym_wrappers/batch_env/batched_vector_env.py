@@ -186,6 +186,9 @@ class BatchedVectorEnv(VectorEnv):
         self.env_a.close_extras(**kwargs)
         if self.env_b:
             self.env_b.close_extras(**kwargs)
+        if self.viewer:
+            self.viewer.close()
+
 
     def render(self, mode: str = "rgb_array"):
         chunked_images_a = self.env_a.render(mode="rgb_array")

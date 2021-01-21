@@ -448,7 +448,6 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # TODO: Remove `Setting.configure(method)` entirely, from everywhere,
         # and use the `prepare_data` or `setup` methods instead (since these
         # `configure` methods aren't using the `method` anyway.)
-        self.configure(method)
         method.configure(setting=self)
 
         logger.info(f"Train task schedule:" + json.dumps(self.train_task_schedule, indent="\t"))

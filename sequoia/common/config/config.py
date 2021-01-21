@@ -24,6 +24,10 @@ from sequoia.utils.logging_utils import get_logger
 # from .wandb_config import WandbLoggerConfig
 logger = get_logger(__file__)
 
+
+virtual_display = None
+
+
 @dataclass
 class Config(Serializable, Parseable):
     """ Configuration options for an experiment.
@@ -56,11 +60,14 @@ class Config(Serializable, Parseable):
         self.seed_everything()
         self.display: Optional[Display] = None
         if not self.render:
+            global virtual_display
             # If `--render` isn't set, then try to create a virtual display.
             # This has the same effect as running the script with xvfb-run 
             try:
-                self.display = Display(visible=False, size=(1366, 768))
-                self.display.start()
+                if virtual_display is None:
+                    virtual_display = Display(visible=False, size=(1366, 768))
+                    virtual_display.start()
+                self.display = virtual_display
             except Exception as e:
                 logger.warning(RuntimeWarning(
                     f"Rendering is disabled, but we were unable to start the "
@@ -69,10 +76,10 @@ class Config(Serializable, Parseable):
                     f"want to prevent rendering the environment's observations."
                 ))
 
-    def __del__(self):
-        if self.display:
-            self.display.stop()
-            del self.display
+    # def __del__(self):
+        # if self.display:
+        #     self.display.stop()
+        #     del self.display
 
     def seed_everything(self) -> None:
         if self.seed is not None:
