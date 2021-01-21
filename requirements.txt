@@ -31,4 +31,3 @@ pytest-xvfb # Prevents the gym popups from displaying during tests.
 # TODO: Move this to an 'extras' in setup.py?
 stable-baselines3
 pyvirtualdisplay
-git+https://github.com/tfjgeorge/nngeometry.git

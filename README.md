@@ -25,7 +25,6 @@ Requires python >= 3.7
 git clone https://www.github.com/lebrice/Sequoia.git
 cd Sequoia
 pip install -e .
-pip install -r requirements.txt
 ```
 
 ### Additional Installation Steps for Mac
