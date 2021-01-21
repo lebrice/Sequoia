@@ -8,9 +8,11 @@ from numpy import inf
 import tqdm
 import gym
 from gym import spaces
+from simple_parsing import ArgumentParser
 
 from scipy.signal import lfilter
 
+from sequoia.common import Config
 from sequoia.settings import TaskIncrementalRLSetting
 from stable_baselines3.common.base_class import BaseAlgorithm
 from sequoia.settings import Method
@@ -359,8 +361,22 @@ class ImproveMethod(Method, target_setting=TaskIncrementalRLSetting):
             ac_loss.backward()
             self.optimizer.step()
 
+    @classmethod
+    def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
+        parser.add_arguments(cls.HParams, dest="hparams")
+
+    @classmethod
+    def from_argparse_args(cls, args, dest: str = None) -> "ImproveMethod":
+        hparams: ImproveMethod.HParams = args.hparams
+        method = cls(hparams=hparams)
+        return method
+
 if __name__ == "__main__":
     parser = ArgumentParser(description=__doc__, add_dest_to_option_strings=False)
+
+    Config.add_argparse_args(parser, dest="config")
+    ImproveMethod.add_argparse_args(parser, dest="method")
+
     # Haven't tested with observe_state_directly=False 
     # it run but I don't know if it converge
     setting = TaskIncrementalRLSetting(
@@ -372,12 +388,18 @@ if __name__ == "__main__":
             1000:   {"gravity": 10, "length": 0.5},
         },
     )
+
+    args = parser.parse_args()
     
+    config: Config = Config.from_argparse_args(args, dest="config")
+    method: ImproveMethod = ImproveMethod.from_argparse_args(args, dest="method")
+    method.config = config
+
     ## 2. Creating the Method
-    method = ImproveMethod()
+    # method = ImproveMethod()
     
     ## 3. Applying the method to the setting:
-    results = setting.apply(method)
+    results = setting.apply(method, config=config)
     
     print(results.summary())
     print(f"objective: {results.objective}")

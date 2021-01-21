@@ -275,12 +275,12 @@ class ImproveMethod(Method, target_setting=TaskIncrementalSetting):
     @classmethod
     def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
         parser.add_arguments(cls.HParams, dest="hparams")
-        parser.add_argument("--foo", default=123)
+        # parser.add_argument("--foo", default=123)
 
     @classmethod
     def from_argparse_args(cls, args, dest: str = None) -> "ImproveMethod":
         hparams: ImproveMethod.HParams = args.hparams
-        foo: int = args.foo
+        # foo: int = args.foo
         method = cls(hparams=hparams)
         return method
 
