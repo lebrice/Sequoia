@@ -178,7 +178,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         """
         # Here in this base model the encoder only takes the 'x' from the
         # observations.
-        x = observations.x.to(device=self.device, dtype=self.dtype)
+        x = torch.as_tensor(observations.x, device=self.device, dtype=self.dtype)
         h_x = self.encoder(x)
         if isinstance(h_x, list) and len(h_x) == 1:
             # Some pretrained encoders sometimes give back a list with one tensor. (?)

@@ -9,10 +9,10 @@ import numpy as np
 import torch
 from gym import spaces
 from gym.vector.utils import batch_space
-from gym.envs.classic_control.rendering import SimpleImageViewer
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data.dataloader import _BaseDataLoaderIter
+import matplotlib.pyplot as plt
 
 from sequoia.common.batch import Batch
 from sequoia.common.gym_wrappers.utils import reshape_space
@@ -43,7 +43,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
     """
     passive: ClassVar[bool] = True
     
-    metadata = {"render.modes": ["rgb_array"]}
+    metadata = {"render.modes": ["rgb_array", "human"]}
 
     def __init__(self,
                  dataset: Union[IterableDataset, Dataset],
@@ -108,7 +108,9 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self._next_batch: Optional[Tuple[ObservationType, RewardType]] = None
         self._done: Optional[bool] = None
         self._closed: bool = False
-        self.viewer: Optional[SimpleImageViewer] = None
+        
+        # from gym.envs.classic_control.rendering import SimpleImageViewer
+        self.viewer = None
 
     def reset(self) -> ObservationType:
         """ Resets the env by deleting and re-creating the iterator.
@@ -126,9 +128,6 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         if not self._closed:
             if self.viewer:
                 self.viewer.close()
-            del self.viewer
-            del self._iterator
-            del self.dataset
             self._closed = True
 
     def __del__(self):
@@ -161,12 +160,21 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             return image_batch
         
         if mode == "human":
-            
-            import matplotlib.pyplot as plt
             # return plt.imshow(image_batch)
             if self.viewer is None:
                 display = None
-                self.viewer = SimpleImageViewer(display=display)
+                # TODO: There seems to be a bit of a bug, tests sometime fail because
+                # "Can't connect to display: None" etc.
+                try:
+                    from gym.envs.classic_control.rendering import SimpleImageViewer
+                except Exception:
+                    from pyvirtualdisplay import Display
+                    display = Display(visible=0, size=(1366, 768))
+                    display.start()
+                    from gym.envs.classic_control.rendering import SimpleImageViewer
+                finally:
+                    self.viewer = SimpleImageViewer(display=display)
+                    
             self.viewer.imshow(image_batch)
             return self.viewer.isopen
 

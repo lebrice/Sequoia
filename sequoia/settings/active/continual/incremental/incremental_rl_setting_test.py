@@ -1,19 +1,20 @@
 from typing import Callable, List, Optional, Tuple
 
 import gym
-import pytest
 import numpy as np
+import pytest
 from gym import spaces
 
 from sequoia.common.config import Config
-from sequoia.common.spaces import Sparse
-from sequoia.common.transforms import ChannelsFirstIfNeeded, ToTensor, Transforms
-from sequoia.conftest import xfail_param
+from sequoia.common.spaces import Image, Sparse
+from sequoia.common.transforms import (ChannelsFirstIfNeeded, ToTensor,
+                                       Transforms)
+from sequoia.conftest import xfail_param, monsterkong_required
+from sequoia.settings import Method
+from sequoia.settings.assumptions.incremental import TestEnvironment
 from sequoia.utils.utils import take
 
 from .incremental_rl_setting import IncrementalRLSetting
-from sequoia.settings import Method
-from sequoia.settings.assumptions.incremental import TestEnvironment
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 3])
@@ -96,6 +97,9 @@ def test_check_iterate_and_step(dataset: str,
 
 
 class DummyMethod(Method, target_setting=IncrementalRLSetting):
+    """ Dummy method used to check that the Setting calls `on_task_switch` with the
+    right arguments. 
+    """
     def __init__(self):
         self.n_task_switches = 0
         self.received_task_ids: List[Optional[int]] = []
@@ -123,13 +127,11 @@ class DummyMethod(Method, target_setting=IncrementalRLSetting):
         self.n_task_switches += 1
         self.received_task_ids.append(task_id)
 
+
 from sequoia.conftest import DummyEnvironment
 
 
-
-
 def test_on_task_switch_is_called():
-    dataset = "Breakout-v0"
     setting = IncrementalRLSetting(
         dataset=DummyEnvironment,
         nb_tasks=5,
@@ -161,3 +163,59 @@ def test_on_task_switch_is_called():
     # 5 during training, 5 during testing!
     assert method.n_task_switches == 10
     assert method.received_task_ids == list(range(5)) + list(range(5))
+
+@monsterkong_required
+@pytest.mark.parametrize("task_labels_at_test_time", [False, True])
+def test_monsterkong_state(task_labels_at_test_time: bool):
+    """ checks that the MonsterKong env works fine with monsterkong and state input. """
+    setting = IncrementalRLSetting(
+        dataset="monsterkong",
+        observe_state_directly=True,
+        nb_tasks=5,
+        steps_per_task=1000,
+        train_transforms=[],
+        test_transforms=[],
+        val_transforms=[],
+        task_labels_at_test_time=task_labels_at_test_time,
+        max_episode_steps=100,
+    )
+    with setting.train_dataloader() as env:
+        obs = env.reset()
+        assert obs in setting.observation_space
+    
+    method = DummyMethod()
+    results = setting.apply(method)
+
+    expected_test_time_task_ids = [i if task_labels_at_test_time else None for i in range(5)]
+    # 5 during training, 5 during testing!
+    assert method.n_task_switches == 10
+    assert method.received_task_ids == list(range(5)) + expected_test_time_task_ids
+
+
+@monsterkong_required
+@pytest.mark.parametrize("task_labels_at_test_time", [False, True])
+def test_monsterkong_pixels(task_labels_at_test_time: bool):
+    """ checks that the MonsterKong env works fine with monsterkong and state input. """
+    setting = IncrementalRLSetting(
+        dataset="monsterkong",
+        # observe_state_directly=True,
+        nb_tasks=5,
+        steps_per_task=1000,
+        train_transforms=[],
+        test_transforms=[],
+        val_transforms=[],
+        task_labels_at_test_time=task_labels_at_test_time,
+        max_episode_steps=100,
+    )
+    assert setting.observation_space.x == Image(0, 255, (64, 64, 3), np.uint8)
+    with setting.train_dataloader() as env:
+        obs = env.reset()
+        assert obs in setting.observation_space
+    
+    method = DummyMethod()
+    results = setting.apply(method)
+
+    expected_test_time_task_ids = [i if task_labels_at_test_time else None for i in range(5)]
+    # 5 during training, 5 during testing!
+    assert method.n_task_switches == 10
+    assert method.received_task_ids == list(range(5)) + expected_test_time_task_ids

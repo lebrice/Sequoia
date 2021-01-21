@@ -19,9 +19,10 @@ from simple_parsing import (Serializable, choice, field, flag, list_field,
                             mutable_field)
 
 from sequoia.utils.parseable import Parseable
+from sequoia.utils.logging_utils import get_logger
 # from .trainer_config import TrainerConfig
 # from .wandb_config import WandbLoggerConfig
-
+logger = get_logger(__file__)
 
 @dataclass
 class Config(Serializable, Parseable):
@@ -53,20 +54,25 @@ class Config(Serializable, Parseable):
     
     def __post_init__(self):
         self.seed_everything()
-
+        self.display: Optional[Display] = None
         if not self.render:
             # If `--render` isn't set, then try to create a virtual display.
             # This has the same effect as running the script with xvfb-run 
             try:
-                display = Display(visible=0, size=(1366, 768))
-                display.start()
+                self.display = Display(visible=False, size=(1366, 768))
+                self.display.start()
             except Exception as e:
-                raise RuntimeError(
+                logger.warning(RuntimeWarning(
                     f"Rendering is disabled, but we were unable to start the "
                     f"virtual display! {e}\n"
                     f"Make sure that xvfb is installed on your machine if you "
                     f"want to prevent rendering the environment's observations."
-                )
+                ))
+
+    def __del__(self):
+        if self.display:
+            self.display.stop()
+            del self.display
 
     def seed_everything(self) -> None:
         if self.seed is not None:

@@ -47,31 +47,15 @@ class IncrementalRLSetting(ContinualRLSetting):
     )
     dataset: str = choice(available_datasets, default="cartpole")
 
-    # def __post_init__(self, *args, **kwargs):
-    #     super().__post_init__(*args, **kwargs)
+    def __post_init__(self, *args, **kwargs):
+        super().__post_init__(*args, **kwargs)
 
-    def _make_wrappers(
-        self,
-        task_schedule: Dict[int, Dict],
-        sharp_task_boundaries: bool,
-        task_labels_available: bool,
-        transforms: List[Transforms],
-        starting_step: int,
-        max_steps: int,
-    ) -> List[Callable[[gym.Env], gym.Env]]:
-        wrappers = super()._make_wrappers(
-            task_schedule,
-            sharp_task_boundaries,
-            task_labels_available,
-            transforms,
-            starting_step,
-            max_steps,
-        )
         if self.dataset == "MetaMonsterKong-v0":
-            # TODO: Limit the episode length?
-            wrappers.insert(0, partial(TimeLimit, max_episode_steps=100))
-        return wrappers
-
+            # TODO: Limit the episode length in monsterkong?
+            # TODO: Actually end episodes when reaching a task boundary, to force the
+            # level to change?
+            self.max_episode_steps = self.max_episode_steps or 500
+    
     def create_task_schedule(
         self, temp_env: MultiTaskEnvironment, change_steps: List[int]
     ) -> Dict[int, Dict]:

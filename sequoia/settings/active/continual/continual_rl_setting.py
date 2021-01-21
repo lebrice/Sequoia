@@ -15,12 +15,13 @@ from gym import spaces
 from gym.envs.atari import AtariEnv
 from gym.envs.classic_control import CartPoleEnv
 from gym.utils import colorize
-from gym.wrappers import AtariPreprocessing
+from gym.wrappers import AtariPreprocessing, TimeLimit
+from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
 from simple_parsing import choice, field, list_field
 from simple_parsing.helpers import dict_field
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from torch import Tensor
-from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
+
 from sequoia.common import Batch, Config, Metrics
 from sequoia.common.gym_wrappers import (AddDoneToObservation,
                                          AddInfoToObservation,
@@ -49,8 +50,8 @@ from sequoia.settings.assumptions.incremental import (IncrementalSetting,
                                                       TestEnvironment)
 from sequoia.settings.base import Method
 from sequoia.settings.base.results import Results
-from sequoia.utils import dict_union, get_logger
 
+from sequoia.utils import dict_union, get_logger
 from .. import ActiveEnvironment
 from .gym_dataloader import GymDataLoader
 from .make_env import make_batched_env
@@ -198,6 +199,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     batch_size: Optional[int] = field(default=None, cmd=False)
     num_workers: Optional[int] = field(default=None, cmd=False)
     
+    # The maximum number of steps per episode. When None, there is no limit.
+    max_episode_steps: Optional[int] = None
+    
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
         
@@ -344,7 +348,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
         # Create a temporary environment so we can extract the spaces and create
         # the task schedules.
-        with self._make_env(self.dataset, self._temp_wrappers()) as temp_env:
+        with self._make_env(self.dataset, self._temp_wrappers(), self.observe_state_directly) as temp_env:
             # FIXME: Replacing the observation space dtypes from their original
             # 'generated' NamedTuples to self.Observations. The alternative
             # would be to add another argument to the MultiTaskEnv wrapper, to
@@ -516,7 +520,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         batch_size = batch_size or self.batch_size
         num_workers = num_workers or self.num_workers
         env_factory = partial(self._make_env, base_env=self.dataset,
-                                              wrappers=self.train_wrappers)
+                                              wrappers=self.train_wrappers,
+                                              observe_state_directly=self.observe_state_directly)
         env_dataloader = self._make_env_dataloader(
             env_factory,
             batch_size=batch_size,
@@ -551,7 +556,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         self.setup("fit")
 
         env_factory = partial(self._make_env, base_env=self.dataset,
-                                              wrappers=self.valid_wrappers)
+                                              wrappers=self.valid_wrappers,
+                                              observe_state_directly=self.observe_state_directly)
         env_dataloader = self._make_env_dataloader(
             env_factory,
             batch_size=batch_size or self.batch_size,
@@ -612,7 +618,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
         num_workers = num_workers or self.num_workers
         env_factory = partial(self._make_env, base_env=self.dataset,
-                                              wrappers=self.test_wrappers)
+                                              wrappers=self.test_wrappers,
+                                              observe_state_directly=self.observe_state_directly)
         env_dataloader = self._make_env_dataloader(
             env_factory,
             batch_size=batch_size,
@@ -639,11 +646,15 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
     @staticmethod
     def _make_env(base_env: Union[str, gym.Env, Callable[[], gym.Env]],
-                 wrappers: List[Callable[[gym.Env], gym.Env]]=None) -> gym.Env:
+                  wrappers: List[Callable[[gym.Env], gym.Env]]=None,
+                  observe_state_directly: bool = False) -> gym.Env:
         """ Helper function to create a single (non-vectorized) environment. """
         env: gym.Env
         if isinstance(base_env, str):
-            env = gym.make(base_env)
+            if base_env.startswith("MetaMonsterKong") and observe_state_directly:
+                env = gym.make(base_env, observe_state=True)
+            else:
+                env = gym.make(base_env)
         elif isinstance(base_env, gym.Env):
             env = base_env
         elif callable(base_env):
@@ -818,26 +829,17 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised?
 
-        # If we are in a classic control env, and we dont want the state to
-        # be fully-observable (i.e. we want pixel observations rather than
-        # getting the pole angle, velocity, etc.), then add the
-        # PixelObservation wrapper to the list of wrappers.
-        # TODO: Change the BaselineMethod so that it uses an nn.Identity()
-        # as its encoder when setting.observe_state_directly is True.    
-        if is_classic_control_env(self.dataset):
-            if not self.observe_state_directly:
-                wrappers.append(PixelObservationWrapper)
-        elif self.observe_state_directly:
-            if self.dataset.startswith("MetaMonsterKong"):
-                # TODO: pass a 'observe_state=True' kwarg to the constructor of the
-                # MetaMonsterKong class.
-                # self.dataset = partial(MetaMonsterKongEnv, observe_state=True)
-                pass
-            else:
-                raise RuntimeError(
-                    f"Don't know how to observe state rather than pixels for "
-                    f"environment {self.dataset}, as it isn't a classic control env!"
-                )
+        if self.max_episode_steps:
+            wrappers.append(partial(TimeLimit, max_episode_steps=self.max_episode_steps))
+        
+        if is_classic_control_env(self.dataset) and not self.observe_state_directly:  
+            # If we are in a classic control env, and we dont want the state to
+            # be fully-observable (i.e. we want pixel observations rather than
+            # getting the pole angle, velocity, etc.), then add the
+            # PixelObservation wrapper to the list of wrappers.
+            wrappers.append(PixelObservationWrapper)
+            wrappers.append(ImageObservations)
+
         # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
         if is_atari_env(self.dataset):
             # TODO: Figure out the differences (if there are any) between the 
@@ -845,10 +847,10 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             wrappers.append(AtariWrapper)
             # wrappers.append(AtariPreprocessing)
             wrappers.append(ImageObservations)
-            # TODO: Mark the observations as Image spaces.
-            # TODO: convert everything to dict spaces rather than tuples.
 
+        # Apply image transforms if the env will have image-like obs space
         if not self.observe_state_directly:
+            # wrappers.append(ImageObservations)
             # Wrapper to apply the image transforms to the env.
             wrappers.append(partial(TransformObservation, f=transforms))
 

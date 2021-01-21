@@ -148,6 +148,8 @@ class IncrementalSetting(ContinualSetting):
                 train_env=task_train_loader,
                 valid_env=task_valid_loader,
             )
+            task_train_loader.close()
+            task_valid_loader.close()
             if success != 0:
                 logger.debug(f"Finished Training on task {task_id}.")
             else:
@@ -238,6 +240,7 @@ class IncrementalSetting(ContinualSetting):
         try:
             # If the Method has `test` defined, use it. 
             method.test(test_env)
+            test_env.close()
             test_env: TestEnvironment
             # Get the metrics from the test environment
             test_results: Results = test_env.get_results()
@@ -392,3 +395,5 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
     def close(self):
         self._closed = True
         return super().close()
+
+TestEnvironment.__test__ = False

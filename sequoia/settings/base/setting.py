@@ -507,9 +507,9 @@ class Setting(SettingABC,
             rewards = rewards.cpu().numpy()
         if isinstance(rewards, np.ndarray):
             rewards = rewards
-        if isinstance(rewards, float):
+        if isinstance(rewards, (int, float)):
             rewards = np.asarray(rewards)
-        assert rewards in env.reward_space
+        assert rewards in env.reward_space, (rewards, env.reward_space)
 
     # Just to make type hinters stop throwing errors when using the constructor
     # to create a Setting.
