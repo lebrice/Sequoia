@@ -13,6 +13,9 @@ if __name__ == "__main__":
         2000:   {"gravity": 10, "length": 0.2},
     }
     setting = ContinualRLSetting(
+    # setting = IncrementalRLSetting(
+    # setting = TaskIncrementalRLSetting(
+    # setting = RLSetting(
         dataset="CartPole-v1",
         observe_state_directly=True,
         max_steps=2000,
