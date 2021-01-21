@@ -20,7 +20,7 @@ from simple_parsing import choice, field, list_field
 from simple_parsing.helpers import dict_field
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from torch import Tensor
-
+from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
 from sequoia.common import Batch, Config, Metrics
 from sequoia.common.gym_wrappers import (AddDoneToObservation,
                                          AddInfoToObservation,
@@ -59,9 +59,6 @@ from .wrappers import (HideTaskLabelsWrapper, NoTypedObjectsWrapper,
                        RemoveTaskLabelsWrapper, TypedObjectsWrapper)
 
 logger = get_logger(__file__)
-
-from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
-
 
 # TODO: Implement a get_metrics (ish) in the Environment, not on the Setting!
 # TODO: The validation environment will also call the on_task_switch when it
@@ -135,7 +132,6 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         "pendulum": "Pendulum-v0",
         "breakout": "Breakout-v0",
         # "duckietown": "Duckietown-straight_road-v0"
-        "monsterkong": "MetaMonsterKong-v1",
     }
     # Which environment (a.k.a. "dataset") to learn on.
     # The dataset could be either a string (env id or a key from the
@@ -831,11 +827,17 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         if is_classic_control_env(self.dataset):
             if not self.observe_state_directly:
                 wrappers.append(PixelObservationWrapper)
-        elif self.observe_state_directly:    
-            raise RuntimeError(
-                f"Don't know how to observe state rather than pixels for "
-                f"environment {self.dataset}, as it isn't a classic control env!"
-            )
+        elif self.observe_state_directly:
+            if self.dataset.startswith("MetaMonsterKong"):
+                # TODO: pass a 'observe_state=True' kwarg to the constructor of the
+                # MetaMonsterKong class.
+                # self.dataset = partial(MetaMonsterKongEnv, observe_state=True)
+                pass
+            else:
+                raise RuntimeError(
+                    f"Don't know how to observe state rather than pixels for "
+                    f"environment {self.dataset}, as it isn't a classic control env!"
+                )
         # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
         if is_atari_env(self.dataset):
             # TODO: Figure out the differences (if there are any) between the 

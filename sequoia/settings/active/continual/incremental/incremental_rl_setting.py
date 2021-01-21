@@ -6,6 +6,7 @@ import gym
 from gym.wrappers import TimeLimit
 from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
 from pytorch_lightning import LightningModule
+from simple_parsing import choice
 
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
 from sequoia.common.transforms import Transforms
@@ -16,6 +17,7 @@ from ..continual_rl_setting import ContinualRLSetting, HideTaskLabelsWrapper
 from ..gym_dataloader import GymDataLoader
 
 logger = get_logger(__file__)
+
 
 @dataclass
 class IncrementalRLSetting(ContinualRLSetting):
@@ -43,6 +45,7 @@ class IncrementalRLSetting(ContinualRLSetting):
     available_datasets: ClassVar[Dict[str, str]] = dict_union(
         ContinualRLSetting.available_datasets, {"monsterkong": "MetaMonsterKong-v0",},
     )
+    dataset: str = choice(available_datasets, default="cartpole")
 
     # def __post_init__(self, *args, **kwargs):
     #     super().__post_init__(*args, **kwargs)
@@ -64,8 +67,8 @@ class IncrementalRLSetting(ContinualRLSetting):
             starting_step,
             max_steps,
         )
-
         if self.dataset == "MetaMonsterKong-v0":
+            # TODO: Limit the episode length?
             wrappers.insert(0, partial(TimeLimit, max_episode_steps=100))
         return wrappers
 
@@ -76,5 +79,8 @@ class IncrementalRLSetting(ContinualRLSetting):
         if isinstance(temp_env.unwrapped, MetaMonsterKongEnv):
             for i, task_step in enumerate(change_steps):
                 task_schedule[task_step] = {"level": i}
+            return task_schedule
         else:
-            return super().create_task_schedule()
+            return super().create_task_schedule(
+                temp_env=temp_env, change_steps=change_steps
+            )
