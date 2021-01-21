@@ -98,8 +98,8 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
     def __len__(self) -> int:
         return self.num_envs
 
-    def close(self):
-        super().close()
+    def close_extras(self, timeout=None, terminate=False):
+        super().close_extras(timeout=timeout, terminate=terminate)
         if self.viewer:
             self.viewer.close()
             

@@ -2,8 +2,19 @@ import bisect
 import random
 from collections.abc import Mapping
 from functools import singledispatch
-from typing import (Any, Callable, Dict, List, Optional, Sequence, Tuple, Type,
-                    TypeVar, Union, MutableMapping)
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    MutableMapping,
+)
 
 import gym
 import matplotlib.pyplot as plt
@@ -17,18 +28,10 @@ from sequoia.utils.logging_utils import get_logger
 from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 
 task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
-    CartPoleEnv: [
-        "gravity",
-        "masscart",
-        "masspole",
-        "length",
-        "force_mag",
-        "tau",
-    ]
+    CartPoleEnv: ["gravity", "masscart", "masspole", "length", "force_mag", "tau",]
     # TODO: Add more of the classic control envs here.
 }
 logger = get_logger(__file__)
-
 
 
 X = TypeVar("X")
@@ -59,14 +62,14 @@ def _add_task_labels_to_single_obs(observation: X, task_labels: T) -> Tuple[X, T
 def _add_task_labels_to_space(observation: X, task_labels: T) -> spaces.Dict:
     # TODO: Return a dict or NamedTuple at some point:
     return NamedTupleSpace(
-        x=observation,
-        task_labels=task_labels,
-        dtype=ObservationsAndTaskLabels,
+        x=observation, task_labels=task_labels, dtype=ObservationsAndTaskLabels,
     )
 
 
 @add_task_labels.register(NamedTupleSpace)
-def _add_task_labels_to_namedtuple(observation: NamedTupleSpace, task_labels: gym.Space) -> NamedTupleSpace:
+def _add_task_labels_to_namedtuple(
+    observation: NamedTupleSpace, task_labels: gym.Space
+) -> NamedTupleSpace:
     return type(observation)(**observation._spaces, task_labels=task_labels)
 
 
@@ -78,25 +81,26 @@ def _add_task_labels_to_tuple(observation: Tuple, task_labels: T) -> Tuple:
 
 @add_task_labels.register(spaces.Dict)
 @add_task_labels.register(dict)
-def _add_task_labels_to_dict(observation: Union[Dict[str, V], spaces.Dict],
-                             task_labels: T) -> Union[Dict[str, Union[V, T]], spaces.Dict]:
-    new: Dict[str, Union[V, T]] = {
-        key: value for key, value in observation.items()
-    }
+def _add_task_labels_to_dict(
+    observation: Union[Dict[str, V], spaces.Dict], task_labels: T
+) -> Union[Dict[str, Union[V, T]], spaces.Dict]:
+    new: Dict[str, Union[V, T]] = {key: value for key, value in observation.items()}
     assert "task_labels" not in new
     new["task_labels"] = task_labels
     return type(observation)(**new)  # type: ignore
 
 
 class MultiTaskEnvironment(gym.Wrapper):
-    """ Creates 'tasks' by modifying attributes of the wrapped environment.
+    """Creates 'tasks' by modifying attributes or applying functions to the wrapped env.
 
     This wrapper accepts a `task_schedule` dictionary, which maps from a given
-    step to the attributes that are to be set at that task.
+    step to either:
+    - dicts of attributes that are to be set on the (unwrapped) env at that step, or
+    - callables to apply to the wrapped environment at the given steps.
 
     For example, when wrapping the "CartPole-v0" environment, we could vary any
     of the "gravity", "masscart", "masspole", "length", "force_mag" or "tau"
-    attributes:
+    attributes like so:
     ```
     env = gym.make("CartPole-v0")
     env = MultiTaskEnvironment(env, task_schedule={
@@ -114,15 +118,20 @@ class MultiTaskEnvironment(gym.Wrapper):
         be changed from its default value (9.8) to 20.
     etc.
     """
-    def __init__(self,
-                 env: gym.Env,
-                 task_schedule: Dict[int, Dict[str, float]] = None,
-                 task_params: List[str] = None,
-                 noise_std: float = 0.2,
-                 add_task_dict_to_info: bool = False,
-                 add_task_id_to_obs: bool = False,
-                 starting_step: int = 0,
-                 max_steps: int = None):
+
+    def __init__(
+        self,
+        env: gym.Env,
+        task_schedule: Dict[
+            int, Union[Dict[str, float], Callable[[gym.Env], Any]]
+        ] = None,
+        task_params: List[str] = None,
+        noise_std: float = 0.2,
+        add_task_dict_to_info: bool = False,
+        add_task_id_to_obs: bool = False,
+        starting_step: int = 0,
+        max_steps: int = None,
+    ):
         """ Wraps an environment, allowing it to be 'multi-task'.
 
         NOTE: Assumes that all the attributes in 'task_param_names' are floats
@@ -142,7 +151,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         """
         super().__init__(env=env)
         self.env: gym.Env
-        
+
         self.noise_std = noise_std
         if not task_params:
             unwrapped_type = type(env.unwrapped)
@@ -163,33 +172,32 @@ class MultiTaskEnvironment(gym.Wrapper):
 
         self._current_task: Dict = {}
         self._task_schedule: Dict[int, Dict[str, Any]] = {}
-        
+
         self.task_params: List[str] = task_params or []
         self.default_task: np.ndarray = self.current_task.copy()
         self.task_schedule = task_schedule or {}
-        
+
         # Wether we will add a task id to the observation.
         self.add_task_id_to_obs = add_task_id_to_obs
         # Wether we will add the task dict (the values of the attributes) to the
         # 'info' dict.
         self.add_task_dict_to_info = add_task_dict_to_info
-        
+
         if 0 not in self.task_schedule:
             self.task_schedule[0] = self.default_task
-        
+
         n_tasks = len(self.task_schedule)
-        
+
         if self.add_task_id_to_obs:
             self.observation_space = add_task_labels(
-                self.env.observation_space,
-                spaces.Discrete(n=n_tasks),
+                self.env.observation_space, spaces.Discrete(n=n_tasks),
             )
             # self.observation_space = spaces.Tuple([
             #     self.env.observation_space,
             #     spaces.Discrete(n=n_tasks)
             # ])
         self._closed = False
-        
+
         self._on_task_switch_callback: Optional[Callable[[int], None]] = None
 
     @property
@@ -207,7 +215,7 @@ class MultiTaskEnvironment(gym.Wrapper):
 
     def set_on_task_switch_callback(self, callback: Callable[[int], None]) -> None:
         self._on_task_switch_callback = callback
-    
+
     def on_task_switch(self, task_id: int):
         if task_id != self.current_task_id:
             logger.debug(f"Switching from {self.current_task_id} -> {task_id}.")
@@ -221,7 +229,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         # that given step.
         if self._closed:
             raise gym.error.ClosedEnvironmentError("Can't step in closed env.")
-        
+
         if self.steps in self.task_schedule:
             self.current_task = self.task_schedule[self.steps]
             logger.debug(f"New task: {self.current_task}")
@@ -229,24 +237,26 @@ class MultiTaskEnvironment(gym.Wrapper):
             # having to add a callback wrapper to use.
             task_id = sorted(self.task_schedule.keys()).index(self.steps)
             self.on_task_switch(task_id)
-            
+
         observation, rewards, done, info = super().step(*args, **kwargs)
         if self.add_task_id_to_obs:
             # TODO: Not actually using the add_task_labels in this case.
             if isinstance(self.observation_space, NamedTupleSpace):
-                observation = self.observation_space.dtype(x=observation, task_labels=self.current_task_id)
+                observation = self.observation_space.dtype(
+                    x=observation, task_labels=self.current_task_id
+                )
             else:
                 observation = add_task_labels(observation, self.current_task_id)
         if self.add_task_dict_to_info:
             info.update(self.current_task)
 
-        self.steps += 1       
+        self.steps += 1
         return observation, rewards, done, info
 
     def close(self, **kwargs) -> None:
         self.env.close(**kwargs)
         self._closed = True
-    
+
     def reset(self, new_random_task: bool = False, **kwargs):
         """ Resets the wrapped environment.
         
@@ -273,7 +283,7 @@ class MultiTaskEnvironment(gym.Wrapper):
     @steps.setter
     def steps(self, value: int) -> None:
         if value < self._starting_step:
-            value = self._starting_step 
+            value = self._starting_step
         if self._max_steps is not None and value > self._max_steps:
             # Reached the maximum number of steps, stagnate.
             # TODO: What exactly should we do in this case? Should we close
@@ -295,8 +305,7 @@ class MultiTaskEnvironment(gym.Wrapper):
             # effectively bypasses any wrappers. Don't know if this is good
             # practice, but oh well.
             self._current_task = {
-                name: getattr(self.env.unwrapped, name)
-                for name in self.task_params
+                name: getattr(self.env.unwrapped, name) for name in self.task_params
             }
         # Double-checking that the attributes didn't change somehow without us
         # knowing.
@@ -313,26 +322,39 @@ class MultiTaskEnvironment(gym.Wrapper):
         return self._current_task
 
     @current_task.setter
-    def current_task(self, task: Union[Dict[str, float], Sequence[float]]):
+    def current_task(self, task: Union[Dict[str, float], Sequence[float], Callable]):
         # logger.debug(f"(_step: {self.steps}): Setting the current task to {task}.")
-        self._current_task.clear()
-        self._current_task.update(self.default_task)
 
-        if isinstance(task, dict):
-            for k, value in task.items():
-                assert isinstance(k, str), "The keys of the task dict should be strings."    
-                self._current_task[k] = value
-        else:
+        if isinstance(task, (list, np.ndarray)):
             assert len(task) == len(self.task_params), "lengths should match!"
+            task_dict = {}
             for k, value in zip(self.task_params, task):
-                self._current_task[k] = value
+                task_dict[k] = value
+            task = task_dict
 
-        # Actually change the value of the task attributes in the environment.
-        for name, param_value in self._current_task.items():
-            assert hasattr(self.env.unwrapped, name), (
-                f"the unwrapped environment doesn't have a {name} attribute!"
+        if callable(task):
+            task(self.env)
+        elif isinstance(task, dict):
+            self._current_task.clear()
+            self._current_task.update(self.default_task)
+
+            if isinstance(task, dict):
+                for k, value in task.items():
+                    assert isinstance(k, str), "The task dict should have str keys."
+                    self._current_task[k] = value
+
+            # Actually change the value of the task attributes in the environment.
+            for name, param_value in self._current_task.items():
+                assert hasattr(
+                    self.env.unwrapped, name
+                ), f"the unwrapped environment doesn't have a {name} attribute!"
+                setattr(self.env.unwrapped, name, param_value)
+        else:
+            raise RuntimeError(
+                f"don't know how to set task {task}! (tasks must be "
+                f"either callables or dicts mapping attributes to "
+                f"values. "
             )
-            setattr(self.env.unwrapped, name, param_value)
 
     def random_task(self) -> Dict:
         """Samples a random 'task', i.e. a random set of attributes.
@@ -392,7 +414,9 @@ class MultiTaskEnvironment(gym.Wrapper):
         if isinstance(values, dict):
             current_task.update(values)
         elif values is not None:
-            raise RuntimeError(f"values can only be a dict or None (received {values}).")
+            raise RuntimeError(
+                f"values can only be a dict or None (received {values})."
+            )
         if kwargs:
             current_task.update(kwargs)
         self.current_task = current_task
@@ -403,9 +427,9 @@ class MultiTaskEnvironment(gym.Wrapper):
         return self.env.seed(seed)
 
     def task_dict(self, task_array: np.ndarray) -> Dict[str, float]:
-        assert len(task_array) == len(self.task_params), (
-            "Lengths should match the number of task parameters."
-        )
+        assert len(task_array) == len(
+            self.task_params
+        ), "Lengths should match the number of task parameters."
         return dict(zip(self.task_params, task_array))
 
     @property
@@ -423,15 +447,16 @@ class MultiTaskEnvironment(gym.Wrapper):
             # mapping from attribute name to value to be set.
             if isinstance(task, (list, np.ndarray)):
                 task = self.task_dict(task)
-            if not isinstance(task, dict):
+            if not (isinstance(task, dict) or callable(task)):
                 raise RuntimeError(
-                    f"Task schedule can only contain dicts, lists or numpy "
-                    f"arrays, but got {task}!"
+                    f"Task schedule can only contain dicts, lists, numpy arrays or"
+                    f"callables, but got {task}!"
                 )
             self._task_schedule[step] = task
 
         if self._steps in self._task_schedule:
             self.current_task = self._task_schedule[self._steps]
+
 
 # def MultiTaskCartPole():
 #     env = gym.make("CartPole-v0")
