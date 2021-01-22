@@ -252,7 +252,7 @@ class ImproveMethod(Method, target_setting=TaskIncrementalRLSetting):
 
         self.device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
 
-        self.train_steps_per_task = setting.max_steps
+        self.train_steps_per_task = setting.steps_per_task
         self.num_steps = self.hparams.num_steps
         # Otherwise, we can train basically as long as we want on each task.
 
