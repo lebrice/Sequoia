@@ -228,7 +228,7 @@ class ImproveMethod(Method, target_setting=TaskIncrementalRLSetting):
     class HParams:
         """ Hyper-parameters of the Settings. """
         # Learning rate of the optimizer.
-        learning_rate: float = 1e-4
+        learning_rate: float = 2e-4
         num_steps: int = 200
         loss_gamma: float = 0.99
         hidden_size: int = 256
