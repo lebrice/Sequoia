@@ -249,8 +249,10 @@ class PolicyHead(ClassificationHead):
         # backpropagated during this step (if
         # `self.hparams.accumulate_losses_before_backward` is False), otherwise
         # it will always be zero, until it is the detached version of
-        # `self.loss` on the big update step. 
+        # `self.loss` on the big update step.
         self.detached_loss = Loss(self.name)
+        # if not self.hparams.accumulate_losses_before_backward:
+        #     self.loss = Loss(self.name)
 
         # NOTE: This means we also need it at test-time though.
         assert observations.done is not None, "need the end-of-episode signal"
@@ -272,7 +274,6 @@ class PolicyHead(ClassificationHead):
                 if self.hparams.accumulate_losses_before_backward:
                     # Option 1:
                     self.loss += env_loss
-                    # self.detached_loss += env_loss.detach()
                 else:
                     # Option 2:
                     env_loss.backward(retain_graph=True)
@@ -280,38 +281,32 @@ class PolicyHead(ClassificationHead):
                     self.detached_loss += env_loss.detach()
 
             if all(self.num_episodes_since_update >= self.hparams.min_episodes_before_update):
-                # TODO: Maybe move this into a 'optimizer_step' method?
-                # self.update_model()
                 # logger.debug(f"Backpropagating loss: {self.loss}")
                 if self.hparams.accumulate_losses_before_backward:    
-                    # Option 1 from above:
-                    # NOTE: Need to step as well, since the predictions below will
-                    # depend on the model at the current time.
-                    self.optimizer_zero_grad()
-                    self.loss.backward()
-                    self.optimizer_step()
-                    # Reset the losses.
-                    self.detached_loss = self.loss.detach()
+                    # Option 1 from above: Actually return the current accumulated loss
+                    # in `get_loss`, which will also detach the current buffers. 
                     
-                    self.loss = Loss(self.name)
+                    # Reset the detached loss (is it ever used though?)
+                    self.detached_loss = self.loss.detach()
                 else:
                     # # Option 2 from above: The losses have already been
                     # backpropagated, so we perform the optimizer step, and then
                     # zero out the grads.
+                    # TODO: Instead of returning a detached loss at every step and
+                    # performing the optimizer step here manually, we should instead
+                    # return detached losses up until the last one, where we then return
+                    # the loss (with gradients), which will make the BaselineModel
+                    # execute the optimizer.step(), a bit like the case above!
                     logger.debug(f"Updating model")
                     self.optimizer_step()
                     self.optimizer_zero_grad()
 
-                self.detach_all_buffers()
-                
-                self.has_reached_episode_end[:] = False
-                self.num_episodes_since_update[:] = 0
-                
-                # self.detached_loss = self.loss.detach()
-                # self.loss = Loss(self.name, metrics={self.name: RLMetrics()})
+                    self.detach_all_buffers()
+                    
+                    self.has_reached_episode_end[:] = False
+                    self.num_episodes_since_update[:] = 0
 
-        # In either case, do we want to detach the representations? or not?
-        representations = representations.float().detach()
+        representations = representations.float()
 
         actions = self.get_actions(representations)
         
@@ -368,12 +363,21 @@ class PolicyHead(ClassificationHead):
         if self.batch_size is None:
             self.batch_size = forward_pass.batch_size
             self.create_buffers()
-
+        
         for env_index in range(self.batch_size):
             # Take a slice across the first dimension
             # env_observations = get_slice(observations, env_index)
             env_rewards = get_slice(rewards, env_index)
             self.rewards[env_index].append(env_rewards)
+
+        if all(self.num_episodes_since_update >= self.hparams.min_episodes_before_update):
+            assert self.hparams.accumulate_losses_before_backward
+            # We return the accumulated loss
+            returned_loss = self.loss
+            self.loss = Loss(self.name)
+            self.detach_all_buffers()
+            return returned_loss
+            
         
         return self.detached_loss
                    

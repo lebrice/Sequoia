@@ -151,8 +151,7 @@ class Loss(Serializable):
     @property
     def requires_grad(self) -> bool:
         """ Returns wether the loss tensor in this object requires grad. """
-        assert isinstance(self.loss, Tensor)
-        return self.loss.requires_grad
+        return isinstance(self.loss, Tensor) and self.loss.requires_grad
     
     def backward(self, *args, **kwargs):
         """ Calls `self.loss.backward(*args, **kwargs)`. """

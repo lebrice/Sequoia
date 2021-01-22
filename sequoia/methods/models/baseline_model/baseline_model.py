@@ -161,25 +161,23 @@ class BaselineModel(SemiSupervisedModel,
         loss_object: Loss = step_result["loss_object"]
         
         if not isinstance(loss, Tensor) or not loss.requires_grad:
-            # TODO: There might be no loss at some steps, because for instance
+            # NOTE: There might be no loss at some steps, because for instance
             # we haven't reached the end of an episode in an RL setting.
             return None
 
-        if loss.requires_grad:
-            if isinstance(self.output_head, PolicyHead):
-                # In this case we don't do the step, since the output head has
-                # its own optimizer. TODO: Should probably improve the
-                # online_a2c such that we can get a loss at each step always,
-                # which would make this much simpler.
-                optimizer = self.optimizers()
-                self.manual_backward(loss, optimizer, retain_graph=True)
-            elif not self.trainer.train_loop.automatic_optimization:
-                optimizer = self.optimizers()
-                self.manual_backward(loss, optimizer)
+        # NOTE In RL, we can only update the model's weights on steps where the output
+        # head has as loss, because the output head has buffers of tensors whose grads
+        # would become invalidated if we performed the optimizer step.
+        if loss.requires_grad and not self.trainer.train_loop.automatic_optimization:
+            output_head_loss = loss_object.losses.get(self.output_head.name)            
+            update_model = output_head_loss is not None and output_head_loss.requires_grad
+            optimizer = self.optimizers()
+            self.manual_backward(loss, optimizer, retain_graph=not update_model)
+            if update_model:
                 optimizer.step()
                 optimizer.zero_grad()
         return step_result
-        
+
     def validation_step(self,
                         batch: Tuple[Observations, Optional[Rewards]],
                         batch_idx: int,
