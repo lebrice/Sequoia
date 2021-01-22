@@ -2,6 +2,14 @@
 header Page Header
 footer Page %page% of %lastpage%
 title Overall Evaluation loop - Sequoia
+note over User, Setting
+Even though this diagram is somewhat large,
+keep in mind that there are but a few key methods:
+1. Method.configure()
+2. Method.fit()
+3. Method.get_actions()
+4. Method.on_task_switch()  
+end note
 
 actor User
 participant Setting << (A,#2121FF) Setting >>
@@ -13,6 +21,8 @@ participant Method << (C,#ADD1B2) Method >>
 participant Model << (C,#ADD1B2) nn.Module >>
 ' activate Setting
 ' autoactivate on
+
+
 
 User -> Setting: Create the Setting
 Setting -> TrainEnv: Create temp env
@@ -123,8 +133,8 @@ group test_loop
             else False: do nothing
                 note over Method
                 When known_task_boundaries=False, the Method doesn't get informed
-                of task boundaries, and thus should perform some kind of change-point
-                detection.
+                of task boundaries (it might have to perform some kind of change-point
+                detection, for instance).
                 end note
             else True
                 note over TestEnv
@@ -151,7 +161,6 @@ group test_loop
                 end
             end
         end
-    ' end
     autoactivate off
     note over TestEnv
     The test environment uses a `Monitor` wrapper, and gather
