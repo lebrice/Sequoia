@@ -4,7 +4,6 @@ from typing import Callable, ClassVar, Dict, Iterable, List, Tuple
 
 import gym
 from gym.wrappers import TimeLimit
-from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
 from pytorch_lightning import LightningModule
 from simple_parsing import choice
 
@@ -17,6 +16,13 @@ from ..continual_rl_setting import ContinualRLSetting, HideTaskLabelsWrapper
 from ..gym_dataloader import GymDataLoader
 
 logger = get_logger(__file__)
+
+try:
+    from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
+except ImportError:
+    monsterkong_installed = False
+else:
+    monsterkong_installed = True
 
 
 @dataclass
@@ -55,15 +61,16 @@ class IncrementalRLSetting(ContinualRLSetting):
             # TODO: Actually end episodes when reaching a task boundary, to force the
             # level to change?
             self.max_episode_steps = self.max_episode_steps or 500
-    
+
     def create_task_schedule(
         self, temp_env: MultiTaskEnvironment, change_steps: List[int]
     ) -> Dict[int, Dict]:
         task_schedule: Dict[int, Dict] = {}
-        if isinstance(temp_env.unwrapped, MetaMonsterKongEnv):
-            for i, task_step in enumerate(change_steps):
-                task_schedule[task_step] = {"level": i}
-            return task_schedule
+        if monsterkong_installed:
+            if isinstance(temp_env.unwrapped, MetaMonsterKongEnv):
+                for i, task_step in enumerate(change_steps):
+                    task_schedule[task_step] = {"level": i}
+                return task_schedule
         else:
             return super().create_task_schedule(
                 temp_env=temp_env, change_steps=change_steps

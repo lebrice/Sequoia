@@ -25,4 +25,3 @@ pytest-xvfb # Prevents the gym popups from displaying during tests.
 # TODO: Move this to an 'extras' in setup.py?
 stable-baselines3
 pyvirtualdisplay
-meta_monsterkong @ git+https://github.com/mattriemer/monsterkong_examples.git@sequoia_integration#egg=meta_monsterkong

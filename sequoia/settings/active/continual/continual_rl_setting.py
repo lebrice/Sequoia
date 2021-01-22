@@ -16,7 +16,6 @@ from gym.envs.atari import AtariEnv
 from gym.envs.classic_control import CartPoleEnv
 from gym.utils import colorize
 from gym.wrappers import AtariPreprocessing, TimeLimit
-from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
 from simple_parsing import choice, field, list_field
 from simple_parsing.helpers import dict_field
 from stable_baselines3.common.atari_wrappers import AtariWrapper

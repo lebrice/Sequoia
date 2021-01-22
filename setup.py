@@ -28,7 +28,10 @@ setup(
     license='GPLv3',
     packages=[package for package in find_packages()
                 if package.startswith('sequoia')],
-    extras_require={},
+    extras_require={
+        "rl": [
+            "meta_monsterkong @ git+https://github.com/mattriemer/monsterkong_examples.git@sequoia_integration#egg=meta_monsterkong"
+        ]},
     install_requires=load_requirements(),
     python_requires='>=3.7',
     tests_require=['pytest'],
