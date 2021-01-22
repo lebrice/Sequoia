@@ -357,6 +357,7 @@ def test_task_schedule_monsterkong():
     env.close()
 
 
+@monsterkong_required
 def test_task_schedule_with_callables():
     """ Apply functions to the env at a given step.
     

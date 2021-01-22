@@ -10,6 +10,7 @@ from examples.basic.quick_demo import demo_command_line, demo_simple, ClassIncre
 from sequoia.settings import Results
 
 
+@pytest.mark.timeout(120)
 def test_quick_demo(monkeypatch):
     """ Test that runs the quick demo and checks that the results correspond to
     what you'd expect.
@@ -46,6 +47,6 @@ def test_quick_demo(monkeypatch):
     
     assert 0.48 <= results.average_metrics_per_task[0].accuracy <= 0.55
     assert 0.48 <= results.average_metrics_per_task[1].accuracy <= 0.55
-    assert 0.60 <= results.average_metrics_per_task[2].accuracy <= 0.90
+    assert 0.60 <= results.average_metrics_per_task[2].accuracy <= 0.95
     assert 0.75 <= results.average_metrics_per_task[3].accuracy <= 0.98
     assert 0.99 <= results.average_metrics_per_task[4].accuracy <= 1.00
