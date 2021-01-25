@@ -286,8 +286,7 @@ class PnnMethod(Method, target_setting=TaskIncrementalRLSetting):
         cuda_observations = observations.to(self.device)
         assert isinstance(self.model, PnnClassifier)
         assert self.hparams
-        #self.model.freeze_columns()
-        #self.model.new_task(device=self.device, sizes=self.layer_size)
+
         self.set_optimizer()
 
         best_val_loss = inf
@@ -401,5 +400,7 @@ def main_sl():
 
 
 if __name__ == "__main__":
+    # Run RL Setting
     # main_sl()
+    # Run SL Setting
     main_rl()

@@ -1,22 +1,11 @@
-import sys
-from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
-import gym
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import tqdm
-from numpy import inf
-from simple_parsing import ArgumentParser
 
-from sequoia.common import Config
-from sequoia.common.spaces import Image
-
-from sequoia.settings import (Method, TaskIncrementalSetting)
-from sequoia.settings.passive.cl.objects import (Actions, Observations,
-                                                 PassiveEnvironment, Rewards)
+from sequoia.settings.passive.cl.objects import (Observations, Rewards)
 
 from layers import PNNConvLayer, PNNLinearBlock
 
