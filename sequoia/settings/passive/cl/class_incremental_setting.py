@@ -83,6 +83,7 @@ num_classes_in_dataset: Dict[str, int] = {
     "core50-v2-79": 50,
     "core50-v2-196": 50,
     "core50-v2-391": 50,
+    "synbols": 48,
 }
 
 
@@ -104,6 +105,7 @@ dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
     "core50-v2-79": (3, 224, 224),
     "core50-v2-196": (3, 224, 224),
     "core50-v2-391": (3, 224, 224),
+    "synbols": (3, 224, 224),
 }
 
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
@@ -133,6 +135,7 @@ base_observation_spaces: Dict[str, Space] = {
         "core50-v2-79": (224, 224, 3),
         "core50-v2-196": (224, 224, 3),
         "core50-v2-391": (224, 224, 3),
+    "synbols": (224, 224, 3),
     }.items()
 }
 
@@ -154,6 +157,7 @@ reward_spaces: Dict[str, Space] = {
     "core50-v2-79": spaces.Discrete(50),
     "core50-v2-196": spaces.Discrete(50),
     "core50-v2-391": spaces.Discrete(50),
+    "synbols": spaces.Discrete(48),
 }
 
 
@@ -197,7 +201,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         for c in [
             CIFARFellowship, MNISTFellowship, ImageNet100,
             ImageNet1000, CIFAR10, CIFAR100, EMNIST, KMNIST, MNIST,
-            QMNIST, FashionMNIST,
+            QMNIST, FashionMNIST, Synbols,
         ]
     }
     # A continual dataset to use. (Should be taken from the continuum package).
