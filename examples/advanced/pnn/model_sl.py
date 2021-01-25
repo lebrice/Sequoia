@@ -18,7 +18,7 @@ from sequoia.settings import (Method, TaskIncrementalSetting)
 from sequoia.settings.passive.cl.objects import (Actions, Observations,
                                                  PassiveEnvironment, Rewards)
 
-from layers import PNNConvLayer, PNNGruLayer, PNNLinearBlock
+from layers import PNNConvLayer, PNNLinearBlock
 
 
 class PnnClassifier(nn.Module):
@@ -90,6 +90,10 @@ class PnnClassifier(nn.Module):
             skip = []
 
         for i, c in enumerate(self.columns):
+            for params in c.parameters():
+                params.requires_grad = True
+
+        for i, c in enumerate(self.columns):
             if i not in skip:
                 for params in c.parameters():
                     params.requires_grad = False
@@ -112,5 +116,5 @@ class PnnClassifier(nn.Module):
         metrics_dict = {"accuracy": accuracy}
         return loss, metrics_dict
 
-    def parameters(self):
-        return self.columns[-1].parameters()
+    def parameters(self, task_id):
+        return self.columns[task_id].parameters()

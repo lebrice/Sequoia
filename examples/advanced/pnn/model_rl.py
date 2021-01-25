@@ -20,7 +20,7 @@ from sequoia.settings import Method
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
-from layers import PNNConvLayer, PNNGruLayer, PNNLinearBlock
+from layers import PNNConvLayer, PNNLinearBlock
 
 
 class PnnA2CAgent(nn.Module):
@@ -134,9 +134,23 @@ class PnnA2CAgent(nn.Module):
 
         print("Add column of the new task")
 
+    def unfreeze_columns(self):
+        for i, c in enumerate(self.columns_actor):
+            for params in c.parameters():
+                params.requires_grad = True
+
+            for params in self.columns_critic[i].parameters():
+                params.requires_grad = True
+
+        for i, c in enumerate(self.columns_conv):
+            for params in c.parameters():
+                params.requires_grad = True
+
     def freeze_columns(self, skip=None):
         if skip == None:
             skip = []
+
+        self.unfreeze_columns()
 
         for i, c in enumerate(self.columns_actor):
             if i not in skip:
@@ -153,15 +167,15 @@ class PnnA2CAgent(nn.Module):
 
         print("Freeze columns from previous tasks")
 
-    def parameters(self):
+    def parameters(self, task_id):
         param = []
-        for p in self.columns_critic[-1].parameters():
+        for p in self.columns_critic[task_id].parameters():
             param.append(p)
-        for p in self.columns_actor[-1].parameters():
+        for p in self.columns_actor[task_id].parameters():
             param.append(p)
 
         if len(self.columns_conv) > 0:
-            for p in self.columns_conv[-1].parameters():
+            for p in self.columns_conv[task_id].parameters():
                 param.append(p)
 
         return param

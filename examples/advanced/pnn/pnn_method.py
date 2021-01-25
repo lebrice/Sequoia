@@ -82,6 +82,8 @@ class PnnMethod(Method, target_setting=TaskIncrementalRLSetting):
         self.num_actions = action_space.n
         self.num_inputs = np.prod(input_space.shape)
 
+        self.added_tasks = []
+
         if isinstance(setting, ActiveSetting):
             # If we're applied to an RL setting:
 
@@ -143,11 +145,21 @@ class PnnMethod(Method, target_setting=TaskIncrementalRLSetting):
         # the index of the new task. If not, task_id will be None.
         # For example, you could do something like this:
         # self.model.current_task = task_id
+        self.model.freeze_columns([task_id])
+        if task_id not in self.added_tasks:
+            if isinstance(self.model, PnnA2CAgent):
+                self.model.new_task(
+                    device=self.device, num_inputs=self.num_inputs, num_actions=self.num_actions)
+            else:
+                self.model.new_task(device=self.device, sizes=self.layer_size)
+                
+            self.added_tasks.append(task_id)
+
         self.task_id = task_id
 
     def set_optimizer(self):
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(),
+            self.model.parameters(self.task_id),
             lr=self.hparams.learning_rate,
         )
 
@@ -196,13 +208,13 @@ class PnnMethod(Method, target_setting=TaskIncrementalRLSetting):
 
     def fit_rl(self, train_env: gym.Env, valid_env: gym.Env):
         """ Training loop for Reinforcement Learning (a.k.a. "active") environment. """
+        """
+        base on https://towardsdatascience.com/understanding-actor-critic-methods-931b97b6df3f
+        """
         if self.model is None:
             self.model = PnnA2CAgent(self.arch, self.hparams.hidden_size)
         assert isinstance(self.model, PnnA2CAgent)
 
-        self.model.freeze_columns()
-        self.model.new_task(
-            device=self.device, num_inputs=self.num_inputs, num_actions=self.num_actions)
         self.set_optimizer()
         assert self.hparams
         # self.model.float()
@@ -274,8 +286,8 @@ class PnnMethod(Method, target_setting=TaskIncrementalRLSetting):
         cuda_observations = observations.to(self.device)
         assert isinstance(self.model, PnnClassifier)
         assert self.hparams
-        self.model.freeze_columns()
-        self.model.new_task(device=self.device, sizes=self.layer_size)
+        #self.model.freeze_columns()
+        #self.model.new_task(device=self.device, sizes=self.layer_size)
         self.set_optimizer()
 
         best_val_loss = inf
@@ -389,5 +401,5 @@ def main_sl():
 
 
 if __name__ == "__main__":
-    main_sl()
-    # main_rl()
+    # main_sl()
+    main_rl()
