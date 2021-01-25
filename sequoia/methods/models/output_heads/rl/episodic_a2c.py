@@ -97,31 +97,19 @@ class EpisodicA2C(PolicyHead):
     def forward(self,
                 observations: ContinualRLSetting.Observations,
                 representations: Tensor) -> A2CHeadOutput:
-        actions = super().forward(observations, representations)
-        assert isinstance(actions, A2CHeadOutput)
-        return actions
-
-    def get_actions(self, representations: Tensor) -> A2CHeadOutput:
+        actions: PolicyHeadOutput = super().forward(observations, representations)
         # TODO: Shouldn't the critic also take the actor's action as an input?
-        logits = self.dense(representations)
-        action_distribution = Categorical(logits=logits)
-
         value = self.critic(representations)
-
-        if action_distribution.has_rsample:
-            sample = action_distribution.rsample()
-        else:
-            sample = action_distribution.sample()
+        # We just need to add the value to the actions of the PolicyHead.
+        # This works, because `self.actor` :== `self.dense`, which is what's used by
+        # the PolicyHead.
         actions = A2CHeadOutput(
-            y_pred=sample,
-            logits=logits,
-            action_dist=action_distribution,
-            value=value,
+            y_pred=actions.y_pred,
+            logits=actions.logits,
+            action_dist=actions.action_dist,
+            value=value
         )
         return actions
-
-    def create_buffers(self):
-        super().create_buffers()
 
     def num_stored_steps(self, env_index: int) -> int:
         """ Returns the number of steps stored in the buffer for the given

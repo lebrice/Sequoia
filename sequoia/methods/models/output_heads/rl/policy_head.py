@@ -183,15 +183,11 @@ class PolicyHead(ClassificationHead):
 
         # The actual "internal" loss we use for training.
         self.loss: Loss = Loss(self.name, metrics={self.name: RLMetrics()})
-        # The loss we expose and return in `get_loss` ( has all metrics etc.)
-        self.detached_loss: Loss = self.loss.detach()
-
         self.batch_size: int = 0
 
-        self.has_reached_episode_end: np.ndarray
-        self.num_episodes_since_update: np.ndarray
+        self.num_episodes_since_update: np.ndarray = np.zeros(1)
+        self.num_steps_in_episode: np.ndarray = np.zeros(1)
 
-        # self.optimizer = self.configure_optimizers()
         self._training: bool = True
 
     def create_buffers(self):
@@ -202,12 +198,9 @@ class PolicyHead(ClassificationHead):
         self.representations = self._make_buffers()
         self.actions = self._make_buffers()
         self.rewards = self._make_buffers()
-
-        self.has_reached_episode_end = np.zeros(self.batch_size, dtype=bool)
+        
+        self.num_steps_in_episode = np.zeros(self.batch_size, dtype=int)
         self.num_episodes_since_update = np.zeros(self.batch_size, dtype=int)
-        self.num_detached_tensors = np.zeros(self.batch_size, dtype=int)
-        self.num_grad_tensors = np.zeros(self.batch_size, dtype=int)
-        self.base_model_optimizer.zero_grad()
 
     def forward(self, observations: ContinualRLSetting.Observations, representations: Tensor) -> PolicyHeadOutput:
         """ Forward pass of a Policy head.
@@ -215,28 +208,9 @@ class PolicyHead(ClassificationHead):
         TODO: Do we actually need the observations here? It is here so we have
         access to the 'done' from the env, but do we really need it here? or
         would there be another (cleaner) way to do this?
-
-        NOTE: (@lebrice) This is identical to the forward pass of the
-        ClassificationHead, except that the policy is stochastic: the actions
-        are sampled from the probabilities described by the logits, rather than
-        always selecting the action with the highest logit as in the
-        ClassificationHead.
-        
-        TODO: This is actually more general than a classification head, no?
-        Would it make sense to maybe re-order the "hierarchy" of the output
-        heads, and make the ClassificationHead inherit from this one?
-        """
-
-        # TODO: (@lebrice) Need to calculate the loss HERE if the episode is
-        # done, i.e. before doing the next forward pass!! (otherwise the actions
-        # for the initial observation are based on the previous weights, which
-        # won't be at the right version when we will backpropagate the loss for
-        # the next episode, if it goes back until the initial observation!
-        # Problem is, we would also need to backpropagate that loss BEFORE we
-        # can do the forward pass on the new observations! Otherwise the first
-        # actions won't have been based on the right weights!
-        
+        """        
         if len(representations.shape) < 2:
+            # Flatten the representations.
             representations = representations.reshape([-1, flatdim(self.input_space)])
         
         # Setup the buffers, which will hold the most recent observations,
@@ -244,101 +218,11 @@ class PolicyHead(ClassificationHead):
         if not self.batch_size:
             self.batch_size = representations.shape[0]
             self.create_buffers()
-
-        # The detached loss will show the loss that *has* already been
-        # backpropagated during this step (if
-        # `self.hparams.accumulate_losses_before_backward` is False), otherwise
-        # it will always be zero, until it is the detached version of
-        # `self.loss` on the big update step. 
-        self.detached_loss = Loss(self.name)
-
-        # NOTE: This means we also need it at test-time though.
-        assert observations.done is not None, "need the end-of-episode signal"
-        if self.training:
-            for env_index, done in enumerate(observations.done):
-                if done:
-                    # End of episode reached in that env!
-                    self.has_reached_episode_end[env_index] = True
-                    self.num_episodes_since_update[env_index] += 1
-
-                env_loss = self.get_episode_loss(env_index, done=done)
-
-                if done:
-                    self.clear_buffers(env_index)
-
-                if env_loss is None:
-                    continue
-
-                if self.hparams.accumulate_losses_before_backward:
-                    # Option 1:
-                    self.loss += env_loss
-                    # self.detached_loss += env_loss.detach()
-                else:
-                    # Option 2:
-                    env_loss.backward(retain_graph=True)
-                    # # Detach the loss so we can keep the metrics but not all the graphs.
-                    self.detached_loss += env_loss.detach()
-
-            if all(self.num_episodes_since_update >= self.hparams.min_episodes_before_update):
-                # TODO: Maybe move this into a 'optimizer_step' method?
-                # self.update_model()
-                # logger.debug(f"Backpropagating loss: {self.loss}")
-                if self.hparams.accumulate_losses_before_backward:    
-                    # Option 1 from above:
-                    # NOTE: Need to step as well, since the predictions below will
-                    # depend on the model at the current time.
-                    self.optimizer_zero_grad()
-                    self.loss.backward()
-                    self.optimizer_step()
-                    # Reset the losses.
-                    self.detached_loss = self.loss.detach()
-                    
-                    self.loss = Loss(self.name)
-                else:
-                    # # Option 2 from above: The losses have already been
-                    # backpropagated, so we perform the optimizer step, and then
-                    # zero out the grads.
-                    logger.debug(f"Updating model")
-                    self.optimizer_step()
-                    self.optimizer_zero_grad()
-
-                self.detach_all_buffers()
-                
-                self.has_reached_episode_end[:] = False
-                self.num_episodes_since_update[:] = 0
-                
-                # self.detached_loss = self.loss.detach()
-                # self.loss = Loss(self.name, metrics={self.name: RLMetrics()})
-
-        # In either case, do we want to detach the representations? or not?
-        representations = representations.float().detach()
-
-        actions = self.get_actions(representations)
+            
+        representations = representations.float()
         
-        for env_index in range(self.batch_size):
-            # Take a slice across the first dimension
-            # env_observations = get_slice(observations, env_index)
-            env_representations = representations[env_index]
-            env_actions = actions.slice(env_index)
-            self.representations[env_index].append(env_representations)
-            self.actions[env_index].append(env_actions)
-        
-        return actions
-
-    def optimizer_zero_grad(self) -> None:
-        """ Calls `self.optimizer.zero_grad()`.
-        You can override this method to customize the backward pass.
-        """
-        self.base_model_optimizer.zero_grad()
-
-    def optimizer_step(self) -> None:
-        """ Calls `self.optimizer.step()`.
-        You can override this method to customize the backward pass.
-        """
-        self.base_model_optimizer.step()
-
-    def get_actions(self, representations: Tensor) -> PolicyHeadOutput:
         logits = self.dense(representations)
+        
         # The policy is the distribution over actions given the current state.
         action_dist = Categorical(logits=logits)
         sample = action_dist.sample()
@@ -361,22 +245,101 @@ class PolicyHead(ClassificationHead):
         `representations` and provide the right (augmented) observations to the
         aux tasks. (Need to design that part later).
         """
-        assert rewards is not None, (forward_pass, actions, rewards)
-
         observations: ContinualRLSetting.Observations = forward_pass.observations
         representations: Tensor = forward_pass.representations
         if self.batch_size is None:
-            self.batch_size = forward_pass.batch_size
+            assert len(representations.shape) == 2, (
+                f"Need batched representations, with a shape [16, 128] or similar, but "
+                f"representations have shape {representations.shape}."
+            )
+            self.batch_size = representations.shape[0]
             self.create_buffers()
+        
+        if not self.hparams.accumulate_losses_before_backward:
+            # Reset the loss for the current step, if we're not accumulating it.
+            self.loss = Loss(self.name)
+
+        observations = forward_pass.observations
+        representations = forward_pass.representations
+        assert observations.done is not None, "need the end-of-episode signal"
+
+        # Calculate the loss for each environment.
+        for env_index, done in enumerate(observations.done):
+            if done:
+                # End of episode reached in that env!
+                self.num_episodes_since_update[env_index] += 1
+                self.num_steps_in_episode[env_index] = 0
+
+            env_loss = self.get_episode_loss(env_index, done=done)
+            
+            if env_loss is not None:
+                self.loss += env_loss
+
+            if done:
+                assert env_loss is not None
+                self.clear_buffers(env_index)
+            
 
         for env_index in range(self.batch_size):
             # Take a slice across the first dimension
             # env_observations = get_slice(observations, env_index)
-            env_rewards = get_slice(rewards, env_index)
+            env_representations = representations[env_index]
+            env_actions = actions.slice(env_index)
+            # env_actions = actions[env_index, ...] # TODO: Is this nicer?
+            env_rewards = rewards.slice(env_index)
+            self.representations[env_index].append(env_representations)
+            self.actions[env_index].append(env_actions)
             self.rewards[env_index].append(env_rewards)
         
-        return self.detached_loss
-                   
+        self.num_steps_in_episode += 1
+        # TODO:
+        # If we want to accumulate the losses before backward, then we just return self.loss
+        # If we DONT want to accumulate the losses before backward, then we do the
+        # 'small' backward pass, and return a detached loss.
+        if self.hparams.accumulate_losses_before_backward:
+            if all(self.num_episodes_since_update >= self.hparams.min_episodes_before_update):
+                # Every environment has seen the required number of episodes.    
+                # We return the accumulated loss, so that the model can do the backward
+                # pass and update the weights.
+                returned_loss = self.loss
+                self.loss = Loss(self.name)
+                self.detach_all_buffers()
+                self.num_episodes_since_update[:] = 0            
+                return returned_loss
+            else:
+                return Loss(self.name)
+        else:
+            # Perform the backward pass as soon as a loss is available (with
+            # retain_graph=True).
+            if all(self.num_episodes_since_update >= self.hparams.min_episodes_before_update):
+                # Every environment has seen the required number of episodes.    
+                # We return the loss for this step, with gradients, to indicate to the
+                # Model that it can perform the backward pass and update the weights.
+                returned_loss = self.loss
+                self.loss = Loss(self.name)
+                self.detach_all_buffers()
+                self.num_episodes_since_update[:] = 0            
+                return returned_loss
+
+            elif self.loss.requires_grad:
+                # Not all environments are done, but we have a Loss from one of them.
+                self.loss.backward(retain_graph=True)
+                # self.loss will be reset at each step in the `forward` method above.
+                return self.loss.detach()
+            
+            else:
+                # TODO: Why is self.loss non-zero here?
+                if self.loss.loss != 0.:
+                    # TODO: This is a weird edge-case, where at least one env produced
+                    # a loss, but that loss doesn't require grad.
+                    # This should only happen if the model isn't in training mode, for
+                    # instance.
+                    assert not self.training, self.loss
+                    # return self.loss
+                return self.loss
+        assert False, f"huh? {self.loss}"
+        return self.loss
+                           
     def get_episode_loss(self,
                          env_index: int,
                          done: bool) -> Optional[Loss]:
@@ -443,11 +406,6 @@ class PolicyHead(ClassificationHead):
         n_stored_items = len(self.actions[env_index])
         n_items_with_grad = sum(v.logits.requires_grad for v in episode_actions)
         n_items_without_grad = n_stored_items - n_items_with_grad
-        self.num_grad_tensors[env_index] += n_items_with_grad
-        self.num_detached_tensors[env_index] += n_items_without_grad
-        # logger.debug(f"Env {env_index} produces a loss based on "
-        #              f"{n_items_with_grad} tensors with grad and "
-        #              f"{n_items_without_grad} without. ")
         return GradientUsageMetric(
             used_gradients=n_items_with_grad,
             wasted_gradients=n_items_without_grad,
@@ -518,6 +476,7 @@ class PolicyHead(ClassificationHead):
             logger.debug(f"Clearing buffers, since we're transitioning between from {before}->{after}")
             self.clear_all_buffers()
             self.batch_size = None
+            self.num_episodes_since_update[:] = 0
         self._training = value
 
     def clear_all_buffers(self) -> None:

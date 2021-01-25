@@ -145,13 +145,11 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
         rewards_obj = ContinualRLSetting.Rewards(y=rewards)
         loss = output_head.get_loss(
             forward_pass=forward_pass,
-            actions=actions,
+            actions=actions_obj,
             rewards=rewards_obj,
         )
         print(f"Step {step}")
         print(f"num episodes since update: {output_head.num_episodes_since_update}")
-        print(f"Tensors with gradients: {output_head.num_grad_tensors}")
-        print(f"Tensors without gradients: {output_head.num_detached_tensors}")
         print(f"steps left in episode: {env.steps_left_in_episode}")
         print(f"Loss for that step: {loss}")
 
@@ -163,18 +161,49 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             assert loss.loss == 5. 
             assert loss.metrics["gradient_usage"].used_gradients == 5.
             assert loss.metrics["gradient_usage"].wasted_gradients == 0.            
-        elif step % 10 == 0 and step != 0:
-            # Env 1 to batch_size, first episode, from steps 0 -> 10
+        elif step == 10:
+            # Envs[1:batch_size], first episode, from steps 0 -> 10
+            # NOTE: At this point, both envs have reached the required number of episodes.
+            # This means that the gradient usage on the next time any env reaches
+            # an end-of-episode will be one less than the total number of items.
             assert loss.loss == 10. * (batch_size-1) 
             assert loss.metrics["gradient_usage"].used_gradients == 10. * (batch_size-1)
             assert loss.metrics["gradient_usage"].wasted_gradients == 0.   
-        elif step % 10 == 5:
+        elif step == 15:
             # Env 0 second episode from steps 5 -> 15
             assert loss.loss == 10.
-            assert loss.metrics["gradient_usage"].used_gradients == 5
-            assert loss.metrics["gradient_usage"].wasted_gradients == 5
+            assert loss.metrics["gradient_usage"].used_gradients == 4
+            assert loss.metrics["gradient_usage"].wasted_gradients == 6
+        
+        elif step == 20:
+            # Envs[1:batch_size]: second episode, from steps 0 -> 10
+            # NOTE: At this point, both envs have reached the required number of episodes.
+            # This means that the gradient usage on the next time any env reaches
+            # an end-of-episode will be one less than the total number of items.
+            assert loss.loss == 10. * (batch_size-1) 
+            assert loss.metrics["gradient_usage"].used_gradients == 9 * (batch_size-1)
+            assert loss.metrics["gradient_usage"].wasted_gradients == 1 * (batch_size-1) 
+        
+        elif step == 25:
+            # Env 0 third episode from steps 5 -> 15
+            assert loss.loss == 10.
+            assert loss.metrics["gradient_usage"].used_gradients == 4
+            assert loss.metrics["gradient_usage"].wasted_gradients == 6
+        
+        elif step > 0 and step % 10 == 0:
+            # Same pattern as step 20 above
+            assert loss.loss == 10. * (batch_size-1), step
+            assert loss.metrics["gradient_usage"].used_gradients == 9 * (batch_size-1)
+            assert loss.metrics["gradient_usage"].wasted_gradients == 1 * (batch_size-1) 
+        
+        elif step > 0 and step % 5 == 0:
+            # Same pattern as step 25 above
+            assert loss.loss == 10.
+            assert loss.metrics["gradient_usage"].used_gradients == 4
+            assert loss.metrics["gradient_usage"].wasted_gradients == 6
+        
         else:
-            assert loss.loss == 0.
+            assert loss.loss == 0., step
 
 
 @pytest.mark.parametrize("batch_size",
@@ -306,9 +335,6 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
         reward_space=reward_space,
         hparams=PolicyHead.HParams(accumulate_losses_before_backward=False),
     )
-    # TODO: Simulating as if the output head were attached to a BaselineModel. 
-    PolicyHead.base_model_optimizer = torch.optim.Adam(head.parameters(), lr=1e-3)
-
 
     env.seed(123)
     non_zero_losses = 0
@@ -332,7 +358,7 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
 
         rewards = env.send(actions) 
 
-        print(f"Step {i}, obs: {obs}, done: {done}")
+        # print(f"Step {i}, obs: {obs}, done: {done}")
         assert isinstance(representations, Tensor)
         forward_pass = ForwardPass(         
             observations=observations,
