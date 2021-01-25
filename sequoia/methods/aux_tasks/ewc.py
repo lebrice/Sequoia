@@ -56,7 +56,7 @@ class EWCTask(AuxiliaryTask):
         #Batchsize to be used when computing FIM
         batch_size_fim: int = 64
         # Number of observations to use for FIM calculation
-        sample_size_fim: int = 100
+        sample_size_fim: int = 400
         #Fisher information type  (diagonal or block diagobnal)
         fim_representation: PMatAbstract = choice({'diagonal':PMatDiag, 'block_diagonal':PMatKFAC}, default=PMatKFAC)
 
@@ -97,7 +97,7 @@ class EWCTask(AuxiliaryTask):
             l, self._shared_net.parameters(),
             retain_graph=(i < len(loglikelihoods)), allow_unused=True,
         ) for i, l in enumerate(loglikelihoods, 1)])
-        #here an error might be raised, in case grads dont backprop into the encoder
+        #here an error might be raised, in case grads dont backprop into the
         loglikelihood_grads = [torch.stack(gs) for gs in loglikelihood_grads]
         fisher_diagonals = [(g ** 2).mean(0) for g in loglikelihood_grads]
         param_names = [
