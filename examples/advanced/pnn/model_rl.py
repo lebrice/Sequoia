@@ -20,7 +20,7 @@ from sequoia.settings import Method
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
-from .layers import PNNConvLayer, PNNGruLayer, PNNLinearBlock
+from layers import PNNConvLayer, PNNGruLayer, PNNLinearBlock
 
 
 class PnnA2CAgent(nn.Module):

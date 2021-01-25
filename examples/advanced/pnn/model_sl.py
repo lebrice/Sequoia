@@ -18,7 +18,7 @@ from sequoia.settings import (Method, TaskIncrementalSetting)
 from sequoia.settings.passive.cl.objects import (Actions, Observations,
                                                  PassiveEnvironment, Rewards)
 
-from .layers import PNNConvLayer, PNNGruLayer, PNNLinearBlock
+from layers import PNNConvLayer, PNNGruLayer, PNNLinearBlock
 
 
 class PnnClassifier(nn.Module):
@@ -32,7 +32,7 @@ class PnnClassifier(nn.Module):
     """
 
     def __init__(self, n_layers):
-        super(PnnClassifier, self).__init__()
+        super().__init__()
         self.n_layers = n_layers
         self.columns = nn.ModuleList([])
 

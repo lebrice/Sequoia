@@ -1,6 +1,3 @@
-
-from .model_sl import PnnClassifier
-from .model_rl import PnnA2CAgent
 import sys
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple, Union
@@ -28,6 +25,9 @@ from torchvision import transforms
 
 import sys
 sys.path.extend([".", ".."])
+
+from model_sl import PnnClassifier
+from model_rl import PnnA2CAgent
 
 
 class PnnMethod(Method, target_setting=TaskIncrementalRLSetting):
@@ -192,7 +192,6 @@ class PnnMethod(Method, target_setting=TaskIncrementalRLSetting):
         if isinstance(train_env.unwrapped, PassiveEnvironment):
             self.fit_sl(train_env, valid_env)
         else:
-            assert isinstance(train_env.unwrapped, ActiveEnvironment), train_env
             self.fit_rl(train_env, valid_env)
 
     def fit_rl(self, train_env: gym.Env, valid_env: gym.Env):
@@ -391,4 +390,4 @@ def main_sl():
 
 if __name__ == "__main__":
     main_sl()
-    main_rl()
+    # main_rl()
