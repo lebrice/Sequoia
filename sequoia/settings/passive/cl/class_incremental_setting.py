@@ -36,7 +36,7 @@ import torch
 from continuum import ClassIncremental
 from continuum.datasets import *
 from continuum.datasets import _ContinuumDataset
-from continuum.scenarios.base import _BaseCLLoader
+from continuum.scenarios.base import _BaseScenario
 from continuum.tasks import split_train_val
 from gym import Space, spaces
 from pytorch_lightning import LightningModule, Trainer
@@ -420,8 +420,8 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         
         self.train_cl_dataset = self.make_dataset(self.data_dir, download=False, train=True)
         self.test_cl_dataset = self.make_dataset(self.data_dir, download=False, train=False)
-        self.train_cl_loader: _BaseCLLoader = self.make_train_cl_loader(self.train_cl_dataset)
-        self.test_cl_loader: _BaseCLLoader = self.make_test_cl_loader(self.test_cl_dataset)
+        self.train_cl_loader: _BaseScenario = self.make_train_cl_loader(self.train_cl_dataset)
+        self.test_cl_loader: _BaseScenario = self.make_test_cl_loader(self.test_cl_dataset)
 
         logger.info(f"Number of train tasks: {self.train_cl_loader.nb_tasks}.")
         logger.info(f"Number of test tasks: {self.train_cl_loader.nb_tasks}.")
@@ -611,7 +611,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             return observations, rewards
         return split_batch
     
-    def make_train_cl_loader(self, train_dataset: _ContinuumDataset) -> _BaseCLLoader:
+    def make_train_cl_loader(self, train_dataset: _ContinuumDataset) -> _BaseScenario:
         """ Creates a train ClassIncremental object from continuum. """
         return ClassIncremental(
             train_dataset,
@@ -622,7 +622,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             transformations=self.transforms,
         )
 
-    def make_test_cl_loader(self, test_dataset: _ContinuumDataset) -> _BaseCLLoader:
+    def make_test_cl_loader(self, test_dataset: _ContinuumDataset) -> _BaseScenario:
         """ Creates a test ClassIncremental object from continuum. """
         return ClassIncremental(
             test_dataset,
