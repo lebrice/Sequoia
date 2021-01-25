@@ -30,7 +30,7 @@ from model_sl import PnnClassifier
 from model_rl import PnnA2CAgent
 
 
-class PnnMethod(Method, target_setting=TaskIncrementalRLSetting):
+class PnnMethod(Method, target_setting=Setting):
     """
     Here we implement the PNN Method according to the characteristics and methodology of
     the current proposal.  It should be as much as possible agnostic to the model and
@@ -42,7 +42,7 @@ class PnnMethod(Method, target_setting=TaskIncrementalRLSetting):
     """
     @dataclass
     class HParams:
-        """ Hyper-parameters of the Pnn method when in an RL setting. """
+        """ Hyper-parameters of the Pnn method. """
         # Learning rate of the optimizer. Defauts to 0.0001 when in SL.
         learning_rate: float = 2e-4
         num_steps: int = 200  # (only applicable in RL settings.)
@@ -182,17 +182,7 @@ class PnnMethod(Method, target_setting=TaskIncrementalRLSetting):
                 action = y_pred
 
         assert action in action_space, (action, action_space)
-        # TODO: Check if this is necessary:
-        # # Wrap up the action to fit what the Setting expects to receive.
-        # actions = self.target_setting.Actions(y_pred)
         return action
-
-    def print_results(self, step, loss, reward):
-        print(f"Task: {self.task_id}",
-              f"Step:{step}",
-              f"Average Loss: {loss}",
-              f"Average Reward: {reward}",
-              sep="\n")
 
     def fit(self, train_env: Environment, valid_env: Environment):
         """ Train and validate this method using the "environments" for the current task.
@@ -401,6 +391,6 @@ def main_sl():
 
 if __name__ == "__main__":
     # Run RL Setting
-    # main_sl()
+    main_sl()
     # Run SL Setting
-    main_rl()
+    # main_rl()
