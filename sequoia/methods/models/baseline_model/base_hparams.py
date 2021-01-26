@@ -9,7 +9,7 @@ from torch.optim.optimizer import Optimizer  # type: ignore
 from sequoia.methods.models.output_heads import OutputHead
 from sequoia.utils import Parseable, Serializable
 from sequoia.utils.pretrained_utils import get_pretrained_encoder
-
+from sequoia.common.hparams import HyperParameters, uniform, log_uniform
 
 from ..simple_convnet import SimpleConvNet
 
@@ -33,7 +33,7 @@ available_encoders: Dict[str, Type[nn.Module]] = {
 
 
 @dataclass
-class BaseHParams(Serializable, Parseable):
+class BaseHParams(HyperParameters):
     """ Set of 'base' Hyperparameters for the 'base' LightningModule. """
     # Class variable versions of the above dicts, for easier subclassing.
     # NOTE: These don't get parsed from the command-line.
@@ -41,9 +41,9 @@ class BaseHParams(Serializable, Parseable):
     available_encoders: ClassVar[Dict[str, Type[nn.Module]]] = available_encoders.copy()
 
     # Learning rate of the optimizer.
-    learning_rate: float = 0.001
+    learning_rate: float = log_uniform(1e-9, 1e-1, default=0.001)
     # L2 regularization term for the model weights.
-    weight_decay: float = 1e-6
+    weight_decay: float = log_uniform(1e-12, 1e-3, default=1e-6)
     # Which optimizer to use.
     optimizer: str = choice(available_optimizers.keys(), default="adam")
     # Use an encoder architecture from the torchvision.models package.

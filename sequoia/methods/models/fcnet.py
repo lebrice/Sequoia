@@ -4,20 +4,21 @@ from typing import ClassVar, Dict, Type, List
 from simple_parsing import list_field, choice
 from dataclasses import dataclass
 from sequoia.utils import Parseable, Serializable
+from sequoia.common.hparams import HyperParameters, uniform, log_uniform
 from typing import overload
 
 class FCNet(nn.Sequential):
     """ Fully-connected network. """
 
     @dataclass
-    class HParams(Serializable, Parseable):
+    class HParams(HyperParameters):
         """ Hyper-parameters of a fully-connected network. """
         available_activations: ClassVar[Dict[str, Type[nn.Module]]] = {
             "relu": nn.ReLU,
             "tanh": nn.Tanh,
         }
         # Number of hidden layers in the output head.
-        hidden_layers: int = 1
+        hidden_layers: int = uniform(0, 10, default=1)
         # Number of neurons in each hidden layer of the output head.
         # If a single value is given, than each of the `hidden_layers` layers
         # will have that number of neurons. 

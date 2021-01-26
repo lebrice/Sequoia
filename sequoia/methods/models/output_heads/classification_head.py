@@ -7,6 +7,7 @@ from gym import spaces
 from torch import Tensor, nn, LongTensor
 from simple_parsing import list_field
 
+from sequoia.common.hparams import uniform
 from sequoia.common import Batch, ClassificationMetrics, Loss
 from sequoia.common.layers import Flatten
 from sequoia.settings import Observations, Actions, Rewards
@@ -51,7 +52,7 @@ class ClassificationHead(OutputHead):
 
     @dataclass
     class HParams(FCNet.HParams, OutputHead.HParams):
-        hidden_layers: int = 1
+        hidden_layers: int = uniform(0, 10, default=0)
         hidden_neurons: List[int] = list_field(64)
 
     def __init__(self,
