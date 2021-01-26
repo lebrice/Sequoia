@@ -31,7 +31,6 @@ from .priors import LogUniformPrior, NormalPrior, Prior, UniformPrior
 
 logger = get_logger(__file__)
 T = TypeVar("T")
-HP = TypeVar("HP", bound="HyperParameters")
 
 
 @overload
@@ -95,6 +94,50 @@ def log_uniform(min: Union[int,float],
     )
 
 loguniform = log_uniform
+
+from simple_parsing import choice as _choice
+from .priors import CategoricalPrior
+
+from functools import wraps
+
+@wraps(_choice)
+def categorical(*choices: T, default: T = None, probabilities: List[float] = None, **kwargs: Any) -> T:
+    """ Marks a field as being a categorical hyper-parameter.
+
+    This wraps the `choice` function from `simple_parsing`.
+
+    Returns:
+        T: the result of the usual `dataclasses.field()` function (a dataclass field).
+    """
+    metadata = kwargs.get("metadata", {})
+    default_key = default
+    if len(choices) == 1 and isinstance(choices[0], dict):
+        choice_dict = choices[0]
+        # TODO: If we use keys here, then we have to add a step in __post_init__ of the
+        # dataclass holding this field, so that it gets the corresponding value from the
+        # dict.
+        # IDEA: Adding some kind of 'hook' to be used by simple-parsing?
+        def postprocess(value):
+            if value in choice_dict:
+                return choice_dict[value]
+            return value
+        metadata["postprocessing"] = postprocess 
+        if default:
+            assert default in choice_dict.values()
+            default_key = [k for k, v in choice_dict.items() if v == default][0]
+        options = list(choice_dict.keys())
+    else:
+        options = list(choices)
+
+    prior = CategoricalPrior(
+        choices=options,
+        probabilities=probabilities,
+        default_value=default_key,
+    )
+    metadata["prior"] = prior
+    kwargs["metadata"] = metadata
+    return _choice(*choices, default=default, **kwargs)
+
 
 def hparam(default: T,
           *args,

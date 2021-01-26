@@ -9,7 +9,7 @@ torch>=1.7
 torchvision
 scikit-learn
 tqdm
-continuum @ git+https://github.com/Continvvm/continuum.git
+continuum>=1.0.5
 # Only required for the current demo:
 wandb
 plotly

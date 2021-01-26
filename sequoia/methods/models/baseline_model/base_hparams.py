@@ -2,14 +2,14 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Type, ClassVar
 
 import torchvision.models as tv_models
-from simple_parsing import choice, mutable_field
+from simple_parsing import mutable_field, choice
 from torch import nn, optim
 from torch.optim.optimizer import Optimizer  # type: ignore
 
 from sequoia.methods.models.output_heads import OutputHead
 from sequoia.utils import Parseable, Serializable
 from sequoia.utils.pretrained_utils import get_pretrained_encoder
-from sequoia.common.hparams import HyperParameters, uniform, log_uniform
+from sequoia.common.hparams import HyperParameters, uniform, log_uniform, categorical
 
 from ..simple_convnet import SimpleConvNet
 
@@ -45,9 +45,9 @@ class BaseHParams(HyperParameters):
     # L2 regularization term for the model weights.
     weight_decay: float = log_uniform(1e-12, 1e-3, default=1e-6)
     # Which optimizer to use.
-    optimizer: str = choice(available_optimizers.keys(), default="adam")
+    optimizer: Type[Optimizer] = categorical(available_optimizers, default=optim.Adam)
     # Use an encoder architecture from the torchvision.models package.
-    encoder: str = choice(available_encoders.keys(), default="resnet18")
+    encoder: Type[nn.Module] = choice(available_encoders, default=tv_models.resnet18)
     
     # Batch size to use during training and evaluation.
     batch_size: Optional[int] = None
@@ -78,10 +78,11 @@ class BaseHParams(HyperParameters):
         """Use this to initialize (or fix) any fields parsed from the
         command-line.
         """
+        super().__post_init__()
 
     def make_optimizer(self, *args, **kwargs) -> Optimizer:
         """ Creates the Optimizer object from the options. """
-        optimizer_class = self.available_optimizers[self.optimizer]
+        optimizer_class = self.optimizer
         options = {
             "lr": self.learning_rate,
             "weight_decay": self.weight_decay,
@@ -91,7 +92,7 @@ class BaseHParams(HyperParameters):
 
     @property
     def encoder_model(self) -> Type[nn.Module]:
-        return self.available_encoders[self.encoder]
+        return self.encoder
     
     def make_encoder(self, encoder_name: str = None) -> Tuple[nn.Module, int]:
         """Creates an Encoder model and returns the resulting hidden size.
@@ -99,13 +100,13 @@ class BaseHParams(HyperParameters):
         Returns:
             Tuple[nn.Module, int]: the encoder and the hidden size.
         """
-        if encoder_name is None:
-            encoder_name = self.encoder
-        if encoder_name not in self.available_encoders:
+        if encoder_name and encoder_name not in self.available_encoders:
             raise KeyError(
                 f"No encoder with name {encoder_name} found! "
                 f"(available encoders: {list(self.available_encoders.keys())}.")
-        encoder_model = self.available_encoders[encoder_name]
+            encoder_model = self.available_encoders[encoder_name]
+        else:
+            encoder_model = self.encoder
         encoder, hidden_size = get_pretrained_encoder(
             encoder_model=encoder_model,
             pretrained=not self.train_from_scratch,

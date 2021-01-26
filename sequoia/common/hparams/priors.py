@@ -1,8 +1,8 @@
 import math
 import random
 from abc import abstractmethod
-from dataclasses import InitVar, dataclass
-from typing import TypeVar, Generic, Union
+from dataclasses import InitVar, dataclass, field
+from typing import TypeVar, Generic, Union, List, Optional, ClassVar
 
 import numpy as np
 
@@ -11,11 +11,18 @@ T = TypeVar("T")
 
 @dataclass  # type: ignore
 class Prior(Generic[T]):
-    rng: np.random.RandomState = np.random
+
+    def __post_init__(self):
+        self.rng = np.random
+
     @abstractmethod
     def sample(self) -> T:
         pass
-    
+
+    def seed(self, seed: Optional[int]) -> None:
+        # Should this seed this individual prior?
+        self.rng = np.random.RandomState(seed)
+
     @abstractmethod
     def get_orion_space_string(self) -> str:
         """ Gets the 'Orion-formatted space string' for this Prior object. """ 
@@ -58,6 +65,51 @@ class UniformPrior(Prior):
         string += ")"
         return string
 
+from typing import overload
+
+
+@dataclass
+class CategoricalPrior(Prior[T]):
+    choices: List[T]
+    probabilities: Optional[List[float]] = None
+    default_value: Optional[T] = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        if isinstance(self.choices, dict):
+            choices = []
+            self.probabilities = []
+            for k, v in self.choices.items():
+                choices.append(k)
+                assert isinstance(v, (int, float)), "probs should be int or float"
+                self.probabilities.append(v)
+            self.choices = choices
+
+    @overload
+    def sample(self, n: int) -> List[T]: ...
+    @overload
+    def sample(self) -> T: ...
+
+    def sample(self, n: int = None) -> Union[T, List[T]]:
+        assert self.choices
+        return self.rng.choice(self.choices, size=n, p=self.probabilities)
+
+    def get_orion_space_string(self) -> str:
+        string = "choices("
+        if self.probabilities:
+            assert sum(self.probabilities) == 1, "probs should sum to 1."
+            string += str(dict(zip(self.choices, self.probabilities)))
+        else:
+            string += str(self.choices)
+        if self.default_value:
+            assert isinstance(self.default_value, (int, str, float))
+            default_value_str = str(self.default_value)
+            if isinstance(self.default_value, str):
+                default_value_str = f"'{self.default_value}'"
+            string += f", default_value={default_value_str}"
+        string += ")"
+        return string
+
 
 @dataclass
 class LogUniformPrior(Prior):
@@ -83,6 +135,7 @@ class LogUniformPrior(Prior):
             log_min = np.log(self.min)
         else:
             log_min = math.log(self.min, self.base)
+        assert isinstance(log_min, (int, float))
         return log_min
 
     @property
@@ -91,6 +144,7 @@ class LogUniformPrior(Prior):
             log_max = np.log(self.max)
         else:
             log_max = math.log(self.max, self.base)
+        assert isinstance(log_max, (int, float))
         return log_max
 
     def get_orion_space_string(self) -> str:

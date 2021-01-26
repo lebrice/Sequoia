@@ -9,7 +9,7 @@ import random
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
-from dataclasses import InitVar, dataclass, fields
+from dataclasses import InitVar, dataclass, fields, Field
 from functools import singledispatch, total_ordering
 from pathlib import Path
 from typing import (Any, Callable, ClassVar, Dict, List, NamedTuple, Optional,
@@ -51,9 +51,25 @@ class HyperParameters(Serializable, Parseable, decode_into_subclasses=True):  # 
     # samples.
     rng: ClassVar[np.random.RandomState] = np.random
     
+    def __post_init__(self):
+        for field in fields(self):
+            field: Field
+            name = field.name
+            value = getattr(self, name)
+            # Apply any post-processing function, if applicable.
+            if "postprocessing" in field.metadata:
+                new_value = field.metadata["postprocessing"](value)
+                setattr(self, name, new_value)
+
     def id(self):
         return compute_identity(**self.to_dict())
-    
+
+    def seed(self, seed: Optional[int]) -> None:
+        """ TODO: Seed all priors with the given seed. (recursively if nested dataclasses
+        are present.)
+        """
+        raise NotImplementedError("TODO")
+
     @classmethod
     def get_orion_space_dict(cls) -> Dict[str, str]:
         result: Dict[str, str] = {}
@@ -61,10 +77,25 @@ class HyperParameters(Serializable, Parseable, decode_into_subclasses=True):  # 
             # If a HyperParameters class contains another HyperParameters class as a field
             # we perform returned a flattened dict.
             if inspect.isclass(field.type) and issubclass(field.type, HyperParameters):
-                result.update({
-                    field.name + "." + key: value for key, value in 
-                    field.type.get_orion_space_dict().items()
-                })
+                result[field.name] = field.type.get_orion_space_dict()
+            else:
+                prior: Optional[Prior] = field.metadata.get("prior")
+                if prior:
+                    result[field.name] = prior.get_orion_space_string()
+        return result
+
+    def get_orion_space(self) -> Dict[str, str]:
+        """ NOTE: This might be more useful in some cases than the above classmethod
+        version, for example when a field is a different kind of dataclass than its
+        annotation.
+        """
+        result: Dict[str, str] = {}
+        for field in fields(self):
+            value = getattr(self, field.name)
+            # If a HyperParameters class contains another HyperParameters class as a field
+            # we perform returned a flattened dict.
+            if isinstance(value, HyperParameters):
+                result[field.name] = value.get_orion_space()
             else:
                 prior: Optional[Prior] = field.metadata.get("prior")
                 if prior:

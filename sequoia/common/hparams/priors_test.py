@@ -4,11 +4,11 @@ from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
 import numpy as np
+from sequoia.utils import set_seed
+from collections import Counter
 
 from .hyperparameters import HyperParameters, hparam
-from sequoia.utils import set_seed
-
-from .priors import LogUniformPrior, UniformPrior
+from .priors import CategoricalPrior, LogUniformPrior, UniformPrior
 
 
 @dataclass
@@ -85,3 +85,22 @@ def test_loguniform_prior():
     mean = np.mean(log_samples)
     # mean base-10 exponent should be around 2.5 
     assert 2.4 <= mean <= 2.6
+
+
+
+def test_categorical_prior():
+    prior = CategoricalPrior(["a", "b", "c"])
+    prior.seed(123)
+    samples = [prior.sample() for _ in range(1000)]
+    counter = Counter(samples)
+    assert all(250 < count < 400 for val, count in counter.items()), counter.items()
+
+    prior = CategoricalPrior({"a": 0.1, "b": 0.1, "c": 0.8})
+    prior.seed(123)
+    assert prior.get_orion_space_string() == "choices({'a': 0.1, 'b': 0.1, 'c': 0.8})"
+
+    samples = prior.sample(1000)
+    counter = Counter(samples)
+    assert 50 <= counter["a"] <= 150
+    assert 50 <= counter["b"] <= 150
+    assert 700 <= counter["c"] <= 900

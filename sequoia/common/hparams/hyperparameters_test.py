@@ -138,3 +138,43 @@ def test_nesting():
     parent = Parent.sample() 
     assert isinstance(parent, Parent)
     assert isinstance(parent.child_a, Child)
+
+from typing import Type
+
+from .hparam import choice
+
+def test_choice_field():
+    
+    @dataclass
+    class Child(HyperParameters):
+        hparam: float = choice({
+            "a": 1.23,
+            "b": 4.56,
+            "c": 7.89,
+        }, default=1.23)
+
+    bob = Child()
+    assert bob.hparam == 1.23
+
+    bob = Child.sample()
+    assert bob.hparam in {1.23, 4.56, 7.89}
+    assert Child.get_orion_space_dict() == {'hparam': "choices(['a', 'b', 'c'])"}
+    
+
+
+
+def test_choice_field_with_values_of_a_weird_type():
+    @dataclass
+    class Bob(HyperParameters):
+        hparam_type: float = choice({
+            "a": A,
+            "b": B,
+            "c": C,
+        }, default=B)
+
+    bob = Bob()
+    assert bob.hparam_type == B
+
+    bob = Bob.sample()
+    assert bob.hparam_type in {A, B, C}
+    assert Bob.get_orion_space_dict() == {'hparam_type': "choices(['a', 'b', 'c'])"}

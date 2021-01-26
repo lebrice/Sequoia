@@ -77,7 +77,11 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         
         # Option 2: Try to use the keyword arguments to create the hparams,
         # config and trainer options.
-        if kwargs:    
+        if kwargs:
+            logger.info(
+                f"using keyword arguments {kwargs} to populate the corresponding "
+                f"values in the hparams, config and trainer_options."
+            )    
             self.hparams = hparams or BaselineModel.HParams.from_dict(kwargs, drop_extra_fields=True)
             self.config = config or Config.from_dict(kwargs, drop_extra_fields=True)
             self.trainer_options = trainer_options or TrainerConfig.from_dict(kwargs, drop_extra_fields=True)
@@ -96,7 +100,9 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             self.hparams = hparams or BaselineModel.HParams()
             self.config = config or Config()
             self.trainer_options = trainer_options or TrainerConfig()
-
+        assert self.hparams
+        assert self.config
+        assert self.trainer_options
 
         if self.config.debug:
             # Disable wandb logging if debug is True.
@@ -128,7 +134,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # Note: this here is temporary, just tinkering with wandb atm.
         method_name: str = self.get_name()
         
-        # Set the default batch size to use.
+        # Set the default batch size to use, depending on the kind of Setting.
         if self.hparams.batch_size is None:
             if isinstance(setting, ActiveSetting):
                 # Default batch size of 1 in RL
@@ -141,15 +147,16 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                     f"{setting}, will try 16."
                 ))
                 self.hparams.batch_size = 16
+        # Set the batch size on the setting.
+        setting.batch_size = self.hparams.batch_size
 
         # TODO: Should we set the 'config' on the setting from here?
-        # setting.config = self.config
-        if setting.config == self.config:
+        if setting.config and setting.config == self.config:
             pass
         elif self.config != Config():
-            assert setting.config == Config(), "method.config has been modified, and so has setting.config!"
+            assert setting.config is None or setting.config == Config(), f"method.config has been modified, and so has setting.config!"
             setting.config == self.config
-        else:
+        elif setting.config:
             assert setting.config != Config(), "Weird, both configs have default values.."
             self.config = setting.config
         
@@ -179,10 +186,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                 setting.val_transforms.append(Transforms.resize_64x64)
                 setting.test_transforms.append(Transforms.resize_64x64)
             
-            if self.hparams.batch_size is None:
-                # Using default batch size of 32, which is huge for RL!
-                self.hparams.batch_size = 1
-
             # Configure the baseline specifically for an RL setting.
             # TODO: Select which output head to use from the command-line?
             # Limit the number of epochs so we never iterate on a closed env.
@@ -195,9 +198,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                 # NOTE: This isn't used, since we don't call `trainer.test()`.
                 self.trainer_options.limit_test_batches = setting.max_steps
 
-        # Set the batch size on the setting.
-        setting.batch_size = self.hparams.batch_size
         self.model = self.create_model(setting)
+        assert self.hparams is self.model.hp
 
         # The PolicyHead actually does its own backward pass, so we disable
         # automatic optimization when using it.

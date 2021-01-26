@@ -468,3 +468,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
         model_summary = ModelSummary(self, mode=mode)
         log.debug('\n' + str(model_summary))
         return model_summary
+
+from simple_parsing.helpers.serialization import register_decoding_fn
+register_decoding_fn(Type[OutputHead], lambda v: v)
