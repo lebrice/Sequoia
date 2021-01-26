@@ -78,24 +78,23 @@ class DummyMethod(BaselineMethod):
             assert self.model.hp is new_hp
 
             results: Results = setting.apply(self, config=self.config)
-            run_results = [dict(
+            # TODO: Orion works in a 'lower is better' fashion I think.
+
+            experiment.observe(trial, [
+                dict(
                     name=results.objective_name,
                     type='objective',
                     value=results.objective
                 )
-            ]
-            # TODO: Orion works in a 'lower is better' fashion I think.
-
-            experiment.observe(trial, run_results)
+            ])
 
             if best_results is None:
-                best_results = run_results
+                best_results = results
                 best_hparams = self.hparams
-            elif run_results > best_results:
-                best_results = run_results
+            elif results > best_results:
+                best_results = results
                 best_hparams = self.hparams
         return best_hparams, best_perf
-
 
 
 if __name__ == "__main__":
