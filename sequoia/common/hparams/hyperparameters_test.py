@@ -141,13 +141,13 @@ def test_nesting():
 
 from typing import Type
 
-from .hparam import choice
+from .hparam import categorical
 
 def test_choice_field():
     
     @dataclass
     class Child(HyperParameters):
-        hparam: float = choice({
+        hparam: float = categorical({
             "a": 1.23,
             "b": 4.56,
             "c": 7.89,
@@ -166,7 +166,7 @@ def test_choice_field():
 def test_choice_field_with_values_of_a_weird_type():
     @dataclass
     class Bob(HyperParameters):
-        hparam_type: float = choice({
+        hparam_type: float = categorical({
             "a": A,
             "b": B,
             "c": C,

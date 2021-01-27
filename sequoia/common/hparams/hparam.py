@@ -10,20 +10,23 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
 from dataclasses import Field, InitVar, dataclass, fields
-from functools import singledispatch, total_ordering
+from functools import singledispatch, total_ordering, wraps
 from pathlib import Path
 from typing import (Any, Callable, ClassVar, Dict, List, NamedTuple, Optional,
                     Tuple, Type, TypeVar, Union, cast, overload)
 
 import matplotlib.pyplot as plt
 import numpy as np
-from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.utils import compute_identity, dict_intersection, zip_dicts
+from simple_parsing import choice as _choice
 from simple_parsing import field
 from simple_parsing.helpers import Serializable, encode
 from simple_parsing.helpers.serialization import register_decoding_fn
 
-from .priors import LogUniformPrior, NormalPrior, Prior, UniformPrior
+from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.utils import compute_identity, dict_intersection, zip_dicts
+
+from .priors import (CategoricalPrior, LogUniformPrior, NormalPrior, Prior,
+                     UniformPrior)
 
 # from orion.core.utils.format_trials import dict_to_trial
 # from orion.core.worker.trial import Trial
@@ -95,13 +98,9 @@ def log_uniform(min: Union[int,float],
 
 loguniform = log_uniform
 
-from simple_parsing import choice as _choice
-from .priors import CategoricalPrior
-
-from functools import wraps
 
 @wraps(_choice)
-def categorical(*choices: T, default: T = None, probabilities: List[float] = None, **kwargs: Any) -> T:
+def categorical(*choices: T, default: T = None, probabilities: Union[List[float], Dict[str, float]] = None, **kwargs: Any) -> T:
     """ Marks a field as being a categorical hyper-parameter.
 
     This wraps the `choice` function from `simple_parsing`.
@@ -128,6 +127,11 @@ def categorical(*choices: T, default: T = None, probabilities: List[float] = Non
         options = list(choice_dict.keys())
     else:
         options = list(choices)
+
+    if isinstance(probabilities, dict):
+        probabilities = [
+            probabilities.get(k, 0.) for k in options
+        ]
 
     prior = CategoricalPrior(
         choices=options,

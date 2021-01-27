@@ -63,6 +63,7 @@ class WandbLoggerConfig(Serializable, Parseable):
             entity=self.entity,
             group=self.group,
             monitor_gym=self.monitor_gym,
+            reinit=True,
         )
         return wandb_logger
 

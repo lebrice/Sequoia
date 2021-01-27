@@ -41,13 +41,18 @@ class BaseHParams(HyperParameters):
     available_encoders: ClassVar[Dict[str, Type[nn.Module]]] = available_encoders.copy()
 
     # Learning rate of the optimizer.
-    learning_rate: float = log_uniform(1e-9, 1e-1, default=0.001)
+    learning_rate: float = log_uniform(1e-6, 1e-2, default=1e-3)
     # L2 regularization term for the model weights.
     weight_decay: float = log_uniform(1e-12, 1e-3, default=1e-6)
     # Which optimizer to use.
     optimizer: Type[Optimizer] = categorical(available_optimizers, default=optim.Adam)
     # Use an encoder architecture from the torchvision.models package.
-    encoder: Type[nn.Module] = choice(available_encoders, default=tv_models.resnet18)
+    encoder: Type[nn.Module] = categorical(
+        available_encoders,
+        default=tv_models.resnet18,
+        # TODO: Only using these two by default when performing a sweep.
+        probabilities={"resnet18": 0.5, "simple_convnet": 0.5},
+    )
     
     # Batch size to use during training and evaluation.
     batch_size: Optional[int] = None

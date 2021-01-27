@@ -97,8 +97,13 @@ class CategoricalPrior(Prior[T]):
     def get_orion_space_string(self) -> str:
         string = "choices("
         if self.probabilities:
+            prob_dict = dict(zip(self.choices, self.probabilities))
             assert sum(self.probabilities) == 1, "probs should sum to 1."
-            string += str(dict(zip(self.choices, self.probabilities)))
+            # BUG: Seems like orion still samples entries, even if they have zero
+            # probability!
+            # TODO: Remove the entries that have zero prob?
+            prob_dict = {k: v for k, v in prob_dict.items() if v > 0}
+            string += str(prob_dict)
         else:
             string += str(self.choices)
         if self.default_value:
