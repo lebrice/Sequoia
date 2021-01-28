@@ -1,15 +1,16 @@
 import json
 from dataclasses import dataclass
 from typing import Dict, Union, List, Optional, Mapping
+import numpy as np
+import wandb
 
 from sequoia.common import Config
 from sequoia.methods.baseline_method import BaselineMethod, BaselineModel
 from sequoia.settings import IIDSetting, Results, Setting
 from sequoia.utils import compute_identity, dict_union
 from sequoia.utils.logging_utils import get_logger
-import numpy as np
 logger = get_logger(__file__)
-import wandb
+
 
 @dataclass
 class DummyMethod(BaselineMethod):
@@ -36,8 +37,8 @@ class DummyMethod(BaselineMethod):
         setting_hash = compute_identity(size=5, **setting.to_dict())
         # TODO: If the setting were to change, even very slightly, then the hash might be
         # very different! Do we really want to delete all previous points/runs while
-        # developing Sequoia? 
-        return f"{setting.get_name()}-{setting.dataset}_{setting_hash}"
+        # developing Sequoia?
+        return f"{self.get_name()}-{setting.get_name()}_{setting.dataset}_{setting_hash}"
 
     def get_search_space(self) -> Mapping[str, Union[str, Dict]]:
         """ Gets the orion-formatted search space dictionary, mapping from hyper-parameter
@@ -60,6 +61,7 @@ class DummyMethod(BaselineMethod):
         self.configure(setting)
         assert self.hparams == self.model.hp
         experiment_name = self.get_experiment_name(setting)
+        search_space_dict = self.get_search_space()
 
         # Setting max epochs to 1, just to make runs a bit shorter.
         self.trainer_options.max_epochs = 1
@@ -72,7 +74,8 @@ class DummyMethod(BaselineMethod):
         else:
             logger.info(f"Experiment {experiment} already exists.")
 
-        search_space_dict = self.get_search_space()
+        logger.info(f"HPO Search space:\n" + json.dumps(search_space_dict, indent="\t"))
+
         experiment = build_experiment(
             name=experiment_name,
             space=search_space_dict,
@@ -125,10 +128,12 @@ class DummyMethod(BaselineMethod):
             ])
 
             if best_results is None:
+                # First run:
                 best_results = result
                 best_hparams = self.hparams
                 best_objective = result.objective
-            elif previous_results > best_results:
+            elif result > best_results:
+                # New best result.
                 best_results = result
                 best_hparams = self.hparams
                 best_objective = result.objective
