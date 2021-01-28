@@ -318,7 +318,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         )
         return trainer
     
-    def get_experiment_name(self, setting: Setting) -> str:
+    def get_experiment_name(self, setting: Setting, experiment_id: str=None) -> str:
         """Gets a unique name for the experiment where `self` is applied to `setting`.
 
         This experiment name will be passed to `orion` when performing a run of
@@ -330,16 +330,19 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
             The `Setting` onto which this method will be applied. This method will be used when
 
+        - experiment_id: str, optional
+
+            A custom hash to append to the experiment name. When `None` (default), a
+            unique hash will be created based on the values of the Setting's fields.
+
         Returns
         -------
         str
             The name for the experiment.
         """
-        setting_hash = compute_identity(size=5, **setting.to_dict())
-        # TODO: If the setting were to change, even very slightly, then the hash might be
-        # very different! Do we really want to delete all previous points/runs while
-        # developing Sequoia?
-        return f"{self.get_name()}-{setting.get_name()}_{setting.dataset}_{setting_hash}"
+        experiment_id = experiment_id or compute_identity(size=5, **setting.to_dict())
+        assert isinstance(setting.dataset, str), "assuming that dataset is a str for now."
+        return f"{self.get_name()}-{setting.get_name()}_{setting.dataset}_{experiment_id}"
 
     def get_search_space(self) -> Mapping[str, Union[str, Dict]]:
         """ Gets the orion-formatted search space dictionary, mapping from hyper-parameter
@@ -360,21 +363,12 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # update
         # the hparams to be fully defined.
         self.configure(setting)
-        assert self.hparams == self.model.hp
-        experiment_name = self.get_experiment_name(setting)
-        search_space_dict = self.get_search_space()
-
         # Setting max epochs to 1, just to make runs a bit shorter.
         self.trainer_options.max_epochs = 1
-        
-        try:
-            experiment = get_experiment(experiment_name, mode="w")
-        except NoConfigurationError:
-            # The experiment doesn't exist yet.
-            logger.info(f"Creating new experiment with name {experiment_name}")
-        else:
-            logger.info(f"Experiment {experiment} already exists.")
+        assert self.hparams == self.model.hp
 
+        experiment_name = self.get_experiment_name(setting)
+        search_space_dict = self.get_search_space()
         logger.info(f"HPO Search space:\n" + json.dumps(search_space_dict, indent="\t"))
 
         experiment = build_experiment(
@@ -387,39 +381,47 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         )
 
         previous_trials: List[Trial] = experiment.fetch_trials_by_status("completed")
-        previous_hparams: List[BaselineModel.HParams] = [type(self.hparams).from_dict(trial.params) for trial in previous_trials]
-        previous_results: List[Trial.Result] = [trial.results[0] for trial in previous_trials]
-        
-        best_results: Optional[Results] = None
-        if previous_results:
-            # (since Orion works in a 'lower is better' fashion)
-            best_index = np.argmin([result.value for result in previous_results])
+        previous_hparams: List[BaselineModel.HParams] = [
+            type(self.hparams).from_dict(trial.params) for trial in previous_trials
+        ]
+        # Since Orion works in a 'lower is better' fashion, we negate the objectives
+        # when extracting them and again before submitting them.
+        previous_objectives: List[float] = [
+            - trial.objective.value for trial in previous_trials
+        ]
+
+        if previous_objectives:
+            logger.info(f"Using existing Experiment {experiment} which has {len(previous_trials)} existing trials.")
+            best_index = np.argmax(previous_objectives)
             best_hparams = previous_hparams[best_index]
-            best_results = None
-            best_objective = - previous_results[best_index].value
+            best_objective = previous_objectives[best_index]
         else:
+            logger.info(f"Created new experiment with name {experiment_name}")
             best_hparams = self.hparams
-            best_results = None
-            best_objective = - np.inf
-
+            best_objective = None
         logger.info(f"Best result encountered so far: {best_objective}")
+        logger.info(f"Best hparams so far: {best_hparams}")
 
-        while not experiment.is_done:
-            trial = experiment.suggest()
-            hparam_values = trial.params
-
-            logger.info(f"Suggested values for this run:\n" + json.dumps(hparam_values, indent="\t"))
-
-            current_hp_dict = self.hparams.to_dict()
-            new_hp_dict = dict_union(current_hp_dict, hparam_values, recurse=True)
+        def adapt_to_new_hparams(new_params: Dict):
+            logger.info(f"Suggested values for this run:\n" + json.dumps(new_params, indent="\t"))
+            # Here we overwrite the corresponding attributes with the new suggested values
+            # leaving other fields unchanged.
+            new_hp_dict = dict_union(self.hparams.to_dict(), new_params, recurse=True)
             new_hp = type(self.hparams).from_dict(new_hp_dict)
-            
             # Change the hyper-parameters, then reconfigure (which recreates the model).
             self.hparams = new_hp
             self.configure(setting)
+            # TODO: We should probably also change some values in the Config (ex log_dir, checkpoint_dir, etc)
+            # between runs.
             assert self.model.hp is new_hp
 
+        while not experiment.is_done:
+            trial: Trial = experiment.suggest()
+            
+            adapt_to_new_hparams(trial.params)
+
             result: Results = setting.apply(self, config=self.config)
+            
             experiment.observe(trial, [
                 dict(
                     name=result.objective_name,
@@ -429,40 +431,35 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                 )
             ])
 
-            if best_results is None:
+            ## Receive the new results.
+
+            if best_objective is None:
                 # First run:
-                best_results = result
                 best_hparams = self.hparams
                 best_objective = result.objective
-            elif result > best_results:
+            elif result.objective > best_objective:
                 # New best result.
-                best_results = result
                 best_hparams = self.hparams
                 best_objective = result.objective
 
-            if wandb.run:
-                wandb.run.finish()
-
-            # FIXME: Remove this, just debugging stuff atm.
-            # break
-        return best_hparams, best_results
-
-
-
+            self.receive_results(setting, result)
+        return best_hparams, best_objective
 
     def receive_results(self, setting: Setting, results: Results):
-        # Note: this here is temporary, just tinkering with wandb atm.
-        
+        """ Receives the results of an experiment, where `self` was applied to Setting
+        `setting`, which produced results `results`.
+        """
         method_name: str = self.get_name()
         setting_name: str = setting.get_name()
-        dataset: str = getattr(setting, "dataset", "")
-        if not (self.config.debug or self.trainer_options.fast_dev_run or self.trainer_options.no_wandb):
+        dataset = setting.dataset
+        if wandb.run:
             wandb.summary["method"] = method_name
             wandb.summary["setting"] = setting_name
-            if dataset:
+            if dataset and isinstance(dataset, str):
                 wandb.summary["dataset"] = dataset
             wandb.log(results.to_log_dict())
             wandb.log(results.make_plots())
+            wandb.run.finish()
         # Reset the run name so we create a new one next time we're applied on a
         # Setting.
         self.trainer_options.wandb.run_name = None
