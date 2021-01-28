@@ -60,7 +60,7 @@ class WandbLoggerConfig(Serializable, Parseable):
     # Which user to use
     entity: str = ""
     # The name of the project to which this run will belong.
-    project: str = "demo" 
+    project: str = "sequoia"
     # Name used to easily group runs together.
     # Used to create a parent folder that will contain the `run_name` directory.
     # A unique string shared by all runs in a given group

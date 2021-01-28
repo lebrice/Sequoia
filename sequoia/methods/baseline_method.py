@@ -6,10 +6,11 @@ we use pytorch-lightning, and a few little utility classes such as `Metrics` and
 methods.
 """
 import warnings
+import json
 from dataclasses import dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, Callable, ClassVar, Dict, Generic, List, Optional,
-                    Sequence, Set, Tuple, Type, TypeVar, Union)
+                    Sequence, Set, Tuple, Type, TypeVar, Union, Mapping)
 
 import gym
 import torch
@@ -20,6 +21,7 @@ from pytorch_lightning.loggers import WandbLogger
 from simple_parsing import Serializable, mutable_field
 from torch import Tensor
 from torch.utils.data import DataLoader
+import numpy as np
 
 from sequoia.common import Batch, Config, Loss, Metrics, TrainerConfig
 from sequoia.common.callbacks import KnnCallback
@@ -35,7 +37,7 @@ from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.settings.base.results import Results
 from sequoia.settings.base.setting import Setting, SettingType
 from sequoia.utils import (Parseable, Serializable, get_logger,
-                           singledispatchmethod)
+                           singledispatchmethod, dict_union, compute_identity)
 from sequoia.utils.utils import get_path_to_source_file
 
 from .models import BaselineModel, ForwardPass
@@ -316,6 +318,138 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         )
         return trainer
     
+    def get_experiment_name(self, setting: Setting) -> str:
+        """Gets a unique name for the experiment where `self` is applied to `setting`.
+
+        This experiment name will be passed to `orion` when performing a run of
+        Hyper-Parameter Optimization. 
+
+        Parameters
+        ----------
+        - setting : Setting
+
+            The `Setting` onto which this method will be applied. This method will be used when
+
+        Returns
+        -------
+        str
+            The name for the experiment.
+        """
+        setting_hash = compute_identity(size=5, **setting.to_dict())
+        # TODO: If the setting were to change, even very slightly, then the hash might be
+        # very different! Do we really want to delete all previous points/runs while
+        # developing Sequoia?
+        return f"{self.get_name()}-{setting.get_name()}_{setting.dataset}_{setting_hash}"
+
+    def get_search_space(self) -> Mapping[str, Union[str, Dict]]:
+        """ Gets the orion-formatted search space dictionary, mapping from hyper-parameter
+        names to their priors.
+        """
+        space = self.hparams.get_orion_space()
+        return space
+
+    def hparam_sweep(self, setting: Setting, max_runs: int = None):
+        """ Performs a hparam sweep using orion, changing the values in
+        `self.hparams` iteratively, and returning the best hparams found so far.
+        """
+        from orion.core.worker.trial import Trial
+        from orion.client import build_experiment, get_experiment
+        from orion.core.utils.exceptions import NoConfigurationError
+
+        # Call 'configure', so that we create `self.model` at least once, which will
+        # update
+        # the hparams to be fully defined.
+        self.configure(setting)
+        assert self.hparams == self.model.hp
+        experiment_name = self.get_experiment_name(setting)
+        search_space_dict = self.get_search_space()
+
+        # Setting max epochs to 1, just to make runs a bit shorter.
+        self.trainer_options.max_epochs = 1
+        
+        try:
+            experiment = get_experiment(experiment_name, mode="w")
+        except NoConfigurationError:
+            # The experiment doesn't exist yet.
+            logger.info(f"Creating new experiment with name {experiment_name}")
+        else:
+            logger.info(f"Experiment {experiment} already exists.")
+
+        logger.info(f"HPO Search space:\n" + json.dumps(search_space_dict, indent="\t"))
+
+        experiment = build_experiment(
+            name=experiment_name,
+            space=search_space_dict,
+            debug=self.config.debug,
+            algorithms="BayesianOptimizer", 
+            max_trials=max_runs,
+            # storage={"type": "pickleddb"},
+        )
+
+        previous_trials: List[Trial] = experiment.fetch_trials_by_status("completed")
+        previous_hparams: List[BaselineModel.HParams] = [type(self.hparams).from_dict(trial.params) for trial in previous_trials]
+        previous_results: List[Trial.Result] = [trial.results[0] for trial in previous_trials]
+        
+        best_results: Optional[Results] = None
+        if previous_results:
+            # (since Orion works in a 'lower is better' fashion)
+            best_index = np.argmin([result.value for result in previous_results])
+            best_hparams = previous_hparams[best_index]
+            best_results = None
+            best_objective = - previous_results[best_index].value
+        else:
+            best_hparams = self.hparams
+            best_results = None
+            best_objective = - np.inf
+
+        logger.info(f"Best result encountered so far: {best_objective}")
+
+        while not experiment.is_done:
+            trial = experiment.suggest()
+            hparam_values = trial.params
+
+            logger.info(f"Suggested values for this run:\n" + json.dumps(hparam_values, indent="\t"))
+
+            current_hp_dict = self.hparams.to_dict()
+            new_hp_dict = dict_union(current_hp_dict, hparam_values, recurse=True)
+            new_hp = type(self.hparams).from_dict(new_hp_dict)
+            
+            # Change the hyper-parameters, then reconfigure (which recreates the model).
+            self.hparams = new_hp
+            self.configure(setting)
+            assert self.model.hp is new_hp
+
+            result: Results = setting.apply(self, config=self.config)
+            experiment.observe(trial, [
+                dict(
+                    name=result.objective_name,
+                    type='objective',
+                    # Note the minus sign, since lower is better in Orion.
+                    value=-result.objective,
+                )
+            ])
+
+            if best_results is None:
+                # First run:
+                best_results = result
+                best_hparams = self.hparams
+                best_objective = result.objective
+            elif result > best_results:
+                # New best result.
+                best_results = result
+                best_hparams = self.hparams
+                best_objective = result.objective
+
+            if wandb.run:
+                wandb.run.finish()
+
+            # FIXME: Remove this, just debugging stuff atm.
+            # break
+        return best_hparams, best_results
+
+
+
+
     def receive_results(self, setting: Setting, results: Results):
         # Note: this here is temporary, just tinkering with wandb atm.
         
@@ -357,6 +491,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             for method, results in all_results.items()
         })
         return all_results
+
 
     def __init_subclass__(cls, *args, **kwargs) -> None:
         """Called when creating a new subclass of Method.
