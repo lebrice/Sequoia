@@ -1,14 +1,11 @@
-import json
-from dataclasses import dataclass
-from typing import Dict, Union, List, Optional, Mapping
-import numpy as np
+"""Runs a hyper-parameter tuning sweep, using Orion for HPO and wandb for visualization. 
+"""
 import wandb
-
 from sequoia.common import Config
-from sequoia.methods.baseline_method import BaselineMethod, BaselineModel
+from sequoia.methods.baseline_method import BaselineMethod
 from sequoia.settings import IIDSetting, Results, Setting
-from sequoia.utils import compute_identity, dict_union
 from sequoia.utils.logging_utils import get_logger
+
 logger = get_logger(__file__)
 
 
