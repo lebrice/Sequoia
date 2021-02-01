@@ -381,3 +381,7 @@ def get_knn_performance(x_t: np.ndarray,
     # Loss constructor has an error. 
     test_loss = Loss(loss_name, loss=nce_t, y_pred=y_t_logits, y=y_t)
     return test_loss
+
+
+from simple_parsing.helpers.serialization import register_decoding_fn
+register_decoding_fn(KnnCallback, lambda v: v)

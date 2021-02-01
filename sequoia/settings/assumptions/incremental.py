@@ -324,9 +324,8 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
         self._closed = False
         self._steps = 0
         self.config = config
-        # if self.config.render:
-        #     if wandb.run:
-        #         wandb.gym.monitor()
+        # if wandb.run:
+        #     wandb.gym.monitor()
             
 
     def is_closed(self):

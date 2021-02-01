@@ -31,6 +31,10 @@ setup(
     extras_require={
         "rl": [
             "meta_monsterkong @ git+https://github.com/mattriemer/monsterkong_examples.git@sequoia_integration#egg=meta_monsterkong"
+        ],
+        "hpo": [
+            "orion",
+            "orion.algo.skopt",
         ]},
     install_requires=load_requirements(),
     python_requires='>=3.7',

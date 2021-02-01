@@ -1,17 +1,55 @@
 """TODO: Re-enable the wandb stuff (disabled for now).
 """
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import *
 
 import wandb
 from pytorch_lightning.loggers import WandbLogger
-
 from simple_parsing import field, list_field
+
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.parseable import Parseable
 from sequoia.utils.serialization import Serializable
+
+def patched_monitor():
+    vcr = wandb.util.get_module(
+        "gym.wrappers.monitoring.video_recorder",
+        required="Couldn't import the gym python package, install with pip install gym",
+    )
+    print(f"Using patched version of `wandb.gym.monitor()`")
+    if hasattr(vcr.ImageEncoder, "orig_close"):
+        print(f"wandb.gym.monitor() has already been called.")
+        return
+    else:
+        vcr.ImageEncoder.orig_close = vcr.ImageEncoder.close
+
+    def close(self):
+        vcr.ImageEncoder.orig_close(self)
+        m = re.match(r".+(video\.\d+).+", self.output_path)
+        if m:
+            key = m.group(1)
+        else:
+            key = "videos"
+        wandb.log({key: wandb.Video(self.output_path)})
+    vcr.ImageEncoder.close = close
+    wandb.patched["gym"].append(
+        ["gym.wrappers.monitoring.video_recorder.ImageEncoder", "close"]
+    )
+
+import wandb.integration.gym
+
+wandb.integration.gym.monitor = patched_monitor 
+
+
+# GYM_MONITOR = os.environ.get("GYM_MONITOR", "")
+# if not GYM_MONITOR:
+#     wandb.gym.monitor()
+#     os.environ["GYM_MONITOR"] = "True"
+# else:
+#     assert False, "importing this a second time?"
 
 logger = get_logger(__file__)
 
@@ -22,7 +60,7 @@ class WandbLoggerConfig(Serializable, Parseable):
     # Which user to use
     entity: str = ""
     # The name of the project to which this run will belong.
-    project: str = "demo" 
+    project: str = "sequoia"
     # Name used to easily group runs together.
     # Used to create a parent folder that will contain the `run_name` directory.
     # A unique string shared by all runs in a given group
@@ -63,6 +101,7 @@ class WandbLoggerConfig(Serializable, Parseable):
             entity=self.entity,
             group=self.group,
             monitor_gym=self.monitor_gym,
+            reinit=True,
         )
         return wandb_logger
 

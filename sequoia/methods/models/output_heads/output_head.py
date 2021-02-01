@@ -12,6 +12,7 @@ from torch import Tensor, nn
 from torch.nn import Flatten  # type: ignore
 from torch.optim.optimizer import Optimizer
 
+from sequoia.common.hparams import HyperParameters
 from sequoia.common.loss import Loss
 from sequoia.common.metrics import ClassificationMetrics, get_metrics
 from sequoia.settings import Actions, Observations, Rewards, Setting
@@ -38,7 +39,7 @@ class OutputHead(nn.Module, ABC):
     base_model_optimizer: ClassVar[Optimizer]
 
     @dataclass
-    class HParams(Serializable, Parseable):
+    class HParams(HyperParameters):
         """ Hyperparameters of the output head. """
         
     def __init__(self,

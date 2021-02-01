@@ -6,10 +6,11 @@ we use pytorch-lightning, and a few little utility classes such as `Metrics` and
 methods.
 """
 import warnings
+import json
 from dataclasses import dataclass, is_dataclass
 from pathlib import Path
 from typing import (Any, Callable, ClassVar, Dict, Generic, List, Optional,
-                    Sequence, Set, Tuple, Type, TypeVar, Union)
+                    Sequence, Set, Tuple, Type, TypeVar, Union, Mapping)
 
 import gym
 import torch
@@ -20,6 +21,7 @@ from pytorch_lightning.loggers import WandbLogger
 from simple_parsing import Serializable, mutable_field
 from torch import Tensor
 from torch.utils.data import DataLoader
+import numpy as np
 
 from sequoia.common import Batch, Config, Loss, Metrics, TrainerConfig
 from sequoia.common.callbacks import KnnCallback
@@ -35,7 +37,7 @@ from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.settings.base.results import Results
 from sequoia.settings.base.setting import Setting, SettingType
 from sequoia.utils import (Parseable, Serializable, get_logger,
-                           singledispatchmethod)
+                           singledispatchmethod, dict_union, compute_identity)
 from sequoia.utils.utils import get_path_to_source_file
 
 from .models import BaselineModel, ForwardPass
@@ -77,7 +79,11 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         
         # Option 2: Try to use the keyword arguments to create the hparams,
         # config and trainer options.
-        if kwargs:    
+        if kwargs:
+            logger.info(
+                f"using keyword arguments {kwargs} to populate the corresponding "
+                f"values in the hparams, config and trainer_options."
+            )    
             self.hparams = hparams or BaselineModel.HParams.from_dict(kwargs, drop_extra_fields=True)
             self.config = config or Config.from_dict(kwargs, drop_extra_fields=True)
             self.trainer_options = trainer_options or TrainerConfig.from_dict(kwargs, drop_extra_fields=True)
@@ -96,7 +102,9 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             self.hparams = hparams or BaselineModel.HParams()
             self.config = config or Config()
             self.trainer_options = trainer_options or TrainerConfig()
-
+        assert self.hparams
+        assert self.config
+        assert self.trainer_options
 
         if self.config.debug:
             # Disable wandb logging if debug is True.
@@ -128,7 +136,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # Note: this here is temporary, just tinkering with wandb atm.
         method_name: str = self.get_name()
         
-        # Set the default batch size to use.
+        # Set the default batch size to use, depending on the kind of Setting.
         if self.hparams.batch_size is None:
             if isinstance(setting, ActiveSetting):
                 # Default batch size of 1 in RL
@@ -141,15 +149,16 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                     f"{setting}, will try 16."
                 ))
                 self.hparams.batch_size = 16
+        # Set the batch size on the setting.
+        setting.batch_size = self.hparams.batch_size
 
         # TODO: Should we set the 'config' on the setting from here?
-        # setting.config = self.config
-        if setting.config == self.config:
+        if setting.config and setting.config == self.config:
             pass
         elif self.config != Config():
-            assert setting.config == Config(), "method.config has been modified, and so has setting.config!"
+            assert setting.config is None or setting.config == Config(), f"method.config has been modified, and so has setting.config!"
             setting.config == self.config
-        else:
+        elif setting.config:
             assert setting.config != Config(), "Weird, both configs have default values.."
             self.config = setting.config
         
@@ -179,10 +188,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                 setting.val_transforms.append(Transforms.resize_64x64)
                 setting.test_transforms.append(Transforms.resize_64x64)
             
-            if self.hparams.batch_size is None:
-                # Using default batch size of 32, which is huge for RL!
-                self.hparams.batch_size = 1
-
             # Configure the baseline specifically for an RL setting.
             # TODO: Select which output head to use from the command-line?
             # Limit the number of epochs so we never iterate on a closed env.
@@ -195,9 +200,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                 # NOTE: This isn't used, since we don't call `trainer.test()`.
                 self.trainer_options.limit_test_batches = setting.max_steps
 
-        # Set the batch size on the setting.
-        setting.batch_size = self.hparams.batch_size
         self.model = self.create_model(setting)
+        assert self.hparams is self.model.hp
 
         # The PolicyHead actually does its own backward pass, so we disable
         # automatic optimization when using it.
@@ -314,19 +318,148 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         )
         return trainer
     
+    def get_experiment_name(self, setting: Setting, experiment_id: str=None) -> str:
+        """Gets a unique name for the experiment where `self` is applied to `setting`.
+
+        This experiment name will be passed to `orion` when performing a run of
+        Hyper-Parameter Optimization. 
+
+        Parameters
+        ----------
+        - setting : Setting
+
+            The `Setting` onto which this method will be applied. This method will be used when
+
+        - experiment_id: str, optional
+
+            A custom hash to append to the experiment name. When `None` (default), a
+            unique hash will be created based on the values of the Setting's fields.
+
+        Returns
+        -------
+        str
+            The name for the experiment.
+        """
+        experiment_id = experiment_id or compute_identity(size=5, **setting.to_dict())
+        assert isinstance(setting.dataset, str), "assuming that dataset is a str for now."
+        return f"{self.get_name()}-{setting.get_name()}_{setting.dataset}_{experiment_id}"
+
+    def get_search_space(self) -> Mapping[str, Union[str, Dict]]:
+        """ Gets the orion-formatted search space dictionary, mapping from hyper-parameter
+        names to their priors.
+        """
+        space = self.hparams.get_orion_space()
+        return space
+
+    def hparam_sweep(self, setting: Setting, max_runs: int = None):
+        """ Performs a hparam sweep using orion, changing the values in
+        `self.hparams` iteratively, and returning the best hparams found so far.
+        """
+        from orion.core.worker.trial import Trial
+        from orion.client import build_experiment, get_experiment
+        from orion.core.utils.exceptions import NoConfigurationError
+
+        # Call 'configure', so that we create `self.model` at least once, which will
+        # update
+        # the hparams to be fully defined.
+        self.configure(setting)
+        # Setting max epochs to 1, just to make runs a bit shorter.
+        self.trainer_options.max_epochs = 1
+        assert self.hparams == self.model.hp
+
+        experiment_name = self.get_experiment_name(setting)
+        search_space_dict = self.get_search_space()
+        logger.info(f"HPO Search space:\n" + json.dumps(search_space_dict, indent="\t"))
+
+        experiment = build_experiment(
+            name=experiment_name,
+            space=search_space_dict,
+            debug=self.config.debug,
+            algorithms="BayesianOptimizer", 
+            max_trials=max_runs,
+            # storage={"type": "pickleddb"},
+        )
+
+        previous_trials: List[Trial] = experiment.fetch_trials_by_status("completed")
+        previous_hparams: List[BaselineModel.HParams] = [
+            type(self.hparams).from_dict(trial.params) for trial in previous_trials
+        ]
+        # Since Orion works in a 'lower is better' fashion, we negate the objectives
+        # when extracting them and again before submitting them.
+        previous_objectives: List[float] = [
+            - trial.objective.value for trial in previous_trials
+        ]
+
+        if previous_objectives:
+            logger.info(f"Using existing Experiment {experiment} which has {len(previous_trials)} existing trials.")
+            best_index = np.argmax(previous_objectives)
+            best_hparams = previous_hparams[best_index]
+            best_objective = previous_objectives[best_index]
+        else:
+            logger.info(f"Created new experiment with name {experiment_name}")
+            best_hparams = self.hparams
+            best_objective = None
+        logger.info(f"Best result encountered so far: {best_objective}")
+        logger.info(f"Best hparams so far: {best_hparams}")
+
+        def adapt_to_new_hparams(new_params: Dict):
+            logger.info(f"Suggested values for this run:\n" + json.dumps(new_params, indent="\t"))
+            # Here we overwrite the corresponding attributes with the new suggested values
+            # leaving other fields unchanged.
+            new_hp_dict = dict_union(self.hparams.to_dict(), new_params, recurse=True)
+            new_hp = type(self.hparams).from_dict(new_hp_dict)
+            # Change the hyper-parameters, then reconfigure (which recreates the model).
+            self.hparams = new_hp
+            self.configure(setting)
+            # TODO: We should probably also change some values in the Config (ex log_dir, checkpoint_dir, etc)
+            # between runs.
+            assert self.model.hp is new_hp
+
+        while not experiment.is_done:
+            trial: Trial = experiment.suggest()
+            
+            adapt_to_new_hparams(trial.params)
+
+            result: Results = setting.apply(self, config=self.config)
+            
+            experiment.observe(trial, [
+                dict(
+                    name=result.objective_name,
+                    type='objective',
+                    # Note the minus sign, since lower is better in Orion.
+                    value=-result.objective,
+                )
+            ])
+
+            ## Receive the new results.
+
+            if best_objective is None:
+                # First run:
+                best_hparams = self.hparams
+                best_objective = result.objective
+            elif result.objective > best_objective:
+                # New best result.
+                best_hparams = self.hparams
+                best_objective = result.objective
+
+            self.receive_results(setting, result)
+        return best_hparams, best_objective
+
     def receive_results(self, setting: Setting, results: Results):
-        # Note: this here is temporary, just tinkering with wandb atm.
-        
+        """ Receives the results of an experiment, where `self` was applied to Setting
+        `setting`, which produced results `results`.
+        """
         method_name: str = self.get_name()
         setting_name: str = setting.get_name()
-        dataset: str = getattr(setting, "dataset", "")
-        if not (self.config.debug or self.trainer_options.fast_dev_run or self.trainer_options.no_wandb):
+        dataset = setting.dataset
+        if wandb.run:
             wandb.summary["method"] = method_name
             wandb.summary["setting"] = setting_name
-            if dataset:
+            if dataset and isinstance(dataset, str):
                 wandb.summary["dataset"] = dataset
             wandb.log(results.to_log_dict())
             wandb.log(results.make_plots())
+            wandb.run.finish()
         # Reset the run name so we create a new one next time we're applied on a
         # Setting.
         self.trainer_options.wandb.run_name = None
@@ -355,6 +488,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             for method, results in all_results.items()
         })
         return all_results
+
 
     def __init_subclass__(cls, *args, **kwargs) -> None:
         """Called when creating a new subclass of Method.

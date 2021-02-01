@@ -1,6 +1,7 @@
 """ Set of Utilities. """
 import collections
 import functools
+import hashlib
 import inspect
 import itertools
 import operator
@@ -22,13 +23,21 @@ import torch
 from simple_parsing import field
 from torch import Tensor, cuda, nn
 
-
 cuda_available = cuda.is_available()
 gpus_available = cuda.device_count()
 
 T = TypeVar("T")
 K = TypeVar("K")
 V = TypeVar("V")
+
+Dataclass = TypeVar("Dataclass")
+
+
+def field_dict(dataclass: Dataclass) -> Dict[str, Field]:
+    return {
+        field.name: field
+        for field in fields(dataclass)
+    }
 
 
 def mean(values: Iterable[T]) -> T:
@@ -151,9 +160,37 @@ def set_seed(seed: int):
 
     import numpy as np
     import torch
+
     random.seed(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def compute_identity(size: int=16, **sample) -> str:
+    """Compute a unique hash out of a dictionary
+
+    Parameters
+    ----------
+    size: int
+        size of the unique hash
+
+    **sample:
+        Dictionary to compute the hash from
+
+    """
+    sample_hash = hashlib.sha256()
+
+    for k, v in sorted(sample.items()):
+        sample_hash.update(k.encode('utf8'))
+
+        if isinstance(v, dict):
+            sample_hash.update(compute_identity(size, **v).encode('utf8'))
+        else:
+            sample_hash.update(str(v).encode('utf8'))
+
+    return sample_hash.hexdigest()[:size]
 
 
 def prod(iterable: Iterable[T]) -> T:

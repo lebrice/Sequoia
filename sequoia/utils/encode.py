@@ -4,11 +4,11 @@ simple-parsing when serializing objects to json or yaml.
 import enum
 import inspect
 from pathlib import Path
-from typing import Any, List, Union
+from typing import Any, List, Union, Type
 
 import numpy as np
 import torch
-from torch import Tensor
+from torch import Tensor, nn, optim
 
 from simple_parsing.helpers import encode
 from simple_parsing.helpers.serialization import register_decoding_fn
@@ -16,6 +16,8 @@ from simple_parsing.helpers.serialization import register_decoding_fn
 # Register functions for decoding Tensor and ndarray fields from json/yaml.
 register_decoding_fn(Tensor, torch.as_tensor)
 register_decoding_fn(np.ndarray, np.asarray)
+register_decoding_fn(Type[nn.Module], lambda v: v)
+register_decoding_fn(Type[optim.Optimizer], lambda v: v)
 
 # NOTE: Uncomment this to enable logging tensors as-is when calling to_dict on a
 # Serializable dataclass

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Type, ClassVar, Optional
 
 import gym
 import torch
@@ -7,6 +7,7 @@ from gym import spaces
 from torch import Tensor, nn, LongTensor
 from simple_parsing import list_field
 
+from sequoia.common.hparams import uniform, categorical
 from sequoia.common import Batch, ClassificationMetrics, Loss
 from sequoia.common.layers import Flatten
 from sequoia.settings import Observations, Actions, Rewards
@@ -51,14 +52,37 @@ class ClassificationHead(OutputHead):
 
     @dataclass
     class HParams(FCNet.HParams, OutputHead.HParams):
-        hidden_layers: int = 1
-        hidden_neurons: List[int] = list_field(64)
+        """ Hyper-parameters of the OutputHead used for classification. """
+
+        # NOTE: These hparams were basically copied over from FCNet.HParams, just so its a
+        # bit more visible.
+
+        available_activations: ClassVar[Dict[str, Type[nn.Module]]] = {
+            "relu": nn.ReLU,
+            "tanh": nn.Tanh,
+            "elu": nn.ELU, # No idea what these do, but hey, they are available!
+            "gelu": nn.GELU,
+            "relu6": nn.ReLU6,
+        }
+        # Number of hidden layers in the output head.
+        hidden_layers: int = uniform(0, 3, default=0)
+        # Number of neurons in each hidden layer of the output head.
+        # If a single value is given, than each of the `hidden_layers` layers
+        # will have that number of neurons. 
+        # If `n > 1` values are given, then `hidden_layers` must either be 0 or
+        # `n`, otherwise a RuntimeError will be raised.
+        hidden_neurons: Union[int, List[int]] = uniform(16, 512, default=64)
+        activation: Type[nn.Module] = categorical(available_activations, default=nn.Tanh)
+        # Dropout probability. Dropout is applied after each layer.
+        # Set to None or 0 for no dropout.
+        # TODO: Not sure if this is how it's typically used. Need to check.
+        dropout_prob: Optional[float] = uniform(0, 0.8, default=0.2)
 
     def __init__(self,
                  input_space: gym.Space,
                  action_space: gym.Space,
                  reward_space: gym.Space = None,
-                 hparams: "OutputHead.HParams" = None,
+                 hparams: "ClassificationHead.HParams" = None,
                  name: str = "classification"):
         super().__init__(
             input_space=input_space,
@@ -67,13 +91,14 @@ class ClassificationHead(OutputHead):
             hparams=hparams,
             name=name,
         )
+        self.hparams: ClassificationHead.HParams
+
         assert isinstance(action_space, spaces.Discrete)
         output_size = action_space.n
         self.dense = FCNet(
             in_features=self.input_size,
             out_features=output_size,
-            hidden_neurons=self.hparams.hidden_neurons,
-            activation=self.hparams.activation,
+            hparams=self.hparams,
         )
         # if output_size == 2:
         #     # TODO: Should we be using this loss instead?
