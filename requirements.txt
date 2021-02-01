@@ -25,3 +25,5 @@ pytest-xvfb # Prevents the gym popups from displaying during tests.
 # TODO: Move this to an 'extras' in setup.py?
 stable-baselines3
 pyvirtualdisplay
+# Required for the synbols dataset to work. 
+h5py
