@@ -1,0 +1,29 @@
+@startuml common
+
+!include gym.puml
+
+' class List
+
+package common {
+    abstract class Batch {}
+
+    package transforms as common.transforms {
+        enum Transforms {
+            to_tensor: ToTensor
+            three_channels: ThreeChannels
+            random_grayscale: RandomGrayscale
+            channels_first: ChannelsFirst
+            channels_last: ChannelsLast
+            resize_64x64: Resize
+            resize_32x32: Resize
+            ...
+        }
+        abstract class Transform
+        class Compose extends torchvision.transforms.Compose {
+        }
+    }
+
+    package gym_wrappers as common.gym_wrappers {}
+    package spaces as common.spaces {}
+}
+@enduml

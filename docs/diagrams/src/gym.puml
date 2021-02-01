@@ -1,0 +1,55 @@
+@startuml gym
+
+package gym {
+    package spaces as gym.spaces {
+        abstract class Space<T> {
+            + bool contains(T sample) 
+            + T sample()
+        }
+
+        class Box extends Space {
+            + low: np.ndarray
+            + high: np.ndarray
+            + shape: Tuple[int, ...]
+            + dtype: np.dtype
+            + contains(np.ndarray sample) -> bool
+            + sample() -> np.ndarray
+        }
+
+        class Discrete extends Space {
+            + n: int
+            + contains(int sample) -> bool
+            + sample() -> int
+        }
+
+        class Tuple extends Space {
+            + spaces: Tuple[Space]
+            + contains(Tuple sample) -> bool
+            + sample() -> Tuple
+        }
+        ' Tuple spaces contain other spaces.
+        Tuple *--  Space
+
+        class Dict extends Space {
+            + spaces: dict[str, Space]
+            + contains(dict sample) -> bool
+            + sample() -> dict
+        }
+        ' Same for Dicts.
+        Dict *--  Space
+    }
+
+    abstract class Env<Obs, Act, Rew>{
+        + observation_space: Space<Obs>
+        + action_space: Space<Act> 
+        + step(Actions): Tuple[Obs, Rew, bool, dict]
+        + reset(): Obs
+    }
+    Env .. Space
+
+    abstract class Wrapper extends Env{
+        + env: Env
+    }
+}
+
+@enduml

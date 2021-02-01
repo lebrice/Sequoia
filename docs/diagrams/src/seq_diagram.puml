@@ -1,0 +1,174 @@
+@startuml ContinualRLSetting
+header Page Header
+footer Page %page% of %lastpage%
+title Overall Evaluation loop - Sequoia
+note over User, Setting
+Even though this diagram is somewhat large,
+keep in mind that there are but a few key methods:
+1. Method.configure()
+2. Method.fit()
+3. Method.get_actions()
+4. Method.on_task_switch()  
+end note
+
+actor User
+participant Setting << (A,#2121FF) Setting >>
+collections TrainEnv
+collections ValidEnv
+collections TestEnv
+' autoactivate on
+participant Method << (C,#ADD1B2) Method >>
+participant Model << (C,#ADD1B2) nn.Module >>
+' activate Setting
+' autoactivate on
+
+
+
+User -> Setting: Create the Setting
+Setting -> TrainEnv: Create temp env
+return observation / action / reward spaces
+User <-- Setting
+
+
+User -> Method: Create the Method
+User <-- Method
+
+
+User -> Setting: setting.apply(method)
+
+Setting -> Method: **method.configure(setting)**
+
+    Method -> Method: create model, optimizer, etc.
+    ' deactivate Method
+
+    Method -> Model: Create
+    ' activate Model
+Setting <-- Method
+
+autoactivate off
+
+== training ==
+
+
+group train_loop [for each task `i`]
+    alt task_labels_at_train_time?
+    else True
+        Setting -> Method: **on_task_switch(i)**
+        Method -> Method: consolidate knowledge, \n switch output heads, etc.
+        Setting <-- Method
+    else False 
+        Setting -> Method: **on_task_switch(None)**
+        Method -> Method: consolidate knowledge etc.
+        Setting <-- Method
+
+    end
+
+    Setting -> TrainEnv: Create train env for task i
+    Setting -> ValidEnv: Create valid env for task i
+    ' activate ValidEnv
+    Setting -> Method: **Method.fit(train_env, valid_env)**
+    ' loop
+    
+    ' alt loop
+    group loop
+        note right
+        The Method is free to do whatever
+        it wants with the Train and Valid envs
+        of the current task.
+        end note
+        Method -> Model: train()
+        return
+
+        ' group training
+        Model <--> TrainEnv: train with the env
+        ...
+
+        Method -> Model: eval()
+        return
+        Model <--> ValidEnv: Evaluate performance
+        ...
+        ' autoactivate on
+        ' Model -> TrainEnv: reset
+        ' return Observations
+        ' Model -> TrainEnv: step(actions)
+        ' return Observations, Rewards, done, info
+    end
+
+end
+
+
+== testing ==
+
+note over Setting, Method
+We currently only perform the test loop after training is complete on all tasks,
+however, in the future we will run this test loop after the end of training on
+each task. See issue#46 on GitHub for more info.
+end note
+
+group test_loop
+    Setting --> Setting: Concatenate datasets for all tasks, \n create test wrappers, etc.
+    Setting --> TestEnv: Create test environment (all tasks)
+    autoactivate on
+    Setting -> TestEnv: reset
+    return observations
+    ' loop
+        alt
+        else normal step
+
+            Setting -> Method: **get_actions(observations)**
+            Method -> Model: predict(x)
+            return y_pred
+            return actions
+            Setting -> TestEnv: step(actions)
+            return observations, rewards, done, info
+
+        else end of episode reached
+            Setting -> TestEnv: reset
+            return observations
+
+        else task boundary is reached
+            ' TestEnv --> Method: **on_task_switch(i)**
+            
+            alt known_task_boundaries?
+            else False: do nothing
+                note over Method
+                When known_task_boundaries=False, the Method doesn't get informed
+                of task boundaries (it might have to perform some kind of change-point
+                detection, for instance).
+                end note
+            else True
+                note over TestEnv
+                Minor note: here it's the TestEnv
+                that calls the Method when a
+                task boundary is reached.
+                end note
+
+                alt task_labels_at_test_time?
+                else true
+                    ' note right of Setting: If task labels are given
+                    TestEnv -> Method: **on_task_switch(i)**
+                    autoactivate off
+                    Method -> Method
+                    autoactivate on
+                    return
+
+                else false 
+                    TestEnv -> Method: **on_task_switch(None)**
+                    autoactivate off
+                    Method -> Method
+                    autoactivate on
+                    return
+                end
+            end
+        end
+    autoactivate off
+    note over TestEnv
+    The test environment uses a `Monitor` wrapper, and gather
+    statistics of interest like the mean reward, accuracy, etc.    
+    end note
+    TestEnv -> Setting: report performance of the Method
+end
+Setting -> Setting: Weigh performance of each task \n depending on the Setting
+User <-- Setting: Results
+' return Results
+@enduml

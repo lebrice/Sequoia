@@ -1,0 +1,16 @@
+@startuml pytorch_lightning
+package pytorch_lightning {
+    abstract class LightningDataModule {
+        {abstract} + prepare_data()
+        {abstract} + setup()
+        {abstract} + train_dataloader(): torch.DataLoader
+        {abstract} + val_dataloader(): torch.DataLoader
+        {abstract} + test_dataloader(): torch.DataLoader
+    }
+    abstract class LightningModule {
+        {abstract} + train_step(batch)
+        + val_step()
+        + test_step()
+    }
+}
+@enduml

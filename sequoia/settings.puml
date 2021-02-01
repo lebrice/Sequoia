@@ -1,0 +1,185 @@
+@startuml settings
+
+!include gym.puml
+!include pytorch_lightning.puml
+' !include common.puml
+'  TODO: there must be a better way to show only one thing from a
+' package, without having to import all the package and then 
+' remove everything but that one thing!
+remove gym.spaces
+remove Wrapper
+' remove common
+
+namespace torch {
+    class DataLoader
+    class Tensor
+}
+
+
+package settings {
+    !include settings/base.puml
+
+    abstract class Setting extends SettingABC {
+        ' 'root' setting.
+        -- static (class) attributes --
+        + {static} Observations: Type[Observations]    
+        + {static} Actions: Type[Actions]
+        + {static} Rewards: Type[Rewards]
+
+        .. attributes ..
+
+        + observation_space: Space 
+        + action_space: Space 
+        + reward_space: Space
+
+        .. methods ..
+
+        {abstract} + apply(Method): Results
+    }
+    
+    package assumptions as settings.assumptions {
+        package incremental as settings.assumptions.incremental {
+            abstract class IncrementalSetting extends Setting {
+                + nb_tasks: int
+                + task_labels_at_train_time: bool
+                + task_labels_at_test_time: bool
+                + {field} known_task_boundaries_at_train_time: bool = True (constant)
+                + {field} known_task_boundaries_at_test_time: bool = True (constant)
+                ' TODO: THis is actually a constant atm, even for ContinualRL
+                ' doesn't have this set to 'true', since there is only one task,
+                ' so there aren't an 'task boundaries' to speak of.
+                + {field} smooth_task_boundaries: bool
+                - _current_task_id: int
+                + train_loop()
+                + test_loop()
+
+            }
+
+            abstract class IncrementalObservations extends Observations {
+                + task_labels: Optional[Tensor]
+            }
+
+            abstract class IncrementalResults extends Results {
+
+            }
+        }
+    }
+
+    package passive as settings.passive {
+        class PassiveEnvironment implements Environment {}
+        abstract class PassiveSetting extends Setting {
+            {abstract} + train_dataloader(): PassiveEnvironment
+            {abstract} + val_dataloader(): PassiveEnvironment
+            {abstract} + test_dataloader(): PassiveEnvironment
+            + dataset: str
+            + available_datasets: dict
+        }
+        ' PassiveEnvironment extends DataLoader
+        
+        package cl as settings.passive.cl {
+            class ClassIncrementalSetting implements PassiveSetting, IncrementalSetting {
+                {static} + Results: Type[Results] = ClassIncrementalResults
+                + nb_tasks: int
+                + task_labels_at_train_time: bool = True
+                + task_labels_at_test_time: bool = False
+                + transforms: List[Transforms]
+                + class_order: Optional[List[int]] = None
+            }
+
+            class ClassIncrementalResults implements IncrementalResults {}
+
+            package task_incremental as settings.passive.cl.task_incremental {
+                class TaskIncrementalSetting extends ClassIncrementalSetting {
+                    {field} + task_labels_at_train_time: bool = True (constant)
+                    {field} + task_labels_at_test_time: bool = True (constant)
+                }
+                class TaskIncrementalResults extends ClassIncrementalResults{}
+                
+                package iid as settings.passive.cl.task_incremental.iid {
+                    class IIDSetting extends TaskIncrementalSetting {
+                        {field} + nb_tasks: int = 1 (constant)
+                    }
+                    class IIDResults extends TaskIncrementalResults{}
+
+                }
+            
+            }
+        }
+    }
+
+    package active as settings.active {
+        'note: This is currently called GymDataLoader in the repo.
+        class ActiveEnvironment extends Environment {}
+        abstract class ActiveSetting extends Setting {
+            {abstract} + train_dataloader(): ActiveEnvironment
+            {abstract} + val_dataloader(): ActiveEnvironment
+            {abstract} + test_dataloader(): ActiveEnvironment
+        }
+
+        package continual as settings.active.continual {
+            class ContinualRLSetting implements ActiveSetting, IncrementalSetting {
+                {static} + Results: Type[Results] = RLResults
+
+                + dataset: str = "cartpole"
+                + nb_tasks: int = 1
+                + max_steps: int = 10000
+                + max_episodes: Optional[int] = None
+                + steps_per_task: Optional[int] = None
+                + episodes_per_task: Optional[int] = None
+                + test_steps_per_task: int = 1000
+                + test_steps: Optional[int] = None
+
+                + smooth_task_boundaries: bool = True
+                + observe_state_directly: bool = False
+                
+                + train_task_schedule: dict
+                + valid_task_schedule: dict
+                + test_task_schedule: dict
+                + task_noise_std: float
+
+                + train_wrappers: List[gym.Wrapper]
+                + valid_wrappers: List[gym.Wrapper]
+                + test_wrappers: List[gym.Wrapper]
+
+                + add_done_to_observations: bool = False
+            }
+            
+            class RLResults implements IncrementalResults
+            
+            package incremental as settings.active.continual.incremental {
+                class IncrementalRLSetting extends ContinualRLSetting {
+                    + nb_tasks: int = 10
+                    {field} + smooth_task_boundaries: bool = False (constant)
+                    + task_labels_at_train_time: bool = True
+                    + task_labels_at_test_time: bool = False
+                }
+
+                package task_incremental_rl as settings.active.incremental.task_incremental_rl {
+                    class TaskIncrementalRLSetting extends IncrementalRLSetting {
+                        {field} + task_labels_at_train_time: bool = True (constant)
+                        {field} + task_labels_at_test_time: bool = True (constant)
+                    }
+
+                    package stationary as settings.active.incremental.task_incremental_rl.stationary {
+                        class RLSetting extends TaskIncrementalRLSetting {
+                            {field} + nb_tasks: int = 1 (constant)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+IncrementalSetting -left-> IncrementalResults : produces
+IncrementalSetting -down-> IncrementalObservations : envs yield
+ClassIncrementalSetting -left-> ClassIncrementalResults : produces
+TaskIncrementalSetting -left-> TaskIncrementalResults : produces
+IIDSetting -left-> IIDResults : produces
+
+PassiveSetting --> PassiveEnvironment : uses
+ActiveSetting -right-> ActiveEnvironment : uses
+ContinualRLSetting -> RLResults : produces
+
+@enduml
+

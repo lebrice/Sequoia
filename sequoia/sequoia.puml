@@ -1,0 +1,7 @@
+@startuml sequoia
+package sequoia {
+    !include common.puml
+    !include settings.puml
+    !include methods.puml
+}
+@enduml

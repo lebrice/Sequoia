@@ -1,0 +1,49 @@
+@startuml methods
+
+' !include gym.plantuml
+' remove gym.spaces
+' TODO: There must be a simpler way to only keep a single node, right?
+' !include settings.puml
+' remove settings.active
+' remove settings.assumptions
+' remove settings.passive
+' remove SettingABC
+' !include settings/base.puml
+
+package methods {
+    package baseline_method {
+        class BaselineMethod implements Method {
+            + hparams: BaselineModel.HParams
+            + config: Config
+            + trainer_options: TrainerConfig
+            + trainer: Trainer
+        }
+    }
+    package aux_tasks {
+        package auxiliary_task {
+            abstract class AuxiliaryTask {
+                + options: AuxiliaryTask.Options
+                + get_loss(ForwardPass, Actions, Rewards): Loss
+                
+            }
+            abstract class AuxiliaryTask.Options {
+                + coefficient: float
+            }
+            AuxiliaryTask *-- AuxiliaryTask.Options
+        }
+
+        package simclr {
+            class SimCLRTask implements AuxiliaryTask {
+                + options: SimCLRTask.Options
+            
+            }
+            class SimCLRTask.Options extends AuxiliaryTask.Options {
+
+            }
+            SimCLRTask *-- SimCLRTask.Options
+        }
+
+    }
+    !include ./methods/models.puml
+}
+@enduml
