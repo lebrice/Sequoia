@@ -131,9 +131,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # flattened. I'm not sure they all are, which case the samples
             # wouldn't match with this space. 
             self.representation_space = spaces.Box(-np.inf, np.inf, (self.hidden_size,), np.float32)
-
+        
+        logger.info(f"Moving encoder to device {self.config.device}")
+        self.encoder = self.encoder.to(self.config.device)
+        
         self.representation_space = add_tensor_support(self.representation_space)
-
         self.output_head: OutputHead = self.create_output_head(setting)
 
     @auto_move_data
@@ -147,6 +149,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # to pass transforms to the settings from the method side.
         observations = self.preprocess_observations(observations)
         # Encode the observation to get representations.
+        assert observations.x.device == self.device
+        
         representations = self.encode(observations)
         # Pass the observations and representations to the output head to get
         # the 'action' (prediction).
@@ -179,7 +183,20 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # Here in this base model the encoder only takes the 'x' from the
         # observations.
         x = torch.as_tensor(observations.x, device=self.device, dtype=self.dtype)
+        assert x.device == self.device
+        encoder_device = list(self.encoder.parameters())[0].device
+        # BUG: WHen using the EWCTask, there seems to be some issues related to which
+        # device the model is stored on.
+
+        if encoder_device != self.device:
+            x = x.to(encoder_device)
+            # self.encoder = self.encoder.to(self.device)
+
         h_x = self.encoder(x)
+        
+        if encoder_device != self.device:
+            h_x = h_x.to(self.device)
+        
         if isinstance(h_x, list) and len(h_x) == 1:
             # Some pretrained encoders sometimes give back a list with one tensor. (?)
             h_x = h_x[0]

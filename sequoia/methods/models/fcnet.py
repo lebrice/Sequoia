@@ -72,7 +72,6 @@ class FCNet(nn.Sequential):
     def __init__(self, in_features: int, out_features: int, hparams: HParams=None, **kwargs):
         self.in_features = in_features
         self.out_features = out_features
-        if kwargs: assert False, kwargs
         self.hparams = hparams or self.HParams(**kwargs)
         hidden_layers: List[nn.Module] = []
         output_size = out_features

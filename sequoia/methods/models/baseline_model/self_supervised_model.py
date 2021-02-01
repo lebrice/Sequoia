@@ -4,23 +4,25 @@ This is meant to be a kind of 'Mixin' that you can use and extend in order
 to add self-supervised losses to your model.
 """
 
+import warnings
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, TypeVar, cast
 
-from simple_parsing import mutable_field
-from torch import Tensor
-from torch import nn
-
 from sequoia.common.config import Config
 from sequoia.common.loss import Loss
-from sequoia.methods.aux_tasks import AEReconstructionTask, EWCTask, VAEReconstructionTask
+# from sequoia.methods.aux_tasks import AEReconstructionTask, VAEReconstructionTask
 from sequoia.methods.aux_tasks.auxiliary_task import AuxiliaryTask
-from sequoia.methods.aux_tasks.simclr import SimCLRTask
-from sequoia.settings import Setting, SettingType, Observations, Actions, Rewards
+# from sequoia.methods.aux_tasks.simclr import SimCLRTask
+from sequoia.settings import (Actions, Observations, Rewards, Setting,
+                              SettingType)
 from sequoia.utils.logging_utils import get_logger
-# from sequoia.utils.module_dict import ModuleDict
+from simple_parsing import mutable_field
+from torch import Tensor, nn
 
 from .base_model import BaseModel
+
+# from sequoia.utils.module_dict import ModuleDict
+
 
 logger = get_logger(__file__)
 HParamsType = TypeVar("HParamsType", bound="SelfSupervisedModel.HParams")
@@ -35,10 +37,9 @@ class SelfSupervisedModel(BaseModel[SettingType]):
     @dataclass
     class HParams(BaseModel.HParams):
         """Hyperparameters of a Self-Supervised method. """
-        simclr: Optional[SimCLRTask.Options] = None
-        vae: Optional[VAEReconstructionTask.Options] = None
-        ae: Optional[AEReconstructionTask.Options] = None
-        ewc: Optional[EWCTask.Options] = None
+        # simclr: Optional[SimCLRTask.Options] = None
+        # vae: Optional[VAEReconstructionTask.Options] = None
+        # ae: Optional[AEReconstructionTask.Options] = None
 
     def __init__(self, setting: Setting, hparams: HParams, config: Config):
         super().__init__(setting, hparams, config)
@@ -75,6 +76,10 @@ class SelfSupervisedModel(BaseModel[SettingType]):
         self.tasks[key] = aux_task.to(self.device)
         if coefficient is not None:
             aux_task.coefficient = coefficient
+        elif not aux_task.coefficient:
+            warnings.warn(UserWarning(
+                f"Adding auxiliary task with name {key}, but with coefficient of 0.!"
+            ))
 
     def create_auxiliary_tasks(self) -> Dict[str, AuxiliaryTask]:
         # Share the relevant parameters with all the auxiliary tasks.
@@ -93,14 +98,14 @@ class SelfSupervisedModel(BaseModel[SettingType]):
         # and then 'enable' them when they are needed? (I'm thinking that maybe
         # being enable/disable auxiliary tasks when needed might be useful
         # later?)
-        if self.hp.simclr and self.hp.simclr.coefficient:
-            tasks[SimCLRTask.name] = SimCLRTask(options=self.hp.simclr)
-        if self.hp.vae and self.hp.vae.coefficient:
-            tasks[VAEReconstructionTask.name] = VAEReconstructionTask(options=self.hp.vae)
-        if self.hp.ae and self.hp.ae.coefficient:
-            tasks[AEReconstructionTask.name] = AEReconstructionTask(options=self.hp.ae)
-        if self.hp.ewc and self.hp.ewc.coefficient:
-            tasks[EWCTask.name] = EWCTask(options=self.hp.ewc)
+        # if self.hp.simclr and self.hp.simclr.coefficient:
+        #     tasks[SimCLRTask.name] = SimCLRTask(options=self.hp.simclr)
+        # if self.hp.vae and self.hp.vae.coefficient:
+        #     tasks[VAEReconstructionTask.name] = VAEReconstructionTask(options=self.hp.vae)
+        # if self.hp.ae and self.hp.ae.coefficient:
+        #     tasks[AEReconstructionTask.name] = AEReconstructionTask(options=self.hp.ae)
+        # if self.hp.ewc and self.hp.ewc.coefficient:
+        #     tasks[EWCTask.name] = EWCTask(options=self.hp.ewc)
 
         return tasks
     

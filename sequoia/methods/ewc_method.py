@@ -21,7 +21,8 @@ from sequoia.settings import (ActiveEnvironment, ActiveSetting,
 from sequoia.settings.assumptions.incremental import IncrementalSetting
 from simple_parsing import mutable_field
 
-from .aux_tasks.ewc import EWCTask
+from sequoia.methods.aux_tasks import AuxiliaryTask
+from sequoia.methods.aux_tasks.ewc import EWCTask
 
 
 class EwcModel(BaselineModel):
@@ -32,7 +33,7 @@ class EwcModel(BaselineModel):
         """ Hyper-parameters of the `EwcModel`. """
 
         # Hyper-parameters related to the EWC auxiliary task.
-        ewc: EWCTask.Options = mutable_field(EWCTask.Options)
+        ewc: EWCTask.Options = mutable_field(EWCTask.Options, coefficient=100)
 
     def __init__(self, setting: Setting, hparams: "EwcModel.HParams", config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
@@ -42,19 +43,32 @@ class EwcModel(BaselineModel):
         self.FIM_representation = self.hp.ewc.fim_representation
         self.last_task_train_env: PassiveEnvironment = None
 
-        self.device = device
+        # self.device = device
         self.previous_model_weights = None
         self._n_switches: int = 0
         self._previous_task_id: int = 0
+        # BUG: mutable_field doesn't work correctly, should use default value of 100!
+        self.add_auxiliary_task(EWCTask(options=self.hp.ewc), coefficient=100)
+
+    @property
+    def ewc_aux_task(self) -> EWCTask:
+        return self.tasks[EWCTask.name]
+    
+    def create_auxiliary_tasks(self) -> Dict[str, AuxiliaryTask]:
+        tasks = super().create_auxiliary_tasks()
+        # tasks["ewc"] = EWCTask(options=self.hp.ewc)
+        return tasks
+    
+    def get_loss(self, forward_pass, rewards=None, loss_name=''):
+        return super().get_loss(forward_pass, rewards=rewards, loss_name=loss_name)
+        
 
 
 @register_method
+@dataclass
 class EwcMethod(BaselineMethod, target_setting=IncrementalSetting):
     """ Method that adds the EWC Auxiliary Task to the `BaselineModel`. """
-
     hparams: EwcModel.HParams = mutable_field(EwcModel.HParams)
-
-    Model: Type[BaselineModel] = EwcModel
 
     def __init__(
         self,
@@ -74,8 +88,7 @@ class EwcMethod(BaselineMethod, target_setting=IncrementalSetting):
         where you get access to the observation & action spaces.
         """
         super().configure(setting)
-        assert False, self.model.tasks
-        self.model.add_auxiliary_task(EWCTask(options=self.hparams.ewc))
+        # self.model.add_auxiliary_task(EWCTask(options=self.hparams.ewc))
 
     def on_task_switch(self, task_id: Optional[int]):
         super().on_task_switch(task_id)
@@ -111,18 +124,18 @@ def demo():
 
     method = EwcMethod.from_argparse_args(args, dest="method")
     config: Config = args.config
-
+    
     task_schedule = {
         0: {"gravity": 10, "length": 0.2},
-        5000: {"gravity": 100, "length": 1.2},
+        1000: {"gravity": 100, "length": 1.2},
         # 2000:   {"gravity": 10, "length": 0.2},
     }
     setting = TaskIncrementalRLSetting(
-        dataset="CartPole-v1",
+        dataset="cartpole",
         train_task_schedule=task_schedule,
         test_task_schedule=task_schedule,
         observe_state_directly=True,
-        max_steps=10000,
+        # max_steps=1000,
     )
 
     # setting = ClassIncrementalSetting(dataset="mnist", nb_tasks=5)

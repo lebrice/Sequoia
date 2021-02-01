@@ -229,10 +229,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         # that given step.
         if self._closed:
             raise gym.error.ClosedEnvironmentError("Can't step in closed env.")
-<<<<<<< HEAD
 
-=======
->>>>>>> reg_methods
         if self.steps in self.task_schedule:
             self.current_task = self.task_schedule[self.steps]
             logger.debug(f"New task: {self.current_task}")
