@@ -66,21 +66,13 @@ class EWCTask(AuxiliaryTask):
         )
 
     def __init__(
-        self,
-        *args,
-        name: str = None,
-        options: "EWC.Options" = None,
-        method: str = "generic",
-        **kwargs,
+        self, *args, name: str = None, options: "EWC.Options" = None, **kwargs
     ):
         super().__init__(*args, options=options, name=name, **kwargs)
         self.options: EWCTask.Options
         self.previous_task: Optional[int] = None
         self._i: int = 0
         self.n_switches: int = 0
-        self.method = method if method in ["dqn", "a2c"] else "generic"
-        logger.info(f"EWC will be applied in {self.method} mode.")
-
         self.previous_model_weights: Optional[PVector] = None
         self.observation_collector: Deque[Observations] = deque(
             maxlen=self.options.sample_size_fim

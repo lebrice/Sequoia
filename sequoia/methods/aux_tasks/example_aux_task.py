@@ -1,11 +1,17 @@
 """ Example of an auxiliary task. This is basically the same as in the examples. """
 
-from .auxiliary_task import AuxiliaryTask
-from torch import nn, Tensor
-from typing import Dict, Tuple, List
-from dataclasses import dataclass
-from sequoia.utils.logging_utils import get_logger
 from copy import deepcopy
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
+
+import torch
+from torch import Tensor, nn
+
+from sequoia.common import Loss
+from sequoia.utils import dict_intersection
+from sequoia.utils.logging_utils import get_logger
+
+from .auxiliary_task import AuxiliaryTask
 
 logger = get_logger(__file__)
 
