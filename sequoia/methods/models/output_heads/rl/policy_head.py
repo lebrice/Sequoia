@@ -161,7 +161,7 @@ class PolicyHead(ClassificationHead):
             hparams=hparams,
             name=name,
         )
-        logger.info("Output head hparams: " + self.hparams.dumps_json(indent='\t'))
+        logger.debug("Output head hparams: " + self.hparams.dumps_json(indent='\t'))
         self.hparams: PolicyHead.HParams
         # Type hints for the spaces;    
         self.input_space: spaces.Box

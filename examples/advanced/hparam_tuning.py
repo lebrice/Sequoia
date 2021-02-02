@@ -29,18 +29,18 @@ if __name__ == "__main__":
 
     search_space = {}
     search_space = {
-        "learning_rate": "loguniform(1e-06, 1e-02)",
-        "weight_decay": "loguniform(1e-12, 1e-03)",
+        "learning_rate": "loguniform(1e-06, 1e-02, default_value=0.001)",
+        "weight_decay": "loguniform(1e-12, 1e-03, default_value=1e-06)",
         "optimizer": "choices(['sgd', 'adam', 'rmsprop'], default_value='adam')",
         "encoder": "choices({'resnet18': 0.5, 'simple_convnet': 0.5}, default_value='resnet18')",
         "output_head": {
             "activation": "choices(['relu', 'tanh', 'elu', 'gelu', 'relu6'], default_value='tanh')",
-            "dropout_prob": "uniform(0, 0.8)",
-            "gamma": "uniform(0.9, 0.999)",
+            "dropout_prob": "uniform(0, 0.8, default_value=0.2)",
+            "gamma": "uniform(0.9, 0.999, default_value=0.99)",
             "normalize_advantages": "choices([True, False])",
-            "actor_loss_coef": "uniform(0.1, 1)",
-            "critic_loss_coef": "uniform(0.1, 1)",
-            "entropy_loss_coef": "uniform(0, 1, discrete=True)",
+            "actor_loss_coef": "uniform(0.1, 1, default_value=0.5)",
+            "critic_loss_coef": "uniform(0.1, 1, default_value=0.5)",
+            "entropy_loss_coef": "uniform(0, 1, discrete=True, default_value=0)",
         },
     }
     best_hparams, best_results = method.hparam_sweep(

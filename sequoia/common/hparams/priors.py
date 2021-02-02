@@ -32,6 +32,7 @@ class NormalPrior(Prior):
     mu: float = 0.
     sigma: float = 1.
     discrete: bool = False
+    default: Optional[float] = None
 
     def sample(self) -> Union[float, int]:
         value = self.rng.normal(self.mu, self.sigma)
@@ -50,6 +51,7 @@ class UniformPrior(Prior):
     min: float = 0.
     max: float = 1.
     discrete: bool = False
+    default: Optional[float] = None
 
     def sample(self) -> Union[float, int]:
         # TODO: add suport for enums?
@@ -62,6 +64,8 @@ class UniformPrior(Prior):
         string = f"uniform({self.min}, {self.max}"
         if self.discrete:
             string += ", discrete=True"
+        if self.default is not None:
+            string += f", default_value={self.default}"
         string += ")"
         return string
 
@@ -122,6 +126,7 @@ class LogUniformPrior(Prior):
     max: float = 1e+3
     base: float = np.e
     discrete: bool = False
+    default: Optional[float] = None
 
     def sample(self) -> float:
         # TODO: Might not be 100% numerically stable.
@@ -172,6 +177,8 @@ class LogUniformPrior(Prior):
         string = f"loguniform({min_str}, {max_str}"
         if self.discrete:
             string += ", discrete=True"
+        if self.default is not None:
+            string += f", default_value={self.default}"
         string += ")"
         return string
 
