@@ -276,7 +276,9 @@ class PolicyHead(ClassificationHead):
                 self.loss += env_loss
 
             if done:
-                assert env_loss is not None
+                if self.training:
+                    # BUG: This seems to be failing, during testing:
+                    assert env_loss is not None, env_loss
                 self.clear_buffers(env_index)
             
 

@@ -7,131 +7,244 @@ TODO: If it's worth it, we could re-add the 'real' EWC using the nngeometry
 package, (which I don't think we need to have as a submodule).
 """
 
+from collections import deque
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import (Dict, Iterable, Iterator, List, Mapping, MutableMapping,
-                    Optional, Tuple)
+from typing import Type, Optional, Deque, List
 
-import torch
-from pytorch_lightning import LightningModule
+from gym.spaces.utils import flatdim
+from nngeometry.metrics import FIM
+from nngeometry.object.pspace import PMatAbstract, PMatDiag, PMatKFAC, PVector
+from simple_parsing import choice
 from torch import Tensor, nn
-from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader
 
-# from sequoia.common.dict_buffer import DictBuffer
 from sequoia.common.loss import Loss
 from sequoia.methods.aux_tasks.auxiliary_task import AuxiliaryTask
-from sequoia.methods.models.output_heads import OutputHead
-from sequoia.utils import dict_intersection, dict_union
+from sequoia.methods.models.forward_pass import ForwardPass
+from sequoia.methods.models.output_heads import ClassificationHead, RegressionHead
+from sequoia.settings.base.objects import Observations
 from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.utils import dict_intersection
 
 logger = get_logger(__file__)
 
 
 class EWCTask(AuxiliaryTask):
-    """ Elastic Weight Consolidation, implemented as a 'self-supervision-style' 
+    """ Elastic Weight Consolidation, implemented as a 'self-supervision-style'
     Auxiliary Task.
+
+    ```bibtex
+    @article{kirkpatrick2017overcoming,
+        title={Overcoming catastrophic forgetting in neural networks},
+        author={Kirkpatrick, James and Pascanu, Razvan and Rabinowitz, Neil and Veness,
+        Joel and Desjardins, Guillaume and Rusu, Andrei A and Milan, Kieran and Quan,
+        John and Ramalho, Tiago and Grabska-Barwinska, Agnieszka and others},
+        journal={Proceedings of the national academy of sciences},
+        volume={114},
+        number={13},
+        pages={3521--3526},
+        year={2017},
+        publisher={National Acad Sciences}
+    }
+    ```
     """
+
     name: str = "ewc"
 
     @dataclass
     class Options(AuxiliaryTask.Options):
         """ Options of the EWC auxiliary task. """
-        # Wether to use the absolute difference of the weights or the difference
-        # in the `regularize` method below.
-        use_abs_diff: bool = False
-        # The norm term for the 'distance' between the current and old weights.
-        distance_norm: int = 2
 
-    def __init__(self,
-                 *args,
-                 name: str = None,
-                 options: "EWC.Options" = None,
-                 **kwargs):
+        # Batchsize to be used when computing FIM (unused atm)
+        batch_size_fim: int = 64
+        # Number of observations to use for FIM calculation
+        sample_size_fim: int = 400
+        # Fisher information representation type  (diagonal or block diagobnal).
+        fim_representation: Type[PMatAbstract] = choice(
+            {"diagonal": PMatDiag, "block_diagonal": PMatKFAC,}, default=PMatDiag,
+        )
+
+    def __init__(
+        self, *args, name: str = None, options: "EWC.Options" = None, **kwargs
+    ):
         super().__init__(*args, options=options, name=name, **kwargs)
         self.options: EWCTask.Options
-        self.previous_task: int = None
-        # TODO: Figure out a clean way to persist this dict into the state_dict.
-        self.previous_model_weights: Dict[str, Tensor] = {}
+        self.previous_task: Optional[int] = None
         self._i: int = 0
         self.n_switches: int = 0
+        self.previous_model_weights: Optional[PVector] = None
+        self.observation_collector: Deque[Observations] = deque(
+            maxlen=self.options.sample_size_fim
+        )
+        self.fisher_information_matrices: List[PMatAbstract] = []
 
-    def state_dict(self, *args, **kwargs) -> Dict:
-        state = super().state_dict(*args, **kwargs)
-        state.update(self.previous_model_weights)
-        return state
+    def consolidate(self, new_fims: List[PMatAbstract], task: Optional[int]) -> None:
+        """ Consolidates the new and current fisher information matrices.
 
-    def load_state_dict(self, state_dict: Dict[str, Tensor], strict: bool = True) -> Tuple[List[str], List[str]]:
-        missing: List[str]
-        unexpected: List[str]
-        missing, unexpected = super().load_state_dict(state_dict=state_dict, strict=False)
-        if unexpected and not self.previous_model_weights:
-            # Create the previous model weights, if needed.
-            self.previous_model_weights.update(deepcopy({
-                k: v.detach() for k, v in self.model.named_parameters()
-            }))
-        # TODO: Make sure that the model itself (i.e. its output heads, etc) gets
-        # restored before this here.
-        for key in unexpected.copy():
-            if key in self.previous_model_weights:
-                # Update the value in the 'previous model weights' dict.
-                self.previous_model_weights[key] = state_dict[key]
-                unexpected.remove(key)
-        return missing, unexpected
+        Parameters
+        ----------
+        new_fims : List[PMatAbstract]
+            The list of new fisher information matrices.
+        task : Optional[int]
+            The id of the previous task, when task labels are available, or the number
+            of task switches encountered so far when task labels are not available.
+        """
+        if not self.fisher_information_matrices:
+            self.fisher_information_matrices = new_fims
+            return
 
-    def disable(self):
-        """ Disable the EWC loss. """
-        # save a little bit of memory by clearing the weights.
-        self.previous_model_weights.clear()
-        return super().disable()
+        if task is None:
+            # Count the number of task switches, and use that as the task.
+            task = self.n_switches
 
-    def enable(self):
-        # old_weights = parameters_to_vector(self.model.parameters())
-        # self.register_buffer("old_weights", old_weights, persistent = True)
-        return super().enable()
+        for i, (fim_previous, fim_new) in enumerate(
+            zip(self.fisher_information_matrices, new_fims)
+        ):
+            # consolidate the FIMs
+            if fim_previous is None:
+                self.fisher_information_matrices[i] = fim_new
+            else:
+                # consolidate the fim_new into fim_previous in place
+                if isinstance(fim_new, PMatDiag):
+                    # TODO: This is some kind of weird online-EWC related magic:
+                    fim_previous.data = (
+                        deepcopy(fim_new.data) + fim_previous.data * (task)
+                    ) / (task + 1)
 
-    def on_task_switch(self, task_id: int)-> None:
-        """ Executed when the task switches (to either a new or known task).
+                elif isinstance(fim_new.data, dict):
+                    # TODO: This is some kind of weird online-EWC related magic:
+                    for _, (prev_param, new_param) in dict_intersection(
+                        fim_previous.data, fim_new.data
+                    ):
+                        for prev_item, new_item in zip(prev_param, new_param):
+                            prev_item.data = (
+                                prev_item.data * task + deepcopy(new_item.data)
+                            ) / (task + 1)
+
+                self.fisher_information_matrices[i] = fim_previous
+
+    def on_task_switch(self, task_id: Optional[int]):
+        """ Executed when the task switches (to either a known or unknown task).
         """
         if not self.enabled:
             return
-        if self.previous_task is None and self.n_switches == 0:
-            logger.debug(f"Starting the first task, no EWC update.")
-            pass
-        elif task_id is None or task_id != self.previous_task:
-            logger.debug(f"Switching tasks: {self.previous_task} -> {task_id}: "
-                         f"Updating the EWC 'anchor' weights.")
+
+        logger.info(f"On task switch called: task_id={task_id}")
+
+        if self._shared_net is None:
+            logger.info(
+                f"On task switch called: task_id={task_id}, EWC cannot be "
+                f"applied as there are no shared weights."
+            )
+
+        elif self.previous_task is None and self.n_switches == 0 and not task_id:
             self.previous_task = task_id
-            self.previous_model_weights.clear()
-            self.previous_model_weights.update(deepcopy({
-                k: v.detach() for k, v in self.model.named_parameters()
-            }))
-            # self.old_weights = parameters_to_vector(self.model.parameters())
-        self.n_switches += 1
+            logger.info("Starting the first task, no EWC update.")
+            self.n_switches += 1
 
-    def get_loss(self, *args, **kwargs) -> Loss:
-        """Gets the 'EWC' loss. 
+        elif (task_id is None or task_id > self.previous_task) and self._model.training:
+            # we dont want to go here at test time.
+            # NOTE: We also switch between unknown tasks.
+            logger.info(
+                f"Switching tasks: {self.previous_task} -> {task_id}: "
+                f"Updating the EWC 'anchor' weights."
+            )
+            self.previous_task = task_id
+            device = self._model.config.device
+            self.previous_model_weights = (
+                PVector.from_model(self._shared_net.to(device)).clone().detach()
+            )
 
-        NOTE: This is a simplified version of EWC where the loss is the P-norm
-        between the current weights and the weights as they were on the begining
-        of the task.
+            # Create a Dataloader from the stored observations.
+            obs_type: Type[Observations] = type(self.observation_collector[0])
+            dataset = [obs.as_namedtuple() for obs in self.observation_collector]
+            # Or, alternatively (see the note below on why we don't use this):
+            # stacked_observations: Observations = obs_type.stack(self.observation_collector)
+            # dataset = TensorDataset(*stacked_observations.as_namedtuple())
 
-        This doesn't actually use any of the provided arguments.
+            # NOTE: This is equivalent to just using the same batch size as during
+            # training, as each Observations in the list is already a batch.
+            # NOTE: We keep the same batch size here as during training because for
+            # instance in RL, it would be weird to suddenly give some new batch size,
+            # since the buffers would get cleared and re-created just for these forward
+            # passes
+            dataloader = DataLoader(dataset, batch_size=None, collate_fn=None)
+
+            # Create the parameters to be passed to the FIM function. These may vary a
+            # bit, depending on if we're being applied in a classification setting or in
+            # a regression setting (not done yet)
+            variant: str
+            if isinstance(self._model.output_head, ClassificationHead):
+                variant = "classif_logits"
+                n_output = self._model.action_space.n
+
+                def fim_function(*inputs) -> Tensor:
+                    observations = obs_type(*inputs).to(self._model.device)
+                    forward_pass: ForwardPass = self._model(observations)
+                    actions = forward_pass.actions
+                    return actions.logits
+
+            elif isinstance(self._model.output_head, RegressionHead):
+                # NOTE: This hasn't been tested yet.
+                variant = "regression"
+                n_output = flatdim(self._model.action_space)
+
+                def fim_function(*inputs) -> Tensor:
+                    observations = obs_type(*inputs).to(self._model.device)
+                    forward_pass: ForwardPass = self._model(observations)
+                    actions = forward_pass.actions
+                    return actions.y_pred
+
+            else:
+                raise NotImplementedError("TODO")
+
+            new_fim = FIM(
+                model=self._shared_net,
+                loader=dataloader,
+                representation=self.options.fim_representation,
+                n_output=n_output,
+                variant=variant,
+                function=fim_function,
+                device=self._model.device,
+            )
+
+            # TODO: There was maybe an idea to use another fisher information matrix for
+            # the critic in A2C, but not doing that atm.
+            new_fims = [new_fim]
+            self.consolidate(new_fims, task=self.previous_task)
+            self.n_switches += 1
+            self.observation_collector.clear()
+
+    @property
+    def _shared_net(self) -> Optional[nn.Module]:
         """
-        if self.previous_task is None:
+        Returns 'None' if there is not shared network part, othervise returns the shared net
+        """
+        if self._model.encoder is None:
+            return None
+        elif isinstance(self._model.encoder, nn.Sequential):
+            if len(self._model.encoder) == 0:
+                return None
+        return self._model.encoder
+
+    def get_loss(self, forward_pass: ForwardPass, y: Tensor = None) -> Loss:
+        """ Gets the EWC loss.
+        """
+        if self._model.training:
+            self.observation_collector.append(forward_pass.observations)
+
+        if self.previous_task is None or not self.enabled or self._shared_net is None:
             # We're in the first task: do nothing.
             return Loss(name=self.name)
 
-        old_weights: Dict[str, Tensor] = self.previous_model_weights
-        new_weights: Dict[str, Tensor] = dict(self.model.named_parameters())
+        loss = 0.0
+        v_current = PVector.from_model(self._shared_net)
 
-        loss = 0.
-        for weight_name, (new_w, old_w) in dict_intersection(new_weights, old_weights):
-            loss += torch.dist(new_w, old_w.type_as(new_w), p=self.options.distance_norm)
+        for fim in self.fisher_information_matrices:
+            diff = v_current - self.previous_model_weights
+            loss += fim.vTMv(diff)
 
         self._i += 1
-        ewc_loss = Loss(
-            name=self.name,
-            loss=loss,
-        )
+        ewc_loss = Loss(name=self.name, loss=loss)
         return ewc_loss

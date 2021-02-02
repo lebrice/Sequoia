@@ -1,9 +1,3 @@
 [submodule "tasks/simclr/falr"]
 	path = tasks/simclr/falr
 	url = https://github.com/lebrice/falr.git
-[submodule "pytorch-lightning"]
-	path = pytorch-lightning
-	url = https://github.com/lebrice/pytorch-lightning.git
-[submodule "utils/nngeometry"]
-	path = utils/nngeometry
-	url = https://github.com/oleksost/nngeometry.git
