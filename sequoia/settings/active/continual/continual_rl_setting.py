@@ -839,9 +839,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             wrappers.append(PixelObservationWrapper)
             wrappers.append(ImageObservations)
 
-        if self.dataset.lower().startswith("metamonsterkong") and not self.observe_state_directly:
+        if isinstance(self.dataset, str) and self.dataset.lower().startswith("metamonsterkong") and not self.observe_state_directly:
             # TODO: Do we need the AtariPreprocessing wrapper on MonsterKong?
-            # Should  
             # wrappers.append(partial(AtariPreprocessing, frame_skip=1))
             pass
         elif is_atari_env(self.dataset): 
