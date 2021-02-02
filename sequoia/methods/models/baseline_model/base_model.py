@@ -111,7 +111,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # change the PolicyHead to have only one layer.
             # Only pass the image, not the task labels to the encoder (for now).
             input_dims = flatdim(self.observation_space[0])
-            output_dims = 128
+            output_dims = self.hp.new_hidden_size or 128
+            
             self.encoder = FCNet(
                 in_features=input_dims,
                 out_features=output_dims,

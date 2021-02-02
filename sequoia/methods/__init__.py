@@ -56,12 +56,16 @@ from .random_baseline import RandomBaselineMethod
 ## A bit hacky: Dynamically import all the modules/packages defined in this
 # folder. This way, we register the methods as they are declared.
 modules = glob.glob(join(dirname(__file__), "*"))
+# TODO: Should use setuptools.find_packages instead
+from setuptools import find_packages
 
 all_modules: List[str] = [
     basename(f).replace(".py", "") for f in modules
     if (#(isfile(f) and
-    not f.endswith('__init__.py') and
-    not f.endswith("_test.py"))
+        f.endswith(".py") and
+        not f.endswith('__init__.py') and
+        not f.endswith("_test.py")
+    )
 ]
 
 for module in all_modules:

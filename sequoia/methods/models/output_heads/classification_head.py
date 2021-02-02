@@ -9,7 +9,6 @@ from simple_parsing import list_field
 
 from sequoia.common.hparams import uniform, categorical
 from sequoia.common import Batch, ClassificationMetrics, Loss
-from sequoia.common.layers import Flatten
 from sequoia.settings import Observations, Actions, Rewards
 
 from .output_head import OutputHead

@@ -6,7 +6,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from sequoia.common.layers import DeConvBlock, Flatten, Reshape
+from sequoia.common.layers import DeConvBlock, Reshape
 from sequoia.common.loss import Loss
 from ..auxiliary_task import AuxiliaryTask
 

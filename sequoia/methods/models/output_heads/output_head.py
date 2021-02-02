@@ -74,7 +74,7 @@ class OutputHead(nn.Module, ABC):
             in_features = out_features # next input size is output size of prev.
 
         return nn.Sequential(
-            Flatten(),
+            nn.Flatten(),
             *hidden_layers,
             nn.Linear(in_features, output_size)
         )

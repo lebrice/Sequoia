@@ -37,12 +37,20 @@ class Image(spaces.Box):
                 self.channels_first = True
             elif self.shape[-1] in {1, 3}:
                 self.h, self.w, self.c = self.shape
+            else:
+                # NOTE: will assume that in channels_first for now, but won't set
+                # `channels_first` property.
+                self.c, self.h, self.w = self.shape
         elif len(self.shape) == 4:
             if self.shape[1] in {1, 3}:
                 self.b, self.c, self.h, self.w = self.shape
                 self.channels_first = True
             elif self.shape[-1] in {1, 3}:
                 self.b, self.h, self.w, self.c = self.shape
+            else:
+                # NOTE: will assume that in channels_first for now:
+                self.b, self.c, self.h, self.w = self.shape
+
         if any(v is None for v in [self.h, self.w, self.c]):
             raise RuntimeError(
                 f"Shouldn't be using an Image space, since the shape "

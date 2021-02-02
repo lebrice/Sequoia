@@ -152,7 +152,9 @@ class BaselineModel(SemiSupervisedModel,
 
         # Upgrade the type of hparams for the output head, based on the setting.
         output_head_type = self.output_head_type(setting)
-        self.hp.output_head = self.hp.output_head.upgrade(target_type=output_head_type.HParams)
+        if not isinstance(self.hp.output_head, output_head_type.HParams):
+            self.hp.output_head = self.hp.output_head.upgrade(target_type=output_head_type.HParams)
+        
         self.output_head: OutputHead = self.create_output_head(setting)
 
         # Dictionary of auxiliary tasks.

@@ -11,7 +11,6 @@ import numpy as np
 from simple_parsing import mutable_field
 from gym import Space, spaces
 from gym.spaces.utils import flatdim
-from sequoia.common.layers import Flatten
 from sequoia.common import Loss
 from sequoia.settings import ContinualRLSetting
 from sequoia.settings.base import Rewards
