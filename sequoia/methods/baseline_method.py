@@ -72,6 +72,37 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                  hparams: BaselineModel.HParams = None,
                  config: Config = None,
                  trainer_options: TrainerConfig = None, **kwargs):
+        """ Creates a new BaselineMethod, using the provided configuration options. 
+
+        Parameters
+        ----------
+        hparams : BaselineModel.HParams, optional
+            Hyper-parameters of the BaselineModel used by this Method. Defaults to None.
+        
+        config : Config, optional
+            Configuration dataclass with options like log_dir, device, etc. Defaults to
+            None.
+        
+        trainer_options : TrainerConfig, optional
+            Dataclass which holds all the options for creating the `pl.Trainer` which
+            will be used for training. Defaults to None.
+        
+        **kwargs :
+            If any of the above arguments are left as `None`, then they will be created
+            using any appropriate value from `kwargs`, if present.
+ 
+        ## Examples:
+        ```
+        method = BaselineMethod(hparams=BaselineModel.HParams(learning_rate=0.01))
+        method = BaselineMethod(learning_rate=0.01) # Same as above
+        
+        method = BaselineMethod(config=Config(debug=True))
+        method = BaselineMethod(debug=True) # Same as above
+        
+        method = BaselineMethod(hparams=BaselineModel.HParams(learning_rate=0.01), config=Config(debug=True))
+        method = BaselineMethod(learning_rate=0.01, debug=True) # Same as above
+        ```
+        """
         # TODO: When creating a Method from a script, like `BaselineMethod()`,
         # should we expect the hparams to be passed? Should we create them from
         # the **kwargs? Should we parse them from the command-line? 

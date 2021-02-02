@@ -39,15 +39,16 @@ logger = get_logger(__file__)
 # WIP (@lebrice): Playing around with this idea, to try and maybe use the idea
 # of creating typed objects for the 'Observation', the 'Action' and the 'Reward'
 # for each kind of model.
+from sequoia.common.hparams import uniform, log_uniform, categorical
 from sequoia.settings import Actions, Observations, Rewards
 from sequoia.settings.assumptions.incremental import IncrementalSetting
 SettingType = TypeVar("SettingType", bound=IncrementalSetting)
+from sequoia.methods.models.simple_convnet import SimpleConvNet
 
 from .base_model import ForwardPass
 from .class_incremental_model import ClassIncrementalModel
 from .self_supervised_model import SelfSupervisedModel
 from .semi_supervised_model import SemiSupervisedModel
-
 
 class BaselineModel(SemiSupervisedModel,
                     ClassIncrementalModel,
@@ -68,9 +69,67 @@ class BaselineModel(SemiSupervisedModel,
                   SelfSupervisedModel.HParams,
                   ClassIncrementalModel.HParams):
         """ HParams of the Model. """
-        # NOTE: The different hyper-parameters can be found as fields in the
-        # base classes, but most of them are defined in base_hparams.py.
-        pass
+        # NOTE: All the fields below were just copied from the BaseHParams class, just
+        # to improve visibility a bit.
+
+        # Class variables that hold the available optimizers and encoders.
+        # NOTE: These don't get parsed from the command-line.
+        available_optimizers: ClassVar[Dict[str, Type[Optimizer]]] = {
+            "sgd": optim.SGD,
+            "adam": optim.Adam,
+            "rmsprop": optim.RMSprop,
+        }
+        
+        # Which optimizer to use.
+        optimizer: Type[Optimizer] = categorical(available_optimizers, default=optim.Adam)
+        
+        available_encoders: ClassVar[Dict[str, Type[nn.Module]]] = {
+            "vgg16": tv_models.vgg16,
+            "resnet18": tv_models.resnet18,
+            "resnet34": tv_models.resnet34,
+            "resnet50": tv_models.resnet50,
+            "resnet101": tv_models.resnet101,
+            "resnet152": tv_models.resnet152,
+            "alexnet": tv_models.alexnet,
+            "densenet": tv_models.densenet161,
+            # TODO: Add the self-supervised pl modules here!
+            "simple_convnet": SimpleConvNet,
+        }
+        # Which encoder to use.
+        encoder: Type[nn.Module] = categorical(
+            available_encoders,
+            default=tv_models.resnet18,
+            # TODO: Only considering these two for now when performing an HPO sweep.
+            probabilities={"resnet18": 0.5, "simple_convnet": 0.5},
+        )
+
+        # Learning rate of the optimizer.
+        learning_rate: float = log_uniform(1e-6, 1e-2, default=1e-3)
+        # L2 regularization term for the model weights.
+        weight_decay: float = log_uniform(1e-12, 1e-3, default=1e-6)
+        
+        # Batch size to use during training and evaluation.
+        batch_size: Optional[int] = None
+
+        # Number of hidden units (before the output head).
+        # When left to None (default), the hidden size from the pretrained
+        # encoder model will be used. When set to an integer value, an
+        # additional Linear layer will be placed between the outputs of the
+        # encoder in order to map from the pretrained encoder's output size H_e
+        # to this new hidden size `new_hidden_size`.
+        new_hidden_size: Optional[int] = None
+        # Retrain the encoder from scratch.
+        train_from_scratch: bool = False
+        # Wether we should keep the weights of the pretrained encoder frozen.
+        freeze_pretrained_encoder_weights: bool = False
+
+        # Hyper-parameters of the output head.
+        output_head: OutputHead.HParams = mutable_field(OutputHead.HParams)
+
+        # Wether the output head should be detached from the representations.
+        # In other words, if the gradients from the downstream task should be
+        # allowed to affect the representations.
+        detach_output_head: bool = False
 
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
@@ -91,14 +150,12 @@ class BaselineModel(SemiSupervisedModel,
             logger.debug("Hparams:")
             logger.debug(self.hp.dumps(indent="\t"))
 
-        if self.trainer:
-            OutputHead.base_model_optimizer = self.optimizers()
-
         # Upgrade the type of hparams for the output head, based on the setting.
-        self.hp.output_head = self.hp.output_head.upgrade(target_type=self.output_head_type(setting).HParams)
-        
+        output_head_type = self.output_head_type(setting)
+        self.hp.output_head = self.hp.output_head.upgrade(target_type=output_head_type.HParams)
         self.output_head: OutputHead = self.create_output_head(setting)
 
+        # Dictionary of auxiliary tasks.
         self.tasks: Dict[str, AuxiliaryTask] = self.create_auxiliary_tasks()
 
         for task_name, task in self.tasks.items():
@@ -109,12 +166,25 @@ class BaselineModel(SemiSupervisedModel,
                 logger.info(f"enabling the '{task_name}' auxiliary task (coefficient of {task.coefficient})")
                 task.enable()
 
-    # @auto_move_data
-    def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:  # type: ignore
+    @auto_move_data
+    def forward(self, observations: Setting.Observations) -> ForwardPass:  # type: ignore
+        """Forward pass of the model.
+        
+        For the given observations, creates a `ForwardPass`, a dict-like object which
+        will hold the observations, the representations and the output head predictions.
+        
+        Parameters
+        ----------
+        observations : Setting.Observations
+            Observations from one of the environments of a Setting.
+
+        Returns
+        -------
+        ForwardPass
+            A dict-like object which holds the observations, representations, and output
+            head predictions (actions). See the `ForwardPass` class for more info.
+        """
         # NOTE: Implementation is mostly in `base_model.py`.
-        # Sharing the optimizer with the output head, in case the
-        # representations are also learned using the output head.
-        OutputHead.base_model_optimizer = self.optimizers()
         return super().forward(observations)
 
     def create_output_head(self, setting: Setting, add_to_optimizer: bool = None) -> OutputHead:
