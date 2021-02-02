@@ -1,28 +1,26 @@
-# Imports:
+"""Defines the EWC method, as a subclass of the BaselineMethod.
+
+Likewise, defines the `EwcModel`, which is a very simple subclass of the
+`BaselineModel`, adding in the Ewc auxiliary task (`EWCTask`).
+
+For a more detailed view of exactly how the EwcTask calculates its loss, see
+the `sequoia.methods.aux_tasks.ewc.EwcTask`.
+"""
 import sys
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Type, Union
+from typing import Dict, Optional
 
-from nngeometry.generator.jacobian import Jacobian
-from simple_parsing import ArgumentParser, choice
-from torch.cuda import device
+from simple_parsing import ArgumentParser, mutable_field
 
 sys.path.extend([".", ".."])
 from sequoia.common.config import Config
 from sequoia.common.config.trainer_config import TrainerConfig
 from sequoia.methods import register_method
-from sequoia.methods.baseline_method import BaselineMethod, BaselineModel
-# Repo imports:
-from sequoia.settings import (ActiveEnvironment, ActiveSetting,
-                              ClassIncrementalSetting, ContinualRLSetting,
-                              IncrementalRLSetting, PassiveEnvironment,
-                              PassiveSetting, RLSetting, Setting,
-                              TaskIncrementalRLSetting, TaskIncrementalSetting)
-from sequoia.settings.assumptions.incremental import IncrementalSetting
-from simple_parsing import mutable_field
-
 from sequoia.methods.aux_tasks import AuxiliaryTask
 from sequoia.methods.aux_tasks.ewc import EWCTask
+from sequoia.methods.baseline_method import BaselineMethod, BaselineModel
+from sequoia.settings import Setting, TaskIncrementalRLSetting
+from sequoia.settings.assumptions.incremental import IncrementalSetting
 
 
 class EwcModel(BaselineModel):
@@ -38,41 +36,35 @@ class EwcModel(BaselineModel):
     def __init__(self, setting: Setting, hparams: "EwcModel.HParams", config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
         self.hp: EwcModel.HParams
-
-        self.FIM: Jacobian = None
-        self.FIM_representation = self.hp.ewc.fim_representation
-        self.last_task_train_env: PassiveEnvironment = None
-
-        # self.device = device
-        self.previous_model_weights = None
-        self._n_switches: int = 0
-        self._previous_task_id: int = 0
-        # BUG: mutable_field doesn't work correctly, should use default value of 100!
+        # BUG: mutable_field doesn't seem to work correctly, should use default value
+        # of 100!
         self.add_auxiliary_task(EWCTask(options=self.hp.ewc), coefficient=100)
 
-    @property
-    def ewc_aux_task(self) -> EWCTask:
-        return self.tasks[EWCTask.name]
-    
     def create_auxiliary_tasks(self) -> Dict[str, AuxiliaryTask]:
         tasks = super().create_auxiliary_tasks()
+        # NOTE: We don't add it here, since we already do this above in __init__.
+        # We could add aux tasks this way as well though.
         # tasks["ewc"] = EWCTask(options=self.hp.ewc)
         return tasks
-    
-    def get_loss(self, forward_pass, rewards=None, loss_name=''):
+
+    def get_loss(self, forward_pass, rewards=None, loss_name=""):
         return super().get_loss(forward_pass, rewards=rewards, loss_name=loss_name)
-        
 
 
 @register_method
 @dataclass
 class EwcMethod(BaselineMethod, target_setting=IncrementalSetting):
-    """ Method that adds the EWC Auxiliary Task to the `BaselineModel`. """
+    """ Subclass of the BaselineMethod, which adds the EWCTask to the `BaselineModel`.
+
+    This Method is applicable to any CL setting (RL or SL) where there are clear task
+    boundaries, regardless of if the task labels are given or not.
+    """
+
     hparams: EwcModel.HParams = mutable_field(EwcModel.HParams)
 
     def __init__(
         self,
-        hparams: BaselineModel.HParams = None,
+        hparams: EwcModel.HParams = None,
         config: Config = None,
         trainer_options: TrainerConfig = None,
         **kwargs,
@@ -82,7 +74,7 @@ class EwcMethod(BaselineMethod, target_setting=IncrementalSetting):
         )
 
     def configure(self, setting: Setting):
-        """ Called before the method is applied on a setting (before training). 
+        """ Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
@@ -95,7 +87,7 @@ class EwcMethod(BaselineMethod, target_setting=IncrementalSetting):
 
     def create_model(self, setting: Setting) -> EwcModel:
         """Create the Model to use for the given Setting.
-        
+
         In this case, we want to return an `EwcModel` (our customized version of the
         BaselineModel).
 
@@ -107,13 +99,15 @@ class EwcMethod(BaselineMethod, target_setting=IncrementalSetting):
         Returns
         -------
         EwcModel
-            The Model that will be trained and used for evaluation. 
+            The Model that will be trained and used for evaluation.
         """
         return EwcModel(setting=setting, hparams=self.hparams, config=self.config)
 
 
-
 def demo():
+    """ Runs the EwcMethod on a simple setting, just to check that it works fine.
+    """
+
     # Adding arguments for each group directly:
     parser = ArgumentParser(description=__doc__)
 
@@ -124,7 +118,6 @@ def demo():
 
     method = EwcMethod.from_argparse_args(args, dest="method")
     config: Config = args.config
-    
     task_schedule = {
         0: {"gravity": 10, "length": 0.2},
         1000: {"gravity": 100, "length": 1.2},
@@ -138,9 +131,10 @@ def demo():
         # max_steps=1000,
     )
 
+    # from sequoia.settings import TaskIncrementalSetting, ClassIncrementalSetting
     # setting = ClassIncrementalSetting(dataset="mnist", nb_tasks=5)
     # setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
-    results = setting.apply(method)
+    results = setting.apply(method, config=config)
     print(results.summary())
 
 
