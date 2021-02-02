@@ -27,6 +27,7 @@ if __name__ == "__main__":
     # args, unused_args = parser.parse_known_args()
     # method: BaselineMethod = BaselineMethod.from_argparse_args(args, dest="method")
 
+    search_space = {}
     search_space = {
         "learning_rate": "loguniform(1e-06, 1e-02)",
         "weight_decay": "loguniform(1e-12, 1e-03)",
@@ -35,6 +36,11 @@ if __name__ == "__main__":
         "output_head": {
             "activation": "choices(['relu', 'tanh', 'elu', 'gelu', 'relu6'], default_value='tanh')",
             "dropout_prob": "uniform(0, 0.8)",
+            "gamma": "uniform(0.9, 0.999)",
+            "normalize_advantages": "choices([True, False])",
+            "actor_loss_coef": "uniform(0.1, 1)",
+            "critic_loss_coef": "uniform(0.1, 1)",
+            "entropy_loss_coef": "uniform(0, 1, discrete=True)",
         },
     }
     best_hparams, best_results = method.hparam_sweep(
