@@ -11,20 +11,36 @@ logger = get_logger(__file__)
 
 if __name__ == "__main__":
     from simple_parsing import ArgumentParser
-    parser = ArgumentParser(description=__doc__)
-    BaselineMethod.add_argparse_args(parser, dest="method")
-    parser.add_arguments(Config, dest="config")
 
-    args = parser.parse_args()
+    ## Create the Setting:
+    from sequoia.settings import RLSetting
 
-    setting = IIDSetting(dataset="mnist")
-    # setting: Setting = args.setting
-    config: Config = args.config
-    setting.config = config
-    method = BaselineMethod.from_argparse_args(args, dest="method")
-    best_hparams, best_results = method.hparam_sweep(setting)
+    setting = RLSetting(dataset="monsterkong")
+    ## Create the BaselineMethod:
+    # Option 1: Create the method manually:
+    # method = BaselineMethod()
+
+    # Option 2: From the command-line:
+    method, unused_args = BaselineMethod.from_known_args()  # allow unused args.
+    # parser = ArgumentParser(description=__doc__)
+    # BaselineMethod.add_argparse_args(parser, dest="method")
+    # args, unused_args = parser.parse_known_args()
+    # method: BaselineMethod = BaselineMethod.from_argparse_args(args, dest="method")
+
+    search_space = {
+        "learning_rate": "loguniform(1e-06, 1e-02)",
+        "weight_decay": "loguniform(1e-12, 1e-03)",
+        "optimizer": "choices(['sgd', 'adam', 'rmsprop'], default_value='adam')",
+        "encoder": "choices({'resnet18': 0.5, 'simple_convnet': 0.5}, default_value='resnet18')",
+        "output_head": {
+            "activation": "choices(['relu', 'tanh', 'elu', 'gelu', 'relu6'], default_value='tanh')",
+            "dropout_prob": "uniform(0, 0.8)",
+        },
+    }
+    best_hparams, best_results = method.hparam_sweep(
+        setting, search_space=search_space, experiment_id="123"
+    )
 
     print(f"Best hparams: {best_hparams}, best perf: {best_results}")
     # results = setting.apply(method, config=Config(debug=True))
-
 

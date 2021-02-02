@@ -368,6 +368,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                     train_change_steps,
                 )
 
+            assert self.train_task_schedule is not None
             # The validation task schedule is the same as the one used in
             # training by default.
             if not self.valid_task_schedule:
@@ -838,8 +839,13 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             wrappers.append(PixelObservationWrapper)
             wrappers.append(ImageObservations)
 
-        # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
-        if is_atari_env(self.dataset):
+        if self.dataset.lower().startswith("metamonsterkong") and not self.observe_state_directly:
+            # TODO: Do we need the AtariPreprocessing wrapper on MonsterKong?
+            # Should  
+            # wrappers.append(partial(AtariPreprocessing, frame_skip=1))
+            pass
+        elif is_atari_env(self.dataset): 
+            # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
             # TODO: Figure out the differences (if there are any) between the 
             # AtariWrapper from SB3 and the AtariPreprocessing wrapper from gym.
             wrappers.append(AtariWrapper)

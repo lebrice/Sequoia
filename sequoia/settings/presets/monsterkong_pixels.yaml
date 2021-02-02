@@ -1,0 +1,27 @@
+dataset: monsterkong
+observe_state_directly: false
+max_episodes: null
+nb_tasks: 10
+test_steps: 1000
+test_steps_per_task: 500
+train_task_schedule:
+  0:
+    level: 0
+  1000:
+    level: 1
+  2000:
+    level: 2
+  3000:
+    level: 3
+  4000:
+    level: 4
+  5000:
+    level: 5
+  6000:
+    level: 6
+  7000:
+    level: 7
+  8000:
+    level: 8
+  9000:
+    level: 9
