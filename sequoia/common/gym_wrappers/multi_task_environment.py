@@ -129,6 +129,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         noise_std: float = 0.2,
         add_task_dict_to_info: bool = False,
         add_task_id_to_obs: bool = False,
+        new_random_task_on_reset: bool = False,
         starting_step: int = 0,
         max_steps: int = None,
     ):
@@ -171,12 +172,13 @@ class MultiTaskEnvironment(gym.Wrapper):
         self._steps: int = self._starting_step
 
         self._current_task: Dict = {}
-        self._task_schedule: Dict[int, Dict[str, Any]] = {}
+        self._task_schedule: Dict[int, Dict[str, Any]] = task_schedule or {}
 
         self.task_params: List[str] = task_params or []
         self.default_task: np.ndarray = self.current_task.copy()
         self.task_schedule = task_schedule or {}
 
+        self.new_random_task_on_reset: bool = new_random_task_on_reset
         # Wether we will add a task id to the observation.
         self.add_task_id_to_obs = add_task_id_to_obs
         # Wether we will add the task dict (the values of the attributes) to the
@@ -204,6 +206,9 @@ class MultiTaskEnvironment(gym.Wrapper):
     def current_task_id(self) -> int:
         """ Returns the 'index' of the current task within the task schedule.
         """
+        if self.new_random_task_on_reset:
+            # The task id is the index of the key that corresponds to the current task.
+            return self._current_task_id
         current_step = self._steps
         assert current_step >= 0
         task_steps: List[int] = sorted(self.task_schedule.keys())
@@ -213,6 +218,10 @@ class MultiTaskEnvironment(gym.Wrapper):
         current_task_index = insertion_index - 1
         return current_task_index
 
+    @current_task_id.setter
+    def current_task_id(self, value: int) -> None:
+        self._current_task_id = value
+    
     def set_on_task_switch_callback(self, callback: Callable[[int], None]) -> None:
         self._on_task_switch_callback = callback
 
@@ -230,14 +239,17 @@ class MultiTaskEnvironment(gym.Wrapper):
         if self._closed:
             raise gym.error.ClosedEnvironmentError("Can't step in closed env.")
 
-        if self.steps in self.task_schedule:
+        if self.steps in self.task_schedule and not self.new_random_task_on_reset:
             self.current_task = self.task_schedule[self.steps]
             logger.debug(f"New task: {self.current_task}")
             # Adding this on_task_switch, since it could maybe be easier than
             # having to add a callback wrapper to use.
             task_id = sorted(self.task_schedule.keys()).index(self.steps)
             self.on_task_switch(task_id)
-
+        elif self.new_random_task_on_reset:
+            self.current_task_id
+            
+            
         observation, rewards, done, info = super().step(*args, **kwargs)
         if self.add_task_id_to_obs:
             # TODO: Not actually using the add_task_labels in this case.
@@ -257,7 +269,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         self.env.close(**kwargs)
         self._closed = True
 
-    def reset(self, new_random_task: bool = False, **kwargs):
+    def reset(self, new_random_task: bool = None, **kwargs):
         """ Resets the wrapped environment.
         
         If `new_random_task` is True, this also sets a new random task as the
@@ -267,10 +279,18 @@ class MultiTaskEnvironment(gym.Wrapper):
         taken, hence the 'task' progression according to the task_schedule
         doesn't change.
         """
+        if new_random_task is None:
+            new_random_task = self.new_random_task_on_reset
+
         if self._closed:
             raise gym.error.ClosedEnvironmentError("Can't reset closed env.")
+
         if new_random_task:
+            prev_task_id = self.current_task_id
+            previous_task = self.current_task
             self.current_task = self.random_task()
+            logger.debug(f"Switching tasks at episode end: {prev_task_id} -> {self.current_task_id} {self.current_task}")
+
         observation = self.env.reset(**kwargs)
         if self.add_task_id_to_obs:
             observation = (observation, self.current_task_id)
@@ -331,7 +351,11 @@ class MultiTaskEnvironment(gym.Wrapper):
             for k, value in zip(self.task_params, task):
                 task_dict[k] = value
             task = task_dict
-
+        if task in self.task_schedule.values():
+            self._current_task_id = [
+                i for i, (k, v) in enumerate(self.task_schedule.items()) if v == task
+            ][0]
+            # assert False, f"Hey, this task is in the values at index {self._current_task_id}"
         if callable(task):
             task(self.env)
         elif isinstance(task, dict):
@@ -357,7 +381,11 @@ class MultiTaskEnvironment(gym.Wrapper):
             )
 
     def random_task(self) -> Dict:
-        """Samples a random 'task', i.e. a random set of attributes.
+        """Samples a random 'task'.
+        
+        If the wrapper already has a task schedule, then one of the tasks (values of the
+        task schedule dict) is selected at random.
+
         How the random value for an attribute is sampled depends on the type of
         its default value in the envionment:
 
@@ -378,6 +406,8 @@ class MultiTaskEnvironment(gym.Wrapper):
             Dict: A dict of the attribute name, and the value that would be set
                 for that attribute.
         """
+        if self.task_schedule:
+            return np.random.choice(list(self.task_schedule.values()))
         task: Dict = {}
         for attribute, default_value in self.default_task.items():
             new_value = default_value
@@ -433,7 +463,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         return dict(zip(self.task_params, task_array))
 
     @property
-    def task_schedule(self):
+    def task_schedule(self) -> Dict:
         return self._task_schedule
 
     @task_schedule.setter
@@ -457,17 +487,3 @@ class MultiTaskEnvironment(gym.Wrapper):
         if self._steps in self._task_schedule:
             self.current_task = self._task_schedule[self._steps]
 
-
-# def MultiTaskCartPole():
-#     env = gym.make("CartPole-v0")
-#     return MultiTaskEnvironment(env, noise_std=0.1)
-
-# MULTI_TASK_CARTPOLE: str = 'MultiTaskCartPole-v1'
-
-# try:
-#     register(
-#         id=MULTI_TASK_CARTPOLE,
-#         entry_point='settings.active.continual.multi_task_environment:MultiTaskCartPole',
-#     )
-# except gym.error.Error:
-#     pass

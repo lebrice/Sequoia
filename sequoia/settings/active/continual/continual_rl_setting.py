@@ -200,9 +200,10 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     
     # The maximum number of steps per episode. When None, there is no limit.
     max_episode_steps: Optional[int] = None
-    
+
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
+        self._new_random_task_on_reset: bool = False
         
         # Post processing of the 'dataset' field:
         if self.dataset in self.available_datasets.keys():
@@ -876,6 +877,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             add_task_id_to_obs=True,
             add_task_dict_to_info=True,
             starting_step=starting_step,
+            new_random_task_on_reset=self._new_random_task_on_reset,
             max_steps=max_steps,
         ))
         # If the task labels aren't available, we then add another wrapper that

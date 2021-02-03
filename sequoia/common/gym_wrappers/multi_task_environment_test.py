@@ -401,3 +401,42 @@ def test_task_schedule_with_callables():
         if done:
             print(f"End of episode at step {i}")
             obs = env.reset()
+            
+
+def test_random_task_on_each_episode():
+    env: MetaMonsterKongEnv = gym.make("MetaMonsterKong-v1")
+    from gym.wrappers import TimeLimit
+    env = TimeLimit(env, max_episode_steps=10)
+    env = MultiTaskEnvironment(
+        env,
+        task_schedule={
+            0: {"level": 0},
+            5: {"level": 1},
+            200: {"level": 2},
+            300: {"level": 3},
+            400: {"level": 4},
+        },
+        add_task_id_to_obs=True,
+        new_random_task_on_reset=True,
+    )
+    task_labels = []
+    for i in range(10):
+        obs = env.reset()
+        task_labels.append(obs[1])
+    assert set(task_labels) > {0}
+    
+    # Episodes only last 10 steps. Tasks don't have anything to do with the task
+    # schedule.
+    obs = env.reset()
+    start_task_label = obs[1]
+    for i in range(10):
+        obs, reward, done, info = env.step(env.action_space.sample())
+        assert obs[1] == start_task_label
+        if i == 9:
+            assert done 
+        else:
+            assert not done
+    
+    
+    
+    env.close()
