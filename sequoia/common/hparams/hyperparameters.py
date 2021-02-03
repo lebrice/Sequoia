@@ -23,7 +23,7 @@ from simple_parsing.helpers.serialization import register_decoding_fn
 
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import (compute_identity, dict_intersection,
-                                 field_dict, zip_dicts)
+                                 field_dict, zip_dicts, dict_union)
 
 from sequoia.utils.parseable import Parseable
 from .hparam import hparam, log_uniform, uniform
@@ -151,6 +151,11 @@ class HyperParameters(Serializable, Parseable, decode_into_subclasses=True):  # 
                     kwargs[field.name] = value
         return cls(**kwargs)
 
+    def replace(self, **new_params):
+        new_hp_dict = dict_union(self.to_dict(), new_params, recurse=True)
+        new_hp = type(self).from_dict(new_hp_dict)
+        return new_hp
+    
     # @classmethod
     # @contextmanager
     # def use_priors(cls, value: bool = True):

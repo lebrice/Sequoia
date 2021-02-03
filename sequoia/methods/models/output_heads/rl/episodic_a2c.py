@@ -11,7 +11,6 @@ import numpy as np
 from simple_parsing import mutable_field
 from gym import Space, spaces
 from gym.spaces.utils import flatdim
-from sequoia.common.layers import Flatten
 from sequoia.common import Loss
 from sequoia.settings import ContinualRLSetting
 from sequoia.settings.base import Rewards
@@ -22,6 +21,7 @@ from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
 from .policy_head import Categorical, PolicyHead, PolicyHeadOutput, GradientUsageMetric
 from .policy_head import normalize
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
+from sequoia.common.hparams import uniform, log_uniform, categorical
 from sequoia.utils import get_logger
 
 logger = get_logger(__file__)
@@ -46,20 +46,17 @@ class EpisodicA2C(PolicyHead):
     class HParams(PolicyHead.HParams):
         """ Hyper-parameters of the episodic A2C output head. """
         # Wether to normalize the advantages for each episode.
-        normalize_advantages: bool = False
+        normalize_advantages: bool = categorical(True, False, default=False)
 
-        actor_loss_coef: float = 0.5
-        critic_loss_coef: float = 0.5
-        entropy_loss_coef: float = 0.1
+        actor_loss_coef: float = uniform(0.1, 1, default=0.5)
+        critic_loss_coef: float = uniform(0.1, 1, default=0.5)
+        entropy_loss_coef: float = uniform(0, 1, default=0.1)
 
         # Maximum norm of the policy gradient.
         max_policy_grad_norm: Optional[float] = None
 
         # The discount factor.
-        gamma: float = 0.99
-
-        # Learning rate of the optimizer.
-        learning_rate: float = 1e-2
+        gamma: float = uniform(0.9, 0.999, default=0.99)
 
     def __init__(self,
                  input_space: spaces.Box,

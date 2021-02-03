@@ -18,7 +18,7 @@ from gym.spaces.utils import flatdim
 from torch import LongTensor, Tensor, nn
 from torch.optim.optimizer import Optimizer
 
-from sequoia.common.layers import Lambda, Flatten
+from sequoia.common.layers import Lambda
 from sequoia.common import Loss
 from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.settings import ContinualRLSetting
@@ -63,7 +63,7 @@ class ActorCriticHead(ClassificationHead):
         self.critic_output_dims = 1
         self.critic = nn.Sequential(
             # Lambda(concat_obs_and_action),
-            Flatten(),
+            nn.Flatten(),
             nn.Linear(self.critic_input_dims, 32),
             nn.ReLU(),
             nn.Linear(32, self.critic_output_dims),
@@ -71,7 +71,7 @@ class ActorCriticHead(ClassificationHead):
         self.actor_input_dims = self.input_size
         self.actor_output_dims = action_dims
         self.actor = nn.Sequential(
-            Flatten(),
+            nn.Flatten(),
             nn.Linear(self.actor_input_dims, 32),
             nn.ReLU(),
             nn.Linear(32, self.actor_output_dims),

@@ -62,7 +62,7 @@ def uniform(min: Union[int, float],
     discrete = discrete or (isinstance(min, int) and isinstance(max, int))
     if discrete:
         default = round(default)
-    prior = UniformPrior(min=min, max=max, discrete=discrete)
+    prior = UniformPrior(min=min, max=max, discrete=discrete, default=default)
     return hparam(
         default=default,
         prior=prior,
@@ -83,7 +83,7 @@ def log_uniform(min: Union[int,float],
                 discrete: bool = False,
                 default: Union[int, float]=None,
                 **kwargs) -> Union[int, float]:
-    prior = LogUniformPrior(min=min, max=max, discrete=discrete)
+    prior = LogUniformPrior(min=min, max=max, discrete=discrete, default=default)
     if default is None:
         log_min = math.log(min, prior.base)
         log_max = math.log(max, prior.base)

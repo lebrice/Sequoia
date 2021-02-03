@@ -7,7 +7,7 @@ import torch
 from torch import Tensor, nn
 from torchvision.transforms import functional as TF
 
-from sequoia.common.layers import Flatten, Lambda
+from sequoia.common.layers import Lambda
 from sequoia.common.loss import Loss
 from sequoia.common.metrics import ClassificationMetrics, Metrics, get_metrics
 from sequoia.utils.utils import fix_channels
@@ -91,7 +91,7 @@ class TransformationBasedTask(AuxiliaryTask):
             if self.options.compare_with_original:
                 input_dims *= 2
             self.auxiliary_layer = nn.Sequential(
-                Flatten(),
+                nn.Flatten(),
                 nn.Linear(input_dims, self.nargs),
             )
 
@@ -218,7 +218,7 @@ class RegressTransformationTask(TransformationBasedTask):
         if self.options.compare_with_original:
             input_dims *= 2
         self.auxiliary_layer = nn.Sequential(
-            Flatten(),
+            nn.Flatten(),
             nn.Linear(input_dims, 1),
             nn.Sigmoid(),
             ScaleToRange(arg_min=self.arg_min, arg_amp=self.arg_amp),

@@ -71,7 +71,6 @@ class IncrementalRLSetting(ContinualRLSetting):
                 for i, task_step in enumerate(change_steps):
                     task_schedule[task_step] = {"level": i}
                 return task_schedule
-        else:
-            return super().create_task_schedule(
-                temp_env=temp_env, change_steps=change_steps
-            )
+        return super().create_task_schedule(
+            temp_env=temp_env, change_steps=change_steps
+        )

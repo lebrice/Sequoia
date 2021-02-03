@@ -1,5 +1,17 @@
+import math
 from typing import Callable, List, Optional, Tuple, Union
 
+import numpy as np
+import torch
+from gym import spaces
+from sequoia.common.spaces.image import Image
+from sequoia.common.transforms import Compose
+from sequoia.utils.generic_functions import singledispatchmethod
+from sequoia.utils.logging_utils import get_logger
+from torch import Tensor, nn
+from torch.nn import Flatten
+
+logger = get_logger(__file__)
 import torch
 from torch import Tensor, nn
 
@@ -11,11 +23,6 @@ class Lambda(nn.Module):
     
     def forward(self, x):
         return self.func(x)
-
-
-class Flatten(nn.Module):
-    def forward(self, inputs):
-        return inputs.reshape([inputs.shape[0], -1])
 
 
 class Reshape(nn.Module):
@@ -108,3 +115,123 @@ class DeConvBlock(nn.Module):
         if self.last_relu:
             x = self.relu(x)
         return x
+
+
+
+
+def n_output_features(
+    in_features: int, padding: int = 1, kernel_size: int = 3, stride: int = 1
+) -> int:
+    """ Calculates the number of output features of a conv2d layer given its parameters.
+    """
+    return math.floor((in_features + 2 * padding - kernel_size) / stride) + 1
+
+
+
+
+class Conv2d(nn.Conv2d):
+    @singledispatchmethod
+    def forward(self, input: Union[Image, Tensor]) -> Union[Tensor, Image]:
+        return super().forward(input)
+
+    @forward.register(Image)
+    def _(self, input: Image) -> Image:
+        assert input.channels_first, f"Need channels first inputs for conv2d: {input}"
+        # NOTE: Not strictly necessary for computing the output space, but it would be
+        # better for the input space to already have a batch size, since conv2d only
+        # accepts 4-dimensional inputs.
+        # assert input.batch_size, (
+        #     f"Image space should be batched, since conv2d only accepts 4-dimensional "
+        #     f"inputs. (input={input})"
+        # )
+        assert input.channels == self.in_channels, (
+            f"Input space doesn't have the right number of channels: "
+            f"input.channels: {input.channels} != self.in_channels: {self.in_channels}"
+        )
+        new_height = n_output_features(
+            input.height,
+            padding=self.padding[0],
+            kernel_size=self.kernel_size[0],
+            stride=self.stride[0],
+        )
+        new_width = n_output_features(
+            input.width,
+            padding=self.padding[1],
+            kernel_size=self.kernel_size[1],
+            stride=self.stride[1],
+        )
+        new_channels = self.out_channels
+
+        new_shape = [new_channels, new_height, new_width]
+        if input.batch_size:
+            new_shape.insert(0, input.batch_size)
+
+        output_space: Image = type(input)(low=-np.inf, high=np.inf, shape=new_shape)
+        output_space.channels_first = True
+        return output_space
+
+
+class MaxPool2d(nn.MaxPool2d):
+    @singledispatchmethod
+    def forward(self, input: Union[Image, Tensor]) -> Union[Tensor, Image]:
+        return super().forward(input)
+
+    @forward.register(Image)
+    def _(self, input: Image) -> Image:
+        assert input.channels_first, f"Need channels first inputs: {input}"
+        # assert not self.padding, "assuming no padding for now."
+        padding = [self.padding] * 2 if isinstance(self.padding, int) else self.padding 
+        kernel_size = [self.kernel_size] * 2 if isinstance(self.kernel_size, int) else self.kernel_size 
+        stride = [self.stride] * 2 if isinstance(self.stride, int) else self.stride 
+        
+        new_height = n_output_features(
+            input.height,
+            padding=padding[0],
+            kernel_size=kernel_size[0],
+            stride=stride[0],
+        )
+        new_width = n_output_features(
+            input.width,
+            padding=padding[1],
+            kernel_size=kernel_size[1],
+            stride=stride[1],
+        )
+
+        new_channels = input.channels
+        new_shape = [new_channels, new_height, new_width]
+        if input.batch_size:
+            new_shape.insert(0, input.batch_size)
+        output_space: Image = type(input)(low=-np.inf, high=np.inf, shape=new_shape)
+        output_space.channels_first = True
+        # assert False, (self.forward(torch.as_tensor([input.sample()])).shape, output_space)
+        return output_space
+
+
+class Sequential(nn.Sequential):
+    
+    # NB: We can't really type check this function as the type of input
+    # may change dynamically (as is tested in
+    # TestScript.test_sequential_intermediary_types).  Cannot annotate
+    # with Any as TorchScript expects a more precise type
+    def forward(self, input):
+        if isinstance(input, spaces.Space):
+            space = input
+            for module in self:
+                try:
+                    space = module(space)
+                except:
+                    if isinstance(space, (spaces.Box, Image)):
+                        # Apply the module to a sample from the space, and create an
+                        # output space of the same shape.
+                        space = Image.from_box(space)
+                        in_sample: Tensor = torch.as_tensor(space.sample())
+                        if not space.batch_size:
+                            in_sample = in_sample.unsqueeze(0)
+                        out_sample = module(in_sample)
+                        out_space = type(space)(low=-np.inf, high=np.inf, shape=out_sample.shape)
+                        space = out_space
+                    else:
+                        logger.debug(f"Unable to apply module {module} on space {space}: assuming that it doesn't change the space.")
+            return space
+        return super().forward(input)
+

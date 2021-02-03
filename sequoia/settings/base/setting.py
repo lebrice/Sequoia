@@ -515,3 +515,71 @@ class Setting(SettingABC,
     # to create a Setting.
     def __new__(cls, *args, **kwargs):
         return super().__new__(cls, *args, **kwargs)
+
+    
+    @classmethod
+    def load_benchmark(cls: Type[SettingType], benchmark: Union[str, Path]) -> SettingType:
+        """ Load the given "benchmark" (pre-configured Setting) of this type. 
+
+        Parameters
+        ----------
+        cls : Type[SettingType]
+            Type of Setting to create.
+        benchmark : Union[str, Path]
+            Either the name of a benchmark (e.g. "cartpole_state", "monsterkong", etc.)
+            or a path to a json/yaml file.
+
+        Returns
+        -------
+        SettingType
+            Setting of type `cls`, appropriately populated according to the chosen
+            benchmark.
+
+        Raises
+        ------
+        RuntimeError
+            If `benchmark` isn't an existing file or a known preset.
+        RuntimeError
+            If any command-line arguments are present in sys.argv which would be ignored
+            when creating this setting. 
+        """
+        # If the provided benchmark isn't a path, try to get the value from
+        # the `setting_presets` dict. If it isn't in the dict, raise an
+        # error.
+        from sequoia.experiment import setting_presets
+        import sys
+        
+        if not Path(benchmark).is_file():
+            if benchmark in setting_presets:
+                benchmark = setting_presets[benchmark]
+            else:
+                raise RuntimeError(
+                    f"Could not find benchmark '{benchmark}': it "
+                    f"is neither a path to a file or a key of the "
+                    f"`setting_presets` dictionary. \n"
+                    f"(Available presets: {setting_presets}) "
+                )
+        # Creating an experiment for the given setting, loaded from the
+        # config file.
+        # TODO: IDEA: Do the same thing for loading the Method?
+        logger.info(f"Will load the options for setting {cls} from the file "
+                    f"at path {benchmark}.")
+
+        # Raise an error if any of the args in sys.argv would have been used
+        # up by the Setting, just to prevent any ambiguities.
+        _, unused_args = cls.from_known_args()
+        consumed_args = list(set(sys.argv[1:]) - set(unused_args))
+        if consumed_args:
+            # TODO: This could also be trigerred if there were arguments
+            # in the method with the same name as some from the Setting. 
+            raise RuntimeError(
+                f"Cannot pass command-line arguments for the Setting when "
+                f"loading a benchmark, since these arguments whould have been "
+                f"ignored when creating the setting of type {cls} "
+                f"anyway: {consumed_args}"
+            )
+
+        drop_extras = False
+        # Actually load the setting from the file.
+        setting = cls.load(path=benchmark, drop_extra_fields=drop_extras)
+        return setting

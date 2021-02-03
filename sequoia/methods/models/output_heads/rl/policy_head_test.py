@@ -66,9 +66,6 @@ class FakeEnvironment(SyncVectorEnv):
 
         return obs, reward, done, info
 
-
-
-from sequoia.common.layers import Flatten
 from gym.spaces.utils import flatdim, flatten
 
 

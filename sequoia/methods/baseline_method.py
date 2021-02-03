@@ -72,6 +72,37 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                  hparams: BaselineModel.HParams = None,
                  config: Config = None,
                  trainer_options: TrainerConfig = None, **kwargs):
+        """ Creates a new BaselineMethod, using the provided configuration options. 
+
+        Parameters
+        ----------
+        hparams : BaselineModel.HParams, optional
+            Hyper-parameters of the BaselineModel used by this Method. Defaults to None.
+        
+        config : Config, optional
+            Configuration dataclass with options like log_dir, device, etc. Defaults to
+            None.
+        
+        trainer_options : TrainerConfig, optional
+            Dataclass which holds all the options for creating the `pl.Trainer` which
+            will be used for training. Defaults to None.
+        
+        **kwargs :
+            If any of the above arguments are left as `None`, then they will be created
+            using any appropriate value from `kwargs`, if present.
+ 
+        ## Examples:
+        ```
+        method = BaselineMethod(hparams=BaselineModel.HParams(learning_rate=0.01))
+        method = BaselineMethod(learning_rate=0.01) # Same as above
+        
+        method = BaselineMethod(config=Config(debug=True))
+        method = BaselineMethod(debug=True) # Same as above
+        
+        method = BaselineMethod(hparams=BaselineModel.HParams(learning_rate=0.01), config=Config(debug=True))
+        method = BaselineMethod(learning_rate=0.01, debug=True) # Same as above
+        ```
+        """
         # TODO: When creating a Method from a script, like `BaselineMethod()`,
         # should we expect the hparams to be passed? Should we create them from
         # the **kwargs? Should we parse them from the command-line? 
@@ -351,29 +382,29 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         space = self.hparams.get_orion_space()
         return space
 
-    def hparam_sweep(self, setting: Setting, max_runs: int = None):
+    def hparam_sweep(self,
+                     setting: Setting,
+                     search_space: Dict[str, Union[str, Dict]]=None,
+                     experiment_id: str = None,
+                     max_runs: int = None) -> Tuple[BaselineModel.HParams, float]:
         """ Performs a hparam sweep using orion, changing the values in
         `self.hparams` iteratively, and returning the best hparams found so far.
         """
         from orion.core.worker.trial import Trial
         from orion.client import build_experiment, get_experiment
         from orion.core.utils.exceptions import NoConfigurationError
-
-        # Call 'configure', so that we create `self.model` at least once, which will
-        # update
-        # the hparams to be fully defined.
-        self.configure(setting)
-        # Setting max epochs to 1, just to make runs a bit shorter.
+        # Setting max epochs to 1, just to keep runs somewhat short.
         self.trainer_options.max_epochs = 1
-        assert self.hparams == self.model.hp
+        # Call 'configure', so that we create `self.model` at least once, which will
+        # update the hparams to be fully defined.
+        self.configure(setting)
 
-        experiment_name = self.get_experiment_name(setting)
-        search_space_dict = self.get_search_space()
-        logger.info(f"HPO Search space:\n" + json.dumps(search_space_dict, indent="\t"))
-
+        search_space = search_space or self.get_search_space()
+        logger.info(f"HPO Search space:\n" + json.dumps(search_space, indent="\t"))
+        experiment_name = self.get_experiment_name(setting, experiment_id=experiment_id)
         experiment = build_experiment(
             name=experiment_name,
-            space=search_space_dict,
+            space=search_space,
             debug=self.config.debug,
             algorithms="BayesianOptimizer", 
             max_trials=max_runs,
@@ -389,7 +420,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         previous_objectives: List[float] = [
             - trial.objective.value for trial in previous_trials
         ]
-
         if previous_objectives:
             logger.info(f"Using existing Experiment {experiment} which has {len(previous_trials)} existing trials.")
             best_index = np.argmax(previous_objectives)
@@ -402,24 +432,26 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         logger.info(f"Best result encountered so far: {best_objective}")
         logger.info(f"Best hparams so far: {best_hparams}")
 
-        def adapt_to_new_hparams(new_params: Dict):
+        while not experiment.is_done:
+            # Get a new suggestion of hparams to try:
+            trial: Trial = experiment.suggest()
+            
+            ## Re-create the Model with the new suggested Hparams values.
+            
+            new_params: Dict = trial.params
+            # Inner function, just used to make the code below a bit simpler.
+            # TODO: We should probably also change some values in the Config (e.g.
+            # log_dir, checkpoint_dir, etc) between runs.
             logger.info(f"Suggested values for this run:\n" + json.dumps(new_params, indent="\t"))
             # Here we overwrite the corresponding attributes with the new suggested values
             # leaving other fields unchanged.
-            new_hp_dict = dict_union(self.hparams.to_dict(), new_params, recurse=True)
-            new_hp = type(self.hparams).from_dict(new_hp_dict)
+            new_hparams = self.hparams.replace(**new_params)
             # Change the hyper-parameters, then reconfigure (which recreates the model).
-            self.hparams = new_hp
+            self.hparams = new_hparams
             self.configure(setting)
-            # TODO: We should probably also change some values in the Config (ex log_dir, checkpoint_dir, etc)
-            # between runs.
-            assert self.model.hp is new_hp
-
-        while not experiment.is_done:
-            trial: Trial = experiment.suggest()
             
-            adapt_to_new_hparams(trial.params)
-
+            ## Evaluate the method again on the setting:
+            
             result: Results = setting.apply(self, config=self.config)
             
             experiment.observe(trial, [
