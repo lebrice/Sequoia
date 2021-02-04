@@ -3,7 +3,7 @@ from sequoia.common import Config
 from sequoia.methods import RandomBaselineMethod
 
 if __name__ == "__main__":
-    setting = TaskIncrementalRLSetting(dataset="cartpole", nb_tasks=2)
+    setting = TaskIncrementalRLSetting(dataset="cartpole", nb_tasks=2, num_workers=0)
     method = RandomBaselineMethod(batch_size=1)
     results = setting.apply(method, Config(num_workers=0, debug=True))
     print(f"results: {results.summary()}")
