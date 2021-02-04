@@ -12,7 +12,7 @@ from simple_parsing import mutable_field
 from torch import Tensor
 
 from sequoia.common.batch import Batch
-from sequoia.common.callbacks import KnnCallback
+# from sequoia.common.callbacks import KnnCallback
 from sequoia.common.loss import Loss
 from sequoia.settings import Actions, Observations, Rewards, SettingType
 from sequoia.utils.logging_utils import get_logger
@@ -31,7 +31,7 @@ class SemiSupervisedModel(BaseModel[SettingType]):
         # the quality of the representations on each task after each training
         # epoch.
         # TODO: Debug/test this callback to make sure it still works fine.
-        knn_callback: KnnCallback = mutable_field(KnnCallback)
+        # knn_callback: KnnCallback = mutable_field(KnnCallback)
 
     def get_loss(self,
                  forward_pass: Dict[str, Tensor],

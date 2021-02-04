@@ -14,19 +14,19 @@
 
 2.  Install the repo, along with the optional dependencies for Hyper-Parameter
     Optimization (HPO):
-    
+
     ```console
     pip install -e .[hpo]
     ```
-    
+
     NOTE: You can also fuse the two steps above with `pip install -e .[rl,hpo]`
 
-3.  Setup a database to hold the hyper-parameter configurations, following the
-    [Orion database configuration documentation](https://orion.readthedocs.io/en/stable/install/database.html)
-    
+3.  (Optional) Setup a database to hold the hyper-parameter configurations, following
+    the [Orion database configuration documentation](https://orion.readthedocs.io/en/stable/install/database.html)
+
     The quickest way to get this setup is to run the `orion db setup` wizard, entering
     "pickleddb" as the database type:
-    
+
     ```console
     $ orion db setup
     Enter the database type:  (default: mongodb) pickleddb
@@ -67,8 +67,6 @@ if __name__ == "__main__":
     # args, unused_args = parser.parse_known_args()
     # method: BaselineMethod = BaselineMethod.from_argparse_args(args, dest="method")
 
-    search_space = {}
-    
     # Search space for the Hyper-Parameter optimization algorithm.
     # NOTE: This is just a copy of the spaces that are auto-generated from the fields of
     # the `BaselineModel.HParams` class. You can change those as you wish though.
