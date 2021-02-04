@@ -183,8 +183,9 @@ class BatchedVectorEnv(VectorEnv):
 
     def close_extras(self, **kwargs):
         r"""Clean up the extra resources e.g. beyond what's in this base class. """
-        self.env_a.close_extras(**kwargs)
-        if self.env_b:
+        if hasattr(self, "env_a"):
+            self.env_a.close_extras(**kwargs)
+        if hasattr(self, "env_b") and self.env_b:
             self.env_b.close_extras(**kwargs)
         if self.viewer:
             self.viewer.close()

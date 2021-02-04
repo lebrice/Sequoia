@@ -3,7 +3,7 @@
 Should be applicable to any Setting.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 
 import gym
 
@@ -23,23 +23,36 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     This method doesn't have a model or any parameters. It just returns a random
     action for every observation.
     """
+
+    # Batch size to be used by this Method.
     batch_size: int = 16
-    
-    def fit(self,
-            train_env: Environment=None,
-            valid_env: Environment=None,
-            datamodule=None
-        ):
+
+    def fit(self, train_env: Environment, valid_env: Environment):
         # This method doesn't actually train, so we just return immediately.
+        import time
+        time.sleep(1)
+        train_env.close()
+        valid_env.close()
         return
+
+    # def __post_init__(self, *args, **kwargs):
+    #     assert False, self.batch_size
 
     def configure(self, setting):
         # Set any batch size, really.
         print(f"Setting the batch size on the setting to {self.batch_size}")
+        # assert self.batch_size == 1 # FIXME: Remove this, just debugging atm.
         setting.batch_size = self.batch_size
 
-    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
+    def get_actions(
+        self, observations: Observations, action_space: gym.Space
+    ) -> Actions:
         return action_space.sample()
+
+    @classmethod
+    def add_argparse_args(cls, parser, dest: str="method"):
+        # super().add_argparse_args(parser, dest=dest)
+        parser.add_arguments(cls, dest=dest) # Equivalent
 
     @classmethod
     def from_args(cls, *args, **kwargs):
@@ -47,7 +60,7 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         # return RandomBaselineMethod()
 
     ## Methods below are just here for testing purposes.
-        
+
     @singledispatchmethod
     def validate_results(self, setting: Setting, results: Setting.Results):
         """Called during testing. Use this to assert that the results you get
@@ -59,11 +72,14 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         """
         assert results is not None
         assert results.objective > 0
-        print(f"Objective when applied to a setting of type {type(setting)}: {results.objective}")
-
+        print(
+            f"Objective when applied to a setting of type {type(setting)}: {results.objective}"
+        )
 
     @validate_results.register
-    def validate(self, setting: ClassIncrementalSetting, results: ClassIncrementalSetting.Results):
+    def validate(
+        self, setting: ClassIncrementalSetting, results: ClassIncrementalSetting.Results
+    ):
         assert isinstance(setting, ClassIncrementalSetting), setting
         assert isinstance(results, ClassIncrementalSetting.Results), results
 
@@ -84,26 +100,6 @@ class RandomBaselineMethod(Method, target_setting=Setting):
             # worse than chance, and to 'make the tests pass' (which is bad)
             # we're setting the lower bound super low, which makes no sense.
             assert 0.25 * chance_accuracy <= task_accuracy <= 2.1 * chance_accuracy
-
-    # @singledispatchmethod
-    # def model_class(self, setting: SettingType) -> Type[BaselineModel]:
-    #     raise NotImplementedError(f"No known model for setting of type {type(setting)} (registry: {self.model_class.registry})")
-    
-    # @model_class.register
-    # def _(self, setting: ActiveSetting) -> Type[Agent]:
-    #     # TODO: Make a 'random' RL method.
-    #     return RandomAgent
-
-    # @model_class.register
-    # def _(self, setting: ClassIncrementalSetting) -> Type[ClassIncrementalModelMixin]:
-    #     # IDEA: Generate the model dynamically instead of creating one of each.
-    #     # (This doesn't work atm because super() gives back a BaselineModel)
-    #     # return get_random_model_class(super().model_class(setting))
-    #     return RandomClassIncrementalModel
-
-    # @model_class.register
-    # def _(self, setting: TaskIncrementalSetting) -> Type[TaskIncrementalModel]:
-    #     return RandomTaskIncrementalModel
 
 
 if __name__ == "__main__":

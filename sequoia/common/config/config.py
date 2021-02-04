@@ -76,10 +76,10 @@ class Config(Serializable, Parseable):
                     f"want to prevent rendering the environment's observations."
                 ))
 
-    # def __del__(self):
-        # if self.display:
-        #     self.display.stop()
-        #     del self.display
+    def __del__(self):
+        if self.display:
+            self.display.stop()
+            del self.display
 
     def seed_everything(self) -> None:
         if self.seed is not None:

@@ -3,15 +3,15 @@ pytorch-lightning>=1.1.2
 gym[atari] @ git+https://www.github.com/lebrice/gym@easier_custom_spaces
 # nngeometry module used in the EWC method
 nngeometry @ git+https://github.com/oleksost/nngeometry.git
-simple_parsing>=0.0.12.post4
+simple_parsing>=0.0.12.post7
 matplotlib
 torch>=1.7
-torchvision
+torchvision>=0.8.2
 scikit-learn
 tqdm
 continuum>=1.0.5
 # Only required for the current demo:
-wandb
+wandb>=0.10.17
 plotly
 pandas
 # Only for python < 3.8
