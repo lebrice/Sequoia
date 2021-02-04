@@ -1,6 +1,8 @@
-# Sequoia - The Research Tree
+# Sequoia - The Research Tree 
 
 A Playground for research at the intersection of Continual, Reinforcement, and Self-Supervised Learning.
+
+## Please note: This is still very much a Work-In-Progress!
 
 ## Motivation:
 Most applied ML research generally either proposes new Settings (research problems), new Methods (solutions to such problems), or both.

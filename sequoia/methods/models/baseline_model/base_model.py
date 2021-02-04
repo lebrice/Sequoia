@@ -185,7 +185,10 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # observations.
         x = torch.as_tensor(observations.x, device=self.device, dtype=self.dtype)
         assert x.device == self.device
-        encoder_device = list(self.encoder.parameters())[0].device
+        encoder_parameters = list(self.encoder.parameters())
+        encoder_device = (
+            encoder_parameters[0].device if encoder_parameters else self.device
+        )
         # BUG: WHen using the EWCTask, there seems to be some issues related to which
         # device the model is stored on.
 

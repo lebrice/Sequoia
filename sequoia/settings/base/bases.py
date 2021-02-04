@@ -253,13 +253,10 @@ class Method(Generic[SettingType], Parseable, ABC):
     target_setting: ClassVar[Type[SettingType]] = None
 
     def configure(self, setting: SettingType) -> None:
-        """Configures the method before it gets applied on the given Setting.
+        """Configures this method before it gets applied on the given Setting.
 
         Args:
             setting (SettingType): The setting the method will be evaluated on.
-        
-        TODO: This might be a problem if we're gonna avoid 'cheating'.. we're
-        essentially giving the 'Setting' object directly to the method.
         """
     
     @abstractmethod

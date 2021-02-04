@@ -274,7 +274,8 @@ class HatMethod(Method, target_setting=TaskIncrementalSetting):
         # parser.add_argument("--foo", default=123)
 
     @classmethod
-    def from_argparse_args(cls, args, dest: str = None) -> "HatMethod":
+    def from_argparse_args(cls, args, dest: str = "") -> "HatMethod":
+        args = getattr(args, dest) if dest else args
         hparams: HatMethod.HParams = args.hparams
         # foo: int = args.foo
         method = cls(hparams=hparams)
