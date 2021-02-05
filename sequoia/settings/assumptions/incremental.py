@@ -209,8 +209,8 @@ class IncrementalSetting(ContinualSetting):
 
         test_env = self.test_dataloader()
         test_env: TestEnvironment
-        
-        if self.known_task_boundaries_at_test_time:
+        if self.known_task_boundaries_at_test_time and self.nb_tasks > 1:
+
             def _on_task_switch(step: int, *arg) -> None:
                 if step not in self.test_task_schedule:
                     return
@@ -394,5 +394,6 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
     def close(self):
         self._closed = True
         return super().close()
+
 
 TestEnvironment.__test__ = False

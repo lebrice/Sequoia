@@ -138,7 +138,8 @@ class MultiTaskEnvironment(gym.Wrapper):
         NOTE: Assumes that all the attributes in 'task_param_names' are floats
         for now.
 
-        TODO: Do we want to add the task labels as a dictionary? or just an 'index'? 
+        TODO: Check the case where a task boundary is reached and the episode is not
+        done yet. 
 
         Args:
             env (gym.Env): The environment to wrap.

@@ -751,6 +751,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             transforms=self.train_transforms,
             starting_step=starting_step,
             max_steps=max_steps,
+            new_random_task_on_reset=self._new_random_task_on_reset,
         )
 
     def create_valid_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
@@ -779,8 +780,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             transforms=self.val_transforms,
             starting_step=starting_step,
             max_steps=max_steps,
+            new_random_task_on_reset=self._new_random_task_on_reset,
         )
-
 
     def create_test_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to a single test environment.
@@ -800,6 +801,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             transforms=self.test_transforms,
             starting_step=0,
             max_steps=self.max_steps,
+            new_random_task_on_reset=self._new_random_task_on_reset,
         )
 
     def load_task_schedule(self, file_path: Path) -> Dict[int, Dict]:
@@ -817,6 +819,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                        transforms: List[Transforms],
                        starting_step: int,
                        max_steps: int,
+                       new_random_task_on_reset: bool,
                        ) -> List[Callable[[gym.Env], gym.Env]]:
         """ helper function for creating the train/valid/test wrappers. 
         
@@ -871,13 +874,14 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         else:
             # Add a wrapper that creates smooth tasks.
             cl_wrapper = SmoothTransitions
+        
         wrappers.append(partial(cl_wrapper,
             noise_std=self.task_noise_std,
             task_schedule=task_schedule,
             add_task_id_to_obs=True,
             add_task_dict_to_info=True,
             starting_step=starting_step,
-            new_random_task_on_reset=self._new_random_task_on_reset,
+            new_random_task_on_reset=new_random_task_on_reset,
             max_steps=max_steps,
         ))
         # If the task labels aren't available, we then add another wrapper that
@@ -908,6 +912,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             # These two shouldn't matter really:
             starting_step=0,
             max_steps=self.max_steps,
+            new_random_task_on_reset=self._new_random_task_on_reset,
         )
 
 
