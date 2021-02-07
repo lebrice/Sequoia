@@ -12,7 +12,7 @@ class RLSetting(TaskIncrementalRLSetting):
     
     Implemented as a TaskIncrementalRLSetting, but with a single task.
     """
-    nb_tasks: int = constant(1)
+    nb_tasks: int = 1
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)

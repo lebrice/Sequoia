@@ -384,7 +384,9 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         if not experiment_id:
             setting_dict = setting.to_dict()
             # BUG: Some settings have non-string keys/value or something?
-            experiment_id = compute_identity(size=5, **setting_dict)
+            from sequoia.utils.utils import flatten_dict
+            d = flatten_dict(setting_dict)
+            experiment_id = compute_identity(size=5, **d)
         assert isinstance(
             setting.dataset, str
         ), "assuming that dataset is a str for now."

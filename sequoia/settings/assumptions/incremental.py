@@ -119,7 +119,10 @@ class IncrementalSetting(ContinualSetting):
     def train_loop(self, method: Method):
         """ (WIP): Runs an incremental training loop, wether in RL or CL."""
         for task_id in range(self.nb_tasks):
-            logger.info(f"Starting training on task {task_id}")
+            logger.info(
+                f"Starting training"
+                + (f" on task {task_id}." if self.nb_tasks > 1 else ".")
+            )
             self.current_task_id = task_id
 
             if self.known_task_boundaries_at_train_time:

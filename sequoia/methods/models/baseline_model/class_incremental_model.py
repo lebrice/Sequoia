@@ -227,8 +227,10 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         
         # Get the indices for each task.
         for task_id in unique_task_labels:
-            if isinstance(task_labels, (Tensor, np.ndarray)):
+            if isinstance(task_labels, np.ndarray):
                 task_indices = np.arange(batch_size)[task_labels == task_id]
+            if isinstance(task_labels, Tensor):
+                task_indices = torch.arange(batch_size)[task_labels == task_id]
             else:
                 task_indices = torch.as_tensor([
                     i for i, task_label in enumerate(task_labels)
@@ -236,7 +238,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
                 ])
             all_task_indices[task_id] = task_indices
 
-        total_loss = Loss("")
+        total_loss = Loss(self.output_head.name)
 
         # Split off the input batch, do a forward pass for each sub-task.
         # (could be done in parallel but whatever.)
@@ -352,6 +354,12 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             output_head_key = str(None)
 
         self.current_task = task_id
+        # NOTE: May need to create new output heads here, since on_task_switch isn't
+        # always called before we see data of a new task (as is the case in so-called
+        # "Multi-Task" RL.)
+        if output_head_key not in self.output_heads:
+            new_output_head = self.create_output_head(self.setting)
+            self.output_heads[output_head_key] = new_output_head
         self.output_head = self.output_heads[output_head_key]
 
         yield
@@ -412,6 +420,9 @@ T = TypeVar("T")
 
 @singledispatch
 def create_placeholder(original: Any, batch_size: int) -> Any:
+    """ IDEA: Creates a 'placeholder', which will be later populated with the values
+    from different tasks.
+    """
     raise NotImplementedError(original)
 
 
@@ -434,6 +445,19 @@ def _create_placeholder_tuple(original: Tuple[T], batch_size: int) -> Tuple[T]:
         create_placeholder(value, batch_size)
         for value in original
     )
+
+from sequoia.utils.categorical import Categorical
+
+@create_placeholder.register(Categorical)
+def _create_placeholder_categorical(original: Categorical, batch_size: int) -> Tuple[T]:
+    placeholder = type(original)(
+        logits=torch.randn(
+            [batch_size, *original.logits.shape[1:]],
+            dtype=original.logits.dtype,
+            device=original.logits.device,
+        )
+    )
+    return placeholder
 
 Dataclass = TypeVar("Dataclass", bound=Batch)
 
