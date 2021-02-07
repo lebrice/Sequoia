@@ -164,7 +164,7 @@ class EpisodicA2C(PolicyHead):
         policy_gradient_loss = - (advantages.detach() * action_log_probs).mean()
         actor_loss = Loss("actor", policy_gradient_loss)
         loss += self.hparams.actor_loss_coef * actor_loss
-        
+
         # Value loss: Try to get the critic's values close to the actual return,
         # which means the advantages should be close to zero.
         value_loss_tensor = F.mse_loss(values, returns.reshape(values.shape))
@@ -174,9 +174,9 @@ class EpisodicA2C(PolicyHead):
         # Entropy loss, to "favor exploration".
         entropy_loss = Loss("entropy", - actions.action_dist.entropy().mean())
         loss += self.hparams.entropy_loss_coef * entropy_loss
-        
         if done:
-            episode_metrics = [EpisodeMetrics(rewards=episode_rewards.tolist())]
+            episode_rewards_array = episode_rewards.reshape([-1])
+            episode_metrics = [EpisodeMetrics(rewards=episode_rewards_array)]
             loss.metric = RLMetrics(episodes=episode_metrics)
         
         loss.metrics["gradient_usage"] = self.get_gradient_usage_metrics(env_index)

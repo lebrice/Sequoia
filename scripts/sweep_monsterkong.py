@@ -12,12 +12,9 @@ logger = get_logger(__file__)
 
 
 if __name__ == "__main__":
-
     ## Create the Setting:
     setting = RLSetting(dataset="monsterkong", nb_tasks=10, max_steps=10_000)
-    # from sequoia.settings import TaskIncrementalSetting
-    # setting = TaskIncrementalSetting(dataset="cifar10")
-    
+
     ## Create the BaselineMethod:
     # Option 1: Create the method manually:
     # method = BaselineMethod()
