@@ -441,7 +441,23 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         """Apply the given method on this setting to producing some results. """
         # Use the supplied config, or parse one from the arguments that were
         # used to create `self`.
-        self.config = config or Config.from_args(self._argv, strict=False)
+        self.config: Config
+        if config is not None:
+            self.config = config
+            logger.debug(f"Using Config {self.config}")
+        elif isinstance(getattr(method, "config", None), Config):
+            self.config = method.config
+            logger.debug(f"Using Config from the Method: {self.config}")
+        else:
+            logger.debug(f"Parsing the Config from the command-line.")
+            self.config = Config.from_args(self._argv, strict=False)
+            logger.debug(f"Resulting Config: {self.config}")
+        
+        # TODO: Test to make sure that this doesn't cause any other bugs with respect to
+        # the display of stuff:
+        # Call this method, creating a virtual display if necessary.
+        self.config.get_display()
+
         # TODO: Should we really overwrite the method's 'config' attribute here?
         if not getattr(method, "config", None):
             method.config = self.config
