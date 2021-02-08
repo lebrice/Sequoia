@@ -13,7 +13,7 @@ logger = get_logger(__file__)
 
 if __name__ == "__main__":
     ## Create the Setting:
-    setting = RLSetting(dataset="monsterkong", nb_tasks=10, max_steps=10_000)
+    setting = RLSetting(dataset="monsterkong", nb_tasks=10, steps_per_task=100_000, test_steps_per_task=10_000)
 
     ## Create the BaselineMethod:
     # Option 1: Create the method manually:
@@ -29,7 +29,6 @@ if __name__ == "__main__":
     best_hparams, best_results = method.hparam_sweep(
         setting, search_space=search_space, experiment_id=None,
     )
-
     print(f"Best hparams: {best_hparams}, best perf: {best_results}")
     # results = setting.apply(method, config=Config(debug=True))
 

@@ -123,8 +123,7 @@ class PolicyHead(ClassificationHead):
         gamma: float = 0.99
         
         # The maximum length of the buffer that will hold the most recent
-        # states/actions/rewards of the current episode. When a batched
-        # environment is used
+        # states/actions/rewards of the current episode.
         max_episode_window_length: int = 1000
         
         # Minumum number of epidodes that need to be completed in each env
@@ -161,9 +160,9 @@ class PolicyHead(ClassificationHead):
             hparams=hparams,
             name=name,
         )
-        logger.debug("Output head hparams: " + self.hparams.dumps_json(indent='\t'))
+        logger.debug("New Output head with hparams: " + self.hparams.dumps_json(indent='\t'))
         self.hparams: PolicyHead.HParams
-        # Type hints for the spaces;    
+        # Type hints for the spaces;
         self.input_space: spaces.Box
         self.action_space: spaces.Discrete
         self.reward_space: spaces.Box
@@ -494,7 +493,8 @@ class PolicyHead(ClassificationHead):
         self.rewards.clear()
         self.representations.clear()
         self.actions.clear()
-        
+        self.batch_size = None
+
     def clear_buffers(self, env_index: int) -> None:
         """ Clear the buffers associated with the environment at env_index.
         """

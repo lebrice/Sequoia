@@ -171,6 +171,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         self._max_steps: Optional[int] = max_steps
         self._starting_step: int = starting_step
         self._steps: int = self._starting_step
+        self._episodes: int = 0
 
         self._current_task: Dict = {}
         self._task_schedule: Dict[int, Dict[str, Any]] = task_schedule or {}
@@ -290,11 +291,19 @@ class MultiTaskEnvironment(gym.Wrapper):
             prev_task_id = self.current_task_id
             previous_task = self.current_task
             self.current_task = self.random_task()
-            logger.debug(f"Switching tasks at episode end: {prev_task_id} -> {self.current_task_id} {self.current_task}")
+            episode = self._episodes
+            step = self._steps
+            if previous_task != self.current_task:
+                logger.debug(
+                    f"Switching tasks at step {step} (end of episode {episode}): "
+                    f"{prev_task_id} -> {self.current_task_id} {self.current_task}"
+                )
 
         observation = self.env.reset(**kwargs)
         if self.add_task_id_to_obs:
             observation = (observation, self.current_task_id)
+            
+        self._episodes += 1
         return observation
 
     @property

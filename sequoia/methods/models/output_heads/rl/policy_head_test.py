@@ -540,3 +540,11 @@ def test_sanity_check_cartpole_done_vector():
             break
     else:
         assert False, "Should have had at least one done=True, over the 100 steps!"
+
+
+def test_applied_to_multitask_rl():
+    """ TODO: on_task_switch is called on the new observation, but we need to produce a
+    loss for the output head that we were just using!
+    """
+    pass
+

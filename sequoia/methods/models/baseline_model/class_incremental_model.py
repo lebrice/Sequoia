@@ -218,10 +218,36 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         if len(unique_task_labels) == 1:
             # If everything is in the same task, no need to split/merge.
             task_id = unique_task_labels[0]
+            if self.current_task == task_id:
+                # Already in that task:
+                loss = super().output_head_loss(forward_pass, actions=actions, rewards=rewards)
+                # FIXME: Debugging stuff.
+                # loss.name += f"(task {self.current_task})"
+                return loss
+
+            # TODO: This is messing things up in RL!
+            if self.training and self.hp.batch_size == 1:
+                # IDEA: Maybe in this case we can safely destroy any preserved state in
+                # the current output head.
+                assert isinstance(task_id, int), "(wip) assuming we have task ids here."
+                # TODO: this isn't really pretty, but the idea is that we need to
+                # actually flush out any 
+                logger.debug(f"Manually calling on_task_switch({task_id}) since we're "
+                             f"training in a single env, which is most probably a "
+                             f"multi-task RL environment.")
+                self.on_task_switch(task_id)
+                loss = super().output_head_loss(forward_pass, actions=actions, rewards=rewards)
+                return loss
+
+            # Switch tasks "temporarily".
+            # TODO: This can make things quite complicated in RL, as the output heads
+            # currently have state for the environments they are being trained on.             
             with self.temporarily_in_task(task_id):
                 # Only one loss to fetch, since all items are from the same task.
                 # Default behaviour: use the (only) output head.
-                return super().output_head_loss(forward_pass, actions=actions, rewards=rewards)
+                loss = super().output_head_loss(forward_pass, actions=actions, rewards=rewards)
+                # loss.name += f"(task {self.current_task})"
+                return loss
 
         all_task_indices: Dict[Any, Tensor] = {}
         
@@ -262,6 +288,8 @@ class ClassIncrementalModel(BaseModel[SettingType]):
                     actions=actions_slice,
                     rewards=rewards_slice,
                 )
+                # FIXME: debugging
+                # task_output_head_loss.name += f"(task {task_id})"
                 logger.debug(f"Task {task_id} loss: {task_output_head_loss}")
                 total_loss += task_output_head_loss
 
@@ -302,6 +330,13 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             basically being informed that there is a task boundary, but without
             knowing what task we're switching to.
         """
+        if task_id != self.current_task:
+            logger.debug(f"Destroying all buffer contents in the output heads.")
+            logger.debug(f"self.current_task = {self.current_task}, new task: {task_id})")
+            self.output_head.clear_all_buffers()
+            for output_head in self.output_heads.values():
+                output_head.clear_all_buffers()
+
         super().on_task_switch(task_id=task_id)
         logger.info(f"Switching from task {self.current_task} -> {task_id}.")
         self.previous_task = self.current_task
@@ -313,7 +348,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
             # ('None' key?) or just use the last trained output head?
             # self.output_head = self.output_heads[str(None)]
             pass
-        
+                        
         # TODO: Do we need to 'save' the output head back into
         # `self.output_heads`? do `self.output_head` and
         # `self.output_heads[str(self.previous_task)]` reference the same
@@ -326,7 +361,8 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         key = str(task_id)
         if self.hp.multihead:
             if key not in self.output_heads:
-                self.output_heads[key] = self.create_output_head(self.setting)
+                logger.info(f"Creating a new output head for task {key}.")
+                self.output_heads[key] = self.create_output_head(self.setting, task_id=task_id)
             # Update `self.output_head` to be the one for the current task.
             self.output_head = self.output_heads[key]
 
@@ -342,7 +378,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         start_task_id = self.current_task
         start_output_head = self.output_head
         assert isinstance(task_id, int) or task_id is None
-        
+
         output_head_key = str(task_id)
         if self.hp.multihead and task_id is None:
             # Multi-headed model, but we don't know the task id: need to use
@@ -358,8 +394,20 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         # always called before we see data of a new task (as is the case in so-called
         # "Multi-Task" RL.)
         if output_head_key not in self.output_heads:
-            new_output_head = self.create_output_head(self.setting)
+            logger.info(f"Creating a new output head for task {output_head_key}.")
+            new_output_head = self.create_output_head(self.setting, task_id=task_id)
             self.output_heads[output_head_key] = new_output_head
+
+        # TODO: BUG: There is "old" state left in the buffers of the output head from
+        # previous forward/backward passes!
+        # Need to clear the output head's state somehow when we're done with it, but
+        # also somehow allow it to accumulate state when it is being applied on the same
+        # task over multiple steps!
+        if self.output_head is not self.output_heads[output_head_key]:
+            from sequoia.methods.models.output_heads.rl import PolicyHead
+            if isinstance(self.output_head, PolicyHead):
+                self.output_head.clear_all_buffers()
+
         self.output_head = self.output_heads[output_head_key]
 
         yield
@@ -393,7 +441,8 @@ class ClassIncrementalModel(BaseModel[SettingType]):
         if self.hp.multihead and unexpected_keys:
             for i in range(self.setting.nb_tasks):
                 # Try to load the output head weights
-                new_output_head = self.create_output_head(self.setting)
+                logger.info(f"Creating a new output head for task {i}")
+                new_output_head = self.create_output_head(self.setting, task_id=i)
                 # FIXME: TODO: This is wrong. We should create all the
                 # output heads if they aren't already created, and then try to
                 # load the state_dict again.

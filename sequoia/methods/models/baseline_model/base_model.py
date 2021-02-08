@@ -137,7 +137,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.encoder = self.encoder.to(self.config.device)
         
         self.representation_space = add_tensor_support(self.representation_space)
-        self.output_head: OutputHead = self.create_output_head(setting)
+        self.output_head: OutputHead = self.create_output_head(setting, task_id=None)
 
     @auto_move_data
     def forward(self, observations:  IncrementalSetting.Observations) -> ForwardPass:
@@ -208,24 +208,27 @@ class BaseModel(LightningModule, Generic[SettingType]):
             h_x = torch.as_tensor(h_x, device=self.device, dtype=self.dtype)
         return h_x
 
-    def create_output_head(self, setting: Setting, add_to_optimizer: bool = None) -> OutputHead:
+    def create_output_head(self, setting: Setting, task_id: Optional[int]) -> OutputHead:
         """Create an output head for the current action and reward spaces.
         
         NOTE: This assumes that the input, action and reward spaces don't change
         between tasks.
-        
+
         Parameters
         ----------
-        add_to_optimizer : bool, optional
-            Wether to add the parameters of the new output head to the optimizer
-            of the model. Defaults to None, in which case we add the output head
-            parameters as long as it doesn't have an `optimizer` attribute of
-            its own.
+        setting : Setting
+            Current Setting. This is the same as `self.setting`, but provided because at
+            some point the idea was to use a singledispatchmethod to choose which kind
+            of output head to create based on the type of Setting.
+        task_id : Optional[int]
+            ID of the task associated with this new output head. Can be `None`, which is
+            interpreted as saying that either that task labels aren't available, or that
+            this output head will be used for all tasks. 
 
         Returns
         -------
         OutputHead
-            The new output head.
+            The new output head for the given task.
         """
         input_space: Space = self.representation_space
         action_space: Space = self.action_space
@@ -234,26 +237,25 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # Choose what type of output head to use depending on the kind of
         # Setting.
         output_head_type: Type[OutputHead] = self.output_head_type(setting)
-
+        output_head_name = str(f"task_{task_id}") if task_id is not None else output_head_type.name
         output_head = output_head_type(
             input_space=input_space,
             action_space=action_space,
             reward_space=reward_space,
             hparams=hparams,
+            name=output_head_name,
         ).to(self.device)
 
-        if add_to_optimizer is None:
-            # Do not add the output head's parameters to the optimizer of the
-            # whole model, if it already has an `optimizer` of its own.
-            add_to_optimizer = not getattr(output_head, "optimizer", None)
-
+        # Do not add the output head's parameters to the optimizer of the whole model,
+        # if it already has an `optimizer` attribute of its own. (NOTE: this isn't the
+        # case in practice so far)
+        add_to_optimizer = not getattr(output_head, "optimizer", None)
         if add_to_optimizer:
             # Add the new parameters to the Optimizer, if it already exists.
             # If we don't yet have a Trainer, the Optimizer hasn't been created
-            # yet. Once it is created though, it will most likely get the
-            # parameters of this output head from `self.parameters()` is passed
-            # to its constructor, since the output head will be stored in
-            # `self.output_heads`.
+            # yet. Once it is created though, it will get the parameters of this output
+            # head from `self.parameters()` is passed to its constructor, since the
+            # output head will be stored in `self.output_heads`.
             if self.trainer:
                 optimizer: Optimizer = self.optimizers()
                 assert isinstance(optimizer, Optimizer)

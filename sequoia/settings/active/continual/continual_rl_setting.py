@@ -151,7 +151,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # Number of steps per task. When left unset and when `max_steps` is set,
     # takes the value of `max_steps` divided by `nb_tasks`.
     steps_per_task: Optional[int] = None
-    # Number of episodes per task.
+    # (WIP): Number of episodes per task.
     episodes_per_task: Optional[int] = None
 
     # Number of steps per task in the test loop.
@@ -451,7 +451,11 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # `configure` methods aren't using the `method` anyway.)
         method.configure(setting=self)
 
-        logger.info(f"Train task schedule:" + json.dumps(self.train_task_schedule, indent="\t"))
+        if self._new_random_task_on_reset:
+            logger.info(f"Train tasks: " + json.dumps(list(self.train_task_schedule.values()), indent="\t"))
+        else:
+            logger.info(f"Train task schedule:" + json.dumps(self.train_task_schedule, indent="\t"))
+            
         # Run the Training loop (which is defined in IncrementalSetting).
         self.train_loop(method)
 

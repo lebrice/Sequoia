@@ -96,11 +96,11 @@ class BaselineModel(SemiSupervisedModel,
             "simple_convnet": SimpleConvNet,
         }
         # Which encoder to use.
-        encoder: Type[nn.Module] = categorical(
+        encoder: Type[nn.Module] = choice(
             available_encoders,
-            default=tv_models.resnet18,
-            # TODO: Only considering these two for now when performing an HPO sweep.
-            probabilities={"resnet18": 0.5, "simple_convnet": 0.5},
+            default=SimpleConvNet,
+            # # TODO: Only considering these two for now when performing an HPO sweep.
+            # probabilities={"resnet18": 0., "simple_convnet": 1.0},
         )
 
         # Learning rate of the optimizer.
@@ -155,7 +155,7 @@ class BaselineModel(SemiSupervisedModel,
         if not isinstance(self.hp.output_head, output_head_type.HParams):
             self.hp.output_head = self.hp.output_head.upgrade(target_type=output_head_type.HParams)
         
-        self.output_head: OutputHead = self.create_output_head(setting)
+        self.output_head: OutputHead = self.create_output_head(setting, task_id=None)
 
         # Dictionary of auxiliary tasks.
         self.tasks: Dict[str, AuxiliaryTask] = self.create_auxiliary_tasks()
@@ -189,27 +189,31 @@ class BaselineModel(SemiSupervisedModel,
         # NOTE: Implementation is mostly in `base_model.py`.
         return super().forward(observations)
 
-    def create_output_head(self, setting: Setting, add_to_optimizer: bool = None) -> OutputHead:
-        """Create an output head for the current setting.
+    def create_output_head(self, setting: Setting, task_id: Optional[int]) -> OutputHead:
+        """Create an output head for the current action and reward spaces.
         
         NOTE: This assumes that the input, action and reward spaces don't change
         between tasks.
-        
+
         Parameters
         ----------
-        add_to_optimizer : bool, optional
-            Wether to add the parameters of the new output head to the optimizer
-            of the model. Defaults to None, in which case we add the output head
-            parameters as long as it doesn't have an `optimizer` attribute of
-            its own.
+        setting : Setting
+            Current Setting. This is the same as `self.setting`, but provided because at
+            some point the idea was to use a singledispatchmethod to choose which kind
+            of output head to create based on the type of Setting.
+        task_id : Optional[int]
+            ID of the task associated with this new output head. Can be `None`, which is
+            interpreted as saying that either that task labels aren't available, or that
+            this output head will be used for all tasks. 
 
         Returns
         -------
         OutputHead
-            The new output head.
+            The new output head for the given task.
         """
-        # NOTE: Implementation is in `base_model.py`.
-        return super().create_output_head(setting, add_to_optimizer=add_to_optimizer)
+        # NOTE: Actual implementation is in `base_model.py`. This is added here just for
+        # convenience when extending the baseline model.
+        return super().create_output_head(setting, task_id=task_id)
 
     def output_head_type(self, setting: SettingType) -> Type[OutputHead]:
         """ Return the type of output head we should use in a given setting.
