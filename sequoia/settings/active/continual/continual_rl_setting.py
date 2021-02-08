@@ -538,7 +538,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         self.setup("fit")
 
         batch_size = batch_size or self.batch_size
-        num_workers = num_workers or self.num_workers
+        num_workers = num_workers if num_workers is not None else self.num_workers
         env_factory = partial(self._make_env, base_env=self.dataset,
                                               wrappers=self.train_wrappers,
                                               observe_state_directly=self.observe_state_directly)
@@ -581,7 +581,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         env_dataloader = self._make_env_dataloader(
             env_factory,
             batch_size=batch_size or self.batch_size,
-            num_workers=num_workers or self.num_workers,
+            num_workers=num_workers if num_workers is not None else self.num_workers,
             max_steps=self.steps_per_task,
             max_episodes=self.episodes_per_task,
         )
@@ -636,7 +636,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             )))
             batch_size = None
 
-        num_workers = num_workers or self.num_workers
+        num_workers = num_workers if num_workers is not None else self.num_workers
         env_factory = partial(self._make_env, base_env=self.dataset,
                                               wrappers=self.test_wrappers,
                                               observe_state_directly=self.observe_state_directly)
