@@ -60,6 +60,7 @@ def _add_task_labels_to_space(observation: X, task_labels: T) -> spaces.Dict:
 def _add_task_labels_to_namedtuple(
     observation: NamedTupleSpace, task_labels: gym.Space
 ) -> NamedTupleSpace:
+    assert "task_labels" not in observation._spaces, "space already has task labels!"
     return type(observation)(**observation._spaces, task_labels=task_labels)
 
 

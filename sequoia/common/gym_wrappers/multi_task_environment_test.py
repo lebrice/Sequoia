@@ -527,6 +527,8 @@ def test_task_sequence_is_reproducible(env: str):
         task_ids_and_lengths = list(zip(task_ids, task_lengths))
         print(f"Task ids and length of each one: {task_ids_and_lengths}")
 
+        assert len(set(task_ids)) > 1, "should have been more than just one task!" 
+        
         if not first_results:
             first_results = task_ids_and_lengths
         else:
