@@ -14,7 +14,7 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
 from sequoia.utils import take
 from sequoia.common import Loss
-from .class_incremental_model import ClassIncrementalModel, OutputHead
+from .multihead_model import MultiHeadModel, OutputHead
 
 
 @pytest.fixture()
@@ -50,10 +50,10 @@ class MockOutputHead(OutputHead):
     def get_loss(self, forward_pass, actions, rewards):
         return Loss(self.name, 0.)
     
-# def mock_output_task(self: ClassIncrementalModel, x: Tensor, h_x: Tensor) -> Tensor:
+# def mock_output_task(self: MultiHeadModel, x: Tensor, h_x: Tensor) -> Tensor:
 #     return self.output_head(x)
 
-# def mock_encoder(self: ClassIncrementalModel, x: Tensor) -> Tensor:
+# def mock_encoder(self: MultiHeadModel, x: Tensor) -> Tensor:
 #     return x.new_ones(self.hp.hidden_size)
 
 
@@ -71,9 +71,9 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
     right output head for each image.
     """
     setting = ClassIncrementalSetting()
-    model = ClassIncrementalModel(
+    model = MultiHeadModel(
         setting=setting,
-        hparams=ClassIncrementalModel.HParams(batch_size=30, multihead=True),
+        hparams=MultiHeadModel.HParams(batch_size=30, multihead=True),
         config=config,
     )
     
@@ -122,3 +122,38 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
     # assert False, y_preds[0]
     
     # assert False, {i: [vi.shape for vi in v] for i, v in mixed_samples.items()}
+
+
+def test_applied_to_multitask_rl():
+    """ TODO: on_task_switch is called on the new observation, but we need to produce a
+    loss for the output head that we were just using!
+    """
+    import gym
+    from sequoia.common.gym_wrappers import MultiTaskEnvironment
+    from gym.wrappers import TimeLimit
+    env = gym.make("CartPole-v0")
+    env = TimeLimit(env, max_episode_steps=10)
+    env = MultiTaskEnvironment(
+        env,
+        task_schedule={
+            0: {"length": 0.1},
+            5: {"length": 0.2},
+            200: {"length": 0.3},
+            300: {"length": 0.4},
+            400: {"length": 0.5},
+        },
+        add_task_id_to_obs=True,
+        new_random_task_on_reset=True,
+    )
+    
+    # Episodes only last 10 steps. Tasks don't have anything to do with the task
+    # schedule.
+    obs = env.reset()
+    start_task_label = obs[1]
+    for i in range(10):
+        obs, reward, done, info = env.step(env.action_space.sample())
+        assert obs[1] == start_task_label
+        if i == 9:
+            assert done
+        else:
+            assert not done

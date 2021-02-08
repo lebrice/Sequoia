@@ -651,7 +651,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             **kwargs
         )
 
-    # These methods below are used by the ClassIncrementalModel, mostly when
+    # These methods below are used by the MultiHeadModel, mostly when
     # using a multihead model, to figure out how to relabel the batches, or how
     # many classes there are in the current task (since we support a different
     # number of classes per task).

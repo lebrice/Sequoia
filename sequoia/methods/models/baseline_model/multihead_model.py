@@ -26,7 +26,7 @@ logger = get_logger(__file__)
 SettingType = TypeVar("SettingType", bound=IncrementalSetting)
 
 
-class ClassIncrementalModel(BaseModel[SettingType]):
+class MultiHeadModel(BaseModel[SettingType]):
     """ Extension of the Model LightningModule aimed at CL settings.
     TODO: Add the stuff related to multihead/continual learning here?
     """
@@ -44,7 +44,7 @@ class ClassIncrementalModel(BaseModel[SettingType]):
     def __init__(self, setting: IncrementalSetting, hparams: HParams, config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
         self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()
-        self.hp: ClassIncrementalModel.HParams
+        self.hp: MultiHeadModel.HParams
         self.setting: SettingType
 
         # TODO: Add an optional task inference mechanism for ClassIncremental
@@ -190,7 +190,9 @@ class ClassIncrementalModel(BaseModel[SettingType]):
                          forward_pass: ForwardPass,
                          actions: Actions,
                          rewards: Rewards) -> Loss:
-        # TODO: WIP: Ask each output head for its contribution to the loss.
+        # Asks each output head for its contribution to the loss.
+        # TODO: Get the loss of the output heads.
+
         observations: IncrementalSetting.Observations = forward_pass.observations
         task_labels = observations.task_labels
         batch_size = forward_pass.batch_size

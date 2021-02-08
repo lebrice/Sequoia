@@ -46,12 +46,12 @@ SettingType = TypeVar("SettingType", bound=IncrementalSetting)
 from sequoia.methods.models.simple_convnet import SimpleConvNet
 
 from .base_model import ForwardPass
-from .class_incremental_model import ClassIncrementalModel
+from .multihead_model import MultiHeadModel
 from .self_supervised_model import SelfSupervisedModel
 from .semi_supervised_model import SemiSupervisedModel
 
 class BaselineModel(SemiSupervisedModel,
-                    ClassIncrementalModel,
+                    MultiHeadModel,
                     SelfSupervisedModel,
                     Generic[SettingType]):
     """ Base model LightningModule (nn.Module extended by pytorch-lightning)
@@ -67,7 +67,7 @@ class BaselineModel(SemiSupervisedModel,
     @dataclass
     class HParams(SemiSupervisedModel.HParams,
                   SelfSupervisedModel.HParams,
-                  ClassIncrementalModel.HParams):
+                  MultiHeadModel.HParams):
         """ HParams of the Model. """
         # NOTE: All the fields below were just copied from the BaseHParams class, just
         # to improve visibility a bit.
