@@ -32,6 +32,9 @@ def xfail_param(*args, reason: str):
 def skip_param(*args, reason: str):
     return pytest.param(*args, marks=pytest.mark.skip(reason=reason))
 
+def skipif_param(condition, *args, reason: str):
+    return pytest.param(*args, marks=pytest.mark.skipif(condition, reason=reason))
+
 
 @pytest.fixture()
 def trainer_config(tmp_path_factory):
@@ -252,3 +255,10 @@ else:
 monsterkong_required = pytest.mark.skipif(
     not monsterkong_installed, reason="monsterkong is required for this test."
 )
+
+def param_requires_monsterkong(*args):
+    return skipif_param(
+        not monsterkong_installed,
+        *args,
+        reason="monsterkong is required for this parameter.",
+    )

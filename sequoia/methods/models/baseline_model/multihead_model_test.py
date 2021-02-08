@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader, Dataset
 from sequoia.utils import take
 from sequoia.common import Loss
 from .multihead_model import MultiHeadModel, OutputHead
+from gym.spaces.utils import flatdim
 
 
 @pytest.fixture()
@@ -123,37 +124,89 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
     
     # assert False, {i: [vi.shape for vi in v] for i, v in mixed_samples.items()}
 
+import gym
+from sequoia.common.gym_wrappers import MultiTaskEnvironment
+from gym.wrappers import TimeLimit
+from gym.vector import SyncVectorEnv
+from sequoia.settings import RLSetting
 
-def test_applied_to_multitask_rl():
+
+@pytest.mark.xfail(reason="WIP")
+def test_multitask_rl_bug():
     """ TODO: on_task_switch is called on the new observation, but we need to produce a
     loss for the output head that we were just using!
     """
-    import gym
-    from sequoia.common.gym_wrappers import MultiTaskEnvironment
-    from gym.wrappers import TimeLimit
-    env = gym.make("CartPole-v0")
-    env = TimeLimit(env, max_episode_steps=10)
-    env = MultiTaskEnvironment(
+    def env_fn() -> gym.Env:
+        env = gym.make("CartPole-v0")
+        env = TimeLimit(env, max_episode_steps=10)
+        env = MultiTaskEnvironment(
+            env,
+            task_schedule={
+                0: {"length": 0.1},
+                100: {"length": 0.2},
+                200: {"length": 0.3},
+                300: {"length": 0.4},
+                400: {"length": 0.5},
+            },
+            add_task_id_to_obs=True,
+            new_random_task_on_reset=True,
+        )
+        return env
+
+    batch_size = 1
+    env = SyncVectorEnv([env_fn for _ in range(batch_size)])
+    from sequoia.settings.active import TypedObjectsWrapper
+    from sequoia.common.gym_wrappers import AddDoneToObservation
+    env = AddDoneToObservation(env)
+    env = TypedObjectsWrapper(
         env,
-        task_schedule={
-            0: {"length": 0.1},
-            5: {"length": 0.2},
-            200: {"length": 0.3},
-            300: {"length": 0.4},
-            400: {"length": 0.5},
-        },
-        add_task_id_to_obs=True,
-        new_random_task_on_reset=True,
+        observations_type=RLSetting.Observations,
+        actions_type=RLSetting.Actions,
+        rewards_type=RLSetting.Rewards,
     )
-    
-    # Episodes only last 10 steps. Tasks don't have anything to do with the task
-    # schedule.
+    env.seed(123)
+
+    # NOTE: Tasks don't have anything to do with the task schedule. They are sampled at
+    # each episode.
     obs = env.reset()
-    start_task_label = obs[1]
-    for i in range(10):
-        obs, reward, done, info = env.step(env.action_space.sample())
-        assert obs[1] == start_task_label
-        if i == 9:
-            assert done
-        else:
-            assert not done
+    done = False
+
+    start_task_label = obs[1][0]
+    print(f"Starting in task {start_task_label}")
+    hidden_size = 16
+    encoder = nn.Linear(flatdim(env.single_observation_space.x), hidden_size)
+    
+    raise NotImplementedError("WIP")
+
+    for step in range(10):
+        print(f"Step {step}.")
+        # Wrap up the obs to pretend that this is the data coming from a
+        # ContinualRLSetting.
+        observations = RLSetting.Observations(x=obs[0], task_labels=obs[1], done=done)#, info=info)
+        # We don't use an encoder for testing, so the representations is just x.
+        
+        representations = encoder(obs.x)
+        assert observations.task_labels is None
+        
+        actions = output_head(observations.float(), representations.float())
+
+        # Wrap things up to pretend like the output head is being used in the
+        # BaselineModel:
+                
+        forward_pass = ForwardPass(
+            observations = observations,
+            representations = representations,
+            actions = actions,
+        )
+
+        action_np = actions.actions_np
+        
+        obs, rewards, done, info = env.step(action_np)
+        
+        obs = torch.from_numpy(obs)
+        rewards = torch.from_numpy(rewards)
+        done = torch.from_numpy(done)
+        
+        rewards = ContinualRLSetting.Rewards(y=rewards)
+        loss = output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
+        

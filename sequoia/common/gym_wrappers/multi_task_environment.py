@@ -2,19 +2,8 @@ import bisect
 import random
 from collections.abc import Mapping
 from functools import singledispatch
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-    MutableMapping,
-)
+from typing import (Any, Callable, Dict, List, MutableMapping, Optional,
+                    Sequence, Tuple, Type, TypeVar, Union)
 
 import gym
 import matplotlib.pyplot as plt
@@ -22,10 +11,11 @@ import numpy as np
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
 from gym.envs.registration import register
+from numpy.random import RandomState
 from torch import Tensor
 
-from sequoia.utils.logging_utils import get_logger
 from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
+from sequoia.utils.logging_utils import get_logger
 
 task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
     CartPoleEnv: ["gravity", "masscart", "masspole", "length", "force_mag", "tau",]
@@ -117,6 +107,14 @@ class MultiTaskEnvironment(gym.Wrapper):
     At step 20, the length of the pole will be set to 1.0, and the gravity will
         be changed from its default value (9.8) to 20.
     etc.
+
+    TODO: Might be more accurate to call this a `TaskIncrementalEnvironment`, rather
+    than `MultiTaskEnvironemnt`, which is more related to the `new_random_task_on_reset`
+    behaviour anyway.
+    TODOs:
+    - Copy this to a `incremental_environment.py` or something similar
+    - Remove all references to this `new_random_task_on_reset` stuff.
+    - Rename "smooth_environment" to "nonstationary_environment"?
     """
 
     def __init__(
@@ -132,6 +130,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         new_random_task_on_reset: bool = False,
         starting_step: int = 0,
         max_steps: int = None,
+        seed: int = None,
     ):
         """ Wraps an environment, allowing it to be 'multi-task'.
 
@@ -153,7 +152,6 @@ class MultiTaskEnvironment(gym.Wrapper):
         """
         super().__init__(env=env)
         self.env: gym.Env
-
         self.noise_std = noise_std
         if not task_params:
             unwrapped_type = type(env.unwrapped)
@@ -204,6 +202,9 @@ class MultiTaskEnvironment(gym.Wrapper):
 
         self._on_task_switch_callback: Optional[Callable[[int], None]] = None
 
+        self.np_random: RandomState
+        self.seed(seed)
+
     @property
     def current_task_id(self) -> int:
         """ Returns the 'index' of the current task within the task schedule.
@@ -248,8 +249,9 @@ class MultiTaskEnvironment(gym.Wrapper):
             # having to add a callback wrapper to use.
             task_id = sorted(self.task_schedule.keys()).index(self.steps)
             self.on_task_switch(task_id)
-        elif self.new_random_task_on_reset:
-            self.current_task_id
+        
+        # elif self.new_random_task_on_reset:
+        #     self.current_task_id
             
             
         observation, rewards, done, info = super().step(*args, **kwargs)
@@ -417,19 +419,19 @@ class MultiTaskEnvironment(gym.Wrapper):
                 for that attribute.
         """
         if self.task_schedule:
-            return np.random.choice(list(self.task_schedule.values()))
+            return self.np_random.choice(list(self.task_schedule.values()))
         task: Dict = {}
         for attribute, default_value in self.default_task.items():
             new_value = default_value
             if isinstance(default_value, (int, float, np.ndarray)):
-                new_value *= random.normalvariate(1.0, self.noise_std)
+                new_value *= self.np_random.normalvariate(1.0, self.noise_std)
                 # Clip the value to be in the [0.1*default, 10*default] range.
                 new_value = max(0.1 * default_value, new_value)
                 new_value = min(10 * default_value, new_value)
                 if isinstance(default_value, int):
                     new_value = round(new_value)
             elif isinstance(default_value, bool):
-                new_value = random.choice([True, False])
+                new_value = self.np_random.choice([True, False])
             else:
                 raise NotImplementedError(
                     f"TODO: Don't yet know how to sample a random value for "
@@ -460,10 +462,11 @@ class MultiTaskEnvironment(gym.Wrapper):
         if kwargs:
             current_task.update(kwargs)
         self.current_task = current_task
-
-    def seed(self, seed: Optional[int] = None) -> None:
-        if seed is not None:
-            np.random.seed(seed)
+    
+    def seed(self, seed: Optional[int] = None) -> List[int]:
+        self.np_random = RandomState(seed)
+        self.action_space.seed(seed)
+        self.observation_space.seed(seed)
         return self.env.seed(seed)
 
     def task_dict(self, task_array: np.ndarray) -> Dict[str, float]:
