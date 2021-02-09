@@ -84,8 +84,8 @@ class MultiHeadModel(BaseModel[SettingType]):
     #     self._output_head = value
 
     @auto_move_data
-    def forward(self, observations:  IncrementalSetting.Observations) -> Dict[str, Tensor]:
-        """ Forward pass of the Model. Returns a dict."""
+    def forward(self, observations:  IncrementalSetting.Observations) -> ForwardPass:
+        """ Forward pass of the Model. """
         # Just testing things out here.
         assert isinstance(observations, self.Observations), observations
         single_observation_space = self.observation_space
@@ -127,9 +127,10 @@ class MultiHeadModel(BaseModel[SettingType]):
         if len(unique_task_labels) == 1:
             # If everything is in the same task, no need to split/merge.
             task_id = unique_task_labels[0]
-            with self.temporarily_in_task(task_id):
-                return super().forward(observations)
-
+            if task_id != self.current_task:
+                # Only switch tasks if the batch isn't of the current task.
+                self.on_task_switch(task_id)
+            return super().forward(observations)
         batch_size = observations.batch_size
 
         # The 'merged' forward pass result dict.
@@ -201,7 +202,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         if not self.hp.multihead:
             # Default behaviour: use the (only) output head.
             return super().output_head_loss(forward_pass, actions=actions, rewards=rewards)
-
+        
         if task_labels is None:
             if self.task_inference_module:
                 # TODO: Predict the task ids using some kind of task
@@ -217,44 +218,42 @@ class MultiHeadModel(BaseModel[SettingType]):
         assert task_labels is not None
         unique_task_labels: List[Optional[int]] = list(set(task_labels.tolist()))
          
-        # TODO: This is messing things up in RL!
-        if self.training and len(task_labels) == 1:
-            # IDEA: Maybe in this case we can safely destroy any preserved state in
-            # the current output head.
-            if isinstance(task_labels, Tensor):
-                task_labels = task_labels.cpu().numpy()
-            task_id = task_labels[0].item()
-            assert isinstance(task_id, int), f"(wip) assuming we have task ids here: {task_labels}"
-            # TODO: this isn't really pretty, but the idea is that we need to
-            # actually flush out any old state.
-            logger.debug(f"Manually calling on_task_switch({task_id}) since we're "
-                         f"training in a single env, (currently in task {self.current_task}) which is most probably a "
-                         f"multi-task RL environment.")
-            # self.on_task_switch(task_id)
-            self.on_task_switch(task_id)
-            loss = super().output_head_loss(forward_pass, actions=actions, rewards=rewards)
-            return loss
+        # # TODO: This is messing things up in RL!
+        # if self.training and len(task_labels) == 1:
+        #     # IDEA: Maybe in this case we can safely destroy any preserved state in
+        #     # the current output head.
+        #     if isinstance(task_labels, Tensor):
+        #         task_labels = task_labels.cpu().numpy()
+        #     task_id = task_labels[0].item()
+        #     assert isinstance(task_id, int), f"(wip) assuming we have task ids here: {task_labels}"
+        #     # TODO: this isn't really pretty, but the idea is that we need to
+        #     # actually flush out any old state.
+        #     if task_id != self.current_task
+        #     # self.on_task_switch(task_id)
+        #     self.on_task_switch(task_id)
+            
+        #     loss = super().output_head_loss(forward_pass, actions=actions, rewards=rewards)
+        #     return loss
 
         if len(unique_task_labels) == 1:
             # If everything is in the same task, no need to split/merge.
             task_id = unique_task_labels[0]
-
-            if self.current_task == task_id:
-                # Already in that task:
-                loss = super().output_head_loss(forward_pass, actions=actions, rewards=rewards)
-                return loss
             # Encountering a task label different from the 'current' task.
-            # Switch tasks "temporarily".
+            # Switch tasks.
             # TODO: This can make things quite complicated in RL, as the output heads
             # currently have state for the environments they are being trained on.             
-            with self.temporarily_in_task(task_id):
-                # Only one loss to fetch, since all items are from the same task.
-                # Default behaviour: use the (only) output head.
-                loss = super().output_head_loss(forward_pass, actions=actions, rewards=rewards)
-                return loss
+            if self.current_task != task_id:
+                logger.debug(f"Manually calling on_task_switch({task_id}) since all "
+                             f"task labels are the same, and that task ({task_id}) is "
+                             f"different from the current task ({self.current_task}).")
+                self.on_task_switch(task_id)
+                assert self.current_task == task_id
+
+            loss = super().output_head_loss(forward_pass, actions=actions, rewards=rewards)
+            return loss
 
         all_task_indices: Dict[Any, Tensor] = {}
-        
+
         # Get the indices for each task.
         for task_id in unique_task_labels:
             if isinstance(task_labels, np.ndarray):
@@ -376,8 +375,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         
     @contextmanager
     def temporarily_in_task(self, task_id: Optional[int]):
-        """WIP: This would be used to temporarily change the 'output_head'
-        attribute,
+        """ This is used to temporarily change the 'output_head' attribute.
         """
         logger.debug(f"Temporarily switching to task {task_id}")
         start_task_id = self.current_task
@@ -408,11 +406,18 @@ class MultiHeadModel(BaseModel[SettingType]):
         # # Need to clear the output head's state somehow when we're done with it, but
         # # also somehow allow it to accumulate state when it is being applied on the same
         # # task over multiple steps!
-        # if self.output_head is not self.output_heads[output_head_key]:
-        #     from sequoia.methods.models.output_heads.rl import PolicyHead
-        #     if isinstance(self.output_head, PolicyHead):
-        #         self.output_head.clear_all_buffers()
 
+        # TODO: IDEA: Rather than try to clear this state ourselves here or in
+        # `on_task_switch`, we could add some sort of method on the OutputHead class
+        # that gets called before/after the model update, so that we get to detach all
+        # the tensors and clear any buffers that need to be cleared, once the model has
+        # performed an update.
+
+        # TODO: The RL output heads and interleaved episodes in different tasks will
+        # most definitely not work with our current mechanism for the multi-headed
+        # model. Would need to share the buffers between the output heads, and then
+        # indicate to each head the indices of the environments it is responsible for
+        # somehow..
         self.output_head = self.output_heads[output_head_key]
 
         yield
