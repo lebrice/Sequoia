@@ -419,8 +419,7 @@ class MultiTaskEnvironment(gym.Wrapper):
             Dict: A dict of the attribute name, and the value that would be set
                 for that attribute.
         """
-        # Since the task schedule will always contain step '0':
-        if set(self.task_schedule.keys()) - {0}:
+        if self.new_random_task_on_reset:
             return self.np_random.choice(list(self.task_schedule.values()))
         task: Dict = {}
         for attribute, default_value in self.default_task.items():

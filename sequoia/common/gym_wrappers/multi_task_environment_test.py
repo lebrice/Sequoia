@@ -440,11 +440,40 @@ def test_random_task_on_each_episode():
         else:
             assert not done
     
-    
-    
     env.close()
 
 from sequoia.conftest import monsterkong_required
+
+
+def test_random_task_on_each_episode_and_only_one_task_in_schedule():
+    """ BUG: When the goal is to have only one task, it instead keeps sampling a new
+    task from the 'distribution', in the case of cartpole!
+    """
+    env: MetaMonsterKongEnv = gym.make("CartPole-v1")
+    from gym.wrappers import TimeLimit
+    env = TimeLimit(env, max_episode_steps=10)
+    env = MultiTaskEnvironment(
+        env,
+        task_schedule={
+            0: {"length": 0.1},
+        },
+        add_task_id_to_obs=True,
+        new_random_task_on_reset=True,
+    )
+    task_labels = []
+    lengths = []
+    for i in range(10):
+        obs = env.reset()
+        task_labels.append(obs[1])
+        lengths.append(env.length)
+        done = False
+        while not done:
+            obs, reward, done, info = env.step(env.action_space.sample())
+            task_labels.append(obs[1])
+            lengths.append(env.length)
+
+    assert set(task_labels) == {0}
+    assert set(lengths) == {0.1}
 
 
 def env_fn_monsterkong() -> gym.Env:
