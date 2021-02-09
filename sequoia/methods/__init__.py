@@ -1,9 +1,13 @@
 import glob
 import inspect
+import os
 import warnings
 from importlib import import_module
 from os.path import basename, dirname, isfile, join
+from pathlib import Path
 from typing import List, Type
+
+from setuptools import find_packages
 
 from sequoia.settings.base import Method
 
@@ -52,21 +56,13 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
 from .baseline_method import BaselineMethod
 from .random_baseline import RandomBaselineMethod
 
-
 ## A bit hacky: Dynamically import all the modules/packages defined in this
 # folder. This way, we register the methods as they are declared.
 modules = glob.glob(join(dirname(__file__), "*"))
 # TODO: Should use setuptools.find_packages instead
-from setuptools import find_packages
+source_dir = Path(os.path.dirname(__file__))
 
-all_modules: List[str] = [
-    basename(f).replace(".py", "") for f in modules
-    if (#(isfile(f) and
-        f.endswith(".py") and
-        not f.endswith('__init__.py') and
-        not f.endswith("_test.py")
-    )
-]
+all_modules = find_packages(where=source_dir)
 
 for module in all_modules:
     try:
