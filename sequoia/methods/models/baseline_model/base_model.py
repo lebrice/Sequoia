@@ -237,7 +237,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # Choose what type of output head to use depending on the kind of
         # Setting.
         output_head_type: Type[OutputHead] = self.output_head_type(setting)
-        output_head_name = str(f"task_{task_id}") if task_id is not None else output_head_type.name
+        # output_head_name = str(f"task_{task_id}") if task_id is not None else output_head_type.name
+        output_head_name = None
         output_head = output_head_type(
             input_space=input_space,
             action_space=action_space,

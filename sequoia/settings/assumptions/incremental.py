@@ -140,7 +140,14 @@ class IncrementalSetting(ContinualSetting):
                 elif not self.task_labels_at_train_time:
                     method.on_task_switch(None)
                 else:
-                    method.on_task_switch(task_id)
+                    # NOTE: on_task_switch won't be called if there is only one "task",
+                    # (as-in one task in a 'sequence' of tasks).
+                    # TODO: in multi-task RL, i.e. RLSetting(dataset=..., nb_tasks=10),
+                    # for instance, then there are indeed 10 tasks, but `self.tasks`
+                    # is used here to describe the number of 'phases' in training and
+                    # testing.
+                    if self.nb_tasks > 1:
+                        method.on_task_switch(task_id)
 
             # Creating the dataloaders ourselves (rather than passing 'self' as
             # the datamodule):

@@ -4,25 +4,26 @@ the end of the episode, rather than at each step.
 
 from collections import deque
 from dataclasses import dataclass
-from typing import List, Optional, Deque
-import torch
+from typing import ClassVar, Deque, List, Optional
+
 import gym
 import numpy as np
-from simple_parsing import mutable_field
+import torch
 from gym import Space, spaces
 from gym.spaces.utils import flatdim
-from sequoia.common import Loss
-from sequoia.settings import ContinualRLSetting
-from sequoia.settings.base import Rewards
+from simple_parsing import mutable_field
 from torch import Tensor, nn
 from torch.nn import functional as F
-from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
 
-from .policy_head import Categorical, PolicyHead, PolicyHeadOutput, GradientUsageMetric
-from .policy_head import normalize
+from sequoia.common import Loss
+from sequoia.common.hparams import categorical, log_uniform, uniform
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
-from sequoia.common.hparams import uniform, log_uniform, categorical
+from sequoia.settings import ContinualRLSetting
+from sequoia.settings.base import Rewards
 from sequoia.utils import get_logger
+from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
+from .policy_head import (Categorical, GradientUsageMetric, PolicyHead,
+                          PolicyHeadOutput, normalize)
 
 logger = get_logger(__file__)
 
@@ -41,6 +42,7 @@ class EpisodicA2C(PolicyHead):
     TODO: This could actually produce a loss every N steps, rather than just at
     the end of the episode.
     """
+    name: ClassVar[str] = "episodic_a2c"
 
     @dataclass
     class HParams(PolicyHead.HParams):

@@ -244,16 +244,21 @@ class BaselineModel(SemiSupervisedModel,
         # NOTE In RL, we can only update the model's weights on steps where the output
         # head has as loss, because the output head has buffers of tensors whose grads
         # would become invalidated if we performed the optimizer step.
-        if loss.requires_grad and not self.trainer.train_loop.automatic_optimization:
+        if loss.requires_grad and not self.automatic_optimization:
             output_head_loss = loss_object.losses.get(self.output_head.name)            
             update_model = output_head_loss is not None and output_head_loss.requires_grad
             optimizer = self.optimizers()
+
             self.manual_backward(loss, optimizer, retain_graph=not update_model)
             if update_model:
                 optimizer.step()
                 optimizer.zero_grad()
         return step_result
 
+    @property
+    def automatic_optimization(self) -> bool:
+        return not isinstance(self.output_head, PolicyHead)
+    
     def validation_step(self,
                         batch: Tuple[Observations, Optional[Rewards]],
                         batch_idx: int,
@@ -303,3 +308,13 @@ class BaselineModel(SemiSupervisedModel,
                 assert not isinstance(value, (dict, str)), "shouldn't be nested at this point!"
                 self.log(key, value, logger=True)
         return results
+
+    def on_task_switch(self, task_id: Optional[int]) -> None:
+        """Called when switching between tasks.
+        
+        Args:
+            task_id (int, optional): the id of the new task. When None, we are
+            basically being informed that there is a task boundary, but without
+            knowing what task we're switching to.
+        """
+        return super().on_task_switch(task_id)

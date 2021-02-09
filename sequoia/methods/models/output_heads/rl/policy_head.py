@@ -31,8 +31,9 @@ import itertools
 from abc import ABC, abstractmethod
 from collections import deque, namedtuple
 from dataclasses import dataclass
-from typing import (Any, Deque, Dict, Iterable, List, MutableSequence,
-                    NamedTuple, Optional, Sequence, Tuple, TypeVar, Union)
+from typing import (Any, ClassVar, Deque, Dict, Iterable, List,
+                    MutableSequence, NamedTuple, Optional, Sequence, Tuple,
+                    TypeVar, Union)
 
 import gym
 import numpy as np
@@ -114,6 +115,7 @@ class PolicyHead(ClassificationHead):
     - The buffers are common to training/validation/testing atm..
     
     """
+    name: ClassVar[str] = "policy"
 
     @dataclass
     class HParams(ClassificationHead.HParams):
@@ -270,17 +272,16 @@ class PolicyHead(ClassificationHead):
                 self.num_steps_in_episode[env_index] = 0
 
             env_loss = self.get_episode_loss(env_index, done=done)
-            
+
             if env_loss is not None:
                 self.loss += env_loss
 
             if done:
                 if self.training:
                     # BUG: This seems to be failing, during testing:
-                    # assert env_loss is not None, env_loss
+                    # assert env_loss is not None, (self.name)
                     pass
                 self.clear_buffers(env_index)
-            
 
         for env_index in range(self.batch_size):
             # Take a slice across the first dimension

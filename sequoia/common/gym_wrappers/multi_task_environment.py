@@ -11,7 +11,7 @@ import numpy as np
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
 from gym.envs.registration import register
-from numpy.random import RandomState
+from numpy.random import Generator
 from torch import Tensor
 
 from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
@@ -203,7 +203,7 @@ class MultiTaskEnvironment(gym.Wrapper):
 
         self._on_task_switch_callback: Optional[Callable[[int], None]] = None
 
-        self.np_random: RandomState
+        self.np_random: np.random.Generator
         self.seed(seed)
 
     @property
@@ -419,13 +419,14 @@ class MultiTaskEnvironment(gym.Wrapper):
             Dict: A dict of the attribute name, and the value that would be set
                 for that attribute.
         """
-        if self.task_schedule:
+        # Since the task schedule will always contain step '0':
+        if set(self.task_schedule.keys()) - {0}:
             return self.np_random.choice(list(self.task_schedule.values()))
         task: Dict = {}
         for attribute, default_value in self.default_task.items():
             new_value = default_value
             if isinstance(default_value, (int, float, np.ndarray)):
-                new_value *= self.np_random.normalvariate(1.0, self.noise_std)
+                new_value *= self.np_random.normal(1.0, self.noise_std)
                 # Clip the value to be in the [0.1*default, 10*default] range.
                 new_value = max(0.1 * default_value, new_value)
                 new_value = min(10 * default_value, new_value)
@@ -465,7 +466,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         self.current_task = current_task
     
     def seed(self, seed: Optional[int] = None) -> List[int]:
-        self.np_random = RandomState(seed)
+        self.np_random = np.random.default_rng(seed)
         self.action_space.seed(seed)
         self.observation_space.seed(seed)
         return self.env.seed(seed)
