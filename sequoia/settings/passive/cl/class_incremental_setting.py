@@ -42,7 +42,7 @@ from gym import Space, spaces
 from pytorch_lightning import LightningModule, Trainer
 from simple_parsing import choice, field, list_field
 from torch import Tensor
-from torch.utils.data import ConcatDataset, DataLoader
+from torch.utils.data import ConcatDataset, DataLoader, Dataset
 from tqdm import tqdm
 
 from sequoia.common import ClassificationMetrics, Metrics, get_metrics
@@ -203,6 +203,8 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             ImageNet1000, CIFAR10, CIFAR100, EMNIST, KMNIST, MNIST,
             QMNIST, FashionMNIST, Synbols,
         ]
+        # "synbols": Synbols,
+        # "synbols_font": partial(Synbols, task="fonts"),
     }
     # A continual dataset to use. (Should be taken from the continuum package).
     dataset: str = choice(available_datasets.keys(), default="mnist")
@@ -243,6 +245,11 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     # TODO: Need to put num_workers in only one place.
     batch_size: int = field(default=32, cmd=False)
     num_workers: int = field(default=4, cmd=False)
+
+    # Wether or not to relabel the images to be within the [0, n_classes_per_task]
+    # range. Floating (False by default) in Class-Incremental Setting, but set to True
+    # in domain_incremental Setting.
+    relabel: bool = False
     
     def __post_init__(self):
         """Initializes the fields of the Setting (and LightningDataModule),
@@ -284,46 +291,16 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # make things a bit more complicated.
         assert isinstance(self.increment, int)
         assert isinstance(self.test_increment, int)
-        
+
         self.n_classes_per_task: int = self.increment
-        # base_obs_space = Image(low=0, high=1, shape=base_observation_spaces[self.dataset], dtype=np.float32)
-        # task_label_space = spaces.Discrete(self.nb_tasks)
-        # if not self.task_labels_at_train_time:
-        #     task_label_space = Sparse(task_label_space, 1.0)
-
-        # observation_space = NamedTupleSpace(
-        #     x=image_space,
-        #     task_labels=task_label_space,
-        #     dtype=self.Observations,
-        # )
-        # assert False, image_space
-        # TODO: Change the actions from logits to predicted labels.
         action_space = spaces.Discrete(self.n_classes_per_task)
-        # action_space = DictSpace(
-        #     y_pred=spaces.Discrete(self.n_classes_per_task),
-        #     dataclass_type=self.Actions,
-        # )
-        # self.action_space = Box(low=-np.inf, high=np.inf, shape=(self.n_classes_per_task,))
         reward_space = spaces.Discrete(self.n_classes_per_task)
-
-        # reward_space = DictSpace(
-        #     y=spaces.Discrete(self.n_classes_per_task),
-        #     dataclass_type=self.Rewards,
-        # )
 
         super().__post_init__(
             # observation_space=observation_space,
             action_space=action_space,
             reward_space=reward_space, # the labels have shape (1,) always.
         )
-
-        # image_space = self.train_transforms(image_space)
-        # self.observation_space = NamedTupleSpace(
-        #     x=image_space,
-        #     task_labels=task_label_space,
-        #     dtype=self.Observations,
-        # )
-
         self.train_datasets: List[_ContinuumDataset] = []
         self.val_datasets: List[_ContinuumDataset] = []
         self.test_datasets: List[_ContinuumDataset] = []
@@ -374,6 +351,24 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             dtype=self.Observations,
         )
 
+    @property
+    def action_space(self) -> spaces.Discrete:
+        """ Action space in class-incremental setting: Discrete over all tasks seen so
+        far.
+        
+        """
+        # TODO: During testing however we would be giving away the current task, right?
+        assert False, self.class_order
+        n_classes_seen_so_far = 0
+        for task_id in range(self.current_task_id):
+            n_classes_seen_so_far += self.num_classes_in_task(task_id)
+        return spaces.Discrete(n_classes_seen_so_far)
+
+
+    @property
+    def reward_space(self) -> spaces.Discrete:
+        return self.action_space
+
     def apply(self, method: Method, config: Config=None) -> ClassIncrementalResults:
         """Apply the given method on this setting to producing some results."""
         # TODO: It still isn't super clear what should be in charge of creating
@@ -420,6 +415,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         
         self.train_cl_dataset = self.make_dataset(self.data_dir, download=False, train=True)
         self.test_cl_dataset = self.make_dataset(self.data_dir, download=False, train=False)
+        
         self.train_cl_loader: _BaseScenario = self.make_train_cl_loader(self.train_cl_dataset)
         self.test_cl_loader: _BaseScenario = self.make_test_cl_loader(self.test_cl_dataset)
 
@@ -570,7 +566,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         return self.test_env
 
     def split_batch_function(self, training: bool) -> Callable[[Tuple[Tensor, ...]], Tuple[Observations, Rewards]]:
-        """ Returns a callable that can be used to split a batch into observations and rewards.
+        """ Returns a callable that is used to split a batch into observations and rewards.
         """
         task_classes = {
             i: self.task_classes(i, train=training)
@@ -596,7 +592,8 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             x, y, t = batch
 
             # Relabel y so it is always in [0, n_classes_per_task) for each task.
-            y = relabel(y, task_classes)
+            if self.relabel:
+                y = relabel(y, task_classes)
 
             if ((training and not self.task_labels_at_train_time) or 
                 (not training and not self.task_labels_at_test_time)):
@@ -633,23 +630,39 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             transformations=self.transforms,
         )
 
-    @property
-    def dataset_class(self) -> Type[_ContinuumDataset]:
-        return self.available_datasets[self.dataset]
-
     def make_dataset(self,
                      data_dir: Path,
                      download: bool = True,
                      train: bool = True,
                      **kwargs) -> _ContinuumDataset:
         # TODO: #7 Use this method here to fix the errors that happen when
-        # trying to create every single dataset from continuum. 
-        return self.dataset_class(
-            data_path=data_dir,
-            download=download,
-            train=train,
-            **kwargs
-        )
+        # trying to create every single dataset from continuum.
+        
+        
+        if self.dataset in self.available_datasets:
+            dataset_class = self.available_datasets[self.dataset]   
+            return dataset_class(
+                data_path=data_dir,
+                download=download,
+                train=train,
+                **kwargs
+            )
+
+        elif self.dataset in self.available_datasets.values():
+            dataset_class = self.dataset
+            return dataset_class(
+                data_path=data_dir,
+                download=download,
+                train=train,
+                **kwargs
+            )
+
+        elif isinstance(self.dataset, Dataset):
+            logger.info(f"Using a custom dataset {self.dataset}")
+            return self.dataset
+
+        else:
+            raise NotImplementedError
 
     # These methods below are used by the MultiHeadModel, mostly when
     # using a multihead model, to figure out how to relabel the batches, or how
