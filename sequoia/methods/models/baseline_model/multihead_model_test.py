@@ -91,12 +91,13 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
     # monkeypatch.setattr(model, "forward", mock_encoder_forward)
     model.encoder = mock_encoder
     # model.output_task = mock_output_task
-    model.output_head = MockOutputHead(
-        input_space=spaces.Box(0, 1, [model.hidden_size]),
-        Actions=setting.Actions,
-        action_space=spaces.Discrete(2),
-        task_id=None,
-    )
+
+    # model.output_head = MockOutputHead(
+    #     input_space=spaces.Box(0, 1, [model.hidden_size]),
+    #     Actions=setting.Actions,
+    #     action_space=spaces.Discrete(2),
+    #     task_id=None,
+    # )
     for i in range(5):
         model.output_heads[str(i)] = MockOutputHead(
             input_space=spaces.Box(0, 1, [model.hidden_size]),
@@ -104,6 +105,7 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
             action_space=spaces.Discrete(2),
             task_id=i,
         )
+    model.output_head = model.output_heads["0"]
     
     xs, ys, ts = map(torch.cat, zip(*mixed_samples.values()))
     
@@ -237,13 +239,11 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
                 task_key: output_head.num_stored_steps(0)
                 for task_key, output_head in model.output_heads.items()
             }
-            if step == 5:
-                assert False, (loss, stored_steps_in_each_head_before, stored_steps_in_each_head_after)
-
-
+            # if step == 5:
+            #     assert False, (loss, stored_steps_in_each_head_before, stored_steps_in_each_head_after)
 
             if any(obs.done):
-                assert loss.loss != 0.
+                assert loss.loss != 0., step
                 assert loss.loss.requires_grad
                 
                 # Backpropagate the loss, update the models, etc etc.
@@ -323,7 +323,7 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
             loss_tensor: Optional[Tensor] = None
             
             if step > 0 and step % 5 == 0:
-                assert all(obs.done) # Since batch_size == 1 for now.
+                assert all(obs.done), step # Since batch_size == 1 for now.
                 assert step_results is not None, (step, obs.task_labels)
                 loss_tensor = step_results["loss"]
                 loss: Loss = step_results["loss_object"]

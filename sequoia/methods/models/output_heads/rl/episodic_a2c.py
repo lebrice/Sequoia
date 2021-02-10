@@ -110,10 +110,14 @@ class EpisodicA2C(PolicyHead):
         )
         return actions
 
-    def num_stored_steps(self, env_index: int) -> int:
+    def num_stored_steps(self, env_index: int) -> Optional[int]:
         """ Returns the number of steps stored in the buffer for the given
         environment index.
+        
+        If there are no buffers for the given env, returns None
         """
+        if not self.actions or env_index >= len(self.actions):
+            return None
         return len(self.actions[env_index])
 
     def get_episode_loss(self, env_index: int, done: bool):

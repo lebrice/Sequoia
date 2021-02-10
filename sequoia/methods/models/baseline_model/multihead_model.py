@@ -36,6 +36,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         """ Hyperparameters specific to a Continual Learning classifier.
         TODO: Add any hyperparameters specific to CL here.
         """
+
         # Wether to create one output head per task.
         # TODO: Does it make no sense to have multihead=True when the model doesn't
         # have access to task labels. Need to figure out how to manage this between TaskIncremental and Classifier.
@@ -124,8 +125,11 @@ class MultiHeadModel(BaseModel[SettingType]):
         """
         # The forward pass to be returned:
         forward_pass: Optional[ForwardPass] = None
-        
-        
+
+        if not self.batch_size:
+            self.batch_size = observations.batch_size
+            logger.debug(f"Setting batch_size to {self.batch_size}.")
+
         # Just testing things out here.
         assert isinstance(observations, self.Observations), observations
         single_observation_space = self.observation_space
@@ -232,10 +236,13 @@ class MultiHeadModel(BaseModel[SettingType]):
 
         # The sum of all the losses from all the output heads.    
         total_loss = Loss(self.output_head.name)
-        
+                
+                
         task_switched_in_env = (task_labels != self.previous_task_labels)
         episode_ended = observations.done
         logger.debug(f"Task labels: {task_labels}, task switched in env: {task_switched_in_env}, episode ended: {episode_ended}")
+        done_set_to_false_temporarily_indices = []
+
         if any(episode_ended & task_switched_in_env):
             # In the environments where there was a task switch to a different task and
             # where some episodes ended, we need to first get the corresponding output
@@ -250,15 +257,22 @@ class MultiHeadModel(BaseModel[SettingType]):
                 # We want the loss from that output head, but we don't want to
                 # re-compute it below!
                 env_index_in_previous_batch = 0
+                # breakpoint()
+                logger.debug(f"Getting a loss from the output head for task {previous_task}, that was used for the last task.")
                 env_episode_loss = previous_output_head.get_episode_loss(env_index_in_previous_batch, done=True)
-                logger.debug(f"Generating a loss with the output head for task {previous_task}, that was used for the last task.")
+                logger.debug(f"Loss from that output head: {env_episode_loss}")
                 # Add this end-of-episode loss to the total loss.
+                # breakpoint()
+                assert env_episode_loss is not None
                 total_loss += env_episode_loss
                 previous_output_head.on_episode_end(env_index_in_previous_batch)
 
                 # Set `done` to `False` for that env, to prevent the output head for the
                 # new task from seeing the first observation in the episode as the last.
                 observations.done[env_index_in_previous_batch] = False
+                done_set_to_false_temporarily_indices.append(env_index_in_previous_batch)
+                # BUG: If we modify that entry in-place, then even after the end of this
+                # method the change persists..
             else:
                 raise NotImplementedError(f"TODO: Need to somehow pass the indices of "
                                           f"which env to take care of to each output "
@@ -273,11 +287,12 @@ class MultiHeadModel(BaseModel[SettingType]):
             # If everything is in the same task (only one key), no need to split/merge
             # stuff, so it's a bit easier:
             task_id: int = list(all_task_indices.keys())[0]
-            task_output_head = self.output_heads[str(task_id)]
-            total_loss = task_output_head.get_loss(
-                forward_pass, actions=actions, rewards=rewards,
-            )
-            return total_loss
+            
+            with self.switch_output_head(task_id):
+                # task_output_head = self.output_heads[str(task_id)]
+                total_loss += self.output_head.get_loss(
+                    forward_pass, actions=actions, rewards=rewards,
+                )
         else:
             # Split off the input batch, do a forward pass for each sub-task.
             # (could be done in parallel but whatever.)
@@ -304,6 +319,10 @@ class MultiHeadModel(BaseModel[SettingType]):
                 total_loss += task_loss
 
         self.previous_task_labels = task_labels
+        # FIXME: Reset the 'done' to True, if we manually set it to False.
+        for index in done_set_to_false_temporarily_indices:
+            observations.done[index] = True
+        
         return total_loss
 
     def shared_step(
@@ -334,7 +353,9 @@ class MultiHeadModel(BaseModel[SettingType]):
             optimizer_idx=optimizer_idx,
         )
 
-    def on_task_switch(self, task_id: Optional[int]) -> None:
+    def on_task_switch(
+        self, task_id: Optional[int], clear_buffers: bool = False
+    ) -> None:
         """Called when switching between tasks.
         
         Args:

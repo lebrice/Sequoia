@@ -251,7 +251,7 @@ class PolicyHead(ClassificationHead):
         """
         observations: ContinualRLSetting.Observations = forward_pass.observations
         representations: Tensor = forward_pass.representations
-        assert self.batch_size is not None, "forward() should have been called before this."
+        assert self.batch_size, "forward() should have been called before this."
         
         if not self.hparams.accumulate_losses_before_backward:
             # Reset the loss for the current step, if we're not accumulating it.
