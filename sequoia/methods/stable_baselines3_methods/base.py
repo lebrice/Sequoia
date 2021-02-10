@@ -235,13 +235,15 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         # TODO: Double check that some settings might not impose a limit on
         # number of training steps per environment (e.g. task-incremental RL?)
         if setting.steps_per_task:
+            
             if self.train_steps_per_task > setting.steps_per_task:
                 warnings.warn(RuntimeWarning(
                     f"Can't train for the requested {self.train_steps_per_task} "
                     f"steps, since we're (currently) only allowed one 'pass' "
                     f"through the environment (max {setting.steps_per_task} steps.)"
                 ))
-                self.train_steps_per_task = setting.steps_per_task
+            # Use as many training steps as possible.
+            self.train_steps_per_task = setting.steps_per_task
         # Otherwise, we can train basically as long as we want on each task.
 
     def create_model(self,
@@ -266,7 +268,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
 
         # Decide how many steps to train on.
         total_timesteps = self.train_steps_per_task
-
+        logger.info(f"Starting training, for a maximum of {total_timesteps} steps.")
         # todo: Customize the parametrers of the model and/or of this "learn"
         # method if needed.
         self.model = self.model.learn(

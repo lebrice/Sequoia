@@ -144,7 +144,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     
     # Max number of steps per task. (Also acts as the "length" of the training
     # and validation "Datasets")
-    max_steps: int = 10_000
+    max_steps: int = 100_000
     # Maximum episodes per task.
     # TODO: Test that the limit on the number of episodes actually works.
     max_episodes: Optional[int] = None
@@ -155,7 +155,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     episodes_per_task: Optional[int] = None
 
     # Number of steps per task in the test loop.
-    test_steps_per_task: int = 1_000
+    test_steps_per_task: int = 10_000
     # Total number of steps in the test loop. By default, takes the value of
     # `test_steps_per_task * nb_tasks`.
     test_steps: Optional[int] = None

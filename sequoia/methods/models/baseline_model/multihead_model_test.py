@@ -250,6 +250,8 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
                 loss.loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
+                # TODO: Need to let the model know than an update is happening so it can clear
+                # buffers etc.
                 
                 episodes += sum(obs.done)
                 losses[step] = loss
