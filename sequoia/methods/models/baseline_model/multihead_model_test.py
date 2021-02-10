@@ -215,6 +215,7 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
     losses: Dict[int, Loss] = {} 
     
     with setting.train_dataloader() as env:
+        env.seed(123)
         # env = TimeLimit(env, max_episode_steps=max_episode_steps)
         # Iterate over the environment, which yields one observation at a time:
         for step, obs in enumerate(env):
@@ -224,10 +225,22 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
                 assert not any(obs.done)
             start_task_label = obs[1][0]
             
+            stored_steps_in_each_head_before = {
+                task_key: output_head.num_stored_steps(0)
+                for task_key, output_head in model.output_heads.items()
+            }
             forward_pass: ForwardPass = model.forward(observations=obs)
             rewards = env.send(forward_pass.actions)
 
             loss: Loss = model.get_loss(forward_pass=forward_pass, rewards=rewards, loss_name="debug")
+            stored_steps_in_each_head_after = {
+                task_key: output_head.num_stored_steps(0)
+                for task_key, output_head in model.output_heads.items()
+            }
+            if step == 5:
+                assert False, (loss, stored_steps_in_each_head_before, stored_steps_in_each_head_after)
+
+
 
             if any(obs.done):
                 assert loss.loss != 0.

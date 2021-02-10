@@ -245,16 +245,13 @@ class PolicyHead(ClassificationHead):
         TODO: Replace the `forward_pass` argument with just `observations` and
         `representations` and provide the right (augmented) observations to the
         aux tasks. (Need to design that part later).
+        
+        NOTE: If an end of episode was reached in a given environment, we always
+        calculate the losses and clear the buffers before adding in the new observation.
         """
         observations: ContinualRLSetting.Observations = forward_pass.observations
         representations: Tensor = forward_pass.representations
-        if self.batch_size is None:
-            assert len(representations.shape) == 2, (
-                f"Need batched representations, with a shape [16, 128] or similar, but "
-                f"representations have shape {representations.shape}."
-            )
-            self.batch_size = representations.shape[0]
-            self.create_buffers()
+        assert self.batch_size is not None, "forward() should have been called before this."
         
         if not self.hparams.accumulate_losses_before_backward:
             # Reset the loss for the current step, if we're not accumulating it.
@@ -266,10 +263,6 @@ class PolicyHead(ClassificationHead):
 
         # Calculate the loss for each environment.
         for env_index, done in enumerate(observations.done):
-            if done:
-                # End of episode reached in that env!
-                self.num_episodes_since_update[env_index] += 1
-                self.num_steps_in_episode[env_index] = 0
 
             env_loss = self.get_episode_loss(env_index, done=done)
 
@@ -277,11 +270,25 @@ class PolicyHead(ClassificationHead):
                 self.loss += env_loss
 
             if done:
+                # End of episode reached in that env!
                 if self.training:
                     # BUG: This seems to be failing, during testing:
                     # assert env_loss is not None, (self.name)
                     pass
-                self.clear_buffers(env_index)
+                self.on_episode_end(env_index)
+
+        if self.batch_size != forward_pass.batch_size:
+            raise NotImplementedError(
+                "TODO: observations.done was used to tell us which episodes ended, now "
+                "we need to clear everything and give back losses for the first steps "
+                "in all these new environments."
+            )
+            assert len(representations.shape) == 2, (
+                f"Need batched representations, with a shape [16, 128] or similar, but "
+                f"representations have shape {representations.shape}."
+            )
+            self.batch_size = representations.shape[0]
+            self.create_buffers()
 
         for env_index in range(self.batch_size):
             # Take a slice across the first dimension
@@ -343,7 +350,12 @@ class PolicyHead(ClassificationHead):
                 return self.loss
         assert False, f"huh? {self.loss}"
         return self.loss
-                           
+    
+    def on_episode_end(self, env_index: int) -> None:
+        self.num_episodes_since_update[env_index] += 1
+        self.num_steps_in_episode[env_index] = 0
+        self.clear_buffers(env_index)
+                     
     def get_episode_loss(self,
                          env_index: int,
                          done: bool) -> Optional[Loss]:
