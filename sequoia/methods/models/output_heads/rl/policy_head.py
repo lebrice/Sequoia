@@ -516,6 +516,10 @@ class PolicyHead(ClassificationHead):
         self.rewards[env_index].clear()
 
     def detach_all_buffers(self):
+        if not self.batch_size:
+            assert not self.actions
+            # No buffers to detach!
+            return
         for env_index in range(self.batch_size):
             self.detach_buffers(env_index)
 

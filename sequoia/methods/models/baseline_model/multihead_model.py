@@ -240,7 +240,7 @@ class MultiHeadModel(BaseModel[SettingType]):
                 
         task_switched_in_env = (task_labels != self.previous_task_labels)
         episode_ended = observations.done
-        logger.debug(f"Task labels: {task_labels}, task switched in env: {task_switched_in_env}, episode ended: {episode_ended}")
+        # logger.debug(f"Task labels: {task_labels}, task switched in env: {task_switched_in_env}, episode ended: {episode_ended}")
         done_set_to_false_temporarily_indices = []
 
         if any(episode_ended & task_switched_in_env):
@@ -260,7 +260,7 @@ class MultiHeadModel(BaseModel[SettingType]):
                 # breakpoint()
                 logger.debug(f"Getting a loss from the output head for task {previous_task}, that was used for the last task.")
                 env_episode_loss = previous_output_head.get_episode_loss(env_index_in_previous_batch, done=True)
-                logger.debug(f"Loss from that output head: {env_episode_loss}")
+                # logger.debug(f"Loss from that output head: {env_episode_loss}")
                 # Add this end-of-episode loss to the total loss.
                 # breakpoint()
                 assert env_episode_loss is not None
