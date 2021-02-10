@@ -325,6 +325,18 @@ class MultiHeadModel(BaseModel[SettingType]):
         
         return total_loss
 
+    def on_after_backward(self):
+        super().on_after_backward()
+
+    def on_before_zero_grad(self, optimizer):
+        super().on_before_zero_grad(optimizer)
+        from sequoia.methods.models.output_heads.rl import PolicyHead
+        for task_id_string, output_head in self.output_heads.items():
+            if isinstance(output_head, PolicyHead):
+                output_head: PolicyHead
+                output_head.detach_all_buffers()
+
+        
     def shared_step(
         self,
         batch: Tuple[Observations, Optional[Rewards]],

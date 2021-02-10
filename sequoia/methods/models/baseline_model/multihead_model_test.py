@@ -248,8 +248,11 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
                 
                 # Backpropagate the loss, update the models, etc etc.
                 loss.loss.backward()
+                model.on_after_backward()
                 optimizer.step()
+                model.on_before_zero_grad(optimizer)
                 optimizer.zero_grad()
+                
                 # TODO: Need to let the model know than an update is happening so it can clear
                 # buffers etc.
                 
