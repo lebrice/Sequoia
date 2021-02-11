@@ -185,9 +185,10 @@ class SettingABC(Parseable, LightningDataModule):
     def get_applicable_methods(cls) -> List[Type["Method"]]:
         """ Returns all the Methods applicable on this Setting. """
         applicable_methods: List[Method] = []
-        applicable_methods.extend(cls._targeted_methods)
-        if cls._parent:
-            applicable_methods.extend(cls._parent.get_applicable_methods())
+        from sequoia.methods import all_methods
+        for method_type in all_methods:
+            if method_type.is_applicable(cls):
+                applicable_methods.append(method_type)
         return applicable_methods
 
     @classmethod

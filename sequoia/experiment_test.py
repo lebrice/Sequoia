@@ -29,6 +29,12 @@ def test_no_collisions_in_setting_names():
     assert len(set(setting.get_name() for setting in all_settings)) == len(all_settings)
 
 
+def test_applicable_methods():
+    from sequoia.methods import BaselineMethod
+    from sequoia.settings import IIDSetting
+    assert BaselineMethod in IIDSetting.get_applicable_methods()
+
+
 def mock_apply(self: Setting, method: Method, config: Config) -> Results:
     # 1. Configure the method to work on the setting.
     # method.configure(self)

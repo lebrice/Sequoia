@@ -202,6 +202,7 @@ def test_monsterkong_pixels(task_labels_at_test_time: bool):
         observe_state_directly=False,
         nb_tasks=5,
         steps_per_task=1000,
+        test_steps_per_task=1000,
         train_transforms=[],
         test_transforms=[],
         val_transforms=[],

@@ -244,9 +244,11 @@ class DummyEnvironment(gym.Env):
         self.i = self.start
         return self.i
 
-
+from contextlib import redirect_stdout
+from io import StringIO
 try:
-    from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
+    with redirect_stdout(StringIO()):
+        from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
 except ImportError:
     monsterkong_installed = False
 else:
