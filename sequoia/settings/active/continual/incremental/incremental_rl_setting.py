@@ -1,24 +1,26 @@
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from functools import partial
+from io import StringIO
 from typing import Callable, ClassVar, Dict, Iterable, List, Tuple
 
 import gym
 from gym.wrappers import TimeLimit
 from pytorch_lightning import LightningModule
-from simple_parsing import choice
 
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
 from sequoia.common.transforms import Transforms
 from sequoia.utils import constant, dict_union
 from sequoia.utils.logging_utils import get_logger
-
+from simple_parsing import choice
 from ..continual_rl_setting import ContinualRLSetting, HideTaskLabelsWrapper
 from ..gym_dataloader import GymDataLoader
 
 logger = get_logger(__file__)
 
 try:
-    from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
+    with redirect_stdout(StringIO()):
+        from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
 except ImportError:
     monsterkong_installed = False
 else:
