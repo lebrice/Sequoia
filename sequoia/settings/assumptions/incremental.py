@@ -161,7 +161,7 @@ class IncrementalSetting(ContinualSetting):
             task_train_loader.close()
             task_valid_loader.close()
             if success != 0:
-                logger.debug(f"Finished Training on task {task_id}.")
+                logger.debug(f"Finished Training" + (f" on task {task_id}." if self.nb_tasks > 1 else "."))
             else:
                 raise RuntimeError(
                     f"Something didn't work during training: "
@@ -320,6 +320,9 @@ class IncrementalSetting(ContinualSetting):
 class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
     """ Wrapper around a 'test' environment, which limits the number of steps
     and keeps tracks of the performance.
+    
+    TODO: Move this 'step_limit' stuff out of the TestEnvironment, use ObservationLimit
+    or ActionLimit or something like that instead.
     """
     def __init__(self,
                  env: gym.Env,

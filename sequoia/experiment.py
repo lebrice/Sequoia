@@ -33,7 +33,9 @@ setting_presets = {
     "fashion_mnist": presets_dir / "fashion_mnist.yaml",
     "cifar10": presets_dir / "cifar10.yaml",
     "cifar100": presets_dir / "cifar100.yaml",
-    "monsterkong": presets_dir / "monsterkong_pixels.yaml"
+    "monsterkong": presets_dir / "monsterkong_pixels.yaml",
+    "monsterkong_jumps": presets_dir / "monsterkong_jumps.yaml",
+    "monsterkong_ladders": presets_dir / "monsterkong_ladders.yaml",
 }
 
 

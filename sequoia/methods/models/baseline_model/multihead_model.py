@@ -251,9 +251,14 @@ class MultiHeadModel(BaseModel[SettingType]):
         # The sum of all the losses from all the output heads.
         total_loss = Loss(self.output_head.name)
 
-        task_switched_in_env = task_labels != self.previous_task_labels
+        task_switched_in_env = (task_labels != self.previous_task_labels)
         # TODO: This `done` attribute isn't added in supervised settings.
         episode_ended = getattr(observations, "done", np.zeros(batch_size, dtype=bool))
+        # TODO: It's annoying to have to do this whole 'convert to numpy' stuff. Would
+        # be nicer / better to have the Observations be all numpy, so taht other
+        # frameworks/etc can be more easily used.
+        if isinstance(episode_ended, Tensor):
+            episode_ended = episode_ended.cpu().numpy()
         # logger.debug(f"Task labels: {task_labels}, task switched in env: {task_switched_in_env}, episode ended: {episode_ended}")
         done_set_to_false_temporarily_indices = []
 

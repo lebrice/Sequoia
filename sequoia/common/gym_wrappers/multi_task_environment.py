@@ -322,8 +322,6 @@ class MultiTaskEnvironment(gym.Wrapper):
             # TODO: What exactly should we do in this case? Should we close
             # the env? Or just stay at the same 'step' in the task schedule
             # forever?
-            # TODO: Is this the "correct" way to limit the number of steps in
-            # an environment?
             value = self._max_steps
         self._steps = value
 

@@ -542,11 +542,17 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         env_factory = partial(self._make_env, base_env=self.dataset,
                                               wrappers=self.train_wrappers,
                                               observe_state_directly=self.observe_state_directly)
+        # TODO: This doesn't feel quite right!
+        if self.nb_tasks == 1:
+            max_steps = self.max_steps
+        else:
+            max_steps = self.steps_per_task
+        logger.debug(f"Maximum number of steps allowed: {max_steps}")
         env_dataloader = self._make_env_dataloader(
             env_factory,
             batch_size=batch_size,
             num_workers=num_workers,
-            max_steps=self.steps_per_task,
+            max_steps=max_steps,
             max_episodes=self.episodes_per_task,
         )
         self.train_env = env_dataloader
@@ -578,6 +584,12 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         env_factory = partial(self._make_env, base_env=self.dataset,
                                               wrappers=self.valid_wrappers,
                                               observe_state_directly=self.observe_state_directly)
+        # TODO: This doesn't feel quite right!
+        if self.nb_tasks == 1:
+            max_steps = self.max_steps
+        else:
+            max_steps = self.steps_per_task
+        logger.debug(f"Maximum number of steps allowed: {max_steps}")
         env_dataloader = self._make_env_dataloader(
             env_factory,
             batch_size=batch_size or self.batch_size,
@@ -645,10 +657,12 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             batch_size=batch_size,
             num_workers=num_workers,
         )
-
-        # TODO: We should probably change the max_steps depending on the
-        # batch size of the env.
         test_loop_max_steps = self.test_steps // (batch_size or 1)
+        logger.debug(f"Maximum number of steps allowed: {test_loop_max_steps}")
+        
+        # TODO: This 'step_limit' is already part of the args of _make_env_dataloader!
+        # Instead of having it be duplicated everywhere, we should just add the
+        # ObservationLimit wrapper.
         # TODO: Find where to configure this 'test directory' for the outputs of
         # the Monitor.
         test_dir = "results"
@@ -763,13 +777,18 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # previous or future tasks.
         # TODO: This assumes that tasks all have the same length.
         starting_step = self.current_task_id * self.steps_per_task
-        max_steps = starting_step + self.steps_per_task - 1
+        stopping_step = starting_step + self.steps_per_task - 1
+        if self.nb_tasks == 1:
+            max_steps = self.max_steps
+        else:
+            max_steps = self.steps_per_task
         return self._make_wrappers(
             task_schedule=self.train_task_schedule,
             sharp_task_boundaries=self.known_task_boundaries_at_train_time,
             task_labels_available=self.task_labels_at_train_time,
             transforms=self.train_transforms,
             starting_step=starting_step,
+            stopping_step=stopping_step,
             max_steps=max_steps,
             new_random_task_on_reset=self._new_random_task_on_reset,
         )
@@ -792,13 +811,19 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # previous or future tasks.
         # TODO: Should the validation environment only be for the current task?
         starting_step = self.current_task_id * self.steps_per_task
-        max_steps = starting_step + self.steps_per_task - 1
+        stopping_step = starting_step + self.steps_per_task - 1
+        if self.nb_tasks == 1:
+            max_steps = self.max_steps
+        else:
+            max_steps = self.steps_per_task
+        # TODO: IDK if this 'max_steps' here is correct.
         return self._make_wrappers(
             task_schedule=self.valid_task_schedule,
             sharp_task_boundaries=self.known_task_boundaries_at_train_time,
             task_labels_available=self.task_labels_at_train_time,
             transforms=self.val_transforms,
             starting_step=starting_step,
+            stopping_step=stopping_step,
             max_steps=max_steps,
             new_random_task_on_reset=self._new_random_task_on_reset,
         )
@@ -812,15 +837,19 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         Returns
         -------
         List[Callable[[gym.Env], gym.Env]]
-            [description]
+            The list of `gym.Wrapper`s that will be applied to the test environment.
         """
+        starting_step = 0
+        stopping_step = self.test_steps
+        max_steps = self.test_steps
         return self._make_wrappers(
             task_schedule=self.test_task_schedule,
             sharp_task_boundaries=self.known_task_boundaries_at_test_time,
             task_labels_available=self.task_labels_at_test_time,
             transforms=self.test_transforms,
-            starting_step=0,
-            max_steps=self.max_steps,
+            starting_step=starting_step,
+            stopping_step=stopping_step,
+            max_steps=max_steps,
             new_random_task_on_reset=self._new_random_task_on_reset,
         )
 
@@ -838,10 +867,11 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                        task_labels_available: bool,
                        transforms: List[Transforms],
                        starting_step: int,
+                       stopping_step: Optional[int],
                        max_steps: int,
                        new_random_task_on_reset: bool,
                        ) -> List[Callable[[gym.Env], gym.Env]]:
-        """ helper function for creating the train/valid/test wrappers. 
+        """ Helper function for creating the train/valid/test wrappers. 
         
         These wrappers get applied *before* the batching, if applicable.
         """
@@ -901,9 +931,15 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             add_task_id_to_obs=True,
             add_task_dict_to_info=True,
             starting_step=starting_step,
+            # TODO: Rename this parameter to `stopping_step` or something.
+            max_steps=stopping_step,
             new_random_task_on_reset=new_random_task_on_reset,
-            max_steps=max_steps,
         ))
+        
+        # TODO: Use max_steps to limit the number of steps, if needed?
+        # if max_steps:
+        #     wrappers.append(ObservationLimit, max_steps=max_steps)
+
         # If the task labels aren't available, we then add another wrapper that
         # hides that information (setting both of them to None) and also marks
         # those spaces as `Sparse`.
