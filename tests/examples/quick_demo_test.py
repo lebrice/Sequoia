@@ -46,7 +46,7 @@ def test_quick_demo(monkeypatch):
     assert results.average_metrics_per_task[4].n_samples == 1984
     
     assert 0.48 <= results.average_metrics_per_task[0].accuracy <= 0.55
-    assert 0.48 <= results.average_metrics_per_task[1].accuracy <= 0.55
+    assert 0.48 <= results.average_metrics_per_task[1].accuracy <= 0.60
     assert 0.60 <= results.average_metrics_per_task[2].accuracy <= 0.95
     assert 0.75 <= results.average_metrics_per_task[3].accuracy <= 0.98
     assert 0.99 <= results.average_metrics_per_task[4].accuracy <= 1.00

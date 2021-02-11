@@ -17,7 +17,7 @@ T = TypeVar("T")
 
 
 @singledispatch
-def get_slice(value: Any, indices: Sequence[int]) -> Any:
+def get_slice(value: T, indices: Sequence[int]) -> T:
     """ Returns a slices of `value` at the given indices.
     """
     if value is None:
@@ -62,7 +62,7 @@ from sequoia.common.batch import Batch
 
 @get_slice.register(Batch)
 def _get_batch_slice(value: Batch, indices: Sequence[int]) -> Batch:
-    return value[:, indices]
+    return value.slice(indices)
     # assert False, f"Removing this in favor of just doing Batch[:, indices]. "
     # return type(value)(**{
     #     field_name: get_slice(field_value, indices) if field_value is not None else None
@@ -77,6 +77,26 @@ def set_slice(target: Any, indices: Sequence[int], values: Sequence[Any]) -> Non
     
     Modifies the `target` in-place.
     """
+    target[indices] = values
+
+from sequoia.utils.categorical import Categorical
+
+@set_slice.register
+def _set_slice_categorical(target: Categorical, indices: Sequence[int], values: Sequence[Any]) -> None:
+    target.logits[indices] = values.logits
+
+
+@set_slice.register(np.ndarray)
+def _set_slice_ndarray(target: np.ndarray, indices: Sequence[int], values: Sequence[Any]) -> None:
+    if isinstance(indices, Tensor):
+        indices = indices.cpu().numpy()
+    if isinstance(values, Tensor):
+        values = values.cpu().numpy()
+    target[indices] = values
+
+
+@set_slice.register(Tensor)
+def _set_slice_ndarray(target: Tensor, indices: Sequence[int], values: Sequence[Any]) -> None:
     target[indices] = values
 
 

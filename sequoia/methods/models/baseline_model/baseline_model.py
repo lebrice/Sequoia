@@ -46,12 +46,12 @@ SettingType = TypeVar("SettingType", bound=IncrementalSetting)
 from sequoia.methods.models.simple_convnet import SimpleConvNet
 
 from .base_model import ForwardPass
-from .class_incremental_model import ClassIncrementalModel
+from .multihead_model import MultiHeadModel
 from .self_supervised_model import SelfSupervisedModel
 from .semi_supervised_model import SemiSupervisedModel
 
 class BaselineModel(SemiSupervisedModel,
-                    ClassIncrementalModel,
+                    MultiHeadModel,
                     SelfSupervisedModel,
                     Generic[SettingType]):
     """ Base model LightningModule (nn.Module extended by pytorch-lightning)
@@ -67,7 +67,7 @@ class BaselineModel(SemiSupervisedModel,
     @dataclass
     class HParams(SemiSupervisedModel.HParams,
                   SelfSupervisedModel.HParams,
-                  ClassIncrementalModel.HParams):
+                  MultiHeadModel.HParams):
         """ HParams of the Model. """
         # NOTE: All the fields below were just copied from the BaseHParams class, just
         # to improve visibility a bit.
@@ -96,11 +96,11 @@ class BaselineModel(SemiSupervisedModel,
             "simple_convnet": SimpleConvNet,
         }
         # Which encoder to use.
-        encoder: Type[nn.Module] = categorical(
+        encoder: Type[nn.Module] = choice(
             available_encoders,
-            default=tv_models.resnet18,
-            # TODO: Only considering these two for now when performing an HPO sweep.
-            probabilities={"resnet18": 0.5, "simple_convnet": 0.5},
+            default=SimpleConvNet,
+            # # TODO: Only considering these two for now when performing an HPO sweep.
+            # probabilities={"resnet18": 0., "simple_convnet": 1.0},
         )
 
         # Learning rate of the optimizer.
@@ -155,7 +155,7 @@ class BaselineModel(SemiSupervisedModel,
         if not isinstance(self.hp.output_head, output_head_type.HParams):
             self.hp.output_head = self.hp.output_head.upgrade(target_type=output_head_type.HParams)
         
-        self.output_head: OutputHead = self.create_output_head(setting)
+        self.output_head: OutputHead = self.create_output_head(setting, task_id=None)
 
         # Dictionary of auxiliary tasks.
         self.tasks: Dict[str, AuxiliaryTask] = self.create_auxiliary_tasks()
@@ -189,27 +189,31 @@ class BaselineModel(SemiSupervisedModel,
         # NOTE: Implementation is mostly in `base_model.py`.
         return super().forward(observations)
 
-    def create_output_head(self, setting: Setting, add_to_optimizer: bool = None) -> OutputHead:
-        """Create an output head for the current setting.
+    def create_output_head(self, setting: Setting, task_id: Optional[int]) -> OutputHead:
+        """Create an output head for the current action and reward spaces.
         
         NOTE: This assumes that the input, action and reward spaces don't change
         between tasks.
-        
+
         Parameters
         ----------
-        add_to_optimizer : bool, optional
-            Wether to add the parameters of the new output head to the optimizer
-            of the model. Defaults to None, in which case we add the output head
-            parameters as long as it doesn't have an `optimizer` attribute of
-            its own.
+        setting : Setting
+            Current Setting. This is the same as `self.setting`, but provided because at
+            some point the idea was to use a singledispatchmethod to choose which kind
+            of output head to create based on the type of Setting.
+        task_id : Optional[int]
+            ID of the task associated with this new output head. Can be `None`, which is
+            interpreted as saying that either that task labels aren't available, or that
+            this output head will be used for all tasks. 
 
         Returns
         -------
         OutputHead
-            The new output head.
+            The new output head for the given task.
         """
-        # NOTE: Implementation is in `base_model.py`.
-        return super().create_output_head(setting, add_to_optimizer=add_to_optimizer)
+        # NOTE: Actual implementation is in `base_model.py`. This is added here just for
+        # convenience when extending the baseline model.
+        return super().create_output_head(setting, task_id=task_id)
 
     def output_head_type(self, setting: SettingType) -> Type[OutputHead]:
         """ Return the type of output head we should use in a given setting.
@@ -240,16 +244,21 @@ class BaselineModel(SemiSupervisedModel,
         # NOTE In RL, we can only update the model's weights on steps where the output
         # head has as loss, because the output head has buffers of tensors whose grads
         # would become invalidated if we performed the optimizer step.
-        if loss.requires_grad and not self.trainer.train_loop.automatic_optimization:
+        if loss.requires_grad and not self.automatic_optimization:
             output_head_loss = loss_object.losses.get(self.output_head.name)            
             update_model = output_head_loss is not None and output_head_loss.requires_grad
             optimizer = self.optimizers()
+
             self.manual_backward(loss, optimizer, retain_graph=not update_model)
             if update_model:
                 optimizer.step()
                 optimizer.zero_grad()
         return step_result
 
+    @property
+    def automatic_optimization(self) -> bool:
+        return not isinstance(self.output_head, PolicyHead)
+    
     def validation_step(self,
                         batch: Tuple[Observations, Optional[Rewards]],
                         batch_idx: int,
@@ -299,3 +308,13 @@ class BaselineModel(SemiSupervisedModel,
                 assert not isinstance(value, (dict, str)), "shouldn't be nested at this point!"
                 self.log(key, value, logger=True)
         return results
+
+    def on_task_switch(self, task_id: Optional[int]) -> None:
+        """Called when switching between tasks.
+        
+        Args:
+            task_id (int, optional): the id of the new task. When None, we are
+            basically being informed that there is a task boundary, but without
+            knowing what task we're switching to.
+        """
+        return super().on_task_switch(task_id)

@@ -58,16 +58,22 @@ class Config(Serializable, Parseable):
     
     def __post_init__(self):
         self.seed_everything()
-        self.display: Optional[Display] = None
+        self._display: Optional[Display] = None
+
+    def __del__(self):
+        if self._display:
+            self._display.stop()
+
+    def get_display(self) -> Optional[Display]:
+        if self._display:
+            return self._display
         if not self.render:
-            global virtual_display
             # If `--render` isn't set, then try to create a virtual display.
             # This has the same effect as running the script with xvfb-run 
             try:
-                if virtual_display is None:
-                    virtual_display = Display(visible=False, size=(1366, 768))
-                    virtual_display.start()
-                self.display = virtual_display
+                virtual_display = Display(visible=False, size=(1366, 768))
+                virtual_display.start()
+                self._display = virtual_display
             except Exception as e:
                 logger.warning(RuntimeWarning(
                     f"Rendering is disabled, but we were unable to start the "
@@ -75,11 +81,7 @@ class Config(Serializable, Parseable):
                     f"Make sure that xvfb is installed on your machine if you "
                     f"want to prevent rendering the environment's observations."
                 ))
-
-    # def __del__(self):
-        # if self.display:
-        #     self.display.stop()
-        #     del self.display
+        return self._display
 
     def seed_everything(self) -> None:
         if self.seed is not None:

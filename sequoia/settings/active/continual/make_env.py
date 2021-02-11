@@ -107,9 +107,13 @@ def make_batched_env(base_env: Union[str, Callable],
         return pre_batch_env_factory()
     
     env_fns = [pre_batch_env_factory for _ in range(batch_size)]
+
     if num_workers is None:
-        num_workers = mp.cpu_count()
-    
+        if batch_size == 1:
+            num_workers = 0
+        else:
+            num_workers = min(mp.cpu_count(), batch_size)
+
     if num_workers == 0:
         if batch_size > 1:
             warnings.warn(UserWarning(

@@ -119,7 +119,10 @@ class IncrementalSetting(ContinualSetting):
     def train_loop(self, method: Method):
         """ (WIP): Runs an incremental training loop, wether in RL or CL."""
         for task_id in range(self.nb_tasks):
-            logger.info(f"Starting training on task {task_id}")
+            logger.info(
+                f"Starting training"
+                + (f" on task {task_id}." if self.nb_tasks > 1 else ".")
+            )
             self.current_task_id = task_id
 
             if self.known_task_boundaries_at_train_time:
@@ -137,7 +140,14 @@ class IncrementalSetting(ContinualSetting):
                 elif not self.task_labels_at_train_time:
                     method.on_task_switch(None)
                 else:
-                    method.on_task_switch(task_id)
+                    # NOTE: on_task_switch won't be called if there is only one "task",
+                    # (as-in one task in a 'sequence' of tasks).
+                    # TODO: in multi-task RL, i.e. RLSetting(dataset=..., nb_tasks=10),
+                    # for instance, then there are indeed 10 tasks, but `self.tasks`
+                    # is used here to describe the number of 'phases' in training and
+                    # testing.
+                    if self.nb_tasks > 1:
+                        method.on_task_switch(task_id)
 
             # Creating the dataloaders ourselves (rather than passing 'self' as
             # the datamodule):
@@ -209,8 +219,8 @@ class IncrementalSetting(ContinualSetting):
 
         test_env = self.test_dataloader()
         test_env: TestEnvironment
-        
-        if self.known_task_boundaries_at_test_time:
+        if self.known_task_boundaries_at_test_time and self.nb_tasks > 1:
+
             def _on_task_switch(step: int, *arg) -> None:
                 if step not in self.test_task_schedule:
                     return
@@ -394,5 +404,6 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
     def close(self):
         self._closed = True
         return super().close()
+
 
 TestEnvironment.__test__ = False

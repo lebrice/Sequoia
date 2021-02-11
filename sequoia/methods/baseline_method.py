@@ -35,7 +35,12 @@ from sequoia.methods import register_method
 from .models import BaselineModel, ForwardPass
 
 logger = get_logger(__file__)
-
+from sequoia.common.gym_wrappers import IterableWrapper
+class RenderEnvWrapper(IterableWrapper):
+    """ Simple Wrapper that renders the env at each step. """
+    def step(self, action):
+        self.env.render("human")
+        return self.env.step(action)
 
 @register_method
 @dataclass
@@ -272,6 +277,10 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             "Setting should have been called method.configure(setting=self) "
             "before calling `fit`!"
         )
+        if self.config.render:
+            train_env = RenderEnvWrapper(train_env)
+
+
         return self.trainer.fit(
             model=self.model, train_dataloader=train_env, val_dataloaders=valid_env,
         )
@@ -384,7 +393,9 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         if not experiment_id:
             setting_dict = setting.to_dict()
             # BUG: Some settings have non-string keys/value or something?
-            experiment_id = compute_identity(size=5, **setting_dict)
+            from sequoia.utils.utils import flatten_dict
+            d = flatten_dict(setting_dict)
+            experiment_id = compute_identity(size=5, **d)
         assert isinstance(
             setting.dataset, str
         ), "assuming that dataset is a str for now."

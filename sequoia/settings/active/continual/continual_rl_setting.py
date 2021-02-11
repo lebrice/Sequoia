@@ -144,18 +144,18 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     
     # Max number of steps per task. (Also acts as the "length" of the training
     # and validation "Datasets")
-    max_steps: int = 10_000
+    max_steps: int = 100_000
     # Maximum episodes per task.
     # TODO: Test that the limit on the number of episodes actually works.
     max_episodes: Optional[int] = None
     # Number of steps per task. When left unset and when `max_steps` is set,
     # takes the value of `max_steps` divided by `nb_tasks`.
     steps_per_task: Optional[int] = None
-    # Number of episodes per task.
+    # (WIP): Number of episodes per task.
     episodes_per_task: Optional[int] = None
 
     # Number of steps per task in the test loop.
-    test_steps_per_task: int = 1_000
+    test_steps_per_task: int = 10_000
     # Total number of steps in the test loop. By default, takes the value of
     # `test_steps_per_task * nb_tasks`.
     test_steps: Optional[int] = None
@@ -200,9 +200,10 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     
     # The maximum number of steps per episode. When None, there is no limit.
     max_episode_steps: Optional[int] = None
-    
+
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
+        self._new_random_task_on_reset: bool = False
         
         # Post processing of the 'dataset' field:
         if self.dataset in self.available_datasets.keys():
@@ -440,7 +441,23 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         """Apply the given method on this setting to producing some results. """
         # Use the supplied config, or parse one from the arguments that were
         # used to create `self`.
-        self.config = config or Config.from_args(self._argv, strict=False)
+        self.config: Config
+        if config is not None:
+            self.config = config
+            logger.debug(f"Using Config {self.config}")
+        elif isinstance(getattr(method, "config", None), Config):
+            self.config = method.config
+            logger.debug(f"Using Config from the Method: {self.config}")
+        else:
+            logger.debug(f"Parsing the Config from the command-line.")
+            self.config = Config.from_args(self._argv, strict=False)
+            logger.debug(f"Resulting Config: {self.config}")
+        
+        # TODO: Test to make sure that this doesn't cause any other bugs with respect to
+        # the display of stuff:
+        # Call this method, creating a virtual display if necessary.
+        self.config.get_display()
+
         # TODO: Should we really overwrite the method's 'config' attribute here?
         if not getattr(method, "config", None):
             method.config = self.config
@@ -450,7 +467,11 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # `configure` methods aren't using the `method` anyway.)
         method.configure(setting=self)
 
-        logger.info(f"Train task schedule:" + json.dumps(self.train_task_schedule, indent="\t"))
+        if self._new_random_task_on_reset:
+            logger.info(f"Train tasks: " + json.dumps(list(self.train_task_schedule.values()), indent="\t"))
+        else:
+            logger.info(f"Train task schedule:" + json.dumps(self.train_task_schedule, indent="\t"))
+            
         # Run the Training loop (which is defined in IncrementalSetting).
         self.train_loop(method)
 
@@ -517,7 +538,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         self.setup("fit")
 
         batch_size = batch_size or self.batch_size
-        num_workers = num_workers or self.num_workers
+        num_workers = num_workers if num_workers is not None else self.num_workers
         env_factory = partial(self._make_env, base_env=self.dataset,
                                               wrappers=self.train_wrappers,
                                               observe_state_directly=self.observe_state_directly)
@@ -560,7 +581,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         env_dataloader = self._make_env_dataloader(
             env_factory,
             batch_size=batch_size or self.batch_size,
-            num_workers=num_workers or self.num_workers,
+            num_workers=num_workers if num_workers is not None else self.num_workers,
             max_steps=self.steps_per_task,
             max_episodes=self.episodes_per_task,
         )
@@ -615,7 +636,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             )))
             batch_size = None
 
-        num_workers = num_workers or self.num_workers
+        num_workers = num_workers if num_workers is not None else self.num_workers
         env_factory = partial(self._make_env, base_env=self.dataset,
                                               wrappers=self.test_wrappers,
                                               observe_state_directly=self.observe_state_directly)
@@ -750,6 +771,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             transforms=self.train_transforms,
             starting_step=starting_step,
             max_steps=max_steps,
+            new_random_task_on_reset=self._new_random_task_on_reset,
         )
 
     def create_valid_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
@@ -778,8 +800,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             transforms=self.val_transforms,
             starting_step=starting_step,
             max_steps=max_steps,
+            new_random_task_on_reset=self._new_random_task_on_reset,
         )
-
 
     def create_test_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to a single test environment.
@@ -799,6 +821,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             transforms=self.test_transforms,
             starting_step=0,
             max_steps=self.max_steps,
+            new_random_task_on_reset=self._new_random_task_on_reset,
         )
 
     def load_task_schedule(self, file_path: Path) -> Dict[int, Dict]:
@@ -816,6 +839,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                        transforms: List[Transforms],
                        starting_step: int,
                        max_steps: int,
+                       new_random_task_on_reset: bool,
                        ) -> List[Callable[[gym.Env], gym.Env]]:
         """ helper function for creating the train/valid/test wrappers. 
         
@@ -870,12 +894,14 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         else:
             # Add a wrapper that creates smooth tasks.
             cl_wrapper = SmoothTransitions
+        
         wrappers.append(partial(cl_wrapper,
             noise_std=self.task_noise_std,
             task_schedule=task_schedule,
             add_task_id_to_obs=True,
             add_task_dict_to_info=True,
             starting_step=starting_step,
+            new_random_task_on_reset=new_random_task_on_reset,
             max_steps=max_steps,
         ))
         # If the task labels aren't available, we then add another wrapper that
@@ -906,6 +932,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             # These two shouldn't matter really:
             starting_step=0,
             max_steps=self.max_steps,
+            new_random_task_on_reset=self._new_random_task_on_reset,
         )
 
 

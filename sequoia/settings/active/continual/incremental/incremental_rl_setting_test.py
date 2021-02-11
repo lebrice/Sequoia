@@ -192,13 +192,14 @@ def test_monsterkong_state(task_labels_at_test_time: bool):
     assert method.received_task_ids == list(range(5)) + expected_test_time_task_ids
 
 
+@pytest.mark.timeout(120)
 @monsterkong_required
 @pytest.mark.parametrize("task_labels_at_test_time", [False, True])
 def test_monsterkong_pixels(task_labels_at_test_time: bool):
     """ checks that the MonsterKong env works fine with monsterkong and state input. """
     setting = IncrementalRLSetting(
         dataset="monsterkong",
-        # observe_state_directly=True,
+        observe_state_directly=False,
         nb_tasks=5,
         steps_per_task=1000,
         train_transforms=[],

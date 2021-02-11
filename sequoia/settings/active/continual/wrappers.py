@@ -4,24 +4,28 @@
 from collections.abc import Mapping
 from dataclasses import is_dataclass, replace
 from functools import singledispatch
-from typing import (Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar,
-                    Union)
+from typing import (Any, Callable, Dict, List, Optional, Sequence, Tuple, Type,
+                    TypeVar, Union)
 
 import gym
 import numpy as np
-from gym import spaces, Space
+from gym import Space, spaces
 from torch import Tensor
 
 from sequoia.common import Batch
 from sequoia.common.gym_wrappers import IterableWrapper, TransformObservation
 from sequoia.common.spaces import Sparse
 from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
-from sequoia.settings.base.objects import Actions, Observations, Rewards
+from sequoia.settings.base.environment import Environment
+from sequoia.settings.base.objects import (Actions, ActionType, Observations,
+                                           ObservationType, Rewards,
+                                           RewardType)
 
 T = TypeVar("T")
 
 
-class TypedObjectsWrapper(IterableWrapper):
+
+class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionType, RewardType]):
     """ Wrapper that converts the observations and rewards coming from the env
     to `Batch` objects.
     
@@ -40,15 +44,18 @@ class TypedObjectsWrapper(IterableWrapper):
     """
     def __init__(self,
                  env: gym.Env,
-                 observations_type: Type[Observations],
-                 rewards_type: Type[Rewards],
-                 actions_type: Type[Actions]):
+                 observations_type: ObservationType,
+                 rewards_type: RewardType,
+                 actions_type: ActionType):
         self.Observations = observations_type
         self.Rewards = rewards_type
         self.Actions = actions_type
         super().__init__(env=env)
         
-    def step(self, action: Actions) -> Tuple[Observations, Rewards, bool, Dict]:
+    def step(self, action: ActionType) -> Tuple[ObservationType,
+                                                RewardType,
+                                                Union[bool, Sequence[bool]],
+                                                Union[Dict, Sequence[Dict]]]:
         # "unwrap" the actions before passing it to the wrapped environment.
         if isinstance(action, Actions):
             action = unwrap(action)
@@ -60,7 +67,7 @@ class TypedObjectsWrapper(IterableWrapper):
         reward = self.Rewards(reward)
         return observation, reward, done, info
 
-    def reset(self, **kwargs) -> Observations:
+    def reset(self, **kwargs) -> ObservationType:
         observation = self.env.reset(**kwargs)
         # TODO: Make the observation space a Dict rather than this annoying
         # NamedTuple!

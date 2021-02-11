@@ -4,25 +4,26 @@ the end of the episode, rather than at each step.
 
 from collections import deque
 from dataclasses import dataclass
-from typing import List, Optional, Deque
-import torch
+from typing import ClassVar, Deque, List, Optional
+
 import gym
 import numpy as np
-from simple_parsing import mutable_field
+import torch
 from gym import Space, spaces
 from gym.spaces.utils import flatdim
-from sequoia.common import Loss
-from sequoia.settings import ContinualRLSetting
-from sequoia.settings.base import Rewards
+from simple_parsing import mutable_field
 from torch import Tensor, nn
 from torch.nn import functional as F
-from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
 
-from .policy_head import Categorical, PolicyHead, PolicyHeadOutput, GradientUsageMetric
-from .policy_head import normalize
+from sequoia.common import Loss
+from sequoia.common.hparams import categorical, log_uniform, uniform
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
-from sequoia.common.hparams import uniform, log_uniform, categorical
+from sequoia.settings import ContinualRLSetting
+from sequoia.settings.base import Rewards
 from sequoia.utils import get_logger
+from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
+from .policy_head import (Categorical, GradientUsageMetric, PolicyHead,
+                          PolicyHeadOutput, normalize)
 
 logger = get_logger(__file__)
 
@@ -41,6 +42,7 @@ class EpisodicA2C(PolicyHead):
     TODO: This could actually produce a loss every N steps, rather than just at
     the end of the episode.
     """
+    name: ClassVar[str] = "episodic_a2c"
 
     @dataclass
     class HParams(PolicyHead.HParams):
@@ -108,16 +110,17 @@ class EpisodicA2C(PolicyHead):
         )
         return actions
 
-    def num_stored_steps(self, env_index: int) -> int:
+    def num_stored_steps(self, env_index: int) -> Optional[int]:
         """ Returns the number of steps stored in the buffer for the given
         environment index.
+        
+        If there are no buffers for the given env, returns None
         """
+        if not self.actions or env_index >= len(self.actions):
+            return None
         return len(self.actions[env_index])
 
-    def get_episode_loss(self, env_index: int, done: bool):
-        inputs: Tensor
-        actions: A2CHeadOutput
-        rewards: Rewards
+    def get_episode_loss(self, env_index: int, done: bool) -> Optional[Loss]:
         # IDEA: Actually, now that I think about it, instead of detaching the
         # tensors, we could instead use the critic's 'value' estimate and get a
         # loss for that incomplete episode using the tensors in the buffer,
@@ -129,13 +132,20 @@ class EpisodicA2C(PolicyHead):
         # TODO: Add something like a 'num_steps_since_update' for each env? (it
         # would actually be a num_steps_since_backward)
         # if self.num_steps_since_update?
-
-        if self.num_stored_steps(env_index) < 5:
+        n_stored_steps = self.num_stored_steps(env_index)
+        if n_stored_steps < 5:
             # For now, we only give back a loss at the end of the episode.
             # TODO: Test if giving back a loss at each step or every few steps
             # would work better!
+            logger.warning(RuntimeWarning(
+                f"Returning None as the episode loss, because only have "
+                f"{n_stored_steps} steps stored for that environment."
+            ))
             return None
 
+        inputs: Tensor
+        actions: A2CHeadOutput
+        rewards: Rewards
         inputs, actions, rewards = self.stack_buffers(env_index)
         logits: Tensor = actions.logits
         action_log_probs: Tensor = actions.action_log_prob
@@ -164,7 +174,7 @@ class EpisodicA2C(PolicyHead):
         policy_gradient_loss = - (advantages.detach() * action_log_probs).mean()
         actor_loss = Loss("actor", policy_gradient_loss)
         loss += self.hparams.actor_loss_coef * actor_loss
-        
+
         # Value loss: Try to get the critic's values close to the actual return,
         # which means the advantages should be close to zero.
         value_loss_tensor = F.mse_loss(values, returns.reshape(values.shape))
@@ -174,9 +184,9 @@ class EpisodicA2C(PolicyHead):
         # Entropy loss, to "favor exploration".
         entropy_loss = Loss("entropy", - actions.action_dist.entropy().mean())
         loss += self.hparams.entropy_loss_coef * entropy_loss
-        
         if done:
-            episode_metrics = [EpisodeMetrics(rewards=episode_rewards.tolist())]
+            episode_rewards_array = episode_rewards.reshape([-1])
+            episode_metrics = [EpisodeMetrics(rewards=episode_rewards_array)]
             loss.metric = RLMetrics(episodes=episode_metrics)
         
         loss.metrics["gradient_usage"] = self.get_gradient_usage_metrics(env_index)

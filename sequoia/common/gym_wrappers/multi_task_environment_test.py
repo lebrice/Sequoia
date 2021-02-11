@@ -1,15 +1,18 @@
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import gym
 import matplotlib.pyplot as plt
 import pytest
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
+from gym.vector import SyncVectorEnv
+from gym.wrappers import TimeLimit
 
-
+from sequoia.common.gym_wrappers import MultiTaskEnvironment
 from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
+from sequoia.conftest import monsterkong_required, param_requires_monsterkong
+from sequoia.settings import RLSetting
 from sequoia.utils.utils import dict_union
-from sequoia.conftest import monsterkong_required
 
 from .multi_task_environment import MultiTaskEnvironment
 
@@ -401,3 +404,164 @@ def test_task_schedule_with_callables():
         if done:
             print(f"End of episode at step {i}")
             obs = env.reset()
+
+
+@monsterkong_required
+def test_random_task_on_each_episode():
+    env: MetaMonsterKongEnv = gym.make("MetaMonsterKong-v1")
+    from gym.wrappers import TimeLimit
+    env = TimeLimit(env, max_episode_steps=10)
+    env = MultiTaskEnvironment(
+        env,
+        task_schedule={
+            0: {"level": 0},
+            5: {"level": 1},
+            200: {"level": 2},
+            300: {"level": 3},
+            400: {"level": 4},
+        },
+        add_task_id_to_obs=True,
+        new_random_task_on_reset=True,
+    )
+    task_labels = []
+    for i in range(10):
+        obs = env.reset()
+        task_labels.append(obs[1])
+    assert len(set(task_labels)) > 1
+    
+    # Episodes only last 10 steps. Tasks don't have anything to do with the task
+    # schedule.
+    obs = env.reset()
+    start_task_label = obs[1]
+    for i in range(10):
+        obs, reward, done, info = env.step(env.action_space.sample())
+        assert obs[1] == start_task_label
+        if i == 9:
+            assert done 
+        else:
+            assert not done
+    
+    env.close()
+
+from sequoia.conftest import monsterkong_required
+
+
+def test_random_task_on_each_episode_and_only_one_task_in_schedule():
+    """ BUG: When the goal is to have only one task, it instead keeps sampling a new
+    task from the 'distribution', in the case of cartpole!
+    """
+    env: MetaMonsterKongEnv = gym.make("CartPole-v1")
+    from gym.wrappers import TimeLimit
+    env = TimeLimit(env, max_episode_steps=10)
+    env = MultiTaskEnvironment(
+        env,
+        task_schedule={
+            0: {"length": 0.1},
+        },
+        add_task_id_to_obs=True,
+        new_random_task_on_reset=True,
+    )
+    task_labels = []
+    lengths = []
+    for i in range(10):
+        obs = env.reset()
+        task_labels.append(obs[1])
+        lengths.append(env.length)
+        done = False
+        while not done:
+            obs, reward, done, info = env.step(env.action_space.sample())
+            task_labels.append(obs[1])
+            lengths.append(env.length)
+
+    assert set(task_labels) == {0}
+    assert set(lengths) == {0.1}
+
+
+def env_fn_monsterkong() -> gym.Env:
+    env = gym.make("MetaMonsterKong-v0")
+    env = TimeLimit(env, max_episode_steps=10)
+    env = MultiTaskEnvironment(
+        env,
+        task_schedule={
+            0:   {"level": 1},
+            100: {"level": 2},
+            200: {"level": 3},
+            300: {"level": 4},
+            400: {"level": 5},
+        },
+        add_task_id_to_obs=True,
+        new_random_task_on_reset=True,
+    )
+    return env
+    
+
+def env_fn_cartpole() -> gym.Env:
+    env = gym.make("CartPole-v0")
+    env = TimeLimit(env, max_episode_steps=10)
+    env = MultiTaskEnvironment(
+        env,
+        task_schedule={
+            0:   {"length": 0.1},
+            100: {"length": 0.2},
+            200: {"length": 0.3},
+            300: {"length": 0.4},
+            400: {"length": 0.5},
+        },
+        add_task_id_to_obs=True,
+        new_random_task_on_reset=True,
+    )
+    return env
+
+
+@pytest.mark.parametrize("env", ["cartpole", param_requires_monsterkong("monsterkong")])
+def test_task_sequence_is_reproducible(env: str):
+    """Test that the multi-task setup is seeded correctly, i.e. that the task sequence
+    is reproducible given the same seed.
+    """
+    if env == "cartpole":
+        env_fn = env_fn_cartpole
+    elif env == "monsterkong":
+        env_fn = env_fn_monsterkong
+    else:
+        assert False, f"just testing on cartpole and monsterkong for now, but got env {env}"
+
+    batch_size = 1
+
+    first_results: List[Tuple[int, int]] = []
+    n_runs = 5
+    n_episodes_per_run = 10
+
+    for run_number in range(n_runs):
+        print(f"starting run {run_number} / {n_runs}")
+        # For each 'run', we record the task sequence and how long each task lasted for.
+        # Then, we want to check that each run was indentical, for a given seed.
+        env = SyncVectorEnv([env_fn for _ in range(batch_size)])
+        env.seed(123)
+        
+        task_ids: List[int] = []
+        task_lengths: List[int] = []
+        for episode in range(n_episodes_per_run):
+            print(f"Episode {episode} / {n_episodes_per_run}")
+            obs = env.reset()
+            task_id: int = obs[1][0]
+            task_length = 0
+            done = False
+            while not done:
+                obs, _, done_array, _ = env.step(env.action_space.sample())
+                assert len(done_array) == 1
+                done = done_array[0]
+                task_length += 1
+            task_ids.append(task_id)
+            task_lengths.append(task_length)
+
+        task_ids_and_lengths = list(zip(task_ids, task_lengths))
+        print(f"Task ids and length of each one: {task_ids_and_lengths}")
+
+        assert len(set(task_ids)) > 1, "should have been more than just one task!" 
+        
+        if not first_results:
+            first_results = task_ids_and_lengths
+        else:
+            # Make sure that the results from this run are equivalent to the others with
+            # the same seed:
+            assert task_ids_and_lengths == first_results

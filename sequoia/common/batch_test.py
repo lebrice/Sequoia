@@ -460,8 +460,8 @@ def test_nesting():
     assert obj[0, 1, 0] == obj.observations.task_labels[0]
     tensor = torch.as_tensor
     assert str(obj.slice(0)) == str(ForwardPass(
-        observations=Observations(x=tensor([0, 1, 2, 3, 4]),
-                                  task_labels=tensor(0)),
-        h_x=tensor([0, 1, 2, 3]),
-        actions=Actions(y_pred=tensor(0)),
+        observations=Observations(x=tensor([[0, 1, 2, 3, 4]]),
+                                  task_labels=tensor([0])),
+        h_x=tensor([[0, 1, 2, 3]]),
+        actions=Actions(y_pred=tensor([0])),
     ))

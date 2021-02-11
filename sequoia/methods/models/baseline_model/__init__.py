@@ -6,7 +6,7 @@ which the following 'addons' get added:
 - [SemiSupervisedModel](self_supervised_model.py):
     Adds support for semi-supervised (partially labeled or un-labeled) batches of data.
 
-- [ClassIncrementalModel](class_incremental_model.py):
+- [MultiHeadModel](multihead_model.py):
     Adds support for:
     - multi-head prediction: Using a dedicated output head for each task when
       task labels are available
@@ -20,7 +20,7 @@ which the following 'addons' get added:
 """
 from .base_hparams import BaseHParams, available_encoders, available_optimizers
 from .base_model import BaseModel
-from .class_incremental_model import ClassIncrementalModel
+from .multihead_model import MultiHeadModel
 from .self_supervised_model import SelfSupervisedModel
 from .semi_supervised_model import SemiSupervisedModel
 from .baseline_model import BaselineModel

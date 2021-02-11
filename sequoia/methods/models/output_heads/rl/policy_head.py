@@ -31,8 +31,9 @@ import itertools
 from abc import ABC, abstractmethod
 from collections import deque, namedtuple
 from dataclasses import dataclass
-from typing import (Any, Deque, Dict, Iterable, List, MutableSequence,
-                    NamedTuple, Optional, Sequence, Tuple, TypeVar, Union)
+from typing import (Any, ClassVar, Deque, Dict, Iterable, List,
+                    MutableSequence, NamedTuple, Optional, Sequence, Tuple,
+                    TypeVar, Union)
 
 import gym
 import numpy as np
@@ -114,6 +115,7 @@ class PolicyHead(ClassificationHead):
     - The buffers are common to training/validation/testing atm..
     
     """
+    name: ClassVar[str] = "policy"
 
     @dataclass
     class HParams(ClassificationHead.HParams):
@@ -123,8 +125,7 @@ class PolicyHead(ClassificationHead):
         gamma: float = 0.99
         
         # The maximum length of the buffer that will hold the most recent
-        # states/actions/rewards of the current episode. When a batched
-        # environment is used
+        # states/actions/rewards of the current episode.
         max_episode_window_length: int = 1000
         
         # Minumum number of epidodes that need to be completed in each env
@@ -161,9 +162,9 @@ class PolicyHead(ClassificationHead):
             hparams=hparams,
             name=name,
         )
-        logger.debug("Output head hparams: " + self.hparams.dumps_json(indent='\t'))
+        logger.debug("New Output head with hparams: " + self.hparams.dumps_json(indent='\t'))
         self.hparams: PolicyHead.HParams
-        # Type hints for the spaces;    
+        # Type hints for the spaces;
         self.input_space: spaces.Box
         self.action_space: spaces.Discrete
         self.reward_space: spaces.Box
@@ -244,16 +245,13 @@ class PolicyHead(ClassificationHead):
         TODO: Replace the `forward_pass` argument with just `observations` and
         `representations` and provide the right (augmented) observations to the
         aux tasks. (Need to design that part later).
+        
+        NOTE: If an end of episode was reached in a given environment, we always
+        calculate the losses and clear the buffers before adding in the new observation.
         """
         observations: ContinualRLSetting.Observations = forward_pass.observations
         representations: Tensor = forward_pass.representations
-        if self.batch_size is None:
-            assert len(representations.shape) == 2, (
-                f"Need batched representations, with a shape [16, 128] or similar, but "
-                f"representations have shape {representations.shape}."
-            )
-            self.batch_size = representations.shape[0]
-            self.create_buffers()
+        assert self.batch_size, "forward() should have been called before this."
         
         if not self.hparams.accumulate_losses_before_backward:
             # Reset the loss for the current step, if we're not accumulating it.
@@ -265,22 +263,37 @@ class PolicyHead(ClassificationHead):
 
         # Calculate the loss for each environment.
         for env_index, done in enumerate(observations.done):
-            if done:
-                # End of episode reached in that env!
-                self.num_episodes_since_update[env_index] += 1
-                self.num_steps_in_episode[env_index] = 0
 
             env_loss = self.get_episode_loss(env_index, done=done)
-            
+
             if env_loss is not None:
                 self.loss += env_loss
 
             if done:
+                # End of episode reached in that env!
                 if self.training:
                     # BUG: This seems to be failing, during testing:
-                    assert env_loss is not None, env_loss
-                self.clear_buffers(env_index)
-            
+                    # assert env_loss is not None, (self.name)
+                    pass
+
+                self.on_episode_end(env_index)
+
+        if self.batch_size != forward_pass.batch_size:
+            raise NotImplementedError(
+                "TODO: The batch size changed, because the batch contains different "
+                "tasks. The BaselineModel isn't yet applicable in the setup where "
+                "there are multiple different tasks in the same batch in RL. "
+            )
+            # IDEA: Need to get access to the 'original' env indices (before slicing),
+            # so that even when one more environment is in this task, the other
+            # environment's buffers remain at the same index.. Something like a
+            # remapping of env indices?
+            assert len(representations.shape) == 2, (
+                f"Need batched representations, with a shape [16, 128] or similar, but "
+                f"representations have shape {representations.shape}."
+            )
+            self.batch_size = representations.shape[0]
+            self.create_buffers()
 
         for env_index in range(self.batch_size):
             # Take a slice across the first dimension
@@ -342,7 +355,12 @@ class PolicyHead(ClassificationHead):
                 return self.loss
         assert False, f"huh? {self.loss}"
         return self.loss
-                           
+    
+    def on_episode_end(self, env_index: int) -> None:
+        self.num_episodes_since_update[env_index] += 1
+        self.num_steps_in_episode[env_index] = 0
+        self.clear_buffers(env_index)
+                     
     def get_episode_loss(self,
                          env_index: int,
                          done: bool) -> Optional[Loss]:
@@ -367,7 +385,7 @@ class PolicyHead(ClassificationHead):
             return None
 
         if len(self.actions[env_index]) == 0:
-            logger.debug(f"Weird, asked to get episode loss, but there is "
+            logger.error(f"Weird, asked to get episode loss, but there is "
                          f"nothing in the buffer?")
             return None
 
@@ -419,19 +437,7 @@ class PolicyHead(ClassificationHead):
         """ Calculates the returns, as the sum of discounted future rewards at
         each step.
         """
-        T = len(rewards)
-        if not isinstance(rewards, Tensor):
-            rewards = torch.as_tensor(rewards)
-        # Construct a reward matrix, with previous rewards masked out (with each
-        # row as a step along the trajectory).
-        reward_matrix = rewards.expand([T, T]).triu()
-        # Get the gamma matrix (upper triangular), see make_gamma_matrix for
-        # more info.
-        gamma_matrix = make_gamma_matrix(gamma, T, device=reward_matrix.device)
-        # Multiplying by the gamma coefficients gives the discounted rewards.
-        discounted_rewards = (reward_matrix * gamma_matrix)
-        # Summing up over time gives the return at each step.
-        return discounted_rewards.sum(-1)
+        return discounted_sum_of_future_rewards(rewards, gamma=gamma)
 
     @staticmethod
     def policy_gradient(rewards: List[float], log_probs: Union[Tensor, List[Tensor]], gamma: float=0.95):
@@ -456,15 +462,7 @@ class PolicyHead(ClassificationHead):
             The "vanilla policy gradient" / REINFORCE gradient resulting from
             that episode.
         """
-        if isinstance(log_probs, Tensor):
-            action_log_probs = log_probs
-        else:
-            action_log_probs = torch.stack(log_probs)
-        reward_tensor = torch.as_tensor(rewards).type_as(action_log_probs)
-
-        returns = PolicyHead.get_returns(reward_tensor, gamma=gamma)
-        policy_gradient = - action_log_probs.dot(returns)
-        return policy_gradient
+        return vanilla_policy_gradient(rewards, log_probs, gamma=gamma)
 
     @property
     def training(self) -> bool:
@@ -493,7 +491,8 @@ class PolicyHead(ClassificationHead):
         self.rewards.clear()
         self.representations.clear()
         self.actions.clear()
-        
+        self.batch_size = None
+
     def clear_buffers(self, env_index: int) -> None:
         """ Clear the buffers associated with the environment at env_index.
         """
@@ -502,6 +501,10 @@ class PolicyHead(ClassificationHead):
         self.rewards[env_index].clear()
 
     def detach_all_buffers(self):
+        if not self.batch_size:
+            assert not self.actions
+            # No buffers to detach!
+            return
         for env_index in range(self.batch_size):
             self.detach_buffers(env_index)
 
@@ -549,6 +552,62 @@ class PolicyHead(ClassificationHead):
         stacked_actions = stack(episode_actions)
         stacked_rewards = stack(episode_rewards)
         return stacked_inputs, stacked_actions, stacked_rewards
+
+
+
+def discounted_sum_of_future_rewards(rewards: Union[Tensor, List[Tensor]], gamma: float) -> Tensor:
+    """ Calculates the returns, as the sum of discounted future rewards at
+    each step.
+    """
+    T = len(rewards)
+    if not isinstance(rewards, Tensor):
+        rewards = torch.as_tensor(rewards)
+    # Construct a reward matrix, with previous rewards masked out (with each
+    # row as a step along the trajectory).
+    reward_matrix = rewards.expand([T, T]).triu()
+    # Get the gamma matrix (upper triangular), see make_gamma_matrix for
+    # more info.
+    gamma_matrix = make_gamma_matrix(gamma, T, device=reward_matrix.device)
+    # Multiplying by the gamma coefficients gives the discounted rewards.
+    discounted_rewards = (reward_matrix * gamma_matrix)
+    # Summing up over time gives the return at each step.
+    return discounted_rewards.sum(-1)
+
+
+def vanilla_policy_gradient(rewards: Sequence[float], log_probs: Union[Tensor, List[Tensor]], gamma: float=0.95):
+    """Implementation of the REINFORCE algorithm.
+
+    Adapted from https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
+
+    Parameters
+    ----------
+    - episode_rewards : Sequence[float]
+
+        The rewards at each step in an episode
+
+    - episode_log_probs : List[Tensor]
+
+        The log probabilities associated with the actions that were taken at
+        each step.
+
+    Returns
+    -------
+    Tensor
+        The "vanilla policy gradient" / REINFORCE gradient resulting from
+        that episode.
+    """
+    if isinstance(log_probs, Tensor):
+        action_log_probs = log_probs
+    else:
+        action_log_probs = torch.stack(log_probs)
+    reward_tensor = torch.as_tensor(rewards).type_as(action_log_probs)
+    returns = PolicyHead.get_returns(reward_tensor, gamma=gamma)
+    # Need both tensors to be 1-dimensional for the dot-product below.
+    action_log_probs = action_log_probs.reshape(returns.shape)
+    policy_gradient = - action_log_probs.dot(returns)
+    return policy_gradient
+
+
 
 # @torch.jit.script
 # @lru_cache()

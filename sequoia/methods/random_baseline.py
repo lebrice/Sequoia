@@ -6,6 +6,7 @@ Should be applicable to any Setting.
 from dataclasses import dataclass
 
 import gym
+from typing import Optional
 
 from sequoia.common.metrics import ClassificationMetrics
 from sequoia.methods import register_method
@@ -14,6 +15,7 @@ from sequoia.settings.base import Actions, Environment, Method, Observations
 from sequoia.utils import get_logger, singledispatchmethod
 
 logger = get_logger(__file__)
+
 
 @register_method
 @dataclass

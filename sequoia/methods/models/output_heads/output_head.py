@@ -103,7 +103,13 @@ class OutputHead(nn.Module, ABC):
         observations, representations and actions, the actions produced by this
         output head and the resulting rewards, returns a Loss to use.
         """
-
+    
+    def clear_all_buffers(self) -> None:
+        """ Optional method that gets called when using multiple output heads, to
+        prevent keeping stale gradients around after the model that produced them gets
+        updated during training.
+        """    
+    
     def upgrade_hparams(self):
         """Upgrades the hparams at `self.hparams` to the right type for this
         output head (`type(self).HParams`), filling in any missing values by

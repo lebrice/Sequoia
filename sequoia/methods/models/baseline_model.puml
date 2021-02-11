@@ -56,24 +56,24 @@ package baseline_model {
             }
         }
 
-        package class_incremental_model {
-            abstract class ClassIncrementalModel extends BaseModel {
+        package multihead_model {
+            abstract class MultiHeadModel extends BaseModel {
                 + output_heads: dict[str, OutputHead]
                 + forward(Observations): ForwardPass
                 + on_task_switch(task_id: Optional[int])
             }
 
-            abstract class ClassIncrementalModel.HParams extends BaseModel.HParams {
+            abstract class MultiHeadModel.HParams extends BaseModel.HParams {
                 + multihead: Optional[bool]
             }
         }
     }
     package baseline_model as baseline_model.baseline_model {
-        class BaselineModel extends SemiSupervisedModel, SelfSupervisedModel, ClassIncrementalModel
+        class BaselineModel extends SemiSupervisedModel, SelfSupervisedModel, MultiHeadModel
         {
             + hparams: BaselineModel.HParams
         }
-        class BaselineModel.HParams extends SelfSupervisedModel.HParams, ClassIncrementalModel.HParams, SemiSupervisedModel.HParams {
+        class BaselineModel.HParams extends SelfSupervisedModel.HParams, MultiHeadModel.HParams, SemiSupervisedModel.HParams {
         }
     }
 
@@ -82,11 +82,11 @@ BaseModel "1" *-- "1" OutputHead
 ' BaselineModel *-- BaselineModel.HParams
 ' SemiSupervisedModel *-- SemiSupervisedModel.HParams
 ' SelfSupervisedModel *-- SelfSupervisedModel.HParams
-' ClassIncrementalModel *-- ClassIncrementalModel.HParams
+' MultiHeadModel *-- MultiHeadModel.HParams
 SelfSupervisedModel "1" o-- "many" aux_tasks.AuxiliaryTask
 ' BaselineMethod "1" *--> "1" BaselineModel : uses
-ClassIncrementalModel "1" *-- "many" OutputHead
-' ClassIncrementalModel "1" *-- "1" OutputHead
+MultiHeadModel "1" *-- "many" OutputHead
+' MultiHeadModel "1" *-- "1" OutputHead
 
 }
 @enduml

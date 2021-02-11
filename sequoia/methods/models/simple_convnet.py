@@ -76,6 +76,7 @@ class SimpleConvNet(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=0, bias=False), # [32, 4, 4]
             nn.BatchNorm2d(32),
+            nn.Flatten(),
         )
         self.fc = nn.Sequential(
             nn.Flatten(),
