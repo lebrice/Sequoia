@@ -1,0 +1,66 @@
+dataset: monsterkong
+observe_state_directly: false
+nb_tasks: 30
+steps_per_task: 1_000_000
+test_steps_per_task: 10_000 
+train_task_schedule:
+  0:
+    level: 0
+  1_000_000:
+    level: 1
+  2_000_000:
+    level: 2
+  3_000_000:
+    level: 3
+  4_000_000:
+    level: 4
+  5_000_000:
+    level: 5
+  6_000_000:
+    level: 6
+  7_000_000:
+    level: 7
+  8_000_000:
+    level: 8
+  9_000_000:
+    level: 9
+  10_000_000:
+    level: 10
+  11_000_000:
+    level: 11
+  12_000_000:
+    level: 12
+  13_000_000:
+    level: 13
+  14_000_000:
+    level: 14
+  15_000_000:
+    level: 15
+  16_000_000:
+    level: 16
+  17_000_000:
+    level: 17
+  18_000_000:
+    level: 18
+  19_000_000:
+    level: 19
+  20_000_000:
+    level: 20
+  21_000_000:
+    level: 21
+  22_000_000:
+    level: 22
+  23_000_000:
+    level: 23
+  24_000_000:
+    level: 24
+  25_000_000:
+    level: 25
+  26_000_000:
+    level: 26
+  27_000_000:
+    level: 27
+  28_000_000:
+    level: 28
+  29_000_000:
+    level: 29

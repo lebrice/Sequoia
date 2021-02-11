@@ -41,6 +41,7 @@ class RLSetting(TaskIncrementalRLSetting):
             task_labels_available=self.task_labels_at_test_time,
             transforms=self.test_transforms,
             starting_step=0,
+            stopping_step=self.test_steps,
             max_steps=self.max_steps,
             new_random_task_on_reset=new_random_task_on_reset,
         )

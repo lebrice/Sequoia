@@ -967,6 +967,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             transforms=self.train_transforms,
             # These two shouldn't matter really:
             starting_step=0,
+            stopping_step=None,
             max_steps=self.max_steps,
             new_random_task_on_reset=self._new_random_task_on_reset,
         )

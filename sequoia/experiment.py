@@ -36,6 +36,9 @@ setting_presets = {
     "monsterkong": presets_dir / "monsterkong_pixels.yaml",
     "monsterkong_jumps": presets_dir / "monsterkong_jumps.yaml",
     "monsterkong_ladders": presets_dir / "monsterkong_ladders.yaml",
+    "monsterkong_jumps_and_ladders": presets_dir / "monsterkong_jumps_and_ladders.yaml",
+    "monsterkong_5_of_each": presets_dir / "monsterkong_5_of_each.yaml",
+    "monsterkong_all": presets_dir / "monsterkong_all.yaml",
 }
 
 
