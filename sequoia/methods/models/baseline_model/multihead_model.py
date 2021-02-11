@@ -10,16 +10,24 @@ from pytorch_lightning.core.decorators import auto_move_data
 
 from sequoia.common import Config, Batch, Loss
 
-from sequoia.settings import ClassIncrementalSetting, Environment, Observations, Actions, Rewards
+from sequoia.settings import (
+    ClassIncrementalSetting,
+    Environment,
+    Observations,
+    Actions,
+    Rewards,
+)
 from sequoia.settings.assumptions.incremental import IncrementalSetting
 
 from sequoia.utils import dict_intersection, zip_dicts, prod
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.generic_functions import get_slice, set_slice
 from ..forward_pass import ForwardPass
+
 # from .semi_supervised_model import SemiSupervisedModel
 from .base_model import BaseModel
 from ..output_heads import OutputHead
+
 logger = get_logger(__file__)
 
 
@@ -48,9 +56,8 @@ class MultiHeadModel(BaseModel[SettingType]):
         self.hp: MultiHeadModel.HParams
         self.setting: SettingType
 
-
         # TODO: Add an optional task inference mechanism
-        # See https://github.com/lebrice/Sequoia/issues/49 
+        # See https://github.com/lebrice/Sequoia/issues/49
         self.task_inference_module: Optional[nn.Module] = None
 
         self.previous_task: Optional[int] = None
@@ -86,7 +93,9 @@ class MultiHeadModel(BaseModel[SettingType]):
         if task_id != self.current_task:
             # Note: ModuleDicts only accept string keys, for some reason.
             if str(task_id) not in self.output_heads:
-                task_output_head = self.create_output_head(self.setting, task_id=task_id)
+                task_output_head = self.create_output_head(
+                    self.setting, task_id=task_id
+                )
                 self.output_heads[str(task_id)] = task_output_head
             else:
                 task_output_head = self.output_heads[str(task_id)]
@@ -139,7 +148,9 @@ class MultiHeadModel(BaseModel[SettingType]):
         # Get the task labels from the observation.
         # TODO: It isn't exactly nice that we have to do this here. Would be nicer if we
         # always had task labels for each sample as a numpy array, or just None.
-        task_labels: Optional[np.ndarray] = cleanup_task_labels(observations.task_labels)
+        task_labels: Optional[np.ndarray] = cleanup_task_labels(
+            observations.task_labels
+        )
         # Get the indices corresponding to the elements from each task within the batch.
         task_indices: Dict[Optional[int], np.ndarray] = get_task_indices(task_labels)
 
@@ -206,7 +217,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         task_labels = observations.task_labels
         batch_size = forward_pass.batch_size
         assert batch_size is not None
-        
+
         if task_labels is None:
             if self.task_inference_module:
                 # TODO: Predict the task ids using some kind of task
@@ -234,11 +245,10 @@ class MultiHeadModel(BaseModel[SettingType]):
                 forward_pass, actions=actions, rewards=rewards,
             )
 
-        # The sum of all the losses from all the output heads.    
+        # The sum of all the losses from all the output heads.
         total_loss = Loss(self.output_head.name)
-                
-                
-        task_switched_in_env = (task_labels != self.previous_task_labels)
+
+        task_switched_in_env = task_labels != self.previous_task_labels
         episode_ended = observations.done
         # logger.debug(f"Task labels: {task_labels}, task switched in env: {task_switched_in_env}, episode ended: {episode_ended}")
         done_set_to_false_temporarily_indices = []
@@ -252,32 +262,57 @@ class MultiHeadModel(BaseModel[SettingType]):
                 previous_task: int = self.previous_task_labels[0].item()
                 # IDEA:
                 from sequoia.methods.models.output_heads.rl import PolicyHead
+
                 previous_output_head = self.output_heads[str(previous_task)]
-                assert isinstance(previous_output_head, PolicyHead), "todo: assuming that this only happends in RL currently."
+                assert isinstance(
+                    previous_output_head, PolicyHead
+                ), "todo: assuming that this only happends in RL currently."
                 # We want the loss from that output head, but we don't want to
                 # re-compute it below!
                 env_index_in_previous_batch = 0
                 # breakpoint()
-                logger.debug(f"Getting a loss from the output head for task {previous_task}, that was used for the last task.")
-                env_episode_loss = previous_output_head.get_episode_loss(env_index_in_previous_batch, done=True)
+                logger.debug(
+                    f"Getting a loss from the output head for task {previous_task}, that was used for the last task."
+                )
+                env_episode_loss = previous_output_head.get_episode_loss(
+                    env_index_in_previous_batch, done=True
+                )
                 # logger.debug(f"Loss from that output head: {env_episode_loss}")
                 # Add this end-of-episode loss to the total loss.
                 # breakpoint()
-                assert env_episode_loss is not None
-                total_loss += env_episode_loss
+                # BUG: This can sometimes (rarely) be None! Need to better understand
+                # why this is happening.
+                if env_episode_loss is None:
+                    logger.warning(
+                        RuntimeWarning(
+                            f"BUG: Env {env_index_in_previous_batch} gave back a loss "
+                            f"of `None`, when we expected a loss from that output head "
+                            f"for task id {previous_task}."
+                        )
+                    )
+                else:
+                    total_loss += env_episode_loss
+                # We call on_episode_end so the output head can clear the relevant
+                # buffers. Note that get_episode_loss(env_index, done=True) doesn't
+                # clear the buffers, it just calculates a loss.
                 previous_output_head.on_episode_end(env_index_in_previous_batch)
 
                 # Set `done` to `False` for that env, to prevent the output head for the
                 # new task from seeing the first observation in the episode as the last.
                 observations.done[env_index_in_previous_batch] = False
-                done_set_to_false_temporarily_indices.append(env_index_in_previous_batch)
-                # BUG: If we modify that entry in-place, then even after the end of this
-                # method the change persists..
+                # FIXME: If we modify that entry in-place, then even after this method
+                # returns, the change will persist.. Therefore we just save the indices
+                # that we altered, and reset them before returning.
+                done_set_to_false_temporarily_indices.append(
+                    env_index_in_previous_batch
+                )
             else:
-                raise NotImplementedError(f"TODO: Need to somehow pass the indices of "
-                                          f"which env to take care of to each output "
-                                          f"head, so they can create / clear buffers "
-                                          f"only when needed.")
+                raise NotImplementedError(
+                    "TODO: The BaselineModel doesn't yet support having multiple "
+                    "different tasks within the same batch in RL. "
+                )
+                # IDEA: Need to somehow pass the indices of which env to take care of to
+                # each output head, so they can create / clear buffers only when needed.
 
         assert task_labels is not None
         all_task_indices: Dict[int, Tensor] = get_task_indices(task_labels)
@@ -287,7 +322,7 @@ class MultiHeadModel(BaseModel[SettingType]):
             # If everything is in the same task (only one key), no need to split/merge
             # stuff, so it's a bit easier:
             task_id: int = list(all_task_indices.keys())[0]
-            
+
             with self.switch_output_head(task_id):
                 # task_output_head = self.output_heads[str(task_id)]
                 total_loss += self.output_head.get_loss(
@@ -322,7 +357,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         # FIXME: Reset the 'done' to True, if we manually set it to False.
         for index in done_set_to_false_temporarily_indices:
             observations.done[index] = True
-        
+
         return total_loss
 
     def on_after_backward(self):
@@ -331,12 +366,12 @@ class MultiHeadModel(BaseModel[SettingType]):
     def on_before_zero_grad(self, optimizer):
         super().on_before_zero_grad(optimizer)
         from sequoia.methods.models.output_heads.rl import PolicyHead
+
         for task_id_string, output_head in self.output_heads.items():
             if isinstance(output_head, PolicyHead):
                 output_head: PolicyHead
                 output_head.detach_all_buffers()
 
-        
     def shared_step(
         self,
         batch: Tuple[Observations, Optional[Rewards]],
@@ -587,7 +622,10 @@ def _create_placeholder_dataclass(original: Dataclass, batch_size: int) -> Datac
         }
     )
 
-def get_task_indices(task_labels: Union[List[Optional[int]], np.ndarray, Tensor]) -> Dict[Optional[int], Union[np.ndarray, Tensor]]:
+
+def get_task_indices(
+    task_labels: Union[List[Optional[int]], np.ndarray, Tensor]
+) -> Dict[Optional[int], Union[np.ndarray, Tensor]]:
     """Given an array-like of task labels, gives back a dictionary mapping from task id
     to an array-like of indices for the corresponding indices in the batch. 
 
@@ -604,20 +642,18 @@ def get_task_indices(task_labels: Union[List[Optional[int]], np.ndarray, Tensor]
         in `task_labels` that correspond to that task.
     """
     all_task_indices: Dict[int, Union[np.ndarray, Tensor]] = {}
-    
+
     if task_labels is None:
         return {}
-    
+
     if isinstance(task_labels, (Tensor, np.ndarray)):
         task_labels = task_labels.tolist()
     else:
         # In case task_labels is a list of numpy arrays, convert it to a
         # list of elements (optional ints).
-        task_labels = [
-            int(label) if label != None else None for label in task_labels
-        ]
+        task_labels = [int(label) if label != None else None for label in task_labels]
     unique_task_labels = list(set(task_labels))
-    
+
     batch_size = len(task_labels)
     # Get the indices for each task.
     for task_id in unique_task_labels:
@@ -627,17 +663,15 @@ def get_task_indices(task_labels: Union[List[Optional[int]], np.ndarray, Tensor]
             task_indices = torch.arange(batch_size)[task_labels == task_id]
         else:
             task_indices = torch.as_tensor(
-                [
-                    i
-                    for i, task_label in enumerate(task_labels)
-                    if task_label == task_id
-                ]
+                [i for i, task_label in enumerate(task_labels) if task_label == task_id]
             )
-        all_task_indices[task_id] = task_indices 
+        all_task_indices[task_id] = task_indices
     return all_task_indices
 
 
-def cleanup_task_labels(task_labels: Optional[Sequence[Optional[int]]]) -> Optional[np.ndarray]:
+def cleanup_task_labels(
+    task_labels: Optional[Sequence[Optional[int]]],
+) -> Optional[np.ndarray]:
     """ 'cleans up' the task labels, by returning either None or an integer numpy array.
 
     TODO: Not clear why we really have to do this in the first place. The point is, if
@@ -666,9 +700,7 @@ def cleanup_task_labels(task_labels: Optional[Sequence[Optional[int]]]) -> Optio
             elif all(task_labels != None):
                 task_labels = torch.as_tensor(task_labels.astype(np.int))
             else:
-                raise NotImplementedError(
-                    f"TODO: Only given a portion of task labels?"
-                )
+                raise NotImplementedError(f"TODO: Only given a portion of task labels?")
                 # IDEA: Maybe set task_id to -1 in those cases, and return an int
                 # ndarray as well?
     if not task_labels.shape:
@@ -677,5 +709,5 @@ def cleanup_task_labels(task_labels: Optional[Sequence[Optional[int]]]) -> Optio
         task_labels = task_labels.cpu().numpy()
     if task_labels is not None:
         task_labels = task_labels.astype(int)
-    assert task_labels is None or isinstance(task_labels, np.ndarray), (task_labels, task_labels.dtype)
+    assert task_labels is None or isinstance(task_labels, np.ndarray)
     return task_labels
