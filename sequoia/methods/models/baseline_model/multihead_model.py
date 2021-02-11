@@ -215,6 +215,9 @@ class MultiHeadModel(BaseModel[SettingType]):
         # Asks each output head for its contribution to the loss.
         observations: IncrementalSetting.Observations = forward_pass.observations
         task_labels = observations.task_labels
+        if isinstance(task_labels, Tensor):
+            task_labels = task_labels.cpu().numpy()
+
         batch_size = forward_pass.batch_size
         assert batch_size is not None
 
@@ -249,7 +252,8 @@ class MultiHeadModel(BaseModel[SettingType]):
         total_loss = Loss(self.output_head.name)
 
         task_switched_in_env = task_labels != self.previous_task_labels
-        episode_ended = observations.done
+        # TODO: This `done` attribute isn't added in supervised settings.
+        episode_ended = getattr(observations, "done", np.zeros(batch_size, dtype=bool))
         # logger.debug(f"Task labels: {task_labels}, task switched in env: {task_switched_in_env}, episode ended: {episode_ended}")
         done_set_to_false_temporarily_indices = []
 
@@ -703,6 +707,8 @@ def cleanup_task_labels(
                 raise NotImplementedError(f"TODO: Only given a portion of task labels?")
                 # IDEA: Maybe set task_id to -1 in those cases, and return an int
                 # ndarray as well?
+    if task_labels is None:
+        return None
     if not task_labels.shape:
         task_labels = task_labels.reshape([1])
     if isinstance(task_labels, Tensor):
