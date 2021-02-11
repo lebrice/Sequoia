@@ -404,8 +404,9 @@ def test_task_schedule_with_callables():
         if done:
             print(f"End of episode at step {i}")
             obs = env.reset()
-            
 
+
+@monsterkong_required
 def test_random_task_on_each_episode():
     env: MetaMonsterKongEnv = gym.make("MetaMonsterKong-v1")
     from gym.wrappers import TimeLimit
@@ -426,7 +427,7 @@ def test_random_task_on_each_episode():
     for i in range(10):
         obs = env.reset()
         task_labels.append(obs[1])
-    assert set(task_labels) > {0}
+    assert len(set(task_labels)) > 1
     
     # Episodes only last 10 steps. Tasks don't have anything to do with the task
     # schedule.

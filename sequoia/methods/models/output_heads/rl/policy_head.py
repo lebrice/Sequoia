@@ -275,14 +275,19 @@ class PolicyHead(ClassificationHead):
                     # BUG: This seems to be failing, during testing:
                     # assert env_loss is not None, (self.name)
                     pass
+
                 self.on_episode_end(env_index)
 
         if self.batch_size != forward_pass.batch_size:
             raise NotImplementedError(
-                "TODO: observations.done was used to tell us which episodes ended, now "
-                "we need to clear everything and give back losses for the first steps "
-                "in all these new environments."
+                "TODO: The batch size changed, because the batch contains different "
+                "tasks. The BaselineModel isn't yet applicable in the setup where "
+                "there are multiple different tasks in the same batch in RL. "
             )
+            # IDEA: Need to get access to the 'original' env indices (before slicing),
+            # so that even when one more environment is in this task, the other
+            # environment's buffers remain at the same index.. Something like a
+            # remapping of env indices?
             assert len(representations.shape) == 2, (
                 f"Need batched representations, with a shape [16, 128] or similar, but "
                 f"representations have shape {representations.shape}."
@@ -380,7 +385,7 @@ class PolicyHead(ClassificationHead):
             return None
 
         if len(self.actions[env_index]) == 0:
-            logger.debug(f"Weird, asked to get episode loss, but there is "
+            logger.error(f"Weird, asked to get episode loss, but there is "
                          f"nothing in the buffer?")
             return None
 
@@ -432,19 +437,7 @@ class PolicyHead(ClassificationHead):
         """ Calculates the returns, as the sum of discounted future rewards at
         each step.
         """
-        T = len(rewards)
-        if not isinstance(rewards, Tensor):
-            rewards = torch.as_tensor(rewards)
-        # Construct a reward matrix, with previous rewards masked out (with each
-        # row as a step along the trajectory).
-        reward_matrix = rewards.expand([T, T]).triu()
-        # Get the gamma matrix (upper triangular), see make_gamma_matrix for
-        # more info.
-        gamma_matrix = make_gamma_matrix(gamma, T, device=reward_matrix.device)
-        # Multiplying by the gamma coefficients gives the discounted rewards.
-        discounted_rewards = (reward_matrix * gamma_matrix)
-        # Summing up over time gives the return at each step.
-        return discounted_rewards.sum(-1)
+        return discounted_sum_of_future_rewards(rewards, gamma=gamma)
 
     @staticmethod
     def policy_gradient(rewards: List[float], log_probs: Union[Tensor, List[Tensor]], gamma: float=0.95):
@@ -469,20 +462,7 @@ class PolicyHead(ClassificationHead):
             The "vanilla policy gradient" / REINFORCE gradient resulting from
             that episode.
         """
-        if isinstance(log_probs, Tensor):
-            action_log_probs = log_probs
-        else:
-            action_log_probs = torch.stack(log_probs)
-        reward_tensor = (
-            torch.as_tensor(rewards)
-            .type_as(action_log_probs)
-            .reshape(action_log_probs.shape)
-        )
-
-        returns = PolicyHead.get_returns(reward_tensor, gamma=gamma)
-        returns = returns.reshape(action_log_probs.shape)
-        policy_gradient = - action_log_probs.dot(returns)
-        return policy_gradient
+        return vanilla_policy_gradient(rewards, log_probs, gamma=gamma)
 
     @property
     def training(self) -> bool:
@@ -572,6 +552,62 @@ class PolicyHead(ClassificationHead):
         stacked_actions = stack(episode_actions)
         stacked_rewards = stack(episode_rewards)
         return stacked_inputs, stacked_actions, stacked_rewards
+
+
+
+def discounted_sum_of_future_rewards(rewards: Union[Tensor, List[Tensor]], gamma: float) -> Tensor:
+    """ Calculates the returns, as the sum of discounted future rewards at
+    each step.
+    """
+    T = len(rewards)
+    if not isinstance(rewards, Tensor):
+        rewards = torch.as_tensor(rewards)
+    # Construct a reward matrix, with previous rewards masked out (with each
+    # row as a step along the trajectory).
+    reward_matrix = rewards.expand([T, T]).triu()
+    # Get the gamma matrix (upper triangular), see make_gamma_matrix for
+    # more info.
+    gamma_matrix = make_gamma_matrix(gamma, T, device=reward_matrix.device)
+    # Multiplying by the gamma coefficients gives the discounted rewards.
+    discounted_rewards = (reward_matrix * gamma_matrix)
+    # Summing up over time gives the return at each step.
+    return discounted_rewards.sum(-1)
+
+
+def vanilla_policy_gradient(rewards: Sequence[float], log_probs: Union[Tensor, List[Tensor]], gamma: float=0.95):
+    """Implementation of the REINFORCE algorithm.
+
+    Adapted from https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
+
+    Parameters
+    ----------
+    - episode_rewards : Sequence[float]
+
+        The rewards at each step in an episode
+
+    - episode_log_probs : List[Tensor]
+
+        The log probabilities associated with the actions that were taken at
+        each step.
+
+    Returns
+    -------
+    Tensor
+        The "vanilla policy gradient" / REINFORCE gradient resulting from
+        that episode.
+    """
+    if isinstance(log_probs, Tensor):
+        action_log_probs = log_probs
+    else:
+        action_log_probs = torch.stack(log_probs)
+    reward_tensor = torch.as_tensor(rewards).type_as(action_log_probs)
+    returns = PolicyHead.get_returns(reward_tensor, gamma=gamma)
+    # Need both tensors to be 1-dimensional for the dot-product below.
+    action_log_probs = action_log_probs.reshape(returns.shape)
+    policy_gradient = - action_log_probs.dot(returns)
+    return policy_gradient
+
+
 
 # @torch.jit.script
 # @lru_cache()

@@ -120,10 +120,7 @@ class EpisodicA2C(PolicyHead):
             return None
         return len(self.actions[env_index])
 
-    def get_episode_loss(self, env_index: int, done: bool):
-        inputs: Tensor
-        actions: A2CHeadOutput
-        rewards: Rewards
+    def get_episode_loss(self, env_index: int, done: bool) -> Optional[Loss]:
         # IDEA: Actually, now that I think about it, instead of detaching the
         # tensors, we could instead use the critic's 'value' estimate and get a
         # loss for that incomplete episode using the tensors in the buffer,
@@ -135,13 +132,20 @@ class EpisodicA2C(PolicyHead):
         # TODO: Add something like a 'num_steps_since_update' for each env? (it
         # would actually be a num_steps_since_backward)
         # if self.num_steps_since_update?
-
-        if self.num_stored_steps(env_index) < 5:
+        n_stored_steps = self.num_stored_steps(env_index)
+        if n_stored_steps < 5:
             # For now, we only give back a loss at the end of the episode.
             # TODO: Test if giving back a loss at each step or every few steps
             # would work better!
+            logger.warning(RuntimeWarning(
+                f"Returning None as the episode loss, because only have "
+                f"{n_stored_steps} steps stored for that environment."
+            ))
             return None
 
+        inputs: Tensor
+        actions: A2CHeadOutput
+        rewards: Rewards
         inputs, actions, rewards = self.stack_buffers(env_index)
         logits: Tensor = actions.logits
         action_log_probs: Tensor = actions.action_log_prob
