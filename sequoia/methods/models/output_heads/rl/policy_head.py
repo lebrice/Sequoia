@@ -473,9 +473,14 @@ class PolicyHead(ClassificationHead):
             action_log_probs = log_probs
         else:
             action_log_probs = torch.stack(log_probs)
-        reward_tensor = torch.as_tensor(rewards).type_as(action_log_probs)
+        reward_tensor = (
+            torch.as_tensor(rewards)
+            .type_as(action_log_probs)
+            .reshape(action_log_probs.shape)
+        )
 
         returns = PolicyHead.get_returns(reward_tensor, gamma=gamma)
+        returns = returns.reshape(action_log_probs.shape)
         policy_gradient = - action_log_probs.dot(returns)
         return policy_gradient
 
