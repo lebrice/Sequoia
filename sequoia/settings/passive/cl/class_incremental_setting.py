@@ -527,6 +527,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
+            pretend_to_be_active=True,
         )
         if self.test_transforms:
             env = TransformObservation(env, f=self.test_transforms)

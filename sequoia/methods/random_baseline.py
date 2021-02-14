@@ -40,6 +40,12 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         print(f"Setting the batch size on the setting to {self.batch_size}")
         setting.batch_size = self.batch_size
 
+        if setting.task_labels_at_test_time:
+            # TODO: Maybe reduce the action space? Since we're being asked
+            # for actions in a specific task at test-time, maybe we could get the
+            # 'task action space' rather than the action space on the setting itself?
+            pass
+
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         return action_space.sample()
 

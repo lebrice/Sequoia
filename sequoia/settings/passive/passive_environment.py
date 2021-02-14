@@ -52,8 +52,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
                  action_space: gym.Space = None,
                  reward_space: gym.Space = None,
                  n_classes: int = None,
-                 adjust_spaces_with_data: bool = True,
-                #  pretend_to_be_active: bool = False,
+                 pretend_to_be_active: bool = False,
                  **kwargs):
         """Creates the DataLoader/Environment for the given dataset.
 
@@ -100,6 +99,8 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self.action_space: gym.Space = add_tensor_support(action_space)
         self.reward_space: gym.Space = add_tensor_support(reward_space)
 
+        self.pretend_to_be_active = pretend_to_be_active
+    
         self.n_classes: Optional[int] = n_classes
         self._iterator: Optional[_BaseDataLoaderIter] = None
         # NOTE: These here are never processed with self.observation or self.reward. 
@@ -108,6 +109,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self._next_batch: Optional[Tuple[ObservationType, RewardType]] = None
         self._done: Optional[bool] = None
         self._closed: bool = False
+        
         
         # from gym.envs.classic_control.rendering import SimpleImageViewer
         self.viewer = None
@@ -327,18 +329,17 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             self._observations = self.observation(observations)
             self._rewards = self.reward(rewards)
 
-            # if self.pretend_to_be_active:
-            #     # TODO: Should we yield one item, or two?
-            #     yield self._observations, None
-            # else:
-            yield self._observations, self._rewards
+            if self.pretend_to_be_active:
+                # TODO: Should we yield one item, or two?
+                yield self._observations, None
+            else:
+                yield self._observations, self._rewards
 
     def send(self, action: Actions) -> Rewards:
         """ Return the last latch of rewards from the dataset (which were
         withheld if in 'active' mode)
         """
-        # TODO: work in progress, if you're gonna pretend this is an "
-        # 'active' environment, then it might be better to just use the gym API
-        # for now.
-        # assert self.action_space.contains(action), action
-        return None
+        if self.pretend_to_be_active:
+            return self._rewards
+        else:
+            return None
