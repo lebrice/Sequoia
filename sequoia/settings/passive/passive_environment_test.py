@@ -393,5 +393,80 @@ def test_observation_wrapper_applied_to_passive_environment():
     # from continuum.datasets import MNIST
     # from continuum.tasks import split_train_val
 
+
+def test_passive_environment_interaction():
+    """ Test the gym.Env-style interaction with a PassiveEnvironment.
+    """
+    batch_size = 5
+    transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
+    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    max_samples = 100
+    dataset = Subset(dataset, list(range(max_samples)))
+    
+    obs_space = Image(0, 255, (1, 28, 28), np.uint8)
+    obs_space = transforms(obs_space)
+    env = PassiveEnvironment(
+        dataset,
+        n_classes=10,
+        batch_size=batch_size,
+        observation_space=obs_space,
+        pretend_to_be_active=True,
+    )
+        
+    assert env.observation_space == Image(0, 1, (batch_size, 3, 28, 28))
+    assert env.action_space.shape == (batch_size,)
+    assert env.reward_space == env.action_space
+    env.seed(123)
+    obs = env.reset()
+    assert obs in env.observation_space
+    
+    obs, reward, done, info = env.step(env.action_space.sample())
+    assert reward is not None
+    assert obs in env.observation_space
+   
+    for i, (obs, reward) in enumerate(env):
+        assert obs in env.observation_space
+        assert reward is None
+        other_reward = env.send(env.action_space.sample())
+        assert other_reward is not None
+    assert i == max_samples // batch_size - 1
+
+
+
+def test_passive_environment_without_pretend_to_be_active():
+    """ Test the gym.Env-style interaction with a PassiveEnvironment.
+    """
+    batch_size = 5
+    transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
+    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    max_samples = 100
+    dataset = Subset(dataset, list(range(max_samples)))
+    
+    obs_space = Image(0, 255, (1, 28, 28), np.uint8)
+    obs_space = transforms(obs_space)
+    env = PassiveEnvironment(
+        dataset,
+        n_classes=10,
+        batch_size=batch_size,
+        observation_space=obs_space,
+        pretend_to_be_active=False,
+    )
+    assert env.observation_space == Image(0, 1, (batch_size, 3, 28, 28))
+    assert env.action_space.shape == (batch_size,)
+    assert env.reward_space == env.action_space
+    env.seed(123)
+    obs = env.reset()
+    assert obs in env.observation_space
+
+    obs, reward, done, info = env.step(env.action_space.sample())
+    assert reward is not None
+    
+    for i, (obs, reward) in enumerate(env):
+        assert reward is not None
+        other_reward = env.send(env.action_space.sample())
+        assert other_reward is None
+    assert i == max_samples // batch_size - 1
+
+
 def test_render():
     pass
