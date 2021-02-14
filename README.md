@@ -2,7 +2,7 @@
 
 A Playground for research at the intersection of Continual, Reinforcement, and Self-Supervised Learning.
 
-Join the [mailing list](https://groups.google.com/forum/#!forum/garage-announce/join) for infrequent updates (<1/mo.) on the status of the project and new releases.
+Join the [mailing list](https://groups.google.com/forum/#!forum/sequoia_research/join) for infrequent updates (<1/mo.) on the status of the project and new releases.
 
 ## Please note: This is still very much a Work-In-Progress!
 
