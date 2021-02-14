@@ -11,11 +11,13 @@ from .base.setting import Setting, SettingType
 from .base.bases import SettingABC, Method
 from .active import *
 from .passive import *
+
 # all concrete settings:
 all_settings: List[Type[Setting]] = [
-    IIDSetting,
-    TaskIncrementalSetting,
     ClassIncrementalSetting,
+    DomainIncrementalSetting,
+    TaskIncrementalSetting,
+    IIDSetting,
     ContinualRLSetting,
     IncrementalRLSetting,
     TaskIncrementalRLSetting,

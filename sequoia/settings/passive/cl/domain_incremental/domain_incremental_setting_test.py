@@ -1,21 +1,20 @@
 import itertools
 
 from .domain_incremental_setting import DomainIncrementalSetting
-
+from sequoia.common.spaces import NamedTupleSpace, Image
+from gym.spaces import Discrete
+import numpy as np
 
 
 def test_domain_incremental_mnist_setup():
     setting = DomainIncrementalSetting(
         dataset="mnist",
         increment=2,
-        # BUG: When num_workers > 0, some of the tests hang, but only when running *all* the tests!
-        # num_workers=0,
     )
     setting.prepare_data(data_dir="data")
     setting.setup()
-    
-    assert False, setting.observation_space
-
+    assert setting.observation_space == NamedTupleSpace(x=Image(0.0, 1.0, (3, 28, 28), np.float32), task_labels=Discrete(5))
+    assert False, setting.action_space
     for i in range(setting.nb_tasks):
         setting.current_task_id = i
         batch_size = 5

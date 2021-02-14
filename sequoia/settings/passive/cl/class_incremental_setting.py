@@ -353,12 +353,13 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
     @property
     def action_space(self) -> spaces.Discrete:
-        """ Action space in class-incremental setting: Discrete over all tasks seen so
-        far.
+        """ Action space for this setting. """
+        if self.relabel:
+            return spaces.Discrete(self.n_classes_per_task)
+        return spaces.Discrete(self.num_classes)
         
-        """
-        # TODO: During testing however we would be giving away the current task, right?
-        assert False, self.class_order
+        # TODO: IDEA: Have the action space only reflect the number of 'current' classes
+        # in order to create a "true" class-incremental learning setting.
         n_classes_seen_so_far = 0
         for task_id in range(self.current_task_id):
             n_classes_seen_so_far += self.num_classes_in_task(task_id)

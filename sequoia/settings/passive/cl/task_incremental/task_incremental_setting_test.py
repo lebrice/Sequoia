@@ -71,6 +71,7 @@ def test_class_incremental_mnist_setup_reversed_class_order():
     setting.setup()
     check_only_right_classes_present(setting)
 
+
 def test_class_incremental_mnist_setup_with_nb_tasks():
     setting = TaskIncrementalSetting(
         dataset="mnist",
