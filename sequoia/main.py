@@ -18,11 +18,7 @@ def main():
         f"- {method.get_name()}: {method} ({method.get_path_to_source_file()})" for method in all_methods
     ))
 
-    results = Experiment.main()
-    if results:
-        print("\n\n EXPERIMENT IS DONE \n\n")
-        # Experiment didn't crash, show results:
-        print(f"Results: {results}")
+    return Experiment.main()
 
 
 if __name__ == "__main__":
