@@ -5,26 +5,36 @@ See https://stable-baselines3.readthedocs.io/en/master/guide/install.html
 import warnings
 from abc import ABC
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union, Mapping
 
 import gym
 import torch
 from gym import spaces
 from simple_parsing import choice, mutable_field
-from stable_baselines3.common.base_class import (BaseAlgorithm, BasePolicy,
-                                                 DummyVecEnv, GymEnv,
-                                                 MaybeCallback, Monitor,
-                                                 VecEnv, VecTransposeImage,
-                                                 is_image_space, is_wrapped)
+from stable_baselines3.common.base_class import (
+    BaseAlgorithm,
+    BasePolicy,
+    DummyVecEnv,
+    GymEnv,
+    MaybeCallback,
+    Monitor,
+    VecEnv,
+    VecTransposeImage,
+    is_image_space,
+    is_wrapped,
+)
 from stable_baselines3.common.vec_env.obs_dict_wrapper import ObsDictWrapper
 
+from sequoia.common.hparams import HyperParameters, uniform, log_uniform, categorical
 from sequoia.common.gym_wrappers.batch_env.batched_vector_env import VectorEnv
 from sequoia.common.gym_wrappers.utils import has_wrapper
 from sequoia.common.transforms import Transforms
-from sequoia.settings import Method
+from sequoia.settings import Method, Setting
 from sequoia.settings.active.continual import ContinualRLSetting
 from sequoia.settings.active.continual.wrappers import (
-    NoTypedObjectsWrapper, RemoveTaskLabelsWrapper)
+    NoTypedObjectsWrapper,
+    RemoveTaskLabelsWrapper,
+)
 from sequoia.utils import Parseable, Serializable
 from sequoia.utils.logging_utils import get_logger
 
@@ -47,14 +57,18 @@ def _wrap_env(env: GymEnv, verbose: int = 0, monitor_wrapper: bool = True) -> Ve
     :param monitor_wrapper: Whether to wrap the env in a ``Monitor`` when possible.
     :return: The wrapped environment.
     """
-    
+
     # if not isinstance(env, VecEnv):
-    if not (isinstance(env, (VecEnv, VectorEnv)) or
-            isinstance(env.unwrapped, (VecEnv, VectorEnv))):
+    if not (
+        isinstance(env, (VecEnv, VectorEnv))
+        or isinstance(env.unwrapped, (VecEnv, VectorEnv))
+    ):
         # if not is_wrapped(env, Monitor) and monitor_wrapper:
-        if monitor_wrapper and not (is_wrapped(env, Monitor) or
-                                    is_wrapped(env, gym.wrappers.Monitor) or
-                                    has_wrapper(env, gym.wrappers.Monitor)): 
+        if monitor_wrapper and not (
+            is_wrapped(env, Monitor)
+            or is_wrapped(env, gym.wrappers.Monitor)
+            or has_wrapper(env, gym.wrappers.Monitor)
+        ):
             if verbose >= 1:
                 print("Wrapping the env with a `Monitor` wrapper")
             env = Monitor(env)
@@ -74,55 +88,27 @@ def _wrap_env(env: GymEnv, verbose: int = 0, monitor_wrapper: bool = True) -> Ve
     return env
 
 
-# def _wrap_env(env: gym.Env, verbose: int = 0, monitor_wrapper: bool = False)  -> VecEnv:
-#     # NOTE: We just want to change this single line here:
-#     # if not isinstance(env, VecEnv):
-#     if not (isinstance(env, (VecEnv, VectorEnv)) or
-#             isinstance(env.unwrapped, (VecEnv, VectorEnv))):
-#         if monitor_wrapper and not (is_wrapped(env, Monitor) or
-#                                     is_wrapped(env, gym.wrappers.Monitor) or
-#                                     has_wrapper(env, gym.wrappers.Monitor)): 
-#             if verbose >= 1:
-#                 print("Wrapping the env with a `Monitor` wrapper")
-#             env = Monitor(env)
-#         if verbose >= 1:
-#             print("Wrapping the env in a DummyVecEnv.")
-#         env = DummyVecEnv([lambda: env])
-
-#         if (
-#             is_image_space(env.observation_space)
-#             and not is_vecenv_wrapped(env, VecTransposeImage)
-#             and not is_image_space_channels_first(env.observation_space)
-#         ):
-#             if verbose >= 1:
-#                 print("Wrapping the env in a VecTransposeImage.")
-#             env = VecTransposeImage(env)
-
-#         # check if wrapper for dict support is needed when using HER
-#         if isinstance(env.observation_space, gym.spaces.dict.Dict):
-#             env = ObsDictWrapper(env)
-
-#         return env
-
 BaseAlgorithm._wrap_env = staticmethod(_wrap_env)
 
 
 @dataclass
-class SB3BaseHParams(Serializable, Parseable):
+class SB3BaseHParams(HyperParameters):
     """ Hyper-parameters of a model from the `stable_baselines3` package.
 
     The command-line arguments for these are created with simple-parsing.
     """
+
     # The policy model to use (MlpPolicy, CnnPolicy, ...)
     policy: Optional[Union[str, Type[BasePolicy]]] = choice(
-        "MlpPolicy", "CnnPolicy", default=None)
+        "MlpPolicy", "CnnPolicy", default=None
+    )
 
     # # The base policy used by this method
     # policy_base: Type[BasePolicy]
 
     # learning rate for the optimizer, it can be a function of the current
     # progress remaining (from 1 to 0)
-    learning_rate: Union[float, Callable] = 1e-4
+    learning_rate: Union[float, Callable] = log_uniform(1e-7, 1e-2, default=1e-4)
     # Additional arguments to be passed to the policy on creation
     policy_kwargs: Optional[Dict[str, Any]] = None
     # the log location for tensorboard (if None, no logging)
@@ -159,6 +145,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     """ Base class for the methods that use models from the stable_baselines3
     repo.
     """
+
     # Class variable that represents what kind of Model will be used.
     # (This is just here so we can easily create one Method class per model type
     # by just changing this class attribute.)
@@ -235,20 +222,20 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         # TODO: Double check that some settings might not impose a limit on
         # number of training steps per environment (e.g. task-incremental RL?)
         if setting.steps_per_task:
-            
+
             if self.train_steps_per_task > setting.steps_per_task:
-                warnings.warn(RuntimeWarning(
-                    f"Can't train for the requested {self.train_steps_per_task} "
-                    f"steps, since we're (currently) only allowed one 'pass' "
-                    f"through the environment (max {setting.steps_per_task} steps.)"
-                ))
+                warnings.warn(
+                    RuntimeWarning(
+                        f"Can't train for the requested {self.train_steps_per_task} "
+                        f"steps, since we're (currently) only allowed one 'pass' "
+                        f"through the environment (max {setting.steps_per_task} steps.)"
+                    )
+                )
             # Use as many training steps as possible.
             self.train_steps_per_task = setting.steps_per_task
         # Otherwise, we can train basically as long as we want on each task.
 
-    def create_model(self,
-                     train_env: gym.Env,
-                     valid_env: gym.Env) -> BaseAlgorithm:
+    def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> BaseAlgorithm:
         """ Create a Model given the training and validation environments. """
         return self.Model(env=train_env, **self.hparams.to_dict())
 
@@ -285,13 +272,13 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
             reset_num_timesteps=True,
         )
 
-    def get_actions(self,
-                    observations: ContinualRLSetting.Observations,
-                    action_space: spaces.Space) -> ContinualRLSetting.Actions:
+    def get_actions(
+        self, observations: ContinualRLSetting.Observations, action_space: spaces.Space
+    ) -> ContinualRLSetting.Actions:
         obs = observations.x
         predictions = self.model.predict(obs)
         action, _ = predictions
-        # BUG: DQN prediction here doesn't work. 
+        # BUG: DQN prediction here doesn't work.
         if action not in action_space:
             assert len(action) == 1, (observations, action, action_space)
             action = action.item()
@@ -306,3 +293,37 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
 
         todo: use this to customize how your method handles task transitions.
         """
+
+    def get_search_space(self, setting: Setting) -> Mapping[str, Union[str, Dict]]:
+        """Returns the search space to use for HPO in the given Setting.
+
+        Parameters
+        ----------
+        setting : Setting
+            The Setting on which the run of HPO will take place.
+
+        Returns
+        -------
+        Mapping[str, Union[str, Dict]]
+            An orion-formatted search space dictionary, mapping from hyper-parameter
+            names (str) to their priors (str), or to nested dicts of the same form.
+        """
+        return self.hparams.get_orion_space()
+
+    def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
+        """Adapts the Method when it receives new Hyper-Parameters to try for a new run.
+
+        It is required that this method be implemented if you want to perform HPO sweeps
+        with Orion.
+        
+        Parameters
+        ----------
+        new_hparams : Dict[str, Any]
+            The new hyper-parameters being recommended by the HPO algorithm. These will
+            have the same structure as the search space.
+        """
+        # Here we overwrite the corresponding attributes with the new suggested values
+        # leaving other fields unchanged.
+        # NOTE: These new hyper-paramers will be used in the next run in the sweep,
+        # since each call to `configure` will create a new Model.
+        self.hparams = self.hparams.replace(**new_hparams)

@@ -6,7 +6,7 @@ Should be applicable to any Setting.
 from dataclasses import dataclass
 
 import gym
-from typing import Optional
+from typing import Optional, Mapping, Dict, Union, Any
 
 from sequoia.common.metrics import ClassificationMetrics
 from sequoia.methods import register_method
@@ -47,6 +47,40 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     def from_args(cls, *args, **kwargs):
         return super().from_args(*args, **kwargs)
         # return RandomBaselineMethod()
+
+    def get_search_space(self, setting: Setting) -> Mapping[str, Union[str, Dict]]:
+        """Returns the search space to use for HPO in the given Setting.
+
+        Parameters
+        ----------
+        setting : Setting
+            The Setting on which the run of HPO will take place.
+
+        Returns
+        -------
+        Mapping[str, Union[str, Dict]]
+            An orion-formatted search space dictionary, mapping from hyper-parameter
+            names (str) to their priors (str), or to nested dicts of the same form.
+        """
+        logger.warning(UserWarning(f"Hey, you seem to be trying to perform an HPO sweep using the random baseline method?"))
+        # Assuming that this is just used for debugging, so giving back a simple space.
+        return {"foo": "choice([0, 1, 2])"}
+
+    def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
+        """Adapts the Method when it receives new Hyper-Parameters to try for a new run.
+
+        It is required that this method be implemented if you want to perform HPO sweeps
+        with Orion.
+        
+        Parameters
+        ----------
+        new_hparams : Dict[str, Any]
+            The new hyper-parameters being recommended by the HPO algorithm. These will
+            have the same structure as the search space.
+        """
+        logger.warning(UserWarning(f"Hey, you seem to be trying to perform an HPO sweep using the random baseline method?"))
+        foo = new_hparams["foo"]
+        print(f"Using new suggested value")
 
     ## Methods below are just here for testing purposes.
         

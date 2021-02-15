@@ -510,10 +510,9 @@ class Method(Generic[SettingType], Parseable, ABC):
             names (str) to their priors (str), or to nested dicts of the same form.
         """
         raise NotImplementedError(
-            "You need to provide an implementation for this method in order to "
-            "enable HPO sweeps."
+            "You need to provide an implementation for the `get_search_space` method "
+            "in order to enable HPO sweeps."
         )
-        return self.hparams.get_orion_space()
 
     def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
         """Adapts the Method when it receives new Hyper-Parameters to try for a new run.
@@ -528,8 +527,8 @@ class Method(Generic[SettingType], Parseable, ABC):
             have the same structure as the search space.
         """
         raise NotImplementedError(
-            "You need to provide an implementation for this method in order to "
-            "enable HPO sweeps."
+            "You need to provide an implementation for the `adapt_to_new_hparams` "
+            "method in order to enable HPO sweeps."
         )
 
     def hparam_sweep(
@@ -539,6 +538,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         experiment_id: str = None,
         database_path: Union[str, Path] = None,
         max_runs: int = None,
+        debug: bool = False,
     ) -> Tuple[Dict, float]:
         """ Performs a Hyper-Parameter Optimization sweep using orion.
 
@@ -567,6 +567,10 @@ class Method(Generic[SettingType], Parseable, ABC):
             Maximum number of runs to perform. Defaults to `None`, in which case the run
             lasts until the search space is exhausted.
 
+        debug : bool, optional
+            Wether to run Orion in debug-mode, where the database is an EphemeralDb,
+            meaning it gets created for the sweep and destroyed at the end of the sweep.
+        
         Returns
         -------
         Tuple[BaselineModel.HParams, float]
@@ -589,7 +593,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         experiment = build_experiment(
             name=experiment_name,
             space=search_space,
-            debug=self.config.debug,
+            debug=debug,
             algorithms="BayesianOptimizer",
             max_trials=max_runs,
             storage={

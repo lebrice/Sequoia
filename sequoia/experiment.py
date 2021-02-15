@@ -76,11 +76,6 @@ class Experiment(Parseable, Serializable):
     # things like the log directory, wether Cuda is used, etc.
     config: Config = mutable_field(Config)
 
-    # Wether to launch an HPO Sweep.
-    # TODO: This `experiment` class is getting way too complicated. Need to make it
-    # simpler, as part of https://github.com/lebrice/Sequoia/issues/47
-    sweep: bool = False
-
     def __post_init__(self):
         if not (self.setting or self.method):
             raise RuntimeError("One of `setting` or `method` must be set!")
@@ -312,31 +307,14 @@ class Experiment(Parseable, Serializable):
             assert isinstance(setting, Setting)
             assert isinstance(method, Method)
 
-            # TODO: Change where/how this 'sweep' is launched from.
-            if experiment.sweep:
-                # TODO: Add arguments for these? If so, where?
-                search_space = None
-                database_path = None
-                experiment_id = None
-                max_runs = None
-                best_params, best_objective = method.hparam_sweep(
-                    setting,
-                    search_space=search_space,
-                    database_path=database_path,
-                    experiment_id=experiment_id,
-                    max_runs=max_runs,
-                )
-                print(f"Best params: {best_params}")
-                print(f"Best objective: {best_objective}")
-                return (best_params, best_objective)
-            else:
-                results = experiment.launch(argv, strict_args=strict_args)
-                print("\n\n EXPERIMENT IS DONE \n\n")
-                print(f"Results: {results}")
-                return results
+            results = experiment.launch(argv, strict_args=strict_args)
+            print("\n\n EXPERIMENT IS DONE \n\n")
+            print(f"Results: {results}")
+            return results
 
         else:
             # TODO: Test out this other case. Haven't used it in a while.
+            # TODO: Move this to something like a BatchExperiment?
             all_results = launch_batch_of_runs(
                 setting=setting, method=method, argv=argv
             )
@@ -440,6 +418,7 @@ def parse_setting_and_method_instances(
         assert issubclass(setting, Setting)
         setting.add_argparse_args(parser)
     if not isinstance(method, Method):
+        assert method is not None
         assert issubclass(method, Method)
         method.add_argparse_args(parser)
 

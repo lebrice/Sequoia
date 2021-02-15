@@ -448,6 +448,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         experiment_id: str = None,
         database_path: Union[str, Path] = None,
         max_runs: int = None,
+        debug: bool = False,
     ) -> Tuple[BaselineModel.HParams, float]:
         # Setting max epochs to 1, just to keep runs somewhat short.
         self.trainer_options.max_epochs = 1
@@ -463,6 +464,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             experiment_id=experiment_id,
             database_path=database_path,
             max_runs=max_runs,
+            debug = debug or self.config.debug,
         )
 
     def receive_results(self, setting: Setting, results: Results):

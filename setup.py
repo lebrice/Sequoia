@@ -48,6 +48,7 @@ setup(
     entry_points={
         "console_scripts": [
             "sequoia = sequoia.main:main",
+            "sequoia_sweep = sequoia.hpo_sweep:main"
         ],
     }
 )
