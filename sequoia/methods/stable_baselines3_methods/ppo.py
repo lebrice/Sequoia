@@ -8,7 +8,6 @@ import gym
 import torch
 from gym import spaces
 from simple_parsing import mutable_field
-from stable_baselines3.common.type_aliases import Schedule
 from stable_baselines3.ppo import PPO
 
 from sequoia.common.hparams import categorical, log_uniform, uniform
@@ -40,7 +39,7 @@ class PPOModel(PPO):
 
         # The learning rate, it can be a function of the current progress remaining
         # (from 1 to 0)
-        learning_rate: Union[float, Schedule] = log_uniform(1e-6, 1e-2, default=3e-4)
+        learning_rate: float = log_uniform(1e-6, 1e-2, default=3e-4)
 
         # The number of steps to run for each environment per update (i.e. batch size
         # is n_steps * n_env where n_env is number of environment copies running in
@@ -62,13 +61,13 @@ class PPOModel(PPO):
 
         # Clipping parameter, it can be a function of the current progress remaining
         # (from 1 to 0).
-        clip_range: Union[float, Schedule] = uniform(0.05, 0.4, default=0.2)
+        clip_range: float = uniform(0.05, 0.4, default=0.2)
 
         # Clipping parameter for the value function, it can be a function of the current
         # progress remaining (from 1 to 0). This is a parameter specific to the OpenAI
         # implementation. If None is passed (default), no clipping will be done on the
         # value function. IMPORTANT: this clipping depends on the reward scaling.
-        clip_range_vf: Union[None, float, Schedule] = None
+        clip_range_vf: Optional[float] = None
 
         # Entropy coefficient for the loss calculation
         ent_coef: float = uniform(0., 1., default=0.0)

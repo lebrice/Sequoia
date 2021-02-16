@@ -264,3 +264,23 @@ def param_requires_monsterkong(*args):
         *args,
         reason="monsterkong is required for this parameter.",
     )
+
+try:
+    with redirect_stdout(StringIO()):
+        from gym.envs.atari import AtariEnv
+except gym.error.DependencyNotInstalled:
+    atari_py_installed = False
+else:
+    atari_py_installed = True
+
+
+atari_py_required = pytest.mark.skipif(
+    not atari_py_installed, reason="atari_py is required for this test."
+)
+
+def param_requires_atari_py(*args):
+    return skipif_param(
+        not atari_py_installed,
+        *args,
+        reason="atari_py is required for this parameter.",
+    )

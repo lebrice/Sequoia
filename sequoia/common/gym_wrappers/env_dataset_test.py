@@ -8,7 +8,7 @@ from gym import spaces
 from gym.spaces import Discrete
 
 from sequoia.common.transforms import Transforms
-from sequoia.conftest import DummyEnvironment
+from sequoia.conftest import DummyEnvironment, atari_py_required
 from sequoia.settings.active.continual.make_env import make_batched_env
 
 from .env_dataset import EnvDataset
@@ -191,7 +191,7 @@ class DummyWrapper(TransformObservation):
         print(f"Result shape: {result.shape}, max: {result.max()}")
         return result
 
-
+@atari_py_required
 def test_observation_wrapper_applies_to_yielded_objects():
     """ Test that when an TransformObservation wrapper (or any wrapper that
     changes the Observations) is applied on the env, the observations that are
@@ -245,7 +245,7 @@ def test_observation_wrapper_applies_to_yielded_objects():
 
     env.close()
 
-
+@atari_py_required
 def test_iteration_with_more_than_one_wrapper():
     """ Same as above, but with more than one wrapper applied on top of the
     EnvDataset.

@@ -10,7 +10,7 @@ from gym.wrappers import TimeLimit
 
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
 from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
-from sequoia.conftest import monsterkong_required, param_requires_monsterkong
+from sequoia.conftest import monsterkong_required, param_requires_monsterkong, atari_py_required
 from sequoia.settings import RLSetting
 from sequoia.utils.utils import dict_union
 
@@ -285,7 +285,7 @@ def test_starting_step_and_max_step():
     env.close()
 
 
-
+@atari_py_required
 def test_task_id_is_added_even_when_no_known_task_schedule():
     """ Test that even when the env is unknown or there are no task params, the
     task_id is still added correctly and is zero at all times.

@@ -6,29 +6,28 @@ import gym
 import numpy as np
 import pytest
 import torch
-from sequoia.conftest import DummyEnvironment, xfail
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv, PendulumEnv
 from gym.vector.utils import batch_space
 from torch import Tensor
 
 from sequoia.common.gym_wrappers import (AsyncVectorEnv, ConvertToFromTensors,
-                                 EnvDataset, PixelObservationWrapper,
-                                 TransformObservation)
+                                         EnvDataset, PixelObservationWrapper,
+                                         TransformObservation)
 from sequoia.common.transforms import ChannelsFirstIfNeeded, Transforms
-from .gym_dataloader import GymDataLoader
-from .make_env import make_batched_env
+from sequoia.conftest import DummyEnvironment, param_requires_atari_py, xfail
 from sequoia.utils import take
 from sequoia.utils.logging_utils import get_logger
 
-from sequoia.common.gym_wrappers import EnvDataset
+from .gym_dataloader import GymDataLoader
+from .make_env import make_batched_env
 
 logger = get_logger(__file__)
 
 
 
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
-@pytest.mark.parametrize("env_name", ["CartPole-v0", "Breakout-v0"])
+@pytest.mark.parametrize("env_name", ["CartPole-v0", param_requires_atari_py("Breakout-v0")])
 def test_spaces(env_name: str, batch_size: int):
     dataset = EnvDataset(make_batched_env(env_name, batch_size=batch_size))
     
@@ -58,7 +57,7 @@ def test_spaces(env_name: str, batch_size: int):
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 5])
-@pytest.mark.parametrize("env_name", ["CartPole-v0", "Breakout-v0"])
+@pytest.mark.parametrize("env_name", ["CartPole-v0", param_requires_atari_py("Breakout-v0")])
 def test_max_steps_is_respected(env_name: str, batch_size: int):
     max_steps = 5
     env_name = "CartPole-v0"
@@ -77,7 +76,7 @@ def test_max_steps_is_respected(env_name: str, batch_size: int):
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 5])
-@pytest.mark.parametrize("env_name", ["CartPole-v0", "Breakout-v0"])
+@pytest.mark.parametrize("env_name", ["CartPole-v0", param_requires_atari_py("Breakout-v0")])
 def test_multiple_epochs_works(env_name: str, batch_size: int):
     
     epochs = 3
@@ -114,14 +113,9 @@ def test_multiple_epochs_works(env_name: str, batch_size: int):
         assert len(all_rewards) == epochs * max_steps_per_episode * batch_size
 
 
-
-
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
-@pytest.mark.parametrize("env_name", ["Breakout-v0"])
+@pytest.mark.parametrize("env_name", [param_requires_atari_py("Breakout-v0")])
 def test_reward_isnt_always_one(env_name: str, batch_size: int):
-    # TODO: BUG: The CartPoleEnv always has a reward of 1.
-    
-    from gym.envs.atari import AtariEnv
     epochs = 3
     max_steps_per_episode = 100
     

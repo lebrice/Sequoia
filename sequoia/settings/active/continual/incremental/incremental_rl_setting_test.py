@@ -9,7 +9,7 @@ from sequoia.common.config import Config
 from sequoia.common.spaces import Image, Sparse
 from sequoia.common.transforms import (ChannelsFirstIfNeeded, ToTensor,
                                        Transforms)
-from sequoia.conftest import xfail_param, monsterkong_required
+from sequoia.conftest import xfail_param, monsterkong_required, param_requires_atari_py
 from sequoia.settings import Method
 from sequoia.settings.assumptions.incremental import TestEnvironment
 from sequoia.utils.utils import take
@@ -21,8 +21,8 @@ from .incremental_rl_setting import IncrementalRLSetting
 @pytest.mark.parametrize(
     "dataset, expected_obs_shape", [
         ("CartPole-v0", (3, 400, 600)),
-        # ("Breakout-v0", (3, 210, 160)),
-        ("Breakout-v0", (3, 84, 84)), # Since the Atari Preprocessing is added by default.
+        # param_requires_atari_py("Breakout-v0", (3, 210, 160)),
+        param_requires_atari_py("Breakout-v0", (3, 84, 84)), # Since the Atari Preprocessing is added by default.
         # ("duckietown", (120, 160, 3)),
     ],
 )
