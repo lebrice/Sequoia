@@ -268,8 +268,8 @@ class HatMethod(Method, target_setting=TaskIncrementalSetting):
         self.model.current_task = task_id
 
     @classmethod
-    def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
-        parser.add_arguments(cls.HParams, dest="hparams")
+    def add_argparse_args(cls, parser: ArgumentParser, dest: str = "") -> None:
+        parser.add_arguments(cls.HParams, dest=f"{dest}.hparams" if dest else "hparams")
         # You can also add arguments as usual:
         # parser.add_argument("--foo", default=123)
 
