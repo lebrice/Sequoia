@@ -15,7 +15,7 @@ for ln in lines:
 
 setup(
     name="sequoia",
-    version="0.0.2",
+    version="0.0.1",
     description="The Research Tree - A playground for research at the intersection of Continual, Reinforcement, and Self-Supervised Learning.",
     url="https://github.com/lebrice/Sequoia",
     author="Fabrice Normandin",
