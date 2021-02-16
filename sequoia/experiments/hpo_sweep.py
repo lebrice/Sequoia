@@ -72,7 +72,9 @@ class HPOSweep(Experiment):
             experiment_id=self.experiment_id,
             max_runs=self.max_runs,
         )
-        print(f"Best params: {best_params}")
+        print("Best params:\n" + "\n".join(
+            f"\t{key}: {value}" for key, value in best_params.items()
+        ))
         print(f"Best objective: {best_objective}")
         return (best_params, best_objective)
 

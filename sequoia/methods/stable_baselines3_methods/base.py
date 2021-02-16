@@ -325,3 +325,9 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         # NOTE: These new hyper-paramers will be used in the next run in the sweep,
         # since each call to `configure` will create a new Model.
         self.hparams = self.hparams.replace(**new_hparams)
+
+# We do this just to prevent errors when trying to decode the hparams class above, and
+# also to silence the related warnings from simple-parsing's decoding.py module.
+from sequoia.utils.serialization import register_decoding_fn
+register_decoding_fn(Type[BasePolicy], lambda v: v)
+register_decoding_fn(Callable, lambda v: v)

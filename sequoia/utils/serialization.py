@@ -24,6 +24,8 @@ from .logging_utils import get_logger
 from .utils import dict_union
 from sequoia.utils.generic_functions import detach
 
+register_decoding_fn(torch.device, torch.device)
+
 T = TypeVar("T")
 logger = get_logger(__file__)
 
