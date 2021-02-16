@@ -99,8 +99,12 @@ class Experiment(Parseable, Serializable):
                     raise RuntimeError(
                         f"Could not find benchmark '{self.benchmark}': it "
                         f"is neither a path to a file or a key of the "
-                        f"`setting_presets` dictionary. \n"
-                        f"(Available presets: {setting_presets}) "
+                        f"`setting_presets` dictionary. \n\n"
+                        f"Available presets: \n"
+                        + "\n".join(
+                            f"- {preset_name}: {preset_file.relative_to(source_dir)}"
+                            for preset_name, preset_file in setting_presets.items()
+                        )
                     )
             # Creating an experiment for the given setting, loaded from the
             # config file.

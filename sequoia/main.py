@@ -1,12 +1,10 @@
 """Runs an experiment, which consist in applying a Method to a Setting.
-
-
 """
 import sequoia.methods
 from sequoia.methods import all_methods
 from sequoia.settings import all_settings
 from sequoia.utils import get_logger
-from sequoia.experiment import Experiment
+from sequoia.experiments import Experiment
 
 logger = get_logger(__file__)
 
