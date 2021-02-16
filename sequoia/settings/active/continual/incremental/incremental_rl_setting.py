@@ -20,7 +20,7 @@ logger = get_logger(__file__)
 
 try:
     with redirect_stdout(StringIO()):
-        from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
+        from meta_monsterkong.make_env import MetaMonsterKongEnv
 except ImportError:
     monsterkong_installed = False
 else:

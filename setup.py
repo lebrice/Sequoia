@@ -30,7 +30,7 @@ setup(
                 if package.startswith('sequoia')],
     extras_require={
         "monsterkong": [
-            "meta_monsterkong @ git+https://github.com/mattriemer/monsterkong_examples.git@sequoia_integration#egg=meta_monsterkong"
+            "meta_monsterkong @ git+https://github.com/lebrice/MetaMonsterkong.git#egg=meta_monsterkong"
         ],
         "atari": [
             "gym[atari] @ git+https://www.github.com/lebrice/gym@easier_custom_spaces#egg=gym"
