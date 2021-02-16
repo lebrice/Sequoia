@@ -1,4 +1,3 @@
-pytorch-lightning>=1.1.2
 # Fork of gym with more flexible utility functions.
 gym[atari] @ git+https://www.github.com/lebrice/gym@easier_custom_spaces
 # nngeometry module used in the EWC method
@@ -16,6 +15,7 @@ plotly
 pandas
 # Only for python < 3.8
 singledispatchmethod;python_version<'3.8'
+pytorch-lightning>=1.1.8
 pytorch-lightning-bolts
 # Requirements for running tests:
 pytest-timeout
