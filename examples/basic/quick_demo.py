@@ -214,7 +214,7 @@ def demo_simple():
     # (Optional): You can also create a Config, which holds other fields like
     # `log_dir`, `debug`, `device`, etc. which aren't specific to either the
     # Setting or the Method.
-    config = Config(debug=True, render=True)
+    config = Config(debug=True, render=False)
     ## 3. Applying the method to the setting: (optionally passing a Config to
     # use for that run)
     results = setting.apply(method, config=config)
