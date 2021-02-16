@@ -813,7 +813,28 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         task_id = bisect.bisect_right(task_steps, self._steps) - 1
         self.metrics[task_id].append(metric)
         self._steps += 1
-        return super()._after_step(observation, reward, done, info)
+        
+        
+        ## Debugging issue with Monitor class:
+        # return super()._after_step(observation, reward, done, info)
+        if not self.enabled: return done
+
+        if done and self.env_semantics_autoreset:
+            # For envs with BlockingReset wrapping VNCEnv, this observation will be the first one of the new episode
+            if self.config.render:
+                self.reset_video_recorder()
+            self.episode_id += 1
+            self._flush()
+
+        # Record stats
+        self.stats_recorder.after_step(observation, reward, done, info)
+        
+        # Record video
+        if self.config.render:
+            self.video_recorder.capture_frame()
+        return done
+        ## 
+    
     
     def _after_reset(self, observation: ClassIncrementalSetting.Observations):
         image_batch = observation.numpy().x
@@ -830,7 +851,21 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
             image_batch = (256 * image_batch).astype(np.uint8)
         
         assert image_batch.dtype == np.uint8
-        super()._after_reset(image_batch)
+        # Debugging this issue here:
+        # super()._after_reset(image_batch)
+
+        ## -- Code from Monitor
+        if not self.enabled: return
+        # Reset the stat count
+        self.stats_recorder.after_reset(observation)
+        if self.config.render:
+            self.reset_video_recorder()
+
+        # Bump *after* all reset activity has finished
+        self.episode_id += 1
+
+        self._flush()
+        ## -- 
 
     def render(self, mode='human', **kwargs):
         # NOTE: This doesn't get called, because the video recorder uses

@@ -18,7 +18,7 @@ from sequoia.settings.passive.cl.objects import Observations, Rewards
 from sequoia.utils import dict_intersection
 from sequoia.utils.logging_utils import get_logger
 
-from examples.quick_demo import DemoMethod, MyModel
+from quick_demo import DemoMethod, MyModel
 
 logger = get_logger(__file__)
 
