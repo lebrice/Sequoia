@@ -23,7 +23,6 @@ dependencies:
     - aiohttp==3.7.3
     - apipkg==1.5
     - async-timeout==3.0.1
-    - atari-py==0.2.6
     - attrs==20.3.0
     - cachetools==4.2.1
     - certifi==2020.12.5
@@ -109,5 +108,4 @@ dependencies:
     - werkzeug==1.0.1
     - wheel==0.36.2
     - yarl==1.6.3
-prefix: /home/fabrice/miniconda3/envs/sequoia
 
