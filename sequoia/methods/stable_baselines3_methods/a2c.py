@@ -40,7 +40,7 @@ class A2CModel(A2C):
         gamma: float = uniform(0.9, 0.9999, default=0.99)
         # Factor for trade-off of bias vs variance for Generalized Advantage Estimator.
         # Equivalent to classic advantage when set to 1.
-        gae_lambda: float = uniform(0.0, 1.0, default=1.0)
+        gae_lambda: float = uniform(0.5, 1.0, default=1.0)
         # Entropy coefficient for the loss calculation
         ent_coef: float = uniform(0.0, 1.0, default=0.0)
         # Value function coefficient for the loss calculation
