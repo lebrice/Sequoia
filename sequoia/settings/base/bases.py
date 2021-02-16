@@ -2,24 +2,46 @@
 """
 import dataclasses
 import inspect
+import json
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import (Any, ClassVar, Generic, Iterable, List, Optional, Set,
-                    Type, TypeVar, Union)
-
+from typing import (
+    Any,
+    ClassVar,
+    Generic,
+    Iterable,
+    List,
+    Optional,
+    Set,
+    Type,
+    TypeVar,
+    Union,
+    Mapping,
+    Tuple,
+    Dict,
+)
+import operator
 import gym
 import numpy as np
 from pytorch_lightning import LightningDataModule
-from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.utils import get_path_to_source_file
-
 from sequoia.common import Config, Metrics
-from sequoia.settings.base.environment import (Actions, Environment, Observations,
-                                       Rewards)
+from sequoia.settings.base.environment import (
+    Actions,
+    Environment,
+    Observations,
+    Rewards,
+)
 from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.settings.base.results import Results
-from sequoia.utils.utils import camel_case, remove_suffix
+from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.parseable import Parseable
+from sequoia.utils.utils import (
+    camel_case,
+    compute_identity,
+    flatten_dict,
+    get_path_to_source_file,
+    remove_suffix,
+)
 
 logger = get_logger(__file__)
 
@@ -48,6 +70,7 @@ class SettingABC(Parseable, LightningDataModule):
     - `Rewards`: The type of Rewards that this setting will (potentially) return
       upon receiving an action from the method.
     """
+
     Results: ClassVar[Type[Results]] = Results
     Observations: ClassVar[Type[Observations]] = Observations
     Actions: ClassVar[Type[Actions]] = Actions
@@ -104,10 +127,9 @@ class SettingABC(Parseable, LightningDataModule):
         # of samples that a user can have access to (the number of epochs, etc).
         # Or the dataloader would only allow a given number of iterations!
         method.fit(
-            train_env=self.train_dataloader(),
-            valid_env=self.val_dataloader(),
+            train_env=self.train_dataloader(), valid_env=self.val_dataloader(),
         )
-        
+
         test_metrics = []
         test_environment = self.test_dataloader()
         for observations in test_environment:
@@ -133,21 +155,25 @@ class SettingABC(Parseable, LightningDataModule):
         pass
 
     @abstractmethod
-    def train_dataloader(self, *args, **kwargs) -> Environment[Observations, Actions, Rewards]:
+    def train_dataloader(
+        self, *args, **kwargs
+    ) -> Environment[Observations, Actions, Rewards]:
         pass
 
     @abstractmethod
-    def val_dataloader(self, *args, **kwargs) -> Environment[Observations, Actions, Rewards]:
+    def val_dataloader(
+        self, *args, **kwargs
+    ) -> Environment[Observations, Actions, Rewards]:
         pass
 
     @abstractmethod
-    def test_dataloader(self, *args, **kwargs) -> Environment[Observations, Actions, Rewards]:
+    def test_dataloader(
+        self, *args, **kwargs
+    ) -> Environment[Observations, Actions, Rewards]:
         pass
 
     @abstractmethod
-    def get_metrics(self,
-                    actions: Actions,
-                    rewards: Rewards) -> Union[float, Metrics]:
+    def get_metrics(self, actions: Actions, rewards: Rewards) -> Union[float, Metrics]:
         """ Calculate the "metric" from the model predictions (actions) and the
         true labels (rewards).
         """
@@ -166,7 +192,7 @@ class SettingABC(Parseable, LightningDataModule):
     _children: ClassVar[Set[Type["SettingABC"]]] = set()
     # List of all methods that directly target this Setting.
     _targeted_methods: ClassVar[Set[Type["Method"]]] = set()
-    
+
     def __init_subclass__(cls, **kwargs):
         """ Called whenever a new subclass of `Setting` is declared. """
         # logger.debug(f"Registering a new setting: {cls.get_name()}")
@@ -186,6 +212,7 @@ class SettingABC(Parseable, LightningDataModule):
         """ Returns all the Methods applicable on this Setting. """
         applicable_methods: List[Method] = []
         from sequoia.methods import all_methods
+
         for method_type in all_methods:
             if method_type.is_applicable(cls):
                 applicable_methods.append(method_type)
@@ -225,7 +252,8 @@ class SettingABC(Parseable, LightningDataModule):
         None
         """
         base_nodes = [
-            base for base in cls.__bases__
+            base
+            for base in cls.__bases__
             if inspect.isclass(base) and issubclass(base, SettingABC)
         ]
         return base_nodes[0] if base_nodes else None
@@ -241,13 +269,15 @@ class SettingABC(Parseable, LightningDataModule):
     @classmethod
     def depth(cls) -> int:
         return len(list(cls.get_parents()))
-    
+
 
 SettingType = TypeVar("SettingType", bound=SettingABC)
+
 
 class Method(Generic[SettingType], Parseable, ABC):
     """ ABC for a Method, which is a solution to a research problem (a Setting).
     """
+
     # Class attribute that holds the setting this method was designed to target.
     # Needs to either be passed to the class statement or set as a class
     # attribute.
@@ -259,16 +289,21 @@ class Method(Generic[SettingType], Parseable, ABC):
         Args:
             setting (SettingType): The setting the method will be evaluated on.
         """
-    
+
     @abstractmethod
-    def get_actions(self, observations: Observations, action_space: gym.Space) -> Union[Actions, Any]:
+    def get_actions(
+        self, observations: Observations, action_space: gym.Space
+    ) -> Union[Actions, Any]:
         """ Get a batch of predictions (actions) for the given observations.
         returned actions must fit the action space.
         """
 
     @abstractmethod
-    def fit(self, train_env: Environment[Observations, Actions, Rewards],
-                  valid_env: Environment[Observations, Actions, Rewards]):
+    def fit(
+        self,
+        train_env: Environment[Observations, Actions, Rewards],
+        valid_env: Environment[Observations, Actions, Rewards],
+    ):
         """Called by the Setting to give the method data to train with.
 
         Might be called more than once before training is 'complete'.
@@ -285,7 +320,7 @@ class Method(Generic[SettingType], Parseable, ABC):
             only allowed a limited number of steps.
         """
         raise NotImplementedError
-    
+
     def receive_results(self, setting: SettingType, results: Results) -> None:
         """ Receive the Results of applying this method on the given Setting.
         
@@ -297,24 +332,15 @@ class Method(Generic[SettingType], Parseable, ABC):
         Parameters
         ----------
         results : Results
-            [description]
-
-        Returns
-        -------
-        [type]
-            [description]
-
-        Raises
-        ------
-        RuntimeError
-            [description]
+            The `Results` object constructed by `setting`, as a result of applying
+            this Method to it.
         """
 
     ## Below this are some class attributes and methods related to the Tree
     ## structure and for launching Experiments using this method.
 
     @classmethod
-    def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
+    def main(cls, argv: Optional[Union[str, List[str]]] = None) -> Results:
         """ Run an Experiment from the command-line using this method.
         
         (TODO: @lebrice Finish writing a good docstring here that explains how this works
@@ -325,6 +351,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         """
 
         from sequoia.main import Experiment
+
         experiment: Experiment
         # Create the Method object from the command-line:
         method = cls.from_args(argv, strict=False)
@@ -335,7 +362,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         experiment.method = method
         results: Results = experiment.launch(argv)
         return results
-    
+
     @classmethod
     def is_applicable(cls, setting: Union[SettingType, Type[SettingType]]) -> bool:
         """Returns wether this Method is applicable to the given setting.
@@ -358,15 +385,17 @@ class Method(Generic[SettingType], Parseable, ABC):
         # if given an object, get it's type.
         if isinstance(setting, LightningDataModule):
             setting = type(setting)
-        
-        if (not issubclass(setting, SettingABC)
-            and issubclass(setting, LightningDataModule)):
+
+        if not issubclass(setting, SettingABC) and issubclass(
+            setting, LightningDataModule
+        ):
             # TODO: If we're trying to check if this method would be compatible
             # with a LightningDataModule, rather than a Setting, then we treat
             # that LightningModule the same way we would an IIDSetting.
             # i.e., if we're trying to apply a Method on something that isn't in
             # the tree, then we consider that datamodule as the IIDSetting node.
             from sequoia.settings import IIDSetting
+
             setting = IIDSetting
 
         return issubclass(setting, cls.target_setting)
@@ -377,6 +406,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         NOTE: This only returns 'concrete' Settings.
         """
         from sequoia.settings import all_settings
+
         return list(filter(cls.is_applicable, all_settings))
         # This would return ALL the setting:
         # return list([cls.target_setting, *cls.target_setting.all_children()])
@@ -393,7 +423,7 @@ class Method(Generic[SettingType], Parseable, ABC):
             for dataset in setting_type.get_available_datasets():
                 setting = setting_type(dataset=dataset, **kwargs)
                 yield setting
-    
+
     @classmethod
     def get_name(cls) -> str:
         """ Gets the name of this method class. """
@@ -403,7 +433,9 @@ class Method(Generic[SettingType], Parseable, ABC):
             name = remove_suffix(name, "_method")
         return name
 
-    def __init_subclass__(cls, target_setting: Type[SettingType] = None, **kwargs) -> None:
+    def __init_subclass__(
+        cls, target_setting: Type[SettingType] = None, **kwargs
+    ) -> None:
         """Called when creating a new subclass of Method.
 
         Args:
@@ -424,7 +456,208 @@ class Method(Generic[SettingType], Parseable, ABC):
         # Register this new method on the Setting.
         target_setting.register_method(cls)
         return super().__init_subclass__(**kwargs)
-    
+
     @classmethod
     def get_path_to_source_file(cls) -> Path:
         return get_path_to_source_file(cls)
+
+    def get_experiment_name(self, setting: SettingABC, experiment_id: str = None) -> str:
+        """Gets a unique name for the experiment where `self` is applied to `setting`.
+
+        This experiment name will be passed to `orion` when performing a run of
+        Hyper-Parameter Optimization.
+
+        Parameters
+        ----------
+        - setting : Setting
+
+            The `Setting` onto which this method will be applied. This method will be used when
+
+        - experiment_id: str, optional
+
+            A custom hash to append to the experiment name. When `None` (default), a
+            unique hash will be created based on the values of the Setting's fields.
+
+        Returns
+        -------
+        str
+            The name for the experiment.
+        """
+        if not experiment_id:
+            setting_dict = setting.to_dict()
+            # BUG: Some settings have non-string keys/value or something?
+            d = flatten_dict(setting_dict)
+            experiment_id = compute_identity(size=5, **d)
+        assert isinstance(
+            setting.dataset, str
+        ), "assuming that dataset is a str for now."
+        return (
+            f"{self.get_name()}-{setting.get_name()}_{setting.dataset}_{experiment_id}"
+        )
+
+    def get_search_space(self, setting: SettingABC) -> Mapping[str, Union[str, Dict]]:
+        """Returns the search space to use for HPO in the given Setting.
+
+        Parameters
+        ----------
+        setting : Setting
+            The Setting on which the run of HPO will take place.
+
+        Returns
+        -------
+        Mapping[str, Union[str, Dict]]
+            An orion-formatted search space dictionary, mapping from hyper-parameter
+            names (str) to their priors (str), or to nested dicts of the same form.
+        """
+        raise NotImplementedError(
+            "You need to provide an implementation for the `get_search_space` method "
+            "in order to enable HPO sweeps."
+        )
+
+    def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
+        """Adapts the Method when it receives new Hyper-Parameters to try for a new run.
+
+        It is required that this method be implemented if you want to perform HPO sweeps
+        with Orion.
+        
+        Parameters
+        ----------
+        new_hparams : Dict[str, Any]
+            The new hyper-parameters being recommended by the HPO algorithm. These will
+            have the same structure as the search space.
+        """
+        raise NotImplementedError(
+            "You need to provide an implementation for the `adapt_to_new_hparams` "
+            "method in order to enable HPO sweeps."
+        )
+
+    def hparam_sweep(
+        self,
+        setting: SettingABC,
+        search_space: Dict[str, Union[str, Dict]] = None,
+        experiment_id: str = None,
+        database_path: Union[str, Path] = None,
+        max_runs: int = None,
+        debug: bool = False,
+    ) -> Tuple[Dict, float]:
+        """ Performs a Hyper-Parameter Optimization sweep using orion.
+
+        Changes the values in `self.hparams` iteratively, returning the best hparams
+        found so far.
+
+        Parameters
+        ----------
+        setting : Setting
+            Setting to run the sweep on.
+
+        search_space : Dict[str, Union[str, Dict]], optional
+            Search space of the hyper-parameter optimization algorithm. Defaults to
+            `None`, in which case the result of the `get_search_space` method is used.
+
+        experiment_id : str, optional
+            Unique Id to use when creating the experiment in Orion. Defaults to `None`,
+            in which case a hash of the `setting`'s fields is used.
+
+        database_path : Union[str, Path], optional
+            Path to a pickle file to be used by Orion to store the hyper-parameters and
+            their corresponding values. Default to `None`, in which case the database is
+            created at path `./orion_db.pkl`.
+
+        max_runs : int, optional
+            Maximum number of runs to perform. Defaults to `None`, in which case the run
+            lasts until the search space is exhausted.
+
+        debug : bool, optional
+            Wether to run Orion in debug-mode, where the database is an EphemeralDb,
+            meaning it gets created for the sweep and destroyed at the end of the sweep.
+        
+        Returns
+        -------
+        Tuple[BaselineModel.HParams, float]
+            Best HParams, and the corresponding performance.
+        """
+
+        # TODO: Maybe make this more general than just the BaselineMethod, if there's a
+        # demand for that, so that any other method can use this by just implementing
+        # some simple method like an `adapt_to_new_hparams` or something.
+        from orion.client import build_experiment
+        from orion.core.worker.trial import Trial
+
+        search_space = search_space or self.get_search_space(setting)
+        logger.info("HPO Search space:\n" + json.dumps(search_space, indent="\t"))
+
+        database_path: Path = Path(database_path or "./orion_db.pkl")
+        logger.info(f"Will use database at path '{database_path}'.")
+        experiment_name = self.get_experiment_name(setting, experiment_id=experiment_id)
+
+        experiment = build_experiment(
+            name=experiment_name,
+            space=search_space,
+            debug=debug,
+            algorithms="BayesianOptimizer",
+            max_trials=max_runs,
+            storage={
+                "type": "legacy",
+                "database": {"type": "pickleddb", "host": str(database_path),},
+            },
+        )
+
+        previous_trials: List[Trial] = experiment.fetch_trials_by_status("completed")
+        # Since Orion works in a 'lower is better' fashion, so if the `objective` of the
+        # Results class for the given Setting have "higher is better", we negate the
+        # objectives when extracting them and again before submitting them to Orion.
+        lower_is_better = setting.Results.lower_is_better
+        sign = 1 if lower_is_better else -1
+        if previous_trials:
+            logger.info(
+                f"Using existing Experiment {experiment} which has "
+                f"{len(previous_trials)} existing trials."
+            )
+        else:
+            logger.info(f"Created new experiment with name {experiment_name}")
+
+        trials_performed = 0
+        while not experiment.is_done:
+            # Get a new suggestion of hparams to try:
+            trial: Trial = experiment.suggest()
+
+            ## Re-create the Model with the new suggested Hparams values.
+
+            new_hparams: Dict = trial.params
+            # Inner function, just used to make the code below a bit simpler.
+            # TODO: We should probably also change some values in the Config (e.g.
+            # log_dir, checkpoint_dir, etc) between runs.
+            logger.info(
+                "Suggested values for this run:\n"
+                + json.dumps(new_hparams, indent="\t")
+            )
+
+            self.adapt_to_new_hparams(new_hparams)
+
+            ## Evaluate the method again on the setting:
+            result: Results = setting.apply(self)
+            # Report the results to Orion:
+            orion_result = dict(
+                name=result.objective_name,
+                type="objective",
+                value=sign * result.objective,
+            )
+            experiment.observe(trial, [orion_result])
+            trials_performed += 1
+            logger.info(f"Trial #{trials_performed}: {result.objective_name} = {result.objective}")
+            # Receive the results, maybe log to wandb, whatever you wanna do.
+            self.receive_results(setting, result)
+
+        logger.info("Experiment statistics: \n" + "\n".join(
+            f"\t{key}: {value}" for key, value in experiment.stats.items()
+        ))
+        logger.info(f"Number of previous trials: {len(previous_trials)}")
+        logger.info(f"Trials completed by this worker: {trials_performed}")
+
+        if "best_trials_id" not in experiment.stats:
+            raise RuntimeError("Can't find the best trial, experiment might be broken!")
+
+        best_trial: Trial = experiment.get_trial(uid=experiment.stats["best_trials_id"])
+        best_hparams = best_trial.params
+        best_objective = best_trial.objective
+        return best_hparams, best_objective

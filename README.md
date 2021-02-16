@@ -25,11 +25,25 @@ The goal of this repo is to:
 ## Installation
 Requires python >= 3.7
 
-```console
-git clone https://www.github.com/lebrice/Sequoia.git
-cd Sequoia
-pip install -e .
-```
+1. Clone the repo:
+
+	```console
+	$ git clone https://www.github.com/lebrice/Sequoia.git
+	$ cd Sequoia
+	```
+
+2. Optional: Create the conda environment (only need to do this once):
+
+	```console
+	$ conda create -f environment.yaml
+	$ conda activate sequoia
+	```
+
+3. Install the dependencies:
+
+	```console
+	$ pip install -e .
+	```
 
 ### Additional Installation Steps for Mac
 

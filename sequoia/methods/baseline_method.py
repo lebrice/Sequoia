@@ -36,11 +36,15 @@ from .models import BaselineModel, ForwardPass
 
 logger = get_logger(__file__)
 from sequoia.common.gym_wrappers import IterableWrapper
+
+
 class RenderEnvWrapper(IterableWrapper):
     """ Simple Wrapper that renders the env at each step. """
+
     def step(self, action):
         self.env.render("human")
         return self.env.step(action)
+
 
 @register_method
 @dataclass
@@ -280,7 +284,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         if self.config.render:
             train_env = RenderEnvWrapper(train_env)
 
-
         return self.trainer.fit(
             model=self.model, train_dataloader=train_env, val_dataloaders=valid_env,
         )
@@ -394,6 +397,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             setting_dict = setting.to_dict()
             # BUG: Some settings have non-string keys/value or something?
             from sequoia.utils.utils import flatten_dict
+
             d = flatten_dict(setting_dict)
             experiment_id = compute_identity(size=5, **d)
         assert isinstance(
@@ -419,6 +423,24 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         """
         return self.hparams.get_orion_space()
 
+    def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
+        """Adapts the Method when it receives new Hyper-Parameters to try for a new run.
+
+        It is required that this method be implemented if you want to perform HPO sweeps
+        with Orion.
+        
+        Parameters
+        ----------
+        new_hparams : Dict[str, Any]
+            The new hyper-parameters being recommended by the HPO algorithm. These will
+            have the same structure as the search space.
+        """
+        # Here we overwrite the corresponding attributes with the new suggested values
+        # leaving other fields unchanged.
+        new_hparams = self.hparams.replace(**new_hparams)
+        # Change the hyper-parameters, then reconfigure (which recreates the model).
+        self.hparams = new_hparams
+
     def hparam_sweep(
         self,
         setting: Setting,
@@ -426,149 +448,24 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         experiment_id: str = None,
         database_path: Union[str, Path] = None,
         max_runs: int = None,
+        debug: bool = False,
     ) -> Tuple[BaselineModel.HParams, float]:
-        """ Performs a Hyper-Parameter Optimization sweep using orion.
-
-        Changes the values in `self.hparams` iteratively, returning the best hparams
-        found so far.
-
-        Parameters
-        ----------
-        setting : Setting
-            Setting to run the sweep on.
-
-        search_space : Dict[str, Union[str, Dict]], optional
-            Search space of the hyper-parameter optimization algorithm. Defaults to
-            `None`, in which case the result of the `get_search_space` method is used.
-
-        experiment_id : str, optional
-            Unique Id to use when creating the experiment in Orion. Defaults to `None`,
-            in which case a hash of the `setting`'s fields is used.
-
-        database_path : Union[str, Path], optional
-            Path to a pickle file to be used by Orion to store the hyper-parameters and
-            their corresponding values. Default to `None`, in which case the database is
-            created at path `./orion_db.pkl`.
-
-        max_runs : int, optional
-            Maximum number of runs to perform. Defaults to `None`, in which case the run
-            lasts until the search space is exhausted.
-
-        Returns
-        -------
-        Tuple[BaselineModel.HParams, float]
-            Best HParams, and the corresponding performance.
-        """
-
-        # TODO: Maybe make this more general than just the BaselineMethod, if there's a
-        # demand for that, so that any other method can use this by just implementing
-        # some simple method like an `adapt_to_new_hparams` or something.
-        from orion.client import build_experiment
-        from orion.core.worker.trial import Trial
-
         # Setting max epochs to 1, just to keep runs somewhat short.
         self.trainer_options.max_epochs = 1
-
         # Call 'configure', so that we create `self.model` at least once, which will
         # update the hparams.output_head field to be of the right type. This is
         # necessary in order for the `get_orion_space` to retrieve all the hparams
         # of the output head.
         self.configure(setting)
-        search_space = search_space or self.get_search_space(setting)
-        logger.info("HPO Search space:\n" + json.dumps(search_space, indent="\t"))
 
-        database_path: Path = Path(database_path or "./orion_db.pkl")
-        experiment_name = self.get_experiment_name(setting, experiment_id=experiment_id)
-
-        experiment = build_experiment(
-            name=experiment_name,
-            space=search_space,
-            debug=self.config.debug,
-            algorithms="BayesianOptimizer",
-            max_trials=max_runs,
-            storage={
-                "type": "legacy",
-                "database": {"type": "pickleddb", "host": str(database_path),},
-            },
+        return super().hparam_sweep(
+            setting=setting,
+            search_space=search_space,
+            experiment_id=experiment_id,
+            database_path=database_path,
+            max_runs=max_runs,
+            debug = debug or self.config.debug,
         )
-
-        previous_trials: List[Trial] = experiment.fetch_trials_by_status("completed")
-        previous_hparams: List[BaselineModel.HParams] = [
-            type(self.hparams).from_dict(trial.params) for trial in previous_trials
-        ]
-        # Since Orion works in a 'lower is better' fashion, so if the `objective` of the
-        # Results class for the given Setting have "higher is better", we negate the
-        # objectives when extracting them and again before submitting them to Orion.
-        lower_is_better = setting.Results.lower_is_better
-        sign = 1 if lower_is_better else -1
-        previous_objectives: List[float] = [
-            sign * trial.objective.value for trial in previous_trials
-        ]
-        if previous_objectives:
-            logger.info(
-                f"Using existing Experiment {experiment} which has "
-                f"{len(previous_trials)} existing trials."
-            )
-            best_index = (np.argmin if lower_is_better else np.argmax)(
-                previous_objectives
-            )
-            best_hparams = previous_hparams[best_index]
-            best_objective = previous_objectives[best_index]
-        else:
-            logger.info(f"Created new experiment with name {experiment_name}")
-            best_hparams = self.hparams
-            best_objective = None
-        logger.info(f"Best result encountered so far: {best_objective}")
-        logger.info(f"Best hparams so far: {best_hparams}")
-
-        while not experiment.is_done:
-            # Get a new suggestion of hparams to try:
-            trial: Trial = experiment.suggest()
-
-            ## Re-create the Model with the new suggested Hparams values.
-
-            new_params: Dict = trial.params
-            # Inner function, just used to make the code below a bit simpler.
-            # TODO: We should probably also change some values in the Config (e.g.
-            # log_dir, checkpoint_dir, etc) between runs.
-            logger.info(
-                "Suggested values for this run:\n" + json.dumps(new_params, indent="\t")
-            )
-            # Here we overwrite the corresponding attributes with the new suggested values
-            # leaving other fields unchanged.
-            new_hparams = self.hparams.replace(**new_params)
-            # Change the hyper-parameters, then reconfigure (which recreates the model).
-            self.hparams = new_hparams
-            self.configure(setting)
-
-            ## Evaluate the method again on the setting:
-
-            result: Results = setting.apply(self, config=self.config)
-            experiment.observe(
-                trial,
-                [
-                    dict(
-                        name=result.objective_name,
-                        type="objective",
-                        value=sign * result.objective,
-                    )
-                ],
-            )
-
-            ## Receive the new results.
-            better = operator.lt if lower_is_better else operator.gt
-            if best_objective is None:
-                # First run:
-                best_hparams = self.hparams
-                best_objective = result.objective
-            elif better(result.objective, best_objective):
-                # New best result.
-                best_hparams = self.hparams
-                best_objective = result.objective
-
-            # Receive the results, maybe log to wandb, whatever you wanna do.
-            self.receive_results(setting, result)
-        return best_hparams, best_objective
 
     def receive_results(self, setting: Setting, results: Results):
         """ Receives the results of an experiment, where `self` was applied to Setting

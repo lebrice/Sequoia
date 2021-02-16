@@ -7,6 +7,7 @@ from pytorch_lightning import LightningModule
 from torch import Tensor, nn, optim
 from torch.nn import functional as F
 
+from sequoia.common.hparams import HyperParameters, uniform
 from sequoia.common.loss import Loss
 from sequoia.common.task import Task
 from sequoia.utils import cuda_available
@@ -35,10 +36,10 @@ class AuxiliaryTask(nn.Module):
     preprocessing: ClassVar[Callable[[Tensor, Optional[Tensor]], Tuple[Tensor, Optional[Tensor]]]]
 
     @dataclass
-    class Options(Serializable):
+    class Options(HyperParameters):
         """Settings for this Auxiliary Task. """
         # Coefficient used to scale the task loss before adding it to the total.
-        coefficient: float = 0.
+        coefficient: float = uniform(0., 1., default=1.)
 
     def __init__(self, *args, options: Options = None, name: str = None, **kwargs):
         """Creates a new Auxiliary Task to further train the encoder.

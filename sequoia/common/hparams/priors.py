@@ -110,7 +110,7 @@ class CategoricalPrior(Prior[T]):
             string += str(prob_dict)
         else:
             string += str(self.choices)
-        if self.default_value:
+        if self.default_value is not None:
             assert isinstance(self.default_value, (int, str, float))
             default_value_str = str(self.default_value)
             if isinstance(self.default_value, str):

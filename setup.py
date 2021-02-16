@@ -29,8 +29,11 @@ setup(
     packages=[package for package in find_packages()
                 if package.startswith('sequoia')],
     extras_require={
-        "rl": [
-            "meta_monsterkong @ git+https://github.com/mattriemer/monsterkong_examples.git@sequoia_integration#egg=meta_monsterkong"
+        "monsterkong": [
+            "meta_monsterkong @ git+https://github.com/lebrice/MetaMonsterkong.git#egg=meta_monsterkong"
+        ],
+        "atari": [
+            "gym[atari] @ git+https://www.github.com/lebrice/gym@easier_custom_spaces#egg=gym"
         ],
         "hpo": [
             "orion",
@@ -47,7 +50,10 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "sequoia = sequoia.main:main",
+            "sequoia = sequoia.experiments.experiment:main",
+            # TODO: This entry-point is added temporarily while we redesign the
+            # command-line API (See https://github.com/lebrice/Sequoia/issues/47)
+            "sequoia_sweep = sequoia.experiments.hpo_sweep:main"
         ],
     }
 )

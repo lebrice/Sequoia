@@ -248,7 +248,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 try:
     with redirect_stdout(StringIO()):
-        from monsterkong_randomensemble.make_env import MetaMonsterKongEnv
+        from meta_monsterkong.make_env import MetaMonsterKongEnv
 except ImportError:
     monsterkong_installed = False
 else:

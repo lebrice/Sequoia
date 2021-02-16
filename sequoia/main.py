@@ -1,12 +1,10 @@
 """Runs an experiment, which consist in applying a Method to a Setting.
-
-
 """
 import sequoia.methods
 from sequoia.methods import all_methods
 from sequoia.settings import all_settings
 from sequoia.utils import get_logger
-from sequoia.experiment import Experiment
+from sequoia.experiments import Experiment
 
 logger = get_logger(__file__)
 
@@ -18,11 +16,7 @@ def main():
         f"- {method.get_name()}: {method} ({method.get_path_to_source_file()})" for method in all_methods
     ))
 
-    results = Experiment.main()
-    if results:
-        print("\n\n EXPERIMENT IS DONE \n\n")
-        # Experiment didn't crash, show results:
-        print(f"Results: {results}")
+    return Experiment.main()
 
 
 if __name__ == "__main__":

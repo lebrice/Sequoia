@@ -20,6 +20,7 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader
 
 from sequoia.common.loss import Loss
+from sequoia.common.hparams import uniform
 from sequoia.methods.aux_tasks.auxiliary_task import AuxiliaryTask
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.methods.models.output_heads import ClassificationHead, RegressionHead
@@ -55,7 +56,11 @@ class EWCTask(AuxiliaryTask):
     @dataclass
     class Options(AuxiliaryTask.Options):
         """ Options of the EWC auxiliary task. """
-
+        # Coefficient of the EWC auxilary task.
+        # NOTE: It seems to be the case that, at least just for EWC, the coefficient
+        # can be often be much greater than 1, hence why we overwrite the prior over
+        # that hyper-parameter here.
+        coefficient: float = uniform(0., 100., default=1.)
         # Batchsize to be used when computing FIM (unused atm)
         batch_size_fim: int = 64
         # Number of observations to use for FIM calculation

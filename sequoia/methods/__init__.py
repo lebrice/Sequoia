@@ -28,6 +28,7 @@ class MyMethod(Method, target_setting=ContinualRLSetting):
 
 def register_method(new_method: Type[Method]) -> Type[Method]:
     name = new_method.get_name()
+    # print(f"Registering method with name {name}")
     if new_method not in all_methods:
         for method in all_methods:
             if method.get_name() == name:
@@ -58,14 +59,21 @@ from .random_baseline import RandomBaselineMethod
 
 ## A bit hacky: Dynamically import all the modules/packages defined in this
 # folder. This way, we register the methods as they are declared.
-modules = glob.glob(join(dirname(__file__), "*"))
-# TODO: Should use setuptools.find_packages instead
 source_dir = Path(os.path.dirname(__file__))
 
 all_modules = find_packages(where=source_dir)
+# Add all non-package modules (i.e. all *.py files in this methods folder), for example
+# ewc_method.py.
+all_modules.extend(
+    [
+        file.relative_to(source_dir).stem for file in Path(source_dir).glob("*.py")
+        if not file.name.endswith("_test.py") and file.name != "__init__.py"
+    ]
+)
 
 for module in all_modules:
     try:
+        # print(f"Importing module sequoia.methods.{module}")
         import_module(f"sequoia.methods.{module}")
     except ImportError as e:
         warnings.warn(RuntimeWarning(f"Couldn't import Method from module methods/{module}: {e}"))

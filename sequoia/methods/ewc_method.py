@@ -29,21 +29,19 @@ class EwcModel(BaselineModel):
     @dataclass
     class HParams(BaselineModel.HParams):
         """ Hyper-parameters of the `EwcModel`. """
-
         # Hyper-parameters related to the EWC auxiliary task.
-        ewc: EWCTask.Options = mutable_field(EWCTask.Options, coefficient=100)
+        ewc: EWCTask.Options = mutable_field(EWCTask.Options)
 
     def __init__(self, setting: Setting, hparams: "EwcModel.HParams", config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
         self.hp: EwcModel.HParams
-        # BUG: mutable_field doesn't seem to work correctly, should use default value
-        # of 100!
-        self.add_auxiliary_task(EWCTask(options=self.hp.ewc), coefficient=100)
+        # BUG: mutable_field doesn't seem to work correctly: Doesn't use default value.
+        self.add_auxiliary_task(EWCTask(options=self.hp.ewc))
 
     def create_auxiliary_tasks(self) -> Dict[str, AuxiliaryTask]:
         tasks = super().create_auxiliary_tasks()
         # NOTE: We don't add it here, since we already do this above in __init__.
-        # We could add aux tasks this way as well though.
+        # We could also add the aux tasks this way as well:
         # tasks["ewc"] = EWCTask(options=self.hp.ewc)
         return tasks
 
@@ -59,7 +57,6 @@ class EwcMethod(BaselineMethod, target_setting=IncrementalSetting):
     This Method is applicable to any CL setting (RL or SL) where there are clear task
     boundaries, regardless of if the task labels are given or not.
     """
-
     hparams: EwcModel.HParams = mutable_field(EwcModel.HParams)
 
     def __init__(

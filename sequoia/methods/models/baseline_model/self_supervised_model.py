@@ -81,6 +81,9 @@ class SelfSupervisedModel(BaseModel[SettingType]):
                 f"Adding auxiliary task with name {key}, but with coefficient of 0.!"
             ))
 
+        if aux_task.coefficient:
+            aux_task.enable()
+
     def create_auxiliary_tasks(self) -> Dict[str, AuxiliaryTask]:
         # Share the relevant parameters with all the auxiliary tasks.
         # We do this by setting class attributes.
