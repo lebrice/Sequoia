@@ -103,7 +103,8 @@ loguniform = log_uniform
 def categorical(*choices: T, default: T = None, probabilities: Union[List[float], Dict[str, float]] = None, **kwargs: Any) -> T:
     """ Marks a field as being a categorical hyper-parameter.
 
-    This wraps the `choice` function from `simple_parsing`.
+    This wraps the `choice` function from `simple_parsing`, making it possible to choose
+    the value from the command-line.
 
     Returns:
         T: the result of the usual `dataclasses.field()` function (a dataclass field).

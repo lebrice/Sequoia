@@ -97,12 +97,10 @@ class SB3BaseHParams(HyperParameters):
 
     The command-line arguments for these are created with simple-parsing.
     """
-
     # The policy model to use (MlpPolicy, CnnPolicy, ...)
     policy: Optional[Union[str, Type[BasePolicy]]] = choice(
         "MlpPolicy", "CnnPolicy", default=None
     )
-
     # # The base policy used by this method
     # policy_base: Type[BasePolicy]
 
