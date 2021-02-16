@@ -12,6 +12,7 @@ for ln in lines:
     if ln:  # if requirement is not empty
         packages_pip.append(ln)
 
+packages_git = []
 
 setup(
     name="sequoia",
