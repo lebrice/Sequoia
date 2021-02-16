@@ -8,7 +8,7 @@ from sequoia.common.gym_wrappers import MultiTaskEnvironment
 from gym import Env, Wrapper
 from gym.envs.classic_control import CartPoleEnv
 from gym import spaces
-
+from sequoia.conftest import param_requires_atari_py
 from .async_vector_env import AsyncVectorEnv
 
 @pytest.fixture()
@@ -19,7 +19,7 @@ def allow_remote_getattr(monkeypatch):
 
 @pytest.mark.parametrize("env_name, expected_obs_shape", [
     ("CartPole-v0", (4,)),    
-    ("Breakout-v0", (210, 160, 3)),    
+    param_requires_atari_py("Breakout-v0", (210, 160, 3)),    
 ])
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
 def test_spaces(batch_size: int, env_name: str, expected_obs_shape: Tuple[int, ...]):

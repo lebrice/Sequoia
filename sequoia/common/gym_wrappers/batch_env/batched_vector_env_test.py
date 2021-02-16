@@ -10,11 +10,12 @@ import pytest
 
 from .batched_vector_env import BatchedVectorEnv
 
-from sequoia.conftest import DummyEnvironment, slow_param, slow
+from sequoia.conftest import DummyEnvironment, slow_param, slow, atari_py_required, param_requires_atari_py
 
 from sequoia.common.gym_wrappers.multi_task_environment import MultiTaskEnvironment
 
 
+@atari_py_required
 @pytest.mark.parametrize("batch_size", [1, 5, slow_param(11), slow_param(24)])
 @pytest.mark.parametrize("n_workers", [1, 3, None])
 def test_space_with_tuple_observations(batch_size: int, n_workers: Optional[int]):
@@ -181,7 +182,7 @@ def test_render_human():
             env.viewer.window
 
 
-@pytest.mark.parametrize("env_name", ["CartPole-v0", "Pendulum-v0", "Breakout-v0"])
+@pytest.mark.parametrize("env_name", ["CartPole-v0", "Pendulum-v0", param_requires_atari_py("Breakout-v0")])
 def test_with_pixelobservationwrapper_before_batch(env_name: str):
     """ Test out what happens if we put the PixelObservationWrapper before the 
     batching, i.e. in each of the environments.

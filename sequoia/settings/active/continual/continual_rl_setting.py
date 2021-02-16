@@ -12,7 +12,6 @@ from typing import (Callable, ClassVar, Dict, List, Optional, Sequence, Type,
 import gym
 import numpy as np
 from gym import spaces
-# from gym.envs.atari import AtariEnv
 from gym.envs.classic_control import CartPoleEnv
 from gym.utils import colorize
 from gym.wrappers import AtariPreprocessing, TimeLimit
@@ -133,6 +132,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         "breakout": "Breakout-v0",
         # "duckietown": "Duckietown-straight_road-v0"
     }
+    # TODO: Add breakout to 'available_datasets' only when atari_py is installed. 
+    
     # Which environment (a.k.a. "dataset") to learn on.
     # The dataset could be either a string (env id or a key from the
     # available_datasets dict), a gym.Env, or a callable that returns a single environment.

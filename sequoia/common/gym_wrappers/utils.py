@@ -31,8 +31,11 @@ def is_atari_env(env: Union[str, gym.Env]) -> bool:
     # way to do this.
     if isinstance(env, str) and env.startswith("Breakout"):
         return True
-    if isinstance(env, gym.Env) and isinstance(env.unwrapped, AtariEnv):
-        return True
+    try:
+        from gym.envs.atari import AtariEnv
+        return isinstance(env, gym.Env) and isinstance(env.unwrapped, AtariEnv)
+    except gym.error.DependencyNotInstalled:
+        return False
     return False
 
 logger = get_logger(__file__)

@@ -32,7 +32,7 @@ Requires python >= 3.7
 	$ cd Sequoia
 	```
 
-2. Optional: Create the conda environment (only need to do this once):
+2. Optional: Create the conda environment (only once):
 
 	```console
 	$ conda create -f environment.yaml

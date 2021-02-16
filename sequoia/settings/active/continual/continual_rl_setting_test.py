@@ -9,7 +9,7 @@ from gym import spaces
 from sequoia.common.config import Config
 from sequoia.common.spaces import Sparse
 from sequoia.common.transforms import ChannelsFirstIfNeeded, ToTensor, Transforms
-from sequoia.conftest import xfail_param
+from sequoia.conftest import xfail_param, param_requires_atari_py
 from sequoia.utils.utils import take
 
 from .continual_rl_setting import ContinualRLSetting
@@ -40,8 +40,8 @@ def test_task_schedule_is_used():
 @pytest.mark.parametrize(
     "dataset, expected_obs_shape", [
         ("CartPole-v0", (3, 400, 600)),
-        # ("Breakout-v0", (3, 210, 160)), 
-        ("Breakout-v0", (3, 84, 84)), # Since the AtariWrapper gets added by default
+        # param_requires_atari_py("Breakout-v0", (3, 210, 160)), 
+        param_requires_atari_py("Breakout-v0", (3, 84, 84)), # Since the AtariWrapper gets added by default
         # ("duckietown", (120, 160, 3)),
     ],
 )

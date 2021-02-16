@@ -40,7 +40,7 @@ from sequoia.conftest import skipif_param
     ],
 )
 def test_convert_tensors_wrapper(device: Union[str, torch.device]):
-    env_name = "Breakout-v0"
+    env_name = "CartPole-v0"
     env = gym.make(env_name)
     env = ConvertToFromTensors(env, device=device)
     obs = env.reset()
