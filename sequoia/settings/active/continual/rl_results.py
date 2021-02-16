@@ -25,7 +25,7 @@ class RLResults(IncrementalSetting.Results, Results):
     TODO: Actually implement this, making sure that the metrics/plots this
     creates make sense.
     """
-    objective_name: ClassVar[str] = "Mean Reward"
+    objective_name: ClassVar[str] = "Mean reward per episode"
       
     episode_rewards: List[List[float]] = list_field(repr=False)
     episode_lengths: List[List[int]] = list_field(repr=False)
@@ -45,13 +45,19 @@ class RLResults(IncrementalSetting.Results, Results):
 
     @property
     def objective(self) -> float:
-        return self.mean_reward
+        return self.mean_reward_per_episode
     
     @property
     def mean_reward(self):
         average_metric = self.average_metrics
         return average_metric.mse
 
+    @property
+    def mean_reward_per_episode(self) -> float:
+        # Concatenate all the episodes from all tasks.
+        all_episode_rewards: List[float] = sum(self.episode_rewards, [])
+        return float(np.mean(all_episode_rewards))
+    
     @property
     def mean_episode_length(self) -> int:
         all_episode_lengths = sum(self.episode_lengths, [])
