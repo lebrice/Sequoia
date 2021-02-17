@@ -56,3 +56,7 @@ def test_domain_incremental_mnist_setup():
             assert rewards is not None
             y = rewards.y
             assert ((0 <= y) & (y < setting.n_classes_per_task)).all()
+
+
+def test_import_iid_setting_from_domain_incremental_package():
+    from . import IIDSetting

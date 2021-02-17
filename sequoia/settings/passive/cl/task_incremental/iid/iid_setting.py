@@ -14,7 +14,8 @@ from sequoia.common.config import Config
 from sequoia.settings.base import Results
 from sequoia.utils.utils import constant, dict_union
 
-from .. import TaskIncrementalSetting
+from sequoia.settings.passive.cl.task_incremental.task_incremental_setting import TaskIncrementalSetting
+from sequoia.settings.passive.cl.domain_incremental.domain_incremental_setting import DomainIncrementalSetting
 from .iid_results import IIDResults
 
 # TODO: Remove the task labels here.
@@ -31,16 +32,21 @@ from .iid_results import IIDResults
 
 
 @dataclass
-class IIDSetting(TaskIncrementalSetting):
-    """Your 'usual' learning Setting, where the samples are i.i.d.
+class IIDSetting(TaskIncrementalSetting, DomainIncrementalSetting):
+    """Your 'usual' supervised learning Setting, where the samples are i.i.d.
     
-    Implemented as a variant of Task-Incremental CL, but with only one task.
-    
+    This Setting is slightly different than the others, in that it can be recovered in
+    *two* different ways:
+    - As a variant of Task-Incremental learning, but where there is only one task;
+    - As a variant of Domain-Incremental learning, but where there is only one task.
     """
     Results: ClassVar[Type[Results]] = IIDResults
 
-    # Held constant, since this is an IID setting.
+    # Number of tasks, held constant, since this is an IID setting.
+    # TODO: This setting could also be a 'multi-task' Supervised learning setting, if
+    # this were to be left 'floating'.
     nb_tasks: int = constant(1)
+
     increment: Union[int, List[int]] = constant(None)
     # A different task size applied only for the first task.
     # Desactivated if `increment` is a list.
