@@ -5,24 +5,21 @@ import json
 import os
 import shlex
 import sys
-from pathlib import Path
 from collections import defaultdict
 from dataclasses import InitVar, dataclass
-from inspect import isabstract, isclass
-from typing import Dict, List, Optional, Tuple, Type, TypeVar, Union, Any
-from simple_parsing import ArgumentParser, ConflictResolution
 from functools import partial
-from simple_parsing import ArgumentParser, choice, field, mutable_field, subparsers
+from inspect import isabstract, isclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
+
+import sequoia.methods
+from simple_parsing import (ArgumentParser, ConflictResolution, choice, field,
+                            mutable_field, subparsers)
 
 from sequoia.common.config import Config
 from sequoia.methods import Method, all_methods
-from sequoia.settings import (
-    ClassIncrementalResults,
-    Results,
-    Setting,
-    SettingType,
-    all_settings,
-)
+from sequoia.settings import (ClassIncrementalResults, Results, Setting,
+                              SettingType, all_settings)
 from sequoia.utils import Parseable, Serializable, get_logger
 from sequoia.utils.logging_utils import get_logger
 
@@ -480,3 +477,13 @@ def check_has_descendants(potential_classes: List[Type[Method]]) -> List[bool]:
 
     return [_has_descendant(method) for method in potential_classes]
 
+
+def main():
+    logger.debug("Registered Settings: \n" + "\n".join(
+        f"- {setting.get_name()}: {setting} ({setting.get_path_to_source_file()})" for setting in all_settings
+    ))
+    logger.debug("Registered Methods: \n" + "\n".join(
+        f"- {method.get_name()}: {method} ({method.get_path_to_source_file()})" for method in all_methods
+    ))
+
+    return Experiment.main()
