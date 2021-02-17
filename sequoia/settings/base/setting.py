@@ -22,41 +22,44 @@ import inspect
 import itertools
 import os
 import shlex
+import sys
 from abc import abstractmethod
 from argparse import Namespace
 from dataclasses import InitVar, dataclass, fields, is_dataclass
-from inspect import getsourcefile, isclass
 from functools import partial
+from inspect import getsourcefile, isclass
 from pathlib import Path
 from typing import *
 
 import gym
-import torch
 import numpy as np
+import torch
 from gym import spaces
 from pytorch_lightning import LightningDataModule
 from pytorch_lightning.core.datamodule import _DataModuleWrapper
-from simple_parsing import (ArgumentParser, Serializable, list_field,
-                            mutable_field, subparsers, field, choice)
+from simple_parsing import (ArgumentParser, Serializable, choice, field,
+                            list_field, mutable_field, subparsers)
 from torch import Tensor
 from torch.utils.data import DataLoader
 
 from sequoia.common.config import Config
 from sequoia.common.loss import Loss
 from sequoia.common.metrics import Metrics
-from sequoia.common.transforms import Compose, Transforms, Transform, SplitBatch
-from sequoia.utils import Parseable, camel_case, dict_union, get_logger, remove_suffix, take
-
+from sequoia.common.transforms import (Compose, SplitBatch, Transform,
+                                       Transforms)
+from sequoia.settings.presets import setting_presets
+from sequoia.utils import (Parseable, camel_case, dict_union, get_logger,
+                           remove_suffix, take)
+from .environment import Actions, Environment, Observations, Rewards
 from .results import Results
 from .setting_meta import SettingMeta
-from .environment import Environment, Observations, Actions, Rewards
 
 logger = get_logger(__file__)
 
 EnvironmentType = TypeVar("EnvironmentType", bound=Environment)
 SettingType = TypeVar("SettingType", bound="Setting")
 
-from  .bases import SettingABC, Method
+from .bases import Method, SettingABC
 
 
 @dataclass
@@ -536,9 +539,6 @@ class Setting(SettingABC,
         # If the provided benchmark isn't a path, try to get the value from
         # the `setting_presets` dict. If it isn't in the dict, raise an
         # error.
-        from sequoia.experiment import setting_presets
-        import sys
-        
         if not Path(benchmark).is_file():
             if benchmark in setting_presets:
                 benchmark = setting_presets[benchmark]

@@ -20,23 +20,13 @@ from sequoia.common.config import Config
 from sequoia.methods import Method, all_methods
 from sequoia.settings import (ClassIncrementalResults, Results, Setting,
                               SettingType, all_settings)
+from sequoia.settings.presets import setting_presets
 from sequoia.utils import Parseable, Serializable, get_logger
 from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
 source_dir = Path(os.path.dirname(__file__))
-presets_dir = source_dir / "settings" / "presets"
-
-setting_presets = {
-    "cartpole_state": presets_dir / "cartpole_state.yaml",
-    "cartpole_pixels": presets_dir / "cartpole_pixels.yaml",
-    "mnist": presets_dir / "mnist.yaml",
-    "fashion_mnist": presets_dir / "fashion_mnist.yaml",
-    "cifar10": presets_dir / "cifar10.yaml",
-    "cifar100": presets_dir / "cifar100.yaml",
-    "monsterkong": presets_dir / "monsterkong_pixels.yaml",
-}
 
 
 @dataclass

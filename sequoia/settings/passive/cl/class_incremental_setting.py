@@ -639,7 +639,8 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
                      **kwargs) -> _ContinuumDataset:
         # TODO: #7 Use this method here to fix the errors that happen when
         # trying to create every single dataset from continuum.
-        
+        if not data_dir.exists():
+            data_dir.mkdir(parents=True, exist_ok=True)
         
         if self.dataset in self.available_datasets:
             dataset_class = self.available_datasets[self.dataset]   
