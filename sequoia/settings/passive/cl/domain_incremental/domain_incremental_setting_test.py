@@ -60,3 +60,4 @@ def test_domain_incremental_mnist_setup():
 
 def test_import_iid_setting_from_domain_incremental_package():
     from . import IIDSetting
+    from sequoia.settings.passive.cl.domain_incremental.iid import IIDResults
