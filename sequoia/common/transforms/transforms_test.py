@@ -1,11 +1,14 @@
-import gym
-from gym import spaces
-import pytest
-import numpy as np
-from typing import Tuple
-import torch
-import PIL.Image
+from dataclasses import dataclass, field
+from typing import Tuple, List
 
+import gym
+import numpy as np
+import PIL.Image
+import pytest
+import torch
+from gym import spaces
+
+from sequoia.utils.serialization import Serializable
 from . import (ChannelsFirst, ChannelsFirstIfNeeded, ChannelsLast, Compose,
                ThreeChannels, Transforms)
 
@@ -79,6 +82,19 @@ def test_transform(transform: Transforms, input_shape, output_shape):
     # Apply the transform onto the input space directly: 
     actual_output_space = transform(input_space)
     assert actual_output_space == output_space
+    
+    # TODO: Test that serializing / deserializing the transforms works correctly.
+    @dataclass
+    class Foo(Serializable):
+        transforms: List[Transforms] = field(default_factory=list)
+
+    foo = Foo(transforms=[transform])
+    foo_ = Foo.loads_json(foo.dumps_json())
+    assert foo_ == foo
+    assert Compose(foo_.transforms)(x).shape == output_shape
+    assert Compose(foo_.transforms)(input_space) == output_space
+    
+    
 
 from PIL.Image import Image
 
@@ -128,7 +144,8 @@ def test_compose_applied_on_shape():
     assert x.shape == transform(start_shape) == (3, 9, 9)
 
 import gym
-from sequoia.common.gym_wrappers import PixelObservationWrapper, TransformObservation
+from sequoia.common.gym_wrappers import (PixelObservationWrapper,
+                                         TransformObservation)
 
 
 def test_channels_first_transform_on_gym_env():

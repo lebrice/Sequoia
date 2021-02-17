@@ -9,6 +9,9 @@ from pprint import pprint
 from typing import (Any, Callable, Dict, Iterable, List, Optional, Sequence,
                     Tuple, Type, TypeVar, Union)
 
+
+from typing import Type, get_type_hints
+from inspect import isfunction
 import numpy as np
 import torch
 from torch import Tensor, nn
@@ -108,3 +111,45 @@ class Serializable(SerializableBase, Pickleable, decode_into_subclasses=True):  
         elif not isinstance(other, dict):
             raise RuntimeError(f"Can't merge self with {other}.")
         return type(self).from_dict(dict_union(self_dict, other))
+
+
+class decode:    
+    @staticmethod
+    def register(fn_or_type: Type = None):
+        """ Decorator to be used to register a decoding function for a given type.
+        
+        This can be used in two different ways. The type annotation can either be
+        explicit, like so:
+        ```python
+        @decode.register(SomeType)
+        def decode_some_type(v: str):
+           return SomeType(v)  # return an instance of SomeType from a string.
+        ```
+        or implicitly determined through the return type annotation, like so:
+        ```
+        @decode.register
+        def decode_some_type(v: str) -> SomeType:
+           (...)
+        ```
+
+        In the end, this just calls `register_decoding_fn(SomeType, decode_some_type)`.        
+        """
+        def _wrapper(fn):
+            if fn_or_type is not None:
+                type_ = fn_or_type
+            else:
+                type_hints = get_type_hints(fn)
+                if "return" not in type_hints:
+                    raise RuntimeError(
+                        f"Need to either explicitly pass a type to `register`, or use "
+                        f"a return type annotation (e.g. `-> Foo:`) on the function!"
+                    )
+                type_ = type_hints["return"]
+            register_decoding_fn(type_, fn)            
+            return fn
+
+        if isfunction(fn_or_type):
+            fn = fn_or_type
+            fn_or_type = None
+            return _wrapper(fn)
+        return _wrapper
