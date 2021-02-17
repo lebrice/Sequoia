@@ -396,10 +396,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                                                 high=self.reward_range[1],
                                                 shape=()))
         del temp_env
-        # This attribute will hold a reference to the `on_task_switch` method of
-        # the Method being currently applied on this setting.
-        self.on_task_switch_callback: Callable[[Optional[int]], None] = None
-        
+
         self.train_env: gym.Env
         self.valid_env: gym.Env
         self.test_env: gym.Env
@@ -456,7 +453,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         
         # TODO: Test to make sure that this doesn't cause any other bugs with respect to
         # the display of stuff:
-        # Call this method, creating a virtual display if necessary.
+        # Call this method, which creates a virtual display if necessary.
         self.config.get_display()
 
         # TODO: Should we really overwrite the method's 'config' attribute here?
@@ -468,22 +465,15 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # `configure` methods aren't using the `method` anyway.)
         method.configure(setting=self)
 
+        # BUG This won't work if the task schedule uses callables as the values (as
+        # they aren't json-serializable.)
         if self._new_random_task_on_reset:
             logger.info(f"Train tasks: " + json.dumps(list(self.train_task_schedule.values()), indent="\t"))
         else:
             logger.info(f"Train task schedule:" + json.dumps(self.train_task_schedule, indent="\t"))
-            
+
         # Run the Training loop (which is defined in IncrementalSetting).
         self.train_loop(method)
-
-        # Store a reference to the method's 'on_task_switch' method.
-        if self.known_task_boundaries_at_test_time:
-            self.on_task_switch_callback = getattr(method, "on_task_switch", None)
-            if self.on_task_switch_callback is None:
-                logger.warning(UserWarning(
-                    f"Task boundaries are available at test time, but the "
-                    f"method doesn't have an 'on_task_switch' callback."
-                ))
 
         if self.config.debug:
             logger.debug(f"Test task schedule:" + json.dumps(self.test_task_schedule, indent="\t"))
