@@ -185,7 +185,7 @@ class MultiHeadModel(BaseModel[SettingType]):
             for task_id, task_indices in task_indices.items():
                 # Take the elements for that task and create a new Observation of the
                 # same type.
-                partial_observation = get_slice(observations, task_indices)
+                partial_observation = observations.slice(task_indices)
                 logger.debug(
                     f"Doing partial forward for "
                     f"{len(task_indices)/batch_size:.0%} of the batch which "

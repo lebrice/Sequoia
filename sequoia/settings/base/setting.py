@@ -164,16 +164,6 @@ class Setting(SettingABC,
         self._action_space = action_space
         self._reward_space = reward_space
 
-        # TODO: Testing out an idea: letting the transforms tell us how
-        # they change the shape of the observations.
-        # if x_shape and self.transforms:
-        #     logger.debug(f"x shape before transforms: {x_shape}")
-        #     x_shape: Tuple[int, ...] = self.transforms.shape_change(x_shape)
-        #     logger.debug(f"x shape after transforms: {x_shape}")
-        # self.observation_space = x_shape
-        # TODO: We have to set the 'dims' property from LightningDataModule so
-        # that models know the input dimensions.
-        # This should probably be set on `self` inside of `apply` call.
         # TODO: It's a bit confusing to also have a `config` attribute on the
         # Setting. Might want to change this a bit.
         self.config: Config = None

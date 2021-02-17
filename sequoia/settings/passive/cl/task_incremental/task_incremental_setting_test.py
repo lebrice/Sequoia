@@ -28,15 +28,15 @@ def check_only_right_classes_present(setting: TaskIncrementalSetting):
         batch_size = 5
         train_loader = setting.train_dataloader(batch_size=batch_size)
         
-        # # Find out which classes are supposed to be within this task.
-        classes_of_task = setting.current_task_classes(train=True)
-
+        # get the classes in the current task:
+        task_classes = setting.task_classes(i, train=True)
+        
         for j, (observations, rewards) in enumerate(itertools.islice(train_loader, 100)):
             x = observations.x
             t = observations.task_labels
             y = rewards.y
             print(i, j, y, t)
-            assert all(y < setting.n_classes_per_task)
+            assert all(y_i in task_classes for y_i in y.tolist())
             assert x.shape == (batch_size, 3, 28, 28)
             x = x.permute(0, 2, 3, 1)[0]
             assert x.shape == (28, 28, 3)
@@ -47,7 +47,7 @@ def check_only_right_classes_present(setting: TaskIncrementalSetting):
         train_loader.close()
 
 
-def test_class_incremental_mnist_setup():
+def test_task_incremental_mnist_setup():
     setting = TaskIncrementalSetting(
         dataset="mnist",
         increment=2,
@@ -73,6 +73,7 @@ def test_class_incremental_mnist_setup_reversed_class_order():
     setting.prepare_data(data_dir="data")
     setting.setup()
     check_only_right_classes_present(setting)
+
 
 def test_class_incremental_mnist_setup_with_nb_tasks():
     setting = TaskIncrementalSetting(

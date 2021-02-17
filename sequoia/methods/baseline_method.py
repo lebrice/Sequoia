@@ -283,7 +283,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         )
         if self.config.render:
             train_env = RenderEnvWrapper(train_env)
-
+        # BUG: There seems to be a bug related to the number of training epochs!
         return self.trainer.fit(
             model=self.model, train_dataloader=train_env, val_dataloaders=valid_env,
         )
@@ -480,7 +480,11 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             if dataset and isinstance(dataset, str):
                 wandb.summary["dataset"] = dataset
             wandb.log(results.to_log_dict())
-            wandb.log(results.make_plots())
+            # BUG: Bug in plotly?
+            # File "/home/fabrice/miniconda3/envs/sequoia/lib/python3.8/site-packages/plotly/matplotlylib/mplexporter/utils.py", line 246, in get_grid_style
+            # if axis._gridOnMajor and len(gridlines) > 0:
+            # AttributeError: 'XAxis' object has no attribute '_gridOnMajor'
+            # wandb.log(results.make_plots())
             wandb.run.finish()
         # Reset the run name so we create a new one next time we're applied on a
         # Setting.

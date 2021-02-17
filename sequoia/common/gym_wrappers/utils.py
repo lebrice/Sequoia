@@ -148,6 +148,12 @@ class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
             # logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.send.")
             return EnvDataset.send(self, action)
 
+        if hasattr(self.env, "send"):
+            action = self.action(action)
+            reward = self.env.send(action)
+            reward = self.reward(reward)
+            return reward
+
     def __iter__(self) -> Iterator:
         # Option 1: Return the iterator from the wrapped env. This ignores
         # everything in the wrapper.

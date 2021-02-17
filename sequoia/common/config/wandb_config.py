@@ -60,7 +60,7 @@ class WandbLoggerConfig(Serializable, Parseable):
     # Which user to use
     entity: str = ""
     # The name of the project to which this run will belong.
-    project: str = "sequoia"
+    project: str = "sweep"
     # Name used to easily group runs together.
     # Used to create a parent folder that will contain the `run_name` directory.
     # A unique string shared by all runs in a given group
@@ -84,10 +84,11 @@ class WandbLoggerConfig(Serializable, Parseable):
     version: Optional[str] = None
     # Save checkpoints in wandb dir to upload on W&B servers.
     log_model: bool = False
-    
+
     monitor_gym: bool = True
-    
+
     def make_logger(self, wandb_parent_dir: Path) -> WandbLogger:
+        logger.info(f"Creating a WandbLogger with using options {self}.")
         wandb_logger = WandbLogger(
             name=self.run_name,
             save_dir=str(wandb_parent_dir),
@@ -110,9 +111,9 @@ class WandbLoggerConfig(Serializable, Parseable):
 class WandbConfig(Serializable):
     """ Set of configurations options for calling wandb.init directly. """
     # Which user to use
-    entity: str = "lebrice"
+    entity: str = ""
 
-    project_name: str = "SSCL_replay" # project name to use in wandb.
+    project_name: str = "" # project name to use in wandb.
     # Name used to easily group runs together.
     # Used to create a parent folder that will contain the `run_name` directory. 
     run_group: Optional[str] = None

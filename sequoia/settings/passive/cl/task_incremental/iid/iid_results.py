@@ -13,16 +13,16 @@ from simple_parsing import list_field
 from sequoia.common import ClassificationMetrics, Loss, Metrics, RegressionMetrics
 from sequoia.settings.base.results import Results
 from sequoia.utils.plotting import PlotSectionLabel, autolabel
-
-from .. import TaskIncrementalResults
+from sequoia.settings.passive.cl.class_incremental_results import ClassIncrementalResults
 
 
 @dataclass
-class IIDResults(TaskIncrementalResults):
+class IIDResults(ClassIncrementalResults):
     """Results of applying a Method on an IID Setting.    
     TODO: This should be customized, as it doesn't really make sense to use the
     same plots as in ClassIncremental (there is only one task).
     """
+
     test_metrics: List[Metrics] = list_field(repr=False)
 
     def __post_init__(self):
@@ -34,18 +34,18 @@ class IIDResults(TaskIncrementalResults):
         save_dir = Path(save_dir)
         save_dir.mkdir(exist_ok=True, parents=True)
         plots: Dict[str, plt.Figure] = self.make_plots()
-        
+
         # Save the actual 'results' object to a file in the save dir.
         results_json_path = save_dir / "results.json"
         self.save(results_json_path)
         print(f"Saved a copy of the results to {results_json_path}")
-        
+
         print(f"\nPlots: {plots}\n")
         for fig_name, figure in plots.items():
             print(f"fig_name: {fig_name}")
             # figure.show()
             # plt.waitforbuttonpress(10)
-            path = (save_dir/ fig_name).with_suffix(".jpg")
+            path = (save_dir / fig_name).with_suffix(".jpg")
             path.parent.mkdir(exist_ok=True, parents=True)
             figure.savefig(path)
             print(f"Saved figure at path {path}")
@@ -53,9 +53,7 @@ class IIDResults(TaskIncrementalResults):
     def make_plots(self) -> Dict[str, plt.Figure]:
         plots_dict = super().make_plots()
         # TODO: Could add a Confusion Matrix plot?
-        plots_dict.update({
-            "class_accuracies": self.class_accuracies_plot()
-        })
+        plots_dict.update({"class_accuracies": self.class_accuracies_plot()})
         return plots_dict
 
     def class_accuracies_plot(self):

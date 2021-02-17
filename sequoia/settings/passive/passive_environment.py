@@ -52,8 +52,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
                  action_space: gym.Space = None,
                  reward_space: gym.Space = None,
                  n_classes: int = None,
-                 adjust_spaces_with_data: bool = True,
-                #  pretend_to_be_active: bool = False,
+                 pretend_to_be_active: bool = False,
                  **kwargs):
         """Creates the DataLoader/Environment for the given dataset.
 
@@ -100,6 +99,8 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self.action_space: gym.Space = add_tensor_support(action_space)
         self.reward_space: gym.Space = add_tensor_support(reward_space)
 
+        self.pretend_to_be_active = pretend_to_be_active
+    
         self.n_classes: Optional[int] = n_classes
         self._iterator: Optional[_BaseDataLoaderIter] = None
         # NOTE: These here are never processed with self.observation or self.reward. 
@@ -109,6 +110,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self._done: Optional[bool] = None
         self._closed: bool = False
         
+        
         # from gym.envs.classic_control.rendering import SimpleImageViewer
         self.viewer = None
 
@@ -117,7 +119,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         Returns the first batch of observations.
         """
         del self._iterator
-        self._iterator = self.__iter__()
+        self._iterator = super().__iter__()
         self._previous_batch = None
         self._current_batch = self.get_next_batch()
         self._done = False
@@ -179,7 +181,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             return self.viewer.isopen
 
         raise NotImplementedError(f"Unsuported mode {mode}")
-    
+
     def get_next_batch(self) -> Tuple[ObservationType, RewardType]:
         """Gets the next batch from the underlying dataset.
 
@@ -192,10 +194,14 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             [description]
         """
         if self._iterator is None:
-            self._iterator = self.__iter__()
-        batch = next(self._iterator)
-        # if self.split_batch_fn:
-        #     batch = self.split_batch_fn(batch)
+            self._iterator = super().__iter__()
+        try:
+            batch = next(self._iterator)
+        except StopIteration:
+            batch = None
+
+        if self.split_batch_fn and batch is not None:
+            batch = self.split_batch_fn(batch)
         return batch
         # obs, reward = batch
         # return self.observation(obs), self.reward(reward)
@@ -207,9 +213,6 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             raise gym.error.ResetNeeded("Need to reset the env before calling step.")
         if self._done:
             raise gym.error.ResetNeeded("Need to reset the env since it is done.")
-
-        # IDEA: Let subclasses customize how the action impacts the env?
-        self.use_action(action)
         
         # Transform the Action, if needed:
         action = self.action(action)
@@ -219,9 +222,10 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self._previous_batch = self._current_batch
         if self._next_batch is None:
             # This should only ever happen right after resetting.
-            self._next_batch = next(self._iterator, None)
+            self._next_batch = self.get_next_batch()
         self._current_batch = self._next_batch
-        self._next_batch = next(self._iterator, None)
+        self._next_batch = self.get_next_batch()
+        # self._next_batch = self._observations, self._rewards
 
         assert self._previous_batch is not None
 
@@ -277,16 +281,6 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             [description]
         """
         return reward
-    
-    def use_action(self, action):
-        """ Override this method if you want the actions to affect the env
-        somehow. (You could also just override the `step` method, I guess).
-        
-        Parameters
-        ----------
-        action : [type]
-            [description]
-        """
 
     def get_info(self) -> Dict:
         """Returns the dict to be returned as the 'info' in step().
@@ -327,18 +321,16 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             self._observations = self.observation(observations)
             self._rewards = self.reward(rewards)
 
-            # if self.pretend_to_be_active:
-            #     # TODO: Should we yield one item, or two?
-            #     yield self._observations, None
-            # else:
-            yield self._observations, self._rewards
+            if self.pretend_to_be_active:
+                yield self._observations, None
+            else:
+                yield self._observations, self._rewards
 
     def send(self, action: Actions) -> Rewards:
         """ Return the last latch of rewards from the dataset (which were
         withheld if in 'active' mode)
         """
-        # TODO: work in progress, if you're gonna pretend this is an "
-        # 'active' environment, then it might be better to just use the gym API
-        # for now.
-        # assert self.action_space.contains(action), action
-        return None
+        if self.pretend_to_be_active:
+            return self._rewards
+        else:
+            return None

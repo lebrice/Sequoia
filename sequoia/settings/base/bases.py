@@ -201,10 +201,9 @@ class SettingABC(Parseable, LightningDataModule):
         # forthcoming subclasses of this particular new setting.
         cls._children = set()
         cls._targeted_methods = set()
-        # Inform the immediate parent in the tree, telling it that it has a new
-        # child.
-        parent = cls.get_parent()
-        parent._children.add(cls)
+        # Inform the immediate parents in the tree that they have a new child.
+        for immediate_parent in cls.get_immediate_parents():
+            immediate_parent._children.add(cls)
         super().__init_subclass__(**kwargs)
 
     @classmethod
@@ -234,6 +233,9 @@ class SettingABC(Parseable, LightningDataModule):
 
     @classmethod
     def get_children(cls) -> List[Type["SettingABC"]]:
+        """ Returns the immediate children of this Setting in the hierarchy.
+        In most cases, this will be a list with only one value.
+        """
         return cls._children
 
     @classmethod
@@ -247,28 +249,24 @@ class SettingABC(Parseable, LightningDataModule):
             yield from child.all_children()
 
     @classmethod
-    def get_parent(cls) -> Optional[Type["SettingABC"]]:
-        """Returns the first base class that is an instance of SettingABC, else
-        None
+    def get_immediate_parents(cls) -> Optional[Type["SettingABC"]]:
+        """ Returns the immediate parent(s) Setting(s).
+        In most cases, this will be a list with only one value.
         """
-        base_nodes = [
-            base
-            for base in cls.__bases__
-            if inspect.isclass(base) and issubclass(base, SettingABC)
-        ]
-        return base_nodes[0] if base_nodes else None
-
+        return [parent for parent in cls.__bases__ if issubclass(parent, SettingABC)]
+    
     @classmethod
     def get_parents(cls) -> Iterable[Type["SettingABC"]]:
-        """TODO: yields the lineage, from bottom to top. """
-        parent = cls.get_parent()
-        if parent:
-            yield parent
-            yield from parent.get_parents()
-
-    @classmethod
-    def depth(cls) -> int:
-        return len(list(cls.get_parents()))
+        """yields the lineage, from bottom to top.
+        
+        NOTE: In the case of Settings having multiple parents (such as IIDSetting),
+        this is still just a list that reflects the method resolution order for that
+        setting.
+        """
+        return [
+            parent_class for parent_class in cls.mro()[1:]
+            if issubclass(parent_class, SettingABC)
+        ]
 
 
 SettingType = TypeVar("SettingType", bound=SettingABC)
@@ -576,12 +574,14 @@ class Method(Generic[SettingType], Parseable, ABC):
         Tuple[BaselineModel.HParams, float]
             Best HParams, and the corresponding performance.
         """
-
-        # TODO: Maybe make this more general than just the BaselineMethod, if there's a
-        # demand for that, so that any other method can use this by just implementing
-        # some simple method like an `adapt_to_new_hparams` or something.
-        from orion.client import build_experiment
-        from orion.core.worker.trial import Trial
+        try:            
+            from orion.client import build_experiment
+            from orion.core.worker.trial import Trial
+        except ImportError as e:
+            raise RuntimeError(
+                f"Need to install the optional dependencies for HPO, using "
+                f"`pip install -e .[hpo]` (error: {e})"
+            ) from e
 
         search_space = search_space or self.get_search_space(setting)
         logger.info("HPO Search space:\n" + json.dumps(search_space, indent="\t"))

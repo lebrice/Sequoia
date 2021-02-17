@@ -286,7 +286,7 @@ class Batch(ABC, Mapping[str, T]):
         if not isinstance(index, (int, slice, np.ndarray, Tensor)):
             raise NotImplementedError(f"can't slice with index {index}")
         sliced_value = self._map(operator.itemgetter(index), recursive=True)
-        if isinstance(index, int) or len(index) == 1:
+        if isinstance(index, int):
             sliced_value = sliced_value.with_batch_dimension()
         return sliced_value
         # return type(self)(**{

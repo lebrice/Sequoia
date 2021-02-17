@@ -465,3 +465,12 @@ def test_nesting():
         h_x=tensor([[0, 1, 2, 3]]),
         actions=Actions(y_pred=tensor([0])),
     ))
+
+
+def test_slicing_with_one_item():
+    observations=Observations(
+        x=torch.arange(10).reshape([2, 5]),
+        task_labels=torch.arange(2, dtype=int),
+    )
+    indices = torch.as_tensor([0])
+    assert observations.slice(indices).shapes == {"x": torch.Size([1, 5]), "task_labels": torch.Size([1])}
