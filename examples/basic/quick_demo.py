@@ -21,7 +21,7 @@ from simple_parsing import ArgumentParser
 sys.path.extend([".", ".."])
 from sequoia import Method, Setting
 from sequoia.common import Config
-from sequoia.settings import ClassIncrementalSetting
+from sequoia.settings import DomainIncrementalSetting
 from sequoia.settings.passive.cl.objects import (Actions, Observations,
                                          PassiveEnvironment, Results, Rewards)
 
@@ -95,7 +95,7 @@ class MyModel(nn.Module):
         return loss, metrics_dict
 
 
-class DemoMethod(Method, target_setting=ClassIncrementalSetting):
+class DemoMethod(Method, target_setting=DomainIncrementalSetting):
     """ Minimal example of a Method targetting the Class-Incremental CL setting.
     
     For a quick intro to dataclasses, see examples/dataclasses_example.py    
@@ -124,7 +124,7 @@ class DemoMethod(Method, target_setting=ClassIncrementalSetting):
         self.model: MyModel
         self.optimizer: torch.optim.Optimizer
 
-    def configure(self, setting: ClassIncrementalSetting):
+    def configure(self, setting: DomainIncrementalSetting):
         """ Called before the method is applied on a setting (before training). 
 
         You can use this to instantiate your model, for instance, since this is
@@ -205,10 +205,10 @@ class DemoMethod(Method, target_setting=ClassIncrementalSetting):
 
 def demo_simple():
     """ Simple demo: Creating and applying a Method onto a Setting. """
-    from sequoia.settings import TaskIncrementalSetting
+    from sequoia.settings import DomainIncrementalSetting
     
     ## 1. Creating the setting:
-    setting = TaskIncrementalSetting(dataset="fashionmnist", batch_size=32)
+    setting = DomainIncrementalSetting(dataset="fashionmnist", batch_size=32)
     ## 2. Creating the Method
     method = DemoMethod()
     # (Optional): You can also create a Config, which holds other fields like
@@ -224,21 +224,21 @@ def demo_simple():
 
 def demo_command_line():
     """ Run this quick demo from the command-line. """
-    from sequoia.settings import ClassIncrementalSetting, TaskIncrementalSetting
+    from sequoia.settings import DomainIncrementalSetting, DomainIncrementalSetting
     parser = ArgumentParser(description=__doc__)
     # Add command-line arguments for the Method and the Setting.
     DemoMethod.add_argparse_args(parser)
     # Add command-line arguments for the Setting and the Config (an object with
     # options like log_dir, debug, etc, which are not part of the Setting or the
     # Method) using simple-parsing.
-    parser.add_arguments(TaskIncrementalSetting, "setting")
+    parser.add_arguments(DomainIncrementalSetting, "setting")
     parser.add_arguments(Config, "config")
     args = parser.parse_args()
     
     # Create the Method from the parsed arguments
     method: DemoMethod = DemoMethod.from_argparse_args(args)
     # Extract the Setting and Config from the args.
-    setting: TaskIncrementalSetting = args.setting
+    setting: DomainIncrementalSetting = args.setting
     config: Config = args.config
     
     # Run the demo, applying that DemoMethod on the given setting.
