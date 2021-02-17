@@ -56,16 +56,18 @@ from .setting_meta import SettingMeta
 
 logger = get_logger(__file__)
 
-EnvironmentType = TypeVar("EnvironmentType", bound=Environment)
 SettingType = TypeVar("SettingType", bound="Setting")
 
-from .bases import Method, SettingABC
+from  .bases import SettingABC, Method, SettingType
 
+EnvironmentType = TypeVar("EnvironmentType", bound=Environment)
 
 @dataclass
 class Setting(SettingABC,
-              Generic[EnvironmentType],
+              Parseable,
               Serializable,
+              LightningDataModule,
+              Generic[EnvironmentType],
               metaclass=SettingMeta):
     """ Base class for all research settings in ML: Root node of the tree. 
 
@@ -86,6 +88,23 @@ class Setting(SettingABC,
 
     This is a dataclass. Its attributes are can also be used as command-line
     arguments using `simple_parsing`.
+    
+    Abstract (required) methods:
+    - **apply** Applies a given Method on this setting to produce Results.
+    - **prepare_data** (things to do on 1 GPU/TPU not on every GPU/TPU in distributed mode).
+    - **setup**  (things to do on every accelerator in distributed mode).
+    - **train_dataloader** the training environment/dataloader.
+    - **val_dataloader** the val environments/dataloader(s).
+    - **test_dataloader** the test environments/dataloader(s).
+
+    "Abstract"-ish (required) class attributes:
+    - `Results`: The class of Results that are created when applying a Method on
+      this setting.
+    - `Observations`: The type of Observations that will be produced  in this
+        setting.
+    - `Actions`: The type of Actions that are expected from this setting.
+    - `Rewards`: The type of Rewards that this setting will (potentially) return
+      upon receiving an action from the method.
     """
     ## ---------- Class Variables ------------- 
     ## Fields in this block are class attributes. They don't create command-line
