@@ -10,6 +10,7 @@ import gym
 import numpy as np
 import pytorch_lightning as pl
 import torch
+import wandb
 from gym import Space, spaces
 from pytorch_lightning import LightningDataModule, LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
@@ -176,12 +177,15 @@ class BaselineModel(SemiSupervisedModel,
     def on_fit_start(self):
         super().on_fit_start()
         if self.logger and not self._setting_logged:
-            setting_dict = self.setting.to_dict()
             # TODO: Some values might be too verbose / annoying to have logged to wandb
-            self.logger.experiment.config.update({
-                k: v for k, v in setting_dict.items() if not k.startswith("_")
-            })
-            self._setting_logged = True
+            # BUG: Sometimes (during tests for instance) the Config object in wandb
+            # is actually some werd DummyExperiment.nop object?
+            if isinstance(self.logger.experiment.config, wandb.Config):
+                setting_dict = self.setting.to_dict()
+                self.logger.experiment.config.update({
+                    k: v for k, v in setting_dict.items() if not k.startswith("_")
+                })
+                self._setting_logged = True
 
     @auto_move_data
     def forward(self, observations: Setting.Observations) -> ForwardPass:  # type: ignore
