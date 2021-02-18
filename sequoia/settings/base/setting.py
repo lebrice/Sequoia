@@ -150,11 +150,11 @@ class Setting(SettingABC,
     batch_size: int = field(default=0, cmd=False)
     num_workers: int = field(default=0, cmd=False)
 
-    # TODO: Add support for semi-supervised training.
-    # Fraction of the dataset that is labeled.
-    labeled_data_fraction: int = 1.0
-    # Number of labeled examples.
-    n_labeled_examples: Optional[int] = None
+    # # TODO: Add support for semi-supervised training.
+    # # Fraction of the dataset that is labeled.
+    # labeled_data_fraction: int = 1.0
+    # # Number of labeled examples.
+    # n_labeled_examples: Optional[int] = None
 
     def __post_init__(self,
                       observation_space: gym.Space = None,
@@ -365,35 +365,6 @@ class Setting(SettingABC,
     def get_path_to_source_file(cls: Type) -> Path:
         from sequoia.utils.utils import get_path_to_source_file
         return get_path_to_source_file(cls)
-
-    def configure(self, method: Method):
-        """ Configure the setting before the method is applied to it.
-        
-        TODO: This is basically just here so we can figure out the batch size
-        to use and the directory where the data should be downloaded, which are
-        properties on the Config object (which atm is not in the setting, but on
-        either the Method or the Experiment.). Need to clean this up.
-        
-        Parameters
-        ----------
-        method : Method
-            The Method that is being applied on this setting.
-        config : Config
-            [description]
-        """
-        # TODO: Remove this, move it to `prepare_data`.
-        assert self.config is not None
-        # TODO: Should the data_dir be in the Setting, or the Config?
-        self.data_dir = self.config.data_dir
-        # Create the dataloader kwargs, if needed.
-        self.batch_size = self.batch_size or getattr(self.config, "batch_size", None)
-        self.num_workers = self.num_workers or self.config.num_workers
-
-        # Debugging: Run a quick check to see that what is returned by the
-        # dataloaders is of the right type and shape etc.
-        # TODO: Should probably remove this and just do that in tests only.
-        if self.config.debug:
-            self._check_environments()
 
     def _check_environments(self):
         """ Do a quick check to make sure that interacting with the envs/dataloaders
