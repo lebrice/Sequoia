@@ -214,6 +214,14 @@ class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
             object.__setattr__(self, attr, value)
 
 
+class RenderEnvWrapper(IterableWrapper):
+    """ Simple Wrapper that renders the env at each step. """
+
+    def step(self, action):
+        self.env.render("human")
+        return self.env.step(action)
+
+
 @singledispatch
 def reshape_space(space: gym.Space, new_shape: Tuple[int, ...]) -> gym.Space:
     """ Returns a new space based on 'space', but with a new shape.

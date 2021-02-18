@@ -67,7 +67,12 @@ class IncrementalSetting(ContinualSetting):
         Adds the 'task labels' to the base Observation.
         """
         task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
-
+    
+    # TODO: Actually add the 'smooth' task boundary case.
+    # Wether we have clear boundaries between tasks, or if the transition is
+    # smooth.
+    smooth_task_boundaries: bool = constant(False) # constant for now.
+    
     # Wether task labels are available at train time.
     # NOTE: Forced to True at the moment.
     task_labels_at_train_time: bool = flag(default=True)
@@ -83,10 +88,7 @@ class IncrementalSetting(ContinualSetting):
     # training. Only used when `smooth_task_boundaries` is False.
     known_task_boundaries_at_test_time: bool = constant(True)
 
-    # TODO: Actually add the 'smooth' task boundary case.
-    # Wether we have clear boundaries between tasks, or if the transition is
-    # smooth.
-    smooth_task_boundaries: bool = constant(False) # constant for now.
+  
     # The number of tasks. By default 0, which means that it will be set
     # depending on other fields in __post_init__, or eventually be just 1. 
     nb_tasks: int = field(0, alias=["n_tasks", "num_tasks"])
@@ -108,6 +110,9 @@ class IncrementalSetting(ContinualSetting):
         TODO: Do we want to return None if the task labels aren't currently
         available? (at either Train or Test time?) Or if we 'detect' if
         this is being called from the method?
+        
+        TODO: This property doesn't really make sense in the Multi-Task SL or RL
+        settings.
         """
         return self._current_task_id
 

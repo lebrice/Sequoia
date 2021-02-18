@@ -67,8 +67,8 @@ def supports_tensors(space: S) -> bool:
 def has_tensor_support(space: S) -> bool:
     return supports_tensors(space)
 
-def _mark_supports_tensors(space: S) -> bool:
-    return setattr(space, "__supports_tensors", True)
+def _mark_supports_tensors(space: S) -> None:
+    setattr(space, "__supports_tensors", True)
 
 @singledispatch
 def add_tensor_support(space: S, device: torch.device = None) -> S:

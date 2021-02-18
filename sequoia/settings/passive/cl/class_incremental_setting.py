@@ -786,6 +786,14 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
     def __init__(self, env: gym.Env, *args, **kwargs):
         super().__init__(env, *args, **kwargs)
         self._steps = 0
+        # TODO: Maybe rework this so we don't depend on the test phase being one task at
+        # a time, instead store the test metrics in the task corresponding to the
+        # task_label in the observations.
+        # BUG: The problem is, right now we're depending on being passed the
+        # 'task schedule', which we then use to get the task ids. This
+        # is actually pretty bad, because if the class ordering was changed between
+        # training and testing, then, this wouldn't actually report the correct results! 
+
         self.task_steps = sorted(self.env.task_schedule.keys())
         self.metrics: List[ClassificationMetrics] = [[] for step in self.task_steps]
         self._reset = False
