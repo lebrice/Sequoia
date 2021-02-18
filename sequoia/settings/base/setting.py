@@ -22,47 +22,52 @@ import inspect
 import itertools
 import os
 import shlex
+import sys
 from abc import abstractmethod
 from argparse import Namespace
 from dataclasses import InitVar, dataclass, fields, is_dataclass
-from inspect import getsourcefile, isclass
 from functools import partial
+from inspect import getsourcefile, isclass
 from pathlib import Path
 from typing import *
 
 import gym
-import torch
 import numpy as np
+import torch
 from gym import spaces
 from pytorch_lightning import LightningDataModule
 from pytorch_lightning.core.datamodule import _DataModuleWrapper
-from simple_parsing import (ArgumentParser, Serializable, list_field,
-                            mutable_field, subparsers, field, choice)
+from simple_parsing import (ArgumentParser, Serializable, choice, field,
+                            list_field, mutable_field, subparsers)
 from torch import Tensor
 from torch.utils.data import DataLoader
 
 from sequoia.common.config import Config
 from sequoia.common.loss import Loss
 from sequoia.common.metrics import Metrics
-from sequoia.common.transforms import Compose, Transforms, Transform, SplitBatch
-from sequoia.utils import Parseable, camel_case, dict_union, get_logger, remove_suffix, take
-
+from sequoia.common.transforms import (Compose, SplitBatch, Transform,
+                                       Transforms)
+from sequoia.settings.presets import setting_presets
+from sequoia.utils import (Parseable, camel_case, dict_union, get_logger,
+                           remove_suffix, take)
+from .environment import Actions, Environment, Observations, Rewards
 from .results import Results
 from .setting_meta import SettingMeta
-from .environment import Environment, Observations, Actions, Rewards
 
 logger = get_logger(__file__)
 
-EnvironmentType = TypeVar("EnvironmentType", bound=Environment)
 SettingType = TypeVar("SettingType", bound="Setting")
 
-from  .bases import SettingABC, Method
+from  .bases import SettingABC, Method, SettingType
 
+EnvironmentType = TypeVar("EnvironmentType", bound=Environment)
 
 @dataclass
 class Setting(SettingABC,
-              Generic[EnvironmentType],
+              Parseable,
               Serializable,
+              LightningDataModule,
+              Generic[EnvironmentType],
               metaclass=SettingMeta):
     """ Base class for all research settings in ML: Root node of the tree. 
 
@@ -83,6 +88,23 @@ class Setting(SettingABC,
 
     This is a dataclass. Its attributes are can also be used as command-line
     arguments using `simple_parsing`.
+    
+    Abstract (required) methods:
+    - **apply** Applies a given Method on this setting to produce Results.
+    - **prepare_data** (things to do on 1 GPU/TPU not on every GPU/TPU in distributed mode).
+    - **setup**  (things to do on every accelerator in distributed mode).
+    - **train_dataloader** the training environment/dataloader.
+    - **val_dataloader** the val environments/dataloader(s).
+    - **test_dataloader** the test environments/dataloader(s).
+
+    "Abstract"-ish (required) class attributes:
+    - `Results`: The class of Results that are created when applying a Method on
+      this setting.
+    - `Observations`: The type of Observations that will be produced  in this
+        setting.
+    - `Actions`: The type of Actions that are expected from this setting.
+    - `Rewards`: The type of Rewards that this setting will (potentially) return
+      upon receiving an action from the method.
     """
     ## ---------- Class Variables ------------- 
     ## Fields in this block are class attributes. They don't create command-line
@@ -128,11 +150,11 @@ class Setting(SettingABC,
     batch_size: int = field(default=0, cmd=False)
     num_workers: int = field(default=0, cmd=False)
 
-    # TODO: Add support for semi-supervised training.
-    # Fraction of the dataset that is labeled.
-    labeled_data_fraction: int = 1.0
-    # Number of labeled examples.
-    n_labeled_examples: Optional[int] = None
+    # # TODO: Add support for semi-supervised training.
+    # # Fraction of the dataset that is labeled.
+    # labeled_data_fraction: int = 1.0
+    # # Number of labeled examples.
+    # n_labeled_examples: Optional[int] = None
 
     def __post_init__(self,
                       observation_space: gym.Space = None,
@@ -344,35 +366,6 @@ class Setting(SettingABC,
         from sequoia.utils.utils import get_path_to_source_file
         return get_path_to_source_file(cls)
 
-    def configure(self, method: Method):
-        """ Configure the setting before the method is applied to it.
-        
-        TODO: This is basically just here so we can figure out the batch size
-        to use and the directory where the data should be downloaded, which are
-        properties on the Config object (which atm is not in the setting, but on
-        either the Method or the Experiment.). Need to clean this up.
-        
-        Parameters
-        ----------
-        method : Method
-            The Method that is being applied on this setting.
-        config : Config
-            [description]
-        """
-        # TODO: Remove this, move it to `prepare_data`.
-        assert self.config is not None
-        # TODO: Should the data_dir be in the Setting, or the Config?
-        self.data_dir = self.config.data_dir
-        # Create the dataloader kwargs, if needed.
-        self.batch_size = self.batch_size or getattr(self.config, "batch_size", None)
-        self.num_workers = self.num_workers or self.config.num_workers
-
-        # Debugging: Run a quick check to see that what is returned by the
-        # dataloaders is of the right type and shape etc.
-        # TODO: Should probably remove this and just do that in tests only.
-        if self.config.debug:
-            self._check_environments()
-
     def _check_environments(self):
         """ Do a quick check to make sure that interacting with the envs/dataloaders
         works correctly.
@@ -536,9 +529,6 @@ class Setting(SettingABC,
         # If the provided benchmark isn't a path, try to get the value from
         # the `setting_presets` dict. If it isn't in the dict, raise an
         # error.
-        from sequoia.experiment import setting_presets
-        import sys
-        
         if not Path(benchmark).is_file():
             if benchmark in setting_presets:
                 benchmark = setting_presets[benchmark]

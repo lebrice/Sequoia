@@ -46,7 +46,7 @@ from sequoia.utils.utils import (
 logger = get_logger(__file__)
 
 
-class SettingABC(Parseable, LightningDataModule):
+class SettingABC:
     """ Abstract base class for a Setting.
 
     This just shows the minimal API. For more info, see the `Setting` class,
@@ -54,13 +54,8 @@ class SettingABC(Parseable, LightningDataModule):
     tree.
 
     Abstract (required) methods:
-    - (new) **apply** Applies a given Method on this setting to produce Results.
-    - **prepare_data** (things to do on 1 GPU/TPU not on every GPU/TPU in distributed mode).
-    - **setup**  (things to do on every accelerator in distributed mode).
-    - **train_dataloader** the training environment/dataloader.
-    - **val_dataloader** the val environments/dataloader(s).
-    - **test_dataloader** the test environments/dataloader(s).
-    
+    - **apply** Applies a given Method on this setting to produce Results.
+
     "Abstract"-ish (required) class attributes:
     - `Results`: The class of Results that are created when applying a Method on
       this setting.

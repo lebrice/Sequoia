@@ -254,6 +254,11 @@ class MultiHeadModel(BaseModel[SettingType]):
         task_switched_in_env = task_labels != self.previous_task_labels
         # TODO: This `done` attribute isn't added in supervised settings.
         episode_ended = getattr(observations, "done", np.zeros(batch_size, dtype=bool))
+        # TODO: Remove all this useless conversion from Tensors to ndarrays, by making
+        # Sequoia more numpy-centric.
+        if isinstance(episode_ended, Tensor):
+            episode_ended = episode_ended.cpu().numpy()
+
         # logger.debug(f"Task labels: {task_labels}, task switched in env: {task_switched_in_env}, episode ended: {episode_ended}")
         done_set_to_false_temporarily_indices = []
 

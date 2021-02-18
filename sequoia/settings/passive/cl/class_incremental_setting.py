@@ -33,6 +33,7 @@ import gym
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import wandb
 from continuum import ClassIncremental
 from continuum.datasets import *
 from continuum.datasets import _ContinuumDataset
@@ -374,10 +375,19 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         """Apply the given method on this setting to producing some results."""
         # TODO: It still isn't super clear what should be in charge of creating
         # the config, and how to create it, when it isn't passed explicitly.
-        self.config = self.config or config or (Config.from_args(self._argv) if self._argv else Config())
-        method.config = self.config
+        self.config: Config
+        if config is not None:
+            self.config = config
+            logger.debug(f"Using Config {self.config}")
+        elif isinstance(getattr(method, "config", None), Config):
+            # If the Method has a `config` attribute that is a Config, use that.
+            self.config = method.config
+            logger.debug(f"Using Config from the Method: {self.config}")
+        else:
+            logger.debug(f"Parsing the Config from the command-line.")
+            self.config = Config.from_args(self._argv, strict=False)
+            logger.debug(f"Resulting Config: {self.config}")
 
-        self.configure(method)
         method.configure(setting=self)
         
         # Run the Training loop (which is defined in IncrementalSetting).
@@ -639,7 +649,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
                      **kwargs) -> _ContinuumDataset:
         # TODO: #7 Use this method here to fix the errors that happen when
         # trying to create every single dataset from continuum.
-        
+        data_dir = Path(data_dir)
+        if not data_dir.exists():
+            data_dir.mkdir(parents=True, exist_ok=True)
         
         if self.dataset in self.available_datasets:
             dataset_class = self.available_datasets[self.dataset]   

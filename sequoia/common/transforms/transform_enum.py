@@ -20,7 +20,7 @@ from torchvision.transforms import RandomGrayscale
 from torchvision.transforms import ToTensor as ToTensor_
 
 from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.serialization import encode, register_decoding_fn
+from sequoia.utils.serialization import encode, register_decoding_fn, decode
 
 logger = get_logger(__file__)
 
@@ -125,16 +125,12 @@ class Compose(List[T], ComposeBase):
     #     return input_shape
 
 
-
-
-
-
 @encode.register
 def encode_transforms(v: Transforms) -> str:
     return v.name
 
+@decode.register
 def decode_transforms(v: str) -> Transforms:
-    print(f"Decoding a Transforms object: {v}, {Transforms[v]}")
     return Transforms[v]
 
 
