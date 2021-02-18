@@ -167,6 +167,21 @@ class BaselineModel(SemiSupervisedModel,
                 logger.debug(f"\t {task_name}: {task.coefficient}")
                 logger.info(f"enabling the '{task_name}' auxiliary task (coefficient of {task.coefficient})")
                 task.enable()
+        from pytorch_lightning.loggers import WandbLogger
+        self.logger: WandbLogger
+        
+        # Wether we logged the setting's config to wandb before or not.
+        self._setting_logged = False
+
+    def on_fit_start(self):
+        super().on_fit_start()
+        if self.logger and not self._setting_logged:
+            setting_dict = self.setting.to_dict()
+            # TODO: Some values might be too verbose / annoying to have logged to wandb
+            self.logger.experiment.config.update({
+                k: v for k, v in setting_dict.items() if not k.startswith("_")
+            })
+            self._setting_logged = True
 
     @auto_move_data
     def forward(self, observations: Setting.Observations) -> ForwardPass:  # type: ignore

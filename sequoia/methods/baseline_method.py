@@ -283,7 +283,9 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         )
         if self.config.render:
             train_env = RenderEnvWrapper(train_env)
-        # BUG: There seems to be a bug related to the number of training epochs!
+        
+        # BUG: There seems to be a bug related to the number of training epochs in
+        # multi-task synbols?
         return self.trainer.fit(
             model=self.model, train_dataloader=train_env, val_dataloaders=valid_env,
         )
