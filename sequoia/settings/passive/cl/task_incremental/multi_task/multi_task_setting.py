@@ -1,18 +1,23 @@
+import itertools
 from dataclasses import dataclass
-from typing import Callable, ClassVar, Dict, List, Optional, Tuple, Type, TypeVar, Union
+from typing import (Callable, ClassVar, Dict, List, Optional, Tuple, Type,
+                    TypeVar, Union)
 
+import tqdm
 from simple_parsing import list_field
+from torch import Tensor
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 from sequoia.common.gym_wrappers import RenderEnvWrapper, TransformObservation
+from sequoia.settings.assumptions.incremental import TestEnvironment
 from sequoia.settings.base import Method
+from sequoia.settings.passive.cl.class_incremental_setting import \
+    ClassIncrementalTestEnvironment
 from sequoia.settings.passive.passive_environment import PassiveEnvironment
 from sequoia.utils import get_logger
 from sequoia.utils.utils import constant
-from sequoia.settings.passive.cl.class_incremental_setting import ClassIncrementalTestEnvironment
-from sequoia.settings.assumptions.incremental import TestEnvironment
-
-from ..task_incremental_setting import TaskIncrementalSetting
+from ..task_incremental_setting import (Actions, Observations, Rewards,
+                                        TaskIncrementalSetting)
 
 logger = get_logger(__file__)
 
@@ -81,6 +86,15 @@ class MultiTaskSetting(TaskIncrementalSetting):
         success = method.fit(train_env=task_train_loader, valid_env=task_valid_loader,)
         task_train_loader.close()
         task_valid_loader.close()
+    
+    def get_train_dataset(self) -> Dataset:
+        return ConcatDataset(self.train_datasets)
+
+    def get_val_dataset(self) -> Dataset:
+        return ConcatDataset(self.val_datasets)
+
+    def get_test_dataset(self) -> Dataset:
+        return ConcatDataset(self.test_datasets)
 
     def train_dataloader(
         self, batch_size: int = None, num_workers: int = None
@@ -104,42 +118,7 @@ class MultiTaskSetting(TaskIncrementalSetting):
         PassiveEnvironment
             A "Passive" Dataloader/gym.Env. 
         """
-        if not self.has_prepared_data:
-            self.prepare_data()
-        if not self.has_setup_fit:
-            self.setup("fit")
-
-        dataset = ConcatDataset(self.train_datasets)
-
-        batch_size = batch_size if batch_size is not None else self.batch_size
-        num_workers = num_workers if num_workers is not None else self.num_workers
-        # TODO: Add some kind of Wrapper around the dataset to make it
-        # semi-supervised.
-        env = PassiveEnvironment(
-            dataset,
-            split_batch_fn=self.split_batch_function(training=True),
-            observation_space=self.observation_space,
-            action_space=self.action_space,
-            reward_space=self.reward_space,
-            pin_memory=True,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            shuffle=True,
-        )
-
-        if self.config.render:
-            env = RenderEnvWrapper(env)
-
-        if self.train_transforms:
-            # TODO: Check that the transforms aren't already being applied in the
-            # 'dataset' portion.
-            env = TransformObservation(env, f=self.train_transforms)
-
-        if self.train_env:
-            # Close the previous train environment, if any.
-            self.train_env.close()
-        self.train_env = env
-        return self.train_env
+        return super().train_dataloader(batch_size=batch_size, num_workers=num_workers)
 
     def val_dataloader(
         self, batch_size: int = None, num_workers: int = None
@@ -163,42 +142,7 @@ class MultiTaskSetting(TaskIncrementalSetting):
         PassiveEnvironment
             A "Passive" Dataloader/gym.Env. 
         """
-        super().val_dataloader
-        if not self.has_prepared_data:
-            self.prepare_data()
-        if not self.has_setup_fit:
-            self.setup("fit")
-
-        dataset = ConcatDataset(self.val_datasets)
-
-        batch_size = batch_size if batch_size is not None else self.batch_size
-        num_workers = num_workers if num_workers is not None else self.num_workers
-        env = PassiveEnvironment(
-            dataset,
-            split_batch_fn=self.split_batch_function(training=True),
-            observation_space=self.observation_space,
-            action_space=self.action_space,
-            reward_space=self.reward_space,
-            pin_memory=True,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            shuffle=True,
-        )
-
-        if self.config.render:
-            env = RenderEnvWrapper(env)
-
-        if self.val_transforms:
-            # TODO: Check that the transforms aren't already being applied in the
-            # 'dataset' portion.
-            env = TransformObservation(env, f=self.val_transforms)
-
-        if self.val_env:
-            # Close the previous environment, if it exists.
-            self.val_env.close()
-        self.val_env = env
-        return self.val_env
-        super().test_dataloader
+        return super().val_dataloader(batch_size=batch_size, num_workers=num_workers)
 
     def test_dataloader(
         self, batch_size: int = None, num_workers: int = None
@@ -228,45 +172,7 @@ class MultiTaskSetting(TaskIncrementalSetting):
         PassiveEnvironment
             A "Passive" Dataloader/gym.Env. 
         """
-        if not self.has_prepared_data:
-            self.prepare_data()
-        if not self.has_setup_test:
-            self.setup("test")
-
-        batch_size = batch_size if batch_size is not None else self.batch_size
-        num_workers = num_workers if num_workers is not None else self.num_workers
-
-        # Join all the test datasets.
-        dataset = ConcatDataset(self.test_datasets)
-
-        env = PassiveEnvironment(
-            dataset,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            split_batch_fn=self.split_batch_function(training=False),
-            observation_space=self.observation_space,
-            action_space=self.action_space,
-            reward_space=self.reward_space,
-            pretend_to_be_active=True,
-        )
-        if self.test_transforms:
-            env = TransformObservation(env, f=self.test_transforms)
-
-        # TODO: Configure the 'monitoring' dir properly.
-        test_dir = "results"
-        test_loop_max_steps = len(dataset) // (env.batch_size or 1)
-        test_env = ClassIncrementalTestEnvironment(
-            env,
-            directory=test_dir,
-            step_limit=test_loop_max_steps,
-            force=True,
-            config=self.config,
-        )
-
-        if self.test_env:
-            self.test_env.close()
-        self.test_env = test_env
-        return self.test_env
+        return super().test_dataloader(batch_size=batch_size, num_workers=num_workers)
 
     def test_loop(self, method: Method) -> "IncrementalSetting.Results":
         """ Runs a multi-task test loop and returns the Results.
@@ -321,7 +227,3 @@ class MultiTaskSetting(TaskIncrementalSetting):
         test_results = test_env.get_results()
 
         return test_results
-        # if not self.task_labels_at_test_time:
-        #     # TODO: move this wrapper to common/wrappers.
-        #     test_env = RemoveTaskLabelsWrapper(test_env)
-

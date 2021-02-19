@@ -447,6 +447,15 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
         super().setup(stage, *args, **kwargs)
 
+    def get_train_dataset(self) -> Dataset:
+        return self.train_datasets[self.current_task_id]
+    
+    def get_val_dataset(self) -> Dataset:
+        return self.val_datasets[self.current_task_id]
+
+    def get_test_dataset(self) -> Dataset:
+        return ConcatDataset(self.test_datasets)
+
     def train_dataloader(self, batch_size: int = None, num_workers: int = None) -> PassiveEnvironment:
         """Returns a DataLoader for the train dataset of the current task. """
         if not self.has_prepared_data:
@@ -454,11 +463,10 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         if not self.has_setup_fit:
             self.setup("fit")
 
-        # TODO: Clean this up: decide where num_workers should be stored.
-        batch_size = batch_size or self.batch_size
-        num_workers = num_workers or self.num_workers
+        batch_size = batch_size if batch_size is not None else self.batch_size
+        num_workers = num_workers if num_workers is not None else self.num_workers
 
-        dataset = self.train_datasets[self.current_task_id]
+        dataset = self.get_train_dataset()
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised.
         env = PassiveEnvironment(
@@ -470,6 +478,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             pin_memory=True,
             batch_size=batch_size,
             num_workers=num_workers,
+            # Since the dataset only contains data from the current task(s), it's fine
+            # to shuffle here. TODO: Double-check this.
+            shuffle=True,
         )
         
         if self.config.render:
@@ -477,6 +488,8 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             env = env
             
         if self.train_transforms:
+            # TODO: Check that the transforms aren't already being applied in the
+            # 'dataset' portion.
             env = TransformObservation(env, f=self.train_transforms)
         if self.train_env:
             self.train_env.close()
@@ -491,9 +504,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         if not self.has_setup_fit:
             self.setup("fit")
 
-        dataset = self.val_datasets[self.current_task_id]
-        batch_size = batch_size or self.batch_size
-        num_workers = num_workers or self.num_workers
+        dataset = self.get_val_dataset()
+        batch_size = batch_size if batch_size is not None else self.batch_size
+        num_workers = num_workers if num_workers is not None else self.num_workers
         env = PassiveEnvironment(
             dataset,
             split_batch_fn=self.split_batch_function(training=True),
@@ -503,6 +516,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             pin_memory=True,
             batch_size=batch_size,
             num_workers=num_workers,
+            # Since the dataset only contains data from the current task(s), it's fine
+            # to shuffle here. TODO: Double-check this.
+            shuffle=True,
         )
         if self.val_transforms:
             env = TransformObservation(env, f=self.val_transforms)
@@ -523,11 +539,14 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
         # Testing this out, we're gonna have a "test schedule" like this to try
         # to imitate the MultiTaskEnvironment in RL. 
-        transition_steps = [0] + list(itertools.accumulate(map(len, self.test_datasets)))[:-1]
-        # Join all the test datasets.        
-        dataset = ConcatDataset(self.test_datasets)
-        batch_size = batch_size or self.batch_size
-        num_workers = num_workers or self.num_workers
+        transition_steps = [0] + list(
+            itertools.accumulate(map(len, self.test_datasets))
+        )[:-1]
+        # Join all the test datasets.
+        dataset = self.get_test_dataset()
+
+        batch_size = batch_size if batch_size is not None else self.batch_size
+        num_workers = num_workers if num_workers is not None else self.num_workers
         
         env = PassiveEnvironment(
             dataset,
@@ -538,6 +557,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             action_space=self.action_space,
             reward_space=self.reward_space,
             pretend_to_be_active=True,
+            shuffle=False,
         )
         if self.test_transforms:
             env = TransformObservation(env, f=self.test_transforms)
@@ -550,15 +570,12 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         if not self.task_labels_at_test_time:
             env = HideTaskLabelsWrapper(env)
 
-        self.test_task_schedule = dict.fromkeys(
+        # FIXME: Creating a 'task schedule' for the TestEnvironment, mimicing what's in
+        # the RL settings. 
+        test_task_schedule = dict.fromkeys(
             [step // (env.batch_size or 1) for step in transition_steps],
             range(len(transition_steps)),
         )
-        # a bit hacky, but it works.
-        env.task_schedule = self.test_task_schedule
-        # TODO: Would this mislead the Method into not observing/getting the last batch ?
-        env.max_steps = self.max_steps = len(dataset) // (env.batch_size or 1)
-
         # TODO: Configure the 'monitoring' dir properly.
         test_dir = "results"
         test_loop_max_steps = len(dataset) // (env.batch_size or 1)
@@ -568,6 +585,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             env,
             directory=test_dir,
             step_limit=test_loop_max_steps,
+            task_schedule=test_task_schedule,
             force=True,
             config=self.config,
         )
@@ -783,7 +801,7 @@ Rewards = ClassIncrementalSetting.Rewards
 
 
 class ClassIncrementalTestEnvironment(TestEnvironment):
-    def __init__(self, env: gym.Env, *args, **kwargs):
+    def __init__(self, env: gym.Env, *args, task_schedule: Dict[int, Any] = None, **kwargs):
         super().__init__(env, *args, **kwargs)
         self._steps = 0
         # TODO: Maybe rework this so we don't depend on the test phase being one task at
@@ -793,16 +811,16 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         # 'task schedule', which we then use to get the task ids. This
         # is actually pretty bad, because if the class ordering was changed between
         # training and testing, then, this wouldn't actually report the correct results! 
-
-        self.task_steps = sorted(self.env.task_schedule.keys())
+        self.task_schedule = task_schedule or {}
+        self.task_steps = sorted(self.task_schedule.keys())
         self.metrics: List[ClassificationMetrics] = [[] for step in self.task_steps]
         self._reset = False
 
     def get_results(self) -> ClassIncrementalResults:
-        rewards = self.get_episode_rewards()
-        lengths = self.get_episode_lengths()
-        total_steps = self.get_total_steps()
-        n_metrics_per_task = [len(task_metrics) for task_metrics in self.metrics]
+        # rewards = self.get_episode_rewards()
+        # lengths = self.get_episode_lengths()
+        # total_steps = self.get_total_steps()
+        # n_metrics_per_task = [len(task_metrics) for task_metrics in self.metrics]
         return ClassIncrementalResults(
             test_metrics=self.metrics
         )
@@ -843,6 +861,7 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         nb_tasks = len(task_steps)
         assert nb_tasks >= 1
 
+       
         import bisect
         # Given the step, find the task id.
         task_id = bisect.bisect_right(task_steps, self._steps) - 1
