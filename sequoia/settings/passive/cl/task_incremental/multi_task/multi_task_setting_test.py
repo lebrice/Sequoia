@@ -16,7 +16,7 @@ import pytest
 import torch
 from gym.spaces import Discrete
 from sequoia.common.spaces import Image, NamedTupleSpace
-from sequoia.settings import Environment
+from sequoia.settings import Environment, Actions
 
 from .multi_task_setting import MultiTaskSetting
 
@@ -40,7 +40,7 @@ def check_is_multitask_env(env: Environment, has_rewards: bool):
     done = False
     steps = 0
     while not done and steps < 10:
-        action = setting.Actions(y_pred=torch.randint(10, [env.batch_size]))
+        action = Actions(y_pred=torch.randint(10, [env.batch_size]))
         # BUG: convert_tensors seems to be causing issues again: We shouldn't have
         # to manually convert obs to numpy before checking `obs in obs_space`.
         # TODO: Also not super clean that we can't just do `action in action_space`.
