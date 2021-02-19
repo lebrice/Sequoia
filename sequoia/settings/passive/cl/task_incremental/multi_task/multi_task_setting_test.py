@@ -9,14 +9,16 @@ TODO: Tests for the multi-task SL setting.
 - Classes shouldn't be relabeled.
 
 """
+import itertools
+
+import numpy as np
+import pytest
+import torch
+from gym.spaces import Discrete
+from sequoia.common.spaces import Image, NamedTupleSpace
+from sequoia.settings import Environment
 
 from .multi_task_setting import MultiTaskSetting
-from sequoia.common.spaces import NamedTupleSpace, Image
-from sequoia.settings import Environment
-from gym.spaces import Discrete
-import numpy as np
-import itertools
-import torch
 
 
 def check_is_multitask_env(env: Environment, has_rewards: bool):
