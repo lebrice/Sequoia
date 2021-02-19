@@ -442,6 +442,16 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             self.test_datasets.append(test_dataset)
 
         super().setup(stage, *args, **kwargs)
+        
+        # TODO: Adding this temporarily just for the competition
+        self.test_boundary_steps = [0] + list(
+            itertools.accumulate(map(len, self.test_datasets))
+        )[:-1]       
+        # self.test_steps = [0] + list(
+        #     itertools.accumulate(map(len, self.test_datasets))
+        # )[:-1]
+
+        
 
     def get_train_dataset(self) -> Dataset:
         return self.train_datasets[self.current_task_id]
