@@ -71,7 +71,7 @@ class SettingMeta(_DataModuleWrapper, Type["Setting"]):
 
     def __instancecheck__(self, instance):
         from sequoia.server import SettingProxy
-        if isinstance(instance, SettingProxy):
+        if isinstance(instance, SettingProxy) or hasattr(instance, "_setting_type"):
             # If the setting is a proxy, then we check if its a proxy to a setting of
             # this type.
             return issubclass(instance._setting_type, self)
