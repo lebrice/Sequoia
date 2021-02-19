@@ -1,9 +1,10 @@
 from dataclasses import dataclass
+from typing import Union
 
 import numpy as np
+import pytest
 
 from .hyperparameters import HyperParameters, hparam, log_uniform, uniform
-import pytest
 
 
 @dataclass
@@ -143,6 +144,7 @@ from typing import Type
 
 from .hparam import categorical
 
+
 def test_choice_field():
     
     @dataclass
@@ -178,3 +180,23 @@ def test_choice_field_with_values_of_a_weird_type():
     bob = Bob.sample()
     assert bob.hparam_type in {A, B, C}
     assert Bob.get_orion_space_dict() == {'hparam_type': "choices(['a', 'b', 'c'], default_value='b')"}
+
+
+@pytest.mark.xfail(
+    reason="TODO: it isn't trivial how to fix this, without having to rework the "
+    "from_dict from simple-parsing."
+)
+def test_replace_int_or_float_preserves_type():
+    @dataclass
+    class A(HyperParameters):
+        # How much of training dataset to check (floats = percent, int = num_batches)
+        limit_train_batches: Union[int, float] = 1.0
+        # How much of validation dataset to check (floats = percent, int = num_batches)
+        limit_val_batches: Union[int, float] = 1.0
+        # How much of test dataset to check (floats = percent, int = num_batches)
+        limit_test_batches: Union[int, float] = 1.0
+        
+    a = A()
+    assert isinstance(a.limit_test_batches, float)
+    b = a.replace(limit_train_batches=0.5) 
+    assert isinstance(b.limit_test_batches, float)

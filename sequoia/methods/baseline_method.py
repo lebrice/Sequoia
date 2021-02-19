@@ -17,6 +17,7 @@ import numpy as np
 import torch
 import wandb
 from pytorch_lightning import Callback, Trainer
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from simple_parsing import mutable_field
 
 from sequoia.common import Config, TrainerConfig
@@ -160,6 +161,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         self.additional_train_wrappers: List[Callable] = []
         self.additional_valid_wrappers: List[Callable] = []
+        
+        self.setting: Setting
 
     def configure(self, setting: SettingType) -> None:
         """Configures the method for the given Setting.
@@ -266,6 +269,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             self.trainer_options.automatic_optimization = False
 
         self.trainer = self.create_trainer(setting)
+        self.setting = setting
 
     def fit(
         self,
@@ -283,9 +287,16 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         )
         if self.config.render:
             train_env = RenderEnvWrapper(train_env)
+
+        # TODO: Figure out if there is a smarter way to reset the state of the Trainer,
+        # rather than just creating a new one every time.
+        self.trainer = self.create_trainer(self.setting)
         
-        # BUG: There seems to be a bug related to the number of training epochs in
-        # multi-task synbols?
+        # NOTE: It doesn't seem sufficient to just do this, since for instance the
+        # early-stopping callback would prevent training on future tasks, since they
+        # have higher validation loss:
+        # self.trainer.current_epoch = 0
+
         return self.trainer.fit(
             model=self.model, train_dataloader=train_env, val_dataloaders=valid_env,
         )
@@ -423,7 +434,10 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             An orion-formatted search space dictionary, mapping from hyper-parameter
             names (str) to their priors (str), or to nested dicts of the same form.
         """
-        return self.hparams.get_orion_space()
+        return {
+            "hparams": self.hparams.get_orion_space(),
+            "trainer_options": self.trainer_options.get_orion_space(),
+        }
 
     def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
         """Adapts the Method when it receives new Hyper-Parameters to try for a new run.
@@ -439,9 +453,10 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         """
         # Here we overwrite the corresponding attributes with the new suggested values
         # leaving other fields unchanged.
-        new_hparams = self.hparams.replace(**new_hparams)
-        # Change the hyper-parameters, then reconfigure (which recreates the model).
-        self.hparams = new_hparams
+        self.hparams = self.hparams.replace(**new_hparams["hparams"])
+        # BUG with the `replace` function and Union[int, float] type, it doesn't
+        # preserve the type of the field when serializing/deserializing!
+        self.trainer_options.max_epochs = new_hparams["trainer_options"]["max_epochs"]
 
     def hparam_sweep(
         self,
@@ -453,7 +468,10 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         debug: bool = False,
     ) -> Tuple[BaselineModel.HParams, float]:
         # Setting max epochs to 1, just to keep runs somewhat short.
-        self.trainer_options.max_epochs = 1
+        # NOTE: Now we're actually going to have the max_epochs as a tunable
+        # hyper-parameter, so we're not hard-setting this value anymore. 
+        # self.trainer_options.max_epochs = 1
+        
         # Call 'configure', so that we create `self.model` at least once, which will
         # update the hparams.output_head field to be of the right type. This is
         # necessary in order for the `get_orion_space` to retrieve all the hparams
@@ -511,6 +529,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # once PL adds it.
         # from sequoia.common.callbacks.vae_callback import SaveVaeSamplesCallback
         return [
+            EarlyStopping(monitor="val Loss")
             # self.hparams.knn_callback,
             # SaveVaeSamplesCallback(),
         ]
