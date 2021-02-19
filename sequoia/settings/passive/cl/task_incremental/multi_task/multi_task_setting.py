@@ -13,11 +13,11 @@ from sequoia.settings.assumptions.incremental import TestEnvironment
 from sequoia.settings.base import Method
 from sequoia.settings.passive.cl.class_incremental_setting import \
     ClassIncrementalTestEnvironment
+from sequoia.settings.passive.cl.objects import Observations, Actions, Rewards
 from sequoia.settings.passive.passive_environment import PassiveEnvironment
 from sequoia.utils import get_logger
 from sequoia.utils.utils import constant
-from ..task_incremental_setting import (Actions, Observations, Rewards,
-                                        TaskIncrementalSetting)
+from ..task_incremental_setting import TaskIncrementalSetting
 
 logger = get_logger(__file__)
 

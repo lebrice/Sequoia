@@ -26,8 +26,8 @@ from abc import abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import (Callable, ClassVar, Dict, List, Optional, Sequence, Tuple,
-                    Type, Union)
+from typing import (Any, Callable, ClassVar, Dict, List, Optional, Sequence,
+                    Tuple, Type, Union)
 
 import gym
 import matplotlib.pyplot as plt
@@ -566,7 +566,8 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # 'split_batch_fn' at train and test time, or by using this wrapper
         # which is also used in the RL side of the tree:
         # TODO: Maybe remove/simplify the 'split_batch_function'.
-        from sequoia.settings.active.continual.wrappers import HideTaskLabelsWrapper
+        from sequoia.settings.active.continual.wrappers import \
+            HideTaskLabelsWrapper
         if not self.task_labels_at_test_time:
             env = HideTaskLabelsWrapper(env)
 
