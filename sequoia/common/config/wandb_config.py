@@ -14,6 +14,7 @@ from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.parseable import Parseable
 from sequoia.utils.serialization import Serializable
 
+
 def patched_monitor():
     vcr = wandb.util.get_module(
         "gym.wrappers.monitoring.video_recorder",
@@ -34,14 +35,16 @@ def patched_monitor():
         else:
             key = "videos"
         wandb.log({key: wandb.Video(self.output_path)})
+
     vcr.ImageEncoder.close = close
     wandb.patched["gym"].append(
         ["gym.wrappers.monitoring.video_recorder.ImageEncoder", "close"]
     )
 
+
 import wandb.integration.gym
 
-wandb.integration.gym.monitor = patched_monitor 
+wandb.integration.gym.monitor = patched_monitor
 
 
 # GYM_MONITOR = os.environ.get("GYM_MONITOR", "")
@@ -57,6 +60,7 @@ logger = get_logger(__file__)
 @dataclass
 class WandbLoggerConfig(Serializable, Parseable):
     """ Configuration options for the wandb logger of pytorch-lightning. """
+
     # Which user to use
     entity: str = ""
     # The name of the project to which this run will belong.
@@ -69,9 +73,18 @@ class WandbLoggerConfig(Serializable, Parseable):
     run_name: Optional[str] = None
     # Identifier unique to each individual wandb run. When given, will try to
     # resume the corresponding run, generates a new ID each time.
-    # TODO: Could also use a hash of the hparams, like @nitarshan did.     
+    # TODO: Could also use a hash of the hparams, like @nitarshan did.
     run_id: Optional[str] = None
-    
+
+    # Wandb api key. Useful for preventing the login prompt from wandb from appearing
+    # when running on clusters or docker-based setups where the environment variables
+    # aren't always shared.
+    wandb_api_key: Optional[Union[str, Path]] = field(
+        default=os.environ.get("WANDB_API_KEY"),
+        to_dict=False,  # Do not serialize this field.
+        repr=False,  # Do not show this field in repr().
+    )
+
     # Tags to add to this run with wandb.
     tags: List[str] = list_field()
     # Notes about this particular experiment. (will be logged to wandb if used.)
@@ -89,6 +102,15 @@ class WandbLoggerConfig(Serializable, Parseable):
 
     def make_logger(self, wandb_parent_dir: Path) -> WandbLogger:
         logger.info(f"Creating a WandbLogger with using options {self}.")
+
+        if self.wandb_api_key is not None:
+            if Path(self.wandb_api_key).is_file():
+                key = Path(self.wandb_api_key).read_text()
+            else:
+                key = self.wandb_api_key
+            assert isinstance(key, str)
+            wandb.login(key=key)
+
         wandb_logger = WandbLogger(
             name=self.run_name,
             save_dir=str(wandb_parent_dir),
@@ -110,36 +132,39 @@ class WandbLoggerConfig(Serializable, Parseable):
 @dataclass
 class WandbConfig(Serializable):
     """ Set of configurations options for calling wandb.init directly. """
+
     # Which user to use
     entity: str = ""
 
-    project_name: str = "" # project name to use in wandb.
+    project_name: str = ""  # project name to use in wandb.
     # Name used to easily group runs together.
-    # Used to create a parent folder that will contain the `run_name` directory. 
+    # Used to create a parent folder that will contain the `run_name` directory.
     run_group: Optional[str] = None
     # Wandb run name. If None, will use wandb's automatic name generation
     run_name: Optional[str] = None
 
     # Identifier unique to each individual wandb run. When given, will try to
-    # resume the corresponding run, generates a new ID each time. 
+    # resume the corresponding run, generates a new ID each time.
     run_id: str = field(default_factory=wandb.util.generate_id)
 
     # An run number is used to differentiate different iterations of the same experiment.
     # Runs with the same name can be later grouped with wandb to produce stderr plots.
     # TODO: Could maybe use the run_id instead?
-    run_number: Optional[int] = None 
+    run_number: Optional[int] = None
 
     # Path where the wandb files should be stored. If the 'WANDB_DIR'
     # environment variable is set, uses that value. Otherwise, defaults to
     # the value of "<log_dir_root>/wandb"
-    wandb_path: Optional[Path] = Path(os.environ['WANDB_DIR']) if "WANDB_DIR" in os.environ else None
+    wandb_path: Optional[Path] = Path(
+        os.environ["WANDB_DIR"]
+    ) if "WANDB_DIR" in os.environ else None
 
     # Tags to add to this run with wandb.
-    tags: List[str] = list_field() 
+    tags: List[str] = list_field()
 
     # Notes about this particular experiment. (will be logged to wandb if used.)
     notes: Optional[str] = None
-    
+
     # Root Logging directory.
     log_dir_root: Path = Path("results")
 
@@ -150,7 +175,7 @@ class WandbConfig(Serializable):
         return self.log_dir_root.joinpath(
             (self.project_name or ""),
             (self.run_group or ""),
-            (self.run_name or 'default'),
+            (self.run_name or "default"),
             (f"run_{self.run_number}" if self.run_number is not None else ""),
         )
 
@@ -174,13 +199,16 @@ class WandbConfig(Serializable):
             # At the moment, if no run name is given, the 'random' name from wandb is used.
             pass
         logger.info(f"Using wandb. Experiment name: {self.run_name}")
-        
+
         if self.wandb_path is None:
             self.wandb_path = self.log_dir_root / "wandb"
         self.wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
 
         logger.info(f"Wandb run id: {self.run_id}")
-        logger.info(f"Using wandb. Group name: {self.run_group} run name: {self.run_name}, log_dir: {self.log_dir}")
+        logger.info(
+            f"Using wandb. Group name: {self.run_group} run name: {self.run_name}, "
+            f"log_dir: {self.log_dir}"
+        )
 
         run = wandb.init(
             project=self.project_name,
@@ -197,7 +225,7 @@ class WandbConfig(Serializable):
         )
         logger.info(f"Run: {run}")
         run.save()
-        
+
         if run.resumed:
             # TODO: add *proper* wandb resuming, probaby by using @nitarshan 's md5 id cool idea.
             # wandb.restore(self.log_dir / "checkpoints")
@@ -209,5 +237,5 @@ class WandbConfig(Serializable):
 
         if self.run_name is None:
             self.run_name = run.name
-        
+
         return run
