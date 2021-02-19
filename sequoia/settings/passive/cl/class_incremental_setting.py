@@ -450,7 +450,8 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # TODO: Adding this temporarily just for the competition
         self.test_boundary_steps = [0] + list(
             itertools.accumulate(map(len, self.test_datasets))
-        )[:-1]       
+        )[:-1]
+        self.test_steps = sum(map(len, self.test_datasets))
         # self.test_steps = [0] + list(
         #     itertools.accumulate(map(len, self.test_datasets))
         # )[:-1]
