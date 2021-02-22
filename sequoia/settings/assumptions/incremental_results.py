@@ -73,7 +73,6 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
             for task_sequence_result in self.transfer_matrix
         ]
 
-
     @property
     def num_tasks(self) -> int:
         return len(self)
@@ -90,15 +89,18 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
 
     @property
     def final_performance(self) -> List[TaskResults[MetricType]]:
-        return self[-1]
+        return self.transfer_matrix[-1]
 
     @property
-    def avereage_online_performance(self) -> MetricType:
-        return sum(self.online_performance, Metrics())
+    def average_online_performance(self) -> MetricType:
+        return sum(
+            [task_results.average_metrics for task_results in self.online_performance],
+            Metrics(),
+        )
 
     @property
     def average_final_performance(self) -> MetricType:
-        return sum(self.final_performance, Metrics())
+        return self[-1].average_metrics
 
     def to_log_dict(self, verbose: bool = False) -> Dict:
         log_dict = {}

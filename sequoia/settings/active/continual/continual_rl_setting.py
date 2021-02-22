@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Callable, ClassVar, Dict, List, Optional, Sequence, Type, Union
-
+import wandb
 import gym
 import numpy as np
 from gym import spaces
@@ -602,6 +602,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             max_episodes=self.episodes_per_task,
         )
         self.train_env = env_dataloader
+        # BUG: There is a mismatch between the train env's observation space and the
+        # shape of its observations.
+        self.observation_space = self.train_env.observation_space
         return self.train_env
 
     def val_dataloader(
@@ -1033,6 +1036,7 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         import bisect
         nb_tasks = len(task_steps)
         assert nb_tasks >= 1
+
         test_results = TaskSequenceResults(TaskResults() for _ in range(nb_tasks))
 
         # TODO: Fix this, since the task id might not be related to the steps!

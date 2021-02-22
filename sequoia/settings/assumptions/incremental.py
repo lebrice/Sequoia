@@ -6,6 +6,7 @@ from io import StringIO
 from itertools import accumulate, chain
 from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Sequence, Tuple, Type, TypeVar, Union
+import time
 
 import json
 import gym
@@ -100,6 +101,9 @@ class IncrementalSetting(ContinualSetting):
         self.train_env: Environment = None  # type: ignore
         self.val_env: Environment = None  # type: ignore
         self.test_env: TestEnvironment = None  # type: ignore
+        
+        self._start_time: Optional[float] = None
+        self._end_time: Optional[float] = None
 
     @property
     def current_task_id(self) -> Optional[int]:
@@ -170,6 +174,7 @@ class IncrementalSetting(ContinualSetting):
         # import issues)
         results = self.Results()
 
+        self._start_time = time.process_time()
         for task_id in range(self.nb_tasks):
             logger.info(
                 f"Starting training"
@@ -195,7 +200,49 @@ class IncrementalSetting(ContinualSetting):
             results.append(test_metrics)
             logger.info(f"Resulting objective of Test Loop: {test_metrics.objective}")
 
+        self._end_time = time.process_time()
+        logger.info(f"Finished main loop in {self._end_time - self._start_time} seconds.")
+        self.log_results(method, results)
         return results
+
+    def log_results(self, method: Method, results: IncrementalResults)-> None:
+         """
+        TODO: Create the tabs we need to show up in wandb:
+        1. Final
+            - Average "Current/Online" performance (scalar)
+            - Average "Final" performance (scalar)
+            - Runtime
+        2. Test
+            - Task i (evolution over time (x axis is the task id, if possible))
+        """
+        method_name: str = self.get_name()
+        setting_name: str = self.get_name()
+        dataset = self.dataset
+        logger.info(results.summary())
+        print("Final", {
+            "Average Online Performance": results.average_online_performance.objective,
+            "Average Final Performance": results.average_final_performance.objective,
+            "Runtime (seconds)": self._end_time - self._start_time,
+        })
+        if wandb.run:
+            wandb.summary["method"] = method_name
+            wandb.summary["setting"] = setting_name
+            if dataset and isinstance(dataset, str):
+                wandb.summary["dataset"] = dataset
+            wandb.log(results.to_log_dict())
+            # BUG: Bug in plotly?
+            # File "/home/fabrice/miniconda3/envs/sequoia/lib/python3.8/site-packages/plotly/matplotlylib/mplexporter/utils.py", line 246, in get_grid_style
+            # if axis._gridOnMajor and len(gridlines) > 0:
+            # AttributeError: 'XAxis' object has no attribute '_gridOnMajor'
+            # wandb.log(results.make_plots())
+            wandb.log({
+                "Final": {
+                    "Average Online Performance": results.average_online_performance.objective,
+                    "Average Final Performance": results.average_final_performance.objective,
+                    "Runtime (seconds)": self._end_time - self._start_time,
+                },
+            })
+            wandb.run.finish()
 
     def test_loop(self, method: Method) -> "IncrementalSetting.Results":
         """ (WIP): Runs an incremental test loop and returns the Results.
@@ -212,12 +259,13 @@ class IncrementalSetting(ContinualSetting):
         This `on_task_switch` 'callback' wrapper gets added the same way for
         Supervised or Reinforcement learning settings.
         """
-        # TODO: We could probably
         test_env = self.test_dataloader()
         test_env: TestEnvironment
         if self.known_task_boundaries_at_test_time and self.nb_tasks > 1:
 
             def _on_task_switch(step: int, *arg) -> None:
+                # TODO: This attribute isn't on IncrementalSetting itself, it's defined
+                # on ContinualRLSetting.
                 if step not in self.test_task_schedule:
                     return
                 if not hasattr(method, "on_task_switch"):
@@ -297,7 +345,7 @@ class IncrementalSetting(ContinualSetting):
                 episode += 1
 
         test_env.close()
-        test_results: TaskSequenceResults[EpisodeMetrics] = test_env.get_results()
+        test_results: TaskSequenceResults = test_env.get_results()
         return test_results
         # return test_results
         # if not self.task_labels_at_test_time:
@@ -326,7 +374,6 @@ class IncrementalSetting(ContinualSetting):
     ) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
         """ Returns the Test Environment (for all the tasks). """
         return super().test_dataloader(*args, **kwargs)
-
 
 class TestEnvironment(gym.wrappers.Monitor, IterableWrapper, ABC):
     """ Wrapper around a 'test' environment, which limits the number of steps
