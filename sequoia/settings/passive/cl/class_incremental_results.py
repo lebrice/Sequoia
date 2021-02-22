@@ -61,7 +61,7 @@ class ClassIncrementalResults(IncrementalSetting.Results):
         axes: plt.Axes
         figure, axes = plt.subplots()
         x = list(range(self.num_tasks))
-        y = [metrics.accuracy for metrics in self.average_metrics_per_task]
+        y = [metrics.accuracy for metrics in self[-1].average_metrics_per_task]
         rects = axes.bar(x, y)
         axes.set_title("Task Accuracy")
         axes.set_xlabel("Task")
@@ -95,16 +95,16 @@ class ClassIncrementalResults(IncrementalSetting.Results):
     def summary(self) -> str:
         s = StringIO()
         with redirect_stdout(s):
-            for i, average_task_metrics in enumerate(self.average_metrics_per_task):
+            for i, average_task_metrics in enumerate(self[-1].average_metrics_per_task):
                 print(f"Test Results on task {i}: {average_task_metrics}")
-            print(f"Average test metrics accross all the test tasks: {self.average_metrics}")
+            print(f"Average test metrics accross all the test tasks: {self[-1].average_metrics}")
         s.seek(0)
         return s.read()
 
     def to_log_dict(self) -> Dict[str, float]:
         results = {}
         results[self.objective_name] = self.objective
-        average_metrics = self.average_metrics
+        average_metrics = self[-1].average_metrics
 
         if isinstance(average_metrics, ClassificationMetrics):
             results["accuracy/average"] = average_metrics.accuracy
@@ -113,7 +113,7 @@ class ClassIncrementalResults(IncrementalSetting.Results):
         else:
             results["average metrics"] = average_metrics
 
-        for i, average_task_metrics in enumerate(self.average_metrics_per_task):
+        for i, average_task_metrics in enumerate(self[-1].average_metrics_per_task):
             if isinstance(average_task_metrics, ClassificationMetrics):
                 results[f"accuracy/task_{i}"] = average_task_metrics.accuracy
             elif isinstance(average_task_metrics, RegressionMetrics):

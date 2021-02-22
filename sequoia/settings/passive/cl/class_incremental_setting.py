@@ -389,13 +389,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             logger.debug(f"Resulting Config: {self.config}")
 
         method.configure(setting=self)
-        
-        # Run the Training loop (which is defined in IncrementalSetting).
-        self.train_loop(method)
-        # Run the Test loop (which is defined in IncrementalSetting).
-        results: ClassIncrementalResults = self.test_loop(method)
-        
-        logger.info(f"Resulting objective of Test Loop: {results.objective}")
+
+        # Run the main loop (which is defined in IncrementalSetting).
+        results: ClassIncrementalResults = self.main_loop(method)
         logger.info(results.summary())
         method.receive_results(self, results=results)
         return results

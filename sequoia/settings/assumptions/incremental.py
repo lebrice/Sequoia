@@ -1,10 +1,14 @@
 import itertools
 from abc import ABC, abstractmethod
+from contextlib import redirect_stdout
 from dataclasses import dataclass
+from io import StringIO
+from itertools import accumulate, chain
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple, Union, ClassVar, Type
+from typing import ClassVar, List, Optional, Sequence, Tuple, Type, Union
 
 import gym
+import matplotlib.pyplot as plt
 import torch
 import tqdm
 import wandb
@@ -13,19 +17,100 @@ from gym.vector import VectorEnv
 from simple_parsing import field
 from torch import Tensor
 
-from sequoia.settings.base import Setting
 from sequoia.common import ClassificationMetrics, Metrics, RegressionMetrics
+from sequoia.common.config import Config
 from sequoia.common.gym_wrappers.step_callback_wrapper import (
     Callback, StepCallbackWrapper)
 from sequoia.common.gym_wrappers.utils import IterableWrapper
-from sequoia.common.config import Config
 from sequoia.settings.base import (Actions, Environment, Method, Results,
-                                   Rewards, SettingABC)
+                                   Rewards, Setting, SettingABC)
 from sequoia.utils import constant, flag, mean
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
 from .continual import ContinualSetting
+
+logger = get_logger(__file__)
+
+
+class TaskResults(List[Metrics]):
+    """ Results within a given Task. """
+    @property
+    def average_metrics(self) -> Metrics:
+        return sum(self, Metrics())
+
+    @property
+    def objective(self) -> float:
+        average_metrics = self.average_metrics
+        if isinstance(average_metrics, ClassificationMetrics):
+            return average_metrics.accuracy
+        if isinstance(average_metrics, RegressionMetrics):
+            return average_metrics.mse
+        return average_metrics
+
+    def __str__(self):
+        return f"{type(self).__name__}({self.average_metrics})"
+    
+
+class TaskSequenceResults(List[TaskResults]):
+    """ Results for a sequence of Tasks. """
+    @property
+    def average_metrics(self) -> Metrics:
+        return sum(self.average_metrics_per_task, Metrics())
+    @property
+    def num_tasks(self) -> int:
+        return len(self)
+
+    @property
+    def average_metrics_per_task(self) -> List[Metrics]:
+        return [task_result.average_metrics for task_result in self]
+
+    @property
+    def objective(self) -> float:
+        average_metrics = self.average_metrics
+        if isinstance(average_metrics, ClassificationMetrics):
+            return average_metrics.accuracy
+        if isinstance(average_metrics, RegressionMetrics):
+            return average_metrics.mse
+        return average_metrics
+
+
+class IncrementalResults(List[TaskSequenceResults]):
+    """ Results for a whole train loop (transfer matrix). """
+    @property
+    def objective_matrix(self) -> List[List[float]]:
+        """return the objective for each task, as a 2d transfer matrix.
+
+        Returns
+        -------
+        List[List[float]]
+            The 2d matrix of objectives.    
+        """
+        return [
+            [task_result.objective for task_result in loop_result]
+            for loop_result in self
+        ]
+
+    @property
+    def num_tasks(self) -> int:
+        return len(self)
+
+    @property
+    def online_performance(self) -> Metrics:
+        return sum([self[i][i] for i in range(self.num_tasks)], Metrics())
+
+    @property
+    def final_performance(self) -> Metrics:
+        return sum(self[-1], Metrics())
+
+    def make_plots(self):
+        return {
+            "task_metrics": self.task_accuracies_plot()
+        }
+
+
+
+
+
 
 @dataclass
 class IncrementalSetting(ContinualSetting):
@@ -39,26 +124,7 @@ class IncrementalSetting(ContinualSetting):
     is quite important. 
     
     """
-    @dataclass
-    class Results(SettingABC.Results):
-        test_metrics: List[List[Metrics]]
-        @property
-        def num_tasks(self) -> int:
-            return len(self.test_metrics)
-        @property
-        def average_metrics_per_task(self) -> List[Metrics]:
-            return list(map(mean, self.test_metrics))
-        @property
-        def average_metrics(self) -> Metrics:
-            return mean(self.average_metrics_per_task)
-        @property
-        def objective(self) -> float:
-            average_metrics = self.average_metrics
-            if isinstance(average_metrics, ClassificationMetrics):
-                return average_metrics.accuracy
-            if isinstance(average_metrics, RegressionMetrics):
-                return average_metrics.mse
-            return average_metrics
+    Results: ClassVar[Type[Results]] = IncrementalResults
 
     @dataclass(frozen=True)
     class Observations(Setting.Observations):
@@ -121,42 +187,58 @@ class IncrementalSetting(ContinualSetting):
         """ Sets the current task id. """
         self._current_task_id = value
 
-    def train_loop(self, method: Method):
-        """ (WIP): Runs an incremental training loop, wether in RL or CL."""
+    def task_boundary_reached(self, method: Method, task_id: int, training: bool):
+        known_task_boundaries = self.known_task_boundaries_at_train_time if training else self.known_task_boundaries_at_test_time
+        task_labels_available = self.task_labels_at_train_time if training else self.task_labels_at_test_time
+        
+        if known_task_boundaries:
+            # Inform the model of a task boundary. If the task labels are
+            # available, then also give the id of the new task to the
+            # method.
+            # TODO: Should we also inform the method of wether or not the
+            # task switch is occuring during training or testing?
+            if not hasattr(method, "on_task_switch"):
+                logger.warning(UserWarning(
+                    f"On a task boundary, but since your method doesn't "
+                    f"have an `on_task_switch` method, it won't know about "
+                    f"it! "
+                ))
+            elif not task_labels_available:
+                method.on_task_switch(None)
+            elif self.nb_tasks == 1:
+                # NOTE: on_task_switch won't be called if there is only one "task",
+                # (as-in one task in a 'sequence' of tasks).
+                # TODO: in multi-task RL, i.e. RLSetting(dataset=..., nb_tasks=10),
+                # for instance, then there are indeed 10 tasks, but `self.tasks`
+                # is used here to describe the number of 'phases' in training and
+                # testing.
+                pass
+            else:
+                method.on_task_switch(task_id)
+
+    def main_loop(self, method: Method) -> Results:
+        """ Runs an incremental training loop, wether in RL or CL. """
+        # TODO: Add ways of restoring state to continue a given run?
+
+        # For each training task, for each test task, a list of the Metrics obtained
+        # during testing on that task. 
+        # NOTE: We could also just store a single metric for each test task, but then
+        # we'd lose the ability to create a plots to show the performance within a test
+        # task.
+        # IDEA: We could use a list of IIDResults! (but that might cause some circular
+        # import issues)
+        results = self.Results()
+
         for task_id in range(self.nb_tasks):
             logger.info(
                 f"Starting training"
                 + (f" on task {task_id}." if self.nb_tasks > 1 else ".")
             )
             self.current_task_id = task_id
-
-            if self.known_task_boundaries_at_train_time:
-                # Inform the model of a task boundary. If the task labels are
-                # available, then also give the id of the new task to the
-                # method.
-                # TODO: Should we also inform the method of wether or not the
-                # task switch is occuring during training or testing?
-                if not hasattr(method, "on_task_switch"):
-                    logger.warning(UserWarning(
-                        f"On a task boundary, but since your method doesn't "
-                        f"have an `on_task_switch` method, it won't know about "
-                        f"it! "
-                    ))
-                elif not self.task_labels_at_train_time:
-                    method.on_task_switch(None)
-                else:
-                    # NOTE: on_task_switch won't be called if there is only one "task",
-                    # (as-in one task in a 'sequence' of tasks).
-                    # TODO: in multi-task RL, i.e. RLSetting(dataset=..., nb_tasks=10),
-                    # for instance, then there are indeed 10 tasks, but `self.tasks`
-                    # is used here to describe the number of 'phases' in training and
-                    # testing.
-                    if self.nb_tasks > 1:
-                        method.on_task_switch(task_id)
+            self.task_boundary_reached(method, task_id=task_id, training=True)
 
             # Creating the dataloaders ourselves (rather than passing 'self' as
             # the datamodule):
-            # TODO: Pass the train_dataloader and val_dataloader methods, rather than the envs?
             task_train_loader = self.train_dataloader()
             task_valid_loader = self.val_dataloader()
             success = method.fit(
@@ -165,13 +247,15 @@ class IncrementalSetting(ContinualSetting):
             )
             task_train_loader.close()
             task_valid_loader.close()
-            if success != 0:
-                logger.debug(f"Finished Training on task {task_id}.")
-            else:
-                raise RuntimeError(
-                    f"Something didn't work during training: "
-                    f"method.fit() returned {success}"
-                )
+            
+            logger.info(f"Finished Training on task {task_id}.")
+
+            test_metrics: TaskSequenceResults = self.test_loop(method)
+            # Add a row to the transfer matrix.
+            results.append(test_metrics)
+            logger.info(f"Resulting objective of Test Loop: {test_metrics.objective}")
+
+        return results
 
     def test_loop(self, method: Method) -> "IncrementalSetting.Results":
         """ (WIP): Runs an incremental test loop and returns the Results.
@@ -187,41 +271,8 @@ class IncrementalSetting(ContinualSetting):
 
         This `on_task_switch` 'callback' wrapper gets added the same way for
         Supervised or Reinforcement learning settings.
-        
-        Args:
-            method (Method): The Method to evaluate.
-
-        Returns:
-            `IncrementalSetting.Results`:  An object that holds the test metrics
-            and that is used to define the `objective` - a float representing
-            how 'good' this method was on this given setting).
-            This object is also useful for creating the plots, serialization,
-            and logging to wandb. See `Results` for more info.
-
-        Important Notes:
-        -   The PL way of doing this here would be something like:
-            `test_results = method.test(datamodule=self)`, however, there are
-            some issues with doing it this way (as I just recently learned):
-            - This gives the method/model access to the labels at test time;
-            - The Method/LightningModule gets the responsibility of creating the
-              metrics we're interested in measuring in its `test_step` method.
-            - It might be difficult to customize the test loop. For example,
-              How would one go about adding some kind of 'test-time training'
-              or OSAKA-like evaluation setup using the usual
-              `[train/val/test]_step` methods?
-
-            However, I'd rather not do that, and write out the test loop
-            manually here, which also allows us more flexibility, but also has
-            some downsides:
-            - We don't currently support any of the Callbacks from
-              pytorch-lightning during testing.
-
-            For some subclasses (e.g `IIDSetting`), it might be totally fine to
-            just use the usual Trainer.fit() and Trainer.test() methods, so feel
-            free to overwrite this method with your own implementation if that
-            makes your life easier.
         """
-
+        # TODO: We could probably
         test_env = self.test_dataloader()
         test_env: TestEnvironment
         if self.known_task_boundaries_at_test_time and self.nb_tasks > 1:
@@ -298,8 +349,10 @@ class IncrementalSetting(ContinualSetting):
         
         test_env.close()
         test_results = test_env.get_results()
-        
-        return test_results
+        return TaskSequenceResults([
+            TaskResults(metrics) for metrics in test_results.test_metrics
+        ])        
+        # return test_results
         # if not self.task_labels_at_test_time:
         #     # TODO: move this wrapper to common/wrappers.
         #     test_env = RemoveTaskLabelsWrapper(test_env)
