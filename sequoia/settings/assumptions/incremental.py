@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from io import StringIO
 from itertools import accumulate, chain
 from pathlib import Path
-from typing import ClassVar, List, Optional, Sequence, Tuple, Type, Union
+from typing import (ClassVar, Dict, List, Optional, Sequence, Tuple, Type,
+                    TypeVar, Union)
 
 import gym
 import matplotlib.pyplot as plt
@@ -26,42 +27,42 @@ from sequoia.settings.base import (Actions, Environment, Method, Results,
                                    Rewards, Setting, SettingABC)
 from sequoia.utils import constant, flag, mean
 from sequoia.utils.logging_utils import get_logger
-
 from .continual import ContinualSetting
 
 logger = get_logger(__file__)
 
+MetricType = TypeVar("MetricType", bound=Metrics)
 
-class TaskResults(List[Metrics]):
+
+class TaskResults(List[MetricType]):
     """ Results within a given Task. """
     @property
-    def average_metrics(self) -> Metrics:
+    def average_metrics(self) -> MetricType:
         return sum(self, Metrics())
 
     @property
     def objective(self) -> float:
-        average_metrics = self.average_metrics
-        if isinstance(average_metrics, ClassificationMetrics):
-            return average_metrics.accuracy
-        if isinstance(average_metrics, RegressionMetrics):
-            return average_metrics.mse
-        return average_metrics
+        return self.average_metrics.objective
 
     def __str__(self):
         return f"{type(self).__name__}({self.average_metrics})"
-    
 
-class TaskSequenceResults(List[TaskResults]):
+    def to_log_dict(self, verbose: bool = False) -> Dict:
+        return self.average_metrics.to_log_dict(verbose=verbose)        
+
+
+class TaskSequenceResults(List[TaskResults[MetricType]]):
     """ Results for a sequence of Tasks. """
-    @property
-    def average_metrics(self) -> Metrics:
-        return sum(self.average_metrics_per_task, Metrics())
     @property
     def num_tasks(self) -> int:
         return len(self)
 
     @property
-    def average_metrics_per_task(self) -> List[Metrics]:
+    def average_metrics(self) -> MetricType:
+        return sum(self.average_metrics_per_task, Metrics())
+
+    @property
+    def average_metrics_per_task(self) -> List[MetricType]:
         return [task_result.average_metrics for task_result in self]
 
     @property
@@ -73,8 +74,20 @@ class TaskSequenceResults(List[TaskResults]):
             return average_metrics.mse
         return average_metrics
 
+    def to_log_dict(self, verbose: bool=False) -> Dict:
+        result = {}
+        for task_id, task_results in enumerate(self):
+            result[f"Task {task_id}"] = task_results.to_log_dict(verbose=verbose)
+        return result
 
-class IncrementalResults(List[TaskSequenceResults]):
+    def make_plots(self) -> Dict[str, plt.Figure]:
+        result = {}
+        for task_id, task_results in enumerate(self):
+            result[f"Task {task_id}"] = task_results.make_plots()
+        return result
+    
+
+class IncrementalResults(List[TaskSequenceResults[MetricType]]):
     """ Results for a whole train loop (transfer matrix). """
     @property
     def objective_matrix(self) -> List[List[float]]:
@@ -91,20 +104,34 @@ class IncrementalResults(List[TaskSequenceResults]):
         ]
 
     @property
+    def transfer_matrix(self) -> List[List[MetricType]]:
+        return [
+            task_sequence_result.average_metrics_per_task for task_sequence_result in self
+        ]
+        
+    @property
     def num_tasks(self) -> int:
         return len(self)
 
     @property
-    def online_performance(self) -> Metrics:
-        return sum([self[i][i] for i in range(self.num_tasks)], Metrics())
+    def online_performance(self) -> List[MetricType]:
+        return [self[i][i] for i in range(self.num_tasks)]
 
     @property
-    def final_performance(self) -> Metrics:
-        return sum(self[-1], Metrics())
+    def avereage_online_performance(self) -> MetricType:
+        return sum(self.online_performance, Metrics())
 
-    def make_plots(self):
+    @property
+    def final_performance(self) -> List[MetricType]:
+        return self[-1]
+
+    @property
+    def average_final_performance(self) -> MetricType:
+        return sum(self.final_performance, Metrics())
+
+    def make_plots(self) -> Dict[str, plt.Figure]:
         return {
-            "task_metrics": self.task_accuracies_plot()
+            # "task_metrics": self.task_accuracies_plot()
         }
 
 
@@ -348,10 +375,8 @@ class IncrementalSetting(ContinualSetting):
                 episode += 1
         
         test_env.close()
-        test_results = test_env.get_results()
-        return TaskSequenceResults([
-            TaskResults(metrics) for metrics in test_results.test_metrics
-        ])        
+        test_results: TaskSequenceResults[EpisodeMetrics] = test_env.get_results()
+        return test_results
         # return test_results
         # if not self.task_labels_at_test_time:
         #     # TODO: move this wrapper to common/wrappers.

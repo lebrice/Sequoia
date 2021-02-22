@@ -11,44 +11,69 @@ from .metrics import Metrics
 
 @dataclass
 class EpisodeMetrics(Metrics):
-    """ Metrics for an Episode in RL. """
-    rewards: List[float] = field(default_factory=list, repr=False)
-    # actions: List[int] = field(default_factory=list, repr=False)
-    # log_probs: List[Sequence[float]] = field(default_factory=list, repr=False)
+    """ Metrics for Episodes in RL.
     
-    # Step at which the episode started.
-    start_step: Optional[int] = None
-    
-    episode_length: int = field(default=0)
-    total_reward: float = field(default=0.)
-    mean_reward: float  = field(default=0.)
+    n_samples is the number of stored episodes.
+    """
+    n_samples: int = field(default=1, compare=False)
+    # The average reward per episode.
+    mean_episode_reward: float = 0.
+    # The average length of each episode.
+    mean_episode_length: float = 0
 
-    def __post_init__(self, **kwargs):
-        super().__post_init__(**kwargs)
-        self.rewards = detach(self.rewards)
-        self.n_samples = len(self.rewards)
-        self.episode_length = len(self.rewards)
-        self.total_reward = sum(self.rewards)
-        self.mean_reward = self.total_reward / self.episode_length
-        
-        # IDEA: Maybe use the 'variance' in actions/rewards as a metric?
+    @property
+    def n_episodes(self) -> int:
+        return self.n_samples
+
+    @property
+    def mean_reward_per_step(self) -> float:
+        return self.mean_episode_reward / self.mean_episode_length
  
-    def __add__(self, other):
-        # IDEA: Adding two EpisodeMetrics together gives you a RLMetrics??
-        # if isinstance(other, EpisodeMetrics):
-        #     return RLMetrics(episodes=[self, other])
-        return NotImplemented
+    def __add__(self, other: Union["EpisodeMetrics", Any]):
+        if not isinstance(other, EpisodeMetrics):
+            return NotImplemented
+        
+        other: EpisodeMetrics
+        other_total_reward = other.mean_episode_reward * other.n_samples
+        other_total_length = other.mean_episode_length * other.n_samples
+        self_total_reward = self.mean_episode_reward * self.n_samples
+        self_total_length = self.mean_episode_length * self.n_samples
+        
+        new_n_samples = self.n_samples + other.n_samples
+        new_mean_reward = (self_total_reward + other_total_reward) / new_n_samples
+        new_mean_length = (self_total_length + other_total_length) / new_n_samples
+
+        return EpisodeMetrics(
+            n_samples=new_n_samples,
+            mean_episode_reward=new_mean_reward,
+            mean_episode_length=new_mean_length,
+        )
+
+    @property
+    def total_reward(self) -> float:
+        return self.n_episodes * self.mean_episode_reward
+
+    @property
+    def total_steps(self) -> int:
+        return round(self.n_episodes * self.mean_episode_length)
 
     def to_pbar_message(self) -> Dict[str, Union[str, float]]:
         log_dict = self.to_log_dict()
-        log_dict.pop("rewards")
         return log_dict
-    # def to_log_dict(self):
+    
+    def to_log_dict(self, verbose=False):
+        return {
+            "Episodes": self.n_episodes,
+            "Total steps": self.total_steps,
+            "Total reward": self.total_reward,
+            "Mean reward per step": self.mean_reward_per_step,
+            "Mean episode length": self.mean_episode_length,
+            "Mean reward per episode": self.mean_episode_reward,
+        }
 
 
 @dataclass
 class RLMetrics(Metrics):
-    # Dict mapping from starting step to episode.
     episodes: List[EpisodeMetrics] = field(default_factory=list, repr=False)
     
     average_episode_length: int = field(default=0)
