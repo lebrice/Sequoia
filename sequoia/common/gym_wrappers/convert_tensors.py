@@ -60,15 +60,14 @@ class ConvertToFromTensors(gym.Wrapper):
         # info = np.ndarray(info)
         return type(result)([observation, reward, done, info])
 
-
 def supports_tensors(space: S) -> bool:
-    return getattr(space, "__supports_tensors", False)
+    return getattr(space, "_supports_tensors", False)
 
 def has_tensor_support(space: S) -> bool:
     return supports_tensors(space)
 
 def _mark_supports_tensors(space: S) -> None:
-    setattr(space, "__supports_tensors", True)
+    setattr(space, "_supports_tensors", True)
 
 @singledispatch
 def add_tensor_support(space: S, device: torch.device = None) -> S:
@@ -85,7 +84,6 @@ def add_tensor_support(space: S, device: torch.device = None) -> S:
     if supports_tensors(space):
         logger.debug(f"Space {space} already supports Tensors.")
         return space
-    _mark_supports_tensors(space)
     
     @wraps(space.sample)
     def _sample(*args, **kwargs):
@@ -102,25 +100,33 @@ def add_tensor_support(space: S, device: torch.device = None) -> S:
 
     space.sample = _sample
     space.contains = _contains
+    _mark_supports_tensors(space)
+    assert has_tensor_support(space)
     return space
 
 from sequoia.common.spaces.named_tuple import NamedTupleSpace, NamedTuple
 
 @add_tensor_support.register
 def _add_tensor_support(space: spaces.Dict, device: torch.device = None) -> spaces.Dict:
-    return type(space)(**{
+    space = type(space)(**{
         key: add_tensor_support(value, device=device)
         for key, value in space.spaces.items()
     })
+    _mark_supports_tensors(space)
+    return space
 
 @add_tensor_support.register(NamedTupleSpace)
 def _add_tensor_support(space: Dict, device: torch.device = None) -> Dict:
-    return type(space)(**{
+    space = type(space)(**{
         key: add_tensor_support(value, device=device) for key, value in space.items()
     })
+    _mark_supports_tensors(space)
+    return space
 
 @add_tensor_support.register(spaces.Tuple)
 def _add_tensor_support(space: Dict, device: torch.device = None) -> Dict:
-    return type(space)([
+    space = type(space)([
         add_tensor_support(value, device=device) for value in space.spaces
     ])
+    _mark_supports_tensors(space)
+    return space
