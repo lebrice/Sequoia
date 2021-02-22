@@ -309,30 +309,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         always be `True`.
         """
         self.model.eval()
-
-        # Check if the observation is batched or not. If it isn't, add a
-        # batch dimension to the inputs, and later remove any batch
-        # dimension from the produced actions before they get sent back to
-        # the Setting.
-        single_obs_space = self.model.observation_space
-
-        model_inputs = observations
-
-        # Check if the observations aren't batched.
-        not_batched = observations[0].shape == single_obs_space[0].shape
-        if not_batched:
-            model_inputs = observations.with_batch_dimension()
-
         with torch.no_grad():
-            forward_pass = self.model(model_inputs)
-        # Simplified this for now, but we could add more flexibility later.
-        assert isinstance(forward_pass, ForwardPass)
-
-        # If the original observations didn't have a batch dimension,
-        # Remove the batch dimension from the results.
-        if not_batched:
-            forward_pass = forward_pass.remove_batch_dimension()
-
+            forward_pass = self.model.forward(observations)
         actions: Actions = forward_pass.actions
         action_numpy = actions.actions_np
         assert action_numpy in action_space, (action_numpy, action_space)

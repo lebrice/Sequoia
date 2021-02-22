@@ -5,6 +5,8 @@ from .task_incremental import TaskIncrementalSetting
 from sequoia.utils import constant
 from dataclasses import dataclass
 
+# TODO: Import and use the `TaskResults` here.
+
 
 @dataclass
 class IIDSetting(TaskIncrementalSetting):

@@ -58,9 +58,12 @@ class EpisodeMetrics(Metrics):
         return round(self.n_episodes * self.mean_episode_length)
 
     def to_pbar_message(self) -> Dict[str, Union[str, float]]:
-        log_dict = self.to_log_dict()
-        return log_dict
-    
+        return self.to_log_dict()
+
+    @property
+    def objective(self) -> float:
+        return self.mean_episode_reward
+
     def to_log_dict(self, verbose=False):
         return {
             "Episodes": self.n_episodes,
@@ -72,34 +75,34 @@ class EpisodeMetrics(Metrics):
         }
 
 
-@dataclass
-class RLMetrics(Metrics):
-    episodes: List[EpisodeMetrics] = field(default_factory=list, repr=False)
+# @dataclass
+# class RLMetrics(Metrics):
+#     episodes: List[EpisodeMetrics] = field(default_factory=list, repr=False)
     
-    average_episode_length: int = field(default=0)
-    average_episode_reward: float = field(default=0.)
+#     average_episode_length: int = field(default=0)
+#     average_episode_reward: float = field(default=0.)
 
-    def __post_init__(self):
-        if self.episodes:
-            self.n_samples = len(self.episodes)
-            self.average_episode_length = sum(ep.episode_length for ep in self.episodes) / self.n_samples
-            self.average_episode_reward = sum(ep.total_reward for ep in self.episodes) / self.n_samples
+#     def __post_init__(self):
+#         if self.episodes:
+#             self.n_samples = len(self.episodes)
+#             self.average_episode_length = sum(ep.episode_length for ep in self.episodes) / self.n_samples
+#             self.average_episode_reward = sum(ep.total_reward for ep in self.episodes) / self.n_samples
         
-    def __add__(self, other: Union["RLMetrics", EpisodeMetrics, Any]) -> "RLMetrics":
-        if isinstance(other, RLMetrics):
-            return RLMetrics(
-                episodes = self.episodes + other.episodes,
-            )
-        if isinstance(other, EpisodeMetrics):
-            self.episodes.append(other)
-            return self
-        return NotImplemented
+#     def __add__(self, other: Union["RLMetrics", EpisodeMetrics, Any]) -> "RLMetrics":
+#         if isinstance(other, RLMetrics):
+#             return RLMetrics(
+#                 episodes = self.episodes + other.episodes,
+#             )
+#         if isinstance(other, EpisodeMetrics):
+#             self.episodes.append(other)
+#             return self
+#         return NotImplemented
 
-    def to_pbar_message(self) -> Dict[str, Union[str, float]]:
-        log_dict = self.to_log_dict()
-        # Rename "n_samples" to "episodes":
-        log_dict["episodes"] = log_dict.pop("n_samples")
-        return log_dict
+#     def to_pbar_message(self) -> Dict[str, Union[str, float]]:
+#         log_dict = self.to_log_dict()
+#         # Rename "n_samples" to "episodes":
+#         log_dict["episodes"] = log_dict.pop("n_samples")
+#         return log_dict
 
 
 @dataclass

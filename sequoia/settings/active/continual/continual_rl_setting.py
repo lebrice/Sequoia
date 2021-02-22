@@ -71,7 +71,7 @@ from .wrappers import (
 )
 
 from sequoia.settings.assumptions.incremental import TaskSequenceResults, TaskResults
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 
 logger = get_logger(__file__)
 
@@ -112,7 +112,7 @@ from sequoia.settings.assumptions.incremental import (
     TaskSequenceResults,
     IncrementalResults,
 )
-from sequoia.common.metrics.rl_metrics import RLMetrics, EpisodeMetrics
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 
 
 @dataclass
@@ -130,8 +130,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     Results: ClassVar[Type[Results]] = RLResults
 
     @dataclass(frozen=True)
-    class Observations(#ActiveSEtting.Observations,
-                       IncrementalSetting.Observations):
+    class Observations(IncrementalSetting.Observations):
         """ Observations in a continual RL Setting. """
 
         # Just as a reminder, these are the fields defined in the base classes:
@@ -401,7 +400,6 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             # attribute, which would be ugly.
             assert isinstance(temp_env.observation_space, NamedTupleSpace)
             temp_env.observation_space.dtype = self.Observations
-
             # Populate the task schedules created above.
             if not self.train_task_schedule:
                 train_change_steps = list(range(0, self.max_steps, self.steps_per_task))
@@ -441,6 +439,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                     low=self.reward_range[0], high=self.reward_range[1], shape=()
                 ),
             )
+            
         del temp_env
 
         self.train_env: gym.Env

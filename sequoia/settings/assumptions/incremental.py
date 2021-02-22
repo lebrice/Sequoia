@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from io import StringIO
 from itertools import accumulate, chain
 from pathlib import Path
-from typing import (ClassVar, Dict, List, Optional, Sequence, Tuple, Type,
-                    TypeVar, Union)
+from typing import ClassVar, Dict, List, Optional, Sequence, Tuple, Type, TypeVar, Union
 
+import json
 import gym
 import matplotlib.pyplot as plt
 import torch
@@ -21,122 +21,26 @@ from torch import Tensor
 from sequoia.common import ClassificationMetrics, Metrics, RegressionMetrics
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers.step_callback_wrapper import (
-    Callback, StepCallbackWrapper)
+    Callback,
+    StepCallbackWrapper,
+)
 from sequoia.common.gym_wrappers.utils import IterableWrapper
-from sequoia.settings.base import (Actions, Environment, Method, Results,
-                                   Rewards, Setting, SettingABC)
+from sequoia.settings.base import (
+    Actions,
+    Environment,
+    Method,
+    Results,
+    Rewards,
+    Setting,
+    SettingABC,
+)
 from sequoia.utils import constant, flag, mean
 from sequoia.utils.logging_utils import get_logger
 from .continual import ContinualSetting
 
 logger = get_logger(__file__)
 
-MetricType = TypeVar("MetricType", bound=Metrics)
-
-
-class TaskResults(List[MetricType]):
-    """ Results within a given Task. """
-    @property
-    def average_metrics(self) -> MetricType:
-        return sum(self, Metrics())
-
-    @property
-    def objective(self) -> float:
-        return self.average_metrics.objective
-
-    def __str__(self):
-        return f"{type(self).__name__}({self.average_metrics})"
-
-    def to_log_dict(self, verbose: bool = False) -> Dict:
-        return self.average_metrics.to_log_dict(verbose=verbose)        
-
-
-class TaskSequenceResults(List[TaskResults[MetricType]]):
-    """ Results for a sequence of Tasks. """
-    @property
-    def num_tasks(self) -> int:
-        return len(self)
-
-    @property
-    def average_metrics(self) -> MetricType:
-        return sum(self.average_metrics_per_task, Metrics())
-
-    @property
-    def average_metrics_per_task(self) -> List[MetricType]:
-        return [task_result.average_metrics for task_result in self]
-
-    @property
-    def objective(self) -> float:
-        average_metrics = self.average_metrics
-        if isinstance(average_metrics, ClassificationMetrics):
-            return average_metrics.accuracy
-        if isinstance(average_metrics, RegressionMetrics):
-            return average_metrics.mse
-        return average_metrics
-
-    def to_log_dict(self, verbose: bool=False) -> Dict:
-        result = {}
-        for task_id, task_results in enumerate(self):
-            result[f"Task {task_id}"] = task_results.to_log_dict(verbose=verbose)
-        return result
-
-    def make_plots(self) -> Dict[str, plt.Figure]:
-        result = {}
-        for task_id, task_results in enumerate(self):
-            result[f"Task {task_id}"] = task_results.make_plots()
-        return result
-    
-
-class IncrementalResults(List[TaskSequenceResults[MetricType]]):
-    """ Results for a whole train loop (transfer matrix). """
-    @property
-    def objective_matrix(self) -> List[List[float]]:
-        """return the objective for each task, as a 2d transfer matrix.
-
-        Returns
-        -------
-        List[List[float]]
-            The 2d matrix of objectives.    
-        """
-        return [
-            [task_result.objective for task_result in loop_result]
-            for loop_result in self
-        ]
-
-    @property
-    def transfer_matrix(self) -> List[List[MetricType]]:
-        return [
-            task_sequence_result.average_metrics_per_task for task_sequence_result in self
-        ]
-        
-    @property
-    def num_tasks(self) -> int:
-        return len(self)
-
-    @property
-    def online_performance(self) -> List[MetricType]:
-        return [self[i][i] for i in range(self.num_tasks)]
-
-    @property
-    def avereage_online_performance(self) -> MetricType:
-        return sum(self.online_performance, Metrics())
-
-    @property
-    def final_performance(self) -> List[MetricType]:
-        return self[-1]
-
-    @property
-    def average_final_performance(self) -> MetricType:
-        return sum(self.final_performance, Metrics())
-
-    def make_plots(self) -> Dict[str, plt.Figure]:
-        return {
-            # "task_metrics": self.task_accuracies_plot()
-        }
-
-
-
-
+from .incremental_results import TaskResults, TaskSequenceResults, IncrementalResults
 
 
 @dataclass
@@ -151,6 +55,7 @@ class IncrementalSetting(ContinualSetting):
     is quite important. 
     
     """
+
     Results: ClassVar[Type[Results]] = IncrementalResults
 
     @dataclass(frozen=True)
@@ -159,6 +64,7 @@ class IncrementalSetting(ContinualSetting):
 
         Adds the 'task labels' to the base Observation.
         """
+
         task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
     
     # TODO: Actually add the 'smooth' task boundary case.
@@ -181,17 +87,16 @@ class IncrementalSetting(ContinualSetting):
     # training. Only used when `smooth_task_boundaries` is False.
     known_task_boundaries_at_test_time: bool = constant(True)
 
-  
     # The number of tasks. By default 0, which means that it will be set
-    # depending on other fields in __post_init__, or eventually be just 1. 
+    # depending on other fields in __post_init__, or eventually be just 1.
     nb_tasks: int = field(0, alias=["n_tasks", "num_tasks"])
-    
+
     # Attributes (not parsed through the command-line):
     _current_task_id: int = field(default=0, init=False)
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
-        
+
         self.train_env: Environment = None  # type: ignore
         self.val_env: Environment = None  # type: ignore
         self.test_env: TestEnvironment = None  # type: ignore
@@ -215,9 +120,17 @@ class IncrementalSetting(ContinualSetting):
         self._current_task_id = value
 
     def task_boundary_reached(self, method: Method, task_id: int, training: bool):
-        known_task_boundaries = self.known_task_boundaries_at_train_time if training else self.known_task_boundaries_at_test_time
-        task_labels_available = self.task_labels_at_train_time if training else self.task_labels_at_test_time
-        
+        known_task_boundaries = (
+            self.known_task_boundaries_at_train_time
+            if training
+            else self.known_task_boundaries_at_test_time
+        )
+        task_labels_available = (
+            self.task_labels_at_train_time
+            if training
+            else self.task_labels_at_test_time
+        )
+
         if known_task_boundaries:
             # Inform the model of a task boundary. If the task labels are
             # available, then also give the id of the new task to the
@@ -225,11 +138,13 @@ class IncrementalSetting(ContinualSetting):
             # TODO: Should we also inform the method of wether or not the
             # task switch is occuring during training or testing?
             if not hasattr(method, "on_task_switch"):
-                logger.warning(UserWarning(
-                    f"On a task boundary, but since your method doesn't "
-                    f"have an `on_task_switch` method, it won't know about "
-                    f"it! "
-                ))
+                logger.warning(
+                    UserWarning(
+                        f"On a task boundary, but since your method doesn't "
+                        f"have an `on_task_switch` method, it won't know about "
+                        f"it! "
+                    )
+                )
             elif not task_labels_available:
                 method.on_task_switch(None)
             elif self.nb_tasks == 1:
@@ -243,12 +158,11 @@ class IncrementalSetting(ContinualSetting):
             else:
                 method.on_task_switch(task_id)
 
-    def main_loop(self, method: Method) -> Results:
+    def main_loop(self, method: Method) -> IncrementalResults:
         """ Runs an incremental training loop, wether in RL or CL. """
         # TODO: Add ways of restoring state to continue a given run?
-
         # For each training task, for each test task, a list of the Metrics obtained
-        # during testing on that task. 
+        # during testing on that task.
         # NOTE: We could also just store a single metric for each test task, but then
         # we'd lose the ability to create a plots to show the performance within a test
         # task.
@@ -269,12 +183,11 @@ class IncrementalSetting(ContinualSetting):
             task_train_loader = self.train_dataloader()
             task_valid_loader = self.val_dataloader()
             success = method.fit(
-                train_env=task_train_loader,
-                valid_env=task_valid_loader,
+                train_env=task_train_loader, valid_env=task_valid_loader,
             )
             task_train_loader.close()
             task_valid_loader.close()
-            
+
             logger.info(f"Finished Training on task {task_id}.")
 
             test_metrics: TaskSequenceResults = self.test_loop(method)
@@ -308,11 +221,13 @@ class IncrementalSetting(ContinualSetting):
                 if step not in self.test_task_schedule:
                     return
                 if not hasattr(method, "on_task_switch"):
-                    logger.warning(UserWarning(
-                        f"On a task boundary, but since your method doesn't "
-                        f"have an `on_task_switch` method, it won't know about "
-                        f"it! "
-                    ))
+                    logger.warning(
+                        UserWarning(
+                            f"On a task boundary, but since your method doesn't "
+                            f"have an `on_task_switch` method, it won't know about "
+                            f"it! "
+                        )
+                    )
                     return
                 if self.task_labels_at_test_time:
                     task_steps = sorted(self.test_task_schedule.keys())
@@ -320,18 +235,23 @@ class IncrementalSetting(ContinualSetting):
                     # tasks for example), then this wouldn't work, we'd need a
                     # list of the task ids or something like that.
                     task_id = task_steps.index(step)
-                    logger.debug(f"Calling `method.on_task_switch({task_id})` "
-                                 f"since task labels are available at test-time.")
+                    logger.debug(
+                        f"Calling `method.on_task_switch({task_id})` "
+                        f"since task labels are available at test-time."
+                    )
                     method.on_task_switch(task_id)
                 else:
-                    logger.debug(f"Calling `method.on_task_switch(None)` "
-                                 f"since task labels aren't available at "
-                                 f"test-time, but task boundaries are known.")
+                    logger.debug(
+                        f"Calling `method.on_task_switch(None)` "
+                        f"since task labels aren't available at "
+                        f"test-time, but task boundaries are known."
+                    )
                     method.on_task_switch(None)
+
             test_env = StepCallbackWrapper(test_env, callbacks=[_on_task_switch])
 
         try:
-            # If the Method has `test` defined, use it. 
+            # If the Method has `test` defined, use it.
             method.test(test_env)
             test_env.close()
             test_env: TestEnvironment
@@ -339,10 +259,12 @@ class IncrementalSetting(ContinualSetting):
             test_results: Results = test_env.get_results()
             print(f"Test results: {test_results}")
             return test_results
- 
+
         except NotImplementedError:
-            logger.info(f"Will query the method for actions at each step, "
-                        f"since it doesn't implement a `test` method.")
+            logger.info(
+                f"Will query the method for actions at each step, "
+                f"since it doesn't implement a `test` method."
+            )
 
         obs = test_env.reset()
 
@@ -368,12 +290,12 @@ class IncrementalSetting(ContinualSetting):
                 action = action.cpu().numpy()
 
             obs, reward, done, info = test_env.step(action)
-            
+
             if done and not test_env.is_closed():
                 # logger.debug(f"end of test episode {episode}")
                 obs = test_env.reset()
                 episode += 1
-        
+
         test_env.close()
         test_results: TaskSequenceResults[EpisodeMetrics] = test_env.get_results()
         return test_results
@@ -381,36 +303,46 @@ class IncrementalSetting(ContinualSetting):
         # if not self.task_labels_at_test_time:
         #     # TODO: move this wrapper to common/wrappers.
         #     test_env = RemoveTaskLabelsWrapper(test_env)
-    
+
     @abstractmethod
-    def train_dataloader(self, *args, **kwargs) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
-        """ Returns the DataLoader/Environment for the current train task. """  
+    def train_dataloader(
+        self, *args, **kwargs
+    ) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
+        """ Returns the DataLoader/Environment for the current train task. """
         return super().train_dataloader(*args, **kwargs)
-    
+
     @abstractmethod
-    def val_dataloader(self, *args, **kwargs) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
+    def val_dataloader(
+        self, *args, **kwargs
+    ) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
         """ Returns the DataLoader/Environment used for validation on the
         current task.
-        """  
+        """
         return super().val_dataloader(*args, **kwargs)
-    
+
     @abstractmethod
-    def test_dataloader(self, *args, **kwargs) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
-        """ Returns the Test Environment (for all the tasks). """  
+    def test_dataloader(
+        self, *args, **kwargs
+    ) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
+        """ Returns the Test Environment (for all the tasks). """
         return super().test_dataloader(*args, **kwargs)
 
 
-class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
+class TestEnvironment(gym.wrappers.Monitor, IterableWrapper, ABC):
     """ Wrapper around a 'test' environment, which limits the number of steps
     and keeps tracks of the performance.
     """
-    def __init__(self,
-                 env: gym.Env,
-                 directory: Path,
-                 step_limit: int = 1_000,
-                 no_rewards: bool = False,
-                 config: Config = None,
-                 *args, **kwargs):
+
+    def __init__(
+        self,
+        env: gym.Env,
+        directory: Path,
+        step_limit: int = 1_000,
+        no_rewards: bool = False,
+        config: Config = None,
+        *args,
+        **kwargs,
+    ):
         super().__init__(env, directory, *args, **kwargs)
         self.step_limit = step_limit
         self.no_rewards = no_rewards
@@ -419,11 +351,10 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
         self.config = config
         # if wandb.run:
         #     wandb.gym.monitor()
-            
 
     def is_closed(self):
         return self._closed
-    
+
     @abstractmethod
     def get_results(self) -> Results:
         """ Return how well the Method was applied on this environment.
@@ -452,7 +383,7 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
         action_for_stats = action.y_pred if isinstance(action, Actions) else action
 
         self._before_step(action_for_stats)
-        
+
         if isinstance(action, Tensor):
             action = action.cpu().numpy()
         observation, reward, done, info = self.env.step(action)
@@ -460,20 +391,20 @@ class TestEnvironment(gym.wrappers.Monitor,  IterableWrapper, ABC):
         reward_for_stats = reward.y
 
         # TODO: Always render when debugging? or only when the corresponding
-        # flag is set in self.config? 
+        # flag is set in self.config?
         try:
             if self.config and self.config.render and self.config.debug:
                 self.render("human")
         except NotImplementedError:
             pass
-        
+
         if isinstance(self.env.unwrapped, VectorEnv):
             done = all(done)
         else:
             done = bool(done)
-        
+
         done = self._after_step(observation_for_stats, reward_for_stats, done, info)
-    
+
         if self.get_total_steps() >= self.step_limit:
             done = True
             self.close()

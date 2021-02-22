@@ -135,6 +135,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         # The forward pass to be returned:
         forward_pass: Optional[ForwardPass] = None
 
+        # TODO: Remove this.
         if not self.batch_size:
             self.batch_size = observations.batch_size
             logger.debug(f"Setting batch_size to {self.batch_size}.")
@@ -144,7 +145,8 @@ class MultiHeadModel(BaseModel[SettingType]):
         single_observation_space = self.observation_space
         if observations[0].shape == single_observation_space[0].shape:
             raise RuntimeError("Observations should be batched!")
-
+        
+        assert not isinstance(observations.task_labels, int), observations.shapes
         # Get the task labels from the observation.
         # TODO: It isn't exactly nice that we have to do this here. Would be nicer if we
         # always had task labels for each sample as a numpy array, or just None.
@@ -714,6 +716,7 @@ def cleanup_task_labels(
                 # ndarray as well?
     if task_labels is None:
         return None
+    assert isinstance(task_labels, (np.ndarray, Tensor)), task_labels
     if not task_labels.shape:
         task_labels = task_labels.reshape([1])
     if isinstance(task_labels, Tensor):
