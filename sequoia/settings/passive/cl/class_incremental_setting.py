@@ -809,7 +809,7 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         # is actually pretty bad, because if the class ordering was changed between
         # training and testing, then, this wouldn't actually report the correct results! 
         self.task_schedule = task_schedule or {}
-        self.task_steps = sorted(self.env.task_schedule.keys())
+        self.task_steps = sorted(self.task_schedule.keys())
         self.results: TaskSequenceResults[ClassificationMetrics] = TaskSequenceResults(
             TaskResults() for step in self.task_steps
         )
