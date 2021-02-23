@@ -206,7 +206,7 @@ class IncrementalSetting(ContinualSetting):
         return results
 
     def log_results(self, method: Method, results: IncrementalResults)-> None:
-         """
+        """
         TODO: Create the tabs we need to show up in wandb:
         1. Final
             - Average "Current/Online" performance (scalar)
