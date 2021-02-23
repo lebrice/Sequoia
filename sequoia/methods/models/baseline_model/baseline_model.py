@@ -170,22 +170,11 @@ class BaselineModel(SemiSupervisedModel,
                 task.enable()
         from pytorch_lightning.loggers import WandbLogger
         self.logger: WandbLogger
-        
-        # Wether we logged the setting's config to wandb before or not.
-        self._setting_logged = False
 
     def on_fit_start(self):
         super().on_fit_start()
-        if self.logger and not self._setting_logged:
-            # TODO: Some values might be too verbose / annoying to have logged to wandb
-            # BUG: Sometimes (during tests for instance) the Config object in wandb
-            # is actually some werd DummyExperiment.nop object?
-            if isinstance(self.logger.experiment.config, wandb.Config):
-                setting_dict = self.setting.to_dict()
-                self.logger.experiment.config.update({
-                    k: v for k, v in setting_dict.items() if not k.startswith("_")
-                })
-                self._setting_logged = True
+        # NOTE: We could use this to log stuff to wandb.
+        # NOTE: The Setting already logs itself in the `wandb.config` dict.
 
     @auto_move_data
     def forward(self, observations: Setting.Observations) -> ForwardPass:  # type: ignore

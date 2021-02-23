@@ -12,7 +12,7 @@ from itertools import accumulate, chain
 from functools import partial
 from typing import Dict, List, Union, ClassVar
 from pathlib import Path
-
+import wandb
 
 import matplotlib.pyplot as plt
 from simple_parsing import field, list_field, mutable_field
@@ -51,10 +51,14 @@ class ClassIncrementalResults(IncrementalSetting.Results):
     objective_name: ClassVar[str] = "Average Accuracy"
 
     def make_plots(self):
-        results = {
-            "task_metrics": self.task_accuracies_plot()
-        }
-        return results
+        plots_dict = {}
+        if wandb.run:
+            # TODO: Add a Histogram plot from wandb?
+            pass
+        else:
+            # TODO: Add back the plots.
+            plots_dict["task_metrics"] = self.task_accuracies_plot()
+        return plots_dict
 
     def task_accuracies_plot(self):
         figure: plt.Figure

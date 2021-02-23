@@ -202,7 +202,7 @@ class IncrementalSetting(ContinualSetting):
                     logger.info(f"Detected that wandb is being used, will fill the `config` with values from the setting.")
                     wandb.config["method"] = method.get_name()
                     wandb.config["setting"] = self.get_name()
-                    for k, v in self.to_dict():
+                    for k, v in self.to_dict().items():
                         if not k.startswith("_"):
                             wandb.config[f"setting/{k}"] = v
                     self._setting_logged_to_wandb = True
@@ -232,11 +232,14 @@ class IncrementalSetting(ContinualSetting):
         setting_name: str = self.get_name()
         dataset = self.dataset
         logger.info(results.summary())
-        print("Final", {
-            "Average Online Performance": results.average_online_performance.objective,
-            "Average Final Performance": results.average_final_performance.objective,
-            "Runtime (seconds)": self._end_time - self._start_time,
-        })
+        final_dict = {
+            "Final/Average Online Performance": results.average_online_performance.objective,
+            "Final/Average Final Performance": results.average_final_performance.objective,
+            "Final/Runtime (seconds)": self._end_time - self._start_time,
+            "Final/CL Score": results.cl_score,
+        }
+        print(json.dumps(final_dict, indent="\t"))
+        
         if wandb.run:
             wandb.summary["method"] = method_name
             wandb.summary["setting"] = setting_name
@@ -245,16 +248,12 @@ class IncrementalSetting(ContinualSetting):
 
             # wandb.log(results.to_log_dict())
             
-            # BUG: Bug in plotly?
+            # BUG: Sometimes logging a matplotlib figure causes a crash:
             # File "/home/fabrice/miniconda3/envs/sequoia/lib/python3.8/site-packages/plotly/matplotlylib/mplexporter/utils.py", line 246, in get_grid_style
             # if axis._gridOnMajor and len(gridlines) > 0:
             # AttributeError: 'XAxis' object has no attribute '_gridOnMajor'
             # wandb.log(results.make_plots())
-            wandb.log({
-                "Final/Average Online Performance": results.average_online_performance.objective,
-                "Final/Average Final Performance": results.average_final_performance.objective,
-                "Final/Runtime (seconds)": self._end_time - self._start_time,
-            })
+            wandb.log(final_dict)
             wandb.log(results.make_plots())
 
             wandb.run.finish()
@@ -275,13 +274,15 @@ class IncrementalSetting(ContinualSetting):
         Supervised or Reinforcement learning settings.
         """
         test_env = self.test_dataloader()
+        
         test_env: TestEnvironment
+
         if self.known_task_boundaries_at_test_time and self.nb_tasks > 1:
 
             def _on_task_switch(step: int, *arg) -> None:
                 # TODO: This attribute isn't on IncrementalSetting itself, it's defined
                 # on ContinualRLSetting.
-                if step not in self.test_task_schedule:
+                if step not in test_env.boundary_steps:
                     return
                 if not hasattr(method, "on_task_switch"):
                     logger.warning(
@@ -292,8 +293,10 @@ class IncrementalSetting(ContinualSetting):
                         )
                     )
                     return
+
                 if self.task_labels_at_test_time:
-                    task_steps = sorted(self.test_task_schedule.keys())
+                    # TODO: Should this 'test boundary' step depend on the batch size?
+                    task_steps = sorted(test_env.boundary_steps)
                     # TODO: If the ordering of tasks were different (shuffled
                     # tasks for example), then this wouldn't work, we'd need a
                     # list of the task ids or something like that.

@@ -445,6 +445,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         self.train_env: gym.Env
         self.valid_env: gym.Env
         self.test_env: gym.Env
+        
 
     def create_task_schedule(
         self, temp_env: MultiTaskEnvironment, change_steps: List[int]
@@ -1017,6 +1018,10 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
     def __init__(self, *args, task_schedule: Dict, **kwargs):
         super().__init__(*args, **kwargs)
         self.task_schedule = task_schedule
+        self.boundary_steps = [
+            step // (self.batch_size or 1) for step in
+            self.task_schedule.keys()
+        ]
 
     def get_results(self) -> TaskSequenceResults[EpisodeMetrics]:
         # TODO: Place the metrics in the right 'bin' at the end of each episode during
