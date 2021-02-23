@@ -4,6 +4,7 @@ This is a bit like the Metrics from pytorch-lightning, but seems easier to use,
 as far as I know. Also totally transferable between gpus etc. (Haven't used
 the metrics from PL much yet, to be honest).
 """
+from abc import abstractmethod
 from dataclasses import InitVar, dataclass, field, fields
 from typing import Any, Dict, Optional, Union
 
@@ -114,3 +115,14 @@ class Metrics(Serializable):
         return type(self)(**{
             name: to_numpy(val) for name, val in self.items()
         })
+    
+    @property
+    def objective(self) -> float:
+        """Returns the 'main' metric from this object, as a float.
+
+        Returns
+        -------
+        float
+            The most important metric from this object, as a float.
+        """
+        raise NotImplementedError(f"No objective implemented for Metrics {self}")

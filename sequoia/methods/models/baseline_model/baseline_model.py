@@ -170,22 +170,11 @@ class BaselineModel(SemiSupervisedModel,
                 task.enable()
         from pytorch_lightning.loggers import WandbLogger
         self.logger: WandbLogger
-        
-        # Wether we logged the setting's config to wandb before or not.
-        self._setting_logged = False
 
     def on_fit_start(self):
         super().on_fit_start()
-        if self.logger and not self._setting_logged:
-            # TODO: Some values might be too verbose / annoying to have logged to wandb
-            # BUG: Sometimes (during tests for instance) the Config object in wandb
-            # is actually some werd DummyExperiment.nop object?
-            if isinstance(self.logger.experiment.config, wandb.Config):
-                setting_dict = self.setting.to_dict()
-                self.logger.experiment.config.update({
-                    k: v for k, v in setting_dict.items() if not k.startswith("_")
-                })
-                self._setting_logged = True
+        # NOTE: We could use this to log stuff to wandb.
+        # NOTE: The Setting already logs itself in the `wandb.config` dict.
 
     @auto_move_data
     def forward(self, observations: Setting.Observations) -> ForwardPass:  # type: ignore
@@ -194,6 +183,8 @@ class BaselineModel(SemiSupervisedModel,
         For the given observations, creates a `ForwardPass`, a dict-like object which
         will hold the observations, the representations and the output head predictions.
         
+        NOTE: Base implementation is in `base_model.py`.
+
         Parameters
         ----------
         observations : Setting.Observations
@@ -205,8 +196,25 @@ class BaselineModel(SemiSupervisedModel,
             A dict-like object which holds the observations, representations, and output
             head predictions (actions). See the `ForwardPass` class for more info.
         """
-        # NOTE: Implementation is mostly in `base_model.py`.
-        return super().forward(observations)
+        # The observations should come from a batched environment. If they are not, we
+        # add a batch dimension, which we will then remove.
+        # BUG: The observation space of the Setting doesn't correspond to the shapes of
+        # the observations.
+        single_obs_space = self.observation_space
+        # Check if the observations are batched or not.
+        not_batched = len(observations[0].shape) == len(single_obs_space[0].shape)
+        if not_batched:
+            observations = observations.with_batch_dimension()
+
+        forward_pass = super().forward(observations)
+        # Simplified this for now, but we could add more flexibility later.
+        assert isinstance(forward_pass, ForwardPass)
+
+        # If the original observations didn't have a batch dimension,
+        # Remove the batch dimension from the results.
+        if not_batched:
+            forward_pass = forward_pass.remove_batch_dimension()
+        return forward_pass
 
     def create_output_head(self, setting: Setting, task_id: Optional[int]) -> OutputHead:
         """Create an output head for the current action and reward spaces.

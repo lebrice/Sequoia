@@ -48,8 +48,7 @@ from torch.optim.optimizer import Optimizer
 
 from sequoia.common import Loss, Metrics
 from sequoia.common.layers import Lambda
-from sequoia.common.metrics.rl_metrics import (EpisodeMetrics,
-                                               GradientUsageMetric, RLMetrics)
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics, GradientUsageMetric
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.settings.active.continual import ContinualRLSetting
 from sequoia.settings.base.objects import Actions, Observations, Rewards
@@ -183,7 +182,7 @@ class PolicyHead(ClassificationHead):
         self.rewards: List[Deque[ContinualRLSetting.Rewards]] = []
 
         # The actual "internal" loss we use for training.
-        self.loss: Loss = Loss(self.name, metrics={self.name: RLMetrics()})
+        self.loss: Loss = Loss(self.name)
         self.batch_size: int = 0
 
         self.num_episodes_since_update: np.ndarray = np.zeros(1)
@@ -402,19 +401,22 @@ class PolicyHead(ClassificationHead):
         log_probabilities = actions.y_pred_log_prob
         rewards = rewards.y
         
-        loss = self.policy_gradient(
+        loss_tensor = self.policy_gradient(
             rewards=rewards,
             log_probs=log_probabilities,
             gamma=self.hparams.gamma,
         )
+        loss = Loss(self.name, loss_tensor)
+        loss.metric = EpisodeMetrics(
+            n_samples=1,
+            mean_episode_reward=float(rewards.sum()),
+            mean_episode_length=len(rewards),
+        )
+        # TODO: add something like `add_metric(self, metric: Metrics, name: str=None)`
+        # to `Loss`.
+        loss.metrics["gradient_usage"] = self.get_gradient_usage_metrics(env_index)
+        return loss
         
-        gradient_usage = self.get_gradient_usage_metrics(env_index)
-        # TODO: Add 'Metrics' for each episode?
-        return Loss(self.name, loss, metrics={
-            self.name: RLMetrics(episodes=[EpisodeMetrics(rewards=rewards)]),
-            "gradient_usage": gradient_usage
-        })
-
     def get_gradient_usage_metrics(self, env_index: int) -> GradientUsageMetric:
         """ Returns a Metrics object that describes how many of the actions
         from an episode that are used to calculate a loss still have their

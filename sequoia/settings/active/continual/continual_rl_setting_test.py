@@ -11,6 +11,7 @@ from sequoia.common.spaces import Sparse
 from sequoia.common.transforms import ChannelsFirstIfNeeded, ToTensor, Transforms
 from sequoia.conftest import xfail_param, param_requires_atari_py
 from sequoia.utils.utils import take
+from sequoia.common.gym_wrappers.convert_tensors import has_tensor_support
 
 from .continual_rl_setting import ContinualRLSetting
 
@@ -68,6 +69,11 @@ def test_check_iterate_and_step(dataset: str,
     
     with setting.train_dataloader(batch_size=batch_size) as temp_env:
         assert temp_env.observation_space[0] == spaces.Box(0., 1., expected_obs_batch_shape, dtype=np.float32)
+        obs = temp_env.reset()
+        # BUG:
+        # assert has_tensor_support(temp_env.observation_space)
+        assert obs[0].shape == temp_env.observation_space[0].shape
+        
 
     with setting.val_dataloader(batch_size=batch_size) as temp_env:
         assert temp_env.observation_space[0] == spaces.Box(0., 1., expected_obs_batch_shape, dtype=np.float32)
@@ -103,10 +109,10 @@ def test_check_iterate_and_step(dataset: str,
             assert env.batch_size == batch_size
         ##
         # env = dataloader_method(batch_size=batch_size)
-        
+
         reset_obs = env.reset()
         check_obs(reset_obs)
-        
+
         step_obs, *_ = env.step(env.action_space.sample())
         check_obs(step_obs)
 

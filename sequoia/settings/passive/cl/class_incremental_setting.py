@@ -55,7 +55,7 @@ from sequoia.common.spaces import Image, Sparse
 from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.transforms import Compose, SplitBatch, Transforms
 from sequoia.settings.assumptions.incremental import (IncrementalSetting,
-                                                      TestEnvironment)
+                                                      TestEnvironment, TaskResults, TaskSequenceResults)
 from sequoia.settings.base import Method, ObservationType, Results, RewardType
 from sequoia.utils import constant, dict_union, get_logger, mean, take
 
@@ -389,13 +389,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             logger.debug(f"Resulting Config: {self.config}")
 
         method.configure(setting=self)
-        
-        # Run the Training loop (which is defined in IncrementalSetting).
-        self.train_loop(method)
-        # Run the Test loop (which is defined in IncrementalSetting).
-        results: ClassIncrementalResults = self.test_loop(method)
-        
-        logger.info(f"Resulting objective of Test Loop: {results.objective}")
+
+        # Run the main loop (which is defined in IncrementalSetting).
+        results: ClassIncrementalResults = self.main_loop(method)
         logger.info(results.summary())
         method.receive_results(self, results=results)
         return results
@@ -814,17 +810,17 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         # training and testing, then, this wouldn't actually report the correct results! 
         self.task_schedule = task_schedule or {}
         self.task_steps = sorted(self.task_schedule.keys())
-        self.metrics: List[ClassificationMetrics] = [[] for step in self.task_steps]
+        self.results: TaskSequenceResults[ClassificationMetrics] = TaskSequenceResults(
+            TaskResults() for step in self.task_steps
+        )
         self._reset = False
+        self.boundary_steps = [
+            step // (self.batch_size or 1) for step in
+            self.task_schedule.keys()
+        ]
 
     def get_results(self) -> ClassIncrementalResults:
-        # rewards = self.get_episode_rewards()
-        # lengths = self.get_episode_lengths()
-        # total_steps = self.get_total_steps()
-        # n_metrics_per_task = [len(task_metrics) for task_metrics in self.metrics]
-        return ClassIncrementalResults(
-            test_metrics=self.metrics
-        )
+        return self.results
 
     def reset(self):
         if not self._reset:
@@ -866,10 +862,9 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         import bisect
         # Given the step, find the task id.
         task_id = bisect.bisect_right(task_steps, self._steps) - 1
-        self.metrics[task_id].append(metric)
+        self.results[task_id].append(metric)
         self._steps += 1
-        
-        
+
         ## Debugging issue with Monitor class:
         # return super()._after_step(observation, reward, done, info)
         if not self.enabled: return done

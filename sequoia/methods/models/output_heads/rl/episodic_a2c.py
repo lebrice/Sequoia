@@ -17,13 +17,12 @@ from torch.nn import functional as F
 
 from sequoia.common import Loss
 from sequoia.common.hparams import categorical, log_uniform, uniform
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 from sequoia.settings import ContinualRLSetting
 from sequoia.settings.base import Rewards
 from sequoia.utils import get_logger
 from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
-from .policy_head import (Categorical, GradientUsageMetric, PolicyHead,
-                          PolicyHeadOutput, normalize)
+from .policy_head import Categorical, PolicyHead, PolicyHeadOutput, normalize
 
 logger = get_logger(__file__)
 
@@ -152,7 +151,7 @@ class EpisodicA2C(PolicyHead):
         values: Tensor = actions.value
         assert rewards.y is not None
         episode_rewards: Tensor = rewards.y
-        
+
         # target values are calculated backward
         # it's super important to handle correctly done states,
         # for those cases we want our to target to be equal to the reward only
@@ -182,15 +181,17 @@ class EpisodicA2C(PolicyHead):
         loss += self.hparams.critic_loss_coef * critic_loss
 
         # Entropy loss, to "favor exploration".
-        entropy_loss = Loss("entropy", - actions.action_dist.entropy().mean())
+        entropy_loss_tensor = - actions.action_dist.entropy().mean()
+        entropy_loss = Loss("entropy", entropy_loss_tensor)
         loss += self.hparams.entropy_loss_coef * entropy_loss
         if done:
             episode_rewards_array = episode_rewards.reshape([-1])
-            episode_metrics = [EpisodeMetrics(rewards=episode_rewards_array)]
-            loss.metric = RLMetrics(episodes=episode_metrics)
-        
+            loss.metric = EpisodeMetrics(
+                n_samples=1,
+                mean_episode_reward=float(episode_rewards_array.sum()),
+                mean_episode_length=len(episode_rewards_array),
+            )
         loss.metrics["gradient_usage"] = self.get_gradient_usage_metrics(env_index)
-
         return loss
 
     def optimizer_step(self):
