@@ -1,7 +1,7 @@
 """ Results of an Incremental setting. """
 import json
 from io import StringIO
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Optional
 
 import matplotlib.pyplot as plt
 import wandb
@@ -52,10 +52,41 @@ class TaskSequenceResults(List[TaskResults[MetricType]]):
 class IncrementalResults(List[TaskSequenceResults[MetricType]]):
     """ Results for a whole train loop (transfer matrix). """
 
+    def __init__(self, *args):
+        super().__init__(*args)
+        self._runtime: Optional[float] = None
+    
     @property
     def transfer_matrix(self) -> List[List[TaskResults]]:
         return self
 
+    @property
+    def cl_score(self) -> float:
+        """ CL Score, as a weigted sum of three objectives:
+        - The average final performance over all tasks
+        - The average 'online' performance over all tasks
+        - Runtime
+
+        TODO: @optimass Determine the weights for each factor.
+        
+        Returns
+        -------
+        float
+            [description]
+        """
+        # TODO: Determine the function to use to get a runtime score between 0 and 1.
+        def runtime_score(runtime: float) -> float:
+            return 1.0 if runtime <= 3600 else 0.
+        score = (
+            0.2 * self.average_online_performance.objective +
+            0.6 * self.average_final_performance.objective +
+            0.2 * runtime_score(self._runtime)
+        )
+        return score
+
+    def objective(self) -> float:
+        return self.cl_score
+    
     @property
     def objective_matrix(self) -> List[List[float]]:
         """Return transfer matrix containing the value of the 'objective' for each task.
@@ -88,19 +119,24 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
         return [self[i][i] for i in range(self.num_tasks)]
 
     @property
+    def online_performance_metrics(self) -> List[MetricType]:
+        return [task_results.average_metrics for task_results in self.online_performance]
+
+    @property
     def final_performance(self) -> List[TaskResults[MetricType]]:
         return self.transfer_matrix[-1]
 
     @property
+    def final_performance_metrics(self) -> List[MetricType]:
+        return [task_result.average_metrics for task_result in self.final_performance]
+
+    @property
     def average_online_performance(self) -> MetricType:
-        return sum(
-            [task_results.average_metrics for task_results in self.online_performance],
-            Metrics(),
-        )
+        return sum(self.online_performance_metrics, Metrics())
 
     @property
     def average_final_performance(self) -> MetricType:
-        return self[-1].average_metrics
+        return sum(self.final_performance_metrics, Metrics())
 
     def to_log_dict(self, verbose: bool = False) -> Dict:
         log_dict = {}

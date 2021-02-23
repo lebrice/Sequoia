@@ -61,7 +61,7 @@ class ClassIncrementalResults(IncrementalSetting.Results):
         axes: plt.Axes
         figure, axes = plt.subplots()
         x = list(range(self.num_tasks))
-        y = [metrics.accuracy for metrics in self[-1].average_metrics_per_task]
+        y = [metrics.accuracy for metrics in self.final_performance]
         rects = axes.bar(x, y)
         axes.set_title("Task Accuracy")
         axes.set_xlabel("Task")

@@ -213,6 +213,7 @@ class IncrementalSetting(ContinualSetting):
                 wandb.log(d)
 
         self._end_time = time.process_time()
+        results._runtime = self._start_time - self._end_time
         logger.info(f"Finished main loop in {self._end_time - self._start_time} seconds.")
         self.log_results(method, results)
         return results
