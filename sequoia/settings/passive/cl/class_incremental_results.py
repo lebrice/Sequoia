@@ -47,7 +47,8 @@ class ClassIncrementalResults(IncrementalSetting.Results):
     evaluation loop ourselves.
     TODO: Fix this for the 'incremental regression' case.
     """
-    test_metrics: List[List[Metrics]] = list_field(repr=False)
+    # Higher accuracy => better
+    lower_is_better: ClassVar[bool] = False
     objective_name: ClassVar[str] = "Average Accuracy"
 
     def make_plots(self):
@@ -75,25 +76,29 @@ class ClassIncrementalResults(IncrementalSetting.Results):
         return figure
 
     def cumul_metrics_plot(self):
-        """TODO: Create a plot that shows the evolution of the test accuracy
-        over all test tasks seen so far.
+        """TODO: Create a plot that shows the evolution of the test performance over
+        all test tasks seen so far.
 
         (during training or during testing?)
-
-        :return: [description]
-        :rtype: [type]
         """
         figure: plt.Figure
         axes: plt.Axes
         figure, axes = plt.subplots()
-        cumulative_metrics = list(accumulate(chain(*self.test_metrics)))
+        x = list(range(self.num_tasks))
+        y = []
+        metric_name: str = ""
+        for i in range(self.num_tasks):
+            previous_metrics = self.metrics_matrix[i][:i+1]
+            cumul_metrics = sum(previous_metrics)
+            y.append(cumul_metrics.objective)
+            if not metric_name:
+                metric_name = cumul_metrics.objective_name
 
-        if isinstance(cumulative_metrics[0], ClassificationMetrics):
-            assert cumulative_metrics[-1].accuracy == self.average_metrics.accuracy
-
-        x = [metrics.n_samples for metrics in cumulative_metrics]
-        y = [metrics.accuracy for metrics in cumulative_metrics]
+        # x = [metrics.n_samples for metrics in cumulative_metrics]
+        # y = [metrics.accuracy for metrics in cumulative_metrics]
         axes.plot(x, y)
+        axes.set_xlabel("# of learned tasks")
+        axes.set_ylabel(f"Average {metric_name} on tasks seen so far")
         return figure
 
     # def summary(self) -> str:

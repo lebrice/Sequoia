@@ -36,17 +36,16 @@ class Config(Serializable, Parseable):
     either the Setting or the Method, or common to both. For instance, the
     random seed, or the log directory, wether CUDA is to be used, etc.
     """
-    
     # Directory containing the datasets.
-    data_dir: Path = Path("data")    
+    data_dir: Path = Path(os.environ.get("SLURM_TMPDIR", "data"))
     # Directory containing the results of an experiment.
     log_dir: Path = Path("results")
-    
+
     # Run in Debug mode: no wandb logging, extra output.
     debug: bool = flag(False)
     # Wether to render the environment observations. Slows down training.
     render: bool = flag(False)
-    
+
     # Enables more verbose logging.
     verbose: bool = flag(False)
     # Number of workers for the dataloaders.
