@@ -132,3 +132,6 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
                 show_text=True,
             )
         return plots
+
+    def __str__(self) -> str:
+        return self.summary()

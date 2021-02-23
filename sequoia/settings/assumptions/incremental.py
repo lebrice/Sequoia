@@ -1,14 +1,15 @@
 import itertools
+import json
+import time
 from abc import ABC, abstractmethod
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from io import StringIO
 from itertools import accumulate, chain
 from pathlib import Path
-from typing import ClassVar, Dict, List, Optional, Sequence, Tuple, Type, TypeVar, Union
-import time
+from typing import (ClassVar, Dict, List, Optional, Sequence, Tuple, Type,
+                    TypeVar, Union)
 
-import json
 import gym
 import matplotlib.pyplot as plt
 import torch
@@ -22,26 +23,20 @@ from torch import Tensor
 from sequoia.common import ClassificationMetrics, Metrics, RegressionMetrics
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers.step_callback_wrapper import (
-    Callback,
-    StepCallbackWrapper,
-)
+    Callback, StepCallbackWrapper)
 from sequoia.common.gym_wrappers.utils import IterableWrapper
-from sequoia.settings.base import (
-    Actions,
-    Environment,
-    Method,
-    Results,
-    Rewards,
-    Setting,
-    SettingABC,
-)
+from sequoia.settings.base import (Actions, Environment, Method, Results,
+                                   Rewards, Setting, SettingABC)
 from sequoia.utils import constant, flag, mean
 from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.utils import add_prefix
+
 from .continual import ContinualSetting
 
 logger = get_logger(__file__)
 
-from .incremental_results import TaskResults, TaskSequenceResults, IncrementalResults
+from .incremental_results import (IncrementalResults, TaskResults,
+                                  TaskSequenceResults)
 
 
 @dataclass
@@ -65,7 +60,6 @@ class IncrementalSetting(ContinualSetting):
 
         Adds the 'task labels' to the base Observation.
         """
-
         task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
     
     # TODO: Actually add the 'smooth' task boundary case.
@@ -95,6 +89,8 @@ class IncrementalSetting(ContinualSetting):
     # Attributes (not parsed through the command-line):
     _current_task_id: int = field(default=0, init=False)
 
+    # TODO: Add wandb support for all methods, not just the baseline.
+    
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
 
@@ -104,6 +100,7 @@ class IncrementalSetting(ContinualSetting):
         
         self._start_time: Optional[float] = None
         self._end_time: Optional[float] = None
+        self._setting_logged_to_wandb: bool = False
 
     @property
     def current_task_id(self) -> Optional[int]:
@@ -200,6 +197,21 @@ class IncrementalSetting(ContinualSetting):
             results.append(test_metrics)
             logger.info(f"Resulting objective of Test Loop: {test_metrics.objective}")
 
+            if wandb.run:
+                if not self._setting_logged_to_wandb:
+                    logger.info(f"Detected that wandb is being used, will fill the `config` with values from the setting.")
+                    wandb.config["method"] = method.get_name()
+                    wandb.config["setting"] = self.get_name()
+                    for k, v in self.to_dict():
+                        if not k.startswith("_"):
+                            wandb.config[f"setting/{k}"] = v
+                    self._setting_logged_to_wandb = True
+
+                d = add_prefix(test_metrics.to_log_dict(), prefix="Test", sep="/")
+                # d = add_prefix(test_metrics.to_log_dict(), prefix="Test", sep="/")
+                d["current_task"] = task_id
+                wandb.log(d)
+
         self._end_time = time.process_time()
         logger.info(f"Finished main loop in {self._end_time - self._start_time} seconds.")
         self.log_results(method, results)
@@ -229,7 +241,9 @@ class IncrementalSetting(ContinualSetting):
             wandb.summary["setting"] = setting_name
             if dataset and isinstance(dataset, str):
                 wandb.summary["dataset"] = dataset
-            wandb.log(results.to_log_dict())
+
+            # wandb.log(results.to_log_dict())
+            
             # BUG: Bug in plotly?
             # File "/home/fabrice/miniconda3/envs/sequoia/lib/python3.8/site-packages/plotly/matplotlylib/mplexporter/utils.py", line 246, in get_grid_style
             # if axis._gridOnMajor and len(gridlines) > 0:
@@ -240,6 +254,8 @@ class IncrementalSetting(ContinualSetting):
                 "Final/Average Final Performance": results.average_final_performance.objective,
                 "Final/Runtime (seconds)": self._end_time - self._start_time,
             })
+            wandb.log(results.make_plots())
+
             wandb.run.finish()
 
     def test_loop(self, method: Method) -> "IncrementalSetting.Results":
@@ -303,7 +319,7 @@ class IncrementalSetting(ContinualSetting):
             test_env: TestEnvironment
             # Get the metrics from the test environment
             test_results: Results = test_env.get_results()
-            print(f"Test results: {test_results}")
+            print(f"Test results: {test_results.to_log_dict()}")
             return test_results
 
         except NotImplementedError:
@@ -344,6 +360,7 @@ class IncrementalSetting(ContinualSetting):
 
         test_env.close()
         test_results: TaskSequenceResults = test_env.get_results()
+        
         return test_results
         # return test_results
         # if not self.task_labels_at_test_time:

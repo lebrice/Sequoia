@@ -30,6 +30,8 @@ class EpisodeMetrics(Metrics):
         return self.mean_episode_reward / self.mean_episode_length
  
     def __add__(self, other: Union["EpisodeMetrics", Any]):
+        if isinstance(other, Metrics) and other == Metrics():
+            return self
         if not isinstance(other, EpisodeMetrics):
             return NotImplemented
         
@@ -64,15 +66,19 @@ class EpisodeMetrics(Metrics):
     def objective(self) -> float:
         return self.mean_episode_reward
 
-    def to_log_dict(self, verbose=False):
-        return {
-            "Episodes": self.n_episodes,
-            "Total steps": self.total_steps,
-            "Total reward": self.total_reward,
-            "Mean reward per step": self.mean_reward_per_step,
-            "Mean episode length": self.mean_episode_length,
-            "Mean reward per episode": self.mean_episode_reward,
+    def to_log_dict(self, verbose: bool=False):
+        log_dict = {
+            "Mean reward per episode": self.mean_episode_reward,            
         }
+        if verbose:
+            log_dict.update({
+                "Episodes": self.n_episodes,
+                "Total steps": self.total_steps,
+                "Total reward": self.total_reward,
+                "Mean reward per step": self.mean_reward_per_step,
+                "Mean episode length": self.mean_episode_length,
+            })
+        return log_dict
 
 
 # @dataclass
