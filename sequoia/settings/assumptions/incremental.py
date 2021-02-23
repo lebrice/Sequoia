@@ -230,19 +230,20 @@ class IncrementalSetting(ContinualSetting):
         """
         method_name: str = self.get_name()
         setting_name: str = self.get_name()
-        dataset = self.dataset
-        logger.info(results.summary())
+        
+        # logger.info(results.summary())
         final_dict = {
             "Final/Average Online Performance": results.average_online_performance.objective,
             "Final/Average Final Performance": results.average_final_performance.objective,
             "Final/Runtime (seconds)": self._end_time - self._start_time,
             "Final/CL Score": results.cl_score,
         }
-        print(json.dumps(final_dict, indent="\t"))
+        logger.info(json.dumps(final_dict, indent="\t"))
         
         if wandb.run:
             wandb.summary["method"] = method_name
             wandb.summary["setting"] = setting_name
+            dataset = self.dataset
             if dataset and isinstance(dataset, str):
                 wandb.summary["dataset"] = dataset
 
