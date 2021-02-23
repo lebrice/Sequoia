@@ -20,6 +20,7 @@ from pytorch_lightning import Callback, Trainer
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from simple_parsing import mutable_field
 
+from sequoia.common.gym_wrappers import RenderEnvWrapper
 from sequoia.common import Config, TrainerConfig
 from sequoia.common.config import WandbLoggerConfig
 from sequoia.settings import ActiveSetting, PassiveSetting
@@ -36,15 +37,6 @@ from sequoia.methods import register_method
 from .models import BaselineModel, ForwardPass
 
 logger = get_logger(__file__)
-from sequoia.common.gym_wrappers import IterableWrapper
-
-
-class RenderEnvWrapper(IterableWrapper):
-    """ Simple Wrapper that renders the env at each step. """
-
-    def step(self, action):
-        self.env.render("human")
-        return self.env.step(action)
 
 
 @register_method

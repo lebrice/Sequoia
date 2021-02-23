@@ -10,3 +10,4 @@ from .. import ClassIncrementalResults as TaskIncrementalResults
 # 2. Import what we overwrite/customize
 from .task_incremental_setting import TaskIncrementalSetting
 from .iid import *
+from .multi_task import *

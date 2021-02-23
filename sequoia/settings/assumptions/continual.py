@@ -1,7 +1,10 @@
 from sequoia.settings.base import Setting
 from sequoia.utils.utils import flag
+from sequoia.utils import get_logger
 
 from dataclasses import dataclass
+
+logger = get_logger(__file__)
 
 @dataclass
 class ContinualSetting(Setting):
@@ -13,3 +16,7 @@ class ContinualSetting(Setting):
     # Wether we have sudden changes in the environments, or if the transition
     # are "smooth".
     smooth_task_boundaries: bool = flag(True)
+
+    # TODO: Move everything necessary to get ContinualRLSetting to work out of
+    # Incremental and into this here. Makes no sense that ContinualRLSetting inherits
+    # from Incremental, rather than this!
