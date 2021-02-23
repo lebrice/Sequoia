@@ -23,6 +23,9 @@ from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 class RLResults(IncrementalResults[EpisodeMetrics]):
     """ Results for a whole train loop (transfer matrix), in an RL Setting.
     """
+    # Higher mean reward / episode => better
+    lower_is_better: ClassVar[bool] = False
+    
     objective_name: ClassVar[str] = "Mean reward per episode"
 
     def mean_reward_plot(self):

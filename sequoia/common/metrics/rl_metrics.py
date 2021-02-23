@@ -30,17 +30,20 @@ class EpisodeMetrics(Metrics):
         return self.mean_episode_reward / self.mean_episode_length
  
     def __add__(self, other: Union["EpisodeMetrics", Any]):
+        if isinstance(other, (int, float)) and other == 0:
+            # This makes `sum(list_of_metrics)` work!.
+            return self
         if isinstance(other, Metrics) and other == Metrics():
             return self
         if not isinstance(other, EpisodeMetrics):
             return NotImplemented
-        
+
         other: EpisodeMetrics
         other_total_reward = other.mean_episode_reward * other.n_samples
         other_total_length = other.mean_episode_length * other.n_samples
         self_total_reward = self.mean_episode_reward * self.n_samples
         self_total_length = self.mean_episode_length * self.n_samples
-        
+
         new_n_samples = self.n_samples + other.n_samples
         new_mean_reward = (self_total_reward + other_total_reward) / new_n_samples
         new_mean_length = (self_total_length + other_total_length) / new_n_samples

@@ -665,6 +665,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         # TODO: #7 Use this method here to fix the errors that happen when
         # trying to create every single dataset from continuum.
         data_dir = Path(data_dir)
+
         if not data_dir.exists():
             data_dir.mkdir(parents=True, exist_ok=True)
         

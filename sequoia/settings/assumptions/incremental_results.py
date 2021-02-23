@@ -1,7 +1,7 @@
 """ Results of an Incremental setting. """
 import json
 from io import StringIO
-from typing import Dict, List, Union, Optional
+from typing import Dict, List, Union, Optional, ClassVar
 
 import matplotlib.pyplot as plt
 import wandb
@@ -12,7 +12,10 @@ from .iid_results import MetricType, TaskResults
 
 class TaskSequenceResults(List[TaskResults[MetricType]]):
     """ Results for a sequence of Tasks. """
-
+    # For now, all the 'concrete' objectives (mean reward / episode in RL, accuracy in
+    # SL) have higher => better 
+    lower_is_better: ClassVar[bool] = False
+    
     @property
     def num_tasks(self) -> int:
         """Returns the number of tasks.
@@ -50,43 +53,40 @@ class TaskSequenceResults(List[TaskResults[MetricType]]):
 
 
 class IncrementalResults(List[TaskSequenceResults[MetricType]]):
-    """ Results for a whole train loop (transfer matrix). """
+    """ Results for a whole train loop (transfer matrix).
 
+    This class is basically just a 2d list of TaskResults objects, with some convenience
+    methods and properties.
+    We get one TaskSequenceResults (a 1d list of TaskResults objects) as a result of
+    every test loop, which, in the Incremental Settings, happens after training on each
+    task, hence why we get a nb_tasks x nb_tasks matrix of results.
+    """
     def __init__(self, *args):
         super().__init__(*args)
         self._runtime: Optional[float] = None
-    
+
     @property
     def transfer_matrix(self) -> List[List[TaskResults]]:
         return self
 
     @property
-    def cl_score(self) -> float:
-        """ CL Score, as a weigted sum of three objectives:
-        - The average final performance over all tasks
-        - The average 'online' performance over all tasks
-        - Runtime
+    def metrics_matrix(self) -> List[List[MetricType]]:
+        """Returns the 'transfer matrix' but with the average metrics for each task
+        in each cell.
 
-        TODO: @optimass Determine the weights for each factor.
-        
+        NOTE: This is different from `transfer_matrix` since it returns the matrix of
+        `TaskResults` objects (which are themselves lists of Metrics) 
+
         Returns
         -------
-        float
-            [description]
+        List[List[MetricType]]
+            2d grid of average metrics for each task.
         """
-        # TODO: Determine the function to use to get a runtime score between 0 and 1.
-        def runtime_score(runtime: float) -> float:
-            return 1.0 if runtime <= 3600 else 0.
-        score = (
-            0.2 * self.average_online_performance.objective +
-            0.6 * self.average_final_performance.objective +
-            0.2 * runtime_score(self._runtime)
-        )
-        return score
+        return [
+            [task_results.average_metrics for task_results in task_sequence_result]
+            for task_sequence_result in self
+        ]
 
-    def objective(self) -> float:
-        return self.cl_score
-    
     @property
     def objective_matrix(self) -> List[List[float]]:
         """Return transfer matrix containing the value of the 'objective' for each task.
@@ -103,6 +103,35 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
             [task_result.objective for task_result in task_sequence_result]
             for task_sequence_result in self.transfer_matrix
         ]
+
+    @property
+    def cl_score(self) -> float:
+        """ CL Score, as a weigted sum of three objectives:
+        - The average final performance over all tasks
+        - The average 'online' performance over all tasks
+        - Runtime
+
+        TODO: @optimass Determine the weights for each factor.
+
+        Returns
+        -------
+        float
+            [description]
+        """
+        # TODO: Determine the function to use to get a runtime score between 0 and 1.
+        def runtime_score(runtime: float) -> float:
+            return 1.0 if runtime <= 3600 else 0.
+        score = (
+            0.2 * self.average_online_performance.objective +
+            0.6 * self.average_final_performance.objective +
+            0.2 * runtime_score(self._runtime)
+        )
+        return score
+
+    @property
+    def objective(self) -> float:
+        return self.cl_score
+    
 
     @property
     def num_tasks(self) -> int:

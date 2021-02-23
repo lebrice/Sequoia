@@ -115,7 +115,7 @@ class Metrics(Serializable):
         return type(self)(**{
             name: to_numpy(val) for name, val in self.items()
         })
-    
+
     @property
     def objective(self) -> float:
         """Returns the 'main' metric from this object, as a float.
@@ -125,4 +125,15 @@ class Metrics(Serializable):
         float
             The most important metric from this object, as a float.
         """
-        raise NotImplementedError(f"No objective implemented for Metrics {self}")
+        raise NotImplementedError(f"TODO: Add the 'objective' property to class {type(self)}")
+
+    @property
+    def objective_name(self) -> str:
+        """Returns the name to be associated with the objective of this class.
+
+        Returns
+        -------
+        float
+            The name associated with the objective.
+        """
+        raise NotImplementedError(f"TODO: Add the 'objective_name' property to class {type(self)}")

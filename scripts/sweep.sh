@@ -12,4 +12,4 @@ cd ~/Sequoia
 pip install -e .[hpo,monsterkong]
 
 # TODO: Change the setting, the number of tasks, the method, etc.
-sequoia_sweep "$@"
+sequoia_sweep --data_dir $SLURM_TMPDIR "$@"

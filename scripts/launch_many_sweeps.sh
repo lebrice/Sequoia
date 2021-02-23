@@ -6,7 +6,6 @@ conda activate sequoia
 cd ~/Sequoia
 pip install -e .[hpo,monsterkong]
 
-
 settings="incremental_rl task_incremental_rl rl"
 nb_tasks="10 20"
 methods="baseline ewc" #a2c ppo dqn"

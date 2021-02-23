@@ -1,5 +1,5 @@
 """ Results for an IID experiment. """
-from typing import TypeVar, List, Dict
+from typing import TypeVar, List, Dict, ClassVar
 import matplotlib.pyplot as plt
 from sequoia.common.metrics import Metrics
 
@@ -12,6 +12,9 @@ class TaskResults(List[MetricType]):
 
     This is just a List of a given Metrics type, with additional methods.
     """
+    # For now, all the 'concrete' objectives (mean reward / episode in RL, accuracy in
+    # SL) have higher => better
+    lower_is_better: ClassVar[bool] = False
 
     @property
     def average_metrics(self) -> MetricType:
@@ -31,6 +34,11 @@ class TaskResults(List[MetricType]):
             A single float that describes how 'good' these results are.
         """
         return self.average_metrics.objective
+
+    @property
+    def objective_name(self) -> str:
+        # TODO: Add this objective_name attribute on Metrics
+        return self.average_metrics.objective_name
 
     def __str__(self):
         return f"{type(self).__name__}({self.average_metrics})"
