@@ -236,11 +236,9 @@ class IncrementalSetting(ContinualSetting):
             # AttributeError: 'XAxis' object has no attribute '_gridOnMajor'
             # wandb.log(results.make_plots())
             wandb.log({
-                "Final": {
-                    "Average Online Performance": results.average_online_performance.objective,
-                    "Average Final Performance": results.average_final_performance.objective,
-                    "Runtime (seconds)": self._end_time - self._start_time,
-                },
+                "Final/Average Online Performance": results.average_online_performance.objective,
+                "Final/Average Final Performance": results.average_final_performance.objective,
+                "Final/Runtime (seconds)": self._end_time - self._start_time,
             })
             wandb.run.finish()
 
