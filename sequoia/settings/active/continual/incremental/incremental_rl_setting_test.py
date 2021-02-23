@@ -214,12 +214,13 @@ def test_monsterkong_state(task_labels_at_test_time: bool):
         dataset="monsterkong",
         observe_state_directly=True,
         nb_tasks=5,
-        steps_per_task=1000,
+        steps_per_task=100,
+        test_steps_per_task=100,
         train_transforms=[],
         test_transforms=[],
         val_transforms=[],
         task_labels_at_test_time=task_labels_at_test_time,
-        max_episode_steps=100,
+        max_episode_steps=10,
     )
     with setting.train_dataloader() as env:
         obs = env.reset()
@@ -228,12 +229,33 @@ def test_monsterkong_state(task_labels_at_test_time: bool):
     method = DummyMethod()
     results = setting.apply(method)
 
-    expected_test_time_task_ids = [
-        i if task_labels_at_test_time else None for i in range(5)
-    ]
-    # 5 during training, 5 during testing!
-    assert method.n_task_switches == 10
-    assert method.received_task_ids == list(range(5)) + expected_test_time_task_ids
+    assert method.n_task_switches == 30
+    if task_labels_at_test_time:
+        assert method.received_task_ids == [
+            0,
+            *list(range(5)),
+            1,
+            *list(range(5)),
+            2,
+            *list(range(5)),
+            3,
+            *list(range(5)),
+            4,
+            *list(range(5)),
+        ]
+    else:
+        assert method.received_task_ids == [
+            0,
+            *[None for _ in range(5)],
+            1,
+            *[None for _ in range(5)],
+            2,
+            *[None for _ in range(5)],
+            3,
+            *[None for _ in range(5)],
+            4,
+            *[None for _ in range(5)],
+        ]
 
 
 @pytest.mark.timeout(120)
@@ -245,13 +267,13 @@ def test_monsterkong_pixels(task_labels_at_test_time: bool):
         dataset="monsterkong",
         observe_state_directly=False,
         nb_tasks=5,
-        steps_per_task=1000,
-        test_steps_per_task=1000,
+        steps_per_task=100,
+        test_steps_per_task=100,
         train_transforms=[],
         test_transforms=[],
         val_transforms=[],
         task_labels_at_test_time=task_labels_at_test_time,
-        max_episode_steps=100,
+        max_episode_steps=10,
     )
     assert setting.observation_space.x == Image(0, 255, (64, 64, 3), np.uint8)
     with setting.train_dataloader() as env:
@@ -261,9 +283,31 @@ def test_monsterkong_pixels(task_labels_at_test_time: bool):
     method = DummyMethod()
     results = setting.apply(method)
 
-    expected_test_time_task_ids = [
-        i if task_labels_at_test_time else None for i in range(5)
-    ]
-    # 5 during training, 5 during testing!
-    assert method.n_task_switches == 10
-    assert method.received_task_ids == list(range(5)) + expected_test_time_task_ids
+    assert method.n_task_switches == 30
+    if task_labels_at_test_time:
+        assert method.received_task_ids == [
+            0,
+            *list(range(5)),
+            1,
+            *list(range(5)),
+            2,
+            *list(range(5)),
+            3,
+            *list(range(5)),
+            4,
+            *list(range(5)),
+        ]
+    else:
+        assert method.received_task_ids == [
+            0,
+            *[None for _ in range(5)],
+            1,
+            *[None for _ in range(5)],
+            2,
+            *[None for _ in range(5)],
+            3,
+            *[None for _ in range(5)],
+            4,
+            *[None for _ in range(5)],
+        ]
+
