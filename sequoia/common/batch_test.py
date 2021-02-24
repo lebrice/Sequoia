@@ -222,6 +222,13 @@ def test_newaxis():
             task_labels=np.array([1]),
         ))
 
+def test_single_index():
+    """ BUG: observations[0] gives another Observations object, rather than just x. """
+    obs = Observations(
+        x = torch.arange(5),
+        task_labels = 1,
+    )
+    assert obs[0] is obs.x
 
 def test_remove_batch_dim():
     """ Removing an extra batch dimension. """

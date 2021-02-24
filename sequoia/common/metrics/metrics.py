@@ -6,7 +6,7 @@ the metrics from PL much yet, to be honest).
 """
 from abc import abstractmethod
 from dataclasses import InitVar, dataclass, field, fields
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, TypeVar, Union
 
 import numpy as np
 import torch
@@ -14,6 +14,7 @@ from torch import Tensor
 from sequoia.utils.logging_utils import cleanup
 from sequoia.utils.serialization import Serializable
 
+MetricsType = TypeVar("MetricsType", bound="Metrics")
 
 @dataclass
 class Metrics(Serializable):

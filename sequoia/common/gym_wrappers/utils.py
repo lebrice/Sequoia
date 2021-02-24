@@ -103,8 +103,6 @@ class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
     
     This allows us to wrap dataloader-based Environments and still use the gym
     wrapper conventions.
-    
-        # Maybe detect if we're applying 
     """
 
     def __init__(self, env: gym.Env):
@@ -122,21 +120,24 @@ class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
             logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__.")
             return EnvDataset.__next__(self)
         # return self.observation(obs)
-
+    
     def observation(self, observation):
         logger.debug(f"Observation won't be transformed.")
         return observation
-    
+
     def action(self, action):
         return action
-    
+
     def reward(self, reward):
         return reward
-    
+
+    def __len__(self):
+        return self.env.__len__()
+
     def send(self, action):
         # (Option 1 below)
         # return self.env.send(action)
-        
+        return self.reward(self.env.send(self.action(action)))
         # (Option 2 below)
         # return self.env.send(self.action(action))
         

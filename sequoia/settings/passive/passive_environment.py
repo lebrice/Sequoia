@@ -76,12 +76,16 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         """
         super().__init__(dataset=dataset, **kwargs)
         self.split_batch_fn = split_batch_fn
-        
+
+        # TODO: When the spaces aren't passed explicitly, assumes a classification dataset.
         if not observation_space:
             observation_space = Image(0., 1., self.dataset[0][0].shape)
         if not action_space:
-            assert n_classes, "must pass either `action_space`, or `n_classes`"
+            assert n_classes, "must pass either `action_space`, or `n_classes` for now"
             action_space = spaces.Discrete(n_classes)
+        elif isinstance(action_space, spaces.Discrete):
+            n_classes = action_space.n
+
         if not reward_space:
             reward_space = action_space
             # reward_space = spaces.Discrete(n_classes)

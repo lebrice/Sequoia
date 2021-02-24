@@ -12,10 +12,11 @@ from .iid_results import MetricType, TaskResults
 
 class TaskSequenceResults(List[TaskResults[MetricType]]):
     """ Results for a sequence of Tasks. """
+
     # For now, all the 'concrete' objectives (mean reward / episode in RL, accuracy in
-    # SL) have higher => better 
+    # SL) have higher => better
     lower_is_better: ClassVar[bool] = False
-    
+
     @property
     def num_tasks(self) -> int:
         """Returns the number of tasks.
@@ -61,9 +62,11 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
     every test loop, which, in the Incremental Settings, happens after training on each
     task, hence why we get a nb_tasks x nb_tasks matrix of results.
     """
+
     def __init__(self, *args):
         super().__init__(*args)
         self._runtime: Optional[float] = None
+        self._online_training_performance: Optional[List[Dict[int, Metrics]]] = None
 
     @property
     def transfer_matrix(self) -> List[List[TaskResults]]:
@@ -120,36 +123,48 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
         """
         # TODO: Determine the function to use to get a runtime score between 0 and 1.
         def runtime_score(runtime: float) -> float:
-            return 1.0 if runtime <= 3600 else 0.
+            return 1.0 if runtime <= 3600 else 0.0
+
         score = (
-            0.2 * self.average_online_performance.objective +
-            0.6 * self.average_final_performance.objective +
-            0.2 * runtime_score(self._runtime)
+            0.2 * self.average_online_performance.objective
+            + 0.6 * self.average_final_performance.objective
+            + 0.2 * runtime_score(self._runtime)
         )
         return score
 
     @property
     def objective(self) -> float:
         return self.cl_score
-    
 
     @property
     def num_tasks(self) -> int:
         return len(self)
 
     @property
-    def online_performance(self) -> List[TaskResults[MetricType]]:
-        """ Returns the "online" performance, i.e. the diagonal of the transfer matrix.
+    def online_performance(self) -> List[Dict[int, MetricType]]:
+        """ Returns the online training performance for each task. i.e. the diagonal of
+        the transfer matrix.
         
-        NOTE: This doesn't exactly show online performance, since testing happens after
-        training is done on each task. This shows the performance on the most recently
-        learned task, over the course of training.
+        In SL, this is only recorded over the first epoch.
+
+        Returns
+        -------
+        List[Dict[int, MetricType]]
+            A List containing, for each task, a dictionary mapping from step number to
+            the Metrics object produced at that step.
         """
-        return [self[i][i] for i in range(self.num_tasks)]
+        if not self._online_training_performance:
+            return [{} for _ in range(self.num_tasks)]
+        return self._online_training_performance
+
+        # return [self[i][i] for i in range(self.num_tasks)]
 
     @property
     def online_performance_metrics(self) -> List[MetricType]:
-        return [task_results.average_metrics for task_results in self.online_performance]
+        return [
+            sum(online_performance_dict.values(), Metrics())
+            for online_performance_dict in self.online_performance
+        ]
 
     @property
     def final_performance(self) -> List[TaskResults[MetricType]]:

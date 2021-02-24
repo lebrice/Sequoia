@@ -7,35 +7,40 @@ import functools
 
 
 @torch.no_grad()
-def get_confusion_matrix(y_pred: Union[np.ndarray, Tensor], y: Union[np.ndarray, Tensor]) -> Union[Tensor, np.ndarray]:
+def get_confusion_matrix(y_pred: Union[np.ndarray, Tensor], y: Union[np.ndarray, Tensor], num_classes: int = None) -> Union[Tensor, np.ndarray]:
     """ Taken from https://discuss.pytorch.org/t/how-to-find-individual-class-accuracy/6348
-    
+
     NOTE: `y_pred` is assumed to be the logits with shape [B, C], while the
-    labels `y` is assumed to have shape either `[B]` or `[B, 1]`.
+    labels `y` is assumed to have shape either `[B]` or `[B, 1]`, unless `num_classes`
+    is given, in which case y_pred can be the predicted labels.
     """
     if isinstance(y_pred, Tensor):
         y_pred = y_pred.detach().cpu().numpy()
     if isinstance(y, Tensor):
         y = y.detach().cpu().numpy()
-    
+
     # FIXME: How do we properly check if something is an integer type in np?
     if len(y_pred.shape) == 1 and y_pred.dtype not in {np.float32, np.float64}:
         # y_pred is already the predicted labels.
         y_preds = y_pred
-        raise NotImplementedError(f"Can't determine the number of classes. Pass logits rather than predicted labels.")
+        if num_classes is None:
+            raise NotImplementedError(f"Can't determine the number of classes. Pass logits rather than predicted labels.")
+        n_classes = num_classes
     elif y_pred.shape[-1] == 1:
         n_classes = 2  # y_pred is the logit for binary classification.
         y_preds = y_pred.round()
     else:
+        # y_pred is assumed to be the logits.
         n_classes = y_pred.shape[-1]
         y_preds = y_pred.argmax(-1)
 
     y = y.flatten().astype(int)
     y_preds = y_preds.flatten().astype(int)
-    
+
+    # BUG: This is failing on the last batch.
     assert y.shape == y_preds.shape, (y.shape, y_preds.shape)
     assert y.dtype == y_preds.dtype == np.int, (y.dtype, y_preds.dtype)
-    
+
     confusion_matrix = np.zeros([n_classes, n_classes])
     
     assert 0 <= y.min() and y.max() < n_classes, (y, n_classes)

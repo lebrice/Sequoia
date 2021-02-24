@@ -89,6 +89,12 @@ class IncrementalSetting(ContinualSetting):
     # Attributes (not parsed through the command-line):
     _current_task_id: int = field(default=0, init=False)
 
+    # WIP: When True, a Monitor-like wrapper will be applied to the training environment
+    # and monitor the 'online' performance during training. Note that in SL, this will
+    # also cause the Rewards (y) to be withheld until actions are passed to the `send`
+    # method of the Environment.
+    monitor_training_performance: bool = False
+
     # TODO: Add wandb support for all methods, not just the baseline.
     
     def __post_init__(self, *args, **kwargs):
@@ -170,6 +176,8 @@ class IncrementalSetting(ContinualSetting):
         # IDEA: We could use a list of IIDResults! (but that might cause some circular
         # import issues)
         results = self.Results()
+        if self.monitor_training_performance:
+            results._online_training_performance = []
 
         self._start_time = time.process_time()
         for task_id in range(self.nb_tasks):
@@ -182,13 +190,22 @@ class IncrementalSetting(ContinualSetting):
 
             # Creating the dataloaders ourselves (rather than passing 'self' as
             # the datamodule):
-            task_train_loader = self.train_dataloader()
-            task_valid_loader = self.val_dataloader()
-            success = method.fit(
-                train_env=task_train_loader, valid_env=task_valid_loader,
+            task_train_env = self.train_dataloader()
+            # If we want to monitor the training performance:
+            if self.monitor_training_performance:
+                task_train_env = self.add_training_performance_monitor(task_train_env)
+                self.train_env = task_train_env
+
+            task_valid_env = self.val_dataloader()
+            method.fit(
+                train_env=task_train_env, valid_env=task_valid_env,
             )
-            task_train_loader.close()
-            task_valid_loader.close()
+            task_train_env.close()
+
+            if self.monitor_training_performance:
+                results._online_training_performance.append(task_train_env.get_online_performance())
+            
+            task_valid_env.close()
 
             logger.info(f"Finished Training on task {task_id}.")
 
@@ -218,6 +235,9 @@ class IncrementalSetting(ContinualSetting):
         self.log_results(method, results)
         return results
 
+    def add_training_performance_monitor(self, env: Environment) -> Environment:
+        return env
+    
     def log_results(self, method: Method, results: IncrementalResults)-> None:
         """
         TODO: Create the tabs we need to show up in wandb:

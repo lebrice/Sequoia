@@ -202,7 +202,9 @@ class BaselineModel(SemiSupervisedModel,
         # the observations.
         single_obs_space = self.observation_space
         # Check if the observations are batched or not.
-        not_batched = len(observations[0].shape) == len(single_obs_space[0].shape)
+        assert isinstance(observations.x, Tensor), (observations.shapes, observations.x.shapes)
+        # assert isinstance(single_obs_space.x, Image)
+        not_batched = len(observations.x.shape) == len(single_obs_space.x.shape)
         if not_batched:
             observations = observations.with_batch_dimension()
 
