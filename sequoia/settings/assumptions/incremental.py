@@ -254,16 +254,14 @@ class IncrementalSetting(ContinualSetting):
             - Runtime
         2. Test
             - Task i (evolution over time (x axis is the task id, if possible))
-        """
-        method_name: str = self.get_name()
-        setting_name: str = self.get_name()
-        
+        """        
         logger.info(results.summary())
-        
+
         if wandb.run:
-            wandb.summary["method"] = method_name
-            wandb.summary["setting"] = setting_name
-            dataset = self.dataset
+            wandb.summary["method"] = method.get_name()
+            wandb.summary["setting"] = self.get_name()
+
+            dataset = getattr(self, "dataset", None)
             if dataset and isinstance(dataset, str):
                 wandb.summary["dataset"] = dataset
 
