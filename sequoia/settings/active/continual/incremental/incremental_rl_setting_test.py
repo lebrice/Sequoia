@@ -114,6 +114,7 @@ class DummyMethod(Method, target_setting=IncrementalRLSetting):
     def __init__(self):
         self.n_task_switches = 0
         self.received_task_ids: List[Optional[int]] = []
+        self.received_while_training: List[bool] = []
 
     def fit(self, train_env: gym.Env = None, valid_env: gym.Env = None):
         obs = train_env.reset()
@@ -139,6 +140,7 @@ class DummyMethod(Method, target_setting=IncrementalRLSetting):
     def on_task_switch(self, task_id: int = None):
         self.n_task_switches += 1
         self.received_task_ids.append(task_id)
+        self.received_while_training.append(self.training)
 
 
 from sequoia.conftest import DummyEnvironment
@@ -176,7 +178,18 @@ def test_on_task_switch_is_called_incremental_rl():
         4,
         *[None for _ in range(5)],
     ]
-
+    assert method.received_while_training == [
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+    ]
 
 def test_on_task_switch_is_called_task_incremental_rl():
     setting = IncrementalRLSetting(
@@ -204,7 +217,18 @@ def test_on_task_switch_is_called_task_incremental_rl():
         4,
         *list(range(5)),
     ]
-
+    assert method.received_while_training == [
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+    ]
 
 @monsterkong_required
 @pytest.mark.parametrize("task_labels_at_test_time", [False, True])
@@ -256,6 +280,18 @@ def test_monsterkong_state(task_labels_at_test_time: bool):
             4,
             *[None for _ in range(5)],
         ]
+    assert method.received_while_training == [
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+    ]
 
 
 @pytest.mark.timeout(120)
@@ -310,4 +346,15 @@ def test_monsterkong_pixels(task_labels_at_test_time: bool):
             4,
             *[None for _ in range(5)],
         ]
-
+    assert method.received_while_training == [
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+        True,
+        *[False for _ in range(5)],
+    ]

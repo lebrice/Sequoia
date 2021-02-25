@@ -276,6 +276,8 @@ class Method(Generic[SettingType], Parseable, ABC):
     # attribute.
     target_setting: ClassVar[Type[SettingType]] = None
 
+    _training: bool
+    
     def configure(self, setting: SettingType) -> None:
         """Configures this method before it gets applied on the given Setting.
 
@@ -328,6 +330,68 @@ class Method(Generic[SettingType], Parseable, ABC):
             The `Results` object constructed by `setting`, as a result of applying
             this Method to it.
         """
+
+    def set_training(self) -> None:
+        """Called by the Setting to let the Method know it is in the "training" phase.
+
+        By default, this will try to to look for any nn.Module attributes on `self`, and
+        call their `train()` method.
+        """
+        self._training = True
+        try:
+            from torch import nn
+            for attribute, value in vars(self):
+                if isinstance(value, nn.Module):
+                    logger.debug(
+                        f"Calling 'train()' on the Method's {attribute} attribute."
+                    )
+                    value.train()
+        except Exception as exc:
+            logger.warning(
+                f"Unable to call `train()` on nn.Modules of the Method: {exc}"
+            )
+
+    def set_testing(self) -> None:
+        """Called by the Setting to let the Method know when it is in "testing" phase.
+
+        By default, this will try to to look for any nn.Module attributes on `self`, and
+        call their `eval()` method.
+        """
+        self._training = False
+        try:
+            from torch import nn
+            for attribute, value in vars(self):
+                if isinstance(value, nn.Module):
+                    logger.debug(
+                        f"Calling 'eval()' on the Method's {attribute} attribute."
+                    )
+                    value.eval()
+        except Exception as exc:
+            logger.warning(
+                f"Unable to call `eval()` on nn.Modules of the Method: {exc}"
+            )
+
+    @property
+    def training(self) -> bool:
+        """Wether we're currently in the 'training' phase.
+
+        Returns
+        -------
+        bool
+            Wether we're in the 'training' phase or not.
+        """
+        return getattr(self, "_training", True)
+
+    @property
+    def testing(self) -> bool:
+        """Wether we're currently in the 'testing' phase.
+
+        Returns
+        -------
+        bool
+            Wether we're in the 'testing' phase or not.
+        """
+        return not self.training
 
     ## Below this are some class attributes and methods related to the Tree
     ## structure and for launching Experiments using this method.
