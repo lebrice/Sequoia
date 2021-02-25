@@ -190,6 +190,12 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
             log_dict[f"Task {task_id}"] = task_sequence_result.to_log_dict(
                 verbose=verbose
             )
+        log_dict.update({
+            "Final/Average Online Performance": self.average_online_performance.objective,
+            "Final/Average Final Performance": self.average_final_performance.objective,
+            "Final/Runtime (seconds)": self._runtime,
+            "Final/CL Score": self.cl_score,
+        })
         return log_dict
 
     def summary(self):
