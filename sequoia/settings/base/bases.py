@@ -340,7 +340,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         self._training = True
         try:
             from torch import nn
-            for attribute, value in vars(self):
+            for attribute, value in vars(self).items():
                 if isinstance(value, nn.Module):
                     logger.debug(
                         f"Calling 'train()' on the Method's {attribute} attribute."
@@ -360,7 +360,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         self._training = False
         try:
             from torch import nn
-            for attribute, value in vars(self):
+            for attribute, value in vars(self).items():
                 if isinstance(value, nn.Module):
                     logger.debug(
                         f"Calling 'eval()' on the Method's {attribute} attribute."
