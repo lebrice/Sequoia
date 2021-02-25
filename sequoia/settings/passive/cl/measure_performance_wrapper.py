@@ -61,7 +61,6 @@ class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[ClassificationMetric
         self._steps: int = 0
         assert isinstance(self.env.unwrapped, PassiveEnvironment)
         if not self.env.unwrapped.pretend_to_be_active:
-            # TODO: How do we prevent
             warnings.warn(
                 RuntimeWarning(
                     colorize(
@@ -116,6 +115,6 @@ class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[ClassificationMetric
             yield obs, None
 
 
-class MeasureRLPermanceWrapper(MeasurePerformanceWrapper[EpisodeMetrics]):
+class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[EpisodeMetrics]):
     # TODO
     pass
