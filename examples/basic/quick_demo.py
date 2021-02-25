@@ -2,7 +2,7 @@
 """
 import sys
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Type
+from typing import Dict, List, Tuple, Type, Optional
 
 from collections import defaultdict
 from pathlib import Path
@@ -21,7 +21,7 @@ from simple_parsing import ArgumentParser
 sys.path.extend([".", ".."])
 from sequoia import Method, Setting
 from sequoia.common import Config
-from sequoia.settings import DomainIncrementalSetting
+from sequoia.settings import DomainIncrementalSetting, Environment
 from sequoia.settings.passive.cl.objects import (Actions, Observations,
                                          PassiveEnvironment, Results, Rewards)
 
@@ -38,6 +38,7 @@ class MyModel(nn.Module):
                  action_space: gym.Space,
                  reward_space: gym.Space):
         super().__init__()
+        
         image_shape = observation_space[0].shape
         assert image_shape == (3, 28, 28)
         assert isinstance(action_space, spaces.Discrete)
@@ -63,6 +64,11 @@ class MyModel(nn.Module):
         )
         self.loss = nn.CrossEntropyLoss()
 
+        # Keep a reference to the training and evaluation environments, in case we need
+        # to send an action to them before we're allowed to get the rewards/labels back.
+        self.train_env: Optional[Environment] = None
+        self.valid_env: Optional[Environment] = None
+
     def forward(self, observations: Observations) -> Tensor:
         # NOTE: here we don't make use of the task labels.
         x = observations.x
@@ -71,22 +77,30 @@ class MyModel(nn.Module):
         logits = self.classifier(features)
         return logits
 
-    def training_step(self, batch: Tuple[Observations, Rewards], *args, **kwargs):
-        return self.shared_step(batch, *args, **kwargs)
+    def training_step(self, batch: Tuple[Observations, Rewards]):
+        return self.shared_step(batch, environment=self.train_env)
 
-    def validation_step(self, batch: Tuple[Observations, Rewards], *args, **kwargs):
-        return self.shared_step(batch, *args, **kwargs)
+    def validation_step(self, batch: Tuple[Observations, Rewards]):
+        return self.shared_step(batch, environment=self.valid_env)
 
-    def shared_step(self, batch: Tuple[Observations, Rewards], *args, **kwargs):
-        # Since we're training on a Passive environment, we get both
-        # observations and rewards.
+    def shared_step(self, batch: Tuple[Observations, Rewards], environment: Environment):
+        # Since we're training on a Passive environment, we will get both observations
+        # and rewards, unless we're being evaluated based on our training performance,
+        # in which case we will need to send actions to the environments before we can
+        # get the corresponding rewards (image labels).
         observations: Observations = batch[0]
-        rewards: Rewards = batch[1]
-        image_labels = rewards.y
-
+        rewards: Optional[Rewards] = batch[1]
         # Get the predictions:
         logits = self(observations)
         y_pred = logits.argmax(-1)
+        
+        if rewards is None:
+            # If the rewards in the batch is None, it means we're expected to give
+            # actions before we can get rewards back from the environment.
+            rewards = environment.send(Actions(y_pred))
+
+        assert rewards is not None
+        image_labels = rewards.y
 
         loss = self.loss(logits, image_labels)
 
@@ -145,6 +159,8 @@ class DemoMethod(Method, target_setting=DomainIncrementalSetting):
         the supervised CL settings), this will be called once per task.
         """
         # configure() will have been called by the setting before we get here.
+        self.model.train_env = train_env
+        self.model.valid_env = valid_env
         best_val_loss = inf
         best_epoch = 0
         for epoch in range(self.max_epochs):
@@ -245,8 +261,7 @@ def demo_command_line():
     results: Results = setting.apply(method, config=config)
     print(results.summary())
     print(f"objective: {results.objective}")
-    results.save_to_dir(config.log_dir)
-
+        
 
 if __name__ == "__main__":
     # Example: Evaluate a Method on a single CL setting:
@@ -254,14 +269,14 @@ if __name__ == "__main__":
     ###
     ### First option: Run the demo, creating the Setting and Method directly.
     ###
-    demo_simple()
+    # demo_simple()
     
     ##
     ## Second part of the demo: Same as before, but customize the options for
     ## the Setting and the Method from the command-line.
     ##
     
-    # demo_command_line()
+    demo_command_line()
     
     ##
     ## As a little bonus: Evaluate on *ALL* the applicable settings, and
