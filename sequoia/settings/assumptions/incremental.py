@@ -195,10 +195,6 @@ class IncrementalSetting(ContinualSetting):
             # Creating the dataloaders ourselves (rather than passing 'self' as
             # the datamodule):
             task_train_env = self.train_dataloader()
-            # If we want to monitor the training performance:
-            if self.monitor_training_performance:
-                task_train_env = self.add_training_performance_monitor(task_train_env)
-                self.train_env = task_train_env
 
             task_valid_env = self.val_dataloader()
             method.fit(
@@ -242,9 +238,6 @@ class IncrementalSetting(ContinualSetting):
         self.log_results(method, results)
         return results
 
-    def add_training_performance_monitor(self, env: Environment) -> Environment:
-        return env
-    
     def log_results(self, method: Method, results: IncrementalResults)-> None:
         """
         TODO: Create the tabs we need to show up in wandb:

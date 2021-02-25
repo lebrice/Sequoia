@@ -603,6 +603,11 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             max_steps=self.steps_per_task,
             max_episodes=self.episodes_per_task,
         )
+        
+        if self.monitor_training_performance:
+            # TODO: Add a MeasureRLPerformanceWrapper
+            pass
+
         self.train_env = env_dataloader
         # BUG: There is a mismatch between the train env's observation space and the
         # shape of its observations.

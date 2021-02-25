@@ -55,14 +55,16 @@ from sequoia.common.spaces import Image, Sparse
 from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.transforms import Compose, SplitBatch, Transforms
 from sequoia.settings.assumptions.incremental import (IncrementalSetting,
-                                                      TestEnvironment, TaskResults, TaskSequenceResults)
+                                                      TaskResults,
+                                                      TaskSequenceResults,
+                                                      TestEnvironment)
 from sequoia.settings.base import Method, ObservationType, Results, RewardType
 from sequoia.utils import constant, dict_union, get_logger, mean, take
-
 from ..passive_environment import (Actions, ActionType, Observations,
                                    PassiveEnvironment, Rewards)
 from ..passive_setting import PassiveSetting
 from .class_incremental_results import ClassIncrementalResults
+from .measure_performance_wrapper import MeasureSLPerformanceWrapper
 
 logger = get_logger(__file__)
 
@@ -396,10 +398,6 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         method.receive_results(self, results=results)
         return results
 
-    def add_training_performance_monitor(self, env: PassiveEnvironment) -> PassiveEnvironment:
-        from .measure_performance_wrapper import MeasureSLPerformanceWrapper
-        return MeasureSLPerformanceWrapper(env, first_epoch_only=True)
-
     def prepare_data(self, data_dir: Path = None, **kwargs):
         self.config = self.config or Config.from_args(self._argv, strict=False)
         
@@ -502,8 +500,14 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             # TODO: Check that the transforms aren't already being applied in the
             # 'dataset' portion.
             env = TransformObservation(env, f=self.train_transforms)
+        
         if self.train_env:
             self.train_env.close()
+        
+        # If we want to monitor the training performance:
+        if self.monitor_training_performance:
+            env = MeasureSLPerformanceWrapper(env, first_epoch_only=True)
+        
         self.train_env = env
         return self.train_env
 
