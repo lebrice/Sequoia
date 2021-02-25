@@ -135,9 +135,13 @@ class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
         return self.env.__len__()
 
     def send(self, action):
+        action = self.action(action)
+        reward = self.env.send(action)
+        reward = self.reward(reward)
+        return reward
+
         # (Option 1 below)
         # return self.env.send(action)
-        return self.reward(self.env.send(self.action(action)))
         # (Option 2 below)
         # return self.env.send(self.action(action))
         

@@ -468,5 +468,34 @@ def test_passive_environment_without_pretend_to_be_active():
     assert i == max_samples // batch_size - 1
 
 
-def test_render():
-    pass
+
+def test_passive_environment_needs_actions_to_be_sent():
+    """ Test the 'active dataloader' style interaction.
+    """
+    batch_size = 10
+    transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
+    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    max_samples = 105
+    dataset = Subset(dataset, list(range(max_samples)))
+    
+    obs_space = Image(0, 255, (1, 28, 28), np.uint8)
+    obs_space = transforms(obs_space)
+    env = PassiveEnvironment(
+        dataset,
+        n_classes=10,
+        batch_size=batch_size,
+        observation_space=obs_space,
+        pretend_to_be_active=True,
+    )
+
+    with pytest.raises(RuntimeError):
+        for i, (obs, _) in enumerate(env):
+            print(i)
+
+    
+    for i, (obs, _) in enumerate(env):
+        print(i)
+        action = env.action_space.sample()
+        rewards = env.send(action)
+        assert rewards is not None
+        assert rewards.shape[0] == action.shape[0]

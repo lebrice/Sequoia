@@ -113,7 +113,8 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self._next_batch: Optional[Tuple[ObservationType, RewardType]] = None
         self._done: Optional[bool] = None
         self._closed: bool = False
-        
+
+        self._action: Optional[ActionType] = None
         
         # from gym.envs.classic_control.rendering import SimpleImageViewer
         self.viewer = None
@@ -324,9 +325,15 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
             # TransformObservation or something similar)
             self._observations = self.observation(observations)
             self._rewards = self.reward(rewards)
+            
+            self._previous_batch = self._current_batch
+            self._current_batch = (self._observations, self._rewards)
 
             if self.pretend_to_be_active:
+                self._action = None
                 yield self._observations, None
+                if self._action is None:
+                    raise RuntimeError(f"Need to send an action before the env can return the Rewards.")
             else:
                 yield self._observations, self._rewards
 
@@ -335,6 +342,8 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         withheld if in 'active' mode)
         """
         if self.pretend_to_be_active:
-            return self._rewards
+            self._action = action
+            return self._previous_batch[1]
+            # return self._rewards
         else:
             return None

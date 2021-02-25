@@ -1,11 +1,14 @@
 """ TODO: Tests for the 'measure performance wrapper' to be used to get the performance
 over the first "epoch" 
 """
+import dataclasses
 import itertools
-import pytest
+
 import gym
 import numpy as np
+import pytest
 import torch
+from sequoia.common import Config
 from sequoia.common.metrics import ClassificationMetrics
 from sequoia.settings.active.continual import TypedObjectsWrapper
 from sequoia.settings.passive.passive_environment import PassiveEnvironment
@@ -14,7 +17,6 @@ from torch.utils.data import TensorDataset
 from .class_incremental_setting import ClassIncrementalSetting
 from .measure_performance_wrapper import MeasureSLPerformanceWrapper
 from .objects import Actions, Observations, Rewards
-
 
 
 def test_measure_performance_wrapper():
@@ -214,4 +216,46 @@ def test_last_batch():
         
     perf = env.get_average_online_performance()
     assert perf.accuracy == 1.0
+    assert perf.n_samples == 110
+    
+    
+from sequoia.methods.models.baseline_model import BaselineModel
+
+
+def test_last_batch_baseline_model():
+    """ BUG: Baseline method is doing something weird at the last batch, and I dont know quite why.
+    """
+    n_samples = 110
+    batch_size = 20
+    dataset = TensorDataset(
+        torch.arange(n_samples).reshape([n_samples, 1, 1, 1]) * torch.ones([n_samples, 3, 32, 32]),
+        torch.zeros(n_samples, dtype=int),
+    )
+    pretend_to_be_active = False
+    env = PassiveEnvironment(
+        dataset, batch_size=batch_size, n_classes=n_samples, pretend_to_be_active=pretend_to_be_active
+    )
+    env = TypedObjectsWrapper(
+        env, observations_type=Observations, actions_type=Actions, rewards_type=Rewards
+    )
+    env = MeasureSLPerformanceWrapper(env, first_epoch_only=True)
+    setting = ClassIncrementalSetting()
+    setting.train_env = env
+    model = BaselineModel(setting = setting, hparams=BaselineModel.HParams(), config=Config(debug=True))
+
+    for i, (obs, rew) in enumerate(env):
+        # assert rew is None
+        # if i != 5:
+        #     assert obs.batch_size == 20, i
+        # else:
+        #     assert obs.batch_size == 10, i
+        # actions = Actions(y_pred=torch.arange(i * 20 , (i+1) * 20)[:obs.batch_size])
+        # rewards = env.send(actions)
+        # assert (rewards.y == torch.arange(i * 20 , (i+1) * 20)[:obs.batch_size]).all()
+        obs = dataclasses.replace(obs, task_labels=torch.ones([obs.x.shape[0]], device=obs.x.device))
+        assert rew is None
+        stuff = model.training_step((obs, rew), batch_idx=i)
+        print(stuff)
+        
+    perf = env.get_average_online_performance()
     assert perf.n_samples == 110
