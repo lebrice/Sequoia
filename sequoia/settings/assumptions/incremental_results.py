@@ -134,9 +134,9 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
         """
         # TODO: Determine the function to use to get a runtime score between 0 and 1.
         score = (
-            + 0.2 * self._online_performance_score()
-            + 0.6 * self._final_performance_score()
-            + 0.2 * self._runtime_score()
+            + 0.25 * self._online_performance_score()
+            + 0.50 * self._final_performance_score()
+            + 0.25 * self._runtime_score()
         )
         return score
 
