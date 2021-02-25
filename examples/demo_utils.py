@@ -10,7 +10,7 @@ import pandas as pd
 from sequoia.settings import PassiveSetting, ActiveSetting
 
 
-def demo_all_settings(MethodType: Type[Method], datasets: List[str] = ["mnist", "fashionmnist"]):
+def demo_all_settings(MethodType: Type[Method], datasets: List[str] = ["mnist", "fashionmnist"], **setting_kwargs):
     """ Evaluates the given Method on all its applicable settings.
     
     NOTE: Only evaluates on the mnist/fashion-mnist datasets for this demo.
@@ -36,7 +36,7 @@ def demo_all_settings(MethodType: Type[Method], datasets: List[str] = ["mnist", 
             method = MethodType()
 
             # 2. Create the setting
-            setting = setting_type(dataset=dataset)
+            setting = setting_type(dataset=dataset, **setting_kwargs)
             
             # 3. Apply the method on the setting.
             results: Results = setting.apply(method)

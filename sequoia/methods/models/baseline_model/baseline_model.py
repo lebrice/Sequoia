@@ -202,7 +202,9 @@ class BaselineModel(SemiSupervisedModel,
         # the observations.
         single_obs_space = self.observation_space
         # Check if the observations are batched or not.
-        not_batched = len(observations[0].shape) == len(single_obs_space[0].shape)
+        assert isinstance(observations.x, Tensor), (observations.shapes, observations.x.shapes)
+        # assert isinstance(single_obs_space.x, Image)
+        not_batched = len(observations.x.shape) == len(single_obs_space.x.shape)
         if not_batched:
             observations = observations.with_batch_dimension()
 
@@ -251,13 +253,10 @@ class BaselineModel(SemiSupervisedModel,
     def training_step(self,
                       batch: Tuple[Observations, Optional[Rewards]],
                       batch_idx: int,
-                      *args, **kwargs):
-        step_result = self.shared_step(
+                      **kwargs):
+        step_result = super().training_step(
             batch,
-            batch_idx,
-            environment=self.setting.train_env,
-            loss_name="train",
-            *args,
+            batch_idx=batch_idx,
             **kwargs
         )
         loss: Tensor = step_result["loss"]
@@ -285,32 +284,24 @@ class BaselineModel(SemiSupervisedModel,
     @property
     def automatic_optimization(self) -> bool:
         return not isinstance(self.output_head, PolicyHead)
-    
+
     def validation_step(self,
                         batch: Tuple[Observations, Optional[Rewards]],
                         batch_idx: int,
-                        *args,
                         **kwargs):
-        return self.shared_step(
+        return super().validation_step(
             batch,
-            batch_idx,
-            environment=self.setting.val_env,
-            loss_name="val",
-            *args,
+            batch_idx=batch_idx,
             **kwargs,
         )
 
     def test_step(self,
                   batch: Tuple[Observations, Optional[Rewards]],
                   batch_idx: int,
-                  *args,
                   **kwargs):
-        return self.shared_step(
+        return super().test_step(
             batch,
-            batch_idx,
-            *args,
-            environment=self.setting.test_env,
-            loss_name="test",
+            batch_idx=batch_idx,
             **kwargs,
         )
 

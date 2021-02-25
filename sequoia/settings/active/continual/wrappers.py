@@ -24,7 +24,6 @@ from sequoia.settings.base.objects import (Actions, ActionType, Observations,
 T = TypeVar("T")
 
 
-
 class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionType, RewardType]):
     """ Wrapper that converts the observations and rewards coming from the env
     to `Batch` objects.
@@ -52,32 +51,66 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
         self.Actions = actions_type
         super().__init__(env=env)
         
+        if isinstance(self.env.observation_space, NamedTupleSpace):
+            self.observation_space = self.env.observation_space
+            self.observation_space.dtype = self.Observations
+
+        # TODO: Also change the action and reward spaces?
+        # if isinstance(self.env.observation_space, NamedTupleSpace):
+        #     self.observation_space = self.env.observation_space
+        #     self.observation_space.dtype = self.Observations
+
     def step(self, action: ActionType) -> Tuple[ObservationType,
                                                 RewardType,
                                                 Union[bool, Sequence[bool]],
                                                 Union[Dict, Sequence[Dict]]]:
         # "unwrap" the actions before passing it to the wrapped environment.
-        if isinstance(action, Actions):
-            action = unwrap(action)
-        
+        action = self.action(action)        
         observation, reward, done, info = self.env.step(action)
         # TODO: Make the observation space a Dict
-        observation = self.Observations(*observation)
-
-        reward = self.Rewards(reward)
+        observation = self.observations(observation)
+        reward = self.rewards(reward)
         return observation, reward, done, info
+
+    def observation(self, observation: Any) -> ObservationType:
+        if isinstance(observation, self.Observations):
+            return observation
+        if isinstance(observation, tuple):
+            return self.Observations(*observation)
+        if isinstance(observation, dict):
+            return self.Observations(**observation)
+        assert isinstance(observation, (Tensor, np.ndarray))
+        return self.Observations(observation)
+
+    def action(self, action: ActionType) -> Any:
+        return unwrap(action)
+    
+    def reward(self, reward: Any) -> RewardType:
+        return self.Rewards(reward)
 
     def reset(self, **kwargs) -> ObservationType:
         observation = self.env.reset(**kwargs)
-        # TODO: Make the observation space a Dict rather than this annoying
-        # NamedTuple!
-        return self.Observations(*observation)
+        return self.observation(observation)
+    
+    def __iter__(self):
+        for batch in self.env:
+            if isinstance(batch, tuple) and len(batch) == 2:
+                yield self.observation(batch[0]), self.reward(batch[1])
+            elif isinstance(batch, tuple) and len(batch) == 1:
+                yield self.observation(batch[0])
+            else:
+                yield self.observation(batch)
 
+    def send(self, action: ActionType) -> RewardType:
+        action = self.action(action)
+        reward = self.env.send(action)
+        return self.reward(reward)
 
 # TODO: turn unwrap into a single-dispatch callable.
 # TODO: Atm 'unwrap' basically means "get rid of everything apart from the first
 # item", which is a bit ugly.
-
+# Unwrap should probably be a method on the corresponding `Batch` class, which could
+# maybe accept a Space to fit into?
 @singledispatch
 def unwrap(obj: Any) -> Any:
     raise NotImplementedError(obj)

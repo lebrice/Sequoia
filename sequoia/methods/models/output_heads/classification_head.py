@@ -121,6 +121,8 @@ class ClassificationHead(OutputHead):
     def get_loss(self, forward_pass: ForwardPass, actions: ClassificationOutput, rewards: Rewards) -> Loss:
         logits: Tensor = actions.logits
         y_pred: Tensor = actions.y_pred
+        rewards = rewards.to(logits.device)
+        
         y: Tensor = rewards.y
 
         n_classes = logits.shape[-1]

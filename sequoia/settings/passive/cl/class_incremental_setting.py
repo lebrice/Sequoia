@@ -391,10 +391,14 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         method.configure(setting=self)
 
         # Run the main loop (which is defined in IncrementalSetting).
-        results: ClassIncrementalResults = self.main_loop(method)
+        results: ClassIncrementalResults = super().main_loop(method)
         logger.info(results.summary())
         method.receive_results(self, results=results)
         return results
+
+    def add_training_performance_monitor(self, env: PassiveEnvironment) -> PassiveEnvironment:
+        from .measure_performance_wrapper import MeasureSLPerformanceWrapper
+        return MeasureSLPerformanceWrapper(env, first_epoch_only=True)
 
     def prepare_data(self, data_dir: Path = None, **kwargs):
         self.config = self.config or Config.from_args(self._argv, strict=False)

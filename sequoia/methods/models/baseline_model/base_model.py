@@ -293,11 +293,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def training_step(self,
                       batch: Tuple[Observations, Optional[Rewards]],
-                      *args,
+                      batch_idx: int,
                       **kwargs):
         return self.shared_step(
             batch,
-            *args,
+            batch_idx,
             environment=self.setting.train_env,
             loss_name="train",
             **kwargs
@@ -305,11 +305,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def validation_step(self,
                       batch: Tuple[Observations, Optional[Rewards]],
-                      *args,
+                      batch_idx: int,
                       **kwargs):
         return self.shared_step(
             batch,
-            *args,
+            batch_idx=batch_idx,
             environment=self.setting.val_env,
             loss_name="val",
             **kwargs
@@ -317,11 +317,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def test_step(self,
                       batch: Tuple[Observations, Optional[Rewards]],
-                      *args,
+                      batch_idx: int,
                       **kwargs):
         return self.shared_step(
             batch,
-            *args,
+            batch_idx=batch_idx,
             environment=self.setting.test_env,
             loss_name="test",
             **kwargs
@@ -348,11 +348,15 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # TODO: It would be nice if we could actually do the same things for
         # both sides of the tree here..
         observations, rewards = self.split_batch(batch)
+        
+        # FIXME: Remove this, debugging:
+        assert isinstance(observations, Observations), observations
+        assert isinstance(observations.x, Tensor), observations.shapes
         # Get the forward pass results, containing:
         # - "observation": the augmented/transformed/processed observation.
         # - "representations": the representations for the observations.
         # - "actions": The actions (predictions)
-        forward_pass: ForwardPass = self(observations)
+        forward_pass: ForwardPass = self.forward(observations)
         
         # get the actions from the forward pass:
         actions = forward_pass.actions
@@ -373,7 +377,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
             "loss_object": loss,
         }
 
-    @auto_move_data
     def split_batch(self, batch: Any) -> Tuple[Observations, Rewards]:
         """ Splits the batch into the observations and the rewards. 
         
@@ -385,10 +388,21 @@ class BaseModel(LightningModule, Generic[SettingType]):
         """
         if isinstance(batch, (tuple, list)) and len(batch) == 2:
             observations, rewards = batch
-            if (isinstance(observations, self.Observations) and
-                isinstance(rewards, self.Rewards)):
-                return observations, rewards
-        return self.split_batch_transform(batch)
+            assert isinstance(observations, self.Observations)
+            assert rewards is None or isinstance(rewards, self.Rewards)
+            # raise NotImplementedError(
+            #     f"Expected to receive observations of type {self.Observations}, but "
+            #     f"got {observations} of type {type(observations)} instead."
+            # )
+        else:
+            assert isinstance(batch, self.Observations)
+            observations = batch
+            rewards = None
+        
+        observations = observations.torch(device=self.device)
+        if rewards is not None:
+            rewards = rewards.torch(device=self.device)
+        return observations, rewards
 
     def get_loss(self,
                  forward_pass: ForwardPass,
@@ -444,6 +458,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
                          actions: Actions,
                          rewards: Rewards) -> Loss:
         """ Gets the Loss of the output head. """
+        assert actions.device == rewards.device == self.device
         return self.output_head.get_loss(
             forward_pass,
             actions=actions,

@@ -52,17 +52,19 @@ class ClassificationMetrics(Metrics):
     h_x:    InitVar[Optional[Tensor]] = None
     y_pred: InitVar[Optional[Tensor]] = None
     y:      InitVar[Optional[Tensor]] = None
+    num_classes: InitVar[Optional[int]] = None
     
     def __post_init__(self,
                       x: Tensor = None,
                       h_x: Tensor = None,
                       y_pred: Tensor = None,
-                      y: Tensor = None):
+                      y: Tensor = None,
+                      num_classes: int = None):
 
         super().__post_init__(x=x, h_x=h_x, y_pred=y_pred, y=y)
 
         if self.confusion_matrix is None and y_pred is not None and y is not None:
-            self.confusion_matrix = get_confusion_matrix(y_pred=y_pred, y=y)
+            self.confusion_matrix = get_confusion_matrix(y_pred=y_pred, y=y, num_classes=num_classes)
 
         #TODO: add other useful metrics (potentially ones using x or h_x?)
         if self.confusion_matrix is not None:
@@ -86,10 +88,11 @@ class ClassificationMetrics(Metrics):
             confusion_matrix = self.confusion_matrix.clone()
         else:
             confusion_matrix = self.confusion_matrix + other.confusion_matrix
-
+        
         result = ClassificationMetrics(
             n_samples=self.n_samples + other.n_samples,
             confusion_matrix=confusion_matrix,
+            num_classes=self.num_classes,
         )
         return result
 

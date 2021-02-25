@@ -28,7 +28,6 @@ from .. import Results
 logger = get_logger(__file__)
 
 
-@dataclass
 class ClassIncrementalResults(IncrementalSetting.Results):
     """Results for a ClassIncrementalSetting.
     
@@ -50,6 +49,9 @@ class ClassIncrementalResults(IncrementalSetting.Results):
     # Higher accuracy => better
     lower_is_better: ClassVar[bool] = False
     objective_name: ClassVar[str] = "Average Accuracy"
+
+    # Maximum runtime allowed (in hours).
+    max_runtime_hours: ClassVar[float] = 5.0
 
     def make_plots(self):
         plots_dict = {}
