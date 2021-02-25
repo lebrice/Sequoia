@@ -115,7 +115,7 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         self._closed: bool = False
 
         self._action: Optional[ActionType] = None
-        
+
         # from gym.envs.classic_control.rendering import SimpleImageViewer
         self.viewer = None
 
@@ -343,7 +343,6 @@ class PassiveEnvironment(DataLoader, Environment[Tuple[ObservationType,
         """
         if self.pretend_to_be_active:
             self._action = action
-            return self._previous_batch[1]
-            # return self._rewards
+            return self._rewards
         else:
             return None

@@ -21,10 +21,7 @@ def test_passive_environment_as_dataloader():
     obs_space = transforms(obs_space)
 
     env: Iterable[Tuple[Tensor, Tensor]] = PassiveEnvironment(
-        dataset,
-        batch_size=batch_size,
-        n_classes=10,
-        observation_space=obs_space,
+        dataset, batch_size=batch_size, n_classes=10, observation_space=obs_space,
     )
 
     for x, y in env:
@@ -42,17 +39,17 @@ def test_passive_environment_as_dataloader():
 
 def test_mnist_as_gym_env():
     # from continuum.datasets import MNIST
-    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
-    
+    dataset = MNIST(
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+    )
+
     batch_size = 4
-    env = PassiveEnvironment(dataset,
-                             n_classes=10,
-                             batch_size=batch_size)
-    
+    env = PassiveEnvironment(dataset, n_classes=10, batch_size=batch_size)
+
     assert env.observation_space.shape == (batch_size, 3, 28, 28)
     assert env.action_space.shape == (batch_size,)
     assert env.reward_space.shape == (batch_size,)
-    
+
     env.seed(123)
     obs = env.reset()
     assert obs.shape == (batch_size, 3, 28, 28)
@@ -64,6 +61,7 @@ def test_mnist_as_gym_env():
         assert not done
     env.close()
 
+
 import numpy as np
 from torch.utils.data import Subset
 
@@ -72,60 +70,60 @@ def test_env_gives_done_on_last_item():
     # from continuum.datasets import MNIST
     max_samples = 100
     batch_size = 1
-    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    dataset = MNIST(
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+    )
     dataset = Subset(dataset, list(range(max_samples)))
 
-    env = PassiveEnvironment(dataset,
-                             n_classes=10,
-                             batch_size=batch_size)
+    env = PassiveEnvironment(dataset, n_classes=10, batch_size=batch_size)
 
     assert env.observation_space.shape == (batch_size, 3, 28, 28)
     assert env.action_space.shape == (batch_size,)
     assert env.reward_space.shape == (batch_size,)
-    
+
     env.seed(123)
     obs = env.reset()
     assert obs.shape == (batch_size, 3, 28, 28)
-    # Starting at 1 since reset() gives one observation already. 
+    # Starting at 1 since reset() gives one observation already.
     for i in range(1, max_samples):
         obs, reward, done, info = env.step(env.action_space.sample())
         assert obs.shape == (batch_size, 3, 28, 28)
         assert reward.shape == (batch_size,)
-        assert done == (i == max_samples-1), i
+        assert done == (i == max_samples - 1), i
         if done:
             break
     else:
         assert False, "Should have reached done=True!"
     assert i == max_samples - 1
     env.close()
-    
+
 
 def test_env_done_works_with_batch_size():
     # from continuum.datasets import MNIST
     max_samples = 100
     batch_size = 5
     max_batches = max_samples // batch_size
-    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    dataset = MNIST(
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+    )
     dataset = Subset(dataset, list(range(max_samples)))
 
-    env = PassiveEnvironment(dataset,
-                             n_classes=10,
-                             batch_size=batch_size)
+    env = PassiveEnvironment(dataset, n_classes=10, batch_size=batch_size)
 
     assert env.observation_space.shape == (batch_size, 3, 28, 28)
     assert env.action_space.shape == (batch_size,)
     assert env.reward_space.shape == (batch_size,)
-    
+
     env.seed(123)
     obs = env.reset()
     assert obs.shape == (batch_size, 3, 28, 28)
-    # Starting at 1 since reset() gives one observation already. 
+    # Starting at 1 since reset() gives one observation already.
     for i in range(1, max_batches):
-        
+
         obs, reward, done, info = env.step(env.action_space.sample())
         assert obs.shape == (batch_size, 3, 28, 28)
         assert reward.shape == (batch_size,)
-        assert done == (i == max_batches-1), i
+        assert done == (i == max_batches - 1), i
         if done:
             break
     else:
@@ -134,37 +132,36 @@ def test_env_done_works_with_batch_size():
     env.close()
 
 
-
 def test_multiple_epochs_env():
     max_epochs = 3
     max_samples = 100
     batch_size = 5
     max_batches = max_samples // batch_size
-    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    dataset = MNIST(
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+    )
     dataset = Subset(dataset, list(range(max_samples)))
 
-    env = PassiveEnvironment(dataset,
-                             n_classes=10,
-                             batch_size=batch_size)
+    env = PassiveEnvironment(dataset, n_classes=10, batch_size=batch_size)
 
     assert env.observation_space.shape == (batch_size, 3, 28, 28)
     assert env.action_space.shape == (batch_size,)
     assert env.reward_space.shape == (batch_size,)
-    
+
     env.seed(123)
     total_steps = 0
     for epoch in range(max_epochs):
         obs = env.reset()
-        total_steps += 1      
-        
+        total_steps += 1
+
         assert obs.shape == (batch_size, 3, 28, 28)
-        # Starting at 1 since reset() gives one observation already. 
+        # Starting at 1 since reset() gives one observation already.
         for i in range(1, max_batches):
             obs, reward, done, info = env.step(env.action_space.sample())
             assert obs.shape == (batch_size, 3, 28, 28)
             assert reward.shape == (batch_size,)
-            assert done == (i == max_batches-1), i
-            total_steps += 1      
+            assert done == (i == max_batches - 1), i
+            total_steps += 1
             if done:
                 break
         else:
@@ -175,19 +172,18 @@ def test_multiple_epochs_env():
     env.close()
 
 
-
 def test_multiple_epochs_dataloader():
     """ Test that we can iterate on the dataloader more than once. """
     max_epochs = 3
     max_samples = 200
     batch_size = 5
     max_batches = max_samples // batch_size
-    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    dataset = MNIST(
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+    )
     dataset = Subset(dataset, list(range(max_samples)))
 
-    env = PassiveEnvironment(dataset,
-                             n_classes=10,
-                             batch_size=batch_size)
+    env = PassiveEnvironment(dataset, n_classes=10, batch_size=batch_size)
 
     assert env.observation_space.shape == (batch_size, 3, 28, 28)
     assert env.action_space.shape == (batch_size,)
@@ -197,10 +193,9 @@ def test_multiple_epochs_dataloader():
         for obs, reward in env:
             assert obs.shape == (batch_size, 3, 28, 28)
             assert reward.shape == (batch_size,)
-            total_steps += 1      
+            total_steps += 1
 
     assert total_steps == max_batches * max_epochs
-
 
 
 def test_multiple_epochs_dataloader_with_split_batch_fn():
@@ -208,21 +203,21 @@ def test_multiple_epochs_dataloader_with_split_batch_fn():
     max_epochs = 3
     max_samples = 200
     batch_size = 5
-    
+
     def split_batch_fn(batch):
         x, y, = batch
         # some dummy function.
         return torch.zeros_like(x), y
-    
-    
+
     max_batches = max_samples // batch_size
-    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    dataset = MNIST(
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+    )
     dataset = Subset(dataset, list(range(max_samples)))
 
-    env = PassiveEnvironment(dataset,
-                             n_classes=10,
-                             batch_size=batch_size,
-                             split_batch_fn=split_batch_fn)
+    env = PassiveEnvironment(
+        dataset, n_classes=10, batch_size=batch_size, split_batch_fn=split_batch_fn
+    )
 
     assert env.observation_space.shape == (batch_size, 3, 28, 28)
     assert env.action_space.shape == (batch_size,)
@@ -233,10 +228,9 @@ def test_multiple_epochs_dataloader_with_split_batch_fn():
             assert obs.shape == (batch_size, 3, 28, 28)
             assert torch.all(obs == 0)
             assert reward.shape == (batch_size,)
-            total_steps += 1      
+            total_steps += 1
 
     assert total_steps == max_batches * max_epochs
-
 
 
 def test_env_requires_reset_before_step():
@@ -244,12 +238,12 @@ def test_env_requires_reset_before_step():
     max_samples = 100
     batch_size = 5
     max_batches = max_samples // batch_size
-    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    dataset = MNIST(
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+    )
     dataset = Subset(dataset, list(range(max_samples)))
 
-    env = PassiveEnvironment(dataset,
-                             n_classes=10,
-                             batch_size=batch_size)
+    env = PassiveEnvironment(dataset, n_classes=10, batch_size=batch_size)
 
     with pytest.raises(gym.error.ResetNeeded):
         env.step(env.action_space.sample())
@@ -259,11 +253,13 @@ def test_split_batch_fn():
     # from continuum.datasets import MNIST
     batch_size = 5
     max_batches = 10
-    
-    def split_batch_fn(batch: Tuple[Tensor, Tensor, Tensor]) -> Tuple[Tuple[Tensor, Tensor], Tensor]:
+
+    def split_batch_fn(
+        batch: Tuple[Tensor, Tensor, Tensor]
+    ) -> Tuple[Tuple[Tensor, Tensor], Tensor]:
         x, y, t = batch
         return (x, t), y
-    
+
     # dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
     from continuum import ClassIncremental
     from continuum.datasets import MNIST
@@ -274,7 +270,7 @@ def test_split_batch_fn():
         increment=2,
         transformations=Compose([Transforms.to_tensor, Transforms.three_channels]),
     )
-    
+
     classes_per_task = scenario.nb_classes // scenario.nb_tasks
     print(f"Number of classes per task {classes_per_task}.")
     for i, task_dataset in enumerate(scenario):
@@ -284,19 +280,21 @@ def test_split_batch_fn():
             batch_size=batch_size,
             split_batch_fn=split_batch_fn,
             # Need to pass the observation space, in this case.
-            observation_space=spaces.Tuple([
-                spaces.Box(low=0, high=1, shape=(3, 28, 28)),
-                spaces.Discrete(scenario.nb_tasks) # task label
-            ]),
+            observation_space=spaces.Tuple(
+                [
+                    spaces.Box(low=0, high=1, shape=(3, 28, 28)),
+                    spaces.Discrete(scenario.nb_tasks),  # task label
+                ]
+            ),
             action_space=spaces.Box(
                 low=np.array([i * classes_per_task]),
-                high=np.array([(i+1) * classes_per_task]),
+                high=np.array([(i + 1) * classes_per_task]),
                 dtype=int,
-            )
+            ),
         )
         assert spaces.Box(
             low=np.array([i * classes_per_task]),
-            high=np.array([(i+1) * classes_per_task]),
+            high=np.array([(i + 1) * classes_per_task]),
             dtype=int,
         ).shape == (1,)
         assert isinstance(env.observation_space[0], spaces.Box)
@@ -304,9 +302,9 @@ def test_split_batch_fn():
         assert env.observation_space[1].shape == (batch_size,)
         assert env.action_space.shape == (batch_size, 1)
         assert env.reward_space.shape == (batch_size, 1)
-        
+
         env.seed(123)
-        
+
         obs = env.reset()
         assert len(obs) == 2
         x, t = obs
@@ -341,7 +339,7 @@ def check_env(env: PassiveEnvironment):
     assert step_rewards in env.reward_space
     # TODO: Should passive environments return a single 'done' value? or a list
     # like vectorized environments in RL?
-    assert not done # shouldn't be `done`.
+    assert not done  # shouldn't be `done`.
 
     for iter_obs, iter_rewards in env:
         assert iter_obs in env.observation_space, iter_obs.shape
@@ -357,17 +355,14 @@ def test_observation_wrapper_applied_to_passive_environment():
     env.
     """
     batch_size = 5
-    
+
     transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
     dataset = MNIST("data", transform=transforms)
     obs_space = Image(0, 255, (1, 28, 28), np.uint8)
     obs_space = transforms(obs_space)
     dataset.classes
     env = PassiveEnvironment(
-        dataset,
-        n_classes=10,
-        batch_size=batch_size,
-        observation_space=obs_space,
+        dataset, n_classes=10, batch_size=batch_size, observation_space=obs_space,
     )
 
     assert env.observation_space == Image(0, 1, (batch_size, 3, 28, 28))
@@ -375,18 +370,18 @@ def test_observation_wrapper_applied_to_passive_environment():
     assert env.reward_space == env.action_space
 
     env.seed(123)
-    
+
     check_env(env)
-    
+
     # Apply a transformation that changes the observation space.
     env = TransformObservation(env=env, f=Compose([Transforms.resize_64x64]))
     assert env.observation_space == Image(0, 1, (batch_size, 3, 64, 64))
     assert env.action_space.shape == (batch_size,)
     assert env.reward_space.shape == (batch_size,)
-    
+
     env.seed(123)
     check_env(env)
-    
+
     env.close()
 
     # from continuum import ClassIncremental
@@ -399,10 +394,12 @@ def test_passive_environment_interaction():
     """
     batch_size = 5
     transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
-    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    dataset = MNIST(
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+    )
     max_samples = 100
     dataset = Subset(dataset, list(range(max_samples)))
-    
+
     obs_space = Image(0, 255, (1, 28, 28), np.uint8)
     obs_space = transforms(obs_space)
     env = PassiveEnvironment(
@@ -412,18 +409,18 @@ def test_passive_environment_interaction():
         observation_space=obs_space,
         pretend_to_be_active=True,
     )
-        
+
     assert env.observation_space == Image(0, 1, (batch_size, 3, 28, 28))
     assert env.action_space.shape == (batch_size,)
     assert env.reward_space == env.action_space
     env.seed(123)
     obs = env.reset()
     assert obs in env.observation_space
-    
+
     obs, reward, done, info = env.step(env.action_space.sample())
     assert reward is not None
     assert obs in env.observation_space
-   
+
     for i, (obs, reward) in enumerate(env):
         assert obs in env.observation_space
         assert reward is None
@@ -432,16 +429,17 @@ def test_passive_environment_interaction():
     assert i == max_samples // batch_size - 1
 
 
-
 def test_passive_environment_without_pretend_to_be_active():
     """ Test the gym.Env-style interaction with a PassiveEnvironment.
     """
     batch_size = 5
     transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
-    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    dataset = MNIST(
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+    )
     max_samples = 100
     dataset = Subset(dataset, list(range(max_samples)))
-    
+
     obs_space = Image(0, 255, (1, 28, 28), np.uint8)
     obs_space = transforms(obs_space)
     env = PassiveEnvironment(
@@ -460,7 +458,7 @@ def test_passive_environment_without_pretend_to_be_active():
 
     obs, reward, done, info = env.step(env.action_space.sample())
     assert reward is not None
-    
+
     for i, (obs, reward) in enumerate(env):
         assert reward is not None
         other_reward = env.send(env.action_space.sample())
@@ -468,16 +466,17 @@ def test_passive_environment_without_pretend_to_be_active():
     assert i == max_samples // batch_size - 1
 
 
-
 def test_passive_environment_needs_actions_to_be_sent():
     """ Test the 'active dataloader' style interaction.
     """
     batch_size = 10
     transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
-    dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
+    dataset = MNIST(
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+    )
     max_samples = 105
     dataset = Subset(dataset, list(range(max_samples)))
-    
+
     obs_space = Image(0, 255, (1, 28, 28), np.uint8)
     obs_space = transforms(obs_space)
     env = PassiveEnvironment(
@@ -490,12 +489,51 @@ def test_passive_environment_needs_actions_to_be_sent():
 
     with pytest.raises(RuntimeError):
         for i, (obs, _) in enumerate(env):
-            print(i)
+            pass
 
-    
+    env = PassiveEnvironment(
+        dataset,
+        n_classes=10,
+        batch_size=batch_size,
+        observation_space=obs_space,
+        pretend_to_be_active=True,
+    )
     for i, (obs, _) in enumerate(env):
-        print(i)
-        action = env.action_space.sample()
+        assert isinstance(obs, Tensor)
+        action = env.action_space.sample()[: obs.shape[0]]
         rewards = env.send(action)
         assert rewards is not None
         assert rewards.shape[0] == action.shape[0]
+
+
+from torch.utils.data import TensorDataset
+
+
+def test_passive_environment_active_mode_action_reward_match():
+    """ Test the 'active dataloader' style interaction.
+    """
+    batch_size = 10
+    max_samples = 105
+    dataset = TensorDataset(
+        torch.arange(max_samples).reshape([max_samples, 1, 1, 1])
+        * torch.ones([max_samples, 3, 32, 32]),
+        torch.arange(max_samples),
+    )
+    dataset = Subset(dataset, list(range(max_samples)))
+    env = PassiveEnvironment(
+        dataset,
+        n_classes=max_samples,
+        batch_size=batch_size,
+        pretend_to_be_active=True,
+    )
+
+    for i, (obs, _) in enumerate(env):
+        print(i)
+        expected_obs = torch.arange(i * batch_size, (i + 1) * batch_size)
+        expected_obs = expected_obs[:obs.shape[0]]
+        assert (obs == expected_obs.reshape([obs.shape[0], 1, 1, 1])).all()
+        action = torch.arange(i * batch_size, (i + 1) * batch_size, dtype=int)
+        action = action[: obs.shape[0]]
+        rewards = env.send(action)
+        assert (rewards == action).all()
+
