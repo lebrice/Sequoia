@@ -126,7 +126,8 @@ class Metrics(Serializable):
         float
             The most important metric from this object, as a float.
         """
-        raise NotImplementedError(f"TODO: Add the 'objective' property to class {type(self)}")
+        return 0
+        # raise NotImplementedError(f"TODO: Add the 'objective' property to class {type(self)}")
 
     @property
     def objective_name(self) -> str:

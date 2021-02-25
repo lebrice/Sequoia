@@ -485,6 +485,7 @@ def test_passive_environment_needs_actions_to_be_sent():
         batch_size=batch_size,
         observation_space=obs_space,
         pretend_to_be_active=True,
+        strict = True,
     )
 
     with pytest.raises(RuntimeError):

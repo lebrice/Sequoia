@@ -293,11 +293,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def training_step(self,
                       batch: Tuple[Observations, Optional[Rewards]],
-                      *args,
+                      batch_idx: int,
                       **kwargs):
         return self.shared_step(
             batch,
-            *args,
+            batch_idx,
             environment=self.setting.train_env,
             loss_name="train",
             **kwargs
@@ -305,11 +305,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def validation_step(self,
                       batch: Tuple[Observations, Optional[Rewards]],
-                      *args,
+                      batch_idx: int,
                       **kwargs):
         return self.shared_step(
             batch,
-            *args,
+            batch_idx=batch_idx,
             environment=self.setting.val_env,
             loss_name="val",
             **kwargs
@@ -317,11 +317,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def test_step(self,
                       batch: Tuple[Observations, Optional[Rewards]],
-                      *args,
+                      batch_idx: int,
                       **kwargs):
         return self.shared_step(
             batch,
-            *args,
+            batch_idx=batch_idx,
             environment=self.setting.test_env,
             loss_name="test",
             **kwargs

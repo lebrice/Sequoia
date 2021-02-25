@@ -28,7 +28,6 @@ from .. import Results
 logger = get_logger(__file__)
 
 
-@dataclass
 class ClassIncrementalResults(IncrementalSetting.Results):
     """Results for a ClassIncrementalSetting.
     

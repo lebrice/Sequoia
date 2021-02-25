@@ -88,12 +88,10 @@ class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[ClassificationMetric
         return observation, reward, done, info
 
     def send(self, action: Actions):
-        assert action.y_pred.shape[0] == self._observation.x.shape[0], (self._observation.shapes, action.shapes)
         reward = self.env.send(action)
-        assert action.y_pred.shape[0] == reward.y.shape[0]
-        
         if self.in_evaluation_period:
             self._metrics[self._steps] += self.get_metrics(action, reward)
+            assert action.y_pred.shape[0] == reward.y.shape[0]
         # This is ok since we don't increment in the iterator.
         self._steps += 1
         return reward
