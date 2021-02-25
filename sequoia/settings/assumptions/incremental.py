@@ -203,7 +203,9 @@ class IncrementalSetting(ContinualSetting):
             task_train_env.close()
 
             if self.monitor_training_performance:
-                results._online_training_performance.append(task_train_env.get_online_performance())
+                results._online_training_performance.append(
+                    task_train_env.get_online_performance()
+                )
             
             task_valid_env.close()
 
@@ -230,8 +232,9 @@ class IncrementalSetting(ContinualSetting):
                 wandb.log(d)
 
         self._end_time = time.process_time()
-        results._runtime = self._start_time - self._end_time
-        logger.info(f"Finished main loop in {self._end_time - self._start_time} seconds.")
+        runtime = self._end_time - self._start_time
+        results._runtime = runtime
+        logger.info(f"Finished main loop in {runtime} seconds.")
         self.log_results(method, results)
         return results
 

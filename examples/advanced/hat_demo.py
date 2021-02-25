@@ -14,7 +14,7 @@ from torch import Tensor
 from sequoia.methods import register_method
 from sequoia.common import Config
 from sequoia.common.spaces import Image
-from sequoia.settings import Method
+from sequoia.settings import Method, Environment
 from sequoia.settings.passive import TaskIncrementalSetting
 from sequoia.settings.passive.cl.objects import (Actions, Observations,
                                                  PassiveEnvironment, Rewards)
@@ -130,16 +130,47 @@ class HatNet(torch.nn.Module):
         gfc2 = self.gate(s_hat * self.efc2(t))
         return Masks(gc1, gc2, gc3, gfc1, gfc2)
 
-    def shared_step(self, batch: Tuple[Observations, Rewards]) -> Tuple[Tensor, Dict]:
-        # Since we're training on a Passive environment, we get both
-        # observations and rewards.
+    def shared_step(self, batch: Tuple[Observations, Optional[Rewards]], environment: Environment) -> Tuple[Tensor, Dict]:
+        """Shared step used for both training and validation.
+        
+        Parameters
+        ----------
+        batch : Tuple[Observations, Optional[Rewards]]
+            Batch containing Observations, and optional Rewards. When the Rewards are
+            None, it means that we'll need to provide the Environment with actions
+            before we can get the Rewards (e.g. image labels) back.
+            
+            This happens for example when being applied in a Setting which cares about
+            sample efficiency or training performance, for example.
+            
+        environment : Environment
+            The environment we're currently interacting with. Used to provide the
+            rewards when they aren't already part of the batch (as mentioned above).
+
+        Returns
+        -------
+        Tuple[Tensor, Dict]
+            The Loss tensor, and a dict of metrics to be logged.
+        """
+        # Since we're training on a Passive environment, we will get both observations
+        # and rewards, unless we're being evaluated based on our training performance,
+        # in which case we will need to send actions to the environments before we can
+        # get the corresponding rewards (image labels) back.
         observations: Observations = batch[0]
-        rewards: Rewards = batch[1]
-        image_labels = rewards.y
+        rewards: Optional[Rewards] = batch[1]
 
         # Get the predictions:
         logits, _ = self(observations)
         y_pred = logits.argmax(-1)
+
+        if rewards is None:
+            # If the rewards in the batch were None, it means we're expected to give
+            # actions before we can get rewards back from the environment.
+            # This happens when the Setting is monitoring our training performance.
+            rewards = environment.send(Actions(y_pred))
+
+        assert rewards is not None
+        image_labels = rewards.y
 
         loss = self.loss(logits, image_labels)
 
@@ -201,7 +232,10 @@ class HatMethod(Method, target_setting=TaskIncrementalSetting):
             n_classes_per_task=n_classes_per_task,
             s_hat=self.hparams.s_hat
         )
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
+        self.optimizer = torch.optim.Adam(
+            self.model.parameters(),
+            lr=self.hparams.learning_rate,
+        )
 
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
         """ 
@@ -226,7 +260,10 @@ class HatMethod(Method, target_setting=TaskIncrementalSetting):
                 postfix = {}
                 train_pbar.set_description(f"Training Epoch {epoch}")
                 for i, batch in enumerate(train_pbar):
-                    loss, metrics_dict = self.model.shared_step(batch)
+                    loss, metrics_dict = self.model.shared_step(
+                        batch,
+                        environment=train_env,
+                    )
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
@@ -242,7 +279,10 @@ class HatMethod(Method, target_setting=TaskIncrementalSetting):
                 epoch_val_loss = 0.
 
                 for i, batch in enumerate(val_pbar):
-                    batch_val_loss, metrics_dict = self.model.shared_step(batch)
+                    batch_val_loss, metrics_dict = self.model.shared_step(
+                        batch,
+                        environment=valid_env,
+                    )
                     epoch_val_loss += batch_val_loss
                     postfix.update(metrics_dict, val_loss=epoch_val_loss)
                     val_pbar.set_postfix(postfix)

@@ -128,7 +128,7 @@ class MyModel(nn.Module):
         loss = self.loss(logits, image_labels)
 
         accuracy = (y_pred == image_labels).sum().float() / len(image_labels)
-        metrics_dict = {"accuracy": accuracy}
+        metrics_dict = {"accuracy": accuracy.item()}
         return loss, metrics_dict
 
 

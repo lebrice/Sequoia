@@ -1,5 +1,6 @@
 """Defines the Results of apply a Method to an IID Setting.  
 """
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Union
@@ -16,18 +17,11 @@ from sequoia.utils.plotting import PlotSectionLabel, autolabel
 from sequoia.settings.passive.cl.class_incremental_results import ClassIncrementalResults
 
 
-@dataclass
 class IIDResults(ClassIncrementalResults):
     """Results of applying a Method on an IID Setting.    
-    TODO: This should be customized, as it doesn't really make sense to use the
-    same plots as in ClassIncremental (there is only one task).
+    
+    # TODO: Refactor this to be based on `TaskResults`?
     """
-
-    test_metrics: List[Metrics] = list_field(repr=False)
-
-    def __post_init__(self):
-        if len(self.test_metrics) > 1:
-            self.test_metrics = [self.test_metrics]
 
     def save_to_dir(self, save_dir: Union[str, Path]) -> None:
         # TODO: Add wandb logging here somehow.
@@ -60,7 +54,7 @@ class IIDResults(ClassIncrementalResults):
         figure: plt.Figure
         axes: plt.Axes
         figure, axes = plt.subplots()
-        y = self.average_metrics.class_accuracy
+        y = self[0][0].average_metrics.class_accuracy
         x = list(range(len(y)))
         rects = axes.bar(x, y)
         axes.set_title("Class Accuracy")
@@ -70,17 +64,18 @@ class IIDResults(ClassIncrementalResults):
         # autolabel(axes, rects)
         return figure
 
-    def summary(self) -> str:
-        s = StringIO()
-        with redirect_stdout(s):
-            print(f"Average Accuracy: {self.average_metrics.accuracy:.2%}")
-            for i, class_acc in enumerate(self.average_metrics.class_accuracy):
-                print(f"Accuracy for class {i}: {class_acc:.3%}")
-        s.seek(0)
-        return s.read()
+    # def summary(self) -> str:
+    #     s = StringIO()
+    #     with redirect_stdout(s):
+    #         print(f"Average Accuracy: {self.average_metrics.accuracy:.2%}")
+    #         for i, class_acc in enumerate(self.average_metrics.class_accuracy):
+    #             print(f"Accuracy for class {i}: {class_acc:.3%}")
+    #     s.seek(0)
+    #     return s.read()
 
     def to_log_dict(self) -> Dict[str, float]:
-        results = {}
-        results["objective"] = self.objective
-        results.update(self.average_metrics.to_log_dict(verbose=True))
+        results = super().to_log_dict()
+        # Remove the useless 2-levels of nesting from the log_dict
+        results.update(results.pop("Task 0").pop("Task 0"))
+        # assert False, json.dumps(results, indent="\t")
         return results
