@@ -29,7 +29,7 @@ class PNNConvLayer(nn.Module):
         
 
 class PNNLinearBlock(nn.Module):
-    def __init__(self, col, depth, n_in, n_out):
+    def __init__(self, col: int, depth: int, n_in: int, n_out: int):
         super(PNNLinearBlock, self).__init__()
         self.layer = nn.Linear(n_in, n_out)
 

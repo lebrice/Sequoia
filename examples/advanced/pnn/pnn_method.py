@@ -144,7 +144,14 @@ class PnnMethod(Method, target_setting=Setting):
             assert (
                 setting.increment == setting.test_increment
             ), "Assuming same number of classes per task for training and testing."
-            self.layer_size = [self.num_inputs, 256, setting.increment]
+            # TODO: (@lebrice): Temporarily 'fixing' this by making it so each output
+            # head has as many outputs as there are classes in total, which might make
+            # no sense, but currently works.
+            # It would be better to refactor this so that each output head can have only
+            # as many outputs as is required, and then reshape / offset the predictions.
+            n_outputs = setting.increment
+            n_outputs = setting.action_space.n
+            self.layer_size = [self.num_inputs, 256, n_outputs]
             self.model = PnnClassifier(n_layers=len(self.layer_size) - 1,)
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
@@ -380,8 +387,8 @@ def main_sl():
     # Add arguments for the Setting
     # TODO: PNN is coded for the DomainIncrementalSetting, where the action space
     # is the same for each task.
-    parser.add_arguments(DomainIncrementalSetting, dest="setting")
-    # parser.add_arguments(TaskIncrementalSetting, dest="setting")
+    # parser.add_arguments(DomainIncrementalSetting, dest="setting")
+    parser.add_arguments(TaskIncrementalSetting, dest="setting")
     # TaskIncrementalSetting.add_argparse_args(parser, dest="setting")
     Config.add_argparse_args(parser, dest="config")
 
@@ -391,8 +398,8 @@ def main_sl():
     args = parser.parse_args()
 
     # setting: TaskIncrementalSetting = args.setting
-    # setting: TaskIncrementalSetting = TaskIncrementalSetting.from_argparse_args(
-    setting: DomainIncrementalSetting = DomainIncrementalSetting.from_argparse_args(
+    setting: TaskIncrementalSetting = TaskIncrementalSetting.from_argparse_args(
+    # setting: DomainIncrementalSetting = DomainIncrementalSetting.from_argparse_args(
         args, dest="setting"
     )
     config: Config = Config.from_argparse_args(args, dest="config")

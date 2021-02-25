@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
-from sequoia.settings.passive.cl.objects import (Observations, Rewards)
+from sequoia.settings.passive.cl.objects import Observations, Rewards
 from sequoia.settings import PassiveEnvironment, Actions
 from layers import PNNConvLayer, PNNLinearBlock
 
@@ -31,24 +31,29 @@ class PnnClassifier(nn.Module):
         self.n_classes_per_task: List[int] = []
 
     def forward(self, observations):
-        assert self.columns, 'PNN should at least have one column (missing call to `new_task` ?)'
+        assert (
+            self.columns
+        ), "PNN should at least have one column (missing call to `new_task` ?)"
         x = observations.x
         x = torch.flatten(x, start_dim=1)
         labels = observations.task_labels
         # TODO: Debug this:
-        inputs = [c[0](x) + n_classes_in_task for n_classes_in_task, c in zip(self.n_classes_per_task, self.columns)]
+        inputs = [
+            c[0](x) + n_classes_in_task
+            for n_classes_in_task, c in zip(self.n_classes_per_task, self.columns)
+        ]
         for l in range(1, self.n_layers):
             outputs = []
 
             for i, column in enumerate(self.columns):
-                outputs.append(column[l](inputs[:i+1]))
+                outputs.append(column[l](inputs[: i + 1]))
 
             inputs = outputs
 
         y: Optional[Tensor] = None
         task_masks = {}
         for task_id in set(labels.tolist()):
-            task_mask = (labels == task_id)
+            task_mask = labels == task_id
             task_masks[task_id] = task_mask
 
             if y is None:
@@ -60,7 +65,7 @@ class PnnClassifier(nn.Module):
         return y
 
     # def new_task(self, device, num_inputs, num_actions = 5):
-    def new_task(self, device, sizes):
+    def new_task(self, device, sizes: List[int]):
         assert len(sizes) == self.n_layers + 1, (
             f"Should have the out size for each layer + input size (got {len(sizes)} "
             f"sizes but {self.n_layers} layers)."
@@ -71,7 +76,9 @@ class PnnClassifier(nn.Module):
         task_id = len(self.columns)
         modules = []
         for i in range(0, self.n_layers):
-            modules.append(PNNLinearBlock(task_id, i, sizes[i], sizes[i+1]))
+            modules.append(
+                PNNLinearBlock(col=task_id, depth=i, n_in=sizes[i], n_out=sizes[i + 1])
+            )
 
         new_column = nn.ModuleList(modules).to(device)
         self.columns.append(new_column)
@@ -94,7 +101,11 @@ class PnnClassifier(nn.Module):
 
         print("Freeze columns from previous tasks")
 
-    def shared_step(self, batch: Tuple[Observations, Optional[Rewards]], environment: PassiveEnvironment):
+    def shared_step(
+        self,
+        batch: Tuple[Observations, Optional[Rewards]],
+        environment: PassiveEnvironment,
+    ):
         """Shared step used for both training and validation.
                 
         Parameters
@@ -132,7 +143,7 @@ class PnnClassifier(nn.Module):
         # Get the rewards, if necessary:
         if rewards is None:
             rewards = environment.send(Actions(y_pred))
-        
+
         image_labels = rewards.y.to(self.device)
         # print(logits.size())
         loss = self.loss(logits, image_labels)
