@@ -148,7 +148,7 @@ class EWCTask(AuxiliaryTask):
             logger.info("Starting the first task, no EWC update.")
             self.n_switches += 1
 
-        elif (task_id is None or task_id > self.previous_task) and self._model.training:
+        elif self._model.training and (task_id is None or task_id > self.previous_task):
             # we dont want to go here at test time.
             # NOTE: We also switch between unknown tasks.
             logger.info(
@@ -236,7 +236,7 @@ class EWCTask(AuxiliaryTask):
     def get_loss(self, forward_pass: ForwardPass, y: Tensor = None) -> Loss:
         """ Gets the EWC loss.
         """
-        if self._model.training:
+        if self._model.training:      
             self.observation_collector.append(forward_pass.observations)
 
         if self.previous_task is None or not self.enabled or self._shared_net is None:
@@ -249,7 +249,6 @@ class EWCTask(AuxiliaryTask):
         for fim in self.fisher_information_matrices:
             diff = v_current - self.previous_model_weights
             loss += fim.vTMv(diff)
-
         self._i += 1
         ewc_loss = Loss(name=self.name, loss=loss)
         return ewc_loss
