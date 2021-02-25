@@ -69,8 +69,12 @@ class HatNet(torch.nn.Module):
         self.output_layers = torch.nn.ModuleList()
 
         n_tasks = len(self.n_classes_per_task)
-        for t, n in self.n_classes_per_task.items():
-            self.output_layers.append(torch.nn.Linear(2048, n))
+        # TODO: (@lebrice) Here I'm 'fixing' this, by making it so each output head has
+        # as many outputs as there are classes in total. It's not super efficient, but
+        # it should work.
+        total_classes = sum(self.n_classes_per_task.values())
+        for task_index, n_classes_in_task in self.n_classes_per_task.items():
+            self.output_layers.append(torch.nn.Linear(2048, total_classes))
 
         self.gate = torch.nn.Sigmoid()
         # All embedding stuff should start with 'e'
@@ -224,7 +228,7 @@ class HatMethod(Method, target_setting=TaskIncrementalSetting):
         )
         n_classes_per_task = {
             i: setting.num_classes_in_task(i, train=True)
-            for i in range(setting.nb_tasks)            
+            for i in range(setting.nb_tasks)  
         }
         image_space: Image = setting.observation_space[0]
         self.model = HatNet(
