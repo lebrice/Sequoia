@@ -3,24 +3,30 @@
 Then maybe after we can make something more general that also works for RL.
 """
 import warnings
-from abc import ABC, abstractmethod
+from abc import ABC
 from collections import defaultdict
-from typing import Dict, Generic, List, Optional, Sequence, Union, Iterable, Tuple
+from typing import Dict, Generic, Iterable, List, Optional, Tuple
 
+import numpy as np
 from gym.utils import colorize
-from sequoia.common.gym_wrappers.utils import IterableWrapper, has_wrapper
+from torch import Tensor
+
+from sequoia.common.gym_wrappers.utils import IterableWrapper
 from sequoia.common.metrics import ClassificationMetrics, Metrics, MetricsType
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
-from sequoia.settings.base import (Actions, ActionType, Environment,
-                                   Observations, ObservationType, Rewards,
-                                   RewardType)
+from sequoia.settings.base import (
+    Actions,
+    Environment,
+    Observations,
+    Rewards,
+)
 from sequoia.settings.passive.passive_environment import PassiveEnvironment
 
 
 class MeasurePerformanceWrapper(IterableWrapper, Generic[MetricsType], ABC):
     def __init__(self, env: Environment):
         super().__init__(env)
-        self._metrics: Dict[int, MetricsType] = {}
+        self.__metrics: Dict[int, MetricsType] = {}
 
     def get_online_performance(self) -> Dict[int, List[MetricsType]]:
         """Returns the online performance over the evaluation period.
@@ -30,7 +36,7 @@ class MeasurePerformanceWrapper(IterableWrapper, Generic[MetricsType], ABC):
         Dict[int, MetricsType]
             A dict mapping from step number to the Metrics object captured at that step.
         """
-        return dict(self._metrics)
+        return dict(self.__metrics.copy())
 
     def get_average_online_performance(self) -> Optional[MetricsType]:
         """Returns the average online performance over the evaluation period, or None
@@ -41,7 +47,7 @@ class MeasurePerformanceWrapper(IterableWrapper, Generic[MetricsType], ABC):
         Optional[MetricsType]
             Metrics
         """
-        if not self._metrics:
+        if not self.__metrics:
             return None
         return sum(self._metrics.values())
 
@@ -49,7 +55,7 @@ class MeasurePerformanceWrapper(IterableWrapper, Generic[MetricsType], ABC):
 class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[ClassificationMetrics]):
     def __init__(self, env: PassiveEnvironment, first_epoch_only: bool = False):
         super().__init__(env)
-        self._metrics: Dict[int, ClassificationMetrics] = defaultdict(int)
+        self.__metrics: Dict[int, ClassificationMetrics] = defaultdict(int)
         self.first_epoch_only = first_epoch_only
         # Counter for the number of steps.
         self._steps: int = 0
@@ -83,22 +89,26 @@ class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[ClassificationMetric
     def step(self, action: Actions):
         observation, reward, done, info = self.env.step(action)
         if self.in_evaluation_period:
-            self._metrics[self._steps] += self.get_metrics(action, reward)
+            self.__metrics[self._steps] += self.get_metrics(action, reward)
         self._steps += 1
         return observation, reward, done, info
 
     def send(self, action: Actions):
+        if not isinstance(action, Actions):
+            assert isinstance(action, (np.ndarray, Tensor))
+            action = Actions(action)
         reward = self.env.send(action)
         if self.in_evaluation_period:
-            self._metrics[self._steps] += self.get_metrics(action, reward)
-            assert action.y_pred.shape[0] == reward.y.shape[0]
+            self.__metrics[self._steps] += self.get_metrics(action, reward)
         # This is ok since we don't increment in the iterator.
         self._steps += 1
         return reward
 
     def get_metrics(self, action: Actions, reward: Rewards) -> Metrics:
         assert action.y_pred.shape == reward.y.shape, (action.shapes, reward.shapes)
-        return ClassificationMetrics(y_pred=action.y_pred, y=reward.y, num_classes=self.n_classes)
+        return ClassificationMetrics(
+            y_pred=action.y_pred, y=reward.y, num_classes=self.n_classes
+        )
 
     def __iter__(self) -> Iterable[Tuple[Observations, Optional[Rewards]]]:
         for obs, _ in self.env.__iter__():
@@ -106,5 +116,6 @@ class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[ClassificationMetric
             yield obs, None
 
 
-class MeasureRLPermanceWrapper(MeasurePerformanceWrapper):
+class MeasureRLPermanceWrapper(MeasurePerformanceWrapper[EpisodeMetrics]):
+    # TODO
     pass
