@@ -50,6 +50,9 @@ class ClassIncrementalResults(IncrementalSetting.Results):
     lower_is_better: ClassVar[bool] = False
     objective_name: ClassVar[str] = "Average Accuracy"
 
+    # Maximum runtime allowed (in hours).
+    max_runtime_hours: ClassVar[float] = 5.0
+
     def make_plots(self):
         plots_dict = {}
         if wandb.run:

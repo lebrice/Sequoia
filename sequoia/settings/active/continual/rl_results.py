@@ -25,8 +25,11 @@ class RLResults(IncrementalResults[EpisodeMetrics]):
     """
     # Higher mean reward / episode => better
     lower_is_better: ClassVar[bool] = False
-    
+
     objective_name: ClassVar[str] = "Mean reward per episode"
+
+    # Maximum runtime allowed (in hours).
+    max_runtime_hours: ClassVar[float] = 12.0
 
     def mean_reward_plot(self):
         raise NotImplementedError("TODO")

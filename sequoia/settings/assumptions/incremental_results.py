@@ -1,10 +1,12 @@
 """ Results of an Incremental setting. """
 import json
+import warnings
 from io import StringIO
-from typing import Dict, List, Union, Optional, ClassVar
+from typing import ClassVar, Dict, List, Optional, Union
 
 import matplotlib.pyplot as plt
 import wandb
+from gym.utils import colorize
 from sequoia.common.metrics import Metrics
 
 from .iid_results import MetricType, TaskResults
@@ -62,12 +64,21 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
     every test loop, which, in the Incremental Settings, happens after training on each
     task, hence why we get a nb_tasks x nb_tasks matrix of results.
     """
+    max_runtime_hours: ClassVar[float]
 
     def __init__(self, *args):
         super().__init__(*args)
         self._runtime: Optional[float] = None
         self._online_training_performance: Optional[List[Dict[int, Metrics]]] = None
 
+    @property
+    def runtime_minutes(self) -> Optional[float]:
+        return self._runtime / 60 if self._runtime is not None else None
+
+    @property
+    def runtime_hours(self) -> Optional[float]:
+        return self._runtime / 3600 if self._runtime is not None else None
+    
     @property
     def transfer_matrix(self) -> List[List[TaskResults]]:
         return self
@@ -106,7 +117,7 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
             [task_result.objective for task_result in task_sequence_result]
             for task_sequence_result in self.transfer_matrix
         ]
-
+    
     @property
     def cl_score(self) -> float:
         """ CL Score, as a weigted sum of three objectives:
@@ -122,19 +133,50 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
             [description]
         """
         # TODO: Determine the function to use to get a runtime score between 0 and 1.
-        def runtime_score(runtime: float) -> float:
-            return 1.0 if runtime <= 3600 else 0.0
-
         score = (
-            0.2 * self.average_online_performance.objective
-            + 0.6 * self.average_final_performance.objective
-            + 0.2 * runtime_score(self._runtime)
+            + 0.2 * self._online_performance_score()
+            + 0.6 * self._final_performance_score()
+            + 0.2 * self._runtime_score()
         )
         return score
 
+    def _runtime_score(self) -> float:
+        # TODO: function that takes the total runtime in seconds and returns a
+        # normalized float score between 0 and 1.
+        runtime_seconds = self._runtime
+        if self._runtime is None:
+            warnings.warn(RuntimeWarning(colorize(
+                "Runtime is None! Returning runtime score of 0.\n (Make sure the "
+                "Setting had its `monitor_training_performance` attr set to True!",
+                color="red",
+            )))
+            return 0
+        runtime_hours = runtime_seconds / 3600
+        
+        # Get the maximum runtime for this type of Results (and Setting)
+        max_runtime_hours = type(self).max_runtime_hours
+        
+        assert max_runtime_hours > 0
+        assert runtime_hours > 0
+        if runtime_hours > max_runtime_hours:
+            runtime_hours = max_runtime_hours
+
+        return 1 - (runtime_hours / max_runtime_hours)
+
+    def _online_performance_score(self) -> float:
+        # TODO: function that takes the 'objective' of the Metrics from the average
+        # online performance, and returns a normalized float score between 0 and 1.
+        return self.average_online_performance.objective
+
+    def _final_performance_score(self) -> float:
+        # TODO: function that takes the 'objective' of the Metrics from the average
+        # final performance, and returns a normalized float score between 0 and 1.
+        return self.average_final_performance.objective
+
     @property
     def objective(self) -> float:
-        return self.cl_score
+        # return self.cl_score
+        return self.average_final_performance.objective
 
     @property
     def num_tasks(self) -> int:
