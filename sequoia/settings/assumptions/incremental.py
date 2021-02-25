@@ -171,6 +171,8 @@ class IncrementalSetting(ContinualSetting):
         # import issues)
         results = self.Results()
 
+        method.set_training()
+        
         self._start_time = time.process_time()
         for task_id in range(self.nb_tasks):
             logger.info(
@@ -191,8 +193,8 @@ class IncrementalSetting(ContinualSetting):
             task_valid_loader.close()
 
             logger.info(f"Finished Training on task {task_id}.")
-
             test_metrics: TaskSequenceResults = self.test_loop(method)
+            
             # Add a row to the transfer matrix.
             results.append(test_metrics)
             logger.info(f"Resulting objective of Test Loop: {test_metrics.objective}")
@@ -278,6 +280,9 @@ class IncrementalSetting(ContinualSetting):
         
         test_env: TestEnvironment
 
+        was_training = method.training
+        method.set_testing()
+
         if self.known_task_boundaries_at_test_time and self.nb_tasks > 1:
 
             def _on_task_switch(step: int, *arg) -> None:
@@ -324,48 +329,49 @@ class IncrementalSetting(ContinualSetting):
             test_env: TestEnvironment
             # Get the metrics from the test environment
             test_results: Results = test_env.get_results()
-            print(f"Test results: {test_results.to_log_dict()}")
-            return test_results
 
         except NotImplementedError:
             logger.info(
                 f"Will query the method for actions at each step, "
                 f"since it doesn't implement a `test` method."
             )
+            obs = test_env.reset()
 
-        obs = test_env.reset()
+            # TODO: Do we always have a maximum number of steps? or of episodes?
+            # Will it work the same for Supervised and Reinforcement learning?
+            max_steps: int = getattr(test_env, "step_limit", None)
 
-        # TODO: Do we always have a maximum number of steps? or of episodes?
-        # Will it work the same for Supervised and Reinforcement learning?
-        max_steps: int = getattr(test_env, "step_limit", None)
+            # Reset on the last step is causing trouble, since the env is closed.
+            pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
+            episode = 0
+            for step in pbar:
+                if test_env.is_closed():
+                    logger.debug(f"Env is closed")
+                    break
+                # logger.debug(f"At step {step}")
+                action = method.get_actions(obs, test_env.action_space)
 
-        # Reset on the last step is causing trouble, since the env is closed.
-        pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
-        episode = 0
-        for step in pbar:
-            if test_env.is_closed():
-                logger.debug(f"Env is closed")
-                break
-            # logger.debug(f"At step {step}")
-            action = method.get_actions(obs, test_env.action_space)
+                # logger.debug(f"action: {action}")
+                # TODO: Remove this:
+                if isinstance(action, Actions):
+                    action = action.y_pred
+                if isinstance(action, Tensor):
+                    action = action.cpu().numpy()
 
-            # logger.debug(f"action: {action}")
-            # TODO: Remove this:
-            if isinstance(action, Actions):
-                action = action.y_pred
-            if isinstance(action, Tensor):
-                action = action.cpu().numpy()
+                obs, reward, done, info = test_env.step(action)
 
-            obs, reward, done, info = test_env.step(action)
+                if done and not test_env.is_closed():
+                    # logger.debug(f"end of test episode {episode}")
+                    obs = test_env.reset()
+                    episode += 1
 
-            if done and not test_env.is_closed():
-                # logger.debug(f"end of test episode {episode}")
-                obs = test_env.reset()
-                episode += 1
+            test_env.close()
+            test_results: TaskSequenceResults = test_env.get_results()
 
-        test_env.close()
-        test_results: TaskSequenceResults = test_env.get_results()
-        
+        # Restore 'training' mode, if it was set at the start.
+        if was_training:
+            method.set_training()
+
         return test_results
         # return test_results
         # if not self.task_labels_at_test_time:
