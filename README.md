@@ -35,7 +35,7 @@ Requires python >= 3.7
 2. Optional: Create the conda environment (only once):
 
 	```console
-	$ conda create -f environment.yaml
+	$ conda env create -f environment.yaml
 	$ conda activate sequoia
 	```
 

@@ -20,6 +20,7 @@ from pytorch_lightning import Callback, Trainer
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from simple_parsing import mutable_field
 
+from sequoia.common.gym_wrappers import RenderEnvWrapper
 from sequoia.common import Config, TrainerConfig
 from sequoia.common.config import WandbLoggerConfig
 from sequoia.settings import ActiveSetting, PassiveSetting
@@ -36,15 +37,6 @@ from sequoia.methods import register_method
 from .models import BaselineModel, ForwardPass
 
 logger = get_logger(__file__)
-from sequoia.common.gym_wrappers import IterableWrapper
-
-
-class RenderEnvWrapper(IterableWrapper):
-    """ Simple Wrapper that renders the env at each step. """
-
-    def step(self, action):
-        self.env.render("human")
-        return self.env.step(action)
 
 
 @register_method
@@ -317,30 +309,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         always be `True`.
         """
         self.model.eval()
-
-        # Check if the observation is batched or not. If it isn't, add a
-        # batch dimension to the inputs, and later remove any batch
-        # dimension from the produced actions before they get sent back to
-        # the Setting.
-        single_obs_space = self.model.observation_space
-
-        model_inputs = observations
-
-        # Check if the observations aren't batched.
-        not_batched = observations[0].shape == single_obs_space[0].shape
-        if not_batched:
-            model_inputs = observations.with_batch_dimension()
-
         with torch.no_grad():
-            forward_pass = self.model(model_inputs)
-        # Simplified this for now, but we could add more flexibility later.
-        assert isinstance(forward_pass, ForwardPass)
-
-        # If the original observations didn't have a batch dimension,
-        # Remove the batch dimension from the results.
-        if not_batched:
-            forward_pass = forward_pass.remove_batch_dimension()
-
+            forward_pass = self.model.forward(observations)
         actions: Actions = forward_pass.actions
         action_numpy = actions.actions_np
         assert action_numpy in action_space, (action_numpy, action_space)
@@ -491,21 +461,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         """ Receives the results of an experiment, where `self` was applied to Setting
         `setting`, which produced results `results`.
         """
-        method_name: str = self.get_name()
-        setting_name: str = setting.get_name()
-        dataset = setting.dataset
-        if wandb.run:
-            wandb.summary["method"] = method_name
-            wandb.summary["setting"] = setting_name
-            if dataset and isinstance(dataset, str):
-                wandb.summary["dataset"] = dataset
-            wandb.log(results.to_log_dict())
-            # BUG: Bug in plotly?
-            # File "/home/fabrice/miniconda3/envs/sequoia/lib/python3.8/site-packages/plotly/matplotlylib/mplexporter/utils.py", line 246, in get_grid_style
-            # if axis._gridOnMajor and len(gridlines) > 0:
-            # AttributeError: 'XAxis' object has no attribute '_gridOnMajor'
-            # wandb.log(results.make_plots())
-            wandb.run.finish()
         # Reset the run name so we create a new one next time we're applied on a
         # Setting.
         self.trainer_options.wandb.run_name = None

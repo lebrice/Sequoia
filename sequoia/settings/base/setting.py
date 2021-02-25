@@ -190,6 +190,11 @@ class Setting(SettingABC,
         # Setting. Might want to change this a bit.
         self.config: Config = None
 
+        self.train_env: Environment = None  # type: ignore
+        self.val_env: Environment = None  # type: ignore
+        self.test_env: Environment = None  # type: ignore
+    
+
     @abstractmethod
     def apply(self, method: Method, config: Config = None) -> "Setting.Results":
         # NOTE: The actual train/test loop should be defined in a more specific

@@ -38,6 +38,7 @@ from sequoia.common.batch import Batch
 from sequoia.common.gym_wrappers.batch_env import AsyncVectorEnv, BatchedVectorEnv
 from sequoia.common.gym_wrappers.utils import StepResult, has_wrapper
 from sequoia.common.gym_wrappers.policy_env import PolicyEnv
+from sequoia.common.gym_wrappers.convert_tensors import has_tensor_support, add_tensor_support
 from sequoia.settings.active.active_dataloader import ActiveDataLoader
 from sequoia.utils.logging_utils import get_logger
 from sequoia.common.gym_wrappers import EnvDataset
@@ -145,7 +146,7 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
         
         # self.max_epochs: int = max_epochs
         self.observation_space: gym.Space = self.env.observation_space
-        self.action_space: gym.Space = self.env.action_space        
+        self.action_space: gym.Space = self.env.action_space
         self.reward_space: gym.Space
         if isinstance(env.unwrapped, VectorEnv):
             env: VectorEnv
@@ -165,6 +166,13 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
                 # Same here, we use a 'batched' space rather than Tuple.
                 self.reward_space = batch_space(self.reward_space, batch_size)
 
+        # BUG: Fix this bug: the observation / action spaces don't accept Tensors as
+        # valid samples, even though they should.
+        # self.observation_space = add_tensor_support(self.observation_space)
+        # self.action_space = add_tensor_support(self.action_space)
+        # self.reward_space = add_tensor_support(self.reward_space)
+        # assert has_tensor_support(self.observation_space)
+    
     # def __next__(self) -> EnvDatasetItem:
     #     if self._iterator is None:
     #         self._iterator = self.__iter__()

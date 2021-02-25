@@ -18,6 +18,7 @@ all_settings: List[Type[Setting]] = [
     DomainIncrementalSetting,
     TaskIncrementalSetting,
     IIDSetting,
+    MultiTaskSetting,
     ContinualRLSetting,
     IncrementalRLSetting,
     TaskIncrementalRLSetting,

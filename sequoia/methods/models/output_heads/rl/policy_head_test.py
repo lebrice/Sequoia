@@ -22,7 +22,7 @@ from gym.vector import VectorEnv, SyncVectorEnv
 from gym.vector.utils import batch_space
 
 
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics, RLMetrics
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 
 
 class FakeEnvironment(SyncVectorEnv):
