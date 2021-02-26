@@ -148,78 +148,86 @@ class EWCTask(AuxiliaryTask):
             logger.info("Starting the first task, no EWC update.")
             self.n_switches += 1
 
-        elif self._model.training and (task_id is None or task_id > self.previous_task):
-            # we dont want to go here at test time.
-            # NOTE: We also switch between unknown tasks.
-            logger.info(
-                f"Switching tasks: {self.previous_task} -> {task_id}: "
-                f"Updating the EWC 'anchor' weights."
-            )
-            self.previous_task = task_id
-            device = self._model.config.device
-            self.previous_model_weights = (
-                PVector.from_model(self._shared_net.to(device)).clone().detach()
-            )
+        elif self._model.training:
+            calculate_FIM = False
+            if task_id is None and self.previous_task is None:
+                #setting without task IDs, still calculate FIM
+                calculate_FIM = True
+            elif task_id > self.previous_task:
+                calculate_FIM = True
+                
+            if calculate_FIM:
+                # we dont want to go here at test time.
+                # NOTE: We also switch between unknown tasks.
+                logger.info(
+                    f"Switching tasks: {self.previous_task} -> {task_id}: "
+                    f"Updating the EWC 'anchor' weights."
+                )
+                self.previous_task = task_id
+                device = self._model.config.device
+                self.previous_model_weights = (
+                    PVector.from_model(self._shared_net.to(device)).clone().detach()
+                )
 
-            # Create a Dataloader from the stored observations.
-            obs_type: Type[Observations] = type(self.observation_collector[0])
-            dataset = [obs.as_namedtuple() for obs in self.observation_collector]
-            # Or, alternatively (see the note below on why we don't use this):
-            # stacked_observations: Observations = obs_type.stack(self.observation_collector)
-            # dataset = TensorDataset(*stacked_observations.as_namedtuple())
+                # Create a Dataloader from the stored observations.
+                obs_type: Type[Observations] = type(self.observation_collector[0])
+                dataset = [obs.as_namedtuple() for obs in self.observation_collector]
+                # Or, alternatively (see the note below on why we don't use this):
+                # stacked_observations: Observations = obs_type.stack(self.observation_collector)
+                # dataset = TensorDataset(*stacked_observations.as_namedtuple())
 
-            # NOTE: This is equivalent to just using the same batch size as during
-            # training, as each Observations in the list is already a batch.
-            # NOTE: We keep the same batch size here as during training because for
-            # instance in RL, it would be weird to suddenly give some new batch size,
-            # since the buffers would get cleared and re-created just for these forward
-            # passes
-            dataloader = DataLoader(dataset, batch_size=None, collate_fn=None)
+                # NOTE: This is equivalent to just using the same batch size as during
+                # training, as each Observations in the list is already a batch.
+                # NOTE: We keep the same batch size here as during training because for
+                # instance in RL, it would be weird to suddenly give some new batch size,
+                # since the buffers would get cleared and re-created just for these forward
+                # passes
+                dataloader = DataLoader(dataset, batch_size=None, collate_fn=None)
 
-            # Create the parameters to be passed to the FIM function. These may vary a
-            # bit, depending on if we're being applied in a classification setting or in
-            # a regression setting (not done yet)
-            variant: str
-            if isinstance(self._model.output_head, ClassificationHead):
-                variant = "classif_logits"
-                n_output = self._model.action_space.n
+                # Create the parameters to be passed to the FIM function. These may vary a
+                # bit, depending on if we're being applied in a classification setting or in
+                # a regression setting (not done yet)
+                variant: str
+                if isinstance(self._model.output_head, ClassificationHead):
+                    variant = "classif_logits"
+                    n_output = self._model.action_space.n
 
-                def fim_function(*inputs) -> Tensor:
-                    observations = obs_type(*inputs).to(self._model.device)
-                    forward_pass: ForwardPass = self._model(observations)
-                    actions = forward_pass.actions
-                    return actions.logits
+                    def fim_function(*inputs) -> Tensor:
+                        observations = obs_type(*inputs).to(self._model.device)
+                        forward_pass: ForwardPass = self._model(observations)
+                        actions = forward_pass.actions
+                        return actions.logits
 
-            elif isinstance(self._model.output_head, RegressionHead):
-                # NOTE: This hasn't been tested yet.
-                variant = "regression"
-                n_output = flatdim(self._model.action_space)
+                elif isinstance(self._model.output_head, RegressionHead):
+                    # NOTE: This hasn't been tested yet.
+                    variant = "regression"
+                    n_output = flatdim(self._model.action_space)
 
-                def fim_function(*inputs) -> Tensor:
-                    observations = obs_type(*inputs).to(self._model.device)
-                    forward_pass: ForwardPass = self._model(observations)
-                    actions = forward_pass.actions
-                    return actions.y_pred
+                    def fim_function(*inputs) -> Tensor:
+                        observations = obs_type(*inputs).to(self._model.device)
+                        forward_pass: ForwardPass = self._model(observations)
+                        actions = forward_pass.actions
+                        return actions.y_pred
 
-            else:
-                raise NotImplementedError("TODO")
+                else:
+                    raise NotImplementedError("TODO")
 
-            new_fim = FIM(
-                model=self._shared_net,
-                loader=dataloader,
-                representation=self.options.fim_representation,
-                n_output=n_output,
-                variant=variant,
-                function=fim_function,
-                device=self._model.device,
-            )
+                new_fim = FIM(
+                    model=self._shared_net,
+                    loader=dataloader,
+                    representation=self.options.fim_representation,
+                    n_output=n_output,
+                    variant=variant,
+                    function=fim_function,
+                    device=self._model.device,
+                )
 
-            # TODO: There was maybe an idea to use another fisher information matrix for
-            # the critic in A2C, but not doing that atm.
-            new_fims = [new_fim]
-            self.consolidate(new_fims, task=self.previous_task)
-            self.n_switches += 1
-            self.observation_collector.clear()
+                # TODO: There was maybe an idea to use another fisher information matrix for
+                # the critic in A2C, but not doing that atm.
+                new_fims = [new_fim]
+                self.consolidate(new_fims, task=self.previous_task)
+                self.n_switches += 1
+                self.observation_collector.clear()
 
     @property
     def _shared_net(self) -> Optional[nn.Module]:
