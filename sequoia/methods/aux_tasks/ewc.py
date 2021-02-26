@@ -155,7 +155,9 @@ class EWCTask(AuxiliaryTask):
                 calculate_FIM = True
             elif task_id > self.previous_task:
                 calculate_FIM = True
-                
+            else:
+                raise NotImplementedError
+
             if calculate_FIM:
                 # we dont want to go here at test time.
                 # NOTE: We also switch between unknown tasks.
