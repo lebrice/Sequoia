@@ -3,9 +3,10 @@
 For now this simply holds the 'remote' environment in memory.
 """
 import itertools
-from typing import Callable, Dict, Sequence, Tuple, Type, Union
+from typing import Callable, Dict, Sequence, Tuple, Type, Union, List
 
 import numpy as np
+from sequoia.common.metrics import Metrics
 from sequoia.settings import (
     Actions,
     ActionType,
@@ -24,19 +25,21 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
         # TODO: Actually interact with a given environment of the remote Setting
         # TODO: env_fn is just a callable that returns the actual env now, but the idea
         # is that it would perhaps be a handle/address/whatever which we could contact?
-        self._environment = env_fn()
+        self.__environment = env_fn()
         self._setting_type = setting_type
 
         self.observation_space = self.get_attribute("observation_space")
         self.action_space = self.get_attribute("action_space")
         self.reward_space = self.get_attribute("reward_space")
+        # TODO: Double check this also works for RL
+        self.batch_size: Optional[int] = self.get_attribute("batch_size")
 
     def get_attribute(self, name: str):
         # TODO: actually get the value from the 'remote' env.
-        return getattr(self._environment, name)
+        return getattr(self.__environment, name)
 
     def reset(self) -> ObservationType:
-        obs = self._environment.reset()
+        obs = self.__environment.reset()
         return obs
 
     def step(
@@ -50,7 +53,7 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
         # Simulate converting things to a pickleable object?
         actions_pkl = actions.numpy()
         # TODO: Use some kind of gRPC endpoint.
-        observations_pkl, rewards_pkl, done_pkl, info_pkl = self._environment.step(
+        observations_pkl, rewards_pkl, done_pkl, info_pkl = self.__environment.step(
             actions_pkl
         )
         observations = self._setting_type.Observations(**observations_pkl)
@@ -60,7 +63,7 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
         return observations, rewards, done, info
 
     def __iter__(self):
-        return iter(self._environment)
+        return iter(self.__environment)
         # env_iterator = self._environment.__iter__()
         # print(f"Env iterator: {env_iterator}")
         # for episode_step in itertools.count():
@@ -72,9 +75,10 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
 
         #     yield batch
 
+
     def send(self, actions: ActionType):
         actions_pkl = actions.numpy()
-        rewards_pkl = self._environment.send(actions_pkl)
+        rewards_pkl = self.__environment.send(actions_pkl)
         rewards = self._setting_type.Rewards(**rewards_pkl)
         return rewards
 
@@ -83,4 +87,10 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
         return self.get_attribute("is_closed")
 
     def get_results(self) -> Results:
-        return self._environment.get_results()
+        return self.__environment.get_results()
+
+    def get_online_performance(self) -> List[Metrics]:
+        return self.__environment.get_online_performance()
+
+    def get_average_online_performance(self) -> Metrics:
+        return self.__environment.get_average_online_performance()
