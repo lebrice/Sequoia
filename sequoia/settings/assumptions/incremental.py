@@ -1,6 +1,7 @@
 import itertools
 import json
 import time
+import math
 from abc import ABC, abstractmethod
 from contextlib import redirect_stdout
 from dataclasses import dataclass
@@ -361,20 +362,30 @@ class IncrementalSetting(ContinualSetting):
             # Reset on the last step is causing trouble, since the env is closed.
             pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
             episode = 0
+
             for step in pbar:
-                if test_env.is_closed():
-                    logger.debug(f"Env is closed")
+                if obs is None:
                     break
+                # NOTE: The env might not be closed, while `obs` is actually still there.
+                # if test_env.is_closed():
+                #     logger.debug(f"Env is closed")
+                #     break
                 # logger.debug(f"At step {step}")
                 
                 # BUG: Need to pass an action space that actually reflects the batch
                 # size, even for the last batch!
-                obs_batch_size = obs.x.shape[0] if obs.x.shape else None
-                action_space_batch_size = test_env.action_space.shape[0] if test_env.action_space.shape else None
-                if obs_batch_size is not None and obs_batch_size != action_space_batch_size:
-                    action_space = batch_space(test_env.single_action_space, obs_batch_size)
-                else:
-                    action_space = test_env.action_space
+
+                action_space = test_env.action_space
+                # Check for a potential mismatch between the batch size in the obs and
+                # the batch size in the action space.
+                if getattr(test_env.action_space, "shape", None):
+                    assert obs.x.shape, "x should also have a shape (i.e. not an int)"
+                    obs_batch_size = obs.x.shape[0]
+                    action_space_batch_size = test_env.action_space.shape[0] 
+                    if obs_batch_size != action_space_batch_size:
+                        single_action_space = test_env.single_action_space
+                        action_space = batch_space(single_action_space, obs_batch_size)
+
                 action = method.get_actions(obs, action_space)
 
                 # logger.debug(f"action: {action}")
@@ -383,6 +394,9 @@ class IncrementalSetting(ContinualSetting):
                     action = action.y_pred
                 if isinstance(action, Tensor):
                     action = action.cpu().numpy()
+
+                if test_env.is_closed():
+                    break
 
                 obs, reward, done, info = test_env.step(action)
 
