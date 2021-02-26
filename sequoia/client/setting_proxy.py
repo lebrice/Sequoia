@@ -70,7 +70,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
     # attribute on the SettingProxy.
     # TODO: I don't think this has any effect, because we subclass SettingABC which
     # doesn't use __slots__.
-    __slots__ = ["__setting", "_setting_type", "train_env", "valid_env", "test_env"]
+    __slots__ = ["__setting", "_setting_type", "_train_env", "_valid_env", "_test_env"]
 
     def __init__(
         self,
@@ -86,6 +86,11 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             self.__setting = setting_type(**setting_kwargs)
         self.__setting.monitor_training_performance = True
         super().__init__()
+        
+        self._train_env = None
+        self._val_env = None
+        self._test_env = None
+        
 
     @property
     def observation_space(self) -> gym.Space:
@@ -99,6 +104,18 @@ class SettingProxy(SettingABC, Generic[SettingType]):
     def reward_space(self) -> gym.Space:
         return self.get_attribute("reward_space")
 
+    @property
+    def val_env(self) -> EnvironmentProxy:
+        return self._val_env
+    
+    @property
+    def train_env(self) -> EnvironmentProxy:
+        return self._train_env
+    
+    @property
+    def test_env(self) -> EnvironmentProxy:
+        return self._test_env
+    
     @property
     def config(self) -> Config:
         return self.get_attribute("config")
@@ -168,7 +185,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             else self.get_attribute("num_workers")
         )
 
-        self.train_env = EnvironmentProxy(
+        self._train_env = EnvironmentProxy(
             env_fn=partial(
                 self.__setting.train_dataloader,
                 batch_size=batch_size,
@@ -176,7 +193,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             ),
             setting_type=self._setting_type,
         )
-        return self.train_env
+        return self._train_env
 
     def val_dataloader(
         self, batch_size: int = None, num_workers: int = None
@@ -191,7 +208,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             else self.get_attribute("num_workers")
         )
 
-        self.valid_env = EnvironmentProxy(
+        self._val_env = EnvironmentProxy(
             env_fn=partial(
                 self.__setting.val_dataloader,
                 batch_size=batch_size,
@@ -199,7 +216,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             ),
             setting_type=self._setting_type,
         )
-        return self.valid_env
+        return self._val_env
 
     def test_dataloader(
         self, batch_size: int = None, num_workers: int = None
@@ -214,7 +231,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             else self.get_attribute("num_workers")
         )
 
-        self.test_env = EnvironmentProxy(
+        self._test_env = EnvironmentProxy(
             env_fn=partial(
                 self.__setting.test_dataloader,
                 batch_size=batch_size,
@@ -222,7 +239,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             ),
             setting_type=self._setting_type,
         )
-        return self.test_env
+        return self._test_env
 
     def main_loop(self, method: Method) -> Results:
         # TODO: Implement the 'remote' equivalent of the main loop of the IncrementalSetting.
