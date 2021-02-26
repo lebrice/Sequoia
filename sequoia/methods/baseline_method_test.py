@@ -1,13 +1,16 @@
-from .baseline_method import BaselineMethod
-import pytest
 from typing import Type
 
-from sequoia.settings import Setting, RLSetting, IncrementalRLSetting
-from sequoia.common.config import Config
-from sequoia.conftest import skip_param, slow
 import numpy as np
+import pytest
+import torch
 from pytorch_lightning import Trainer
+from sequoia.common.config import Config, TrainerConfig
+from sequoia.conftest import skip_param, slow
+from sequoia.settings import (ClassIncrementalSetting, IncrementalRLSetting,
+                              RLSetting, Setting)
 from sequoia.settings.active import RLResults
+
+from .baseline_method import BaselineMethod, BaselineModel
 
 
 @pytest.fixture
@@ -62,21 +65,15 @@ def test_incremental_cartpole_state(config: Config, trainer: Trainer):
 
 
 
-from .baseline_method import BaselineModel
-import torch
-from sequoia.common.config import Config, TrainerConfig
-import pytest
-from sequoia.settings import ClassIncrementalSetting
 
-
+@pytest.mark.timeout(60)
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Cuda is required.")
-def test_device_of_output_head_is_correct(config):
+def test_device_of_output_head_is_correct():
     """ There is a bug happening where the output head is on CPU while the rest of the
     model is on GPU.
-    """ 
+    """
     setting = ClassIncrementalSetting(dataset="mnist")
-    config.device = "cuda"
-    method = BaselineMethod(hparams=BaselineModel.HParams(), config=config, trainer_options=TrainerConfig(fast_dev_run=True))
+    method = BaselineMethod(max_epochs=1, no_wandb=True)
 
-    results = setting.apply(method, config=config)
-    assert False, results.objective
+    results = setting.apply(method)
+    assert 0.10 <= results.objective <= 0.30

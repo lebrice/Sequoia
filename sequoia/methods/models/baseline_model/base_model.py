@@ -220,6 +220,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             Current Setting. This is the same as `self.setting`, but provided because at
             some point the idea was to use a singledispatchmethod to choose which kind
             of output head to create based on the type of Setting.
+        
         task_id : Optional[int]
             ID of the task associated with this new output head. Can be `None`, which is
             interpreted as saying that either that task labels aren't available, or that
@@ -230,6 +231,9 @@ class BaseModel(LightningModule, Generic[SettingType]):
         OutputHead
             The new output head for the given task.
         """
+        # NOTE: This assumes that the input, action and reward spaces don't change
+        # between tasks.
+        # TODO: Maybe add something like `setting.get_observation_space(task_id)`
         input_space: Space = self.representation_space
         action_space: Space = self.action_space
         reward_space: Space = self.reward_space
@@ -356,7 +360,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # - "observation": the augmented/transformed/processed observation.
         # - "representations": the representations for the observations.
         # - "actions": The actions (predictions)
-        forward_pass: ForwardPass = self.forward(observations)
+        forward_pass: ForwardPass = self(observations)
         
         # get the actions from the forward pass:
         actions = forward_pass.actions

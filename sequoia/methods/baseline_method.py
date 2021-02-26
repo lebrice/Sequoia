@@ -289,9 +289,13 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # have higher validation loss:
         # self.trainer.current_epoch = 0
 
-        return self.trainer.fit(
+        success = self.trainer.fit(
             model=self.model, train_dataloader=train_env, val_dataloaders=valid_env,
         )
+        # BUG: After `fit`, it seems like the output head of the model is on the CPU?
+        self.model.to(self.config.device)
+
+        return success
 
     def get_actions(
         self, observations: Observations, action_space: gym.Space
