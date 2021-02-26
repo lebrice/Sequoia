@@ -148,15 +148,14 @@ class EWCTask(AuxiliaryTask):
             logger.info("Starting the first task, no EWC update.")
             self.n_switches += 1
 
-        elif self._model.training:
+        elif self.training:  
             calculate_FIM = False
             if task_id is None and self.previous_task is None:
                 #setting without task IDs, still calculate FIM
                 calculate_FIM = True
             elif task_id > self.previous_task:
+                #new task
                 calculate_FIM = True
-            else:
-                raise NotImplementedError
 
             if calculate_FIM:
                 # we dont want to go here at test time.
@@ -246,7 +245,7 @@ class EWCTask(AuxiliaryTask):
     def get_loss(self, forward_pass: ForwardPass, y: Tensor = None) -> Loss:
         """ Gets the EWC loss.
         """
-        if self._model.training:      
+        if self.training:      
             self.observation_collector.append(forward_pass.observations)
 
         if self.previous_task is None or not self.enabled or self._shared_net is None:
