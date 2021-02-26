@@ -17,6 +17,7 @@ import tqdm
 import wandb
 from gym import spaces
 from gym.vector import VectorEnv
+from gym.vector.utils.spaces import batch_space
 from simple_parsing import field
 from torch import Tensor
 
@@ -365,7 +366,16 @@ class IncrementalSetting(ContinualSetting):
                     logger.debug(f"Env is closed")
                     break
                 # logger.debug(f"At step {step}")
-                action = method.get_actions(obs, test_env.action_space)
+                
+                # BUG: Need to pass an action space that actually reflects the batch
+                # size, even for the last batch!
+                obs_batch_size = obs.x.shape[0] if obs.x.shape else None
+                action_space_batch_size = test_env.action_space.shape[0] if test_env.action_space.shape else None
+                if obs_batch_size is not None and obs_batch_size != action_space_batch_size:
+                    action_space = batch_space(test_env.single_action_space, obs_batch_size)
+                else:
+                    action_space = test_env.action_space
+                action = method.get_actions(obs, action_space)
 
                 # logger.debug(f"action: {action}")
                 # TODO: Remove this:
