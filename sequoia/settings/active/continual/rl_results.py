@@ -19,7 +19,6 @@ from sequoia.utils.plotting import autolabel, plt
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 
 
-@dataclass
 class RLResults(IncrementalResults[EpisodeMetrics]):
     """ Results for a whole train loop (transfer matrix), in an RL Setting.
     """

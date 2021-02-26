@@ -224,8 +224,12 @@ class GymDataLoader(ActiveDataLoader[ObservationType, ActionType, RewardType], g
         #     raise RuntimeError(f"Expected to receive an action of type {self.actions_type}?")
         # logger.debug(f"Receiving actions {action}")
         if isinstance(action, Actions):
-            action = action.y_pred.cpu().detach().numpy().tolist()
-        elif isinstance(action, np.ndarray):
+            action = action.y_pred
+        if isinstance(action, Tensor):
+            action = action.detach().cpu().numpy()
+        if isinstance(action, np.ndarray) and not action.shape:
+            action = action.item()
+        if isinstance(self.env.action_space, spaces.Tuple) and isinstance(action, np.ndarray):
             action = action.tolist()
         assert action in self.env.action_space, (action, self.env.action_space)
         return self.env.send(action)

@@ -18,6 +18,7 @@ from simple_parsing import choice, field, list_field
 from simple_parsing.helpers import dict_field
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from torch import Tensor
+import math
 
 from sequoia.common import Batch, Config, Metrics
 from sequoia.common.gym_wrappers import (
@@ -711,10 +712,13 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             wrappers=self.test_wrappers,
             observe_state_directly=self.observe_state_directly,
         )
+        # TODO: Pass the max_steps argument to this `_make_env_dataloader` method,
+        # rather than to a `step_limit` on the TestEnvironment.
         env_dataloader = self._make_env_dataloader(
-            env_factory, batch_size=batch_size, num_workers=num_workers,
+            env_factory,
+            batch_size=batch_size,
+            num_workers=num_workers,
         )
-
         # TODO: We should probably change the max_steps depending on the
         # batch size of the env.
         test_loop_max_steps = self.test_steps // (batch_size or 1)
@@ -1023,6 +1027,9 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
             self.task_schedule.keys()
         ]
 
+    def __len__(self):
+        return math.ceil(self.step_limit / (getattr(self.env, "batch_size", 1) or 1))
+    
     def get_results(self) -> TaskSequenceResults[EpisodeMetrics]:
         # TODO: Place the metrics in the right 'bin' at the end of each episode during
         # testing depending on the task at that time, rather than what's happening here,

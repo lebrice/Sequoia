@@ -68,8 +68,8 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
         action = self.action(action)        
         observation, reward, done, info = self.env.step(action)
         # TODO: Make the observation space a Dict
-        observation = self.observations(observation)
-        reward = self.rewards(reward)
+        observation = self.observation(observation)
+        reward = self.reward(reward)
         return observation, reward, done, info
 
     def observation(self, observation: Any) -> ObservationType:
@@ -115,6 +115,13 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
 def unwrap(obj: Any) -> Any:
     raise NotImplementedError(obj)
 
+
+@unwrap.register(int)
+@unwrap.register(float)
+@unwrap.register(np.ndarray)
+@unwrap.register(list)
+def _unwrap_scalar(v):
+    return v
 
 @unwrap.register(Actions)
 def _unwrap_actions(obj: Actions) -> Union[Tensor, np.ndarray]:

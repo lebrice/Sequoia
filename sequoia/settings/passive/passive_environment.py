@@ -69,31 +69,87 @@ class PassiveEnvironment(
         **kwargs,
     ):
         """Creates the DataLoader/Environment for the given dataset.
-
+        
         Parameters
         ----------
-        dataset : [type]
+        dataset : Union[IterableDataset, Dataset]
             The dataset to iterate on. Should ideally be indexable (a Map-style
             dataset).
 
-        TODO: IDK if this is the best way to go about it. Maybe it would be best
-        to just adopt the gym Env API and forget about this "send" idea here. 
+        split_batch_fn : Callable[ [Tuple[Any, ...]], Tuple[ObservationType, ActionType] ], optional
+            A function to call on each item in the dataset in order to split it into
+            Observations and Rewards, by default None, in which case we assume that the
+            dataset items are tuples of length 2.
+
+        observation_space : gym.Space, optional
+            The single (non-batched) observation space. Default to `None`, in which case
+            this will try to infer the shape of the space using the first item in the
+            dataset.
+
+        action_space : gym.Space, optional
+            The non-batched action space. Defaults to None, in which case the
+            `n_classes` argument must be passed, and the action space is assumed to be
+            discrete (i.e. that the loader is for a classification dataset).
+
+        reward_space : gym.Space, optional
+            The non-batched reward (label) space. Defaults to `None`, in which case it
+            will be the same as the action space (as is the case in classification).
+
+        n_classes : int, optional
+            Number of classes in the dataset. Used in case `action_space` isn't passed.
+            Defaults to `None`.
+
         pretend_to_be_active : bool, optional
             Wether to withhold the rewards (labels) from the batches when being
             iterated on like the usual dataloader, and to only give them back
             after an action is received through the 'send' method. False by
             default, in which case this behaves exactly as a normal dataloader
             when being iterated on.
+            
+            When False, the batches yielded by this dataloader will be of the form
+            `Tuple[Observations, Rewards]` (as usual in SL).
+            However, when set to True, the batches will be `Tuple[Observations, None]`!
+            Rewards will then be returned by the environment when an action is passed to
+            the Send method.
 
-        **kwargs:
-            The rest of the usual DataLoader kwargs.
+        strict : bool, optional
+            [description], by default False
+            
+        # Examples:
+        ```python
+        train_env = PassiveEnvironment(MNIST("data"), batch_size=32, num_classes=10)    
+        
+        # The usual Dataloader-style:
+        for x, y in train_env:
+            # train as usual
+            (...)
+        
+        # OpenAI Gym style:
+        for episode in range(5):
+            # NOTE: "episode" in RL is an "epoch" in SL:
+            obs = train_env.reset()
+            done = False
+            while not done:
+                actions = train_env.action_space.sample()
+                obs, rewards, done, info = train_env.step(actions)
+        ```
+        
         """
+        
         super().__init__(dataset=dataset, **kwargs)
         self.split_batch_fn = split_batch_fn
 
         # TODO: When the spaces aren't passed explicitly, assumes a classification dataset.
         if not observation_space:
-            observation_space = Image(0.0, 1.0, self.dataset[0][0].shape)
+            # NOTE: Assuming min/max of 0 and 1 respectively, but could actually use
+            # min_max of the dataset samples too.
+            first_item = self.dataset[0]
+            if isinstance(first_item, tuple):
+                x, *_ = first_item
+            else:
+                assert isinstance(first_item, (np.ndarray, Tensor))
+                x = first_item
+            observation_space = Image(0.0, 1.0, x.shape)
         if not action_space:
             assert n_classes, "must pass either `action_space`, or `n_classes` for now"
             action_space = spaces.Discrete(n_classes)
@@ -101,18 +157,23 @@ class PassiveEnvironment(
             n_classes = action_space.n
 
         if not reward_space:
+            # Assuming a classification dataset by default:
+            # (action space = reward space = Discrete(n_classes))
             reward_space = action_space
-            # reward_space = spaces.Discrete(n_classes)
 
         assert observation_space
         assert action_space
         assert reward_space
 
+        self.single_observation_space: Space = observation_space 
+        self.single_action_space: Space = action_space 
+        self.single_reward_space: Space = reward_space
+
         if self.batch_size:
             observation_space = batch_space(observation_space, self.batch_size)
             action_space = batch_space(action_space, self.batch_size)
             reward_space = batch_space(reward_space, self.batch_size)
-
+    
         self.observation_space: gym.Space = add_tensor_support(observation_space)
         self.action_space: gym.Space = add_tensor_support(action_space)
         self.reward_space: gym.Space = add_tensor_support(reward_space)
@@ -134,9 +195,13 @@ class PassiveEnvironment(
 
         # from gym.envs.classic_control.rendering import SimpleImageViewer
         self.viewer = None
-
+        
     def reset(self) -> ObservationType:
-        """ Resets the env by deleting and re-creating the iterator.
+        """ Resets the env by deleting and re-creating the dataloader iterator.
+        
+        TODO: This might be pretty expensive, since it's maybe re-creating all the
+        worker processes. There might be an easier way of going about this.
+
         Returns the first batch of observations.
         """
         del self._iterator

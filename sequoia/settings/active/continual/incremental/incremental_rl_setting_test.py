@@ -1,10 +1,10 @@
+import math
 from typing import Callable, List, Optional, Tuple
 
 import gym
 import numpy as np
 import pytest
 from gym import spaces
-
 from sequoia.common.config import Config
 from sequoia.common.spaces import Image, Sparse
 from sequoia.common.transforms import ChannelsFirstIfNeeded, ToTensor, Transforms
@@ -196,6 +196,7 @@ def test_on_task_switch_is_called_task_incremental_rl():
         dataset=DummyEnvironment,
         nb_tasks=5,
         steps_per_task=100,
+        test_steps_per_task=100,
         max_steps=500,
         train_transforms=[],
         test_transforms=[],
@@ -229,6 +230,7 @@ def test_on_task_switch_is_called_task_incremental_rl():
         True,
         *[False for _ in range(5)],
     ]
+
 
 @monsterkong_required
 @pytest.mark.parametrize("task_labels_at_test_time", [False, True])
@@ -358,3 +360,125 @@ def test_monsterkong_pixels(task_labels_at_test_time: bool):
         True,
         *[False for _ in range(5)],
     ]
+
+
+ 
+
+from gym import Space, spaces
+from gym.vector.utils.spaces import batch_space
+from sequoia.methods import Method
+from sequoia.settings import Actions, Environment, Observations, Setting
+
+
+class OtherDummyMethod(Method, target_setting=Setting):
+    def __init__(self):
+        self.batch_sizes: List[int] = []
+    
+    def fit(self, train_env: Environment, valid_env: Environment):
+        for i, batch in enumerate(train_env):
+            if isinstance(batch, Observations):
+                observations, rewards = batch, None
+            else:
+                assert isinstance(batch, tuple) and len(batch) == 2
+                observations, rewards = batch
+                
+            y_preds = train_env.action_space.sample()
+            if rewards is None:
+                action_space = train_env.action_space
+                if train_env.action_space.shape:
+                    obs_batch_size = observations.x.shape[0]
+                    # BUG: Fix the `batch_size` attribute on `Batch` so it works
+                    # even when task labels are None, by checking wether there is
+                    # one or more shapes, and then if there are, then that the first
+                    # dimension match between those.
+                    action_space_batch_size = action_space.shape[0]
+                    if obs_batch_size != action_space_batch_size:
+                        action_space = batch_space(train_env.single_action_space, obs_batch_size)
+
+                rewards = train_env.send(Actions(action_space.sample()))
+
+    def get_actions(self, observations: Observations, action_space: Space) -> Actions:
+        # This won't work on weirder spaces.
+        if action_space.shape:
+            assert observations.x.shape[0] == action_space.shape[0]
+        if getattr(observations.x, "shape", None):
+            batch_size = 1
+            if observations.x.ndim > 1:
+                batch_size = observations.x.shape[0]
+            self.batch_sizes.append(batch_size)
+        else:
+            self.batch_sizes.append(0) # X isn't batched.
+        return action_space.sample()
+
+
+def test_action_space_always_matches_obs_batch_size(config: Config):
+    """ Make sure that the batch size in the observations always matches the action
+    space provided to the `get_actions` method.
+    
+    ALSO:
+    - Make sure that we get asked for actions for all the observations in the test set,
+      even when there is a shorter last batch.
+    - The total number of observations match the dataset size.
+    """
+    nb_tasks = 5
+    batch_size = 128
+    from sequoia.settings import TaskIncrementalSetting
+
+    setting = TaskIncrementalSetting(
+        dataset="mnist",
+        nb_tasks=nb_tasks,
+        batch_size=batch_size,
+        num_workers=4,
+        monitor_training_performance=True,
+    )
+
+    # 10_000 examples in the test dataset of mnist.
+    total_samples = len(setting.test_dataloader().dataset)
+
+    method = OtherDummyMethod()
+    results = setting.apply(method, config=config)
+    
+    # Multiply by nb_tasks because the test loop is ran after each training task.
+    assert sum(method.batch_sizes) == total_samples * nb_tasks
+    assert len(method.batch_sizes) == math.ceil(total_samples / batch_size) * nb_tasks
+    assert set(method.batch_sizes) == {batch_size, total_samples % batch_size}
+
+
+@pytest.mark.timetout(60)
+def test_action_space_always_matches_obs_batch_size_in_RL(config: Config):
+    """ Same test as above, but in RL. """
+    from sequoia.settings import TaskIncrementalRLSetting
+    nb_tasks = 2
+    batch_size = 1
+    setting = TaskIncrementalRLSetting(
+        dataset="cartpole",
+        observe_state_directly=True,
+        nb_tasks=nb_tasks,
+        batch_size=batch_size,
+        steps_per_task=100,
+        test_steps_per_task=100,
+        num_workers=4, # Intentionally wrong
+        # monitor_training_performance=True, # This is still a TODO in RL.
+    )
+    # 500 "examples" in the test dataloader, since 5 * 100 steps per task..
+    total_samples = len(setting.test_dataloader())
+
+    method = OtherDummyMethod()
+    results = setting.apply(method, config=config)
+    
+    expected_encountered_batch_sizes = {batch_size or 1}
+    last_batch_size = total_samples % (batch_size or 1)
+    if last_batch_size != 0:
+        expected_encountered_batch_sizes.add(last_batch_size)
+    assert set(method.batch_sizes) == expected_encountered_batch_sizes
+    
+    # NOTE: Multiply by nb_tasks because the test loop is ran after each training task.
+    actual_num_batches = len(method.batch_sizes)
+    expected_num_batches =  math.ceil(total_samples / (batch_size or 1)) * nb_tasks
+    # MINOR BUG: There's an extra batch for each task. Might make sense, or might not,
+    # not sure.
+    assert actual_num_batches == expected_num_batches + nb_tasks
+    
+    expected_total = total_samples * nb_tasks
+    actual_total_obs = sum(method.batch_sizes)
+    assert actual_total_obs == expected_total + nb_tasks

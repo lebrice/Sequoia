@@ -1,19 +1,15 @@
-from functools import singledispatch
-from pathlib import Path
 # TODO: Create a sort of reusable fixture for the Method
 # TODO: Figure out how to ACTUALLY set the checkpoint dir in pytorch-lightning!
-from typing import Any, Callable, List, Type
+from typing import List, Type
 
 import pytest
-
-from sequoia.common import ClassificationMetrics, Config
-from sequoia.conftest import get_dataset_params, parametrize, slow
-from sequoia.settings.assumptions.incremental import IncrementalSetting
-from sequoia.settings import (ClassIncrementalResults, IncrementalRLSetting,
-                      ClassIncrementalSetting, ContinualRLSetting, IIDSetting,
-                      Results, RLSetting, Setting, TaskIncrementalResults,
-                      TaskIncrementalRLSetting, TaskIncrementalSetting,
-                      all_settings)
+from sequoia.common import Config
+from sequoia.conftest import parametrize, slow
+from sequoia.settings import (ClassIncrementalSetting,
+                              ContinualRLSetting, IIDSetting,
+                              IncrementalRLSetting, RLSetting,
+                              Setting,
+                              all_settings)
 
 from .random_baseline import RandomBaselineMethod
 
@@ -31,6 +27,7 @@ def test_is_applicable_to_all_settings():
     assert set(settings) == set(all_settings)
 
 from sequoia.conftest import slow
+
 
 # This is a very slow test, because it actually iterates through the entire test set for each task.
 @slow
@@ -65,4 +62,4 @@ def test_fast_dev_run(setting_type: Type[Setting],
     
     results = setting.apply(method, config=config)
     method.validate_results(setting, results)
-    
+   
