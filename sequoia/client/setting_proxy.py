@@ -70,7 +70,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
     # attribute on the SettingProxy.
     # TODO: I don't think this has any effect, because we subclass SettingABC which
     # doesn't use __slots__.
-    __slots__ = ["__setting", "_setting_type", "_train_env", "_valid_env", "_test_env"]
+    __slots__ = ["__setting", "_setting_type", "_train_env", "_val_env", "_test_env"]
 
     def __init__(
         self,
