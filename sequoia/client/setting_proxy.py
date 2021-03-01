@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from functools import partial
 from logging import getLogger
 from pathlib import Path
-from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
+from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Callable
 
 import gym
 import numpy as np
@@ -94,6 +94,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
 
     @property
     def observation_space(self) -> gym.Space:
+        self.set_attribute("train_transforms", self.train_transforms)
         return self.get_attribute("observation_space")
 
     @property
@@ -129,7 +130,9 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         return self.__setting.get_name()
 
     def _is_readable(self, attribute: str) -> bool:
-        return attribute not in _hidden_attributes[self._setting_type]
+        if self._setting_type not in _hidden_attributes:
+            return True
+        return  attribute not in _hidden_attributes[self._setting_type]
 
     def _is_writeable(self, attribute: str) -> bool:
         return attribute not in _readonly_attributes[self._setting_type]
@@ -142,10 +145,34 @@ class SettingProxy(SettingABC, Generic[SettingType]):
     def batch_size(self, value: Optional[int]) -> None:
         self.set_attribute("batch_size", value)
 
+    @property
+    def train_transforms(self) -> List[Callable]:
+        return self.__setting.train_tansforms
+    
+    @train_transforms.setter
+    def train_transforms(self, value: List[Callable]):
+        self.__setting.train_transforms = value
+
+    @property
+    def val_transforms(self) -> List[Callable]:
+        return self.__setting.val_tansforms
+
+    @val_transforms.setter
+    def val_transforms(self, value: List[Callable]):
+        self.__setting.val_transforms = value
+
+    @property
+    def test_transforms(self) -> List[Callable]:
+        return self.__setting.test_tansforms
+
+    @test_transforms.setter
+    def test_transforms(self, value: List[Callable]):
+        self.__setting.test_transforms = value
+
     def apply(self, method: Method, config: Config = None) -> Results:
         # TODO: Figure out where the 'config' should be defined?
         method.configure(setting=self)
-
+        # TODO: Not sure if the method is changing the train_transforms.
         # Run the Main loop.
         results: Results = self.main_loop(method)
 
@@ -255,6 +282,10 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         task_labels_at_train_time = self.get_attribute("task_labels_at_train_time")
         start_time = time.process_time()
 
+        # Send the train / val transforms to the 'remote' env.
+        self.set_attribute("train_transforms", self.train_transforms)
+        self.set_attribute("val_transforms", self.val_transforms)
+        
         for task_id in range(nb_tasks):
             logger.info(
                 f"Starting training" + (f" on task {task_id}." if nb_tasks > 1 else ".")
