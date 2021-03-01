@@ -1,7 +1,5 @@
 """ TODO: A special kind of gym.Wrapper that accepts a list of environments or
-environment creating functions, and swaps between them at given points in time, or
-after each episode.
-
+environment creating functions, and can swap between them when desired.
 """
 from dataclasses import dataclass
 from typing import (
@@ -26,16 +24,16 @@ EnvOrEnvFn = Union[gym.Env, Callable[..., gym.Env]]
 
 
 class MultiTaskEnv(IterableWrapper):
-    def __init__(self, env: Union[gym.Env, List[EnvOrEnvFn]]):
-
+    def __init__(self, env: Union[gym.Env, List[EnvOrEnvFn]], env_task_ids: List[int] = None):
         self._envs: List[Union[gym.Env], Callable[..., gym.Env]] = []
         # TODO: Should we always require env constructors rather than envs themselves?
         if isinstance(env, gym.Env):
             env = [env]
         for task_env in env:
             self._envs.append(task_env)
+        self._env_task_ids: List[int] = env_task_ids or list(range(self.nb_tasks))
         env = self.get_env(0)
-        self._current_task_id: int = 0
+        self._current_task_index: int = 0
         self._seeds: List[Optional[int]] = []
 
         super().__init__(env=env)
@@ -64,14 +62,14 @@ class MultiTaskEnv(IterableWrapper):
 
         # TODO: Do we want to close envs on switching tasks? or not?
         # self.env.close()
-        self._current_task_id = new_task_id
+        self._current_task_index = new_task_id
 
         self.env = self.get_env(new_task_id)
         # TODO: Assuming the observations/action spaces don't change between tasks.
 
         if self._seeds and not self._using_live_envs:
             # Seed when creating the env, since we couldn't seed the env instance.
-            self.env.seed(self._seeds[self._current_task_id])
+            self.env.seed(self._seeds[self._current_task_index])
 
         # self.action_space = self.env.action_space
         # self.observation_space = self.env.observation_space
@@ -83,7 +81,11 @@ class MultiTaskEnv(IterableWrapper):
         # self._info["task_switch"] = True
 
     def observation(self, observation):
-        return add_task_labels(observation, self._current_task_id)
+        """ Adds the id of the current task to the observations. """
+        current_task_id = self._current_task_index
+        if self._env_task_ids:
+            current_task_id = self._env_task_ids[self._current_task_index]
+        return add_task_labels(observation, current_task_id)
 
     def step(self, action):
         obs, reward, done, info = super().step(action)
@@ -121,7 +123,7 @@ class MultiTaskEnv(IterableWrapper):
             # We can seed the 'live'/current env, but the others may be 'dormant', so we
             # just store the seeds, and we'll use them when 'waking up' the env.
             self._seeds = seeds
-            self.seed(seeds[self._current_task_id])
+            self.seed(seeds[self._current_task_index])
             return self._seeds
 
     @property

@@ -1,6 +1,7 @@
 """ TODO: Tests for this new 'multi-task Env' (v2)
 
 """
+from typing import Callable
 import gym
 from gym.envs.classic_control import CartPoleEnv
 
@@ -14,6 +15,40 @@ def test_basics():
         env.length = 0.2 + 0.1 * i  # Add offset since length = 0 causes nans in obs.
 
     env = MultiTaskEnv(envs)
+
+    n_episodes_per_task = 3
+    for task_index in range(nb_tasks):
+        env.switch_tasks(task_index)
+        assert env.unwrapped.length == 0.2 + 0.1 * task_index
+
+        for episode in range(n_episodes_per_task):
+            obs = env.reset()
+            done = False
+            while not done:
+                action = env.action_space.sample()
+                obs, reward, done, info = env.step(action)
+                assert obs[1] == task_index
+
+
+def test_basics_with_env_fns():
+    nb_tasks = 5
+
+    lengths = {
+        # Add offset since length = 0 causes nans in obs.
+        i: 0.2 + 0.1 * i
+        for i in range(nb_tasks)
+    }
+
+    def _make_env_fn(i) -> Callable[..., CartPoleEnv]:
+        def _env_fn():
+            env = CartPoleEnv()
+            env.length = lengths[i]
+            return env
+
+        return _env_fn
+
+    env = MultiTaskEnv([_make_env_fn(i) for i in range(nb_tasks)])
+    env.seed(123)
 
     n_episodes_per_task = 3
     for task_index in range(nb_tasks):
