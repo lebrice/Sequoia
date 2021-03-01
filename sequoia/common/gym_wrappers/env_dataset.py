@@ -114,15 +114,13 @@ class EnvDataset(gym.Wrapper,
         self.current_step_result_ = result
         return result
 
-    def __next__(self) -> Tuple[ObservationType,
-                                Union[bool, Sequence[bool]],
-                                Union[Dict, Sequence[Dict]]]:
+    def __next__(self) -> ObservationType:
         """Produces the next observations, or raises StopIteration.
 
         Returns
         -------
-        Tuple[ObservationType, Union[bool, Sequence[bool]], Union[Dict, Sequence[Dict]]]
-            [description]
+        ObservationType:
+            The next observation.
 
         Raises
         ------
@@ -206,7 +204,7 @@ class EnvDataset(gym.Wrapper,
             elif self.reached_step_limit:
                 raise gym.error.ClosedEnvironmentError(f"Env has already reached step limit ({self.max_steps}) and is closed.")
             else:
-                raise gym.error.ClosedEnvironmentError(f"Env is closed, can't iterate over it.")
+                raise gym.error.ClosedEnvironmentError("Env is closed, can't iterate over it.")
         
         # First step reset automatically before iterating, if needed.
         if not self.reset_:
@@ -218,8 +216,11 @@ class EnvDataset(gym.Wrapper,
         
         assert self.observation_ is not None
         # Yield the first observation_.
-        # TODO: What do we want to yield, actually? Just observations?
+        # TODO: Move all the `self.observation()`, `self.action()`, etc. logic out of
+        # the `step` and `reset` methods, since those might be calling `self.env.step()`
+        # rather than `super().step()`.
         yield self.observation_
+        # yield self.observation_
 
         logger.debug(f"episode {self.n_episodes_}/{self.max_episodes}")
 
@@ -232,13 +233,13 @@ class EnvDataset(gym.Wrapper,
             self.action_ = None
             self.reward_ = None
             yield self.observation_
-            
+
             if self.action_ is None:
                 raise RuntimeError(
                     f"You have to send an action using send() between every "
                     f"observation. (env = {self})"
                 )
-                
+
         # Force the user to call reset() between episodes.
         self.reset_ = False
         self.n_episodes_ += 1
