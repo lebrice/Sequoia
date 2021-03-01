@@ -51,7 +51,9 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
         Union[Dict, Sequence[Dict]],
     ]:
         # Simulate converting things to a pickleable object?
-        actions_pkl = actions.numpy()
+        if isinstance(actions, Actions):
+            actions = actions.numpy()
+        actions_pkl = actions
         # TODO: Use some kind of gRPC endpoint.
         observations_pkl, rewards_pkl, done_pkl, info_pkl = self.__environment.step(
             actions_pkl
