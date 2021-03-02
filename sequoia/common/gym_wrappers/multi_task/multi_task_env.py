@@ -24,19 +24,31 @@ EnvOrEnvFn = Union[gym.Env, Callable[..., gym.Env]]
 
 
 class MultiTaskEnv(IterableWrapper):
-    def __init__(self, env: Union[gym.Env, List[EnvOrEnvFn]], env_task_ids: List[int] = None):
+    def __init__(self, env: Union[gym.Env, List[EnvOrEnvFn]]):
+        """Create a Wrapper that change its wrapped environment.
+
+        Parameters
+        ----------
+        env : Union[gym.Env, List[EnvOrEnvFn]]
+            Either a single env, or a list of List of `gym.Env` objects or of callables
+            which produce an environment when called with no arguments.
+
+            If `env` is just a single `gym.Env`, this wrapper has pretty much no effect.
+        """
         self._envs: List[Union[gym.Env], Callable[..., gym.Env]] = []
         # TODO: Should we always require env constructors rather than envs themselves?
         if isinstance(env, gym.Env):
             env = [env]
         for task_env in env:
             self._envs.append(task_env)
-        self._env_task_ids: List[int] = env_task_ids or list(range(self.nb_tasks))
+
         env = self.get_env(0)
+        super().__init__(env=env)
+
         self._current_task_index: int = 0
         self._seeds: List[Optional[int]] = []
+        self._env_task_ids: List[int] = list(range(self.nb_tasks))
 
-        super().__init__(env=env)
 
         task_label_space = spaces.Discrete(self.nb_tasks)
         self.observation_space = add_task_labels(
@@ -47,24 +59,24 @@ class MultiTaskEnv(IterableWrapper):
     def nb_tasks(self) -> int:
         return len(self._envs)
 
-    def get_env(self, env_index: int) -> gym.Env:
-        """ Gets the environment at the given index, creating it if necessary.
+    def get_env(self, task_index: int) -> gym.Env:
+        """ Gets the environment at the given task index, creating it if necessary.
 
         If the envs passed to the constructor were constructors rather than gym.Env
         objects, the constructor for the given env will be called.
         """
-        if isinstance(self._envs[env_index], gym.Env):
-            return self._envs[env_index]
-        return self._envs[env_index]()
+        if isinstance(self._envs[task_index], gym.Env):
+            return self._envs[task_index]
+        return self._envs[task_index]()
 
-    def switch_tasks(self, new_task_id: int) -> None:
-        assert 0 <= new_task_id < self.nb_tasks
+    def switch_tasks(self, new_task_index: int) -> None:
+        assert 0 <= new_task_index < self.nb_tasks
 
         # TODO: Do we want to close envs on switching tasks? or not?
         # self.env.close()
-        self._current_task_index = new_task_id
+        self._current_task_index = new_task_index
 
-        self.env = self.get_env(new_task_id)
+        self.env = self.get_env(new_task_index)
         # TODO: Assuming the observations/action spaces don't change between tasks.
 
         if self._seeds and not self._using_live_envs:
@@ -140,3 +152,8 @@ class MultiTaskEnv(IterableWrapper):
             True if all envs are 'live' `gym.Env` instances.
         """
         return all(isinstance(env, gym.Env) for env in self._envs)
+
+    def __iter__(self):
+        yield self.reset()
+        for batch in super().__iter__():
+            yield self.batch(batch)

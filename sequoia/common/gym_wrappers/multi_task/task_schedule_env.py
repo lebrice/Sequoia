@@ -1,21 +1,23 @@
-""" TODO:  MultiTaskEnv that changes tasks when reaching points in time.
-(nb of steps or episodes).
+""" MultiTaskEnv that changes tasks when reaching points in time (nb of steps or
+episodes).
 """
 import gym
 from gym import spaces
 from typing import List, Union, Dict
 from .multi_task_env import MultiTaskEnv, EnvOrEnvFn
+from sequoia.utils.logging_utils import get_logger
+
+
+logger = get_logger(__file__)
 
 
 class TaskScheduleEnv(MultiTaskEnv):
     def __init__(
         self,
         envs: Union[gym.Env, List[EnvOrEnvFn]],
-        env_task_ids: List[int] = None,
         step_schedule: Dict[int, int] = None,
         episode_schedule: Dict[int, int] = None,
     ):
-        super().__init__(envs, env_task_ids=env_task_ids)
         if step_schedule:
             self._use_steps = True
             self.schedule = step_schedule
@@ -26,6 +28,13 @@ class TaskScheduleEnv(MultiTaskEnv):
             raise RuntimeError(
                 "Need to pass one of `step_schedule` or `episode_schedule`."
             )
+        
+        if isinstance(envs, gym.Env):
+            # If we are given a single env, but a task schedule that will affect it,
+            # then
+            envs = [envs for _ in self.schedule]
+
+        super().__init__(envs)
         self._steps: int = 0
         self._episodes: int = -1  # -1 to account for the first reset.
 
@@ -53,24 +62,39 @@ class TaskScheduleEnv(MultiTaskEnv):
 
     def step(self, action):
         observation, reward, done, info = super().step(action)
-        self._steps += 1
 
         info["task_switch"] = False
         if self.schedule_keys_are_steps and self._steps in self.schedule:
-            next_task_id = self.schedule[self._steps]
-            self.switch_tasks(next_task_id)
+            task = self.schedule[self._steps]
+            self.switch_tasks(task)
             done = True
             info["task_switch"] = True
+
+        self._steps += 1
         return observation, reward, done, info
 
+    def switch_tasks(self, new_task_index: int) -> None:
+        assert 0 <= new_task_index < self.nb_tasks
+
+        # TODO: Do we want to close envs on switching tasks? or not?
+        # self.env.close()
+        self._current_task_index = new_task_index
+
+        self.env = self.get_env(new_task_index)
+        # TODO: Assuming the observations/action spaces don't change between tasks.
+
+        if self._seeds and not self._using_live_envs:
+            # Seed when creating the env, since we couldn't seed the env instance.
+            self.env.seed(self._seeds[self._current_task_index])
+        
+        # new_task = self.schedule[sorted(self.schedule.keys())[new_task_index]]
+        # logger.debug(f"Changing env attributes: {new_task}")
+        # for key, value in new_task.items():
+        #     setattr(self.unwrapped, key, value)
+    
     def reset(self):
         self._episodes += 1
         if self.schedule_keys_are_episodes and self._episodes in self.schedule:
             next_task_id = self.schedule[self._episodes]
             self.switch_tasks(next_task_id)
         return super().reset()
-
-    def __iter__(self):
-        yield self.reset()
-        for batch in super().__iter__():
-            yield self.batch(batch)

@@ -7,7 +7,7 @@ import gym
 from gym.envs.classic_control import CartPoleEnv
 
 from ..env_dataset import EnvDataset
-from .change_after_each_episode import ChangeAfterEachEpisode
+from .every_episode import ChangeTaskAfterEachEpisode
 from .multi_task_env import NamedTuple
 
 
@@ -22,7 +22,7 @@ def test_basics():
     for i, env in enumerate(envs):
         env.unwrapped.length = lengths[i]
 
-    env = ChangeAfterEachEpisode(envs)
+    env = ChangeTaskAfterEachEpisode(envs)
     env.seed_all(123)
 
     episode_task_indices: List[int] = []
@@ -63,7 +63,7 @@ def test_iteration():
     for i, env in enumerate(envs):
         env.unwrapped.length = lengths[i]
 
-    env = ChangeAfterEachEpisode(envs)
+    env = ChangeTaskAfterEachEpisode(envs)
     env.seed(123)
     nb_episodes = 5
 
