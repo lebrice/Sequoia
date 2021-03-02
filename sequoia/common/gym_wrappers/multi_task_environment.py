@@ -18,6 +18,81 @@ task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
 logger = get_logger(__file__)
 
 
+from .multi_task.task_schedule_env import TaskScheduleEnv
+from .multi_task.changing_dynamics import ChangeEnvAttributes
+
+from functools import partial
+
+
+def swap_schedule_format(env: Union[gym.Env, Callable[..., gym.Env]],
+                            task_schedule: Dict[int, Dict]) -> Tuple[List[Callable[..., gym.Env]], Dict[int, int], List]:
+    task_schedule = task_schedule or {}
+    if 0 not in task_schedule:
+        if all(isinstance(v, dict) for v in task_schedule.values()):
+            first_task = {}
+        elif all(callable(v) for v in task_schedule.values()):
+            first_task = lambda e: e
+        else:
+            raise NotImplementedError(task_schedule)
+        task_schedule[0] = first_task
+    envs = []
+    schedule = {}
+    tasks = []
+    for i, step in enumerate(sorted(task_schedule)):
+        task = task_schedule[step]
+        if isinstance(task, dict):
+            task = ChangeEnvAttributes(**task)
+        tasks.append(task)
+        env_fn: Callable[..., gym.Env]
+        if isinstance(env, gym.Env):
+            env_fn = partial(task, env)
+        else:
+            def _env_fn():
+                return task(env())
+            env_fn = _env_fn
+        envs.append(env_fn)
+        schedule[step] = i
+    return envs, schedule, tasks
+
+
+class MultiTaskEnvironment(TaskScheduleEnv):
+    def __init__(self,
+                 env: Union[gym.Env, Callable[..., gym.Env]],
+                 step_schedule: Dict[int, int] = None,
+                 episode_schedule: Dict[int, int] = None,
+                 task_schedule: Dict[int, int]=None,
+                 add_task_dict_to_info: bool = False,
+                 add_task_id_to_obs: bool = True):
+        if task_schedule:
+            # NOTE task_schedule is just an alias for step_schedule.
+            step_schedule = task_schedule
+        if step_schedule:
+            if not all(isinstance(v, int) for v in step_schedule.values()):
+                assert isinstance(env, gym.Env)
+                envs, step_schedule, self._tasks = swap_schedule_format(env, step_schedule)
+        elif episode_schedule:
+            if not all(isinstance(v, int) for v in episode_schedule.values()):
+                assert isinstance(env, gym.Env)
+                envs, episode_schedule, self._tasks = swap_schedule_format(env, episode_schedule)
+        else:
+            assert isinstance(env, gym.Env)
+            envs = [env]
+            self._tasks = [{}]
+        #     step_schedule = {0: 0}
+        super().__init__(envs, step_schedule=step_schedule, episode_schedule=episode_schedule)
+        self.add_task_dict_to_info = add_task_dict_to_info
+        self.add_task_id_to_obs = add_task_id_to_obs
+
+    @property
+    def current_task(self):
+        return self._tasks[self._current_task_index]
+
+    def step(self, action):
+        obs, reward, done, info = super().step(action)
+        if self.add_task_dict_to_info:
+            info["current_task"] = self.current_task
+        return obs, reward, done, info
+
 X = TypeVar("X")
 T = TypeVar("T")
 K = TypeVar("K")
@@ -75,7 +150,7 @@ def _add_task_labels_to_dict(
     return type(observation)(**new)  # type: ignore
 
 
-class MultiTaskEnvironment(gym.Wrapper):
+class OldMultiTaskEnvironment(gym.Wrapper):
     """Creates 'tasks' by modifying attributes or applying functions to the wrapped env.
 
     This wrapper accepts a `task_schedule` dictionary, which maps from a given

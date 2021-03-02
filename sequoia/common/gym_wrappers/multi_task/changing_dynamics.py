@@ -26,9 +26,10 @@ class NonStationarity(ABC):
     """
 
     @abstractmethod
-    def apply_to(self, env: Env) -> Env:
+    def __call__(self, env: Env) -> Env:
         """Applies this 'task' to the given environment, returning the modified env."""
 
+    
 
 @dataclass(init=False)
 class ChangeEnvAttributes(NonStationarity):
@@ -43,7 +44,7 @@ class ChangeEnvAttributes(NonStationarity):
         super().__init__()
         self.attribute_dict = attribute_dict or dict(kwargs)
 
-    def apply_to(self, env: Env) -> Env:
+    def __call__(self, env: Env) -> Env:
         for key, value in self.attribute_dict.items():
             setattr(env.unwrapped, key, value)
         return env
@@ -58,7 +59,7 @@ class ApplyFunctionToEnv(NonStationarity):
     args: Tuple[Any, ...] = ()
     kwargs: Dict = field(default_factory=dict)
 
-    def apply_to(self, env: Env) -> Env:
+    def __call__(self, env: Env) -> Env:
         return self.function(env, *self.args, **self.kwargs)
 
 
@@ -116,7 +117,7 @@ class ChangingDynamics(MultiTaskEnv):
             raise RuntimeError(f"Unexpected task inde: {new_task_index}.")
         assert new_task in self.task_schedule.values()
         super().switch_tasks(new_task_index)
-        new_task.apply_to(self)
+        new_task(self)
     
     # def get_env(self, task_index: int) -> gym.Env:
     #     """ Gets the environment at the given task index, creating it if necessary.
@@ -136,7 +137,7 @@ class ChangingDynamics(MultiTaskEnv):
             task: Optional[NonStationarity] = self.task_schedule.get(self._episodes)
             if task:
                 logger.info(f"Applying non-stationarity {task} at episode {self._episodes}.")
-                task.apply_to(self)
+                task(self)
         return super().reset()
 
     @property

@@ -79,18 +79,13 @@ class TaskScheduleEnv(MultiTaskEnv):
         # TODO: Do we want to close envs on switching tasks? or not?
         # self.env.close()
         self._current_task_index = new_task_index
-
+        logger.debug(f"Switching to env at index {new_task_index}")
         self.env = self.get_env(new_task_index)
         # TODO: Assuming the observations/action spaces don't change between tasks.
 
         if self._seeds and not self._using_live_envs:
             # Seed when creating the env, since we couldn't seed the env instance.
             self.env.seed(self._seeds[self._current_task_index])
-        
-        # new_task = self.schedule[sorted(self.schedule.keys())[new_task_index]]
-        # logger.debug(f"Changing env attributes: {new_task}")
-        # for key, value in new_task.items():
-        #     setattr(self.unwrapped, key, value)
     
     def reset(self):
         self._episodes += 1

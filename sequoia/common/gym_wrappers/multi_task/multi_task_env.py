@@ -68,7 +68,11 @@ class MultiTaskEnv(IterableWrapper):
         if isinstance(self._envs[task_index], gym.Env):
             return self._envs[task_index]
         return self._envs[task_index]()
-
+    
+    @property
+    def current_task(self):
+        return self._current_task_index
+    
     def switch_tasks(self, new_task_index: int) -> None:
         assert 0 <= new_task_index < self.nb_tasks
 
