@@ -57,77 +57,6 @@ wandb.integration.gym.monitor = patched_monitor
 logger = get_logger(__file__)
 
 
-@dataclass
-class WandbLoggerConfig(Serializable, Parseable):
-    """ Configuration options for the wandb logger of pytorch-lightning. """
-
-    # Which user to use
-    entity: str = ""
-    # The name of the project to which this run will belong.
-    project: str = "sweep"
-    # Name used to easily group runs together.
-    # Used to create a parent folder that will contain the `run_name` directory.
-    # A unique string shared by all runs in a given group
-    group: Optional[str] = None
-    # Wandb run name. If None, will use wandb's automatic name generation
-    run_name: Optional[str] = None
-    # Identifier unique to each individual wandb run. When given, will try to
-    # resume the corresponding run, generates a new ID each time.
-    # TODO: Could also use a hash of the hparams, like @nitarshan did.
-    run_id: Optional[str] = None
-
-    # Wandb api key. Useful for preventing the login prompt from wandb from appearing
-    # when running on clusters or docker-based setups where the environment variables
-    # aren't always shared.
-    wandb_api_key: Optional[Union[str, Path]] = field(
-        default=os.environ.get("WANDB_API_KEY"),
-        to_dict=False,  # Do not serialize this field.
-        repr=False,  # Do not show this field in repr().
-    )
-
-    # Tags to add to this run with wandb.
-    tags: List[str] = list_field()
-    # Notes about this particular experiment. (will be logged to wandb if used.)
-    notes: Optional[str] = None
-    # Run offline (data can be streamed later to wandb servers).
-    offline: bool = False
-    # Enables or explicitly disables anonymous logging.
-    anonymous: bool = False
-    # Sets the version, mainly used to resume a previous run.
-    version: Optional[str] = None
-    # Save checkpoints in wandb dir to upload on W&B servers.
-    log_model: bool = False
-
-    monitor_gym: bool = True
-
-    def make_logger(self, wandb_parent_dir: Path) -> WandbLogger:
-        logger.info(f"Creating a WandbLogger with using options {self}.")
-
-        if self.wandb_api_key is not None:
-            if Path(self.wandb_api_key).is_file():
-                key = Path(self.wandb_api_key).read_text()
-            else:
-                key = self.wandb_api_key
-            assert isinstance(key, str)
-            wandb.login(key=key)
-
-        wandb_logger = WandbLogger(
-            name=self.run_name,
-            save_dir=str(wandb_parent_dir),
-            offline=self.offline,
-            id=self.run_id,
-            anonymous=self.anonymous,
-            version=self.version,
-            project=self.project,
-            tags=self.tags,
-            log_model=self.log_model,
-            entity=self.entity,
-            group=self.group,
-            monitor_gym=self.monitor_gym,
-            reinit=True,
-        )
-        return wandb_logger
-
 
 @dataclass
 class WandbConfig(Serializable):
@@ -135,11 +64,15 @@ class WandbConfig(Serializable):
 
     # Which user to use
     entity: str = ""
-
-    project_name: str = ""  # project name to use in wandb.
+    
+    # project name to use in wandb.
+    project: str = ""  
+    
     # Name used to easily group runs together.
     # Used to create a parent folder that will contain the `run_name` directory.
-    run_group: Optional[str] = None
+    # A unique string shared by all runs in a given group
+    # Used to create a parent folder that will contain the `run_name` directory.
+    group: Optional[str] = None
     # Wandb run name. If None, will use wandb's automatic name generation
     run_name: Optional[str] = None
 
@@ -170,14 +103,48 @@ class WandbConfig(Serializable):
 
     monitor_gym: bool = True
 
+    # Wandb api key. Useful for preventing the login prompt from wandb from appearing
+    # when running on clusters or docker-based setups where the environment variables
+    # aren't always shared.
+    wandb_api_key: Optional[Union[str, Path]] = field(
+        default=os.environ.get("WANDB_API_KEY"),
+        to_dict=False,  # Do not serialize this field.
+        repr=False,  # Do not show this field in repr().
+    )
+
+    # Run offline (data can be streamed later to wandb servers).
+    offline: bool = False
+    # Enables or explicitly disables anonymous logging.
+    anonymous: bool = False
+    # Sets the version, mainly used to resume a previous run.
+    version: Optional[str] = None
+    
+    
     @property
     def log_dir(self):
         return self.log_dir_root.joinpath(
-            (self.project_name or ""),
-            (self.run_group or ""),
+            (self.project or ""),
+            (self.group or ""),
             (self.run_name or "default"),
             (f"run_{self.run_number}" if self.run_number is not None else ""),
         )
+        
+    def wandb_login(self) -> bool:
+        """Calls `wandb.login()`. 
+
+        Returns
+        -------
+        bool
+            If the key is configured.
+        """
+        key = None
+        if self.wandb_api_key is not None:
+            if Path(self.wandb_api_key).is_file():
+                key = Path(self.wandb_api_key).read_text()
+            else:
+                key = self.wandb_api_key
+            assert isinstance(key, str)
+        return wandb.login(key=key)
 
     def wandb_init(self, config_dict: Dict) -> wandb.wandb_run.Run:
         """Executes the call to `wandb.init()`. 
@@ -211,12 +178,13 @@ class WandbConfig(Serializable):
         )
 
         run = wandb.init(
-            project=self.project_name,
+            dir=str(self.wandb_path),
+            project=self.project,
+            entity=self.entity,
             name=self.run_name,
             id=self.run_id,
-            group=self.run_group,
+            group=self.group,
             config=config_dict,
-            dir=str(self.wandb_path),
             notes=self.notes,
             reinit=True,
             tags=self.tags,
@@ -224,18 +192,47 @@ class WandbConfig(Serializable):
             monitor_gym=self.monitor_gym,
         )
         logger.info(f"Run: {run}")
-        run.save()
+        if run:
+            run.save()
 
-        if run.resumed:
-            # TODO: add *proper* wandb resuming, probaby by using @nitarshan 's md5 id cool idea.
-            # wandb.restore(self.log_dir / "checkpoints")
-            pass
+            if run.resumed:
+                # TODO: add *proper* wandb resuming, probaby by using @nitarshan 's md5 id cool idea.
+                # wandb.restore(self.log_dir / "checkpoints")
+                pass
 
-        wandb.save(str(self.log_dir / "*"))
-        self.log_dir.mkdir(exist_ok=True, parents=True)
-        self.save_yaml(self.log_dir / "config.yml")
+            wandb.save(str(self.log_dir / "*"))
+            self.log_dir.mkdir(exist_ok=True, parents=True)
+            self.save_yaml(self.log_dir / "config.yml")
 
-        if self.run_name is None:
-            self.run_name = run.name
+            if self.run_name is None:
+                self.run_name = run.name
 
         return run
+
+
+@dataclass
+class WandbLoggerConfig(WandbConfig):
+    """ Configuration options for the wandb logger of pytorch-lightning. """
+    # Save checkpoints in wandb dir to upload on W&B servers.
+    log_model: bool = False
+
+    def make_logger(self, wandb_parent_dir: Path) -> WandbLogger:
+        logger.info(f"Creating a WandbLogger with using options {self}.")
+        wandb_logger = WandbLogger(
+            name=self.run_name,
+            save_dir=str(wandb_parent_dir),
+            offline=self.offline,
+            id=self.run_id,
+            anonymous=self.anonymous,
+            version=self.version,
+            project=self.project,
+            tags=self.tags,
+            log_model=self.log_model,
+            entity=self.entity,
+            group=self.group,
+            monitor_gym=self.monitor_gym,
+            reinit=True,
+        )
+        return wandb_logger
+
+
