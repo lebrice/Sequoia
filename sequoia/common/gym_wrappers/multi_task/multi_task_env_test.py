@@ -18,7 +18,7 @@ def test_basics():
 
     n_episodes_per_task = 3
     for task_index in range(nb_tasks):
-        env.switch_tasks(task_index)
+        env.change_task(task_index)
         assert env.unwrapped.length == 0.2 + 0.1 * task_index
 
         for episode in range(n_episodes_per_task):
@@ -52,7 +52,7 @@ def test_basics_with_env_fns():
 
     n_episodes_per_task = 3
     for task_index in range(nb_tasks):
-        env.switch_tasks(task_index)
+        env.change_task(task_index)
         assert env.unwrapped.length == 0.2 + 0.1 * task_index
 
         for episode in range(n_episodes_per_task):
@@ -79,7 +79,7 @@ def test_iteration():
 
     n_episodes_per_task = 3
     for task_index in range(nb_tasks):
-        env.switch_tasks(task_index)
+        env.change_task(task_index)
         assert env.unwrapped.length == 0.2 + 0.1 * task_index
 
         for episode in range(n_episodes_per_task):

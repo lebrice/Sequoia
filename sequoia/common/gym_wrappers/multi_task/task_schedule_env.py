@@ -6,6 +6,20 @@ from gym import spaces
 from typing import List, Union, Dict
 from .multi_task_env import MultiTaskEnv, EnvOrEnvFn
 from sequoia.utils.logging_utils import get_logger
+from .tasks import Task, TaskType
+
+
+class TaskSchedule(Dict[int, TaskType]):
+    pass
+
+
+class StepTaskSchedule(TaskSchedule[TaskType]):
+    pass
+
+
+class EpisodeTaskSchedule(TaskSchedule[TaskType]):
+    pass
+
 
 
 logger = get_logger(__file__)
@@ -17,7 +31,29 @@ class TaskScheduleEnv(MultiTaskEnv):
         envs: Union[gym.Env, List[EnvOrEnvFn]],
         step_schedule: Dict[int, int] = None,
         episode_schedule: Dict[int, int] = None,
+        offset: int = 0,
     ):
+        """Creates a wrapper that changes underlying environment based on a schedule.
+        
+        The schedule may be either step-based, e.g. "Use environment #2 at step 1000",
+        or episode-based, e.g. "Use environment #3 after 3000 episodes"
+
+        Parameters
+        ----------
+        envs : Union[gym.Env, List[EnvOrEnvFn]]
+            [description]
+        step_schedule : Dict[int, int], optional
+            [description], by default None
+        episode_schedule : Dict[int, int], optional
+            [description], by default None
+        offset : int, optional
+            [description], by default 0
+
+        Raises
+        ------
+        RuntimeError
+            [description]
+        """
         if step_schedule:
             self._use_steps = True
             self.schedule = step_schedule
@@ -28,15 +64,29 @@ class TaskScheduleEnv(MultiTaskEnv):
             raise RuntimeError(
                 "Need to pass one of `step_schedule` or `episode_schedule`."
             )
-        
+
         if isinstance(envs, gym.Env):
             # If we are given a single env, but a task schedule that will affect it,
             # then
             envs = [envs for _ in self.schedule]
 
         super().__init__(envs)
+        self._offset = offset
+
         self._steps: int = 0
         self._episodes: int = -1  # -1 to account for the first reset.
+
+    @property
+    def steps(self) -> int:
+        return self._steps
+
+    @steps.setter
+    def steps(self, value: int) -> None:
+        if value < self._starting_step:
+            value = self._starting_step
+        if self._max_steps is not None and value > self._max_steps:
+            value = self._max_steps
+        self._steps = value
 
     @property
     def schedule_keys_are_steps(self) -> bool:
@@ -61,15 +111,19 @@ class TaskScheduleEnv(MultiTaskEnv):
         return not self.schedule_keys_are_steps
 
     def step(self, action):
-        observation, reward, done, info = super().step(action)
-
-        info["task_switch"] = False
+        task_switch = False
         if self.schedule_keys_are_steps and self._steps in self.schedule:
             task = self.schedule[self._steps]
+            logger.debug(f"Switching to task {task} at step {self._steps}")
             self.switch_tasks(task)
+            # TODO: Do we want to add something in info to indicate that the previous
+            # episode was truncated somehow, rather than ending normally?
+            # TODO: Delay the task switch until the episode is done?
             done = True
-            info["task_switch"] = True
+            task_switch = True
 
+        observation, reward, done, info = super().step(action)
+        info["task_switch"] = task_switch
         self._steps += 1
         return observation, reward, done, info
 

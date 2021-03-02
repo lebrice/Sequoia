@@ -16,29 +16,81 @@ from typing import (
 
 import gym
 from gym import Wrapper, spaces
-
+from functools import partial
 from ..utils import IterableWrapper
 from .add_task_labels import add_task_labels
+from .tasks import Task, TaskType, ChangeEnvAttributes, get_changeable_attributes
 
 EnvOrEnvFn = Union[gym.Env, Callable[..., gym.Env]]
 
 
 class MultiTaskEnv(IterableWrapper):
-    def __init__(self, env: Union[gym.Env, List[EnvOrEnvFn]]):
-        """Create a Wrapper that change its wrapped environment.
+    def __init__(self, env: Union[gym.Env, List[EnvOrEnvFn]], tasks: List[Task] = None):
+        """Creates a Wrapper that can alternate between environments of different tasks.
+
+        This can be either be passed a list of environments to use for each task, or a
+        a single environment along with a list of tasks to apply to it when
+        transitioning to the corresponding task.
+
+        NOTE: The `env` argument can also be a list of functions that each return the
+        environemnt to use for each task, rather than envs objects themselves. This is
+        recommended especially when task switches will not occur often.
+
+        NOTE: When passing a single env and a list of tasks, the env instance will be
+        shared accross all tasks.
 
         Parameters
         ----------
         env : Union[gym.Env, List[EnvOrEnvFn]]
             Either a single env, or a list of List of `gym.Env` objects or of callables
             which produce an environment when called with no arguments.
-
             If `env` is just a single `gym.Env`, this wrapper has pretty much no effect.
+
+        tasks : List[Task], optional
+            When `env` is a single gym.Env, this list of tasks is used to create a list
+            of 'fake' envs for each task, which will just consist in applying the envs.
+            by default None
+
+        ## Examples:
+
+        - Using a list of environments:
+
+        >>> import gym
+        >>> from gym.envs.classic_control import CartPoleEnv
+        >>> from functools import partial
+        >>> def env_fn(i: int) -> CartPoleEnv:
+        ...     env = gym.make("CartPole-v0")
+        ...     # Change the length of the pole.
+        ...     env.unwrapped.length = 0.5 + 0.1 * i
+        ...     return env
+        ...
+        >>> multi_task_cartpole = MultiTaskEnv([partial(env_fn, i) for i in range(10)])
+        >>> multi_task_cartpole.length
+        0.5
+        >>> multi_task_cartpole.change_task(1)
+        >>> multi_task_cartpole.length
+        0.6
+        
+        - Using a single env and a list of tasks:
+
+        >>> import gym
+        >>> from gym.envs.classic_control import CartPoleEnv
+        >>> from .tasks import ChangeEnvAttributes
+        >>> tasks = [ChangeEnvAttributes(length=0.5 + 0.1 * i) for i in range(10)]
+        >>> multi_task_cartpole = MultiTaskEnv(gym.make("CartPole-v0"), tasks)
+        >>> multi_task_cartpole.length
+        0.5
+        >>> multi_task_cartpole.change_task(1)
+        >>> multi_task_cartpole.length
+        0.6
         """
         self._envs: List[Union[gym.Env], Callable[..., gym.Env]] = []
         # TODO: Should we always require env constructors rather than envs themselves?
         if isinstance(env, gym.Env):
-            env = [env]
+            tasks = tasks or [ChangeEnvAttributes(get_changeable_attributes(env))]
+            env = [partial(task, env) for task in tasks]
+
+        self.tasks: List[Task] = tasks or []
         for task_env in env:
             self._envs.append(task_env)
 
@@ -73,7 +125,7 @@ class MultiTaskEnv(IterableWrapper):
     def current_task(self):
         return self._current_task_index
     
-    def switch_tasks(self, new_task_index: int) -> None:
+    def change_task(self, new_task_index: int) -> None:
         assert 0 <= new_task_index < self.nb_tasks
 
         # TODO: Do we want to close envs on switching tasks? or not?

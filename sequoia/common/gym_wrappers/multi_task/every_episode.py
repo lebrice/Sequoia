@@ -26,7 +26,7 @@ class ChangeTaskAfterEachEpisode(MultiTaskEnv):
 
     def reset(self):
         next_task_index = self.new_task()
-        self.switch_tasks(new_task_index=next_task_index)
+        self.change_task(new_task_index=next_task_index)
         return super().reset()
 
     def seed(self, seed: Optional[int]) -> List[int]:
@@ -52,5 +52,5 @@ class RoundRobinEnv(ChangeTaskAfterEachEpisode):
 
     def reset(self):
         new_task_index = (self._current_task_index + 1) % self.nb_tasks
-        self.switch_tasks(new_task_index=new_task_index)
+        self.change_task(new_task_index=new_task_index)
         return super().reset()
