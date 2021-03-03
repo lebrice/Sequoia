@@ -23,7 +23,6 @@ from wandb.wandb_run import Run
 
 from sequoia.common.gym_wrappers import RenderEnvWrapper
 from sequoia.common import Config, TrainerConfig
-from sequoia.common.config import WandbLoggerConfig
 from sequoia.settings import ActiveSetting, PassiveSetting
 from sequoia.settings.active.continual import ContinualRLSetting
 from sequoia.settings.assumptions.incremental import IncrementalSetting
@@ -205,12 +204,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             self.config = setting.config
 
         setting_name: str = setting.get_name()
-        dataset: str = setting.dataset
-        wandb_options: WandbLoggerConfig = self.trainer_options.wandb
-        if wandb_options.run_name is None:
-            wandb_options.run_name = f"{method_name}-{setting_name}" + (
-                f"-{dataset}" if dataset else ""
-            )
+        dataset = setting.dataset
 
         if isinstance(setting, IncrementalSetting):
             if self.hparams.multihead is None:
@@ -354,8 +348,12 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         """
         # We use this here to create loggers!
         callbacks = self.create_callbacks(setting)
+        loggers = []
+        if setting.wandb:
+            wandb_logger = setting.wandb.make_logger()
+            loggers.append(wandb_logger)
         trainer = self.trainer_options.make_trainer(
-            config=self.config, callbacks=callbacks,
+            config=self.config, callbacks=callbacks, loggers=loggers,
         )
         return trainer
 

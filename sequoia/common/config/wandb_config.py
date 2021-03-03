@@ -205,12 +205,12 @@ class WandbConfig(Serializable):
                 pass
         return run
 
-    def make_logger(self, wandb_parent_dir: Path) -> WandbLogger:
+    def make_logger(self, wandb_parent_dir: Path = None) -> WandbLogger:
         logger.info(f"Creating a WandbLogger with using options {self}.")
         self.wandb_login()
         wandb_logger = WandbLogger(
             name=self.run_name,
-            save_dir=str(wandb_parent_dir),
+            save_dir=str(wandb_parent_dir) if wandb_parent_dir else None,
             offline=self.offline,
             id=self.run_id,
             anonymous=self.anonymous,
@@ -224,11 +224,3 @@ class WandbConfig(Serializable):
             reinit=True,
         )
         return wandb_logger
-
-
-
-
-@dataclass
-class WandbLoggerConfig(WandbConfig):
-    """ Configuration options for the wandb logger of pytorch-lightning. """
-    
