@@ -89,7 +89,7 @@ class IncrementalSetting(ContinualSetting):
     known_task_boundaries_at_train_time: bool = constant(True)
     # Wether we get informed when reaching the boundary between two tasks during
     # training. Only used when `smooth_task_boundaries` is False.
-    known_task_boundaries_at_test_time: bool = constant(True)
+    known_task_boundaries_at_test_time: bool = True
 
     # The number of tasks. By default 0, which means that it will be set
     # depending on other fields in __post_init__, or eventually be just 1.
@@ -387,7 +387,7 @@ class IncrementalSetting(ContinualSetting):
             test_results: Results = test_env.get_results()
 
         except NotImplementedError:
-            logger.info(
+            logger.debug(
                 f"Will query the method for actions at each step, "
                 f"since it doesn't implement a `test` method."
             )
