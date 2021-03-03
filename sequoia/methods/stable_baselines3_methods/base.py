@@ -5,7 +5,7 @@ See https://stable-baselines3.readthedocs.io/en/master/guide/install.html
 import warnings
 from abc import ABC
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union, Mapping
+from typing import Any, Callable, ClassVar, Dict, List, Mapping, Optional, Type, Union
 
 import gym
 import torch
@@ -24,19 +24,17 @@ from stable_baselines3.common.base_class import (
     is_wrapped,
 )
 from stable_baselines3.common.vec_env.obs_dict_wrapper import ObsDictWrapper
+from wandb.wandb_run import Run
 
-from sequoia.common.hparams import HyperParameters, uniform, log_uniform, categorical
 from sequoia.common.gym_wrappers.batch_env.batched_vector_env import VectorEnv
 from sequoia.common.gym_wrappers.utils import has_wrapper
-from sequoia.common.transforms import Transforms
+from sequoia.common.hparams import HyperParameters, log_uniform
 from sequoia.settings import Method, Setting
 from sequoia.settings.active.continual import ContinualRLSetting
 from sequoia.settings.active.continual.wrappers import (
     NoTypedObjectsWrapper,
     RemoveTaskLabelsWrapper,
 )
-from sequoia.common.config import WandbConfig
-from sequoia.utils import Parseable, Serializable
 from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
@@ -98,6 +96,7 @@ class SB3BaseHParams(HyperParameters):
 
     The command-line arguments for these are created with simple-parsing.
     """
+
     # The policy model to use (MlpPolicy, CnnPolicy, ...)
     policy: Optional[Union[str, Type[BasePolicy]]] = choice(
         "MlpPolicy", "CnnPolicy", default=None
@@ -178,8 +177,6 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     # Path to a folder where the evaluations will be saved
     eval_log_path: Optional[str] = None
 
-    wandb: Optional[WandbConfig] = None
-    
     def __post_init__(self):
         self.model: Optional[BaseAlgorithm] = None
         # Extra wrappers to add to the train_env and valid_env before passing
@@ -235,11 +232,6 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
             # Use as many training steps as possible.
             self.train_steps_per_task = setting.steps_per_task
         # Otherwise, we can train basically as long as we want on each task.
-
-        if self.wandb:
-            self.wandb.wandb_init(config_dict={
-                "hparams": self.hparams.to_dict(),
-            })
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> BaseAlgorithm:
         """ Create a Model given the training and validation environments. """
@@ -334,8 +326,26 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         # since each call to `configure` will create a new Model.
         self.hparams = self.hparams.replace(**new_hparams)
 
+    def setup_wandb(self, run: Run) -> None:
+        """ Called by the Setting when using Weights & Biases, after `wandb.init`.
+
+        This method is here to provide Methods with the opportunity to log some of their
+        configuration options or hyper-parameters to wandb.
+
+        NOTE: The Setting has already set the `"setting"` entry in the `wandb.config` by
+        this point.
+
+        Parameters
+        ----------
+        run : wandb.Run
+            Current wandb Run.
+        """
+        run.config["hparams"] = self.hparams.to_dict()
+
+
 # We do this just to prevent errors when trying to decode the hparams class above, and
 # also to silence the related warnings from simple-parsing's decoding.py module.
 from sequoia.utils.serialization import register_decoding_fn
+
 register_decoding_fn(Type[BasePolicy], lambda v: v)
 register_decoding_fn(Callable, lambda v: v)

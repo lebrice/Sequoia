@@ -19,6 +19,7 @@ import wandb
 from pytorch_lightning import Callback, Trainer
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from simple_parsing import mutable_field
+from wandb.wandb_run import Run
 
 from sequoia.common.gym_wrappers import RenderEnvWrapper
 from sequoia.common import Config, TrainerConfig
@@ -551,3 +552,23 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             knowing what task we're switching to.
         """
         self.model.on_task_switch(task_id)
+
+    def setup_wandb(self, run: Run) -> None:
+        """ Called by the Setting when using Weights & Biases, after `wandb.init`.
+
+        This method is here to provide Methods with the opportunity to log some of their
+        configuration options or hyper-parameters to wandb.
+
+        NOTE: The Setting has already set the `"setting"` entry in the `wandb.config` by
+        this point.
+
+        Parameters
+        ----------
+        run : wandb.Run
+            Current wandb Run.
+        """
+        # TODO: (@lebrice) I think these will probably be set by the wandb logger,
+        # run.config["config"] = self.config.to_dict()
+        # Need to check wether this causes any issues.
+        # run.config["hparams"] = self.hparams.to_dict()
+        # run.config["trainer_config"] = self.trainer_options

@@ -1,15 +1,14 @@
 import itertools
 import json
-import time
 import math
+import time
 from abc import ABC, abstractmethod
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from io import StringIO
 from itertools import accumulate, chain
 from pathlib import Path
-from typing import (ClassVar, Dict, List, Optional, Sequence, Tuple, Type,
-                    TypeVar, Union)
+from typing import ClassVar, Dict, List, Optional, Sequence, Tuple, Type, TypeVar, Union
 
 import gym
 import matplotlib.pyplot as plt
@@ -21,24 +20,31 @@ from gym.vector import VectorEnv
 from gym.vector.utils.spaces import batch_space
 from simple_parsing import field
 from torch import Tensor
+from wandb.wandb_run import Run
 
 from sequoia.common import ClassificationMetrics, Metrics, RegressionMetrics
-from sequoia.common.config import Config
+from sequoia.common.config import Config, WandbConfig
 from sequoia.common.gym_wrappers.step_callback_wrapper import (
-    Callback, StepCallbackWrapper)
+    Callback,
+    StepCallbackWrapper,
+)
 from sequoia.common.gym_wrappers.utils import IterableWrapper
-from sequoia.settings.base import (Actions, Environment, Method, Results,
-                                   Rewards, Setting, SettingABC)
+from sequoia.settings.base import (
+    Actions,
+    Environment,
+    Method,
+    Results,
+    Rewards,
+    Setting,
+    SettingABC,
+)
 from sequoia.utils import constant, flag, mean
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import add_prefix
-
 from .continual import ContinualSetting
+from .incremental_results import IncrementalResults, TaskResults, TaskSequenceResults
 
 logger = get_logger(__file__)
-
-from .incremental_results import (IncrementalResults, TaskResults,
-                                  TaskSequenceResults)
 
 
 @dataclass
@@ -62,13 +68,14 @@ class IncrementalSetting(ContinualSetting):
 
         Adds the 'task labels' to the base Observation.
         """
+
         task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
-    
+
     # TODO: Actually add the 'smooth' task boundary case.
     # Wether we have clear boundaries between tasks, or if the transition is
     # smooth.
-    smooth_task_boundaries: bool = constant(False) # constant for now.
-    
+    smooth_task_boundaries: bool = constant(False)  # constant for now.
+
     # Wether task labels are available at train time.
     # NOTE: Forced to True at the moment.
     task_labels_at_train_time: bool = flag(default=True)
@@ -97,15 +104,19 @@ class IncrementalSetting(ContinualSetting):
     # method of the Environment.
     monitor_training_performance: bool = False
 
-    # TODO: Add wandb support for all methods, not just the baseline.
-    
+    # Options related to Weights & Biases (wandb). Turned Off by default. Passing any of
+    # its arguments will enable wandb.
+    wandb: Optional[WandbConfig] = None
+
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
 
         self.train_env: Environment = None  # type: ignore
         self.val_env: Environment = None  # type: ignore
         self.test_env: TestEnvironment = None  # type: ignore
-        
+
+        self.wandb_run: Optional[Run] = None
+
         self._start_time: Optional[float] = None
         self._end_time: Optional[float] = None
         self._setting_logged_to_wandb: bool = False
@@ -186,8 +197,13 @@ class IncrementalSetting(ContinualSetting):
         if self.monitor_training_performance:
             results._online_training_performance = []
 
+        if self.wandb:
+            # Init wandb, and then log the setting's options.
+            self.wandb_run = self.setup_wandb(method)
+            method.setup_wandb(self.wandb_run)
+
         method.set_training()
-        
+
         self._start_time = time.process_time()
         
         for task_id in range(self.phases):
@@ -216,26 +232,17 @@ class IncrementalSetting(ContinualSetting):
                 results._online_training_performance.append(
                     task_train_env.get_online_performance()
                 )
-            
+
             task_valid_env.close()
 
             logger.info(f"Finished Training on task {task_id}.")
             test_metrics: TaskSequenceResults = self.test_loop(method)
-            
+
             # Add a row to the transfer matrix.
             results.append(test_metrics)
             logger.info(f"Resulting objective of Test Loop: {test_metrics.objective}")
 
             if wandb.run:
-                if not self._setting_logged_to_wandb:
-                    logger.info(f"Detected that wandb is being used, will fill the `config` with values from the setting.")
-                    wandb.config["method"] = method.get_name()
-                    wandb.config["setting"] = self.get_name()
-                    for k, v in self.to_dict().items():
-                        if not k.startswith("_"):
-                            wandb.config[f"setting/{k}"] = v
-                    self._setting_logged_to_wandb = True
-
                 d = add_prefix(test_metrics.to_log_dict(), prefix="Test", sep="/")
                 # d = add_prefix(test_metrics.to_log_dict(), prefix="Test", sep="/")
                 d["current_task"] = task_id
@@ -248,10 +255,28 @@ class IncrementalSetting(ContinualSetting):
         self.log_results(method, results)
         return results
 
-    def add_training_performance_monitor(self, env: Environment) -> Environment:
-        return env
-    
-    def log_results(self, method: Method, results: IncrementalResults)-> None:
+    def setup_wandb(self, method: Method) -> Run:
+        """Call wandb.init, log the experiment configuration to the config dict.
+
+        This assumes that `self.wandb` is not None. This happens when one of the wandb
+        arguments is passed.
+
+        Parameters
+        ----------
+        method : Method
+            Method to be applied.
+        """
+        assert isinstance(self.wandb, WandbConfig)
+        run = self.wandb.wandb_init()
+        wandb.summary["setting"] = self.get_name()
+        wandb.summary["method"] = method.get_name()
+        for k, v in self.to_dict().items():
+            if not k.startswith("_"):
+                wandb.config[f"setting/{k}"] = v
+        assert wandb.run is run
+        return run
+
+    def log_results(self, method: Method, results: IncrementalResults) -> None:
         """
         TODO: Create the tabs we need to show up in wandb:
         1. Final
@@ -260,9 +285,9 @@ class IncrementalSetting(ContinualSetting):
             - Runtime
         2. Test
             - Task i (evolution over time (x axis is the task id, if possible))
-        """        
+        """
         logger.info(results.summary())
-        
+
         if wandb.run:
             wandb.summary["method"] = method.get_name()
             wandb.summary["setting"] = self.get_name()
@@ -271,12 +296,11 @@ class IncrementalSetting(ContinualSetting):
                 wandb.summary["dataset"] = dataset
 
             # wandb.log(results.to_log_dict())
-            
+
             # BUG: Sometimes logging a matplotlib figure causes a crash:
             # File "/home/fabrice/miniconda3/envs/sequoia/lib/python3.8/site-packages/plotly/matplotlylib/mplexporter/utils.py", line 246, in get_grid_style
             # if axis._gridOnMajor and len(gridlines) > 0:
             # AttributeError: 'XAxis' object has no attribute '_gridOnMajor'
-            # wandb.log(results.make_plots())
             wandb.log(results.make_plots())
 
             wandb.run.finish()
@@ -297,7 +321,7 @@ class IncrementalSetting(ContinualSetting):
         Supervised or Reinforcement learning settings.
         """
         test_env = self.test_dataloader()
-        
+
         test_env: TestEnvironment
 
         was_training = method.training
@@ -373,7 +397,7 @@ class IncrementalSetting(ContinualSetting):
                 #     logger.debug(f"Env is closed")
                 #     break
                 # logger.debug(f"At step {step}")
-                
+
                 # BUG: Need to pass an action space that actually reflects the batch
                 # size, even for the last batch!
 
@@ -383,7 +407,7 @@ class IncrementalSetting(ContinualSetting):
                 if getattr(test_env.action_space, "shape", None):
                     assert obs.x.shape, "x should also have a shape (i.e. not an int)"
                     obs_batch_size = obs.x.shape[0]
-                    action_space_batch_size = test_env.action_space.shape[0] 
+                    action_space_batch_size = test_env.action_space.shape[0]
                     if obs_batch_size != action_space_batch_size:
                         single_action_space = test_env.single_action_space
                         action_space = batch_space(single_action_space, obs_batch_size)
@@ -442,6 +466,7 @@ class IncrementalSetting(ContinualSetting):
     ) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
         """ Returns the Test Environment (for all the tasks). """
         return super().test_dataloader(*args, **kwargs)
+
 
 class TestEnvironment(gym.wrappers.Monitor, IterableWrapper, ABC):
     """ Wrapper around a 'test' environment, which limits the number of steps

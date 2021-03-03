@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import *
 
 import wandb
+from wandb.wandb_run import Run
 from pytorch_lightning.loggers import WandbLogger
 from simple_parsing import field, list_field
 
@@ -148,7 +149,7 @@ class WandbConfig(Serializable):
             assert isinstance(key, str)
         return wandb.login(key=key)
 
-    def wandb_init(self, config_dict: Dict) -> wandb.wandb_run.Run:
+    def wandb_init(self, config_dict: Dict = None) -> wandb.wandb_run.Run:
         """Executes the call to `wandb.init()`. 
 
         TODO(@lebrice): Not sure if it still makes sense to call `wandb.init`
@@ -195,20 +196,13 @@ class WandbConfig(Serializable):
         )
         logger.info(f"Run: {run}")
         if run:
-            run.save()
-
+            if self.run_name is None:
+                self.run_name = run.name
+            # run.save()
             if run.resumed:
                 # TODO: add *proper* wandb resuming, probaby by using @nitarshan 's md5 id cool idea.
                 # wandb.restore(self.log_dir / "checkpoints")
                 pass
-
-            wandb.save(str(self.log_dir / "*"))
-            self.log_dir.mkdir(exist_ok=True, parents=True)
-            self.save_yaml(self.log_dir / "config.yml")
-
-            if self.run_name is None:
-                self.run_name = run.name
-
         return run
 
     def make_logger(self, wandb_parent_dir: Path) -> WandbLogger:
