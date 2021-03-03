@@ -35,6 +35,7 @@ from sequoia.settings.active.continual.wrappers import (
     NoTypedObjectsWrapper,
     RemoveTaskLabelsWrapper,
 )
+from sequoia.common.config import WandbConfig
 from sequoia.utils import Parseable, Serializable
 from sequoia.utils.logging_utils import get_logger
 
@@ -177,6 +178,8 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     # Path to a folder where the evaluations will be saved
     eval_log_path: Optional[str] = None
 
+    wandb: Optional[WandbConfig] = None
+    
     def __post_init__(self):
         self.model: Optional[BaseAlgorithm] = None
         # Extra wrappers to add to the train_env and valid_env before passing
@@ -232,6 +235,11 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
             # Use as many training steps as possible.
             self.train_steps_per_task = setting.steps_per_task
         # Otherwise, we can train basically as long as we want on each task.
+
+        if self.wandb:
+            self.wandb.wandb_init(config_dict={
+                "hparams": self.hparams.to_dict(),
+            })
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> BaseAlgorithm:
         """ Create a Model given the training and validation environments. """

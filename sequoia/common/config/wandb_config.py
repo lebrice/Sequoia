@@ -119,6 +119,8 @@ class WandbConfig(Serializable):
     # Sets the version, mainly used to resume a previous run.
     version: Optional[str] = None
     
+    # Save checkpoints in wandb dir to upload on W&B servers.
+    log_model: bool = False
     
     @property
     def log_dir(self):
@@ -173,7 +175,7 @@ class WandbConfig(Serializable):
 
         logger.info(f"Wandb run id: {self.run_id}")
         logger.info(
-            f"Using wandb. Group name: {self.run_group} run name: {self.run_name}, "
+            f"Using wandb. Group name: {self.group} run name: {self.run_name}, "
             f"log_dir: {self.log_dir}"
         )
 
@@ -209,15 +211,9 @@ class WandbConfig(Serializable):
 
         return run
 
-
-@dataclass
-class WandbLoggerConfig(WandbConfig):
-    """ Configuration options for the wandb logger of pytorch-lightning. """
-    # Save checkpoints in wandb dir to upload on W&B servers.
-    log_model: bool = False
-
     def make_logger(self, wandb_parent_dir: Path) -> WandbLogger:
         logger.info(f"Creating a WandbLogger with using options {self}.")
+        self.wandb_login()
         wandb_logger = WandbLogger(
             name=self.run_name,
             save_dir=str(wandb_parent_dir),
@@ -236,3 +232,9 @@ class WandbLoggerConfig(WandbConfig):
         return wandb_logger
 
 
+
+
+@dataclass
+class WandbLoggerConfig(WandbConfig):
+    """ Configuration options for the wandb logger of pytorch-lightning. """
+    
