@@ -280,7 +280,6 @@ class IncrementalSetting(ContinualSetting):
             # if axis._gridOnMajor and len(gridlines) > 0:
             # AttributeError: 'XAxis' object has no attribute '_gridOnMajor'
             # wandb.log(results.make_plots())
-            wandb.log(final_dict)
             wandb.log(results.make_plots())
 
             wandb.run.finish()
