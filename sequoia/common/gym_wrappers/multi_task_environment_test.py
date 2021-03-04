@@ -9,9 +9,9 @@ from gym.vector import SyncVectorEnv
 from gym.wrappers import TimeLimit
 
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
-from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
-from sequoia.conftest import monsterkong_required, param_requires_monsterkong, atari_py_required
-from sequoia.settings import RLSetting
+from sequoia.common.spaces.named_tuple import NamedTupleSpace
+from sequoia.conftest import (atari_py_required, monsterkong_required,
+                              param_requires_monsterkong)
 from sequoia.utils.utils import dict_union
 
 from .multi_task_environment import MultiTaskEnvironment
@@ -319,7 +319,7 @@ def test_task_id_is_added_even_when_no_known_task_schedule():
 
 @monsterkong_required
 def test_task_schedule_monsterkong():
-    env: MetaMonsterKongEnv = gym.make("MetaMonsterKong-v1")
+    env = gym.make("MetaMonsterKong-v1")
     from gym.wrappers import TimeLimit
     env = TimeLimit(env, max_episode_steps=10)
     env = MultiTaskEnvironment(env, task_schedule={
@@ -365,7 +365,7 @@ def test_task_schedule_with_callables():
     """ Apply functions to the env at a given step.
     
     """
-    env: MetaMonsterKongEnv = gym.make("MetaMonsterKong-v1")
+    env = gym.make("MetaMonsterKong-v1")
     from gym.wrappers import TimeLimit
     env = TimeLimit(env, max_episode_steps=10)
     
@@ -408,7 +408,7 @@ def test_task_schedule_with_callables():
 
 @monsterkong_required
 def test_random_task_on_each_episode():
-    env: MetaMonsterKongEnv = gym.make("MetaMonsterKong-v1")
+    env = gym.make("MetaMonsterKong-v1")
     from gym.wrappers import TimeLimit
     env = TimeLimit(env, max_episode_steps=10)
     env = MultiTaskEnvironment(
@@ -443,14 +443,13 @@ def test_random_task_on_each_episode():
     
     env.close()
 
-from sequoia.conftest import monsterkong_required
 
 
 def test_random_task_on_each_episode_and_only_one_task_in_schedule():
     """ BUG: When the goal is to have only one task, it instead keeps sampling a new
     task from the 'distribution', in the case of cartpole!
     """
-    env: MetaMonsterKongEnv = gym.make("CartPole-v1")
+    env = gym.make("CartPole-v1")
     from gym.wrappers import TimeLimit
     env = TimeLimit(env, max_episode_steps=10)
     env = MultiTaskEnvironment(

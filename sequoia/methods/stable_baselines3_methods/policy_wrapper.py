@@ -215,25 +215,25 @@ class PolicyWrapper(BasePolicy, ABC, Generic[Policy]):
 from stable_baselines3 import A2C, DDPG, DQN, PPO, SAC
 
 
-# Either 'manually', like this:
-class A2CWithEWC(A2C):
-    def __init__(self, *args, ewc_coefficient: float = 1.0, ewc_p_norm: int = 2, **kwargs):
-        self.ewc_coefficient = ewc_coefficient
-        self.ewc_p_norm = ewc_p_norm
-        super().__init__(*args, **kwargs)
-        self.policy: Union[ActorCriticPolicy, EWC]
+# # Either 'manually', like this:
+# class A2CWithEWC(A2C):
+#     def __init__(self, *args, ewc_coefficient: float = 1.0, ewc_p_norm: int = 2, **kwargs):
+#         self.ewc_coefficient = ewc_coefficient
+#         self.ewc_p_norm = ewc_p_norm
+#         super().__init__(*args, **kwargs)
+#         self.policy: Union[ActorCriticPolicy, EWCTask]
 
-    def _setup_model(self):
-        super()._setup_model()
-        # Just to show that the policy was just wrapped.
-        self.policy = EWC._wrap_policy(
-            self.policy,
-            ewc_coefficient=self.ewc_coefficient,
-            ewc_p_norm=self.ewc_p_norm,
-        )
+#     def _setup_model(self):
+#         super()._setup_model()
+#         # Just to show that the policy was just wrapped.
+#         self.policy = EWCTask._wrap_policy(
+#             self.policy,
+#             ewc_coefficient=self.ewc_coefficient,
+#             ewc_p_norm=self.ewc_p_norm,
+#         )
 
-    def on_task_switch(self, task_id: Optional[int]) -> None:
-        self.policy.on_task_switch(task_id)
+#     def on_task_switch(self, task_id: Optional[int]) -> None:
+#         self.policy.on_task_switch(task_id)
 
 
 ## OR automatically, like this!

@@ -58,9 +58,9 @@ def is_sparse(iterable: Iterable[bool]) -> bool:
             if none_values:
                 return True
     return False
-    # Equivalent, but with a copy:
-    values = list(values)
-    return any(v is None for v in values) and not all(v is None for v in values)
+    # # Equivalent, but with a copy:
+    # values = list(values)
+    # return any(v is None for v in values) and not all(v is None for v in values)
 
 
 @pytest.mark.parametrize("base_space", base_spaces)

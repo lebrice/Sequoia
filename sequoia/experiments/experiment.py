@@ -363,7 +363,7 @@ def launch_batch_of_runs(
         run_configs.append(run_config)
 
     arguments_of_each_run: List[Dict] = []
-    results_of_each_run: List[Result] = []
+    results_of_each_run: List[Results] = []
     # Create one 'job' per setting-method combination:
     for setting_type, method_type, run_config in zip(
         setting_types, method_types, run_configs

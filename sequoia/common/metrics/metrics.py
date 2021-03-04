@@ -53,12 +53,12 @@ class Metrics(Serializable):
             return self
         return NotImplemented
 
-    def __mul__(self, factor: Union[float, Tensor]) -> "Loss":
+    def __mul__(self, factor: Union[float, Tensor]) -> "Metrics":
         # By default, multiplying or dividing a Metrics object doesn't change
         # anything about it.
         return self
 
-    def __rmul__(self, factor: Union[float, Tensor]) -> "Loss":
+    def __rmul__(self, factor: Union[float, Tensor]) -> "Metrics":
         # Reverse-order multiply, used to do b * a when a * b returns
         # NotImplemented.
         return self.__mul__(factor)

@@ -12,7 +12,8 @@ from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
-class SettingMeta(_DataModuleWrapper, Type["Setting"]):
+
+class SettingMeta(_DataModuleWrapper):
     """ Metaclass for the nodes in the Setting inheritance tree.
     
     Might remove this. Was experimenting with using this to create class

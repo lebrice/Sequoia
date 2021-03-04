@@ -71,7 +71,7 @@ class EWCTask(AuxiliaryTask):
         )
 
     def __init__(
-        self, *args, name: str = None, options: "EWC.Options" = None, **kwargs
+        self, *args, name: str = None, options: "EWCTask.Options" = None, **kwargs
     ):
         super().__init__(*args, options=options, name=name, **kwargs)
         self.options: EWCTask.Options

@@ -12,8 +12,8 @@ def baseline_demo_simple():
     config = Config()
     method = BaselineMethod(config=config, max_epochs=1)
     
-    ## Create *any* Setting from the tree, for example:
-    ## Supervised Learning Setting:
+    # Create *any* Setting from the tree, for example:
+    # Supervised Learning Setting:
     # setting = TaskIncrementalSetting(
     #     dataset="cifar10",
     #     nb_tasks=2,
@@ -53,9 +53,9 @@ def baseline_demo_command_line():
 
 
 if __name__ == "__main__":
-    ### Option 1: Create the BaselineMethod and Settings manually.
+    # Option 1: Create the BaselineMethod and Settings manually.
     baseline_demo_simple()
     
-    ### Option 2: Create the BaselineMethod and Settings from the command-line.
+    # Option 2: Create the BaselineMethod and Settings from the command-line.
     # baseline_demo_command_line()
  

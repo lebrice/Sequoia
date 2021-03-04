@@ -2,13 +2,9 @@
 """
 import sys
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Type, Optional
-
-from collections import defaultdict
-from pathlib import Path
+from typing import Dict, Tuple, Optional
 
 import gym
-import pandas as pd
 import tqdm
 import torch
 from numpy import inf
@@ -19,7 +15,7 @@ from simple_parsing import ArgumentParser
 
 # This "hack" is required so we can run `python examples/quick_demo.py`
 sys.path.extend([".", ".."])
-from sequoia import Method, Setting
+from sequoia import Method
 from sequoia.common import Config
 from sequoia.settings import DomainIncrementalSetting, Environment
 from sequoia.settings.passive.cl.objects import (
@@ -87,17 +83,17 @@ class MyModel(nn.Module):
         self, batch: Tuple[Observations, Optional[Rewards]], environment: Environment
     ) -> Tuple[Tensor, Dict]:
         """Shared step used for both training and validation.
-                
+
         Parameters
         ----------
         batch : Tuple[Observations, Optional[Rewards]]
             Batch containing Observations, and optional Rewards. When the Rewards are
             None, it means that we'll need to provide the Environment with actions
             before we can get the Rewards (e.g. image labels) back.
-            
+
             This happens for example when being applied in a Setting which cares about
             sample efficiency or training performance, for example.
-            
+
         environment : Environment
             The environment we're currently interacting with. Used to provide the
             rewards when they aren't already part of the batch (as mentioned above).
@@ -146,7 +142,7 @@ class DemoMethod(Method, target_setting=DomainIncrementalSetting):
         learning_rate: float = 0.001
 
         @classmethod
-        def from_args(cls) -> "HParams":
+        def from_args(cls) -> "DemoMethod.HParams":
             """ Get the hparams of the method from the command-line. """
             parser = ArgumentParser(description=cls.__doc__)
             parser.add_arguments(cls, dest="hparams")
@@ -252,15 +248,15 @@ def demo_simple():
     """ Simple demo: Creating and applying a Method onto a Setting. """
     from sequoia.settings import DomainIncrementalSetting
 
-    ## 1. Creating the setting:
+    # 1. Creating the setting:
     setting = DomainIncrementalSetting(dataset="fashionmnist", batch_size=32)
-    ## 2. Creating the Method
+    # 2. Creating the Method
     method = DemoMethod()
     # (Optional): You can also create a Config, which holds other fields like
     # `log_dir`, `debug`, `device`, etc. which aren't specific to either the
     # Setting or the Method.
     config = Config(debug=True, render=False)
-    ## 3. Applying the method to the setting: (optionally passing a Config to
+    # 3. Applying the method to the setting: (optionally passing a Config to
     # use for that run)
     results = setting.apply(method, config=config)
     print(results.summary())
@@ -269,7 +265,7 @@ def demo_simple():
 
 def demo_command_line():
     """ Run this quick demo from the command-line. """
-    from sequoia.settings import DomainIncrementalSetting, DomainIncrementalSetting
+    from sequoia.settings import DomainIncrementalSetting
 
     parser = ArgumentParser(description=__doc__)
     # Add command-line arguments for the Method and the Setting.
@@ -296,22 +292,22 @@ def demo_command_line():
 if __name__ == "__main__":
     # Example: Evaluate a Method on a single CL setting:
 
-    ###
-    ### First option: Run the demo, creating the Setting and Method directly.
-    ###
+    #
+    # First option: Run the demo, creating the Setting and Method directly.
+    #
     # demo_simple()
 
-    ##
-    ## Second part of the demo: Same as before, but customize the options for
-    ## the Setting and the Method from the command-line.
-    ##
+    #
+    # Second part of the demo: Same as before, but customize the options for
+    # the Setting and the Method from the command-line.
+    #
 
     demo_command_line()
 
-    ##
-    ## As a little bonus: Evaluate on *ALL* the applicable settings, and
-    ## aggregate the results in a nice little LaTeX-formatted table.
-    ##
+    #
+    # As a little bonus: Evaluate on *ALL* the applicable settings, and
+    # aggregate the results in a nice little LaTeX-formatted table.
+    #
 
     # from examples.demo_utils import demo_all_settings
     # all_results = demo_all_settings(DemoMethod)

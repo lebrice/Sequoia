@@ -1,53 +1,41 @@
 import sys
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Union
 
 import gym
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import tqdm
 from gym import spaces
 from gym.spaces import Box
-from numpy import inf
-from scipy.signal import lfilter
 from sequoia import Environment
 from sequoia.common import Config
 from sequoia.common.spaces import Image
 from sequoia.settings import (
     Actions,
-    ActiveEnvironment,
-    ActiveSetting,
     Method,
     Observations,
+    ActiveSetting,
     PassiveEnvironment,
-    PassiveSetting,
-    Rewards,
     Setting,
-    DomainIncrementalSetting,
     TaskIncrementalRLSetting,
     TaskIncrementalSetting,
 )
-from sequoia.settings.assumptions import IncrementalSetting
 from simple_parsing import ArgumentParser
-from torchvision import transforms
-
-import sys
 
 sys.path.extend([".", ".."])
 
-from model_sl import PnnClassifier
 from model_rl import PnnA2CAgent
+from model_sl import PnnClassifier
 
 
 class PnnMethod(Method, target_setting=Setting):
     """
     Here we implement the PNN Method according to the characteristics and methodology of
     the current proposal.  It should be as much as possible agnostic to the model and
-    setting we are going to use. 
+    setting we are going to use.
 
-    The method proposed can be specific to a setting to make comparisons easier. 
+    The method proposed can be specific to a setting to make comparisons easier.
     Here what we control is the model's training process, given a setting that delivers
     data in a certain way.
     """
@@ -78,14 +66,14 @@ class PnnMethod(Method, target_setting=Setting):
         self.optimizer: torch.optim.Optimizer
 
     def configure(self, setting: Setting):
-        """ Called before the method is applied on a setting (before training). 
+        """ Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
         """
 
         input_space: Box = setting.observation_space[0]
-        task_label_space = setting.observation_space[1]
+        # task_label_space = setting.observation_space[1]
 
         # For now all Settings have `Discrete` (i.e. classification) action spaces.
         action_space: spaces.Discrete = setting.action_space
@@ -292,15 +280,13 @@ class PnnMethod(Method, target_setting=Setting):
 
     def fit_sl(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
         """ Train on a Supervised Learning (a.k.a. "passive") environment. """
-        observations: TaskIncrementalSetting.Observations = train_env.reset()
-        cuda_observations = observations.to(self.device)
         assert isinstance(self.model, PnnClassifier)
         assert self.hparams
 
         self.set_optimizer()
 
-        best_val_loss = inf
-        best_epoch = 0
+        # best_val_loss = inf
+        # best_epoch = 0
         for epoch in range(self.hparams.max_epochs_per_task):
             self.model.train()
             print(f"Starting epoch {epoch}")
@@ -399,8 +385,9 @@ def main_sl():
 
     # setting: TaskIncrementalSetting = args.setting
     setting: TaskIncrementalSetting = TaskIncrementalSetting.from_argparse_args(
-    # setting: DomainIncrementalSetting = DomainIncrementalSetting.from_argparse_args(
-        args, dest="setting"
+        # setting: DomainIncrementalSetting = DomainIncrementalSetting.from_argparse_args(
+        args,
+        dest="setting",
     )
     config: Config = Config.from_argparse_args(args, dest="config")
 

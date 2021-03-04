@@ -1,7 +1,7 @@
 """Tests for the class-incremental version of the Model class.
 """
 # from sequoia.conftest import config
-from typing import Dict, List, Tuple, Type
+from typing import Dict, List, Tuple, Type, Optional
 
 import pytest
 import torch

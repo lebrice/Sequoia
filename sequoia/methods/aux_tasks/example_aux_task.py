@@ -34,7 +34,7 @@ class ExampleAuxTask(AuxiliaryTask):
     def __init__(self,
                  *args,
                  name: str = None,
-                 options: "EWC.Options" = None,
+                 options: "ExampleAuxTask.Options" = None,
                  **kwargs):
         super().__init__(*args, options=options, name=name, **kwargs)
         self.options: ExampleAuxTask.Options

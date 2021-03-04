@@ -1,12 +1,14 @@
-from pathlib import Path
-from dataclasses import dataclass
 import json
-from sequoia.utils import Parseable, Serializable
-from typing import Optional, Dict, Union, List, Tuple
-from sequoia.settings import Setting, Method, Results
-from .experiment import Experiment, parse_setting_and_method_instances
-import sys
 import shlex
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Type, Union
+
+from sequoia.common import Config
+from sequoia.settings import Method, Results, Setting
+
+from .experiment import Experiment, parse_setting_and_method_instances
 
 
 @dataclass
