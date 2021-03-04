@@ -14,3 +14,13 @@ class IIDSetting(TaskIncrementalSetting):
     task).
     """
     nb_tasks: int = constant(1)
+    
+    @property
+    def phases(self) -> int:
+        """The number of training 'phases', i.e. how many times `method.fit` will be
+        called.
+        
+        Defaults to the number of tasks, but may be different, for instance in so-called
+        Multi-Task Settings, this is set to 1.
+        """
+        return 1

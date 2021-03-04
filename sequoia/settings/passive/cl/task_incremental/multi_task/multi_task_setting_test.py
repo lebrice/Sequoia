@@ -17,7 +17,7 @@ import torch
 from gym.spaces import Discrete
 from sequoia.common.spaces import Image, NamedTupleSpace
 from sequoia.settings import Environment, Actions
-
+from sequoia.methods import Method
 from .multi_task_setting import MultiTaskSetting
 
 
@@ -69,6 +69,8 @@ def test_multitask_setting():
 
     with setting.val_dataloader(batch_size=32, num_workers=0) as val_env:
         check_is_multitask_env(val_env, has_rewards=True)
+        
+
 
 
 @pytest.mark.xfail(reason="test environments still operate in a 'sequential tasks' way")
@@ -85,3 +87,26 @@ def test_multitask_setting_test_env():
     # FIXME: Wait, actually, this test environment, will it be shuffled, or not?
     with setting.test_dataloader(batch_size=32, num_workers=0) as test_env:
         check_is_multitask_env(test_env, has_rewards=False)
+
+
+from sequoia.settings.assumptions.incremental import IncrementalSetting, TestEnvironment
+from sequoia.settings.assumptions.incremental_test import DummyMethod
+from sequoia.conftest import DummyEnvironment
+
+
+def test_on_task_switch_is_called_multi_task():
+    setting = MultiTaskSetting(
+        dataset="mnist",
+        nb_tasks=5,
+        # steps_per_task=100,
+        # max_steps=500,
+        # test_steps_per_task=100,
+        train_transforms=[],
+        test_transforms=[],
+        val_transforms=[],
+    )
+    method = DummyMethod()
+    results = setting.apply(method)
+    assert method.n_task_switches == 0
+    assert method.received_task_ids == []
+    assert method.received_while_training == []

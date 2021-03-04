@@ -109,6 +109,16 @@ class IncrementalSetting(ContinualSetting):
         self._start_time: Optional[float] = None
         self._end_time: Optional[float] = None
         self._setting_logged_to_wandb: bool = False
+    
+    @property
+    def phases(self) -> int:
+        """The number of training 'phases', i.e. how many times `method.fit` will be
+        called.
+        
+        Defaults to the number of tasks, but may be different, for instance in so-called
+        Multi-Task Settings, this is set to 1.
+        """
+        return self.nb_tasks
 
     @property
     def current_task_id(self) -> Optional[int]:
@@ -156,13 +166,8 @@ class IncrementalSetting(ContinualSetting):
                 )
             elif not task_labels_available:
                 method.on_task_switch(None)
-            elif self.nb_tasks == 1:
-                # NOTE: on_task_switch won't be called if there is only one "task",
-                # (as-in one task in a 'sequence' of tasks).
-                # TODO: in multi-task RL, i.e. RLSetting(dataset=..., nb_tasks=10),
-                # for instance, then there are indeed 10 tasks, but `self.tasks`
-                # is used here to describe the number of 'phases' in training and
-                # testing.
+            elif self.phases == 1:
+                # NOTE: on_task_switch won't be called if there is only one task.
                 pass
             else:
                 method.on_task_switch(task_id)
@@ -184,7 +189,8 @@ class IncrementalSetting(ContinualSetting):
         method.set_training()
         
         self._start_time = time.process_time()
-        for task_id in range(self.nb_tasks):
+        
+        for task_id in range(self.phases):
             logger.info(
                 f"Starting training"
                 + (f" on task {task_id}." if self.nb_tasks > 1 else ".")
