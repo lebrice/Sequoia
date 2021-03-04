@@ -2,12 +2,14 @@ import itertools
 from dataclasses import dataclass
 from typing import (Callable, ClassVar, Dict, List, Optional, Tuple, Type,
                     TypeVar, Union)
-
+import numpy as np
 import tqdm
 from simple_parsing import list_field
 from torch import Tensor
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
+from torch.utils.data import Subset
+from numpy.random import permutation
 from sequoia.common.gym_wrappers import RenderEnvWrapper, TransformObservation
 from sequoia.settings.assumptions.incremental import TestEnvironment
 from sequoia.settings.base import Method
@@ -20,6 +22,12 @@ from sequoia.utils.utils import constant
 from ..task_incremental_setting import TaskIncrementalSetting
 
 logger = get_logger(__file__)
+
+
+def shuffle(dataset: Dataset, rng: np.random.Generator) -> Dataset:
+    length = len(dataset)
+    indices = rng.permutation(range(length))
+    return Subset(dataset, indices)
 
 
 @dataclass
@@ -65,10 +73,10 @@ class MultiTaskSetting(TaskIncrementalSetting):
 
     def setup(self, stage=None, *args, **kwargs):
         super().setup(stage=stage, *args, **kwargs)
+    
+    def get_train_dataset(self) -> Dataset:
+        """ Returns the training dataset, which in this case will be shuffled.
 
-    def train_loop(self, method: Method):
-        """Runs a multi-task training loop, wether in RL or CL.
-        
         IDEA: We could probably do it the same way in both RL and SL:
         1. Create the 'datasets' for all the tasks;
         2. "concatenate"+"Shuffle" the "datasets":
@@ -76,19 +84,13 @@ class MultiTaskSetting(TaskIncrementalSetting):
             - in RL: Create a true `MultiTaskEnvironment` that accepts a list of envs as
               an input and alternates between environments at each episode.
               (either round-robin style, or randomly)
+
+        Returns
+        -------
+        Dataset
         """
-        logger.info(f"Starting training")
-        # Creating the dataloaders ourselves (rather than passing 'self' as
-        # the datamodule)
-        # TODO: Pass the train_dataloader and val_dataloader methods, rather than the envs?
-        task_train_loader = self.train_dataloader()
-        task_valid_loader = self.val_dataloader()
-        success = method.fit(train_env=task_train_loader, valid_env=task_valid_loader,)
-        task_train_loader.close()
-        task_valid_loader.close()
-    
-    def get_train_dataset(self) -> Dataset:
-        return ConcatDataset(self.train_datasets)
+        joined_dataset = ConcatDataset(self.train_datasets)
+        return shuffle(joined_dataset, rng=np.random)
 
     def get_val_dataset(self) -> Dataset:
         return ConcatDataset(self.val_datasets)

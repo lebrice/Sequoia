@@ -18,7 +18,17 @@ class RLSetting(TaskIncrementalRLSetting):
         super().__post_init__(*args, **kwargs)
         # Set this to True, so that we switch tasks randomly all the time.
         self._new_random_task_on_reset = True
-        self.nb_tasks = 1
+    
+    @property
+    def phases(self) -> int:
+        """The number of training 'phases', i.e. how many times `method.fit` will be
+        called.
+        
+        Defaults to the number of tasks, but may be different, for instance in so-called
+        Multi-Task Settings, this is set to 1.
+        """
+        return 1
+
     
     def create_test_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to a single test environment.

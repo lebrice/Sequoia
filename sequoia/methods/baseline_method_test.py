@@ -66,7 +66,7 @@ def test_incremental_cartpole_state(config: Config, trainer: Trainer):
 
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(120)
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Cuda is required.")
 def test_device_of_output_head_is_correct():
     """ There is a bug happening where the output head is on CPU while the rest of the

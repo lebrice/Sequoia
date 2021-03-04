@@ -43,7 +43,7 @@ class TransformObservation(TransformObservation_, IterableWrapper):
             for obs, rewards in self.env:
                 yield self(obs), rewards
         else:
-            yield from super().__iter__()
+            return super().__iter__()
 
 
 class TransformReward(TransformReward_, IterableWrapper):
