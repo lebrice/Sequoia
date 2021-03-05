@@ -40,6 +40,7 @@ def is_atari_env(env: Union[str, gym.Env]) -> bool:
 
 logger = get_logger(__file__)
 
+EnvType = TypeVar("EnvType", bound=gym.Env)
 ObservationType = TypeVar("ObservationType")
 ActionType = TypeVar("ActionType")
 RewardType = TypeVar("RewardType")
@@ -98,7 +99,7 @@ class MayCloseEarly(gym.Wrapper, ABC):
         self._is_closed = True
 
 
-class IterableWrapper(gym.Wrapper, IterableDataset, ABC):
+class IterableWrapper(gym.Wrapper, IterableDataset, Generic[EnvType], ABC):
     """ ABC that allows iterating over the wrapped env, if it is iterable.
     
     This allows us to wrap dataloader-based Environments and still use the gym

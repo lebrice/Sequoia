@@ -57,7 +57,7 @@ class Rewards(Batch):
     TODO: Maybe add the task labels as a part of the 'Reward', to help with the
     training of task-inference methods later on when we add those.
     """
-    y: Optional[Tensor]
+    y: Tensor
 
     @property
     def labels(self) -> Tensor:

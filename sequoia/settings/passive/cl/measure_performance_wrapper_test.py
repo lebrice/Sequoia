@@ -156,7 +156,7 @@ def test_measure_performance_wrapper_odd_vs_even():
     assert metrics.n_samples == 100
 
 
-def test_measure_performance_wrapper_odd_vs_even():
+def test_measure_performance_wrapper_odd_vs_even_passive():
     dataset = TensorDataset(
         torch.arange(100).reshape([100, 1, 1, 1]) * torch.ones([100, 3, 32, 32]),
         torch.arange(100),
@@ -228,6 +228,8 @@ def test_last_batch_baseline_model():
     """
     n_samples = 110
     batch_size = 20
+
+    # Note: the y's here are different.
     dataset = TensorDataset(
         torch.arange(n_samples).reshape([n_samples, 1, 1, 1])
         * torch.ones([n_samples, 3, 32, 32]),
@@ -307,3 +309,47 @@ def test_delayed_actions():
     assert perf.accuracy == 1.0
     assert perf.n_samples == 110
 
+
+from sequoia.conftest import DummyEnvironment
+from .measure_performance_wrapper import MeasureRLPerformanceWrapper
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics
+
+
+def test_measure_RL_performance_basics():
+    env = DummyEnvironment(start=0, target=5, max_value=10)
+    
+    from sequoia.settings.active.continual.continual_rl_setting import ContinualRLSetting
+
+    # env = TypedObjectsWrapper(env, observations_type=ContinualRLSetting.Observations, actions_type=ContinualRLSetting.Actions, rewards_type=ContinualRLSetting.Rewards)
+
+    env = MeasureRLPerformanceWrapper(env)
+    env.seed(123)
+    all_episode_rewards = []
+    all_episode_steps = []
+
+    for episode in range(5):
+        episode_steps = 0
+        episode_reward = 0
+        obs = env.reset()
+        print(f"Episode {episode}, obs: {obs}")
+        done = False
+        while not done:
+            action = env.action_space.sample()
+            obs, reward, done, info = env.step(action)
+            episode_reward += reward
+            episode_steps += 1
+            # print(obs, reward, done, info)
+
+        all_episode_steps.append(episode_steps)
+        all_episode_rewards.append(episode_reward)
+    from itertools import accumulate
+
+    expected_metrics = {}
+    for episode_steps, cumul_step, episode_reward in zip(all_episode_steps, accumulate(all_episode_steps), all_episode_rewards):
+        expected_metrics[cumul_step] = EpisodeMetrics(
+            n_samples=1,
+            mean_episode_reward=episode_reward,
+            mean_episode_length=episode_steps,
+        )
+
+    assert env.get_online_performance() == expected_metrics
