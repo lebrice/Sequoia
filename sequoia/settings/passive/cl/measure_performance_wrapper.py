@@ -177,6 +177,31 @@ class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, E
 
         return observation, rewards_, done, info
 
+    def send(self, action: Actions) -> Rewards:
+        rewards_ = self.env.send(action)
+        self._steps += 1
+        reward = rewards_.y if isinstance(rewards_, Rewards) else rewards_
+
+        # TODO: Need access to the "done" signal in here somehow.
+        done = self.env.done_
+        
+        if self.in_evaluation_period:
+            if self.is_batched_env:
+                for env_index, (env_is_done, env_reward) in enumerate(zip(done, reward)):
+                    self._current_episode_reward[env_index] += env_reward
+                    self._current_episode_steps[env_index] += 1
+            else:
+                self._current_episode_reward[0] += reward
+                self._current_episode_steps[0] += 1
+
+            metrics = self.get_metrics(action, reward, done)
+
+            if metrics is not None:
+                assert self._steps not in self._metrics, "two metrics at same step?"
+                self._metrics[self._steps] = metrics
+
+        return rewards_
+
     def get_metrics(self, action: Union[Actions, Any], reward: Union[Rewards, Any], done: Union[bool, Sequence[bool]]) -> Optional[EpisodeMetrics]:
         metrics = []
         
