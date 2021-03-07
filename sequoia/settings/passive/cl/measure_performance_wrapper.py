@@ -7,6 +7,7 @@ from abc import ABC
 from collections import defaultdict
 from typing import Dict, Generic, Iterable, List, Optional, Tuple, Union, Sequence, Any
 
+import wandb
 import numpy as np
 from gym.utils import colorize
 from torch import Tensor
@@ -20,6 +21,7 @@ from sequoia.settings.base import (
     Observations,
     Rewards,
 )
+from sequoia.utils.utils import add_prefix
 from sequoia.settings.passive.passive_environment import PassiveEnvironment
 
 
@@ -53,10 +55,11 @@ class MeasurePerformanceWrapper(IterableWrapper[EnvType], Generic[EnvType, Metri
 
 
 class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[PassiveEnvironment, ClassificationMetrics]):
-    def __init__(self, env: PassiveEnvironment, first_epoch_only: bool = False):
+    def __init__(self, env: PassiveEnvironment, first_epoch_only: bool = False, wandb_prefix: str = None):
         super().__init__(env)
-        self._metrics: Dict[int, ClassificationMetrics] = defaultdict(lambda: 0)
+        self._metrics: Dict[int, ClassificationMetrics] = defaultdict(Metrics)
         self.first_epoch_only = first_epoch_only
+        self.wandb_prefix = wandb_prefix
         # Counter for the number of steps.
         self._steps: int = 0
         assert isinstance(self.env.unwrapped, PassiveEnvironment)
@@ -105,9 +108,17 @@ class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[PassiveEnvironment, 
 
     def get_metrics(self, action: Actions, reward: Rewards) -> Metrics:
         assert action.y_pred.shape == reward.y.shape, (action.shapes, reward.shapes)
-        return ClassificationMetrics(
+        metric = ClassificationMetrics(
             y_pred=action.y_pred, y=reward.y, num_classes=self.n_classes
         )
+
+        if wandb.run:
+            log_dict = metric.to_log_dict()
+            if self.wandb_prefix:
+                log_dict = add_prefix(log_dict, prefix=self.wand_probs, sep="/")
+            log_dict["steps"] = self._steps
+            wandb.log(log_dict)
+        return metric
 
     def __iter__(self) -> Iterable[Tuple[Observations, Optional[Rewards]]]:
         for obs, _ in self.env.__iter__():
@@ -119,7 +130,7 @@ from sequoia.settings.active import ActiveEnvironment
 
 
 class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, EpisodeMetrics]):
-    def __init__(self, env: ActiveEnvironment, eval_episodes: int = None, eval_steps: int = None):
+    def __init__(self, env: ActiveEnvironment, eval_episodes: int = None, eval_steps: int = None, wandb_prefix: str = None):
         super().__init__(env)
         self._metrics: Dict[int, EpisodeMetrics] = {}
         self._eval_episodes = eval_episodes or 0
@@ -128,6 +139,7 @@ class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, E
         self._steps: int = 0
         # Counter for the number of episodes
         self._episodes: int = 0
+        self.wandb_prefix = wandb_prefix
 
         self.is_batched_env = isinstance(self.env.unwrapped, VectorEnv)
         self._batch_size = self.env.num_envs if self.is_batched_env else 1
@@ -231,5 +243,14 @@ class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, E
 
         if not metrics:
             return None
-        return sum(metrics, Metrics())
+        
+        metric = sum(metrics, Metrics())
+        if wandb.run:
+            log_dict = metric.to_log_dict()
+            if self.wandb_prefix:
+                log_dict = add_prefix(log_dict, prefix=self.wand_probs, sep="/")
+            log_dict["steps"] = self._steps
+            log_dict["episode"] = self._episodes
+            wandb.log(log_dict)
 
+        return metric
