@@ -396,10 +396,6 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         method.receive_results(self, results=results)
         return results
 
-    def add_training_performance_monitor(self, env: PassiveEnvironment) -> PassiveEnvironment:
-        from .measure_performance_wrapper import MeasureSLPerformanceWrapper
-        return MeasureSLPerformanceWrapper(env, first_epoch_only=True)
-
     def prepare_data(self, data_dir: Path = None, **kwargs):
         self.config = self.config or Config.from_args(self._argv, strict=False)
         
@@ -482,6 +478,13 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             # to shuffle here. TODO: Double-check this.
             shuffle=True,
         )
+        if self.monitor_training_performance:
+            from .measure_performance_wrapper import MeasureSLPerformanceWrapper
+            env = MeasureSLPerformanceWrapper(
+                env,
+                first_epoch_only=True,
+                wandb_prefix=f"Task {self.current_task_id}",
+            )
         
         if self.config.render:
             # TODO: Add a callback wrapper that calls 'env.render' at each step?

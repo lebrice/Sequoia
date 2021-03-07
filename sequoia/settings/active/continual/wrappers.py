@@ -114,7 +114,7 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
 @singledispatch
 def unwrap(obj: Any) -> Any:
     return obj
-    raise NotImplementedError(obj)
+    # raise NotImplementedError(obj)
 
 
 @unwrap.register(int)
