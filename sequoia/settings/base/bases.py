@@ -3,26 +3,14 @@
 import dataclasses
 import inspect
 import json
+import operator
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import (
-    Any,
-    ClassVar,
-    Generic,
-    Iterable,
-    List,
-    Optional,
-    Set,
-    Type,
-    TypeVar,
-    Union,
-    Mapping,
-    Tuple,
-    Dict,
-)
-import operator
+from typing import *
+
 import gym
 import numpy as np
+import wandb
 from pytorch_lightning import LightningDataModule
 from sequoia.common import Config, Metrics
 from sequoia.settings.base.environment import (
@@ -42,6 +30,7 @@ from sequoia.utils.utils import (
     get_path_to_source_file,
     remove_suffix,
 )
+from wandb.wandb_run import Run
 
 logger = get_logger(__file__)
 
@@ -249,7 +238,7 @@ class SettingABC:
         In most cases, this will be a list with only one value.
         """
         return [parent for parent in cls.__bases__ if issubclass(parent, SettingABC)]
-    
+
     @classmethod
     def get_parents(cls) -> Iterable[Type["SettingABC"]]:
         """yields the lineage, from bottom to top.
@@ -259,7 +248,8 @@ class SettingABC:
         setting.
         """
         return [
-            parent_class for parent_class in cls.mro()[1:]
+            parent_class
+            for parent_class in cls.mro()[1:]
             if issubclass(parent_class, SettingABC)
         ]
 
@@ -277,7 +267,7 @@ class Method(Generic[SettingType], Parseable, ABC):
     target_setting: ClassVar[Type[SettingType]] = None
 
     _training: bool
-    
+
     def configure(self, setting: SettingType) -> None:
         """Configures this method before it gets applied on the given Setting.
 
@@ -331,6 +321,21 @@ class Method(Generic[SettingType], Parseable, ABC):
             this Method to it.
         """
 
+    def setup_wandb(self, run: Run) -> None:
+        """ Called by the Setting when using Weights & Biases, after `wandb.init`.
+
+        This method is here to provide Methods with the opportunity to log some of their
+        configuration options or hyper-parameters to wandb.
+        
+        NOTE: The Setting has already set the `"setting"` entry in the `wandb.config` by
+        this point. 
+        
+        Parameters
+        ----------
+        run : wandb.Run
+            Current wandb Run.
+        """
+
     def set_training(self) -> None:
         """Called by the Setting to let the Method know it is in the "training" phase.
 
@@ -340,6 +345,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         self._training = True
         try:
             from torch import nn
+
             for attribute, value in vars(self).items():
                 if isinstance(value, nn.Module):
                     logger.debug(
@@ -360,6 +366,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         self._training = False
         try:
             from torch import nn
+
             for attribute, value in vars(self).items():
                 if isinstance(value, nn.Module):
                     logger.debug(
@@ -518,7 +525,9 @@ class Method(Generic[SettingType], Parseable, ABC):
     def get_path_to_source_file(cls) -> Path:
         return get_path_to_source_file(cls)
 
-    def get_experiment_name(self, setting: SettingABC, experiment_id: str = None) -> str:
+    def get_experiment_name(
+        self, setting: SettingABC, experiment_id: str = None
+    ) -> str:
         """Gets a unique name for the experiment where `self` is applied to `setting`.
 
         This experiment name will be passed to `orion` when performing a run of
@@ -633,7 +642,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         Tuple[BaselineModel.HParams, float]
             Best HParams, and the corresponding performance.
         """
-        try:            
+        try:
             from orion.client import build_experiment
             from orion.core.worker.trial import Trial
         except ImportError as e:
@@ -703,13 +712,16 @@ class Method(Generic[SettingType], Parseable, ABC):
             )
             experiment.observe(trial, [orion_result])
             trials_performed += 1
-            logger.info(f"Trial #{trials_performed}: {result.objective_name} = {result.objective}")
+            logger.info(
+                f"Trial #{trials_performed}: {result.objective_name} = {result.objective}"
+            )
             # Receive the results, maybe log to wandb, whatever you wanna do.
             self.receive_results(setting, result)
 
-        logger.info("Experiment statistics: \n" + "\n".join(
-            f"\t{key}: {value}" for key, value in experiment.stats.items()
-        ))
+        logger.info(
+            "Experiment statistics: \n"
+            + "\n".join(f"\t{key}: {value}" for key, value in experiment.stats.items())
+        )
         logger.info(f"Number of previous trials: {len(previous_trials)}")
         logger.info(f"Trials completed by this worker: {trials_performed}")
 

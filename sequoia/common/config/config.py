@@ -21,7 +21,6 @@ from simple_parsing import (Serializable, choice, field, flag, list_field,
 from sequoia.utils.parseable import Parseable
 from sequoia.utils.logging_utils import get_logger
 # from .trainer_config import TrainerConfig
-# from .wandb_config import WandbLoggerConfig
 logger = get_logger(__file__)
 
 

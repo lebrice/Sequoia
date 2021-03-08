@@ -113,6 +113,7 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
 # maybe accept a Space to fit into?
 @singledispatch
 def unwrap(obj: Any) -> Any:
+    return obj
     raise NotImplementedError(obj)
 
 

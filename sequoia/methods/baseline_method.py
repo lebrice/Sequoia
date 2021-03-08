@@ -19,10 +19,10 @@ import wandb
 from pytorch_lightning import Callback, Trainer
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from simple_parsing import mutable_field
+from wandb.wandb_run import Run
 
 from sequoia.common.gym_wrappers import RenderEnvWrapper
 from sequoia.common import Config, TrainerConfig
-from sequoia.common.config import WandbLoggerConfig
 from sequoia.settings import ActiveSetting, PassiveSetting
 from sequoia.settings.active.continual import ContinualRLSetting
 from sequoia.settings.assumptions.incremental import IncrementalSetting
@@ -204,12 +204,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             self.config = setting.config
 
         setting_name: str = setting.get_name()
-        dataset: str = setting.dataset
-        wandb_options: WandbLoggerConfig = self.trainer_options.wandb
-        if wandb_options.run_name is None:
-            wandb_options.run_name = f"{method_name}-{setting_name}" + (
-                f"-{dataset}" if dataset else ""
-            )
+        dataset = setting.dataset
 
         if isinstance(setting, IncrementalSetting):
             if self.hparams.multihead is None:
@@ -353,8 +348,12 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         """
         # We use this here to create loggers!
         callbacks = self.create_callbacks(setting)
+        loggers = []
+        if setting.wandb:
+            wandb_logger = setting.wandb.make_logger()
+            loggers.append(wandb_logger)
         trainer = self.trainer_options.make_trainer(
-            config=self.config, callbacks=callbacks,
+            config=self.config, callbacks=callbacks, loggers=loggers,
         )
         return trainer
 
@@ -551,3 +550,23 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             knowing what task we're switching to.
         """
         self.model.on_task_switch(task_id)
+
+    def setup_wandb(self, run: Run) -> None:
+        """ Called by the Setting when using Weights & Biases, after `wandb.init`.
+
+        This method is here to provide Methods with the opportunity to log some of their
+        configuration options or hyper-parameters to wandb.
+
+        NOTE: The Setting has already set the `"setting"` entry in the `wandb.config` by
+        this point.
+
+        Parameters
+        ----------
+        run : wandb.Run
+            Current wandb Run.
+        """
+        # TODO: (@lebrice) I think these will probably be set by the wandb logger,
+        # run.config["config"] = self.config.to_dict()
+        # Need to check wether this causes any issues.
+        # run.config["hparams"] = self.hparams.to_dict()
+        # run.config["trainer_config"] = self.trainer_options
