@@ -171,7 +171,14 @@ class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, E
         observation, rewards_, done, info = self.env.step(action)
         self._steps += 1
         reward = rewards_.y if isinstance(rewards_, Rewards) else rewards_
-      
+        
+        if isinstance(done, bool):
+            self._episodes += int(done)
+        elif isinstance(done, np.ndarray):
+            self._episodes += sum(done)
+        else:
+            self._episodes += done.int().sum()
+
         if self.in_evaluation_period:
             if self.is_batched_env:
                 for env_index, (env_is_done, env_reward) in enumerate(zip(done, reward)):
@@ -196,6 +203,13 @@ class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, E
 
         # TODO: Need access to the "done" signal in here somehow.
         done = self.env.done_
+        
+        if isinstance(done, bool):
+            self._episodes += int(done)
+        elif isinstance(done, np.ndarray):
+            self._episodes += sum(done)
+        else:
+            self._episodes += done.int().sum()
         
         if self.in_evaluation_period:
             if self.is_batched_env:
