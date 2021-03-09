@@ -248,7 +248,7 @@ class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, E
         if wandb.run:
             log_dict = metric.to_log_dict()
             if self.wandb_prefix:
-                log_dict = add_prefix(log_dict, prefix=self.wand_probs, sep="/")
+                log_dict = add_prefix(log_dict, prefix=self.wandb_prefix, sep="/")
             log_dict["steps"] = self._steps
             log_dict["episode"] = self._episodes
             wandb.log(log_dict)
