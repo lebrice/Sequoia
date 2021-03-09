@@ -145,7 +145,7 @@ class WandbConfig(Serializable):
             if Path(self.wandb_api_key).is_file():
                 key = Path(self.wandb_api_key).read_text()
             else:
-                key = self.wandb_api_key
+                key = str(self.wandb_api_key)
             assert isinstance(key, str)
         return wandb.login(key=key)
 
@@ -179,7 +179,7 @@ class WandbConfig(Serializable):
             f"Using wandb. Group name: {self.group} run name: {self.run_name}, "
             f"log_dir: {self.log_dir}"
         )
-
+        self.wandb_login()
         run = wandb.init(
             dir=str(self.wandb_path),
             project=self.project,
