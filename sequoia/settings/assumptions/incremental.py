@@ -312,7 +312,7 @@ class IncrementalSetting(ContinualSetting):
             if dataset and isinstance(dataset, str):
                 wandb.summary["dataset"] = dataset
 
-            # wandb.log(results.to_log_dict())
+            wandb.log(results.to_log_dict())
 
             # BUG: Sometimes logging a matplotlib figure causes a crash:
             # File "/home/fabrice/miniconda3/envs/sequoia/lib/python3.8/site-packages/plotly/matplotlylib/mplexporter/utils.py", line 246, in get_grid_style
