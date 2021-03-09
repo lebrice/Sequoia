@@ -608,7 +608,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             from sequoia.settings.passive.cl.measure_performance_wrapper import MeasureRLPerformanceWrapper
             env_dataloader = MeasureRLPerformanceWrapper(
                 env_dataloader,
-                wandb_prefix=f"Task {self.current_task_id}"
+                wandb_prefix=f"Train/Task {self.current_task_id}"
             )
 
         self.train_env = env_dataloader

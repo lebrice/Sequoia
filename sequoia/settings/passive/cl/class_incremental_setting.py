@@ -483,9 +483,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             env = MeasureSLPerformanceWrapper(
                 env,
                 first_epoch_only=True,
-                wandb_prefix=f"Task {self.current_task_id}",
+                wandb_prefix=f"Train/Task {self.current_task_id}",
             )
-        
+
         if self.config.render:
             # TODO: Add a callback wrapper that calls 'env.render' at each step?
             env = env
