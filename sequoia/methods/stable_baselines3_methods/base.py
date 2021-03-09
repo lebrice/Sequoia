@@ -276,10 +276,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         obs = observations.x
         predictions = self.model.predict(obs)
         action, _ = predictions
-        # BUG: DQN prediction here doesn't work.
-        if action not in action_space:
-            assert len(action) == 1, (observations, action, action_space)
-            action = action.item()
+        assert action in action_space, (observations, action, action_space)
         return action
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
