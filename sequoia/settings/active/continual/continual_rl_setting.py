@@ -603,10 +603,21 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             max_steps=self.steps_per_task,
             max_episodes=self.episodes_per_task,
         )
+        
+        if self.monitor_training_performance:
+            from sequoia.settings.passive.cl.measure_performance_wrapper import MeasureRLPerformanceWrapper
+            env_dataloader = MeasureRLPerformanceWrapper(
+                env_dataloader,
+                wandb_prefix=f"Train/Task {self.current_task_id}"
+            )
+
         self.train_env = env_dataloader
         # BUG: There is a mismatch between the train env's observation space and the
         # shape of its observations.
         self.observation_space = self.train_env.observation_space
+
+
+
         return self.train_env
 
     def val_dataloader(

@@ -20,6 +20,7 @@ from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
+
 class DQNModel(DQN):
     """ Customized version of the DQN model from stable-baselines-3. """
     @dataclass
@@ -49,10 +50,6 @@ class DQNModel(DQN):
         # and ``n_episodes_rollout``) Set to ``-1`` means to do as many gradient
         # steps as steps done in the environment during the rollout.
         gradient_steps: int = categorical(1, -1, default=1)
-        # Update the model every ``n_episodes_rollout`` episodes. Note that this
-        # cannot be used at the same time as ``train_freq``. Set to `-1` to
-        # disable.
-        n_episodes_rollout: int = -1
         # Enable a memory efficient variant of the replay buffer at a cost of
         # more complexity.
         # See https://github.com/DLR-RM/stable-baselines3/issues/37#issuecomment-637501195
@@ -76,6 +73,7 @@ class DQNModel(DQN):
         # Whether or not to build the network at the creation
         # of the instance
         _init_setup_model: bool = True
+
 
 @register_method
 @dataclass

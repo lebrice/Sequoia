@@ -245,6 +245,12 @@ class DummyEnvironment(gym.Env):
         self.i = self.start
         return self.i
 
+    def seed(self, seed: Optional[int]) -> List[int]:
+        seeds = []
+        seeds.append(self.observation_space.seed(seed))
+        seeds.append(self.action_space.seed(seed))
+        return seeds
+
 from contextlib import redirect_stdout
 from io import StringIO
 try:

@@ -3,6 +3,7 @@ import json
 import warnings
 from io import StringIO
 from typing import ClassVar, Dict, List, Optional, Union
+import numpy as np
 
 import matplotlib.pyplot as plt
 import wandb
@@ -46,6 +47,7 @@ class TaskSequenceResults(List[TaskResults[MetricType]]):
         result = {}
         for task_id, task_results in enumerate(self):
             result[f"Task {task_id}"] = task_results.to_log_dict(verbose=verbose)
+        result["Average"] = self.average_metrics.to_log_dict(verbose=verbose)
         return result
 
     def make_plots(self) -> Dict[str, plt.Figure]:
@@ -64,6 +66,7 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
     every test loop, which, in the Incremental Settings, happens after training on each
     task, hence why we get a nb_tasks x nb_tasks matrix of results.
     """
+
     max_runtime_hours: ClassVar[float]
 
     def __init__(self, *args):
@@ -78,7 +81,7 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
     @property
     def runtime_hours(self) -> Optional[float]:
         return self._runtime / 3600 if self._runtime is not None else None
-    
+
     @property
     def transfer_matrix(self) -> List[List[TaskResults]]:
         return self
@@ -117,7 +120,7 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
             [task_result.objective for task_result in task_sequence_result]
             for task_sequence_result in self.transfer_matrix
         ]
-    
+
     @property
     def cl_score(self) -> float:
         """ CL Score, as a weigted sum of three objectives:
@@ -134,7 +137,7 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
         """
         # TODO: Determine the function to use to get a runtime score between 0 and 1.
         score = (
-            + 0.25 * self._online_performance_score()
+            +0.25 * self._online_performance_score()
             + 0.50 * self._final_performance_score()
             + 0.25 * self._runtime_score()
         )
@@ -145,17 +148,21 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
         # normalized float score between 0 and 1.
         runtime_seconds = self._runtime
         if self._runtime is None:
-            warnings.warn(RuntimeWarning(colorize(
-                "Runtime is None! Returning runtime score of 0.\n (Make sure the "
-                "Setting had its `monitor_training_performance` attr set to True!",
-                color="red",
-            )))
+            warnings.warn(
+                RuntimeWarning(
+                    colorize(
+                        "Runtime is None! Returning runtime score of 0.\n (Make sure the "
+                        "Setting had its `monitor_training_performance` attr set to True!",
+                        color="red",
+                    )
+                )
+            )
             return 0
         runtime_hours = runtime_seconds / 3600
-        
+
         # Get the maximum runtime for this type of Results (and Setting)
         max_runtime_hours = type(self).max_runtime_hours
-        
+
         assert max_runtime_hours > 0
         assert runtime_hours > 0
         if runtime_hours > max_runtime_hours:
@@ -232,12 +239,14 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
             log_dict[f"Task {task_id}"] = task_sequence_result.to_log_dict(
                 verbose=verbose
             )
-        log_dict.update({
-            "Final/Average Online Performance": self.average_online_performance.objective,
-            "Final/Average Final Performance": self.average_final_performance.objective,
-            "Final/Runtime (seconds)": self._runtime,
-            "Final/CL Score": self.cl_score,
-        })
+        log_dict.update(
+            {
+                "Final/Average Online Performance": self.average_online_performance.objective,
+                "Final/Average Final Performance": self.average_final_performance.objective,
+                "Final/Runtime (seconds)": self._runtime,
+                "Final/CL Score": self.cl_score,
+            }
+        )
         return log_dict
 
     def summary(self):
@@ -251,13 +260,25 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
             f"Task {task_id}": task_sequence_result.make_plots()
             for task_id, task_sequence_result in enumerate(self)
         }
-        axis_labels = [f"Task {task_id}" for task_id in range(len(self))]
+        axis_labels = [f"Task {task_id}" for task_id in range(self.num_tasks)]
         if wandb.run:
             plots["Transfer matrix"] = wandb.plots.HeatMap(
                 x_labels=axis_labels,
                 y_labels=axis_labels,
                 matrix_values=self.objective_matrix,
                 show_text=True,
+            )
+            objective_array = np.asfarray(self.objective_matrix)
+            perf_per_step = objective_array.mean(-1)
+            table = wandb.Table(
+                data=[[i + 1, perf] for i, perf in enumerate(perf_per_step)],
+                columns=["# of learned tasks", "Average Test performance on all tasks"],
+            )
+            plots["Test Performance"] = wandb.plot.line(
+                table,
+                x="# of learned tasks",
+                y="Average Test performance on all tasks",
+                title="Test Performance vs # of Learned tasks",
             )
         return plots
 

@@ -218,9 +218,9 @@ class IncrementalSetting(ContinualSetting):
             # the datamodule):
             task_train_env = self.train_dataloader()
             # If we want to monitor the training performance:
-            if self.monitor_training_performance:
-                task_train_env = self.add_training_performance_monitor(task_train_env)
-                self.train_env = task_train_env
+            # if self.monitor_training_performance:
+            #     task_train_env = self.add_training_performance_monitor(task_train_env)
+            #     self.train_env = task_train_env
 
             task_valid_env = self.val_dataloader()
             method.fit(
@@ -312,7 +312,7 @@ class IncrementalSetting(ContinualSetting):
             if dataset and isinstance(dataset, str):
                 wandb.summary["dataset"] = dataset
 
-            # wandb.log(results.to_log_dict())
+            wandb.log(results.to_log_dict())
 
             # BUG: Sometimes logging a matplotlib figure causes a crash:
             # File "/home/fabrice/miniconda3/envs/sequoia/lib/python3.8/site-packages/plotly/matplotlylib/mplexporter/utils.py", line 246, in get_grid_style
