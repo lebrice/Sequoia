@@ -147,9 +147,9 @@ class Setting(SettingABC,
     # TODO: Still not sure where exactly we should be adding the 'batch_size'
     # and 'num_workers' arguments. Adding it here for now with cmd=False, so
     # that they can be passed to the constructor of the Setting.
-    batch_size: int = field(default=0, cmd=False)
-    num_workers: int = field(default=0, cmd=False)
-
+    batch_size: Optional[int] = field(default=None, cmd=False)
+    num_workers: Optional[int] = field(default=None, cmd=False)
+    
     # # TODO: Add support for semi-supervised training.
     # # Fraction of the dataset that is labeled.
     # labeled_data_fraction: int = 1.0

@@ -14,15 +14,18 @@ class DummyMethod(Method, target_setting=IncrementalSetting):
 
     def __init__(self):
         self.n_task_switches = 0
+        self.n_fit_calls = 0
         self.received_task_ids: List[Optional[int]] = []
         self.received_while_training: List[bool] = []
 
     def fit(self, train_env: gym.Env = None, valid_env: gym.Env = None):
+        self.n_fit_calls += 1
         obs = train_env.reset()
         for i in range(100):
             obs, reward, done, info = train_env.step(train_env.action_space.sample())
             if done:
                 break
+        
 
     def test(self, test_env: TestEnvironment):
         while not test_env.is_closed():

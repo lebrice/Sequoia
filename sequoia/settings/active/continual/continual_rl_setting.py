@@ -180,11 +180,12 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # (WIP): Number of episodes per task.
     episodes_per_task: Optional[int] = None
 
-    # Number of steps per task in the test loop.
-    test_steps_per_task: int = 10_000
-    # Total number of steps in the test loop. By default, takes the value of
-    # `test_steps_per_task * nb_tasks`.
-    test_steps: Optional[int] = None
+    # Total number of steps in the test loop. (Also acts as the "length" of the testing
+    # environment.)
+    test_steps: int = 10_000
+    # Number of steps per task in the test loop. When left unset and when `test_steps`
+    # is set, takes the value of `test_steps` divided by `nb_tasks`.
+    test_steps_per_task: Optional[int] = None
 
     # Standard deviation of the multiplicative Gaussian noise that is used to
     # create the values of the env attributes for each task.
@@ -204,6 +205,15 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # Path to a json file from which to read the test task schedule.
     test_task_schedule_path: Optional[Path] = None
 
+    # Wether observations from the environments whould include
+    # the end-of-episode signal. Only really useful if your method will iterate
+    # over the environments in the dataloader style
+    # (as does the baseline method).
+    add_done_to_observations: bool = False
+
+    # The maximum number of steps per episode. When None, there is no limit.
+    max_episode_steps: Optional[int] = None
+
     # NOTE: Added this `cmd=False` option to mark that we don't want to generate
     # any command-line arguments for these fields.
     train_task_schedule: Dict[int, Dict[str, float]] = dict_field(cmd=False)
@@ -214,17 +224,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     valid_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
     test_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
 
-    # Wether observations from the environments whould include
-    # the end-of-episode signal. Only really useful if your method will iterate
-    # over the environments in the dataloader style
-    # (as does the baseline method).
-    add_done_to_observations: bool = False
-
     batch_size: Optional[int] = field(default=None, cmd=False)
     num_workers: Optional[int] = field(default=None, cmd=False)
-
-    # The maximum number of steps per episode. When None, there is no limit.
-    max_episode_steps: Optional[int] = None
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
@@ -281,35 +282,51 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             )
 
         if self.train_task_schedule:
-            # A task schedule was passed: infer the number of tasks from it.
-            change_steps = sorted(self.train_task_schedule.keys())
-            assert 0 in change_steps, "Schedule needs a task at step 0."
+            if self.steps_per_task is not None:
+                # If steps per task was passed, then we overwrite the keys of the tasks
+                # schedule.
+                self.train_task_schedule = {
+                    i * self.steps_per_task: self.train_task_schedule[step]
+                    for i, step in enumerate(sorted(self.train_task_schedule.keys()))
+                }
+            else:
+                # A task schedule was passed: infer the number of tasks from it.
+                change_steps = sorted(self.train_task_schedule.keys())
+                assert 0 in change_steps, "Schedule needs a task at step 0."
+                # TODO: @lebrice: I guess we have to assume that the interval
+                # between steps is constant for now? Do we actually depend on this
+                # being the case? I think steps_per_task is only really ever used
+                # for creating the task schedule, which we already have in this
+                # case.
+                assert (
+                    len(change_steps) >= 2
+                ), "WIP: need a minimum of two tasks in the task schedule for now."
+                self.steps_per_task = change_steps[1] - change_steps[0]
+                # Double-check that this is the case.
+                for i in range(len(change_steps) - 1):
+                    if change_steps[i + 1] - change_steps[i] != self.steps_per_task:
+                        raise NotImplementedError(
+                            f"WIP: This might not work yet if the tasks aren't "
+                            f"equally spaced out at a fixed interval."
+                        )
 
-            # NOTE: When in a ContinualRLSetting with smooth task boundaries,
-            # the last entry in the schedule represents the state of the env at
-            # the end of the "task". When there are clear task boundaries (i.e.
-            # when in 'Class'/Task-Incremental RL), the last entry is the start
-            # of the last task.
-            if not self.smooth_task_boundaries:
-                self.nb_tasks = len(change_steps)
-
-            # TODO: @lebrice: I guess we have to assume that the interval
-            # between steps is constant for now? Do we actually depend on this
-            # being the case? I think steps_per_task is only really ever used
-            # for creating the task schedule, which we already have in this
-            # case.
-            assert (
-                len(change_steps) >= 2
-            ), "WIP: need a minimum of two tasks in the task schedule for now."
-            self.steps_per_task = change_steps[1] - change_steps[0]
-
-            for i in range(len(change_steps) - 1):
-                if change_steps[i + 1] - change_steps[i] != self.steps_per_task:
-                    raise NotImplementedError(
-                        f"WIP: This might not work yet if the tasks aren't "
-                        f"equally spaced out at a fixed interval."
+            nb_tasks = len(self.train_task_schedule)
+            if self.smooth_task_boundaries:
+                # NOTE: When in a ContinualRLSetting with smooth task boundaries,
+                # the last entry in the schedule represents the state of the env at
+                # the end of the "task". When there are clear task boundaries (i.e.
+                # when in 'Class'/Task-Incremental RL), the last entry is the start
+                # of the last task.
+                nb_tasks -= 1
+            if self.nb_tasks != 1:
+                if self.nb_tasks != nb_tasks:
+                    raise RuntimeError(
+                        f"Passed number of tasks {self.nb_tasks} doesn't match the "
+                        f"number of tasks deduced from the task schedule ({nb_tasks})"
                     )
-            self.max_steps = max(change_steps)
+            self.nb_tasks = nb_tasks
+
+            self.max_steps = max(self.train_task_schedule.keys())
             if not self.smooth_task_boundaries:
                 # See above note about the last entry.
                 self.max_steps += self.steps_per_task
@@ -338,10 +355,20 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 f"'nb_tasks', or 'steps_per_task'."
             )
 
-        if not self.smooth_task_boundaries:
-            assert self.nb_tasks == self.max_steps // self.steps_per_task
+        assert self.max_steps == self.nb_tasks * self.steps_per_task
 
         if self.test_task_schedule:
+            if 0 not in self.test_task_schedule:
+                raise RuntimeError("Task schedules needs to include an initial task.")
+
+            if self.test_steps_per_task is not None:
+                # If steps per task was passed, then we overwrite the number of steps
+                # for each task in the schedule to match.
+                self.test_task_schedule = {
+                    i * self.test_steps_per_task: self.test_task_schedule[step]
+                    for i, step in enumerate(sorted(self.test_task_schedule.keys()))
+                }
+
             change_steps = sorted(self.test_task_schedule.keys())
             assert 0 in change_steps, "Schedule needs to include task at step 0."
 
@@ -359,10 +386,12 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                         f"WIP: This might not work yet if the test tasks aren't "
                         f"equally spaced out at a fixed interval."
                     )
+
             self.test_steps = max(change_steps)
             if not self.smooth_task_boundaries:
                 # See above note about the last entry.
                 self.test_steps += self.test_steps_per_task
+
         elif self.test_steps is None:
             assert (
                 self.test_steps_per_task
@@ -374,6 +403,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             ), "need to set one of test_steps or test_steps_per_task"
             self.test_steps_per_task = self.test_steps // self.nb_tasks
 
+        assert self.test_steps == self.nb_tasks * self.test_steps_per_task
+        
         if self.smooth_task_boundaries:
             # If we're operating in the 'Online/smooth task transitions' "regime",
             # then there is only one "task", and we don't have task labels.
@@ -384,8 +415,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             self.known_task_boundaries_at_test_time = False
             self.task_labels_at_train_time = False
             self.task_labels_at_test_time = False
-            self.nb_tasks = 1
-            self.steps_per_task = self.max_steps
+            # self.steps_per_task = self.max_steps
 
         # Task schedules for training / validation and testing.
 
@@ -440,13 +470,12 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                     low=self.reward_range[0], high=self.reward_range[1], shape=()
                 ),
             )
-            
+
         del temp_env
 
         self.train_env: gym.Env
         self.valid_env: gym.Env
         self.test_env: gym.Env
-        
 
     def create_task_schedule(
         self, temp_env: MultiTaskEnvironment, change_steps: List[int]
@@ -553,7 +582,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             self.valid_wrappers = self.create_valid_wrappers()
         elif stage in {"test", None}:
             self.test_wrappers = self.create_test_wrappers()
-
+    
     def prepare_data(self, *args, **kwargs) -> None:
         # We don't really download anything atm.
         if self.config is None:
@@ -603,20 +632,20 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             max_steps=self.steps_per_task,
             max_episodes=self.episodes_per_task,
         )
-        
+
         if self.monitor_training_performance:
-            from sequoia.settings.passive.cl.measure_performance_wrapper import MeasureRLPerformanceWrapper
+            from sequoia.settings.passive.cl.measure_performance_wrapper import (
+                MeasureRLPerformanceWrapper,
+            )
+
             env_dataloader = MeasureRLPerformanceWrapper(
-                env_dataloader,
-                wandb_prefix=f"Train/Task {self.current_task_id}"
+                env_dataloader, wandb_prefix=f"Train/Task {self.current_task_id}"
             )
 
         self.train_env = env_dataloader
         # BUG: There is a mismatch between the train env's observation space and the
         # shape of its observations.
         self.observation_space = self.train_env.observation_space
-
-
 
         return self.train_env
 
@@ -726,9 +755,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # TODO: Pass the max_steps argument to this `_make_env_dataloader` method,
         # rather than to a `step_limit` on the TestEnvironment.
         env_dataloader = self._make_env_dataloader(
-            env_factory,
-            batch_size=batch_size,
-            num_workers=num_workers,
+            env_factory, batch_size=batch_size, num_workers=num_workers,
         )
         # TODO: We should probably change the max_steps depending on the
         # batch size of the env.
@@ -748,6 +775,16 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         )
         return self.test_env
 
+    @property
+    def phases(self) -> int:
+        """The number of training 'phases', i.e. how many times `method.fit` will be
+        called.
+        
+        In the case of ContinualRL, fit is only called once, with an environment that
+        shifts between all the tasks.
+        """
+        return 1
+    
     @staticmethod
     def _make_env(
         base_env: Union[str, gym.Env, Callable[[], gym.Env]],
@@ -1034,13 +1071,12 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         super().__init__(*args, **kwargs)
         self.task_schedule = task_schedule
         self.boundary_steps = [
-            step // (self.batch_size or 1) for step in
-            self.task_schedule.keys()
+            step // (self.batch_size or 1) for step in self.task_schedule.keys()
         ]
 
     def __len__(self):
         return math.ceil(self.step_limit / (getattr(self.env, "batch_size", 1) or 1))
-    
+
     def get_results(self) -> TaskSequenceResults[EpisodeMetrics]:
         # TODO: Place the metrics in the right 'bin' at the end of each episode during
         # testing depending on the task at that time, rather than what's happening here,
@@ -1057,6 +1093,7 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         task_steps = sorted(task_schedule.keys())
         assert 0 in task_steps
         import bisect
+
         nb_tasks = len(task_steps)
         assert nb_tasks >= 1
 

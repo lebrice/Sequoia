@@ -134,3 +134,46 @@ def test_dqn_on_env(tmp_path: Path):
     trainer = Trainer(fast_dev_run=True, default_root_dir=tmp_path)
     success = trainer.fit(model)
     assert success == 1
+
+
+def test_passing_task_schedule_sets_other_attributes_correctly():
+    # TODO: Figure out a way to test that the tasks are switching over time.
+    setting = ContinualRLSetting(dataset="CartPole-v0", train_task_schedule={
+        0: {"gravity": 5.0},
+        100: {"gravity": 10.0},
+        200: {"gravity": 20.0},
+    })
+    assert setting.phases == 1
+    assert setting.nb_tasks == 2
+    assert setting.steps_per_task == 100
+    assert setting.test_task_schedule == {
+        0: {"gravity": 5.0},
+        5_000: {"gravity": 10.0},
+        10_000: {"gravity": 20.0},
+    }
+    assert setting.test_steps == 10_000
+    assert setting.test_steps_per_task == 5_000
+
+
+from sequoia.settings.assumptions.incremental_test import DummyMethod
+from sequoia.conftest import DummyEnvironment
+
+
+def test_fit_and_on_task_switch_calls():
+    setting = ContinualRLSetting(
+        dataset=DummyEnvironment,
+        nb_tasks=5,
+        steps_per_task=100,
+        max_steps=500,
+        test_steps_per_task=100,
+        train_transforms=[],
+        test_transforms=[],
+        val_transforms=[],
+    )
+    method = DummyMethod()
+    results = setting.apply(method)
+    # == 30 task switches in total.
+    assert method.n_task_switches == 0
+    assert method.n_fit_calls == 1 # TODO: Add something like this.
+    assert not method.received_task_ids 
+    assert not method.received_while_training
