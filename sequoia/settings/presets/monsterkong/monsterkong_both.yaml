@@ -1,0 +1,24 @@
+dataset: monsterkong
+steps_per_task: 10_000_000
+test_steps_per_task: 10_000
+train_task_schedule:
+  0:
+    level: 20
+  1:
+    level: 21
+  2:
+    level: 22
+  3:
+    level: 23
+  4:
+    level: 24
+  5:
+    level: 25
+  6:
+    level: 26
+  7:
+    level: 27
+  8:
+    level: 28
+  9:
+    level: 29
