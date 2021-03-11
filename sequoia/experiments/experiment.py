@@ -89,7 +89,7 @@ class Experiment(Parseable, Serializable):
                         f"`setting_presets` dictionary. \n\n"
                         f"Available presets: \n"
                         + "\n".join(
-                            f"- {preset_name}: {preset_file.relative_to(source_dir)}"
+                            f"- {preset_name}: \t{preset_file.relative_to(os.getcwd())}"
                             for preset_name, preset_file in setting_presets.items()
                         )
                     )
