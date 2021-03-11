@@ -50,12 +50,15 @@ from sequoia.common import ClassificationMetrics, Metrics, get_metrics
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import TransformObservation
 from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
+from sequoia.common.gym_wrappers.utils import RenderEnvWrapper
 from sequoia.common.loss import Loss
 from sequoia.common.spaces import Image, Sparse
 from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.transforms import Compose, SplitBatch, Transforms
 from sequoia.settings.assumptions.incremental import (IncrementalSetting,
-                                                      TestEnvironment, TaskResults, TaskSequenceResults)
+                                                      TaskResults,
+                                                      TaskSequenceResults,
+                                                      TestEnvironment)
 from sequoia.settings.base import Method, ObservationType, Results, RewardType
 from sequoia.utils import constant, dict_union, get_logger, mean, take
 
@@ -63,6 +66,7 @@ from ..passive_environment import (Actions, ActionType, Observations,
                                    PassiveEnvironment, Rewards)
 from ..passive_setting import PassiveSetting
 from .class_incremental_results import ClassIncrementalResults
+from .measure_performance_wrapper import MeasureSLPerformanceWrapper
 
 logger = get_logger(__file__)
 
@@ -442,6 +446,15 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             self.test_datasets.append(test_dataset)
 
         super().setup(stage, *args, **kwargs)
+        
+        # TODO: Adding this temporarily just for the competition
+        self.test_boundary_steps = [0] + list(
+            itertools.accumulate(map(len, self.test_datasets))
+        )[:-1]
+        self.test_steps = sum(map(len, self.test_datasets))
+        # self.test_steps = [0] + list(
+        #     itertools.accumulate(map(len, self.test_datasets))
+        # )[:-1]
 
     def get_train_dataset(self) -> Dataset:
         return self.train_datasets[self.current_task_id]
@@ -458,6 +471,9 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             self.prepare_data()
         if not self.has_setup_fit:
             self.setup("fit")
+
+        if self.train_env:
+            self.train_env.close()
 
         batch_size = batch_size if batch_size is not None else self.batch_size
         num_workers = num_workers if num_workers is not None else self.num_workers
@@ -478,24 +494,23 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             # to shuffle here. TODO: Double-check this.
             shuffle=True,
         )
+
+        if self.config.render:
+            # TODO: Add a callback wrapper that calls 'env.render' at each step?
+            env = RenderEnvWrapper(env)
+
+        if self.train_transforms:
+            # TODO: Check that the transforms aren't already being applied in the
+            # 'dataset' portion.
+            env = TransformObservation(env, f=self.train_transforms)
+
         if self.monitor_training_performance:
-            from .measure_performance_wrapper import MeasureSLPerformanceWrapper
             env = MeasureSLPerformanceWrapper(
                 env,
                 first_epoch_only=True,
                 wandb_prefix=f"Train/Task {self.current_task_id}",
             )
 
-        if self.config.render:
-            # TODO: Add a callback wrapper that calls 'env.render' at each step?
-            env = env
-            
-        if self.train_transforms:
-            # TODO: Check that the transforms aren't already being applied in the
-            # 'dataset' portion.
-            env = TransformObservation(env, f=self.train_transforms)
-        if self.train_env:
-            self.train_env.close()
         self.train_env = env
         return self.train_env
 
@@ -868,6 +883,7 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
 
        
         import bisect
+
         # Given the step, find the task id.
         task_id = bisect.bisect_right(task_steps, self._steps) - 1
         self.results[task_id].append(metric)

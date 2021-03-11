@@ -89,7 +89,7 @@ class IncrementalSetting(ContinualSetting):
     known_task_boundaries_at_train_time: bool = constant(True)
     # Wether we get informed when reaching the boundary between two tasks during
     # training. Only used when `smooth_task_boundaries` is False.
-    known_task_boundaries_at_test_time: bool = constant(True)
+    known_task_boundaries_at_test_time: bool = True
 
     # The number of tasks. By default 0, which means that it will be set
     # depending on other fields in __post_init__, or eventually be just 1.
@@ -217,23 +217,17 @@ class IncrementalSetting(ContinualSetting):
             # Creating the dataloaders ourselves (rather than passing 'self' as
             # the datamodule):
             task_train_env = self.train_dataloader()
-            # If we want to monitor the training performance:
-            # if self.monitor_training_performance:
-            #     task_train_env = self.add_training_performance_monitor(task_train_env)
-            #     self.train_env = task_train_env
-
             task_valid_env = self.val_dataloader()
             method.fit(
                 train_env=task_train_env, valid_env=task_valid_env,
             )
             task_train_env.close()
+            task_valid_env.close()
 
             if self.monitor_training_performance:
                 results._online_training_performance.append(
                     task_train_env.get_online_performance()
                 )
-
-            task_valid_env.close()
 
             logger.info(f"Finished Training on task {task_id}.")
             test_metrics: TaskSequenceResults = self.test_loop(method)
@@ -392,7 +386,7 @@ class IncrementalSetting(ContinualSetting):
             test_results: Results = test_env.get_results()
 
         except NotImplementedError:
-            logger.info(
+            logger.debug(
                 f"Will query the method for actions at each step, "
                 f"since it doesn't implement a `test` method."
             )
