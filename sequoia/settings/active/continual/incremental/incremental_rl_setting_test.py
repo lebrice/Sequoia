@@ -16,6 +16,7 @@ from sequoia.utils.utils import take
 from .incremental_rl_setting import IncrementalRLSetting
 
 
+@pytest.mark.timeout(60)
 @pytest.mark.parametrize("batch_size", [None, 1, 3])
 @pytest.mark.parametrize(
     "dataset, expected_obs_shape",
@@ -195,6 +196,7 @@ def test_on_task_switch_is_called_task_incremental_rl():
     ]
 
 
+@pytest.mark.timeout(120)
 @monsterkong_required
 @pytest.mark.parametrize("task_labels_at_test_time", [False, True])
 def test_monsterkong_state(task_labels_at_test_time: bool):
