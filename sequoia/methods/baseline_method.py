@@ -21,7 +21,6 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from simple_parsing import mutable_field
 from wandb.wandb_run import Run
 
-from sequoia.common.gym_wrappers import RenderEnvWrapper
 from sequoia.common import Config, TrainerConfig
 from sequoia.settings import ActiveSetting, PassiveSetting
 from sequoia.settings.active.continual import ContinualRLSetting
@@ -272,9 +271,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             "Setting should have been called method.configure(setting=self) "
             "before calling `fit`!"
         )
-        if self.config.render:
-            train_env = RenderEnvWrapper(train_env)
-
         # TODO: Figure out if there is a smarter way to reset the state of the Trainer,
         # rather than just creating a new one every time.
         self.trainer = self.create_trainer(self.setting)

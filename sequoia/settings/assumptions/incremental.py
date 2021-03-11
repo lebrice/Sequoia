@@ -222,13 +222,12 @@ class IncrementalSetting(ContinualSetting):
                 train_env=task_train_env, valid_env=task_valid_env,
             )
             task_train_env.close()
+            task_valid_env.close()
 
             if self.monitor_training_performance:
                 results._online_training_performance.append(
                     task_train_env.get_online_performance()
                 )
-
-            task_valid_env.close()
 
             logger.info(f"Finished Training on task {task_id}.")
             test_metrics: TaskSequenceResults = self.test_loop(method)
