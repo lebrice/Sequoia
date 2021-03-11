@@ -42,6 +42,7 @@ def test_random_baseline():
     method = RandomBaselineMethod()
     setting = SettingProxy(DomainIncrementalSetting)
     results = setting.apply(method)
+    # domain incremental mnist: 2 classes per task -> chance accuracy of 50%.
     assert 0.45 <= results.objective <= 0.55
 
 
@@ -53,26 +54,26 @@ def test_random_baseline_SL_track():
     assert 1/48 * 0.5 <= results.objective <= 1/48 * 1.5
 
 
-@pytest.mark.timeout(120)
-def test_baseline_SL_track():
+@pytest.mark.timeout(300)
+def test_baseline_SL_track(config):
     """ Applies the BaselineMethod on something ressembling the SL track of the
     competition.
     """
-    method = BaselineMethod(max_epochs=1, no_wandb=True)
-    # import numpy as np
-    # class_order = np.random.permutation(48).tolist()
-    # assert False, class_order
+    method = BaselineMethod(max_epochs=1)
+    import numpy as np
+    class_order = np.random.permutation(48).tolist()
     setting = SettingProxy(
         ClassIncrementalSetting,
         dataset="synbols",
         nb_tasks=12,
-        # class_order=class_order,
+        class_order=class_order,
     )
-    results = setting.apply(method)
+    results = setting.apply(method, config)
     assert results.to_log_dict()
-    
+
     # TODO: Add tests for having a different ordering of test tasks vs train tasks.
-    
-    # results: ClassIncrementalSetting.Results
-    # online_perf = results.average_online_performance()
-    # assert 0.30 <= online_perf.objective <= 0.50
+    results: ClassIncrementalSetting.Results
+    online_perf = results.average_online_performance
+    assert 0.30 <= online_perf.objective <= 0.60
+    final_perf = results.average_final_performance
+    assert 0.02 <= final_perf.objective <= 0.06
