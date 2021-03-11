@@ -39,9 +39,8 @@ class IncrementalRLSetting(ContinualRLSetting):
     implement a custom `fit` procedure in the CLTrainer class, that loops over
     the tasks and calls the `on_task_switch` when needed.
     """
-
     # Number of tasks.
-    nb_tasks: int = 10
+    nb_tasks: int = 1
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = constant(False)
     # Wether to give access to the task labels at train time.
