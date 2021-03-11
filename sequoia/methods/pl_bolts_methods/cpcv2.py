@@ -106,4 +106,4 @@ class CPCV2Method(Method[IIDSetting], target_setting=IIDSetting):
 
 
 if __name__ == "__main__":
-    PLBoltsMethod.main()
+    CPCV2Method.main()

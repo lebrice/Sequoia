@@ -5,11 +5,10 @@ This makes it easy to create CL methods that apply to both RL and SL Settings!
 """
 
 import copy
-import random
 import sys
 from argparse import Namespace
 from dataclasses import dataclass
-from typing import ClassVar, List
+from typing import ClassVar, List, Dict
 
 import torch
 from simple_parsing import ArgumentParser, field
@@ -21,10 +20,12 @@ sys.path.extend([".", ".."])
 from sequoia.common.config import Config, TrainerConfig
 from sequoia.common.loss import Loss
 from sequoia.methods import BaselineMethod
-from sequoia.methods.aux_tasks import AuxiliaryTask, SimCLRTask
+from sequoia.methods.aux_tasks import AuxiliaryTask
 from sequoia.methods.models import BaselineModel, ForwardPass
 from sequoia.settings import Setting, Environment, ActiveSetting
 from sequoia.utils import camel_case, dict_intersection, get_logger
+from sequoia.settings.passive import ClassIncrementalSetting
+from sequoia.settings.active import TaskIncrementalRLSetting
 
 logger = get_logger(__file__)
 
@@ -103,7 +104,7 @@ class SimpleRegularizationAuxTask(AuxiliaryTask):
         if not self.enabled:
             return
         if self.previous_task is None and self.n_switches == 0:
-            logger.debug(f"Starting the first task, no update.")
+            logger.debug("Starting the first task, no update.")
             pass
         elif task_id is None or task_id != self.previous_task:
             logger.debug(
@@ -236,7 +237,6 @@ class CustomMethod(BaselineMethod, target_setting=Setting):
 def demo_manual():
     """ Apply the custom method to a Setting, creating both manually in code. """
     # Create any Setting from the tree:
-    from sequoia.settings import TaskIncrementalRLSetting, TaskIncrementalSetting
 
     # setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)  # SL
     setting = TaskIncrementalRLSetting(  # RL
@@ -249,7 +249,7 @@ def demo_manual():
         max_steps=10_000,
     )
 
-    ## Create the BaselineMethod:
+    # Create the BaselineMethod:
     config = Config(debug=True)
     trainer_options = TrainerConfig(max_epochs=1)
     hparams = BaselineModel.HParams()
@@ -257,10 +257,9 @@ def demo_manual():
         hparams=hparams, config=config, trainer_options=trainer_options
     )
 
-    ## Get the results of the baseline method:
+    # Get the results of the baseline method:
     base_results = setting.apply(base_method, config=config)
-
-    ## Create the CustomMethod:
+    # Create the CustomMethod:
     config = Config(debug=True)
     trainer_options = TrainerConfig(max_epochs=1)
     hparams = CustomizedBaselineModel.HParams()
@@ -268,10 +267,10 @@ def demo_manual():
         hparams=hparams, config=config, trainer_options=trainer_options
     )
 
-    ## Get the results for the 'improved' method:
+    # Get the results for the 'improved' method:
     new_results = setting.apply(new_method, config=config)
 
-    print(f"\n\nComparison: BaselineMethod vs CustomMethod")
+    print("\n\nComparison: BaselineMethod vs CustomMethod")
     print("\n BaselineMethod results: ")
     print(base_results.summary())
 
@@ -286,13 +285,11 @@ def demo_command_line():
     NOTE: Remember to uncomment the function call below to use this instead of
     demo_simple!
     """
-    ## Create the `Setting` and the `Config` from the command-line, like in
-    ## the other examples.
+    # Create the `Setting` and the `Config` from the command-line, like in
+    # the other examples.
     parser = ArgumentParser(description=__doc__)
 
-    ## Add command-line arguments for any Setting in the tree:
-    from sequoia.settings import TaskIncrementalRLSetting, TaskIncrementalSetting
-
+    # Add command-line arguments for any Setting in the tree:
     # parser.add_arguments(TaskIncrementalSetting, dest="setting")
     parser.add_arguments(TaskIncrementalRLSetting, dest="setting")
     parser.add_arguments(Config, dest="config")
@@ -311,12 +308,12 @@ def demo_command_line():
     # Get the results of the BaselineMethod:
     base_results = setting.apply(base_method, config=config)
 
-    ## Create the CustomMethod:
+    # Create the CustomMethod:
     new_method = CustomMethod.from_argparse_args(args, dest="method")
     # Get the results for the CustomMethod:
     new_results = setting.apply(new_method, config=config)
 
-    print(f"\n\nComparison: BaselineMethod vs CustomMethod:")
+    print("\n\nComparison: BaselineMethod vs CustomMethod:")
     print(base_results.summary())
     print(new_results.summary())
 

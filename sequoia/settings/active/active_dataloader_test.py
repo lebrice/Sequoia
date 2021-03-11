@@ -43,7 +43,7 @@ class ActiveMnistEnvironment(ActiveEnvironment[Tensor, Tensor, Tensor]):
         while True:
             action = yield next(self)
             if action is not None:
-                logger.debug(f"Received an action of {action} while iterating..")
+                # logger.debug(f"Received an action of {action} while iterating..")
                 self.reward = self.send(action)
 
     @log_calls

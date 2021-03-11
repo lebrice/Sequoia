@@ -3,7 +3,7 @@
 For now this simply holds the 'remote' environment in memory.
 """
 import itertools
-from typing import Callable, Dict, Sequence, Tuple, Type, Union, List
+from typing import Callable, Dict, Sequence, Tuple, Type, Union, List, Optional
 
 import numpy as np
 from sequoia.common.metrics import Metrics
@@ -76,7 +76,6 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
         #         break
 
         #     yield batch
-
 
     def send(self, actions: ActionType):
         actions_pkl = actions.numpy()

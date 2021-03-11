@@ -15,7 +15,9 @@ from typing import (Any, Dict, Generic, Optional, Sequence, Tuple, TypeVar,
 import gym
 import numpy as np
 from gym import spaces
+from sequoia.utils.logging_utils import get_logger
 
+logger = get_logger(__file__)
 T = TypeVar("T")
 
 
@@ -63,26 +65,9 @@ class Sparse(gym.Space, Generic[T]):
             return NotImplemented
         return other.base == self.base and other.sparsity == self.sparsity
 
-
-    def to_jsonable(self, sample_n):
-        assert False, sample_n
-        super().to_jsonable
-        # serialize as dict-repr of vectors
-        return {key: space.to_jsonable([sample[key] for sample in sample_n]) \
-                for key, space in self.spaces.items()}
-
-    def from_jsonable(self, sample_n):
-        assert False, sample_n
-        dict_of_list = {}
-        for key, space in self.spaces.items():
-            dict_of_list[key] = space.from_jsonable(sample_n[key])
-        ret = []
-        for i, _ in enumerate(dict_of_list[key]):
-            entry = {}
-            for key, value in dict_of_list.items():
-                entry[key] = value[i]
-            ret.append(entry)
-        return ret
+    # def __getattr__(self, name: str):
+    #     logger.debug(f"Accessing the {name} attribute on the wrapped space.")
+    #     return getattr(self.base, name)
 
 # from gym.spaces.utils import flatdim, flatten
 from functools import singledispatch

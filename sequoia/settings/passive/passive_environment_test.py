@@ -1,19 +1,68 @@
 from typing import Iterable, Tuple
 
 import gym
-import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 import torch
 from gym import spaces
 from torch import Tensor
-from torchvision.datasets import MNIST
+from torch.utils.data import Subset, TensorDataset
 
+from sequoia.common.gym_wrappers import TransformObservation
+from sequoia.common.spaces import Image, NamedTupleSpace
 from sequoia.common.transforms import Compose, Transforms
 from .passive_environment import PassiveEnvironment
-from sequoia.common.spaces import Image
 
 
-def test_passive_environment_as_dataloader():
+@pytest.fixture()
+def MNIST():
+    """ Fixture that gives back a function that can be used to get the MNIST dataset.
+
+    This is useful for running tests on the mila cluster for instance.
+    """
+    import os
+    import shutil
+    from pathlib import Path
+    from typing import Callable, Optional
+
+    from torchvision.datasets import MNIST as _MNIST
+
+    local_data_dir: Path = "data"
+    _download = True
+
+    if "SLURM_TMPDIR" in os.environ:
+        _download = False
+        network_torchvision_dir = Path("/network/datasets/torchvision")
+        slurm_tmpdir = Path(os.environ["SLURM_TMPDIR"])
+
+        local_data_dir = slurm_tmpdir / "localscratch"
+
+        remote_dataset_dir = network_torchvision_dir / "MNIST"
+        local_dataset_dir = local_data_dir / "MNIST"
+
+        if not (local_data_dir / "MNIST").exists():
+            print(f"Copying {local_dataset_dir} to {local_dataset_dir}")
+            shutil.copytree(remote_dataset_dir, local_dataset_dir)
+
+    def _mnist(
+        data_dir: str = "UNUSED",
+        train: bool = True,
+        transform: Optional[Callable] = None,
+        target_transform: Optional[Callable] = None,
+        download: bool = False,  # UNUSED
+    ):
+        return _MNIST(
+            local_data_dir,
+            train=train,
+            transform=transform,
+            target_transform=target_transform,
+            download=_download,
+        )
+
+    return _mnist
+
+
+def test_passive_environment_as_dataloader(MNIST):
     batch_size = 1
     transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
     dataset = MNIST("data", transform=transforms)
@@ -37,10 +86,10 @@ def test_passive_environment_as_dataloader():
         # plt.waitforbuttonpress(10)
 
 
-def test_mnist_as_gym_env():
+def test_mnist_as_gym_env(MNIST):
     # from continuum.datasets import MNIST
     dataset = MNIST(
-        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]),
     )
 
     batch_size = 4
@@ -62,16 +111,12 @@ def test_mnist_as_gym_env():
     env.close()
 
 
-import numpy as np
-from torch.utils.data import Subset
-
-
-def test_env_gives_done_on_last_item():
+def test_env_gives_done_on_last_item(MNIST):
     # from continuum.datasets import MNIST
     max_samples = 100
     batch_size = 1
     dataset = MNIST(
-        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]),
     )
     dataset = Subset(dataset, list(range(max_samples)))
 
@@ -98,13 +143,13 @@ def test_env_gives_done_on_last_item():
     env.close()
 
 
-def test_env_done_works_with_batch_size():
+def test_env_done_works_with_batch_size(MNIST):
     # from continuum.datasets import MNIST
     max_samples = 100
     batch_size = 5
     max_batches = max_samples // batch_size
     dataset = MNIST(
-        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]),
     )
     dataset = Subset(dataset, list(range(max_samples)))
 
@@ -132,13 +177,13 @@ def test_env_done_works_with_batch_size():
     env.close()
 
 
-def test_multiple_epochs_env():
+def test_multiple_epochs_env(MNIST):
     max_epochs = 3
     max_samples = 100
     batch_size = 5
     max_batches = max_samples // batch_size
     dataset = MNIST(
-        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]),
     )
     dataset = Subset(dataset, list(range(max_samples)))
 
@@ -172,14 +217,14 @@ def test_multiple_epochs_env():
     env.close()
 
 
-def test_multiple_epochs_dataloader():
+def test_multiple_epochs_dataloader(MNIST):
     """ Test that we can iterate on the dataloader more than once. """
     max_epochs = 3
     max_samples = 200
     batch_size = 5
     max_batches = max_samples // batch_size
     dataset = MNIST(
-        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]),
     )
     dataset = Subset(dataset, list(range(max_samples)))
 
@@ -198,7 +243,7 @@ def test_multiple_epochs_dataloader():
     assert total_steps == max_batches * max_epochs
 
 
-def test_multiple_epochs_dataloader_with_split_batch_fn():
+def test_multiple_epochs_dataloader_with_split_batch_fn(MNIST):
     """ Test that we can iterate on the dataloader more than once. """
     max_epochs = 3
     max_samples = 200
@@ -211,7 +256,7 @@ def test_multiple_epochs_dataloader_with_split_batch_fn():
 
     max_batches = max_samples // batch_size
     dataset = MNIST(
-        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]),
     )
     dataset = Subset(dataset, list(range(max_samples)))
 
@@ -233,13 +278,12 @@ def test_multiple_epochs_dataloader_with_split_batch_fn():
     assert total_steps == max_batches * max_epochs
 
 
-def test_env_requires_reset_before_step():
+def test_env_requires_reset_before_step(MNIST):
     # from continuum.datasets import MNIST
     max_samples = 100
     batch_size = 5
-    max_batches = max_samples // batch_size
     dataset = MNIST(
-        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]),
     )
     dataset = Subset(dataset, list(range(max_samples)))
 
@@ -249,10 +293,9 @@ def test_env_requires_reset_before_step():
         env.step(env.action_space.sample())
 
 
-def test_split_batch_fn():
+def test_split_batch_fn(MNIST):
     # from continuum.datasets import MNIST
     batch_size = 5
-    max_batches = 10
 
     def split_batch_fn(
         batch: Tuple[Tensor, Tensor, Tensor]
@@ -263,10 +306,9 @@ def test_split_batch_fn():
     # dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
     from continuum import ClassIncremental
     from continuum.datasets import MNIST
-    from continuum.tasks import split_train_val
 
     scenario = ClassIncremental(
-        MNIST("data", download=True, train=True),
+        MNIST("data", train=True),
         increment=2,
         transformations=Compose([Transforms.to_tensor, Transforms.three_channels]),
     )
@@ -320,10 +362,6 @@ def test_split_batch_fn():
         env.close()
 
 
-from sequoia.common.spaces import NamedTupleSpace
-from sequoia.common.gym_wrappers import TransformObservation
-
-
 def check_env(env: PassiveEnvironment):
     """ Perform a step gym-style and dataloader-style and check that items
     fit their respective spaces.
@@ -349,7 +387,7 @@ def check_env(env: PassiveEnvironment):
         assert False, "should have iterated"
 
 
-def test_observation_wrapper_applied_to_passive_environment():
+def test_observation_wrapper_applied_to_passive_environment(MNIST):
     """ Test that when we apply a gym wrapper to a PassiveEnvironment, it also
     affects the observations / actions / rewards produced when iterating on the
     env.
@@ -357,7 +395,7 @@ def test_observation_wrapper_applied_to_passive_environment():
     batch_size = 5
 
     transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
-    dataset = MNIST("data", transform=transforms)
+    dataset = MNIST("data", transform=transforms, download=True)
     obs_space = Image(0, 255, (1, 28, 28), np.uint8)
     obs_space = transforms(obs_space)
     dataset.classes
@@ -389,13 +427,13 @@ def test_observation_wrapper_applied_to_passive_environment():
     # from continuum.tasks import split_train_val
 
 
-def test_passive_environment_interaction():
+def test_passive_environment_interaction(MNIST):
     """ Test the gym.Env-style interaction with a PassiveEnvironment.
     """
     batch_size = 5
     transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
     dataset = MNIST(
-        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]),
     )
     max_samples = 100
     dataset = Subset(dataset, list(range(max_samples)))
@@ -429,13 +467,13 @@ def test_passive_environment_interaction():
     assert i == max_samples // batch_size - 1
 
 
-def test_passive_environment_without_pretend_to_be_active():
+def test_passive_environment_without_pretend_to_be_active(MNIST):
     """ Test the gym.Env-style interaction with a PassiveEnvironment.
     """
     batch_size = 5
     transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
     dataset = MNIST(
-        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]),
     )
     max_samples = 100
     dataset = Subset(dataset, list(range(max_samples)))
@@ -466,13 +504,14 @@ def test_passive_environment_without_pretend_to_be_active():
     assert i == max_samples // batch_size - 1
 
 
-def test_passive_environment_needs_actions_to_be_sent():
+def test_passive_environment_needs_actions_to_be_sent(MNIST):
     """ Test the 'active dataloader' style interaction.
     """
     batch_size = 10
     transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
+
     dataset = MNIST(
-        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+        "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]),
     )
     max_samples = 105
     dataset = Subset(dataset, list(range(max_samples)))
@@ -485,7 +524,7 @@ def test_passive_environment_needs_actions_to_be_sent():
         batch_size=batch_size,
         observation_space=obs_space,
         pretend_to_be_active=True,
-        strict = True,
+        strict=True,
     )
 
     with pytest.raises(RuntimeError):
@@ -506,8 +545,6 @@ def test_passive_environment_needs_actions_to_be_sent():
         assert rewards is not None
         assert rewards.shape[0] == action.shape[0]
 
-
-from torch.utils.data import TensorDataset
 
 
 def test_passive_environment_active_mode_action_reward_match():
@@ -531,7 +568,7 @@ def test_passive_environment_active_mode_action_reward_match():
     for i, (obs, _) in enumerate(env):
         print(i)
         expected_obs = torch.arange(i * batch_size, (i + 1) * batch_size)
-        expected_obs = expected_obs[:obs.shape[0]]
+        expected_obs = expected_obs[: obs.shape[0]]
         assert (obs == expected_obs.reshape([obs.shape[0], 1, 1, 1])).all()
         action = torch.arange(i * batch_size, (i + 1) * batch_size, dtype=int)
         action = action[: obs.shape[0]]

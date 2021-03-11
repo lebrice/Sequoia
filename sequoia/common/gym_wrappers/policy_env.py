@@ -133,8 +133,8 @@ class PolicyEnv(gym.Wrapper, IterableDataset, Iterable[DatasetItem]):
         self._n_episodes: int = 0
         self._n_steps: int = 0
         self._n_steps_in_episode: int = 0
-        self._observation: Optional[Observations] = None
-        self._action: Optional[Actions] = None
+        self._observation: Optional[ObservationType] = None
+        self._action: Optional[ActionType] = None
 
     def set_policy(self, policy: Callable[[ObservationType, gym.Space], ActionType]) -> None:
         """ Sets a new policy to be used to generate missing actions. """

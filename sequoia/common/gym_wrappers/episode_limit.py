@@ -1,7 +1,7 @@
 # IDEA: Limit the total number of episodes, even in vectorized
 # environments!
 import warnings
-from typing import List, Union
+from typing import List, Union, Sequence
 
 import gym
 import numpy as np

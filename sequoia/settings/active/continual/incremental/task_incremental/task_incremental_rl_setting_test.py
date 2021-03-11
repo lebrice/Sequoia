@@ -1,5 +1,6 @@
 from .task_incremental_rl_setting import TaskIncrementalRLSetting
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
+from typing import List
 
 
 def test_task_schedule_is_used():

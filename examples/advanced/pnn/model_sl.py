@@ -1,20 +1,20 @@
-from typing import Dict, Optional, Tuple, List
+from typing import Optional, Tuple, List
 
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch import Tensor
 from sequoia.settings.passive.cl.objects import Observations, Rewards
 from sequoia.settings import PassiveEnvironment, Actions
-from layers import PNNConvLayer, PNNLinearBlock
+from layers import PNNLinearBlock
 
 
 class PnnClassifier(nn.Module):
     """
     @article{rusu2016progressive,
       title={Progressive neural networks},
-      author={Rusu, Andrei A and Rabinowitz, Neil C and Desjardins, Guillaume and Soyer, Hubert and Kirkpatrick, James and Kavukcuoglu, Koray and Pascanu, Razvan and Hadsell, Raia},
+      author={Rusu, Andrei A and Rabinowitz, Neil C and Desjardins, Guillaume and Soyer,
+      Hubert and Kirkpatrick, James and Kavukcuoglu, Koray and Pascanu,
+      Razvan and Hadsell, Raia},
       journal={arXiv preprint arXiv:1606.04671},
       year={2016}
     }
@@ -42,11 +42,11 @@ class PnnClassifier(nn.Module):
             c[0](x) + n_classes_in_task
             for n_classes_in_task, c in zip(self.n_classes_per_task, self.columns)
         ]
-        for l in range(1, self.n_layers):
+        for layer_index in range(1, self.n_layers):
             outputs = []
 
             for i, column in enumerate(self.columns):
-                outputs.append(column[l](inputs[: i + 1]))
+                outputs.append(column[layer_index](inputs[: i + 1]))
 
             inputs = outputs
 
@@ -87,7 +87,7 @@ class PnnClassifier(nn.Module):
         print("Add column of the new task")
 
     def freeze_columns(self, skip=None):
-        if skip == None:
+        if skip is None:
             skip = []
 
         for i, c in enumerate(self.columns):
@@ -107,17 +107,17 @@ class PnnClassifier(nn.Module):
         environment: PassiveEnvironment,
     ):
         """Shared step used for both training and validation.
-                
+
         Parameters
         ----------
         batch : Tuple[Observations, Optional[Rewards]]
             Batch containing Observations, and optional Rewards. When the Rewards are
             None, it means that we'll need to provide the Environment with actions
             before we can get the Rewards (e.g. image labels) back.
-            
+
             This happens for example when being applied in a Setting which cares about
             sample efficiency or training performance, for example.
-            
+
         environment : Environment
             The environment we're currently interacting with. Used to provide the
             rewards when they aren't already part of the batch (as mentioned above).

@@ -1,11 +1,13 @@
-from .universal_encoder import create_encoder
+import numpy as np
+import pytest
 from gym import Space, spaces
 from gym.vector.utils import batch_space
-import numpy as np
-
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
-from .universal_encoder import n_parameters
 
+from .universal_encoder import create_encoder, n_parameters
+
+
+@pytest.mark.slow(120)
 def test_universal_encoder():
     batch_size = 10
     budget = None

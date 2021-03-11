@@ -171,7 +171,7 @@ class SettingABC:
 
     # These are some "private" class attributes.
     # For any new Setting subclass, it's parent setting.
-    _parent: ClassVar[Type["Setting"]] = None
+    _parent: ClassVar[Type["SettingABC"]] = None
     # A list of all the direct children of this setting.
     _children: ClassVar[Set[Type["SettingABC"]]] = set()
     # List of all methods that directly target this Setting.

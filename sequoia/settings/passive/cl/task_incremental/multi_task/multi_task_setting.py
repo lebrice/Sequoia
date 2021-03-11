@@ -176,7 +176,7 @@ class MultiTaskSetting(TaskIncrementalSetting):
         """
         return super().test_dataloader(batch_size=batch_size, num_workers=num_workers)
 
-    def test_loop(self, method: Method) -> "IncrementalSetting.Results":
+    def test_loop(self, method: Method) -> "MultiTaskSetting.Results":
         """ Runs a multi-task test loop and returns the Results.
         """
         test_env = self.test_dataloader()
@@ -185,7 +185,7 @@ class MultiTaskSetting(TaskIncrementalSetting):
             method.test(test_env)
             test_env.close()
             # Get the metrics from the test environment
-            test_results: Results = test_env.get_results()
+            test_results: MultiTaskSetting.Results = test_env.get_results()
             print(f"Test results: {test_results}")
             return test_results
 
