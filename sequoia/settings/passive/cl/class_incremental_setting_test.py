@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from continuum import InstanceIncremental
+from continuum import InstanceIncremental, ClassIncremental
 from gym.spaces import Discrete, Space
 from sequoia.common.gym_wrappers.convert_tensors import has_tensor_support
 from sequoia.common.spaces import Sparse
@@ -27,7 +27,7 @@ def test_observation_spaces_match_dataset(dataset_name: str):
 
     observation_space = base_observation_spaces[dataset_name]
     reward_space = reward_spaces[dataset_name]
-    for task_dataset in InstanceIncremental(dataset, nb_tasks=1):
+    for task_dataset in ClassIncremental(dataset, nb_tasks=1):
         first_item = task_dataset[0]
         x, t, y = first_item
         assert x in observation_space
