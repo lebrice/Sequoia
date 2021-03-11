@@ -15,8 +15,9 @@ plotly
 pandas
 # Only for python < 3.8
 singledispatchmethod;python_version<'3.8'
-pytorch-lightning>=1.1.8
-pytorch-lightning-bolts
+# Temporarily fix the pytorch lightning version (issue #134)
+pytorch-lightning==1.1.8
+pytorch-lightning-bolts==0.3.0
 # Requirements for running tests:
 pytest-timeout
 pytest-xdist
