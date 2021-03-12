@@ -375,7 +375,8 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             pass
 
         obs = test_env.reset()
-        max_steps: int = self.get_attribute("test_steps") // test_env.batch_size
+        batch_size = test_env.batch_size
+        max_steps: int = self.get_attribute("test_steps") // (batch_size or 1)
 
         # Reset on the last step is causing trouble, since the env is closed.
         pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
@@ -385,16 +386,18 @@ class SettingProxy(SettingABC, Generic[SettingType]):
                 logger.debug(f"Env is closed")
                 break
 
-            # NOTE: Need to pass an action space that actually reflects the batch
-            # size, even for the last batch!
-            obs_batch_size = obs.x.shape[0] if obs.x.shape else None
-            action_space_batch_size = (
-                test_env.action_space.shape[0] if test_env.action_space.shape else None
-            )
-            if obs_batch_size is not None and obs_batch_size != action_space_batch_size:
-                action_space = batch_space(test_env.single_action_space, obs_batch_size)
-            else:
-                action_space = test_env.action_space
+            # BUG: This doesn't work if the env isn't batched.
+            action_space = test_env.action_space
+            env_is_batched = getattr(test_env, "num_envs", 0) >= 1
+            if env_is_batched:
+                # NOTE: Need to pass an action space that actually reflects the batch
+                # size, even for the last batch!
+                obs_batch_size = obs.x.shape[0] if obs.x.shape else None
+                action_space_batch_size = (
+                    test_env.action_space.shape[0] if test_env.action_space.shape else None
+                )
+                if obs_batch_size is not None and obs_batch_size != action_space_batch_size:
+                    action_space = batch_space(test_env.single_action_space, obs_batch_size)
                         
             action = method.get_actions(obs, action_space)
 

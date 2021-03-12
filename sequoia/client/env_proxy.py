@@ -3,9 +3,11 @@
 For now this simply holds the 'remote' environment in memory.
 """
 import itertools
-from typing import Callable, Dict, Sequence, Tuple, Type, Union, List
+from typing import Callable, Dict, Generic, List, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
+from torch import Tensor
+
 from sequoia.common.metrics import Metrics
 from sequoia.settings import (
     Actions,
@@ -26,6 +28,8 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
         # TODO: env_fn is just a callable that returns the actual env now, but the idea
         # is that it would perhaps be a handle/address/whatever which we could contact?
         self.__environment = env_fn()
+        # TODO: Remove this if possible
+        self._environment_type = type(self.__environment)
         self._setting_type = setting_type
 
         self.observation_space = self.get_attribute("observation_space")
@@ -77,12 +81,16 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
 
         #     yield batch
 
-
     def send(self, actions: ActionType):
-        actions_pkl = actions.numpy()
+        if isinstance(actions, (Actions, Tensor)):
+            actions = actions.numpy()
+        actions_pkl = actions
         rewards_pkl = self.__environment.send(actions_pkl)
         rewards = self._setting_type.Rewards(**rewards_pkl)
         return rewards
+
+    def close(self):
+        self.__environment.close()
 
     @property
     def is_closed(self) -> bool:

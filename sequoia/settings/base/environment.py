@@ -4,29 +4,52 @@ NOTE (@lebrice): This 'Environment' abstraction isn't super useful at the moment
 because there's only the `ActiveDataLoader` that fits this interface (since we
 can't send anything to the usual DataLoader).
 """
-from abc import ABC, abstractmethod
+from abc import ABC, ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import Generic, Iterable, Optional, TypeVar
+from typing import Generic, Iterable, Optional, Type, TypeVar
 
 import gym
 import numpy as np
 from gym import spaces
+from sequoia.common.batch import Batch
+from sequoia.utils.logging_utils import get_logger
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from sequoia.common.batch import Batch
-from sequoia.utils.logging_utils import get_logger
+from .objects import (
+    Actions,
+    ActionType,
+    Observations,
+    ObservationType,
+    Rewards,
+    RewardType,
+)
 
 logger = get_logger(__file__)
-from .objects import (Actions, ActionType, Observations, ObservationType,
-                      Rewards, RewardType)
 
 
-class Environment(gym.Env, Generic[ObservationType, ActionType, RewardType], ABC):
+class EnvironmentMeta(ABCMeta, Type["Environment"]):
+    # TODO: Use something like this so that we can do:
+    # isinstance(<EnvironmentProxy[env_type]>, <env_type>) -> True
+    def __instancecheck__(self, instance):
+        if hasattr(instance, "_environment_type"):
+            # If the env is a proxy, then we check if it is a proxy to an env of this
+            # type.
+            return issubclass(instance._environment_type, self)
+        return super().__instancecheck__(instance)
+
+
+class Environment(
+    gym.Env,
+    Generic[ObservationType, ActionType, RewardType],
+    ABC,
+    metaclass=EnvironmentMeta,
+):
     """ABC for a learning 'environment' in Reinforcement or Supervised Learning.
 
     Different settings can implement this interface however they want.
     """
+
     reward_space: gym.Space
     # TODO: This is currently changing. We don't really need to force the envs
     # on the RL branch to also be iterables/dataloaders, only those on the
@@ -45,7 +68,7 @@ class Environment(gym.Env, Generic[ObservationType, ActionType, RewardType], ABC
     # def send(self, action: ActionType) -> RewardType:
     #     """ Send an action to the environment, and returns the corresponding reward. """
 
-    # TODO: (@lebrice): Not sure if we really want/need an abstract __next__. 
+    # TODO: (@lebrice): Not sure if we really want/need an abstract __next__.
     # @abstractmethod
     # def __next__(self) -> ObservationType:
     #     """ Generate the next observation. """

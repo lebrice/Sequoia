@@ -10,9 +10,11 @@ from typing import Optional, Mapping, Dict, Union, Any
 
 from sequoia.common.metrics import ClassificationMetrics
 from sequoia.methods import register_method
-from sequoia.settings import ClassIncrementalSetting, PassiveSetting, Setting
+from sequoia.settings import ClassIncrementalSetting, Setting
 from sequoia.settings.base import Actions, Environment, Method, Observations
 from sequoia.utils import get_logger, singledispatchmethod
+from sequoia.settings.passive import PassiveSetting, PassiveEnvironment
+from sequoia.settings.active import ActiveSetting, ActiveEnvironment
 
 logger = get_logger(__file__)
 
@@ -25,14 +27,27 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     This method doesn't have a model or any parameters. It just returns a random
     action for every observation.
     """
+
     batch_size: int = 16
-    
-    def fit(self,
-            train_env: Environment=None,
-            valid_env: Environment=None,
-            datamodule=None
-        ):
+
+    def fit(
+        self, train_env: Environment, valid_env: Environment,
+    ):
         # This method doesn't actually train, so we just return immediately.
+        if isinstance(train_env, PassiveEnvironment):
+            # Do one 'epoch' only:
+            for batch in train_env:
+                action = train_env.action_space.sample()
+                rewards = train_env.send(action)
+                assert False, rewards
+        elif isinstance(train_env, ActiveEnvironment):
+            while not train_env.is_closed():
+                obs = train_env.reset()
+                done = False
+                while not done:
+                    obs, rewards, done, info = train_env.reset()
+        else:
+            assert False, train_env
         return
 
     def configure(self, setting):
@@ -46,7 +61,9 @@ class RandomBaselineMethod(Method, target_setting=Setting):
             # 'task action space' rather than the action space on the setting itself?
             pass
 
-    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
+    def get_actions(
+        self, observations: Observations, action_space: gym.Space
+    ) -> Actions:
         return action_space.sample()
 
     @classmethod
@@ -68,7 +85,11 @@ class RandomBaselineMethod(Method, target_setting=Setting):
             An orion-formatted search space dictionary, mapping from hyper-parameter
             names (str) to their priors (str), or to nested dicts of the same form.
         """
-        logger.warning(UserWarning(f"Hey, you seem to be trying to perform an HPO sweep using the random baseline method?"))
+        logger.warning(
+            UserWarning(
+                f"Hey, you seem to be trying to perform an HPO sweep using the random baseline method?"
+            )
+        )
         # Assuming that this is just used for debugging, so giving back a simple space.
         return {"foo": "choice([0, 1, 2])"}
 
@@ -84,12 +105,16 @@ class RandomBaselineMethod(Method, target_setting=Setting):
             The new hyper-parameters being recommended by the HPO algorithm. These will
             have the same structure as the search space.
         """
-        logger.warning(UserWarning(f"Hey, you seem to be trying to perform an HPO sweep using the random baseline method?"))
+        logger.warning(
+            UserWarning(
+                f"Hey, you seem to be trying to perform an HPO sweep using the random baseline method?"
+            )
+        )
         foo = new_hparams["foo"]
         print(f"Using new suggested value")
 
     ## Methods below are just here for testing purposes.
-        
+
     @singledispatchmethod
     def validate_results(self, setting: Setting, results: Setting.Results):
         """Called during testing. Use this to assert that the results you get
@@ -101,11 +126,14 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         """
         assert results is not None
         assert results.objective > 0
-        print(f"Objective when applied to a setting of type {type(setting)}: {results.objective}")
-
+        print(
+            f"Objective when applied to a setting of type {type(setting)}: {results.objective}"
+        )
 
     @validate_results.register
-    def validate(self, setting: ClassIncrementalSetting, results: ClassIncrementalSetting.Results):
+    def validate(
+        self, setting: ClassIncrementalSetting, results: ClassIncrementalSetting.Results
+    ):
         assert isinstance(setting, ClassIncrementalSetting), setting
         assert isinstance(results, ClassIncrementalSetting.Results), results
 
@@ -130,7 +158,7 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     # @singledispatchmethod
     # def model_class(self, setting: SettingType) -> Type[BaselineModel]:
     #     raise NotImplementedError(f"No known model for setting of type {type(setting)} (registry: {self.model_class.registry})")
-    
+
     # @model_class.register
     # def _(self, setting: ActiveSetting) -> Type[Agent]:
     #     # TODO: Make a 'random' RL method.
