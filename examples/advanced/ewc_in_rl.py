@@ -23,7 +23,7 @@ from nngeometry.generator.jacobian import Jacobian
 from nngeometry.layercollection import LayerCollection
 from nngeometry.object.pspace import (PMatAbstract, PMatKFAC, PMatDiag,
                                       PVector)
-from sequoia.methods.ewc_method import FIM
+
 from torch.utils.data import DataLoader, TensorDataset
 from sequoia.settings.base import Actions, Environment, Method, Observations
 
@@ -182,7 +182,7 @@ class EWCPolicy(NormRegularizer):
             else:
                 function=self
                 n_output=1
-
+            # TODO: Import this FIM function, from wherever it was defined.
             new_fim = FIM(model=self,
                         loader=dataloader,   
                         representation=self.FIM_representation,
