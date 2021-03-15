@@ -383,8 +383,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             for i in range(self.nb_tasks - 1):
                 if change_steps[i + 1] - change_steps[i] != self.test_steps_per_task:
                     raise NotImplementedError(
-                        f"WIP: This might not work yet if the test tasks aren't "
-                        f"equally spaced out at a fixed interval."
+                        "WIP: This might not work yet if the test tasks aren't "
+                        "equally spaced out at a fixed interval."
                     )
 
             self.test_steps = max(change_steps)
@@ -392,16 +392,21 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 # See above note about the last entry.
                 self.test_steps += self.test_steps_per_task
 
-        elif self.test_steps is None:
-            assert (
-                self.test_steps_per_task
-            ), "need to set one of test_steps or test_steps_per_task"
-            self.test_steps = self.test_steps_per_task * self.nb_tasks
-        else:
+        elif self.test_steps_per_task is None:
+            # This is basically never the case, since the test_steps defaults to 10_000.
             assert (
                 self.test_steps
             ), "need to set one of test_steps or test_steps_per_task"
             self.test_steps_per_task = self.test_steps // self.nb_tasks
+        else:
+            # FIXME: This is too complicated for what is is.
+            # Check that the test steps must either be the default value, or the right
+            # value to use in this case.
+            assert self.test_steps in {10_000, self.test_steps_per_task * self.nb_tasks}
+            assert (
+                self.test_steps_per_task
+            ), "need to set one of test_steps or test_steps_per_task"
+            self.test_steps = self.test_steps_per_task * self.nb_tasks
 
         assert self.test_steps // self.test_steps_per_task == self.nb_tasks
 

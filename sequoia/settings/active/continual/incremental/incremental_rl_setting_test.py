@@ -213,6 +213,7 @@ def test_monsterkong_state(task_labels_at_test_time: bool):
         task_labels_at_test_time=task_labels_at_test_time,
         max_episode_steps=10,
     )
+    assert setting.test_steps == 500
     with setting.train_dataloader() as env:
         obs = env.reset()
         assert obs in setting.observation_space
@@ -278,6 +279,7 @@ def test_monsterkong_pixels(task_labels_at_test_time: bool):
         task_labels_at_test_time=task_labels_at_test_time,
         max_episode_steps=10,
     )
+    assert setting.test_steps == 500
     assert setting.observation_space.x == Image(0, 255, (64, 64, 3), np.uint8)
     with setting.train_dataloader() as env:
         obs = env.reset()
