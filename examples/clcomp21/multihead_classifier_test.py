@@ -1,8 +1,8 @@
 import pytest
 from sequoia.client.setting_proxy import SettingProxy
+from sequoia.conftest import slow
 from sequoia.settings import ClassIncrementalSetting
 
-from .conftest import slow
 from .multihead_classifier import ExampleTaskInferenceMethod, MultiHeadClassifier
 
 

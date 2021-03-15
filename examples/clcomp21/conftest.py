@@ -47,13 +47,3 @@ def rl_track_setting():
         # class_order=class_order,
     )
     return setting
-
-
-def pytest_addoption(parser):
-    parser.addoption("--slow", action="store_true", default=False)
-
-
-slow = pytest.mark.skipif(
-    "--slow" not in sys.argv,
-    reason="This test is slow so we only run it when necessary."
-)

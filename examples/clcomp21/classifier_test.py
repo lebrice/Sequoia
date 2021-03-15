@@ -1,9 +1,9 @@
 import pytest
 from sequoia.client.setting_proxy import SettingProxy
+from sequoia.conftest import slow
 from sequoia.settings.passive import ClassIncrementalSetting
 
-from .conftest import slow
-from .classifier import ExampleMethod, Classifier
+from .classifier import Classifier, ExampleMethod
 
 
 @pytest.mark.timeout(120)

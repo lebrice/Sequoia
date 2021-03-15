@@ -1,8 +1,8 @@
 import pytest
 from sequoia.client.setting_proxy import SettingProxy
+from sequoia.conftest import slow
 from sequoia.settings import ClassIncrementalSetting
 
-from .conftest import slow
 from .regularization_example import ExampleRegMethod, RegularizedClassifier
 
 
