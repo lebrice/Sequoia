@@ -29,20 +29,19 @@ class EwcModel(BaselineModel):
     @dataclass
     class HParams(BaselineModel.HParams):
         """ Hyper-parameters of the `EwcModel`. """
+
         # Hyper-parameters related to the EWC auxiliary task.
         ewc: EWCTask.Options = mutable_field(EWCTask.Options)
 
     def __init__(self, setting: Setting, hparams: "EwcModel.HParams", config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
         self.hp: EwcModel.HParams
-        # BUG: mutable_field doesn't seem to work correctly: Doesn't use default value.
-        self.add_auxiliary_task(EWCTask(options=self.hp.ewc))
 
     def create_auxiliary_tasks(self) -> Dict[str, AuxiliaryTask]:
         tasks = super().create_auxiliary_tasks()
         # NOTE: We don't add it here, since we already do this above in __init__.
         # We could also add the aux tasks this way as well:
-        # tasks["ewc"] = EWCTask(options=self.hp.ewc)
+        tasks["ewc"] = EWCTask(options=self.hp.ewc)
         return tasks
 
     def get_loss(self, forward_pass, rewards=None, loss_name=""):
@@ -57,6 +56,7 @@ class EwcMethod(BaselineMethod, target_setting=IncrementalSetting):
     This Method is applicable to any CL setting (RL or SL) where there are clear task
     boundaries, regardless of if the task labels are given or not.
     """
+
     hparams: EwcModel.HParams = mutable_field(EwcModel.HParams)
 
     def __init__(
@@ -70,13 +70,25 @@ class EwcMethod(BaselineMethod, target_setting=IncrementalSetting):
             hparams=hparams, config=config, trainer_options=trainer_options, **kwargs
         )
 
-    def configure(self, setting: Setting):
+    def configure(self, setting: IncrementalSetting):
         """ Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
         """
+        if setting.phases == 1:
+            # TODO: Should we raise an error in this case? or justlog a warning?
+            # Is there any situation where it makes sense to use this Method in such a
+            # setting? (making a subclass of this for instance?)
+            raise RuntimeError(
+                "Disabling the EWC task, as there is only one phase of training in "
+                "this setting (it is a multi-task setting, in which tasks are "
+                "sampled randomly after each 'episode'"
+            )
+            # We could also just disable the ewc task (after super().configure(setting))
+            # self.model.tasks["ewc"].disable()
         super().configure(setting)
+
         # self.model.add_auxiliary_task(EWCTask(options=self.hparams.ewc))
 
     def on_task_switch(self, task_id: Optional[int]):

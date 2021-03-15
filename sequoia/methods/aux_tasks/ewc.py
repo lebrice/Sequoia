@@ -10,11 +10,12 @@ package, (which I don't think we need to have as a submodule).
 from collections import deque
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Type, Optional, Deque, List
+from typing import Type, Optional, Deque, List, Dict
 from contextlib import contextmanager
 
 from gym.spaces.utils import flatdim
 from nngeometry.metrics import FIM
+from nngeometry.layercollection import LayerCollection
 from nngeometry.object.pspace import PMatAbstract, PMatDiag, PMatKFAC, PVector
 from simple_parsing import choice
 from torch import Tensor, nn
@@ -93,8 +94,20 @@ class EWCTask(AuxiliaryTask):
         # When True, ignore task boundaries (no EWC update).
         # This is used mainly because of the need for executing forward passes when
         # calculating the new FIMs, and the MultiheadModel class might then call
-        # `on_task_switch`, so we don't want to recurse. 
+        # `on_task_switch`, so we don't want to recurse.
         self._ignore_task_boundaries: bool = False
+
+        if not self.model.shared_modules():
+            # TODO: This might cause a bug, if  some auxiliary task were to replace the
+            # encoder and also be 'activated' after this task. This is a really obscure
+            # edge case though.
+            logger.warning(
+                RuntimeWarning(
+                    "Disabling the EWC auxiliary task, since there appears to be no "
+                    "shared weights between tasks!"
+                )
+            )
+            self.disable()
 
     def get_loss(self, forward_pass: ForwardPass, y: Tensor = None) -> Loss:
         """ Gets the EWC loss.
@@ -107,7 +120,7 @@ class EWCTask(AuxiliaryTask):
             return Loss(name=self.name)
 
         loss = 0.0
-        v_current = PVector.from_model(self._shared_net)
+        v_current = self.get_current_model_weights()
 
         for fim in self.fisher_information_matrices:
             diff = v_current - self.previous_model_weights
@@ -116,25 +129,15 @@ class EWCTask(AuxiliaryTask):
         ewc_loss = Loss(name=self.name, loss=loss)
         return ewc_loss
 
-    @property
-    def disabled(self) -> bool:
-        return super().disabled or self._shared_net is None
-
     def on_task_switch(self, task_id: Optional[int]):
         """ Executed when the task switches (to either a known or unknown task).
         """
         if not self.enabled:
             return
         logger.debug(f"On task switch called: task_id={task_id}")
-        
+
         if self._ignore_task_boundaries:
             logger.info("Ignoring task boundary (probably from recursive call)")
-            return
-    
-        if self._shared_net is None:
-            logger.warning(
-                RuntimeWarning("EWC cannot be applied as there are no shared weights!")
-            )
             return
 
         if not self.training:
@@ -186,12 +189,7 @@ class EWCTask(AuxiliaryTask):
             f"Updating the EWC 'anchor' weights before starting training on "
             f"task {new_task_id}"
         )
-        # TODO: There's this issue where the MultiheadModel will actually call on_task_switch, which I will take out here.
-        
-        device = self._model.config.device
-        self.previous_model_weights = (
-            PVector.from_model(self._shared_net.to(device)).clone().detach()
-        )
+        self.previous_model_weights = self.get_current_model_weights().clone().detach()
 
         # Create a Dataloader from the stored observations.
         obs_type: Type[Observations] = type(self.observation_collector[0])
@@ -207,8 +205,8 @@ class EWCTask(AuxiliaryTask):
         # since the buffers would get cleared and re-created just for these forward
         # passes
         dataloader = DataLoader(dataset, batch_size=None, collate_fn=None)
-        # NOTE: Would be nice to have         
-        
+        # TODO: Would be nice to have a progress bar here.
+
         # Create the parameters to be passed to the FIM function. These may vary a
         # bit, depending on if we're being applied in a classification setting or in
         # a regression setting (not done yet)
@@ -238,16 +236,22 @@ class EWCTask(AuxiliaryTask):
 
         else:
             raise NotImplementedError("TODO")
-        
+
         with self._ignoring_task_boundaries():
+            # Prevent recursive calls to `on_task_switch` from affecting us (can be
+            # called from MultiheadModel). (TODO: MultiheadModel will be fixed soon.)
+            # layer_collection = LayerCollection.from_model(self.model.shared_modules())
+            # nngeometry BUG: this doesn't work when passing the layer
+            # collection instead of the model
             new_fim = FIM(
-                model=self._shared_net,
+                model=self.model.shared_modules(),
                 loader=dataloader,
                 representation=self.options.fim_representation,
                 n_output=n_output,
                 variant=variant,
                 function=fim_function,
                 device=self._model.device,
+                layer_collection=None,
             )
 
         # TODO: There was maybe an idea to use another fisher information matrix for
@@ -263,7 +267,7 @@ class EWCTask(AuxiliaryTask):
         self._ignore_task_boundaries = True
         yield
         self._ignore_task_boundaries = False
-    
+
     def consolidate(self, new_fims: List[PMatAbstract], task: Optional[int]) -> None:
         """ Consolidates the new and current fisher information matrices.
 
@@ -309,20 +313,5 @@ class EWCTask(AuxiliaryTask):
 
                 self.fisher_information_matrices[i] = fim_previous
 
-    @property
-    def _shared_net(self) -> Optional[nn.Module]:
-        """Returns the part of the module shared between tasks (i.e. the encoder)
-
-        [extended_summary]
-
-        Returns
-        -------
-        Optional[nn.Module]
-            [description]
-        """
-        if self._model.encoder is None:
-            return None
-        elif isinstance(self._model.encoder, nn.Sequential):
-            if len(self._model.encoder) == 0:
-                return None
-        return self._model.encoder
+    def get_current_model_weights(self) -> PVector:
+        return PVector.from_model(self.model.shared_modules())

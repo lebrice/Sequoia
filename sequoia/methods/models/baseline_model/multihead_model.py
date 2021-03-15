@@ -532,6 +532,28 @@ class MultiHeadModel(BaseModel[SettingType]):
         # TODO: detect wether we are training or testing.
         return self.setting.current_task_classes(self.training)
 
+    def shared_modules(self) -> Dict[str, nn.Module]:
+        """Returns any trainable modules in `self` that are shared across tasks.
+
+        By giving this information, these weights can then be used in
+        regularization-based auxiliary tasks like EWC, for example.
+
+        This dict contains the encoder and output head, by default, as well as any
+        shared modules in the auxiliary tasks.
+
+        When using only multiple output heads (i.e. when `self.hp.multihead` is `True`),
+        then we remove the output head from the dict before returning it.
+
+        Returns
+        -------
+        Dict[str, nn.Module]:
+            Dictionary mapping from name to the shared modules, if any.
+        """
+        shared_modules = super().shared_modules()
+        if self.hp.multihead:
+            shared_modules.pop("output_head")
+        return shared_modules
+
     def load_state_dict(
         self,
         state_dict: Union[Dict[str, Tensor], Dict[str, Tensor]],
