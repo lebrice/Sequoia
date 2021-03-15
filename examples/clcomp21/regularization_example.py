@@ -119,13 +119,9 @@ class ExampleRegMethod(ExampleTaskInferenceMethod):
             observation_space=setting.observation_space,
             action_space=setting.action_space,
             reward_space=setting.reward_space,
-            hparams=hparams,
+            hparams=self.hparams,
         )
-        self.optimizer = torch.optim.Adam(
-            self.model.parameters(),
-            lr=self.hparams.learning_rate,
-            weight_decay=self.hparams.weight_decay,
-        )
+        self.optimizer = self.model.configure_optimizers()
 
     def on_task_switch(self, task_id: Optional[int]):
         self.model.on_task_switch(task_id)

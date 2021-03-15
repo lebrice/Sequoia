@@ -1,8 +1,25 @@
 import pytest
-from .multihead_classifier import ExampleTaskInferenceMethod
+import sys
+
 from sequoia.client.setting_proxy import SettingProxy
 from sequoia.settings.passive import ClassIncrementalSetting
 from sequoia.settings.active import IncrementalRLSetting
+
+
+@pytest.fixture()
+def mnist_setting():
+    return SettingProxy(
+        ClassIncrementalSetting,
+        dataset="mnist",
+    )
+
+
+@pytest.fixture()
+def fashion_mnist_setting():
+    return SettingProxy(
+        ClassIncrementalSetting,
+        dataset="fashionmnist",
+    )
 
 
 @pytest.fixture()
@@ -30,3 +47,13 @@ def rl_track_setting():
         # class_order=class_order,
     )
     return setting
+
+
+def pytest_addoption(parser):
+    parser.addoption("--slow", action="store_true", default=False)
+
+
+slow = pytest.mark.skipif(
+    "--slow" not in sys.argv,
+    reason="This test is slow so we only run it when necessary."
+)

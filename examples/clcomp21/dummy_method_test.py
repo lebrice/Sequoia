@@ -1,10 +1,26 @@
 import pytest
 from sequoia.client.setting_proxy import SettingProxy
-from sequoia.settings.passive import ClassIncrementalSetting
 from sequoia.settings.active import IncrementalRLSetting
+from sequoia.settings.passive import ClassIncrementalSetting
 
+from .conftest import slow
 from .dummy_method import DummyMethod
 
+
+@pytest.mark.timeout(120)
+def test_mnist(mnist_setting: SettingProxy[ClassIncrementalSetting]):
+    """ Applies this Method to the class-incremental mnist Setting.
+    """
+    method = DummyMethod()
+    results = mnist_setting.apply(method)
+    assert results.to_log_dict()
+
+    results: ClassIncrementalSetting.Results
+    assert 0.10 * 0.5 <= results.average_online_performance.objective <= 0.10 * 1.5
+    assert 0.10 * 0.5 <= results.average_final_performance.objective <= 0.10 * 1.5
+
+
+@slow
 @pytest.mark.timeout(300)
 def test_SL_track(sl_track_setting: SettingProxy[ClassIncrementalSetting]):
     """ Applies this Method to the Setting of the sl track of the competition.
@@ -21,6 +37,7 @@ def test_SL_track(sl_track_setting: SettingProxy[ClassIncrementalSetting]):
     assert 0.02 <= final_perf.objective <= 0.05
 
 
+@slow
 @pytest.mark.timeout(300)
 def test_RL_track(rl_track_setting: SettingProxy[IncrementalRLSetting]):
     """ Applies this Method to the Setting of the sl track of the competition.
