@@ -25,6 +25,27 @@ Here's a brief description of the examples in this folder:
     BaselineMethod can be applied to get results in both RL and SL Settings.
 
 
+## CLVision Workshop Submission Examples:
+
+Examples in this folder are aimed at solving the supervised learning track of the competition.
+
+Each example builds on top of the previous, in a manner that improves the overall performance you can expect on any given CL setting.
+
+As such, it is recommended that you take a look at the examples in the following order:
+
+0. [DummyMethod](clcomp21/dummy_method.py)
+    Non-parametric method that simply returns a random prediction for each observation.
+
+1. [Simple Classifier](clcomp21/classifier.py):
+    Standard neural net classifier without any CL-related mechanism. Works in the SL track, but has very poor performance.
+
+2. [Multi-Head / Task Inference Classifier](clcomp21/multihead_classifier.py):
+    Performs multi-head prediction, and a simple form of task inference. Gets better results that the example.
+
+3. [CL Regularized Classifier](clcomp21/regularization_example.py):
+    Adds a simple CL regularization loss to the multihead classifier above.
+
+
 ## Advanced examples:
 
 - [RL_and_SL_demo.py](advanced/RL_and_SL_demo.py):
@@ -45,4 +66,3 @@ Here's a brief description of the examples in this folder:
     Very specific example which shows how, if you really wanted to, you could
     extend one or more of the Methods from SB3 with some kind of regularization
     loss hooking into the internal optimization loop of SB3.
-    

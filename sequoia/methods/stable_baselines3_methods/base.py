@@ -90,6 +90,16 @@ def _wrap_env(env: GymEnv, verbose: int = 0, monitor_wrapper: bool = True) -> Ve
 BaseAlgorithm._wrap_env = staticmethod(_wrap_env)
 
 
+class RemoveInfoWrapper(gym.Wrapper):
+    """ Wrapper used to remove the 'info' dict, since there seems to be a bug in sb3
+    whenever there is something in the 'info' dict.
+    """
+    def step(self, action):
+        obs, rewards, done, info = self.env.step(action)
+        info = {}
+        return obs, rewards, done, info
+
+
 @dataclass
 class SB3BaseHParams(HyperParameters):
     """ Hyper-parameters of a model from the `stable_baselines3` package.
@@ -184,10 +194,12 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         self.extra_train_wrappers: List[Callable[[gym.Env], gym.Env]] = [
             RemoveTaskLabelsWrapper,
             NoTypedObjectsWrapper,
+            RemoveInfoWrapper,
         ]
         self.extra_valid_wrappers: List[Callable[[gym.Env], gym.Env]] = [
             RemoveTaskLabelsWrapper,
             NoTypedObjectsWrapper,
+            RemoveInfoWrapper,
         ]
         # Number of timesteps to train on for each task.
         self.total_timesteps_per_task: int = 0

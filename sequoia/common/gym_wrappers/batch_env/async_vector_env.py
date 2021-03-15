@@ -79,8 +79,7 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
         # List that stores wether a function is being applied on an env and we
         # should expect a result response for that env.
         self.expects_result: List[bool] = []
-        
-                
+
         # Important, this must be done before the call to super().__init__
         from sequoia.common.spaces.sparse import Sparse
         
@@ -91,6 +90,7 @@ class AsyncVectorEnv(AsyncVectorEnv_, Sequence[EnvType]):
             shared_memory=shared_memory,
             **kwargs
         )
+        self.viewer = None
 
     def random_actions(self) -> Tuple:
         return self.action_space.sample()
