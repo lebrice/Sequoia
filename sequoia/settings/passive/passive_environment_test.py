@@ -462,7 +462,7 @@ def test_passive_environment_without_pretend_to_be_active():
     for i, (obs, reward) in enumerate(env):
         assert reward is not None
         other_reward = env.send(env.action_space.sample())
-        assert other_reward is None
+        assert (other_reward == reward).all()
     assert i == max_samples // batch_size - 1
 
 
