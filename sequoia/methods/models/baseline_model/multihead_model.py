@@ -36,7 +36,9 @@ SettingType = TypeVar("SettingType", bound=IncrementalSetting)
 
 class MultiHeadModel(BaseModel[SettingType]):
     """ Extension of the Model LightningModule aimed at CL settings.
-    TODO: Add the stuff related to multihead/continual learning here?
+
+    # TODO: Replace all of this with the logic from the MultiHeadClassifier
+    # example.
     """
 
     @dataclass

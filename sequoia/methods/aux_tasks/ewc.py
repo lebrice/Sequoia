@@ -11,6 +11,7 @@ from collections import deque
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Type, Optional, Deque, List
+from contextlib import contextmanager
 
 from gym.spaces.utils import flatdim
 from nngeometry.metrics import FIM
@@ -56,34 +57,213 @@ class EWCTask(AuxiliaryTask):
     @dataclass
     class Options(AuxiliaryTask.Options):
         """ Options of the EWC auxiliary task. """
+
         # Coefficient of the EWC auxilary task.
         # NOTE: It seems to be the case that, at least just for EWC, the coefficient
         # can be often be much greater than 1, hence why we overwrite the prior over
         # that hyper-parameter here.
-        coefficient: float = uniform(0., 100., default=1.)
+        coefficient: float = uniform(0.0, 100.0, default=1.0)
         # Batchsize to be used when computing FIM (unused atm)
         batch_size_fim: int = 64
         # Number of observations to use for FIM calculation
         sample_size_fim: int = 400
         # Fisher information representation type  (diagonal or block diagobnal).
         fim_representation: Type[PMatAbstract] = choice(
-            {"diagonal": PMatDiag, "block_diagonal": PMatKFAC,}, default=PMatDiag,
+            {"diagonal": PMatDiag, "block_diagonal": PMatKFAC}, default=PMatDiag,
         )
 
     def __init__(
-        self, *args, name: str = None, options: "EWC.Options" = None, **kwargs
+        self, *args, name: str = None, options: "EWCTask.Options" = None, **kwargs
     ):
         super().__init__(*args, options=options, name=name, **kwargs)
         self.options: EWCTask.Options
-        self.previous_task: Optional[int] = None
-        self._i: int = 0
-        self.n_switches: int = 0
+
+        # The id of the current/most recent task the model has been trained on.
+        self.current_training_task: Optional[int] = None
+        # The id of the previous task the model was trained on.
+        self.previous_training_task: Optional[int] = None
+        # The ids of all the tasks trained on so far, not including the current task.
+        self.previous_training_tasks: List[Optional[int]] = []
+
         self.previous_model_weights: Optional[PVector] = None
         self.observation_collector: Deque[Observations] = deque(
             maxlen=self.options.sample_size_fim
         )
         self.fisher_information_matrices: List[PMatAbstract] = []
+        # When True, ignore task boundaries (no EWC update).
+        # This is used mainly because of the need for executing forward passes when
+        # calculating the new FIMs, and the MultiheadModel class might then call
+        # `on_task_switch`, so we don't want to recurse. 
+        self._ignore_task_boundaries: bool = False
 
+    def get_loss(self, forward_pass: ForwardPass, y: Tensor = None) -> Loss:
+        """ Gets the EWC loss.
+        """
+        if self.training:
+            self.observation_collector.append(forward_pass.observations)
+
+        if not self.enabled or self.previous_model_weights is None:
+            # We're in the first task: do nothing.
+            return Loss(name=self.name)
+
+        loss = 0.0
+        v_current = PVector.from_model(self._shared_net)
+
+        for fim in self.fisher_information_matrices:
+            diff = v_current - self.previous_model_weights
+            loss += fim.vTMv(diff)
+
+        ewc_loss = Loss(name=self.name, loss=loss)
+        return ewc_loss
+
+    @property
+    def disabled(self) -> bool:
+        return super().disabled or self._shared_net is None
+
+    def on_task_switch(self, task_id: Optional[int]):
+        """ Executed when the task switches (to either a known or unknown task).
+        """
+        if not self.enabled:
+            return
+        logger.debug(f"On task switch called: task_id={task_id}")
+        
+        if self._ignore_task_boundaries:
+            logger.info("Ignoring task boundary (probably from recursive call)")
+            return
+    
+        if self._shared_net is None:
+            logger.warning(
+                RuntimeWarning("EWC cannot be applied as there are no shared weights!")
+            )
+            return
+
+        if not self.training:
+            logger.debug("Task boundary at test time, no EWC update.")
+            return
+        # Two cases:
+        # - Setting without task IDs --> still calculate the FIMs at each task boundary.
+        # - Setting with IDs --> calculate the FIMs before training on new tasks.
+
+        # Setting without task labels. Task ids: None -> None -> None  (always None)
+        if task_id is None:
+            # Here we use the number of task boundaries as a 'fake' task id, meaning we
+            # treat each task as if it has never been encountered before.
+            if self.current_training_task is None:
+                # Start of first task, no EWC update.
+                self.current_training_task = 0
+            else:
+                self.previous_training_task = self.current_training_task
+                self.current_training_task += 1
+                self.update_anchor_weights(new_task_id=self.current_training_task)
+
+        # Setting with task labels. Task ids: 0 -> 1 -> 2 -> 1 -> 3 -> 5 -> 11 -> 5 etc.
+        else:
+            if self.current_training_task is None:
+                logger.info("Starting the first task, no EWC update.")
+                self.current_training_task = task_id
+            elif task_id == self.current_training_task:
+                logger.info("Switching to same task, no EWC update.")
+            elif task_id in self.previous_training_tasks:
+                logger.info(f"Switching to known task {task_id}, no EWC update.")
+            else:
+                logger.info(f"Switching to new task {task_id}, updating EWC params.")
+                self.previous_training_task = self.current_training_task
+                self.previous_training_tasks.append(self.current_training_task)
+                self.current_training_task = task_id
+                self.update_anchor_weights(new_task_id=self.current_training_task)
+
+    def update_anchor_weights(self, new_task_id: int) -> None:
+        """Update the FIMs and other EWC params before starting training on a new task.
+
+        Parameters
+        ----------
+        new_task_id : int
+            The ID of the new task.
+        """
+        # we dont want to go here at test time.
+        # NOTE: We also switch between unknown tasks.
+        logger.info(
+            f"Updating the EWC 'anchor' weights before starting training on "
+            f"task {new_task_id}"
+        )
+        # TODO: There's this issue where the MultiheadModel will actually call on_task_switch, which I will take out here.
+        
+        device = self._model.config.device
+        self.previous_model_weights = (
+            PVector.from_model(self._shared_net.to(device)).clone().detach()
+        )
+
+        # Create a Dataloader from the stored observations.
+        obs_type: Type[Observations] = type(self.observation_collector[0])
+        dataset = [obs.as_namedtuple() for obs in self.observation_collector]
+        # Or, alternatively (see the note below on why we don't use this):
+        # stacked_observations: Observations = obs_type.stack(self.observation_collector)
+        # dataset = TensorDataset(*stacked_observations.as_namedtuple())
+
+        # NOTE: This is equivalent to just using the same batch size as during
+        # training, as each Observations in the list is already a batch.
+        # NOTE: We keep the same batch size here as during training because for
+        # instance in RL, it would be weird to suddenly give some new batch size,
+        # since the buffers would get cleared and re-created just for these forward
+        # passes
+        dataloader = DataLoader(dataset, batch_size=None, collate_fn=None)
+        # NOTE: Would be nice to have         
+        
+        # Create the parameters to be passed to the FIM function. These may vary a
+        # bit, depending on if we're being applied in a classification setting or in
+        # a regression setting (not done yet)
+        variant: str
+        # TODO: Change this conditional to be based on the type of action space, rather
+        # than of output head.
+        if isinstance(self._model.output_head, ClassificationHead):
+            variant = "classif_logits"
+            n_output = self._model.action_space.n
+
+            def fim_function(*inputs) -> Tensor:
+                observations = obs_type(*inputs).to(self._model.device)
+                forward_pass: ForwardPass = self._model(observations)
+                actions = forward_pass.actions
+                return actions.logits
+
+        elif isinstance(self._model.output_head, RegressionHead):
+            # NOTE: This hasn't been tested yet.
+            variant = "regression"
+            n_output = flatdim(self._model.action_space)
+
+            def fim_function(*inputs) -> Tensor:
+                observations = obs_type(*inputs).to(self._model.device)
+                forward_pass: ForwardPass = self._model(observations)
+                actions = forward_pass.actions
+                return actions.y_pred
+
+        else:
+            raise NotImplementedError("TODO")
+        
+        with self._ignoring_task_boundaries():
+            new_fim = FIM(
+                model=self._shared_net,
+                loader=dataloader,
+                representation=self.options.fim_representation,
+                n_output=n_output,
+                variant=variant,
+                function=fim_function,
+                device=self._model.device,
+            )
+
+        # TODO: There was maybe an idea to use another fisher information matrix for
+        # the critic in A2C, but not doing that atm.
+        new_fims = [new_fim]
+        self.consolidate(new_fims, task=new_task_id)
+        self.observation_collector.clear()
+
+    @contextmanager
+    def _ignoring_task_boundaries(self):
+        """ Contextmanager used to temporarily ignore task boundaries (no EWC update).
+        """
+        self._ignore_task_boundaries = True
+        yield
+        self._ignore_task_boundaries = False
+    
     def consolidate(self, new_fims: List[PMatAbstract], task: Optional[int]) -> None:
         """ Consolidates the new and current fisher information matrices.
 
@@ -129,111 +309,16 @@ class EWCTask(AuxiliaryTask):
 
                 self.fisher_information_matrices[i] = fim_previous
 
-    def on_task_switch(self, task_id: Optional[int]):
-        """ Executed when the task switches (to either a known or unknown task).
-        """
-        if not self.enabled:
-            return
-
-        logger.info(f"On task switch called: task_id={task_id}")
-
-        if self._shared_net is None:
-            logger.info(
-                f"On task switch called: task_id={task_id}, EWC cannot be "
-                f"applied as there are no shared weights."
-            )
-
-        elif self.previous_task is None and self.n_switches == 0 and not task_id:
-            self.previous_task = task_id
-            logger.info("Starting the first task, no EWC update.")
-            self.n_switches += 1
-
-        elif self.training:  
-            calculate_FIM = False
-            if task_id is None and self.previous_task is None:
-                #setting without task IDs, still calculate FIM
-                calculate_FIM = True
-            elif task_id > self.previous_task:
-                #new task
-                calculate_FIM = True
-
-            if calculate_FIM:
-                # we dont want to go here at test time.
-                # NOTE: We also switch between unknown tasks.
-                logger.info(
-                    f"Switching tasks: {self.previous_task} -> {task_id}: "
-                    f"Updating the EWC 'anchor' weights."
-                )
-                self.previous_task = task_id
-                device = self._model.config.device
-                self.previous_model_weights = (
-                    PVector.from_model(self._shared_net.to(device)).clone().detach()
-                )
-
-                # Create a Dataloader from the stored observations.
-                obs_type: Type[Observations] = type(self.observation_collector[0])
-                dataset = [obs.as_namedtuple() for obs in self.observation_collector]
-                # Or, alternatively (see the note below on why we don't use this):
-                # stacked_observations: Observations = obs_type.stack(self.observation_collector)
-                # dataset = TensorDataset(*stacked_observations.as_namedtuple())
-
-                # NOTE: This is equivalent to just using the same batch size as during
-                # training, as each Observations in the list is already a batch.
-                # NOTE: We keep the same batch size here as during training because for
-                # instance in RL, it would be weird to suddenly give some new batch size,
-                # since the buffers would get cleared and re-created just for these forward
-                # passes
-                dataloader = DataLoader(dataset, batch_size=None, collate_fn=None)
-
-                # Create the parameters to be passed to the FIM function. These may vary a
-                # bit, depending on if we're being applied in a classification setting or in
-                # a regression setting (not done yet)
-                variant: str
-                if isinstance(self._model.output_head, ClassificationHead):
-                    variant = "classif_logits"
-                    n_output = self._model.action_space.n
-
-                    def fim_function(*inputs) -> Tensor:
-                        observations = obs_type(*inputs).to(self._model.device)
-                        forward_pass: ForwardPass = self._model(observations)
-                        actions = forward_pass.actions
-                        return actions.logits
-
-                elif isinstance(self._model.output_head, RegressionHead):
-                    # NOTE: This hasn't been tested yet.
-                    variant = "regression"
-                    n_output = flatdim(self._model.action_space)
-
-                    def fim_function(*inputs) -> Tensor:
-                        observations = obs_type(*inputs).to(self._model.device)
-                        forward_pass: ForwardPass = self._model(observations)
-                        actions = forward_pass.actions
-                        return actions.y_pred
-
-                else:
-                    raise NotImplementedError("TODO")
-
-                new_fim = FIM(
-                    model=self._shared_net,
-                    loader=dataloader,
-                    representation=self.options.fim_representation,
-                    n_output=n_output,
-                    variant=variant,
-                    function=fim_function,
-                    device=self._model.device,
-                )
-
-                # TODO: There was maybe an idea to use another fisher information matrix for
-                # the critic in A2C, but not doing that atm.
-                new_fims = [new_fim]
-                self.consolidate(new_fims, task=self.previous_task)
-                self.n_switches += 1
-                self.observation_collector.clear()
-
     @property
     def _shared_net(self) -> Optional[nn.Module]:
-        """
-        Returns 'None' if there is not shared network part, othervise returns the shared net
+        """Returns the part of the module shared between tasks (i.e. the encoder)
+
+        [extended_summary]
+
+        Returns
+        -------
+        Optional[nn.Module]
+            [description]
         """
         if self._model.encoder is None:
             return None
@@ -241,23 +326,3 @@ class EWCTask(AuxiliaryTask):
             if len(self._model.encoder) == 0:
                 return None
         return self._model.encoder
-
-    def get_loss(self, forward_pass: ForwardPass, y: Tensor = None) -> Loss:
-        """ Gets the EWC loss.
-        """
-        if self.training:      
-            self.observation_collector.append(forward_pass.observations)
-
-        if self.previous_task is None or not self.enabled or self._shared_net is None:
-            # We're in the first task: do nothing.
-            return Loss(name=self.name)
-
-        loss = 0.0
-        v_current = PVector.from_model(self._shared_net)
-
-        for fim in self.fisher_information_matrices:
-            diff = v_current - self.previous_model_weights
-            loss += fim.vTMv(diff)
-        self._i += 1
-        ewc_loss = Loss(name=self.name, loss=loss)
-        return ewc_loss
