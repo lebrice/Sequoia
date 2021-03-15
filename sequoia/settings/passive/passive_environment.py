@@ -438,8 +438,6 @@ class PassiveEnvironment(
         if self.pretend_to_be_active:
             self._action = action
             return self._reward_queue.popleft()
-            # if self.skip_one_batch:
-            #     return self._previous_batch[1]
-            return self._rewards
         else:
-            return None
+            # NOTE: What about sending the reward as well this way?
+            return self._rewards

@@ -125,7 +125,7 @@ def test_measure_performance_wrapper_first_epoch_only():
             rewards = env.send(action)
             if epoch != 0:
                 # We should just receive what we already got by iterating.
-                assert (rewards.y == rewards_.y).all()
+                assert rewards.y == rewards_.y
             assert (rewards.y == i).all()
         assert i == 99
 
@@ -151,18 +151,16 @@ def test_measure_performance_wrapper_odd_vs_even():
     env = make_dummy_env(n_samples=100, batch_size=1)
     env = MeasureSLPerformanceWrapper(env, first_epoch_only=True)
 
-    for epoch in range(2):
-        print(f"start epoch {epoch}")
-        for i, (observations, rewards) in enumerate(env):
-            assert observations is not None
-            assert rewards is None or rewards.y is None
-            assert (observations.x == i).all()
+    for i, (observations, rewards) in enumerate(env):
+        assert observations is not None
+        assert rewards is None or rewards.y is None
+        assert (observations.x == i).all()
 
-            # Only guess correctly for the first 50 steps.
-            action = Actions(y_pred=np.array([i if i % 2 == 0 else 0]))
-            rewards = env.send(action)
-            assert (rewards.y == i).all()
-        assert i == 99
+        # Only guess correctly for the first 50 steps.
+        action = Actions(y_pred=np.array([i if i % 2 == 0 else 0]))
+        rewards = env.send(action)
+        assert (rewards.y == i).all()
+    assert i == 99
 
     assert set(env.get_online_performance().keys()) == set(range(100))
     for i, (step, metric) in enumerate(env.get_online_performance().items()):
@@ -191,20 +189,18 @@ def test_measure_performance_wrapper_odd_vs_even_passive():
     env = TypedObjectsWrapper(
         env, observations_type=Observations, actions_type=Actions, rewards_type=Rewards
     )
-    env = MeasureSLPerformanceWrapper(env, first_epoch_only=True)
+    env = MeasureSLPerformanceWrapper(env, first_epoch_only=False)
 
-    for epoch in range(2):
-        print(f"start epoch {epoch}")
-        for i, (observations, rewards) in enumerate(env):
-            assert observations is not None
-            assert rewards is None or rewards.y is None
-            assert (observations.x == i).all()
+    for i, (observations, rewards) in enumerate(env):
+        assert observations is not None
+        assert rewards is None or rewards.y is None
+        assert (observations.x == i).all()
 
-            # Only guess correctly for the first 50 steps.
-            action = Actions(y_pred=np.array([i if i % 2 == 0 else 0]))
-            rewards = env.send(action)
-            assert (rewards.y == i).all()
-        assert i == 99
+        # Only guess correctly for the first 50 steps.
+        action = Actions(y_pred=np.array([i if i % 2 == 0 else 0]))
+        rewards = env.send(action)
+        assert (rewards.y == i).all()
+    assert i == 99
 
     assert set(env.get_online_performance().keys()) == set(range(100))
     for i, (step, metric) in enumerate(env.get_online_performance().items()):
@@ -319,6 +315,7 @@ def test_delayed_actions():
         yield previous_value, True
 
     for i, ((obs, rew), is_last) in enumerate(with_is_last(env)):
+        print(i)
         assert rew is None
         if i != 5:
             assert obs.batch_size == 20, i
