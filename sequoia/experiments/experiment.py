@@ -116,8 +116,21 @@ class Experiment(Parseable, Serializable):
 
             # Raise an error if any of the args in sys.argv would have been used
             # up by the Setting, just to prevent any ambiguities.
-            _, unused_args = self.setting.from_known_args()
+            try:
+                _, unused_args = self.setting.from_known_args()
+            except ImportError as exc:
+                # NOTE: An ImportError can occur here because of a missing OpenGL
+                # dependency, since when no arguments are passed, the default RL setting
+                # is created (cartpole with pixel observations), which requires a render
+                # wrapper to be added (which itself uses pyglet, which uses OpenGL).
+                logger.warning(
+                    RuntimeWarning(f"Unable to check for unused args: {exc}")
+                )
+                # In this case, we just pretend that no arguments would have been used.
+                unused_args = sys.argv[1:]
+
             ignored_args = list(set(sys.argv[1:]) - set(unused_args))
+
             if ignored_args:
                 # TODO: This could also be trigerred if there were arguments
                 # in the method with the same name as some from the Setting.
