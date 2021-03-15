@@ -22,7 +22,9 @@ def rl_track_setting():
     setting = SettingProxy(
         IncrementalRLSetting,
         # "rl_track", # TODO: Levels 0-20 work for now in MonsterKong.
-        "monsterkong_jumps",
+        "rl_track",
+        steps_per_task=2_000,  # just for testing.
+        test_steps_per_task=2_000,  # just for testing.
         # dataset="synbols",
         # nb_tasks=12,
         # class_order=class_order,

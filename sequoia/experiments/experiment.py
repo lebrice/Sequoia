@@ -13,13 +13,24 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
 
 import sequoia.methods
-from simple_parsing import (ArgumentParser, ConflictResolution, choice, field,
-                            mutable_field, subparsers)
+from simple_parsing import (
+    ArgumentParser,
+    ConflictResolution,
+    choice,
+    field,
+    mutable_field,
+    subparsers,
+)
 
 from sequoia.common.config import Config
 from sequoia.methods import Method, all_methods
-from sequoia.settings import (ClassIncrementalResults, Results, Setting,
-                              SettingType, all_settings)
+from sequoia.settings import (
+    ClassIncrementalResults,
+    Results,
+    Setting,
+    SettingType,
+    all_settings,
+)
 from sequoia.settings.presets import setting_presets
 from sequoia.utils import Parseable, Serializable, get_logger
 from sequoia.utils.logging_utils import get_logger

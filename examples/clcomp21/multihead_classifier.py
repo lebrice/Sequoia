@@ -12,6 +12,7 @@ from sequoia.settings.passive.cl import ClassIncrementalSetting
 from sequoia.settings.passive.cl.objects import Observations
 from torch import Tensor, nn
 from torch.nn import functional as F
+from torch.optim.optimizer import Optimizer
 
 from .classifier import Classifier, ExampleMethod
 
@@ -19,13 +20,18 @@ logger = getLogger(__file__)
 
 
 class MultiHeadClassifier(Classifier):
+    @dataclass
+    class HParams(Classifier.HParams):
+        pass
+
     def __init__(
         self,
         observation_space: Space,
         action_space: spaces.Discrete,
         reward_space: spaces.Discrete,
+        hparams: "MultiHeadClassifier.HParams" = None,
     ):
-        super().__init__(observation_space, action_space, reward_space)
+        super().__init__(observation_space, action_space, reward_space, hparams=hparams)
         # Use one output layer per task, rather than a single layer.
         self.output_heads = nn.ModuleList()
         # Use the output layer created in the Classifier constructor for task 0.
@@ -35,6 +41,10 @@ class MultiHeadClassifier(Classifier):
         # new output heads to it later.
         self.optimizer: Optional[torch.optim.Optimizer] = None
         self.current_task_id: int = 0
+
+    def configure_optimizers(self) -> Optimizer:
+        self.optimizer = super().configure_optimizers()
+        return self.optimizer
 
     def create_output_head(self) -> nn.Module:
         return nn.Linear(self.representations_size, self.n_classes).to(self.device)
@@ -265,12 +275,8 @@ class MultiHeadClassifier(Classifier):
 
 
 class ExampleTaskInferenceMethod(ExampleMethod):
-    @dataclass
-    class HParams(ExampleMethod.HParams):
-        """ Hyper-parameters of the demo model. """
-        
-    def __init__(self, hparams: "ExampleTaskInferenceMethod.HParams"=None):
-        super().__init__(hparams=hparams)
+    def __init__(self, hparams: MultiHeadClassifier.HParams = None):
+        super().__init__(hparams=hparams or MultiHeadClassifier.HParams())
 
     def configure(self, setting: ClassIncrementalSetting):
         """ Called before the method is applied on a setting (before training).
@@ -282,12 +288,9 @@ class ExampleTaskInferenceMethod(ExampleMethod):
             observation_space=setting.observation_space,
             action_space=setting.action_space,
             reward_space=setting.reward_space,
+            hparams=self.hparams,
         )
-        self.optimizer = torch.optim.Adam(
-            self.model.parameters(),
-            lr=self.hparams.learning_rate,
-            weight_decay=self.hparams.weight_decay,
-        )
+        self.optimizer = self.model.configure_optimizers()
         # Share a reference to the Optimizer with the model, so it can add new weights
         # when needed.
         self.model.optimizer = self.optimizer

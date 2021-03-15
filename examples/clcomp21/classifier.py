@@ -4,27 +4,39 @@ As you'd expect, this Method exhibits complete forgetting of all previous tasks.
 You can use this model and method as a jumping off point for your own submission.
 """
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import ClassVar, Dict, List, Optional, Tuple, Type
 
 import gym
 import torch
 import tqdm
 from gym import spaces
 from numpy import inf
+from simple_parsing import ArgumentParser
+from torch import Tensor, nn
+from torch.optim.optimizer import Optimizer
+from torchvision.models import ResNet, resnet18
+
 from sequoia.common.hparams import HyperParameters, log_uniform
 from sequoia.common.spaces import Image
 from sequoia.methods import Method
 from sequoia.settings import ClassIncrementalSetting
 from sequoia.settings.passive import PassiveEnvironment
-from sequoia.settings.passive.cl.objects import (
-    Actions,
-    Environment,
-    Observations,
-    Rewards,
-)
-from simple_parsing import ArgumentParser
-from torch import Tensor, nn
-from torchvision.models import ResNet, resnet18
+from sequoia.settings.passive.cl.objects import (Actions, Environment,
+                                                 Observations, Rewards)
+
+@dataclass
+class HParams(HyperParameters):
+    """ Hyper-parameters of the demo model. """
+
+    # Learning rate of the optimizer.
+    learning_rate: float = log_uniform(1e-6, 1e-2, default=0.001)
+    # L2 regularization coefficient.
+    weight_decay: float = log_uniform(1e-9, 1e-3, default=1e-6)
+
+    # Maximum number of training epochs per task.
+    max_epochs_per_task: int = 10
+    # Number of epochs with increasing validation loss after which we stop training.
+    early_stop_patience: int = 2
 
 
 class Classifier(nn.Module):
@@ -32,14 +44,19 @@ class Classifier(nn.Module):
 
     This example model uses a resnet18 as the encoder, and a single output layer.
     """
-
+    
+    HParams: ClassVar[Type[HParams]] = HParams
+    
     def __init__(
         self,
         observation_space: gym.Space,
         action_space: gym.Space,
         reward_space: gym.Space,
+        hparams: HParams = None,
     ):
         super().__init__()
+        self.hparams = hparams or self.HParams()
+
         image_space: Image = observation_space.x
         # image_shape = image_space.shape
 
@@ -55,6 +72,13 @@ class Classifier(nn.Module):
 
     def create_output_head(self) -> nn.Module:
         return nn.Linear(self.representations_size, self.n_classes).to(self.device)
+
+    def configure_optimizers(self) -> Optimizer:
+        return torch.optim.Adam(
+            self.parameters(),
+            lr=self.hparams.learning_rate,
+            weight_decay=self.hparams.weight_decay,
+        )
 
     def create_encoder(self, image_space: Image) -> Tuple[nn.Module, int]:
         """Create an encoder for the given image space.
@@ -168,23 +192,10 @@ class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
 
     This method uses the ExampleModel, which is quite simple.
     """
-
-    @dataclass
-    class HParams(HyperParameters):
-        """ Hyper-parameters of the demo model. """
-
-        # Learning rate of the optimizer.
-        learning_rate: float = log_uniform(1e-6, 1e-2, default=0.001)
-        # L2 regularization coefficient.
-        weight_decay: float = log_uniform(1e-9, 1e-3, default=1e-6)
-
-        # Maximum number of training epochs per task.
-        max_epochs_per_task: int = 10
-        # Number of epochs with increasing validation loss after which we stop training.
-        early_stop_patience: int = 2
-
+    ModelType: ClassVar[Type[Classifier]] = Classifier
+    
     def __init__(self, hparams: HParams = None):
-        self.hparams: ExampleMethod.HParams = hparams or self.HParams()
+        self.hparams: HParams = hparams or HParams()
 
         # We will create those when `configure` will be called, before training.
         self.model: Classifier
@@ -196,17 +207,13 @@ class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
         """
-        self.model = Classifier(
+        self.model = self.ModelType(
             observation_space=setting.observation_space,
             action_space=setting.action_space,
             reward_space=setting.reward_space,
         )
-        self.optimizer = torch.optim.Adam(
-            self.model.parameters(),
-            lr=self.hparams.learning_rate,
-            weight_decay=self.hparams.weight_decay,
-        )
-
+        self.optimizer = self.model.configure_optimizers()
+    
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
         """ Example train loop.
         You can do whatever you want with train_env and valid_env here.
@@ -272,24 +279,21 @@ class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
     @classmethod
     def add_argparse_args(cls, parser: ArgumentParser, dest: str = ""):
         """Adds command-line arguments for this Method to an argument parser."""
-        parser.add_arguments(cls.HParams, "hparams")
+        parser.add_arguments(cls.ModelType.HParams, "hparams")
 
     @classmethod
     def from_argparse_args(cls, args, dest: str = ""):
         """Creates an instance of this Method from the parsed arguments."""
-        hparams: ExampleMethod.HParams = args.hparams
+        hparams: Classifier.HParams = args.hparams
         return cls(hparams=hparams)
 
 
 if __name__ == "__main__":
     from sequoia.common import Config
     from sequoia.settings import ClassIncrementalSetting
-
     # Create the Method:
-
     # - Manually:
     # method = ExampleMethod()
-
     # - From the command-line:
     from simple_parsing import ArgumentParser
 

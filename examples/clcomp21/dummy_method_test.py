@@ -16,7 +16,7 @@ def test_SL_track(sl_track_setting: SettingProxy[ClassIncrementalSetting]):
     # TODO: Add tests for having a different ordering of test tasks vs train tasks.
     results: ClassIncrementalSetting.Results
     online_perf = results.average_online_performance
-    assert 0.20 <= online_perf.objective <= 0.30
+    assert 0.02 <= online_perf.objective <= 0.05
     final_perf = results.average_final_performance
     assert 0.02 <= final_perf.objective <= 0.05
 

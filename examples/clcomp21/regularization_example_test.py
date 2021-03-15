@@ -2,15 +2,15 @@ import pytest
 from sequoia.client.setting_proxy import SettingProxy
 from sequoia.settings import ClassIncrementalSetting
 
-from .multihead_classifier import ExampleTaskInferenceMethod, MultiHeadClassifier
+from .regularization_example import ExampleRegMethod, RegularizedClassifier
 
 
 @pytest.mark.timeout(600)
 def test_SL_track(sl_track_setting: SettingProxy[ClassIncrementalSetting]):
     """ Applies this Method to the Setting of the sl track of the competition.
     """
-    method = ExampleTaskInferenceMethod(
-        hparams=MultiHeadClassifier.HParams(max_epochs_per_task=1)
+    method = ExampleRegMethod(
+        hparams=RegularizedClassifier.HParams(max_epochs_per_task=1)
     )
     results = sl_track_setting.apply(method)
     assert results.to_log_dict()

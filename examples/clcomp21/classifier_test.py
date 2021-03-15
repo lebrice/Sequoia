@@ -1,15 +1,14 @@
 import pytest
 from sequoia.client.setting_proxy import SettingProxy
 from sequoia.settings.passive import ClassIncrementalSetting
-from sequoia.settings.active import IncrementalRLSetting
 
-from .classifier import ExampleMethod
+from .classifier import ExampleMethod, Classifier
 
 @pytest.mark.timeout(300)
 def test_SL_track(sl_track_setting: SettingProxy[ClassIncrementalSetting]):
     """ Applies this Method to the Setting of the sl track of the competition.
     """
-    method = ExampleMethod(hparams=ExampleMethod.HParams(max_epochs_per_task=1))
+    method = ExampleMethod(hparams=Classifier.HParams(max_epochs_per_task=1))
     results = sl_track_setting.apply(method)
     assert results.to_log_dict()
 
