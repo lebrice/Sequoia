@@ -403,8 +403,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             ), "need to set one of test_steps or test_steps_per_task"
             self.test_steps_per_task = self.test_steps // self.nb_tasks
 
-        assert self.test_steps == self.nb_tasks * self.test_steps_per_task
-        
+        assert self.test_steps_per_task == self.test_steps // self.nb_tasks
+
         if self.smooth_task_boundaries:
             # If we're operating in the 'Online/smooth task transitions' "regime",
             # then there is only one "task", and we don't have task labels.
