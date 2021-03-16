@@ -25,7 +25,9 @@ from sequoia.utils.utils import add_prefix
 from sequoia.settings.passive.passive_environment import PassiveEnvironment
 
 
-class MeasurePerformanceWrapper(IterableWrapper[EnvType], Generic[EnvType, MetricsType], ABC):
+class MeasurePerformanceWrapper(
+    IterableWrapper[EnvType], Generic[EnvType, MetricsType], ABC
+):
     def __init__(self, env: Environment):
         super().__init__(env)
         self._metrics: Dict[int, MetricsType] = {}
@@ -54,8 +56,15 @@ class MeasurePerformanceWrapper(IterableWrapper[EnvType], Generic[EnvType, Metri
         return sum(self._metrics.values())
 
 
-class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[PassiveEnvironment, ClassificationMetrics]):
-    def __init__(self, env: PassiveEnvironment, first_epoch_only: bool = False, wandb_prefix: str = None):
+class MeasureSLPerformanceWrapper(
+    MeasurePerformanceWrapper[PassiveEnvironment, ClassificationMetrics]
+):
+    def __init__(
+        self,
+        env: PassiveEnvironment,
+        first_epoch_only: bool = False,
+        wandb_prefix: str = None,
+    ):
         super().__init__(env)
         self._metrics: Dict[int, ClassificationMetrics] = defaultdict(Metrics)
         self.first_epoch_only = first_epoch_only
@@ -67,7 +76,9 @@ class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[PassiveEnvironment, 
             warnings.warn(
                 RuntimeWarning(
                     colorize(
-                        "Your performance on this environment will be monitored! "
+                        "Your performance "
+                        + ("during the first epoch " if self.first_epoch_only else "")
+                        + "on this environment will be monitored! "
                         "Since this env is Passive, i.e. a Supervised Learning "
                         "DataLoader, the Rewards (y) will be withheld until "
                         "actions are passed to the 'send' method. Make sure that "
@@ -77,6 +88,7 @@ class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[PassiveEnvironment, 
                 )
             )
         self.env.unwrapped.pretend_to_be_active = True
+        self.__epochs = 0
 
     def reset(self) -> Observations:
         return self.env.reset()
@@ -85,7 +97,7 @@ class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[PassiveEnvironment, 
     def in_evaluation_period(self) -> bool:
         if self.first_epoch_only:
             # TODO: Double-check the iteraction of IterableDataset and __len__
-            return self._steps < self.env.__len__()
+            return self.__epochs == 0
         return True
 
     def step(self, action: Actions):
@@ -99,9 +111,27 @@ class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[PassiveEnvironment, 
         if not isinstance(action, Actions):
             assert isinstance(action, (np.ndarray, Tensor))
             action = Actions(action)
+
         reward = self.env.send(action)
+
         if self.in_evaluation_period:
+            # TODO: Edge case, but we also need the prediction for the last batch to be
+            # counted.
             self._metrics[self._steps] += self.get_metrics(action, reward)
+        elif self.first_epoch_only:
+            # If we are at the last batch in the first epoch, we still keep the metrics
+            # for that batch, even though we're technically not in the first epoch
+            # anymore.
+            there_is_last_batch = self.env.__len__() % self.batch_size != 0
+            last_batch_isnt_dropped = not self.env.unwrapped.drop_last
+            currently_at_last_batch = self._steps == self.env.__len__() - 1
+            if (
+                there_is_last_batch
+                and last_batch_isnt_dropped
+                and currently_at_last_batch
+            ):
+                self._metrics[self._steps] += self.get_metrics(action, reward)
+
         # This is ok since we don't increment in the iterator.
         self._steps += 1
         return reward
@@ -121,16 +151,39 @@ class MeasureSLPerformanceWrapper(MeasurePerformanceWrapper[PassiveEnvironment, 
         return metric
 
     def __iter__(self) -> Iterable[Tuple[Observations, Optional[Rewards]]]:
-        for obs, _ in self.env.__iter__():
-            self._observation = obs
-            yield obs, None
+        if self.__epochs == 1 and self.first_epoch_only:
+            print(
+                colorize(
+                    "Your performance during the first epoch on this environment has "
+                    "been successfully measured! The environment will now yield the "
+                    "rewards (y) during iteration, and you are no longer required to "
+                    "send an action for each observation.",
+                    color="green",
+                )
+            )
+            self.env.unwrapped.pretend_to_be_active = False
+
+        for obs, rew in self.env.__iter__():
+            if self.in_evaluation_period:
+                yield obs, None
+            else:
+                yield obs, rew
+        self.__epochs += 1
 
 
 from sequoia.settings.active import ActiveEnvironment
 
 
-class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, EpisodeMetrics]):
-    def __init__(self, env: ActiveEnvironment, eval_episodes: int = None, eval_steps: int = None, wandb_prefix: str = None):
+class MeasureRLPerformanceWrapper(
+    MeasurePerformanceWrapper[ActiveEnvironment, EpisodeMetrics]
+):
+    def __init__(
+        self,
+        env: ActiveEnvironment,
+        eval_episodes: int = None,
+        eval_steps: int = None,
+        wandb_prefix: str = None,
+    ):
         super().__init__(env)
         self._metrics: Dict[int, EpisodeMetrics] = {}
         self._eval_episodes = eval_episodes or 0
@@ -143,7 +196,7 @@ class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, E
 
         self.is_batched_env = isinstance(self.env.unwrapped, VectorEnv)
         self._batch_size = self.env.num_envs if self.is_batched_env else 1
-        
+
         self._current_episode_reward = np.zeros([self._batch_size], dtype=float)
         self._current_episode_steps = np.zeros([self._batch_size], dtype=int)
 
@@ -171,7 +224,7 @@ class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, E
         observation, rewards_, done, info = self.env.step(action)
         self._steps += 1
         reward = rewards_.y if isinstance(rewards_, Rewards) else rewards_
-        
+
         if isinstance(done, bool):
             self._episodes += int(done)
         elif isinstance(done, np.ndarray):
@@ -181,7 +234,9 @@ class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, E
 
         if self.in_evaluation_period:
             if self.is_batched_env:
-                for env_index, (env_is_done, env_reward) in enumerate(zip(done, reward)):
+                for env_index, (env_is_done, env_reward) in enumerate(
+                    zip(done, reward)
+                ):
                     self._current_episode_reward[env_index] += env_reward
                     self._current_episode_steps[env_index] += 1
             else:
@@ -203,17 +258,19 @@ class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, E
 
         # TODO: Need access to the "done" signal in here somehow.
         done = self.env.done_
-        
+
         if isinstance(done, bool):
             self._episodes += int(done)
         elif isinstance(done, np.ndarray):
             self._episodes += sum(done)
         else:
             self._episodes += done.int().sum()
-        
+
         if self.in_evaluation_period:
             if self.is_batched_env:
-                for env_index, (env_is_done, env_reward) in enumerate(zip(done, reward)):
+                for env_index, (env_is_done, env_reward) in enumerate(
+                    zip(done, reward)
+                ):
                     self._current_episode_reward[env_index] += env_reward
                     self._current_episode_steps[env_index] += 1
             else:
@@ -228,9 +285,14 @@ class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, E
 
         return rewards_
 
-    def get_metrics(self, action: Union[Actions, Any], reward: Union[Rewards, Any], done: Union[bool, Sequence[bool]]) -> Optional[EpisodeMetrics]:
+    def get_metrics(
+        self,
+        action: Union[Actions, Any],
+        reward: Union[Rewards, Any],
+        done: Union[bool, Sequence[bool]],
+    ) -> Optional[EpisodeMetrics]:
         metrics = []
-        
+
         rewards = reward.y if isinstance(reward, Rewards) else reward
         actions = action.y_pred if isinstance(action, Actions) else action
         dones: Sequence[bool]
@@ -245,19 +307,21 @@ class MeasureRLPerformanceWrapper(MeasurePerformanceWrapper[ActiveEnvironment, E
 
         for env_index, (env_is_done, reward) in enumerate(zip(dones, rewards)):
             if env_is_done:
-                metrics.append(EpisodeMetrics(
-                    n_samples=1,
-                    # The average reward per episode.
-                    mean_episode_reward=self._current_episode_reward[env_index],
-                    # The average length of each episode.
-                    mean_episode_length=self._current_episode_steps[env_index],
-                ))
+                metrics.append(
+                    EpisodeMetrics(
+                        n_samples=1,
+                        # The average reward per episode.
+                        mean_episode_reward=self._current_episode_reward[env_index],
+                        # The average length of each episode.
+                        mean_episode_length=self._current_episode_steps[env_index],
+                    )
+                )
                 self._current_episode_reward[env_index] = 0
                 self._current_episode_steps[env_index] = 0
 
         if not metrics:
             return None
-        
+
         metric = sum(metrics, Metrics())
         if wandb.run:
             log_dict = metric.to_log_dict()
