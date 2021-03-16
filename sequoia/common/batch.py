@@ -134,9 +134,10 @@ class Batch(ABC, Mapping[str, T]):
     """
     # TODO: Would it make sense to add a gym Space class variable here? 
     space: ClassVar[Optional[gym.Space]]
+    # TODO: Remove these:
     field_names: ClassVar[List[str]]
     _namedtuple: ClassVar[Type[NamedTuple]]
-    
+
     def __init_subclass__(cls, *args, **kwargs):
         # IDEA: By not marking 'Batch' a dataclass, we would let the subclass
         # decide it if wants to be frozen or not!

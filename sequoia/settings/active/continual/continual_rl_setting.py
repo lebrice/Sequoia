@@ -976,8 +976,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         max_steps: int,
         new_random_task_on_reset: bool,
     ) -> List[Callable[[gym.Env], gym.Env]]:
-        """ helper function for creating the train/valid/test wrappers. 
-        
+        """ helper function for creating the train/valid/test wrappers.
+
         These wrappers get applied *before* the batching, if applicable.
         """
         wrappers: List[Callable[[gym.Env], gym.Env]] = []
@@ -1002,12 +1002,14 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
         if (
             isinstance(self.dataset, str)
-            and self.dataset.lower().startswith("metamonsterkong")
+            and self.dataset.lower().startswith(("metamonsterkong", "monsterkong"))
             and not self.observe_state_directly
         ):
             # TODO: Do we need the AtariPreprocessing wrapper on MonsterKong?
             # wrappers.append(partial(AtariPreprocessing, frame_skip=1))
+            wrappers.append(ImageObservations)
             pass
+        
         elif is_atari_env(self.dataset):
             # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
             # TODO: Figure out the differences (if there are any) between the
