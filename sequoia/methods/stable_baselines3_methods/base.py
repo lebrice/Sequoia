@@ -315,7 +315,10 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
             An orion-formatted search space dictionary, mapping from hyper-parameter
             names (str) to their priors (str), or to nested dicts of the same form.
         """
-        return self.hparams.get_orion_space()
+        search_space = self.hparams.get_orion_space()
+        # See issue #150: The search space could be constrained to just learning rate
+        # for now, apparently.
+        return {"learning_rate": search_space["learning_rate"]}
 
     def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
         """Adapts the Method when it receives new Hyper-Parameters to try for a new run.

@@ -137,8 +137,8 @@ class A2CMethod(StableBaselines3Method):
             #   continuous actions
             # Therefore we remove related entries in the search space, so they keep
             # their default values.
-            search_space.pop("use_sde")
-            search_space.pop("sde_sample_freq")
+            search_space.pop("use_sde", None)
+            search_space.pop("sde_sample_freq", None)
         return search_space
 
 
