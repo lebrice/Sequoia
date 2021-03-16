@@ -11,24 +11,27 @@ from gym.spaces.utils import flatten_space
 from simple_parsing import mutable_field
 from stable_baselines3.dqn import DQN
 
-from sequoia.common.hparams import uniform, log_uniform, categorical
+from sequoia.common.hparams import categorical, log_uniform, uniform
+from sequoia.common.transforms import ChannelsFirst
 from sequoia.methods import register_method
-from sequoia.methods.stable_baselines3_methods.base import (
-    SB3BaseHParams, StableBaselines3Method)
 from sequoia.settings.active import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
+
+from .base import SB3BaseHParams, StableBaselines3Method
 
 logger = get_logger(__file__)
 
 
 class DQNModel(DQN):
     """ Customized version of the DQN model from stable-baselines-3. """
+
     @dataclass
     class HParams(SB3BaseHParams):
         """ Hyper-parameters of the DQN model from `stable_baselines3`.
 
         The command-line arguments for these are created with simple-parsing.
         """
+
         # The learning rate, it can be a function of the current progress (from
         # 1 to 0)
         learning_rate: Union[float, Callable] = log_uniform(1e-6, 1e-2, default=1e-4)
@@ -169,13 +172,17 @@ class DQNMethod(StableBaselines3Method):
     def fit(self, train_env: gym.Env, valid_env: gym.Env):
         super().fit(train_env=train_env, valid_env=valid_env)
 
-    def get_actions(self,
-                    observations: ContinualRLSetting.Observations,
-                    action_space: spaces.Space) -> ContinualRLSetting.Actions:
-        return super().get_actions(
-            observations=observations,
-            action_space=action_space,
-        )
+    def get_actions(
+        self, observations: ContinualRLSetting.Observations, action_space: spaces.Space
+    ) -> ContinualRLSetting.Actions:
+        obs = observations.x
+        # Temp fix for monsterkong and DQN:
+        if obs.shape == (64, 64, 3):
+            obs = ChannelsFirst.apply(obs)
+        predictions = self.model.predict(obs)
+        action, _ = predictions
+        assert action in action_space, (observations, action, action_space)
+        return action
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
         """ Called when switching tasks in a CL setting.
