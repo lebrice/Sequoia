@@ -464,8 +464,18 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                     for i, task in enumerate(valid_tasks)
                 }
 
+            space_dict = dict(temp_env.observation_space.items())
+            task_label_space = spaces.Discrete(self.nb_tasks)
+            if not self.task_labels_at_train_time or not self.task_labels_at_test_time:
+                task_label_space = Sparse(task_label_space)
+            space_dict["task_labels"] = task_label_space
+
+            # FIXME: Temporarily, we will actually set the task label space, since there
+            # appears to be an error when using monsterkong space.
+            observation_space = NamedTupleSpace(spaces=space_dict, dtype=self.Observations)
+            self.observation_space = observation_space
             # Set the spaces using the temp env.
-            self.observation_space = temp_env.observation_space
+            # self.observation_space = temp_env.observation_space
             self.action_space = temp_env.action_space
             self.reward_range = temp_env.reward_range
             self.reward_space = getattr(
