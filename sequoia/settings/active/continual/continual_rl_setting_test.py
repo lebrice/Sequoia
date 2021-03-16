@@ -182,11 +182,11 @@ def test_passing_task_schedule_sets_other_attributes_correctly():
     assert setting.steps_per_task == 100
     assert setting.test_task_schedule == {
         0: {"gravity": 5.0},
-        5_000: {"gravity": 10.0},
-        10_000: {"gravity": 20.0},
+        100: {"gravity": 10.0},
+        200: {"gravity": 20.0},
     }
-    assert setting.test_steps == 10_000
-    assert setting.test_steps_per_task == 5_000
+    assert setting.test_steps == 200
+    assert setting.test_steps_per_task == 100
 
 
 from sequoia.settings.assumptions.incremental_test import DummyMethod
