@@ -72,15 +72,15 @@ class EpisodeMetrics(Metrics):
 
     def to_log_dict(self, verbose: bool = False):
         log_dict = {
+            "Episodes": self.n_episodes,
             "Mean reward per episode": self.mean_episode_reward,
+            "Mean reward per step": self.mean_reward_per_step,
         }
         if verbose:
             log_dict.update(
                 {
-                    "Episodes": self.n_episodes,
                     "Total steps": self.total_steps,
                     "Total reward": self.total_reward,
-                    "Mean reward per step": self.mean_reward_per_step,
                     "Mean episode length": self.mean_episode_length,
                 }
             )
