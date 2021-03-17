@@ -19,7 +19,7 @@ def test_mnist(mnist_setting: SettingProxy[ClassIncrementalSetting]):
     results: ClassIncrementalSetting.Results
     # There should be an improvement over the Method in `classifier.py`:
     assert 0.80 <= results.average_online_performance.objective <= 1.00
-    assert 0.20 <= results.average_final_performance.objective <= 0.50
+    assert 0.20 <= results.average_final_performance.objective <= 0.60
 
 
 @slow
