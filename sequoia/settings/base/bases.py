@@ -5,6 +5,7 @@ import sys
 import traceback
 from abc import ABC, abstractmethod
 from functools import partial
+from io import StringIO
 from pathlib import Path
 from typing import (
     Any,
@@ -726,11 +727,14 @@ class Method(Generic[SettingType], Parseable, ABC):
                 result: Results = setting.apply(self)
             except Exception:
 
-                print(red("Encountered an error, this trial will be dropped:"))
-                print("-" * 60)
-                traceback.print_exc(file=sys.stdout)
-                print("-" * 60)
-                print(red(f"({failed_trials} failed trials so far). "))
+                logger.error(red("Encountered an error, this trial will be dropped:"))
+                logger.error(red("-" * 60))
+                with StringIO() as s:
+                    traceback.print_exc(file=s)
+                    s.seek(0)
+                    logger.error(s.read())
+                logger.error("-" * 60)
+                logger.error(red(f"({failed_trials} failed trials so far). "))
 
                 experiment.release(trial)
                 failed_trials += 1
