@@ -140,11 +140,11 @@ class MultiHeadModel(BaseModel[SettingType]):
             self.batch_size = observations.batch_size
             logger.debug(f"Setting batch_size to {self.batch_size}.")
 
-        # Just testing things out here.
         assert isinstance(observations, self.Observations), observations
-        single_observation_space = self.observation_space
-        if observations[0].shape == single_observation_space[0].shape:
-            raise RuntimeError("Observations should be batched!")
+        if not self._are_batched(observations):
+            raise RuntimeError(
+                f"Observations should be batched, but have shapes {observations.shapes}"
+            )
 
         assert not isinstance(observations.task_labels, int), observations.shapes
         # Get the task labels from the observation.

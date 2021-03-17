@@ -52,12 +52,12 @@ class IncrementalSetting(ContinualSetting):
     """ Mixin that defines methods that are common to all 'incremental'
     settings, where the data is separated into tasks, and where you may not
     always get the task labels.
-    
+
     Concretely, this holds the train and test loops that are common to the
     ClassIncrementalSetting (highest node on the Passive side) and ContinualRL
     (highest node on the Active side), therefore this setting, while abstract,
-    is quite important. 
-    
+    is quite important.
+
     """
 
     Results: ClassVar[Type[Results]] = IncrementalResults
@@ -120,12 +120,12 @@ class IncrementalSetting(ContinualSetting):
         self._start_time: Optional[float] = None
         self._end_time: Optional[float] = None
         self._setting_logged_to_wandb: bool = False
-    
+
     @property
     def phases(self) -> int:
         """The number of training 'phases', i.e. how many times `method.fit` will be
         called.
-        
+
         Defaults to the number of tasks, but may be different, for instance in so-called
         Multi-Task Settings, this is set to 1.
         """
@@ -134,11 +134,11 @@ class IncrementalSetting(ContinualSetting):
     @property
     def current_task_id(self) -> Optional[int]:
         """ Get the current task id.
-        
+
         TODO: Do we want to return None if the task labels aren't currently
         available? (at either Train or Test time?) Or if we 'detect' if
         this is being called from the method?
-        
+
         TODO: This property doesn't really make sense in the Multi-Task SL or RL
         settings.
         """
@@ -205,7 +205,7 @@ class IncrementalSetting(ContinualSetting):
         method.set_training()
 
         self._start_time = time.process_time()
-        
+
         for task_id in range(self.phases):
             logger.info(
                 f"Starting training"
@@ -218,6 +218,7 @@ class IncrementalSetting(ContinualSetting):
             # the datamodule):
             task_train_env = self.train_dataloader()
             task_valid_env = self.val_dataloader()
+
             method.fit(
                 train_env=task_train_env, valid_env=task_valid_env,
             )
@@ -320,11 +321,11 @@ class IncrementalSetting(ContinualSetting):
 
         The idea is that this loop should be exactly the same, regardless of if
         you're on the RL or the CL side of the tree.
-        
+
         NOTE: If `self.known_task_boundaries_at_test_time` is `True` and the
         method has the `on_task_switch` callback defined, then a callback
         wrapper is added that will invoke the method's `on_task_switch` and pass
-        it the task id (or `None` if `not self.task_labels_available_at_test_time`) 
+        it the task id (or `None` if `not self.task_labels_available_at_test_time`)
         when a task boundary is encountered.
 
         This `on_task_switch` 'callback' wrapper gets added the same way for
@@ -508,7 +509,7 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper, ABC):
     @abstractmethod
     def get_results(self) -> Results:
         """ Return how well the Method was applied on this environment.
-        
+
         In RL, this would be based on the mean rewards, while in supervised
         learning it could be the average accuracy, for instance.
 
