@@ -105,8 +105,11 @@ class DQNMethod(StableBaselines3Method):
 
         # The default value for the buffer size in the DQN model is WAY too
         # large, so we re-size it depending on the size of the observations.
-
-        flattened_observation_space = flatten_space(setting.observation_space)
+        # NOTE: (issue #156) Only consider the images, not the task labels for these
+        # buffer size calculations (since the task labels might be None and have the
+        # np.object dtype).
+        x_space = setting.observation_space.x
+        flattened_observation_space = flatten_space(x_space)
         observation_size_bytes = flattened_observation_space.sample().nbytes
 
         # IF there are more than a few dimensions per observation, then we
