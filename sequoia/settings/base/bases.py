@@ -1,7 +1,10 @@
 """ This module defines the base classes for Settings and Methods.
 """
 import json
+import sys
+import traceback
 from abc import ABC, abstractmethod
+from functools import partial
 from pathlib import Path
 from typing import (
     Any,
@@ -10,17 +13,20 @@ from typing import (
     Generic,
     Iterable,
     List,
+    Mapping,
     Optional,
     Set,
     Tuple,
     Type,
     TypeVar,
     Union,
-    Mapping,
 )
 
 import gym
+from gym.utils import colorize
 from pytorch_lightning import LightningDataModule
+from wandb.wandb_run import Run
+
 from sequoia.common import Config, Metrics
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import Actions, Observations, Rewards
@@ -34,7 +40,6 @@ from sequoia.utils.utils import (
     get_path_to_source_file,
     remove_suffix,
 )
-from wandb.wandb_run import Run
 
 logger = get_logger(__file__)
 
@@ -691,7 +696,12 @@ class Method(Generic[SettingType], Parseable, ABC):
             logger.info(f"Created new experiment with name {experiment_name}")
 
         trials_performed = 0
-        while not experiment.is_done:
+        failed_trials = 0
+
+        red = partial(colorize, color="red")
+        green = partial(colorize, color="green")
+
+        while not (experiment.is_done or failed_trials == 3):
             # Get a new suggestion of hparams to try:
             trial: Trial = experiment.suggest()
 
@@ -707,31 +717,47 @@ class Method(Generic[SettingType], Parseable, ABC):
                 "Suggested values for this run:\n"
                 + json.dumps(new_hparams, indent="\t")
             )
-
             self.adapt_to_new_hparams(new_hparams)
 
-            ## Evaluate the method again on the setting:
-            result: Results = setting.apply(self)
-            # Report the results to Orion:
-            orion_result = dict(
-                name=result.objective_name,
-                type="objective",
-                value=sign * result.objective,
-            )
-            experiment.observe(trial, [orion_result])
-            trials_performed += 1
-            logger.info(
-                f"Trial #{trials_performed}: {result.objective_name} = {result.objective}"
-            )
-            # Receive the results, maybe log to wandb, whatever you wanna do.
-            self.receive_results(setting, result)
+            # ---------
+            # Evaluate the (adapted) method on the setting:
+            # ---------
+            try:
+                result: Results = setting.apply(self)
+            except Exception:
+
+                print(red("Encountered an error, this trial will be dropped:"))
+                print("-" * 60)
+                traceback.print_exc(file=sys.stdout)
+                print("-" * 60)
+                print(red(f"({failed_trials} failed trials so far). "))
+
+                experiment.release(trial)
+                failed_trials += 1
+            else:
+                # Report the results to Orion:
+                orion_result = dict(
+                    name=result.objective_name,
+                    type="objective",
+                    value=sign * result.objective,
+                )
+                experiment.observe(trial, [orion_result])
+                trials_performed += 1
+                logger.info(
+                    green(
+                        f"Trial #{trials_performed}: {result.objective_name} = {result.objective}"
+                    )
+                )
+                # Receive the results, maybe log to wandb, whatever you wanna do.
+                self.receive_results(setting, result)
 
         logger.info(
             "Experiment statistics: \n"
             + "\n".join(f"\t{key}: {value}" for key, value in experiment.stats.items())
         )
         logger.info(f"Number of previous trials: {len(previous_trials)}")
-        logger.info(f"Trials completed by this worker: {trials_performed}")
+        logger.info(f"Trials successfully completed by this worker: {trials_performed}")
+        logger.info(f"Failed Trials attempted by this worker: {failed_trials}")
 
         if "best_trials_id" not in experiment.stats:
             raise RuntimeError("Can't find the best trial, experiment might be broken!")
