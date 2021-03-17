@@ -1,26 +1,31 @@
 """Tests for the class-incremental version of the Model class.
 """
 # from sequoia.conftest import config
+from collections import defaultdict
 from typing import Dict, List, Tuple, Type
 
+import gym
+import numpy as np
 import pytest
 import torch
-from collections import defaultdict
 from continuum import ClassIncremental
 from continuum.datasets import MNIST
 from continuum.tasks import TaskSet
 from gym import spaces
 from gym.spaces.utils import flatdim
+from gym.vector import SyncVectorEnv
+from gym.wrappers import TimeLimit
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, Dataset
+
 from sequoia.common import Loss
 from sequoia.common.config import Config
-from sequoia.settings import ClassIncrementalSetting
+from sequoia.common.gym_wrappers import MultiTaskEnvironment
+from sequoia.methods.models.forward_pass import ForwardPass
+from sequoia.settings import ClassIncrementalSetting, RLSetting
 from sequoia.settings.base import Environment
 from sequoia.utils import take
-from sequoia.methods.models.forward_pass import ForwardPass
-
-from .multihead_model import MultiHeadModel, OutputHead
+from .multihead_model import MultiHeadModel, OutputHead, get_task_indices
 
 
 @pytest.fixture()
@@ -49,13 +54,14 @@ class MockOutputHead(OutputHead):
         h_x = representations
         # actions = torch.stack([h_i.mean() * self.task_id for h_i in h_z])
         # actions = torch.stack([x_i.mean() * self.task_id for x_i in x])
-        actions = [x_i.mean() * self.task_id  for x_i in x]
+        actions = [x_i.mean() * self.task_id for x_i in x]
         actions = torch.stack(actions)
         return self.Actions(actions)
-    
+
     def get_loss(self, forward_pass, actions, rewards):
-        return Loss(self.name, 0.)
-    
+        return Loss(self.name, 0.0)
+
+
 # def mock_output_task(self: MultiHeadModel, x: Tensor, h_x: Tensor) -> Tensor:
 #     return self.output_head(x)
 
@@ -63,15 +69,21 @@ class MockOutputHead(OutputHead):
 #     return x.new_ones(self.hp.hidden_size)
 
 
-@pytest.mark.parametrize("indices", [
-    slice(0, 10), # all the same task (0)
-    slice(0, 20), # 10 from task 0, 10 from task 1
-    slice(0, 30), # 10 from task 0, 10 from task 1, 10 from task 2
-    slice(0, 50), # 10 from each task.
-])
-def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor, Tensor, Tensor]],
-                                          indices: slice,
-                                          monkeypatch, config: Config):
+@pytest.mark.parametrize(
+    "indices",
+    [
+        slice(0, 10),  # all the same task (0)
+        slice(0, 20),  # 10 from task 0, 10 from task 1
+        slice(0, 30),  # 10 from task 0, 10 from task 1, 10 from task 2
+        slice(0, 50),  # 10 from each task.
+    ],
+)
+def test_multiple_tasks_within_same_batch(
+    mixed_samples: Dict[int, Tuple[Tensor, Tensor, Tensor]],
+    indices: slice,
+    monkeypatch,
+    config: Config,
+):
     """ TODO: Write out a test that checks that when given a batch with data
     from different tasks, and when the model is multiheaded, it will use the
     right output head for each image.
@@ -82,7 +94,7 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
         hparams=MultiHeadModel.HParams(batch_size=30, multihead=True),
         config=config,
     )
-    
+
     class MockEncoder(nn.Module):
         def forward(self, x: Tensor):
             return x.new_ones([x.shape[0], model.hidden_size])
@@ -106,13 +118,13 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
             task_id=i,
         )
     model.output_head = model.output_heads["0"]
-    
+
     xs, ys, ts = map(torch.cat, zip(*mixed_samples.values()))
-    
+
     xs = xs[indices]
     ys = ys[indices]
     ts = ts[indices].int()
-    
+
     obs = setting.Observations(x=xs, task_labels=ts)
     with torch.no_grad():
         forward_pass = model(obs)
@@ -120,25 +132,21 @@ def test_multiple_tasks_within_same_batch(mixed_samples: Dict[int, Tuple[Tensor,
 
     assert y_preds.shape == ts.shape
     assert torch.all(y_preds == ts * xs.view([xs.shape[0], -1]).mean(1))
-    
+
     # Test that the output head predictions make sense:
     # print(ts)
     # for x, y_pred, task_id in zip(xs, y_preds, ts):
     #     assert y_pred.tolist() == (x.mean() * task_id).tolist()
-        # assert y_pred.tolist() == (x.mean() * task_id).tolist() 
-    
+    # assert y_pred.tolist() == (x.mean() * task_id).tolist()
+
     # assert False, y_preds[0]
-    
+
     # assert False, {i: [vi.shape for vi in v] for i, v in mixed_samples.items()}
 
-import gym
-from gym.vector import SyncVectorEnv
-from gym.wrappers import TimeLimit
-from sequoia.common.gym_wrappers import MultiTaskEnvironment
-from sequoia.settings import RLSetting
 
-
-def get_multi_task_env(batch_size: int = 1) -> Environment[RLSetting.Observations, RLSetting.Actions, RLSetting.Rewards]:
+def get_multi_task_env(
+    batch_size: int = 1,
+) -> Environment[RLSetting.Observations, RLSetting.Actions, RLSetting.Rewards]:
     def single_env_fn() -> gym.Env:
         env = gym.make("CartPole-v0")
         env = TimeLimit(env, max_episode_steps=10)
@@ -160,6 +168,7 @@ def get_multi_task_env(batch_size: int = 1) -> Environment[RLSetting.Observation
     env = SyncVectorEnv([single_env_fn for _ in range(batch_size)])
     from sequoia.common.gym_wrappers import AddDoneToObservation
     from sequoia.settings.active import TypedObjectsWrapper
+
     env = AddDoneToObservation(env)
     # Wrap the observations so they appear as though they are from the given setting.
     env = TypedObjectsWrapper(
@@ -171,8 +180,10 @@ def get_multi_task_env(batch_size: int = 1) -> Environment[RLSetting.Observation
     env.seed(123)
     return env
 
-from .baseline_model import BaselineModel
+
 from sequoia.methods.models.output_heads.rl.episodic_a2c import EpisodicA2C
+
+from .baseline_model import BaselineModel
 
 
 def test_multitask_rl_bug_without_PL(monkeypatch):
@@ -191,13 +202,16 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
         observe_state_directly=True,
     )
     assert setting._new_random_task_on_reset
-    
+
     # setting = RLSetting.load_benchmark("monsterkong")
     config = Config(debug=True, verbose=True, seed=123)
     config.seed_everything()
     model = BaselineModel(
         setting=setting,
-        hparams=MultiHeadModel.HParams(multihead=True, output_head=EpisodicA2C.HParams(accumulate_losses_before_backward=True)),
+        hparams=MultiHeadModel.HParams(
+            multihead=True,
+            output_head=EpisodicA2C.HParams(accumulate_losses_before_backward=True),
+        ),
         config=config,
     )
     # TODO: Maybe add some kind of "hook" to check which losses get returned when?
@@ -206,16 +220,16 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
     # trainer = Trainer(fast_dev_run=True)
     # trainer.fit(model, train_dataloader=setting.train_dataloader())
     # trainer.setup(model, stage="fit")
-    
+
     # from pytorch_lightning import Trainer
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    
+
     episodes = 0
     max_episodes = 5
-    
+
     # Dict mapping from step to loss at that step.
-    losses: Dict[int, Loss] = {} 
-    
+    losses: Dict[int, Loss] = {}
+
     with setting.train_dataloader() as env:
         env.seed(123)
         # env = TimeLimit(env, max_episode_steps=max_episode_steps)
@@ -226,7 +240,7 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
             if step == 0:
                 assert not any(obs.done)
             start_task_label = obs[1][0]
-            
+
             stored_steps_in_each_head_before = {
                 task_key: output_head.num_stored_steps(0)
                 for task_key, output_head in model.output_heads.items()
@@ -234,7 +248,9 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
             forward_pass: ForwardPass = model.forward(observations=obs)
             rewards = env.send(forward_pass.actions)
 
-            loss: Loss = model.get_loss(forward_pass=forward_pass, rewards=rewards, loss_name="debug")
+            loss: Loss = model.get_loss(
+                forward_pass=forward_pass, rewards=rewards, loss_name="debug"
+            )
             stored_steps_in_each_head_after = {
                 task_key: output_head.num_stored_steps(0)
                 for task_key, output_head in model.output_heads.items()
@@ -243,30 +259,31 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
             #     assert False, (loss, stored_steps_in_each_head_before, stored_steps_in_each_head_after)
 
             if any(obs.done):
-                assert loss.loss != 0., step
+                assert loss.loss != 0.0, step
                 assert loss.loss.requires_grad
-                
+
                 # Backpropagate the loss, update the models, etc etc.
                 loss.loss.backward()
                 model.on_after_backward()
                 optimizer.step()
                 model.on_before_zero_grad(optimizer)
                 optimizer.zero_grad()
-                
+
                 # TODO: Need to let the model know than an update is happening so it can clear
                 # buffers etc.
-                
+
                 episodes += sum(obs.done)
                 losses[step] = loss
             else:
-                assert loss.loss == 0.
-            # TODO: 
-            print(f"Step {step}, episode {episodes}: x={obs[0]}, done={obs.done}, reward={rewards} task labels: {obs.task_labels}, loss: {loss.losses.keys()}: {loss.loss}")
+                assert loss.loss == 0.0
+            # TODO:
+            print(
+                f"Step {step}, episode {episodes}: x={obs[0]}, done={obs.done}, reward={rewards} task labels: {obs.task_labels}, loss: {loss.losses.keys()}: {loss.loss}"
+            )
 
             if episodes > max_episodes:
                 break
     # assert False, losses
-    
 
 
 def test_multitask_rl_bug_with_PL(monkeypatch):
@@ -285,58 +302,58 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
         observe_state_directly=True,
     )
     assert setting._new_random_task_on_reset
-    
+
     # setting = RLSetting.load_benchmark("monsterkong")
     config = Config(debug=True, verbose=True, seed=123)
     config.seed_everything()
     model = BaselineModel(
         setting=setting,
-        hparams=MultiHeadModel.HParams(multihead=True, output_head=EpisodicA2C.HParams(accumulate_losses_before_backward=True)),
+        hparams=MultiHeadModel.HParams(
+            multihead=True,
+            output_head=EpisodicA2C.HParams(accumulate_losses_before_backward=True),
+        ),
         config=config,
     )
 
     # TODO: Maybe add some kind of "hook" to check which losses get returned when?
     model.train()
     assert not model.automatic_optimization
-    
+
     from pytorch_lightning import Trainer
+
     trainer = Trainer(fast_dev_run=True)
     trainer.fit(model, train_dataloader=setting.train_dataloader())
-    
+
     # from pytorch_lightning import Trainer
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    
+
     episodes = 0
     max_episodes = 5
-    
+
     # Dict mapping from step to loss at that step.
     losses: Dict[int, List[Loss]] = defaultdict(list)
-    
+
     with setting.train_dataloader() as env:
         env.seed(123)
-        
-        
+
         # env = TimeLimit(env, max_episode_steps=max_episode_steps)
         # Iterate over the environment, which yields one observation at a time:
         for step, obs in enumerate(env):
             assert isinstance(obs, RLSetting.Observations)
-            
-            step_results = model.training_step(
-                    batch=obs,
-                    batch_idx=step
-            )
+
+            step_results = model.training_step(batch=obs, batch_idx=step)
             loss_tensor: Optional[Tensor] = None
-            
+
             if step > 0 and step % 5 == 0:
-                assert all(obs.done), step # Since batch_size == 1 for now.
+                assert all(obs.done), step  # Since batch_size == 1 for now.
                 assert step_results is not None, (step, obs.task_labels)
                 loss_tensor = step_results["loss"]
                 loss: Loss = step_results["loss_object"]
                 print(f"Loss at step {step}: {loss}")
                 losses[step].append(loss)
-                
+
                 # # Manually perform the optimization step.
-                # output_head_loss = loss.losses.get(model.output_head.name)            
+                # output_head_loss = loss.losses.get(model.output_head.name)
                 # update_model = output_head_loss is not None and output_head_loss.requires_grad
 
                 # assert update_model
@@ -351,8 +368,10 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
             else:
                 assert step_results is None
 
-            print(f"Step {step}, episode {episodes}: x={obs[0]}, done={obs.done}, task labels: {obs.task_labels}, loss_tensor: {loss_tensor}")    
-            
+            print(
+                f"Step {step}, episode {episodes}: x={obs[0]}, done={obs.done}, task labels: {obs.task_labels}, loss_tensor: {loss_tensor}"
+            )
+
             if step > 100:
                 break
 
@@ -361,3 +380,23 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
         for loss in step_losses:
             print(f"\t{loss}")
     # assert False, losses
+
+
+@pytest.mark.parametrize(
+    "input, expected",
+    [
+        (np.array([0, 0, 0, 0]), {0: np.arange(4)}),
+        (torch.as_tensor([0, 0, 0, 0]), {0: torch.arange(4)}),
+        (
+            torch.as_tensor([0, 0, 1, 0]),
+            {0: torch.LongTensor([0, 1, 3]), 1: torch.LongTensor([2])},
+        ),
+        (
+            np.array([0, 0, 1, None]),
+            {0: np.array([0, 1]), 1: np.array([2]), None: np.array([3])},
+        ),
+    ],
+)
+def test_get_task_indices(input, expected):
+    actual = get_task_indices(input)
+    assert str(actual) == str(expected)

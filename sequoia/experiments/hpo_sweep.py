@@ -1,9 +1,9 @@
 from pathlib import Path
 from dataclasses import dataclass
 import json
-from sequoia.utils import Parseable, Serializable
-from typing import Optional, Dict, Union, List, Tuple
+from typing import Optional, Dict, Union, List, Tuple, Type
 from sequoia.settings import Setting, Method, Results
+from sequoia.common.config import Config
 from .experiment import Experiment, parse_setting_and_method_instances
 import sys
 import shlex
@@ -12,9 +12,10 @@ import shlex
 @dataclass
 class HPOSweep(Experiment):
     """ Experiment which launches an HPO Sweep using Orion.
-    
+
     TODO: Maybe use this somewhere in main.py once we redesign the command-line API.
     """
+
     # Path to a json file containing the orion-formatted search space dictionary.
     # When `None` (by default), the result of `get_search_space` will be used instead.
     search_space_path: Optional[Path] = None
@@ -57,7 +58,10 @@ class HPOSweep(Experiment):
         """
         if not (isinstance(self.setting, Setting) and isinstance(self.method, Method)):
             self.setting, self.method = parse_setting_and_method_instances(
-                setting=self.setting, method=self.method, argv=argv, strict_args=strict_args
+                setting=self.setting,
+                method=self.method,
+                argv=argv,
+                strict_args=strict_args,
             )
         assert isinstance(self.setting, Setting)
         assert isinstance(self.method, Method)
@@ -72,9 +76,10 @@ class HPOSweep(Experiment):
             experiment_id=self.experiment_id,
             max_runs=self.max_runs,
         )
-        print("Best params:\n" + "\n".join(
-            f"\t{key}: {value}" for key, value in best_params.items()
-        ))
+        print(
+            "Best params:\n"
+            + "\n".join(f"\t{key}: {value}" for key, value in best_params.items())
+        )
         print(f"Best objective: {best_objective}")
         return (best_params, best_objective)
 
@@ -104,17 +109,19 @@ class HPOSweep(Experiment):
             argv = sys.argv[1:]
         if isinstance(argv, str):
             argv = shlex.split(argv)
-        argv_copy = argv.copy()
+        _ = argv.copy()
 
         experiment: Experiment
         experiment, argv = cls.from_known_args(argv)
 
         setting: Optional[Type[Setting]] = experiment.setting
         method: Optional[Type[Method]] = experiment.method
-        config: Config = experiment.config
+        # config: Config = experiment.config
 
         if method is None or setting is None:
-            raise RuntimeError("Both `--setting` and `--method` must be set to run a sweep.")
+            raise RuntimeError(
+                "Both `--setting` and `--method` must be set to run a sweep."
+            )
         return experiment.launch(argv, strict_args=strict_args)
 
 

@@ -1,24 +1,35 @@
 """ This module defines the base classes for Settings and Methods.
 """
-import dataclasses
-import inspect
 import json
-import operator
+import sys
+import traceback
 from abc import ABC, abstractmethod
+from functools import partial
+from io import StringIO
 from pathlib import Path
-from typing import *
+from typing import (
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import gym
-import numpy as np
-import wandb
+from gym.utils import colorize
 from pytorch_lightning import LightningDataModule
+from wandb.wandb_run import Run
+
 from sequoia.common import Config, Metrics
-from sequoia.settings.base.environment import (
-    Actions,
-    Environment,
-    Observations,
-    Rewards,
-)
+from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.settings.base.results import Results
 from sequoia.utils.logging_utils import get_logger
@@ -30,7 +41,6 @@ from sequoia.utils.utils import (
     get_path_to_source_file,
     remove_suffix,
 )
-from wandb.wandb_run import Run
 
 logger = get_logger(__file__)
 
@@ -62,10 +72,10 @@ class SettingABC:
 
     @abstractmethod
     def apply(self, method: "Method", config: Config = None) -> "SettingABC.Results":
-        """ Applies a Method on this experimental Setting to produce Results. 
- 
+        """ Applies a Method on this experimental Setting to produce Results.
+
         Defines the training/evaluation procedure specific to this Setting.
-        
+
         The training/evaluation loop can be defined however you want, as long as
         it respects the following constraints:
 
@@ -83,16 +93,16 @@ class SettingABC:
             training/evaluation routines at a pretty high level, so that Methods
             that get applied to your Setting can make use of pytorch-lightning's
             `Trainer` & `LightningDataModule` API to be neat and fast.
-        
+
         Parameters
         ----------
         method : Method
             A Method to apply on this Setting.
-        
+
         config : Optional[Config]
             Optional configuration object with things like the log dir, the data
             dir, cuda, wandb config, etc. When None, will be parsed from the
-            current command-line arguments. 
+            current command-line arguments.
 
         Returns
         -------
@@ -167,11 +177,11 @@ class SettingABC:
     def get_available_datasets(cls) -> Iterable[str]:
         """Returns an iterable of the names of available datasets. """
 
-    ## Below this are some class attributes and methods related to the Tree.
+    # --- Below this are some class attributes and methods related to the Tree. ---
 
     # These are some "private" class attributes.
     # For any new Setting subclass, it's parent setting.
-    _parent: ClassVar[Type["Setting"]] = None
+    _parent: ClassVar[Type["SettingABC"]] = None
     # A list of all the direct children of this setting.
     _children: ClassVar[Set[Type["SettingABC"]]] = set()
     # List of all methods that directly target this Setting.
@@ -242,7 +252,7 @@ class SettingABC:
     @classmethod
     def get_parents(cls) -> Iterable[Type["SettingABC"]]:
         """yields the lineage, from bottom to top.
-        
+
         NOTE: In the case of Settings having multiple parents (such as IIDSetting),
         this is still just a list that reflects the method resolution order for that
         setting.
@@ -308,9 +318,9 @@ class Method(Generic[SettingType], Parseable, ABC):
 
     def receive_results(self, setting: SettingType, results: Results) -> None:
         """ Receive the Results of applying this method on the given Setting.
-        
+
         This method is optional.
-        
+
         This will be called after the method has been successfully applied to
         a Setting, and could be used to log or persist the results somehow.
 
@@ -326,10 +336,10 @@ class Method(Generic[SettingType], Parseable, ABC):
 
         This method is here to provide Methods with the opportunity to log some of their
         configuration options or hyper-parameters to wandb.
-        
+
         NOTE: The Setting has already set the `"setting"` entry in the `wandb.config` by
-        this point. 
-        
+        this point.
+
         Parameters
         ----------
         run : wandb.Run
@@ -400,18 +410,20 @@ class Method(Generic[SettingType], Parseable, ABC):
         """
         return not self.training
 
-    ## Below this are some class attributes and methods related to the Tree
-    ## structure and for launching Experiments using this method.
+    # --------
+    # Below this are some class attributes and methods related to the Tree
+    # structure and for launching Experiments using this method.
+    # --------
 
     @classmethod
     def main(cls, argv: Optional[Union[str, List[str]]] = None) -> Results:
         """ Run an Experiment from the command-line using this method.
-        
+
         (TODO: @lebrice Finish writing a good docstring here that explains how this works
         and how to use it.)
         You can then select which setting, dataset, etc. this method will be
         applied to using the --setting <setting_name>, and the rest of the
-        arguments will be passed to the Setting's from_args method. 
+        arguments will be passed to the Setting's from_args method.
         """
 
         from sequoia.main import Experiment
@@ -434,7 +446,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         A method is applicable on a given setting if and only if the setting is
         the method's target setting, or if it is a descendant of the method's
         target setting (below the target setting in the tree).
-        
+
         Concretely, since the tree is implemented as an inheritance hierarchy,
         a method is applicable to any setting which is an instance (or subclass)
         of its target setting.
@@ -479,7 +491,7 @@ class Method(Generic[SettingType], Parseable, ABC):
     def all_evaluation_settings(cls, **kwargs) -> Iterable[SettingType]:
         """ Generator over all the combinations of Settings/datasets on which
         this method is applicable.
-        
+
         If keyword arguments are passed, they will be passed to the constructor
         of each setting.
         """
@@ -585,7 +597,7 @@ class Method(Generic[SettingType], Parseable, ABC):
 
         It is required that this method be implemented if you want to perform HPO sweeps
         with Orion.
-        
+
         Parameters
         ----------
         new_hparams : Dict[str, Any]
@@ -636,7 +648,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         debug : bool, optional
             Wether to run Orion in debug-mode, where the database is an EphemeralDb,
             meaning it gets created for the sweep and destroyed at the end of the sweep.
-        
+
         Returns
         -------
         Tuple[BaselineModel.HParams, float]
@@ -666,7 +678,7 @@ class Method(Generic[SettingType], Parseable, ABC):
             max_trials=max_runs,
             storage={
                 "type": "legacy",
-                "database": {"type": "pickleddb", "host": str(database_path),},
+                "database": {"type": "pickleddb", "host": str(database_path)},
             },
         )
 
@@ -685,11 +697,18 @@ class Method(Generic[SettingType], Parseable, ABC):
             logger.info(f"Created new experiment with name {experiment_name}")
 
         trials_performed = 0
-        while not experiment.is_done:
+        failed_trials = 0
+
+        red = partial(colorize, color="red")
+        green = partial(colorize, color="green")
+
+        while not (experiment.is_done or failed_trials == 3):
             # Get a new suggestion of hparams to try:
             trial: Trial = experiment.suggest()
 
-            ## Re-create the Model with the new suggested Hparams values.
+            # ---------
+            # (Re)create the Model with the suggested Hparams values.
+            # ---------
 
             new_hparams: Dict = trial.params
             # Inner function, just used to make the code below a bit simpler.
@@ -699,31 +718,50 @@ class Method(Generic[SettingType], Parseable, ABC):
                 "Suggested values for this run:\n"
                 + json.dumps(new_hparams, indent="\t")
             )
-
             self.adapt_to_new_hparams(new_hparams)
 
-            ## Evaluate the method again on the setting:
-            result: Results = setting.apply(self)
-            # Report the results to Orion:
-            orion_result = dict(
-                name=result.objective_name,
-                type="objective",
-                value=sign * result.objective,
-            )
-            experiment.observe(trial, [orion_result])
-            trials_performed += 1
-            logger.info(
-                f"Trial #{trials_performed}: {result.objective_name} = {result.objective}"
-            )
-            # Receive the results, maybe log to wandb, whatever you wanna do.
-            self.receive_results(setting, result)
+            # ---------
+            # Evaluate the (adapted) method on the setting:
+            # ---------
+            try:
+                result: Results = setting.apply(self)
+            except Exception:
+
+                logger.error(red("Encountered an error, this trial will be dropped:"))
+                logger.error(red("-" * 60))
+                with StringIO() as s:
+                    traceback.print_exc(file=s)
+                    s.seek(0)
+                    logger.error(s.read())
+                logger.error("-" * 60)
+                logger.error(red(f"({failed_trials} failed trials so far). "))
+
+                experiment.release(trial)
+                failed_trials += 1
+            else:
+                # Report the results to Orion:
+                orion_result = dict(
+                    name=result.objective_name,
+                    type="objective",
+                    value=sign * result.objective,
+                )
+                experiment.observe(trial, [orion_result])
+                trials_performed += 1
+                logger.info(
+                    green(
+                        f"Trial #{trials_performed}: {result.objective_name} = {result.objective}"
+                    )
+                )
+                # Receive the results, maybe log to wandb, whatever you wanna do.
+                self.receive_results(setting, result)
 
         logger.info(
             "Experiment statistics: \n"
             + "\n".join(f"\t{key}: {value}" for key, value in experiment.stats.items())
         )
         logger.info(f"Number of previous trials: {len(previous_trials)}")
-        logger.info(f"Trials completed by this worker: {trials_performed}")
+        logger.info(f"Trials successfully completed by this worker: {trials_performed}")
+        logger.info(f"Failed Trials attempted by this worker: {failed_trials}")
 
         if "best_trials_id" not in experiment.stats:
             raise RuntimeError("Can't find the best trial, experiment might be broken!")

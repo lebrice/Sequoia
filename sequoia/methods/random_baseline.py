@@ -91,7 +91,7 @@ class RandomBaselineMethod(Method, target_setting=Setting):
             )
         )
         # Assuming that this is just used for debugging, so giving back a simple space.
-        return {"foo": "choice([0, 1, 2])"}
+        return {"foo": "choices([0, 1, 2])"}
 
     def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
         """Adapts the Method when it receives new Hyper-Parameters to try for a new run.
