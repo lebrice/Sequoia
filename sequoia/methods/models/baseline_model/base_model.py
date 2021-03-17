@@ -30,6 +30,7 @@ from sequoia.common.config import Config
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.loss import Loss
 from sequoia.common.transforms import SplitBatch, Transforms
+from sequoia.common.spaces import Image
 from sequoia.settings import (Actions, ActiveSetting, ContinualRLSetting,
                               Environment, Observations, PassiveSetting,
                               Rewards, Setting)
@@ -49,12 +50,12 @@ logger = get_logger(__file__)
 
 class BaseModel(LightningModule, Generic[SettingType]):
     """ Base model LightningModule (nn.Module extended by pytorch-lightning)
-    
+
     WIP: (@lebrice): Trying to tidy up the hierarchy of the different kinds of
-    models a little bit. 
-    
+    models a little bit.
+
     This model splits the learning task into a representation-learning problem
-    and a downstream task (output head) applied on top of it.   
+    and a downstream task (output head) applied on top of it.
 
     The most important method to understand is the `get_loss` method, which
     is used by the [train/val/test]_step methods which are called by
@@ -74,7 +75,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             "a2c_online": ActorCriticHead,
             "a2c_episodic": EpisodicA2C,
         }, default=EpisodicA2C)
-        
+
 
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__()
@@ -112,7 +113,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # Only pass the image, not the task labels to the encoder (for now).
             input_dims = flatdim(self.observation_space[0])
             output_dims = self.hp.new_hidden_size or 128
-            
+
             self.encoder = FCNet(
                 in_features=input_dims,
                 out_features=output_dims,
@@ -130,12 +131,12 @@ class BaseModel(LightningModule, Generic[SettingType]):
             self.encoder, self.hidden_size = self.hp.make_encoder()
             # TODO: Check that the outputs of the encoders are actually
             # flattened. I'm not sure they all are, which case the samples
-            # wouldn't match with this space. 
+            # wouldn't match with this space.
             self.representation_space = spaces.Box(-np.inf, np.inf, (self.hidden_size,), np.float32)
-        
+
         logger.info(f"Moving encoder to device {self.config.device}")
         self.encoder = self.encoder.to(self.config.device)
-        
+
         self.representation_space = add_tensor_support(self.representation_space)
         self.output_head: OutputHead = self.create_output_head(setting, task_id=None)
 
@@ -151,11 +152,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
         observations = self.preprocess_observations(observations)
         # Encode the observation to get representations.
         assert observations.x.device == self.device
-        
+
         representations = self.encode(observations)
         # Pass the observations and representations to the output head to get
         # the 'action' (prediction).
-        
+
         if self.hp.detach_output_head:
             representations = representations.detach()
 
@@ -197,10 +198,10 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # self.encoder = self.encoder.to(self.device)
 
         h_x = self.encoder(x)
-        
+
         if encoder_device != self.device:
             h_x = h_x.to(self.device)
-        
+
         if isinstance(h_x, list) and len(h_x) == 1:
             # Some pretrained encoders sometimes give back a list with one tensor. (?)
             h_x = h_x[0]
@@ -210,7 +211,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def create_output_head(self, setting: Setting, task_id: Optional[int]) -> OutputHead:
         """Create an output head for the current action and reward spaces.
-        
+
         NOTE: This assumes that the input, action and reward spaces don't change
         between tasks.
 
@@ -220,11 +221,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
             Current Setting. This is the same as `self.setting`, but provided because at
             some point the idea was to use a singledispatchmethod to choose which kind
             of output head to create based on the type of Setting.
-        
+
         task_id : Optional[int]
             ID of the task associated with this new output head. Can be `None`, which is
             interpreted as saying that either that task labels aren't available, or that
-            this output head will be used for all tasks. 
+            this output head will be used for all tasks.
 
         Returns
         -------
@@ -339,7 +340,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
                     dataloader_idx: int = None,
                     optimizer_idx: int = None) -> Dict:
         """
-        This is the shared step for this 'example' LightningModule. 
+        This is the shared step for this 'example' LightningModule.
         Feel free to customize/change it if you want!
         """
         if dataloader_idx is not None:
@@ -352,7 +353,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # TODO: It would be nice if we could actually do the same things for
         # both sides of the tree here..
         observations, rewards = self.split_batch(batch)
-        
+
         # FIXME: Remove this, debugging:
         assert isinstance(observations, Observations), observations
         assert isinstance(observations.x, Tensor), observations.shapes
@@ -361,17 +362,17 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # - "representations": the representations for the observations.
         # - "actions": The actions (predictions)
         forward_pass: ForwardPass = self(observations)
-        
+
         # get the actions from the forward pass:
         actions = forward_pass.actions
-        
+
         if rewards is None:
             # Get the reward from the environment (the dataloader).
             if self.config.debug and self.config.render:
                 environment.render("human")
                 # import matplotlib.pyplot as plt
                 # plt.waitforbuttonpress(10)
-            
+
             rewards = environment.send(actions)
             assert rewards is not None
 
@@ -382,8 +383,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
         }
 
     def split_batch(self, batch: Any) -> Tuple[Observations, Rewards]:
-        """ Splits the batch into the observations and the rewards. 
-        
+        """ Splits the batch into the observations and the rewards.
+
         Uses the types defined on the setting that this model is being applied
         on (which were copied to `self.Observations` and `self.Actions`) to
         figure out how many fields each type requires.
@@ -402,7 +403,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             assert isinstance(batch, self.Observations)
             observations = batch
             rewards = None
-        
+
         observations = observations.torch(device=self.device)
         if rewards is not None:
             rewards = rewards.torch(device=self.device)
@@ -424,7 +425,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         Returns:
             Loss: a Loss object containing the loss tensor, associated metrics
             and sublosses.
-        
+
         This could look a bit like this, for example:
         ```
         action = forward_pass["action"]
@@ -490,8 +491,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     @batch_size.setter
     def batch_size(self, value: int) -> None:
-        self.hp.batch_size = value 
-    
+        self.hp.batch_size = value
+
     @property
     def learning_rate(self) -> float:
         return self.hp.learning_rate
@@ -502,7 +503,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
         """Called when switching between tasks.
-        
+
         Args:
             task_id (Optional[int]): the Id of the task.
         """
