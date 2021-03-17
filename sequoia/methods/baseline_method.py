@@ -222,9 +222,15 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                 # TODO: Add 'proper' transforms for cartpole, specifically?
                 from sequoia.common.transforms import Transforms
 
-                setting.train_transforms.append(Transforms.resize_64x64)
-                setting.val_transforms.append(Transforms.resize_64x64)
-                setting.test_transforms.append(Transforms.resize_64x64)
+                transforms = [
+                    Transforms.three_channels,
+                    Transforms.to_tensor,
+                    Transforms.resize_64x64,
+                ]
+                setting.transforms = transforms
+                setting.train_transforms = transforms
+                setting.val_transforms = transforms
+                setting.test_transforms = transforms
 
             # Configure the baseline specifically for an RL setting.
             # TODO: Select which output head to use from the command-line?
