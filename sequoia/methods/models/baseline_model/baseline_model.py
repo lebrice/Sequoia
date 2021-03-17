@@ -24,6 +24,7 @@ from torchvision import models as tv_models
 from sequoia.settings import Setting, ActiveSetting, PassiveSetting, Environment
 from sequoia.common.config import Config
 from sequoia.common.loss import Loss
+from sequoia.common.spaces import Image
 from sequoia.methods.aux_tasks.auxiliary_task import AuxiliaryTask
 from sequoia.methods.models.output_heads import (ActorCriticHead,
                                                  ClassificationHead,
@@ -198,14 +199,9 @@ class BaselineModel(SemiSupervisedModel,
         """
         # The observations should come from a batched environment. If they are not, we
         # add a batch dimension, which we will then remove.
-        # BUG: The observation space of the Setting doesn't correspond to the shapes of
-        # the observations.
-        single_obs_space = self.observation_space
-        single_image_space = single_obs_space[0]
-        # Check if the observations are batched or not.
         assert isinstance(observations.x, (Tensor, np.ndarray))
-        # assert isinstance(single_obs_space.x, Image)
-        not_batched = len(observations.x.shape) == len(single_obs_space[0].shape)
+        # Check if the observations are batched or not.
+        not_batched = not self._are_batched(observations)
         if not_batched:
             observations = observations.with_batch_dimension()
 

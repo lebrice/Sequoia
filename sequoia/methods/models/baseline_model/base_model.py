@@ -4,77 +4,85 @@ This is meant
 
 TODO: There is a bunch of work to be done here.
 """
-import dataclasses
-import functools
-import itertools
-from abc import ABC
-from collections import abc as collections_abc
 from dataclasses import dataclass
-from typing import (Any, ClassVar, Dict, Generic, List, NamedTuple, Optional,
-                    Sequence, Tuple, Type, TypeVar, Union)
+from typing import Any, Dict, Generic, Optional, Tuple, Type
 
 import gym
 import numpy as np
 import torch
 from gym import Space, spaces
 from gym.spaces.utils import flatdim
-from pytorch_lightning import LightningDataModule, LightningModule
+from pytorch_lightning import LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
-from simple_parsing import choice, list_field
+from simple_parsing import choice
 from torch import Tensor, nn
 from torch.optim.optimizer import Optimizer
 
-from sequoia.common.batch import Batch
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.loss import Loss
-from sequoia.common.transforms import SplitBatch, Transforms
-from sequoia.settings import (Actions, ActiveSetting, ContinualRLSetting,
-                              Environment, Observations, PassiveSetting,
-                              Rewards, Setting)
+from sequoia.common.transforms import SplitBatch
+from sequoia.common.spaces import Image
+from sequoia.settings import (
+    ActiveSetting,
+    ContinualRLSetting,
+    Environment,
+    PassiveSetting,
+    Setting,
+    SettingType,
+)
 from sequoia.settings.assumptions.incremental import IncrementalSetting
-from sequoia.settings.base.setting import (Actions, Observations, Rewards,
-                                           Setting, SettingType)
+from sequoia.settings.base.setting import Actions, Observations, Rewards
 from sequoia.utils.logging_utils import get_logger
 
 from ..fcnet import FCNet
 from ..forward_pass import ForwardPass
-from ..output_heads import (ActorCriticHead, ClassificationHead, OutputHead,
-                            PolicyHead, RegressionHead)
+from ..output_heads import (
+    ActorCriticHead,
+    ClassificationHead,
+    OutputHead,
+    PolicyHead,
+    RegressionHead,
+)
 from ..output_heads.rl.episodic_a2c import EpisodicA2C
 from .base_hparams import BaseHParams
 
 logger = get_logger(__file__)
 
+
 class BaseModel(LightningModule, Generic[SettingType]):
     """ Base model LightningModule (nn.Module extended by pytorch-lightning)
-    
+
     WIP: (@lebrice): Trying to tidy up the hierarchy of the different kinds of
-    models a little bit. 
-    
+    models a little bit.
+
     This model splits the learning task into a representation-learning problem
-    and a downstream task (output head) applied on top of it.   
+    and a downstream task (output head) applied on top of it.
 
     The most important method to understand is the `get_loss` method, which
     is used by the [train/val/test]_step methods which are called by
     pytorch-lightning.
     """
+
     @dataclass
     class HParams(BaseHParams):
         """ HParams of the Model. """
+
         # Which algorithm to use for the output head when in an RL setting.
         # TODO: Run the PolicyHead in the following conditions:
         # - Compare the big backward pass vs many small ones
         # - Try to have it learn from pixel input, if possible
         # - Try to have it learn on a multi-task RL setting,
         # TODO: Finish the ActorCritic and EpisodicA2C heads.
-        rl_output_head_algo: Type[OutputHead] = choice({
-            "reinforce": PolicyHead,
-            "a2c_online": ActorCriticHead,
-            "a2c_episodic": EpisodicA2C,
-        }, default=EpisodicA2C)
-        
+        rl_output_head_algo: Type[OutputHead] = choice(
+            {
+                "reinforce": PolicyHead,
+                "a2c_online": ActorCriticHead,
+                "a2c_episodic": EpisodicA2C,
+            },
+            default=EpisodicA2C,
+        )
 
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__()
@@ -89,11 +97,12 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.action_space: gym.Space = setting.action_space
         self.reward_space: gym.Space = setting.reward_space
 
-        self.input_shape  = self.observation_space[0].shape
+        self.input_shape = self.observation_space[0].shape
         self.reward_shape = self.reward_space.shape
 
-        self.split_batch_transform = SplitBatch(observation_type=self.Observations,
-                                                reward_type=self.Rewards)
+        self.split_batch_transform = SplitBatch(
+            observation_type=self.Observations, reward_type=self.Rewards
+        )
         self.config: Config = config
         # TODO: Decided to Not set this property, so the trainer doesn't
         # fallback to using it instead of the passed datamodules/dataloaders.
@@ -112,7 +121,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # Only pass the image, not the task labels to the encoder (for now).
             input_dims = flatdim(self.observation_space[0])
             output_dims = self.hp.new_hidden_size or 128
-            
+
             self.encoder = FCNet(
                 in_features=input_dims,
                 out_features=output_dims,
@@ -130,17 +139,19 @@ class BaseModel(LightningModule, Generic[SettingType]):
             self.encoder, self.hidden_size = self.hp.make_encoder()
             # TODO: Check that the outputs of the encoders are actually
             # flattened. I'm not sure they all are, which case the samples
-            # wouldn't match with this space. 
-            self.representation_space = spaces.Box(-np.inf, np.inf, (self.hidden_size,), np.float32)
-        
+            # wouldn't match with this space.
+            self.representation_space = spaces.Box(
+                -np.inf, np.inf, (self.hidden_size,), np.float32
+            )
+
         logger.info(f"Moving encoder to device {self.config.device}")
         self.encoder = self.encoder.to(self.config.device)
-        
+
         self.representation_space = add_tensor_support(self.representation_space)
         self.output_head: OutputHead = self.create_output_head(setting, task_id=None)
 
     @auto_move_data
-    def forward(self, observations:  IncrementalSetting.Observations) -> ForwardPass:
+    def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:
         """ Forward pass of the Model.
 
         Returns a ForwardPass object (acts like a dict of Tensors.)
@@ -151,22 +162,19 @@ class BaseModel(LightningModule, Generic[SettingType]):
         observations = self.preprocess_observations(observations)
         # Encode the observation to get representations.
         assert observations.x.device == self.device
-        
+
         representations = self.encode(observations)
         # Pass the observations and representations to the output head to get
         # the 'action' (prediction).
-        
+
         if self.hp.detach_output_head:
             representations = representations.detach()
 
         actions = self.output_head(
-            observations=observations,
-            representations=representations
+            observations=observations, representations=representations
         )
         forward_pass = ForwardPass(
-            observations=observations,
-            representations=representations,
-            actions=actions,
+            observations=observations, representations=representations, actions=actions,
         )
         return forward_pass
 
@@ -197,10 +205,10 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # self.encoder = self.encoder.to(self.device)
 
         h_x = self.encoder(x)
-        
+
         if encoder_device != self.device:
             h_x = h_x.to(self.device)
-        
+
         if isinstance(h_x, list) and len(h_x) == 1:
             # Some pretrained encoders sometimes give back a list with one tensor. (?)
             h_x = h_x[0]
@@ -208,9 +216,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
             h_x = torch.as_tensor(h_x, device=self.device, dtype=self.dtype)
         return h_x
 
-    def create_output_head(self, setting: Setting, task_id: Optional[int]) -> OutputHead:
+    def create_output_head(
+        self, setting: Setting, task_id: Optional[int]
+    ) -> OutputHead:
         """Create an output head for the current action and reward spaces.
-        
+
         NOTE: This assumes that the input, action and reward spaces don't change
         between tasks.
 
@@ -220,11 +230,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
             Current Setting. This is the same as `self.setting`, but provided because at
             some point the idea was to use a singledispatchmethod to choose which kind
             of output head to create based on the type of Setting.
-        
+
         task_id : Optional[int]
             ID of the task associated with this new output head. Can be `None`, which is
             interpreted as saying that either that task labels aren't available, or that
-            this output head will be used for all tasks. 
+            this output head will be used for all tasks.
 
         Returns
         -------
@@ -241,7 +251,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # Choose what type of output head to use depending on the kind of
         # Setting.
         output_head_type: Type[OutputHead] = self.output_head_type(setting)
-        # output_head_name = str(f"task_{task_id}") if task_id is not None else output_head_type.name
+        # Use the name defined on the output head.
+        # NOTE: Could also use a name in relation to the task, for example.
         output_head_name = None
         output_head = output_head_type(
             input_space=input_space,
@@ -273,7 +284,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         """
         if isinstance(setting, ActiveSetting):
             if not isinstance(setting.action_space, spaces.Discrete):
-                raise NotImplementedError(f"Only support discrete actions for now.")
+                raise NotImplementedError("Only support discrete actions for now.")
             assert issubclass(self.hp.rl_output_head_algo, OutputHead)
             return self.hp.rl_output_head_algo
 
@@ -295,51 +306,50 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
         raise NotImplementedError(f"Unsupported action space: {setting.action_space}")
 
-    def training_step(self,
-                      batch: Tuple[Observations, Optional[Rewards]],
-                      batch_idx: int,
-                      **kwargs):
+    def training_step(
+        self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int, **kwargs
+    ):
         return self.shared_step(
             batch,
             batch_idx,
             environment=self.setting.train_env,
             loss_name="train",
-            **kwargs
+            **kwargs,
         )
 
-    def validation_step(self,
-                      batch: Tuple[Observations, Optional[Rewards]],
-                      batch_idx: int,
-                      **kwargs):
+    def validation_step(
+        self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int, **kwargs
+    ):
         return self.shared_step(
             batch,
             batch_idx=batch_idx,
             environment=self.setting.val_env,
             loss_name="val",
-            **kwargs
+            **kwargs,
         )
 
-    def test_step(self,
-                      batch: Tuple[Observations, Optional[Rewards]],
-                      batch_idx: int,
-                      **kwargs):
+    def test_step(
+        self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int, **kwargs
+    ):
         return self.shared_step(
             batch,
             batch_idx=batch_idx,
             environment=self.setting.test_env,
             loss_name="test",
-            **kwargs
+            **kwargs,
         )
 
-    def shared_step(self,
-                    batch: Tuple[Observations, Rewards],
-                    batch_idx: int,
-                    environment: Environment,
-                    loss_name: str,
-                    dataloader_idx: int = None,
-                    optimizer_idx: int = None) -> Dict:
+    def shared_step(
+        self,
+        batch: Tuple[Observations, Rewards],
+        batch_idx: int,
+        environment: Environment,
+        loss_name: str,
+        dataloader_idx: int = None,
+        optimizer_idx: int = None,
+    ) -> Dict:
         """
-        This is the shared step for this 'example' LightningModule. 
+        This is the shared step for this 'example' LightningModule.
         Feel free to customize/change it if you want!
         """
         if dataloader_idx is not None:
@@ -352,7 +362,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # TODO: It would be nice if we could actually do the same things for
         # both sides of the tree here..
         observations, rewards = self.split_batch(batch)
-        
+
         # FIXME: Remove this, debugging:
         assert isinstance(observations, Observations), observations
         assert isinstance(observations.x, Tensor), observations.shapes
@@ -361,17 +371,17 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # - "representations": the representations for the observations.
         # - "actions": The actions (predictions)
         forward_pass: ForwardPass = self(observations)
-        
+
         # get the actions from the forward pass:
         actions = forward_pass.actions
-        
+
         if rewards is None:
             # Get the reward from the environment (the dataloader).
             if self.config.debug and self.config.render:
                 environment.render("human")
                 # import matplotlib.pyplot as plt
                 # plt.waitforbuttonpress(10)
-            
+
             rewards = environment.send(actions)
             assert rewards is not None
 
@@ -382,8 +392,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
         }
 
     def split_batch(self, batch: Any) -> Tuple[Observations, Rewards]:
-        """ Splits the batch into the observations and the rewards. 
-        
+        """ Splits the batch into the observations and the rewards.
+
         Uses the types defined on the setting that this model is being applied
         on (which were copied to `self.Observations` and `self.Actions`) to
         figure out how many fields each type requires.
@@ -402,16 +412,15 @@ class BaseModel(LightningModule, Generic[SettingType]):
             assert isinstance(batch, self.Observations)
             observations = batch
             rewards = None
-        
+
         observations = observations.torch(device=self.device)
         if rewards is not None:
             rewards = rewards.torch(device=self.device)
         return observations, rewards
 
-    def get_loss(self,
-                 forward_pass: ForwardPass,
-                 rewards: Rewards = None,
-                 loss_name: str = "") -> Loss:
+    def get_loss(
+        self, forward_pass: ForwardPass, rewards: Rewards = None, loss_name: str = ""
+    ) -> Loss:
         """Gets a Loss given the results of the forward pass and the reward.
 
         Args:
@@ -424,7 +433,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         Returns:
             Loss: a Loss object containing the loss tensor, associated metrics
             and sublosses.
-        
+
         This could look a bit like this, for example:
         ```
         action = forward_pass["action"]
@@ -452,21 +461,20 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # For now though, we only have one "prediction" in the actions:
             actions = forward_pass.actions
             # So far we only use 'y' from the rewards in the output head.
-            supervised_loss = self.output_head_loss(forward_pass, actions=actions, rewards=rewards)
+            supervised_loss = self.output_head_loss(
+                forward_pass, actions=actions, rewards=rewards
+            )
             total_loss += supervised_loss
 
         return total_loss
 
-    def output_head_loss(self,
-                         forward_pass: ForwardPass,
-                         actions: Actions,
-                         rewards: Rewards) -> Loss:
+    def output_head_loss(
+        self, forward_pass: ForwardPass, actions: Actions, rewards: Rewards
+    ) -> Loss:
         """ Gets the Loss of the output head. """
         assert actions.device == rewards.device == self.device
         return self.output_head.get_loss(
-            forward_pass,
-            actions=actions,
-            rewards=rewards,
+            forward_pass, actions=actions, rewards=rewards,
         )
 
     def preprocess_observations(self, observations: Observations) -> Observations:
@@ -490,8 +498,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     @batch_size.setter
     def batch_size(self, value: int) -> None:
-        self.hp.batch_size = value 
-    
+        self.hp.batch_size = value
+
     @property
     def learning_rate(self) -> float:
         return self.hp.learning_rate
@@ -502,15 +510,59 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
         """Called when switching between tasks.
-        
+
         Args:
             task_id (Optional[int]): the Id of the task.
         """
 
     def summarize(self, mode: str = ModelSummary.MODE_DEFAULT) -> ModelSummary:
         model_summary = ModelSummary(self, mode=mode)
-        log.debug('\n' + str(model_summary))
+        log.debug("\n" + str(model_summary))
         return model_summary
 
+    def _are_batched(self, observations: IncrementalSetting.Observations) -> bool:
+        """ Returns wether these observations are batched. """
+        assert isinstance(self.observation_space, spaces.Tuple)
+
+        if observations.task_labels is not None:
+            if isinstance(observations.task_labels, int):
+                return True
+            assert isinstance(observations.task_labels, (np.ndarray, Tensor))
+            return observations.task_labels.shape and observations.task_labels.shape[0]
+
+        x_space: spaces.Box = self.observation_space[0]
+
+        if isinstance(x_space, Image):
+            return observations.x.ndim == 4
+
+        if len(x_space.shape) == 4:
+            # This would occur when the observation space isn't an Image space, for some
+            # reason.
+            return observations.x.ndim == 4
+
+        if not isinstance(x_space, spaces.Box):
+            raise NotImplementedError(
+                f"Don't know how to tell if obs space {x_space} is batched, only "
+                f"support Box spaces for the observation's 'x' for now."
+            )
+
+        # self.observation_space *should* usually reflect the shapes of individual
+        # (non-batched) observations.
+        if len(x_space.shape) == 1:
+            return observations.x.ndim == 2
+
+        if len(x_space.shape) == 3:
+            return observations.x.ndim == 4
+
+        if len(x_space.shape) == 2:
+            # TODO: This assumes that any observation space with ndim == 2 is already
+            # batched. This currently only makes sense for cartpole.
+            if self.setting.dataset == "CartPole-v0":
+                return observations.x.ndim == 2
+            # assert False, self.setting.train_env.observation_space
+
+        return not len(observations.x.shape) == len(x_space.shape)
+
 from simple_parsing.helpers.serialization import register_decoding_fn
+
 register_decoding_fn(Type[OutputHead], lambda v: v)

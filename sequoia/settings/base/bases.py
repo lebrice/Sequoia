@@ -732,12 +732,12 @@ class Method(Generic[SettingType], Parseable, ABC):
                 with StringIO() as s:
                     traceback.print_exc(file=s)
                     s.seek(0)
-                    logger.error(s.read())
-                logger.error("-" * 60)
+                    logger.error(red(s.read()))
+                logger.error(red("-" * 60))
+                failed_trials += 1
                 logger.error(red(f"({failed_trials} failed trials so far). "))
 
                 experiment.release(trial)
-                failed_trials += 1
             else:
                 # Report the results to Orion:
                 orion_result = dict(
