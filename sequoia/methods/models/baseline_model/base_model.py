@@ -540,19 +540,26 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # reason.
             return observations.x.ndim == 4
 
+        if not isinstance(x_space, spaces.Box):
+            raise NotImplementedError(
+                f"Don't know how to tell if obs space {x_space} is batched, only "
+                f"support Box spaces for the observation's 'x' for now."
+            )
+
         # self.observation_space *should* usually reflect the shapes of individual
         # (non-batched) observations.
-        if len(x_space.shape) == 3:
-            return observations.x.ndim == 4
-
         if len(x_space.shape) == 1:
             return observations.x.ndim == 2
 
-        # TODO: I don't think this 'fix' will work for CartPole!
+        if len(x_space.shape) == 3:
+            return observations.x.ndim == 4
+
         if len(x_space.shape) == 2:
-            raise NotImplementedError(
-                "TODO: Fix sequoia_sweep with incremental RL, with cartpole state."
-            )
+            # TODO: This assumes that any observation space with ndim == 2 is already
+            # batched. This currently only makes sense for cartpole.
+            if self.setting.dataset == "CartPole-v0":
+                return observations.x.ndim == 2
+            # assert False, self.setting.train_env.observation_space
 
         return not len(observations.x.shape) == len(x_space.shape)
 
