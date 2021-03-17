@@ -145,7 +145,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         single_observation_space = self.observation_space
         if observations[0].shape == single_observation_space[0].shape:
             raise RuntimeError("Observations should be batched!")
-        
+
         assert not isinstance(observations.task_labels, int), observations.shapes
         # Get the task labels from the observation.
         # TODO: It isn't exactly nice that we have to do this here. Would be nicer if we
@@ -652,30 +652,35 @@ def get_task_indices(
         (depending on the type of `task_labels`) of indices corresponding to the indices
         in `task_labels` that correspond to that task.
     """
-    all_task_indices: Dict[int, Union[np.ndarray, Tensor]] = {}
+    all_task_indices: Dict[Optional[int], Union[np.ndarray, Tensor]] = {}
 
     if task_labels is None:
         return {}
 
-    if isinstance(task_labels, (Tensor, np.ndarray)):
-        task_labels = task_labels.tolist()
+    output_type = np.asarray
+    from functools import partial
+
+    assert isinstance(task_labels, (np.ndarray, Tensor))
+
+    if isinstance(task_labels, Tensor):
+        assert task_labels.ndim == 1 or task_labels.size() == 1, task_labels
+        task_labels = task_labels.reshape(-1)
     else:
-        # In case task_labels is a list of numpy arrays, convert it to a
-        # list of elements (optional ints).
-        task_labels = [int(label) if label != None else None for label in task_labels]
-    unique_task_labels = list(set(task_labels))
+        assert task_labels.ndim == 1 or task_labels.size == 1, task_labels
+        task_labels = task_labels.reshape(-1)
+
+    unique_task_labels = list(set(task_labels.tolist()))
 
     batch_size = len(task_labels)
     # Get the indices for each task.
     for task_id in unique_task_labels:
         if isinstance(task_labels, np.ndarray):
             task_indices = np.arange(batch_size)[task_labels == task_id]
-        if isinstance(task_labels, Tensor):
-            task_indices = torch.arange(batch_size)[task_labels == task_id]
         else:
-            task_indices = torch.as_tensor(
-                [i for i, task_label in enumerate(task_labels) if task_label == task_id]
-            )
+            assert isinstance(task_labels, Tensor), task_labels
+            task_indices = torch.arange(batch_size, device=task_labels.device)[
+                task_labels == task_id
+            ]
         all_task_indices[task_id] = task_indices
     return all_task_indices
 

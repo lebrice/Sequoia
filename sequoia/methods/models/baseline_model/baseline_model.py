@@ -201,10 +201,11 @@ class BaselineModel(SemiSupervisedModel,
         # BUG: The observation space of the Setting doesn't correspond to the shapes of
         # the observations.
         single_obs_space = self.observation_space
+        single_image_space = single_obs_space[0]
         # Check if the observations are batched or not.
         assert isinstance(observations.x, (Tensor, np.ndarray))
         # assert isinstance(single_obs_space.x, Image)
-        not_batched = len(observations.x.shape) == len(single_obs_space.x.shape)
+        not_batched = len(observations.x.shape) == len(single_obs_space[0].shape)
         if not_batched:
             observations = observations.with_batch_dimension()
 
