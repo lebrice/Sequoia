@@ -36,36 +36,46 @@ class DQNModel(DQN):
         buffer_size: int = uniform(100, 10_000_000, default=1_000_000)
         # How many steps of the model to collect transitions for before learning
         # starts.
-        learning_starts: int = uniform(1_000, 100_000, default=50_000)
+        # learning_starts: int = uniform(1_000, 100_000, default=50_000)
+        learning_starts: int = 50_000
         # Minibatch size for each gradient update
-        batch_size: Optional[int] = categorical(1, 2, 4, 8, 16, 32, 128, default=32)
+        # batch_size: Optional[int] = categorical(1, 2, 4, 8, 16, 32, 128, default=32)
+        batch_size: int = 32
         # The soft update coefficient ("Polyak update", between 0 and 1) default
         # 1 for hard update
-        tau: float = uniform(0., 1., default=1.0)
+        # tau: float = uniform(0., 1., default=1.0)
+        tau: float = 1.0
         # The discount factor
-        gamma: float = uniform(0.9, 0.9999, default=0.99)
+        # gamma: float = uniform(0.9, 0.9999, default=0.99)
+        gamma: float = 0.99
         # Update the model every ``train_freq`` steps. Set to `-1` to disable.
-        train_freq: int = uniform(1, 100, default=4)
+        train_freq: int = categorical(1, 10, 100, 1_000, 10_000, default=10)
+        # train_freq: int = 4
         # How many gradient steps to do after each rollout (see ``train_freq``
         # and ``n_episodes_rollout``) Set to ``-1`` means to do as many gradient
         # steps as steps done in the environment during the rollout.
-        gradient_steps: int = categorical(1, -1, default=1)
+        # gradient_steps: int = categorical(1, -1, default=1)
+        gradient_steps: int = 1
         # Enable a memory efficient variant of the replay buffer at a cost of
         # more complexity.
         # See https://github.com/DLR-RM/stable-baselines3/issues/37#issuecomment-637501195
         optimize_memory_usage: bool = False
         # Update the target network every ``target_update_interval`` environment
         # steps.
-        target_update_interval: int = categorical(1_000, 5_000, 10_000, 50_000, default=10_000)
+        target_update_interval: int = categorical(1, 10, 100, 1_000, 10_000, default=10_000)
         # Fraction of entire training period over which the exploration rate is
         # reduced.
-        exploration_fraction: float = uniform(0.05, 0.3, default=0.1)
+        # exploration_fraction: float = uniform(0.05, 0.3, default=0.1)
+        exploration_fraction: float = 0.1
         # Initial value of random action probability.
-        exploration_initial_eps: float = uniform(0.5, 1.0, default=1.0)
+        # exploration_initial_eps: float = uniform(0.5, 1.0, default=1.0)
+        exploration_initial_eps: float = 1.0
         # final value of random action probability.
-        exploration_final_eps: float = uniform(0, 0.1, default=0.05)
+        # exploration_final_eps: float = uniform(0, 0.1, default=0.05)
+        exploration_final_eps: float = 0.05
         # The maximum value for the gradient clipping.
-        max_grad_norm: float = uniform(1, 100, default=10)
+        # max_grad_norm: float = uniform(1, 100, default=10)
+        max_grad_norm: float = 10
         # Whether to create a second environment that will be used for
         # evaluating the agent periodically. (Only available when passing string
         # for the environment)
@@ -85,7 +95,7 @@ class DQNMethod(StableBaselines3Method):
     hparams: DQNModel.HParams = mutable_field(DQNModel.HParams)
 
     # Approximate limit on the size of the replay buffer, in megabytes.
-    max_buffer_size_megabytes: float = 50.
+    max_buffer_size_megabytes: float = 2_048.
 
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting)

@@ -48,20 +48,24 @@ class PPOModel(PPO):
         n_steps: int = categorical(32, 128, 256, 1024, 2048, 4096, 8192, default=2048)
 
         # Minibatch size
-        batch_size: Optional[int] = categorical(16, 32, 64, 128, default=64)
+        # batch_size: Optional[int] = categorical(16, 32, 64, 128, default=64)
+        batch_size: int = 64
 
         # Number of epoch when optimizing the surrogate loss
         n_epochs: int = 10
 
         # Discount factor
-        gamma: float = uniform(0.9, 0.9999, default=0.99)
+        # gamma: float = uniform(0.9, 0.9999, default=0.99)
+        gamma: float = 0.99
 
         # Factor for trade-off of bias vs variance for Generalized Advantage Estimator
-        gae_lambda: float = uniform(0.8, 1.0, default=0.95)
+        # gae_lambda: float = uniform(0.8, 1.0, default=0.95)
+        gae_lambda: float = 0.95
 
         # Clipping parameter, it can be a function of the current progress remaining
         # (from 1 to 0).
-        clip_range: float = uniform(0.05, 0.4, default=0.2)
+        # clip_range: float = uniform(0.05, 0.4, default=0.2)
+        clip_range: float = 0.2
 
         # Clipping parameter for the value function, it can be a function of the current
         # progress remaining (from 1 to 0). This is a parameter specific to the OpenAI
@@ -70,21 +74,26 @@ class PPOModel(PPO):
         clip_range_vf: Optional[float] = None
 
         # Entropy coefficient for the loss calculation
-        ent_coef: float = uniform(0., 1., default=0.0)
+        # ent_coef: float = uniform(0., 1., default=0.0)
+        ent_coef: float = 0.0
 
         # Value function coefficient for the loss calculation
-        vf_coef: float = uniform(0.01, 1.0, default=0.5)
+        # vf_coef: float = uniform(0.01, 1.0, default=0.5)
+        vf_coef: float = 0.5
 
         # The maximum value for the gradient clipping
-        max_grad_norm: float = uniform(0.1, 10, default=0.5)
+        # max_grad_norm: float = uniform(0.1, 10, default=0.5)
+        max_grad_norm: float = 0.5
 
         # Whether to use generalized State Dependent Exploration (gSDE) instead of
         # action noise exploration (default: False)
-        use_sde: bool = categorical(True, False, default=False)
+        # use_sde: bool = categorical(True, False, default=False)
+        use_sde: bool = False
 
         # Sample a new noise matrix every n steps when using gSDE Default: -1 (only
         # sample at the beginning of the rollout)
-        sde_sample_freq: int = categorical(-1, 1, 5, 10, default=-1)
+        # sde_sample_freq: int = categorical(-1, 1, 5, 10, default=-1)
+        sde_sample_freq: int = -1
 
         # Limit the KL divergence between updates, because the clipping is not enough to
         # prevent large update see issue #213
@@ -162,8 +171,8 @@ class PPOMethod(StableBaselines3Method):
             #   continuous actions
             # Therefore we remove related entries in the search space, so they keep
             # their default values.
-            search_space.pop("use_sde")
-            search_space.pop("sde_sample_freq")
+            search_space.pop("use_sde", None)
+            search_space.pop("sde_sample_freq", None)
         return search_space
 
 

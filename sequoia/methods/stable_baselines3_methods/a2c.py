@@ -37,32 +37,42 @@ class A2CModel(A2C):
         """
 
         # Discount factor
-        gamma: float = uniform(0.9, 0.9999, default=0.99)
+        # gamma: float = uniform(0.9, 0.9999, default=0.99)
+        gamma: float = 0.99
         # Factor for trade-off of bias vs variance for Generalized Advantage Estimator.
         # Equivalent to classic advantage when set to 1.
-        gae_lambda: float = uniform(0.5, 1.0, default=1.0)
+        # gae_lambda: float = uniform(0.5, 1.0, default=1.0)
+        gae_lambda: float = 1.0
         # Entropy coefficient for the loss calculation
-        ent_coef: float = uniform(0.0, 1.0, default=0.0)
+        # ent_coef: float = uniform(0.0, 1.0, default=0.0)
+        ent_coef: float = 0.0
         # Value function coefficient for the loss calculation
-        vf_coef: float = uniform(0.01, 1.0, default=0.5)
+        # vf_coef: float = uniform(0.01, 1.0, default=0.5)
+        vf_coef: float = 0.5
         # The maximum value for the gradient clipping
-        max_grad_norm: float = uniform(0.1, 10, default=0.5)
+        # max_grad_norm: float = uniform(0.1, 10, default=0.5)
+        max_grad_norm: float = 0.5
         # RMSProp epsilon. It stabilizes square root computation in denominator of
         # RMSProp update.
-        rms_prop_eps: float = log_uniform(1e-7, 1e-3, default=1e-5)
+        # rms_prop_eps: float = log_uniform(1e-7, 1e-3, default=1e-5)
+        rms_prop_eps: float = 1e-5
         # :param use_rms_prop: Whether to use RMSprop (default) or Adam as optimizer
-        use_rms_prop: bool = categorical(True, False, default=True)
+        # use_rms_prop: bool = categorical(True, False, default=True)
+        use_rms_prop: bool = True
 
         # Whether to use generalized State Dependent Exploration (gSDE) instead of
         # action noise exploration (default: False)
-        use_sde: bool = categorical(True, False, default=False)
+        # use_sde: bool = categorical(True, False, default=False)
+        use_sde: bool = False
 
         # Sample a new noise matrix every n steps when using gSDE.
         # Default: -1 (only sample at the beginning of the rollout)
-        sde_sample_freq: int = categorical(-1, 1, 5, 10, default=-1)
+        # sde_sample_freq: int = categorical(-1, 1, 5, 10, default=-1)
+        sde_sample_freq: int = -1
 
         # Whether to normalize or not the advantage
-        normalize_advantage: bool = categorical(True, False, default=False)
+        # normalize_advantage: bool = categorical(True, False, default=False)
+        normalize_advantage: bool = False
 
         # The log location for tensorboard (if None, no logging)
         tensorboard_log: Optional[str] = None
@@ -137,8 +147,8 @@ class A2CMethod(StableBaselines3Method):
             #   continuous actions
             # Therefore we remove related entries in the search space, so they keep
             # their default values.
-            search_space.pop("use_sde")
-            search_space.pop("sde_sample_freq")
+            search_space.pop("use_sde", None)
+            search_space.pop("sde_sample_freq", None)
         return search_space
 
 
