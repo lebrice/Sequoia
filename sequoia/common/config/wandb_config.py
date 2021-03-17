@@ -79,7 +79,7 @@ class WandbConfig(Serializable):
 
     # Identifier unique to each individual wandb run. When given, will try to
     # resume the corresponding run, generates a new ID each time.
-    run_id: str = field(default_factory=wandb.util.generate_id)
+    run_id: Optional[str] = None
 
     # An run number is used to differentiate different iterations of the same experiment.
     # Runs with the same name can be later grouped with wandb to produce stderr plots.

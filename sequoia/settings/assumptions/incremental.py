@@ -274,16 +274,15 @@ class IncrementalSetting(ContinualSetting):
                 run_name += f"_{self.nb_tasks}t"
             self.wandb.run_name = run_name
 
-        run = self.wandb.wandb_init()
-
-        wandb.config["setting"] = setting_name
-        wandb.config["method"] = method_name
+        run: Run = self.wandb.wandb_init()
+        run.config["setting"] = setting_name
+        run.config["method"] = method_name
         for k, value in self.to_dict().items():
             if not k.startswith("_"):
-                wandb.config[f"setting/{k}"] = value
+                run.config[f"setting/{k}"] = value
 
-        wandb.summary["setting"] = self.get_name()
-        wandb.summary["method"] = method.get_name()
+        run.summary["setting"] = self.get_name()
+        run.summary["method"] = method.get_name()
         assert wandb.run is run
         return run
 
