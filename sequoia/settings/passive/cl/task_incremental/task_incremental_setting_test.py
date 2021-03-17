@@ -42,7 +42,10 @@ def check_only_right_classes_present(setting: TaskIncrementalSetting):
             assert x.shape == (28, 28, 3)
             
             reward = train_loader.send([4 for _ in range(batch_size)])
-            assert reward is None
+            if setting.monitor_training_performance:
+                assert reward is None
+            else:
+                assert (reward.y == rewards.y).all()
 
         train_loader.close()
 

@@ -217,10 +217,18 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         # BUG: Need to fix an issue when using the CnnPolicy and Atary envs, the
         # input shape isn't what they expect (only 2 channels instead of three
         # apparently.)
-        setting.transforms = []
-        setting.train_transforms = []
-        setting.val_transforms = []
-        setting.test_transforms = []
+        from sequoia.common.transforms import Transforms
+        # NOTE: Important to not use any transforms, since the SB3 methods want to get
+        # the 'raw' np.uint8 image as an input.
+        transforms = [
+            # Transforms.to_tensor,
+            # Transforms.three_channels,
+            # Transforms.channels_first_if_needed,
+        ]
+        setting.transforms = transforms
+        setting.train_transforms = transforms
+        setting.val_transforms = transforms
+        setting.test_transforms = transforms
 
         if self.hparams.policy is None:
             if setting.observe_state_directly:

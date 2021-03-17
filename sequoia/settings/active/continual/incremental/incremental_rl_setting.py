@@ -62,7 +62,7 @@ class IncrementalRLSetting(ContinualRLSetting):
             # TODO: Actually end episodes when reaching a task boundary, to force the
             # level to change?
             self.max_episode_steps = self.max_episode_steps or 500
-    
+
     @property
     def phases(self) -> int:
         """The number of training 'phases', i.e. how many times `method.fit` will be
