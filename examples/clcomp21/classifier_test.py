@@ -15,7 +15,7 @@ def test_mnist(mnist_setting: SettingProxy[ClassIncrementalSetting]):
     assert results.to_log_dict()
 
     results: ClassIncrementalSetting.Results
-    assert 0.80 <= results.average_online_performance.objective <= 1.00
+    assert 0.60 <= results.average_online_performance.objective <= 1.00
     assert 0.10 <= results.average_final_performance.objective <= 0.30
 
 

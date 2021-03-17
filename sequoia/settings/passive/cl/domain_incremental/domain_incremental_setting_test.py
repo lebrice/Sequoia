@@ -32,10 +32,8 @@ def test_domain_incremental_mnist_setup():
             x = x.permute(0, 2, 3, 1)[0]
             assert x.shape == (28, 28, 3)
 
-            reward = train_loader.send([4 for _ in range(batch_size)])
-            # TODO: Why are we fine with getting `None` as the reward here? Is it
-            # because we're somehow setting it to be ``
-            assert reward is None
+            rewards_ = train_loader.send([4 for _ in range(batch_size)])
+            assert (rewards.y == rewards_.y).all()
 
         train_loader.close()
 
