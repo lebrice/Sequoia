@@ -60,7 +60,7 @@ def test_task_incremental_mnist(monkeypatch):
     #     return _on_epoch_end(self, *args, **kwargs)
 
     # # monkeypatch.setattr(EwcModel, "on_epoch_end", fake_on_epoch_end)
-    method = EwcMethod(debug=True, max_epochs=1)
+    method = EwcMethod(max_epochs=1)
     results = setting.apply(method)
     assert (at_all_points_in_time[0] == 0).all()
     assert at_all_points_in_time[1][1] != 0
@@ -69,7 +69,7 @@ def test_task_incremental_mnist(monkeypatch):
     assert at_all_points_in_time[4][4] != 0
 
     assert 0.95 <= results.average_online_performance.objective
-    assert 0.45 <= results.average_final_performance.objective
+    assert 0.40 <= results.average_final_performance.objective
 
 
 @pytest.mark.parametrize(
