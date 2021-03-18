@@ -9,7 +9,8 @@ the `sequoia.methods.aux_tasks.ewc.EwcTask`.
 import sys
 from dataclasses import dataclass
 from typing import Dict, Optional
-
+import warnings
+from gym.utils import colorize
 from simple_parsing import ArgumentParser, mutable_field
 
 sys.path.extend([".", ".."])
@@ -76,20 +77,21 @@ class EwcMethod(BaselineMethod, target_setting=IncrementalSetting):
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
         """
-        if setting.phases == 1:
-            # TODO: Should we raise an error in this case? or justlog a warning?
-            # Is there any situation where it makes sense to use this Method in such a
-            # setting? (making a subclass of this for instance?)
-            raise RuntimeError(
-                "Disabling the EWC task, as there is only one phase of training in "
-                "this setting (it is a multi-task setting, in which tasks are "
-                "sampled randomly after each 'episode'"
-            )
-            # We could also just disable the ewc task (after super().configure(setting))
-            # self.model.tasks["ewc"].disable()
         super().configure(setting)
 
-        # self.model.add_auxiliary_task(EWCTask(options=self.hparams.ewc))
+        if setting.phases == 1:
+            warnings.warn(
+                RuntimeWarning(
+                    colorize(
+                        "Disabling the EWC portion of this Method entirely, as there "
+                        "is only one phase of training in this setting (i.e. `fit` is "
+                        "only called once)."
+                        "red",
+                    )
+                )
+            )
+            # We could also just disable the ewc task (after super().configure(setting))
+            self.model.tasks["ewc"].disable()
 
     def on_task_switch(self, task_id: Optional[int]):
         super().on_task_switch(task_id)

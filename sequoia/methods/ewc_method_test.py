@@ -1,11 +1,20 @@
 """ TODO: Tests for the EWC Method. """
 
-from .ewc_method import EwcMethod, EwcModel
-from sequoia.settings import ClassIncrementalSetting
-from sequoia.common import Loss
+from functools import partial
+
 import numpy as np
-from torch import Tensor
 import pytest
+from sequoia.common import Loss
+from sequoia.settings import ClassIncrementalSetting
+from sequoia.settings.active import (
+    IncrementalRLSetting,
+    RLSetting,
+    TaskIncrementalRLSetting,
+)
+from sequoia.settings.passive import IIDSetting, MultiTaskSetting
+from torch import Tensor
+
+from .ewc_method import EwcMethod, EwcModel
 
 
 @pytest.mark.timeout(300)
@@ -55,3 +64,24 @@ def test_has_no_ewc_loss_first_task(monkeypatch):
     assert at_all_points_in_time[3][3] != 0
     assert at_all_points_in_time[4][4] != 0
 
+
+@pytest.mark.parametrize(
+    "non_cl_setting_fn",
+    [
+        partial(ClassIncrementalSetting, nb_tasks=1),
+        MultiTaskSetting,
+        IIDSetting,
+        RLSetting,
+        partial(IncrementalRLSetting, nb_tasks=1),
+        partial(TaskIncrementalRLSetting, nb_tasks=1),
+    ],
+)
+def test_raises_warning_when_applied_to_non_cl_setting(non_cl_setting_fn):
+    """ When applied onto a non-CL setting like IID or Multi-Task SL (or RL), the
+    EWCMethod should raise a warning, and disable the auxiliary task.
+    """
+    method = EwcMethod()
+    setting = non_cl_setting_fn()
+
+    with pytest.warns(RuntimeWarning):
+        method.configure(setting)
