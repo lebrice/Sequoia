@@ -240,5 +240,5 @@ if __name__ == "__main__":
     method = Method(n_epochs_per_task=1, learning_rate=1e-3)
 
     results = setting.apply(method)
-    print("Results:")
-    print(results)
+    print(f"Result: {results.objective}")
+    results.show()
