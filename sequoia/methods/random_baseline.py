@@ -34,20 +34,17 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         self, train_env: Environment, valid_env: Environment,
     ):
         # This method doesn't actually train, so we just return immediately.
-        if isinstance(train_env, PassiveEnvironment):
+        if isinstance(train_env.unwrapped, PassiveEnvironment):
             # Do one 'epoch' only:
             for batch in train_env:
                 action = train_env.action_space.sample()
                 rewards = train_env.send(action)
-                assert False, rewards
-        elif isinstance(train_env, ActiveEnvironment):
+        else:
             while not train_env.is_closed():
                 obs = train_env.reset()
                 done = False
                 while not done:
                     obs, rewards, done, info = train_env.reset()
-        else:
-            assert False, train_env
         return
 
     def configure(self, setting):
