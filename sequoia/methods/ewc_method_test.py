@@ -23,7 +23,7 @@ from .ewc_method import EwcMethod, EwcModel
 
 @pytest.mark.timeout(300)
 def test_task_incremental_mnist(monkeypatch):
-    setting = TaskIncrementalSetting(dataset="mnist")
+    setting = TaskIncrementalSetting(dataset="mnist", monitor_training_performance=True)
     total_ewc_losses_per_task = np.zeros(setting.nb_tasks)
 
     _training_step = EwcModel.training_step
