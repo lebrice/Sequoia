@@ -4,22 +4,26 @@ from functools import partial
 
 import numpy as np
 import pytest
+from torch import Tensor
 from sequoia.common import Loss
-from sequoia.settings import ClassIncrementalSetting
 from sequoia.settings.active import (
     IncrementalRLSetting,
     RLSetting,
     TaskIncrementalRLSetting,
 )
-from sequoia.settings.passive import IIDSetting, MultiTaskSetting
-from torch import Tensor
+from sequoia.settings.passive import (
+    ClassIncrementalSetting,
+    IIDSetting,
+    MultiTaskSetting,
+    TaskIncrementalSetting,
+)
 
 from .ewc_method import EwcMethod, EwcModel
 
 
 @pytest.mark.timeout(300)
-def test_has_no_ewc_loss_first_task(monkeypatch):
-    setting = ClassIncrementalSetting(dataset="mnist")
+def test_task_incremental_mnist(monkeypatch):
+    setting = TaskIncrementalSetting(dataset="mnist")
     total_ewc_losses_per_task = np.zeros(setting.nb_tasks)
 
     _training_step = EwcModel.training_step
@@ -63,6 +67,9 @@ def test_has_no_ewc_loss_first_task(monkeypatch):
     assert at_all_points_in_time[2][2] != 0
     assert at_all_points_in_time[3][3] != 0
     assert at_all_points_in_time[4][4] != 0
+
+    assert 0.95 <= results.average_online_performance.objective
+    assert 0.45 <= results.average_final_performance.objective
 
 
 @pytest.mark.parametrize(
