@@ -85,7 +85,7 @@ class EwcMethod(BaselineMethod, target_setting=IncrementalSetting):
                     colorize(
                         "Disabling the EWC portion of this Method entirely, as there "
                         "is only one phase of training in this setting (i.e. `fit` is "
-                        "only called once)."
+                        "only called once).",
                         "red",
                     )
                 )
