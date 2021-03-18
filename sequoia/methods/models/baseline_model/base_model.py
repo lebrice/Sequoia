@@ -35,6 +35,7 @@ from sequoia.settings import (
 from sequoia.settings.assumptions.incremental import IncrementalSetting
 from sequoia.settings.base.setting import Actions, Observations, Rewards
 from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.module_dict import ModuleDict
 
 from ..fcnet import FCNet
 from ..forward_pass import ForwardPass
@@ -514,6 +515,25 @@ class BaseModel(LightningModule, Generic[SettingType]):
         Args:
             task_id (Optional[int]): the Id of the task.
         """
+
+    def shared_modules(self) -> Dict[str, nn.Module]:
+        """Returns any trainable modules in `self` that are shared across tasks.
+
+        By giving this information, these weights can then be used in
+        regularization-based auxiliary tasks like EWC, for example.
+
+        Returns
+        -------
+        Dict[str, nn.Module]:
+            Dictionary mapping from name to the shared modules, if any.
+        """
+        shared_modules: Dict[str, nn.Module] = ModuleDict()
+
+        if self.encoder:
+            shared_modules["encoder"] = self.encoder
+        if self.output_head:
+            shared_modules["output_head"] = self.output_head
+        return shared_modules
 
     def summarize(self, mode: str = ModelSummary.MODE_DEFAULT) -> ModelSummary:
         model_summary = ModelSummary(self, mode=mode)

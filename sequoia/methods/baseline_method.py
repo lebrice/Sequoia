@@ -8,7 +8,7 @@ methods.
 import json
 import operator
 import warnings
-from dataclasses import dataclass, is_dataclass
+from dataclasses import dataclass, is_dataclass, fields
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Type, Union
 
@@ -103,6 +103,10 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # should we expect the hparams to be passed? Should we create them from
         # the **kwargs? Should we parse them from the command-line?
 
+        # Get the type of hparams to use from the field's type annotation.
+        hparam_field = [f for f in fields(self) if f.name == "hparams"][0]
+        hparam_type = hparam_field.type
+
         # Option 2: Try to use the keyword arguments to create the hparams,
         # config and trainer options.
         if kwargs:
@@ -110,7 +114,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                 f"using keyword arguments {kwargs} to populate the corresponding "
                 f"values in the hparams, config and trainer_options."
             )
-            self.hparams = hparams or BaselineModel.HParams.from_dict(
+            self.hparams = hparams or hparam_type.from_dict(
                 kwargs, drop_extra_fields=True
             )
             self.config = config or Config.from_dict(kwargs, drop_extra_fields=True)
@@ -123,7 +127,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             # well from the argv that were used to create the Method.
             # Option 3: Parse them from the command-line.
             # assert not kwargs, "Don't pass any extra kwargs to the constructor!"
-            self.hparams = hparams or BaselineModel.HParams.from_args(
+            self.hparams = hparams or hparam_type.from_args(
                 self._argv, strict=False
             )
             self.config = config or Config.from_args(self._argv, strict=False)
@@ -133,7 +137,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         else:
             # Option 1: Use the default values:
-            self.hparams = hparams or BaselineModel.HParams()
+            self.hparams = hparams or hparam_type()
             self.config = config or Config()
             self.trainer_options = trainer_options or TrainerConfig()
         assert self.hparams

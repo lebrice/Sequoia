@@ -158,3 +158,22 @@ class AuxiliaryTask(nn.Module):
     @staticmethod
     def set_model(model: BaseModel) -> None:
         AuxiliaryTask._model = model
+
+    def shared_modules(self) -> Dict[str, nn.Module]:
+        """Returns any trainable modules if `self` that are shared across tasks.
+
+        By giving this information, these weights can then be used in
+        regularization-based auxiliary tasks like EWC, for example.
+
+        By default, for auxiliary tasks, this returns nothing, for instance.
+        For the base model, this returns a dictionary with the encoder, for example.
+        When using only one output head (i.e. when `self.hp.multihead` is `False`), then
+        this dict also includes the output head.
+
+        Returns
+        -------
+        Dict[str, nn.Module]:
+            Dictionary mapping from name to the shared modules, if any.
+        """
+        return {}
+    
