@@ -34,20 +34,17 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         self, train_env: Environment, valid_env: Environment,
     ):
         # This method doesn't actually train, so we just return immediately.
-        if isinstance(train_env, PassiveEnvironment):
+        if isinstance(train_env.unwrapped, PassiveEnvironment):
             # Do one 'epoch' only:
             for batch in train_env:
                 action = train_env.action_space.sample()
                 rewards = train_env.send(action)
-                assert False, rewards
-        elif isinstance(train_env, ActiveEnvironment):
+        else:
             while not train_env.is_closed():
                 obs = train_env.reset()
                 done = False
                 while not done:
                     obs, rewards, done, info = train_env.reset()
-        else:
-            assert False, train_env
         return
 
     def configure(self, setting):
@@ -140,11 +137,11 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         average_accuracy = results.objective
         # Calculate the expected 'average' chance accuracy.
         # We assume that there is an equal number of classes in each task.
-        chance_accuracy = 1 / setting.n_classes_per_task
-
+        chance_accuracy = 1 / setting.num_classes
+        # chance_accuracy = 1 / setting.n_classes_per_task
         assert 0.5 * chance_accuracy <= average_accuracy <= 1.5 * chance_accuracy
 
-        for i, metric in enumerate(results.average_metrics_per_task):
+        for i, metric in enumerate(results.final_performance_metrics):
             assert isinstance(metric, ClassificationMetrics)
             # TODO: Check that this makes sense:
             chance_accuracy = 1 / setting.n_classes_per_task
