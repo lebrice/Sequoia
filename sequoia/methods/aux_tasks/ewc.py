@@ -10,15 +10,14 @@ package, (which I don't think we need to have as a submodule).
 from collections import deque
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Type, Optional, Deque, List, Dict
+from typing import Type, Optional, Deque, List
 from contextlib import contextmanager
 
 from gym.spaces.utils import flatdim
 from nngeometry.metrics import FIM
-from nngeometry.layercollection import LayerCollection
 from nngeometry.object.pspace import PMatAbstract, PMatDiag, PMatKFAC, PVector
 from simple_parsing import choice
-from torch import Tensor, nn
+from torch import Tensor
 from torch.utils.data import DataLoader
 
 from sequoia.common.loss import Loss
@@ -283,9 +282,7 @@ class EWCTask(AuxiliaryTask):
             self.fisher_information_matrices = new_fims
             return
 
-        if task is None:
-            # Count the number of task switches, and use that as the task.
-            task = self.n_switches
+        assert task is not None, "Should have been given an int task id (even if fake)."
 
         for i, (fim_previous, fim_new) in enumerate(
             zip(self.fisher_information_matrices, new_fims)

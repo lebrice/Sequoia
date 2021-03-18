@@ -5,8 +5,10 @@ from sequoia.settings import ClassIncrementalSetting
 from sequoia.common import Loss
 import numpy as np
 from torch import Tensor
+import pytest
 
 
+@pytest.mark.timeout(300)
 def test_has_no_ewc_loss_first_task(monkeypatch):
     setting = ClassIncrementalSetting(dataset="mnist")
     total_ewc_losses_per_task = np.zeros(setting.nb_tasks)
@@ -26,27 +28,30 @@ def test_has_no_ewc_loss_first_task(monkeypatch):
 
     monkeypatch.setattr(EwcModel, "training_step", fake_training_step)
 
+    _fit = EwcMethod.fit
+
+    at_all_points_in_time = []
+
+    def fake_fit(self, train_env, valid_env):
+        print(f"starting task {self.model.current_task}: {total_ewc_losses_per_task}")
+        total_ewc_losses_per_task[:] = 0
+        _fit(self, train_env, valid_env)
+        at_all_points_in_time.append(total_ewc_losses_per_task.copy())
+
+    monkeypatch.setattr(EwcMethod, "fit", fake_fit)
+
     # _on_epoch_end = EwcModel.on_epoch_end
 
     # def fake_on_epoch_end(self, *args, **kwargs):
     #     assert False, f"heyo: {total_ewc_losses_per_task}"
     #     return _on_epoch_end(self, *args, **kwargs)
 
-    # monkeypatch.setattr(EwcModel, "on_epoch_end", fake_on_epoch_end)
+    # # monkeypatch.setattr(EwcModel, "on_epoch_end", fake_on_epoch_end)
     method = EwcMethod(debug=True, max_epochs=1)
-    method.configure(setting)
-
-    # for task in range(setting.nb_tasks):
-    #     setting.current_task_id = task
-        
-    #     method.fit(
-    #         setting.train_dataloader(),
-    #         setting.val_dataloader(),
-    #     )
-    #     if task == 1:
-    #         assert False, total_ewc_losses_per_task
-
     results = setting.apply(method)
-    assert False, total_ewc_losses_per_task
-    assert False, results.objective
+    assert (at_all_points_in_time[0] == 0).all()
+    assert at_all_points_in_time[1][1] != 0
+    assert at_all_points_in_time[2][2] != 0
+    assert at_all_points_in_time[3][3] != 0
+    assert at_all_points_in_time[4][4] != 0
 
