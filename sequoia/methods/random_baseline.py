@@ -137,11 +137,11 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         average_accuracy = results.objective
         # Calculate the expected 'average' chance accuracy.
         # We assume that there is an equal number of classes in each task.
-        chance_accuracy = 1 / setting.n_classes_per_task
-
+        chance_accuracy = 1 / setting.num_classes
+        # chance_accuracy = 1 / setting.n_classes_per_task
         assert 0.5 * chance_accuracy <= average_accuracy <= 1.5 * chance_accuracy
 
-        for i, metric in enumerate(results.average_metrics_per_task):
+        for i, metric in enumerate(results.final_performance_metrics):
             assert isinstance(metric, ClassificationMetrics)
             # TODO: Check that this makes sense:
             chance_accuracy = 1 / setting.n_classes_per_task

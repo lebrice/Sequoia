@@ -5,11 +5,15 @@ from typing import List, Type
 import pytest
 from sequoia.common import Config
 from sequoia.conftest import parametrize, slow
-from sequoia.settings import (ClassIncrementalSetting,
-                              ContinualRLSetting, IIDSetting,
-                              IncrementalRLSetting, RLSetting,
-                              Setting,
-                              all_settings)
+from sequoia.settings import (
+    ClassIncrementalSetting,
+    ContinualRLSetting,
+    IIDSetting,
+    IncrementalRLSetting,
+    RLSetting,
+    Setting,
+    all_settings,
+)
 
 from .random_baseline import RandomBaselineMethod
 
@@ -18,7 +22,12 @@ from .random_baseline import RandomBaselineMethod
 
 # List of datasets that are currently supported.
 supported_datasets: List[str] = [
-    "mnist", "fashion_mnist", "cifar10", "cifar100", "kmnist", "cartpole"
+    "mnist",
+    "fashionmnist",
+    "cifar10",
+    "cifar100",
+    "kmnist",
+    "cartpole",
 ]
 
 
@@ -26,19 +35,14 @@ def test_is_applicable_to_all_settings():
     settings = RandomBaselineMethod.get_applicable_settings()
     assert set(settings) == set(all_settings)
 
-from sequoia.conftest import slow
 
-
-# This is a very slow test, because it actually iterates through the entire test set for each task.
-@slow
+@pytest.mark.xfail(reason="TODO: This test isn't very reliable.")
 @pytest.mark.timeout(60)
 @parametrize("setting_type", RandomBaselineMethod.get_applicable_settings())
-def test_fast_dev_run(setting_type: Type[Setting],
-                      test_dataset: str,
-                      config: Config):
+def test_fast_dev_run(setting_type: Type[Setting], test_dataset: str, config: Config):
     dataset = test_dataset
     if dataset not in getattr(setting_type, "available_datasets", []):
-        pytest.skip(msg=f"dataset {dataset} isn't available for this setting.")
+        pytest.skip(msg=f"Skipping dataset {dataset} since it isn't available for this setting.")
 
     # Create the Setting
     kwargs = dict(dataset=dataset)
@@ -59,7 +63,6 @@ def test_fast_dev_run(setting_type: Type[Setting],
     elif isinstance(setting, ContinualRLSetting):
         method.batch_size = None
         setting.max_steps = 100
-    
+
     results = setting.apply(method, config=config)
     method.validate_results(setting, results)
-   
