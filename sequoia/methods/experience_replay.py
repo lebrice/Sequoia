@@ -214,8 +214,8 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
 
     def get_search_space(self, setting: ClassIncrementalSetting) -> Dict:
         return {
-            "learning_rate": "loguniform(1e-5, 1e-1, default=1e-3)",
-            "buffer_capacity": "uniform(100, 1000, default=200, discrete=True)",
+            "learning_rate": "loguniform(1e-5, 1e-1, default_value=1e-3)",
+            "buffer_capacity": "uniform(100, 1000, default_value=200, discrete=True)",
         }
 
     def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
