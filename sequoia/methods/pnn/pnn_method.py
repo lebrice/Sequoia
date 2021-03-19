@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Union, Mapping
+from typing import Any, Dict, Mapping, Optional, Union
 
 import gym
 import numpy as np
@@ -8,21 +8,21 @@ import tqdm
 from gym import spaces
 from gym.spaces import Box
 from numpy import inf
-from sequoia import Environment
-from sequoia.common import Config
-from sequoia.common.spaces import Image
-from sequoia.settings import (Actions, ActiveSetting,
-                              Method, Observations, PassiveEnvironment,
-                              Setting, TaskIncrementalRLSetting,
-                              TaskIncrementalSetting)
-from sequoia.settings.assumptions import IncrementalSetting
 from simple_parsing import ArgumentParser
 from wandb.wandb_run import Run
 
+from sequoia import Environment
+from sequoia.common import Config
+from sequoia.common.hparams import (HyperParameters, categorical, log_uniform,
+                                    uniform)
+from sequoia.common.spaces import Image
 from sequoia.methods import register_method
+from sequoia.settings import (Actions, ActiveSetting, Method, Observations,
+                              PassiveEnvironment, Setting,
+                              TaskIncrementalRLSetting, TaskIncrementalSetting)
+from sequoia.settings.assumptions import IncrementalSetting
 from .model_rl import PnnA2CAgent
 from .model_sl import PnnClassifier
-
 
 # BUG: Can't apply PNN to the ClassIncrementalSetting at the moment. 
 # BUG: Can't apply PNN to any RL Settings at the moment.
@@ -41,20 +41,20 @@ class PnnMethod(Method, target_setting=TaskIncrementalSetting):
     """
 
     @dataclass
-    class HParams:
+    class HParams(HyperParameters):
         """ Hyper-parameters of the Pnn method. """
         # Learning rate of the optimizer. Defauts to 0.0001 when in SL.
-        learning_rate: float = 2e-4
+        learning_rate: float = log_uniform(1e-6, 1e-2, default=2e-4)
         num_steps: int = 200  # (only applicable in RL settings.)
         # Discount factor (Only used in RL settings).
-        gamma: float = 0.99
+        gamma: float = uniform(0.9, 0.999, default=0.99)
         # Number of hidden units (only used in RL settings.)
-        hidden_size: int = 256
+        hidden_size: int = categorical(64, 128, 256, default=256)
         # Batch size in SL, and number of parallel environments in RL.
         # Defaults to None in RL, and 32 when in SL.
         batch_size: Optional[int] = None
         # Maximum number of training epochs per task. (only used in SL Settings)
-        max_epochs_per_task: int = 2
+        max_epochs_per_task: int = uniform(1, 20, default=10)
 
     def __init__(self, hparams: HParams = None):
         # We will create those when `configure` will be called, before training.

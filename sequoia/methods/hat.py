@@ -25,6 +25,7 @@ from wandb.wandb_run import Run
 
 from sequoia.methods import register_method
 from sequoia.common import Config
+from sequoia.common.hparams import HyperParameters, log_uniform, uniform, categorical
 from sequoia.common.spaces import Image
 from sequoia.settings import Method, Environment, Setting
 from sequoia.settings.passive import TaskIncrementalSetting
@@ -236,21 +237,21 @@ class HatMethod(Method, target_setting=TaskIncrementalSetting):
     """
 
     @dataclass
-    class HParams:
+    class HParams(HyperParameters):
         """ Hyper-parameters of the Settings. """
 
         # Learning rate of the optimizer.
-        learning_rate: float = 0.001
+        learning_rate: float = log_uniform(1e-6, 1e-2, default=0.001)
         # Batch size
-        batch_size: int = 128
+        batch_size: int = categorical(16, 32, 64, 128, default=128)
         # weight/importance of the task embedding to the gate function
-        s_hat: float = 50.0
+        s_hat: float = uniform(1.0, 100.0, default=50.0)
         # Maximum number of training epochs per task
-        max_epochs_per_task: int = 10
+        max_epochs_per_task: int = uniform(1, 20, default=10, discrete=True)
 
     def __init__(self, hparams: HParams = None):
         self.hparams: HatMethod.HParams = hparams or self.HParams()
-        self.early_stopping_patience = 3
+        self.early_stopping_patience = 2
         # We will create those when `configure` will be called, before training.
         self.model: HatNet
         self.optimizer: torch.optim.Optimizer
