@@ -175,7 +175,8 @@ class HatNet(torch.nn.Module):
 
         environment : Environment
             The environment we're currently interacting with. Used to provide the
-            rewards when they aren't already part of the batch (as mentioned above).
+            rewards when they aren't already part of the batch, for example when our
+            performance is being monitored during training.
 
         Returns
         -------
@@ -221,8 +222,17 @@ def compute_conv_output_size(
 
 @register_method
 class HatMethod(Method, target_setting=TaskIncrementalSetting):
-    """
-    Hard Attention to the Task
+    """Hard Attention to the Task
+
+    ```
+    @inproceedings{serra2018overcoming,
+        title={Overcoming Catastrophic Forgetting with Hard Attention to the Task},
+        author={Serra, Joan and Suris, Didac and Miron, Marius and Karatzoglou, Alexandros},
+        booktitle={International Conference on Machine Learning},
+        pages={4548--4557},
+        year={2018}
+    }
+    ```
     """
 
     @dataclass
