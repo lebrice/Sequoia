@@ -27,6 +27,16 @@ class DQNModel(DQN, OffPolicyModel):
 
         The command-line arguments for these are created with simple-parsing.
         """
+
+        # ------------------ 
+        # overwritten hparams
+        # The learning rate, it can be a function of the current progress (from
+        # 1 to 0)
+        learning_rate: Union[float, Callable] = log_uniform(1e-6, 1e-2, default=1e-4)
+        # size of the replay buffer
+        buffer_size: int = uniform(100_000, 10_000_000, default=1_000_000)
+        #--------------------
+
         # How many steps of the model to collect transitions for before learning
         # starts.
         learning_starts: int = 50_000
@@ -42,7 +52,6 @@ class DQNModel(DQN, OffPolicyModel):
         # 1 for hard update
         tau: float = 1.0
         # tau: float = uniform(0., 1., default=1.0)
-
         # Update the target network every ``target_update_interval`` environment
         # steps.
         target_update_interval: int = categorical(
@@ -77,7 +86,7 @@ class DQNMethod(OffPolicyMethod):
     hparams: DQNModel.HParams = mutable_field(DQNModel.HParams)
 
     # Approximate limit on the size of the replay buffer, in megabytes.
-    max_buffer_size_megabytes: float = 2_048.0
+    max_buffer_size_megabytes: float = 1_024*10.
 
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting)
