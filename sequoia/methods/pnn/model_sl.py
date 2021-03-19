@@ -51,6 +51,11 @@ class PnnClassifier(nn.Module):
 
         y: Optional[Tensor] = None
         task_masks = {}
+        # BUG: Can't apply PNN to the ClassIncrementalSetting at the moment. 
+        if labels is None:
+            raise NotImplementedError(
+                "TODO: Make a prediction when task labels aren't given."
+            )
         for task_id in set(labels.tolist()):
             task_mask = labels == task_id
             task_masks[task_id] = task_mask

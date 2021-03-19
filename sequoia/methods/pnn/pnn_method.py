@@ -24,6 +24,13 @@ from .model_rl import PnnA2CAgent
 from .model_sl import PnnClassifier
 
 
+# BUG: Can't apply PNN to the ClassIncrementalSetting at the moment. 
+# BUG: Can't apply PNN to any RL Settings at the moment.
+# (it was hard-coded to handle pixel cartpole). 
+# TODO: When those bugs get fixed, restore the 'IncrementalSetting' as the target
+# setting.
+
+
 @register_method
 class PnnMethod(Method, target_setting=TaskIncrementalSetting):
     """
