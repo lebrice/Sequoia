@@ -11,6 +11,7 @@ from torch.nn import functional as F
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
+import gym
 
 
 class SimpleConvNet(nn.Module):
@@ -26,15 +27,11 @@ class SimpleConvNet(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(16),
-            nn.AdaptiveAvgPool2d(output_size=(8, 8)),  # [16, 8, 8]
-            nn.Conv2d(
-                16, 32, kernel_size=3, stride=1, padding=0, bias=False
-            ),  # [32, 6, 6]
+            nn.AdaptiveAvgPool2d(output_size=(8, 8)),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
-            nn.Conv2d(
-                32, 32, kernel_size=3, stride=1, padding=0, bias=False
-            ),  # [32, 4, 4]
+            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(32),
             nn.Flatten(),
         )
@@ -112,9 +109,10 @@ class Method:
                     }
                 )
 
-    def predict(self, x: Tensor, task_labels: Optional[Tensor] = None) -> Tensor:
+    def get_actions(self, observations: Tuple[Tensor, Optional[Tensor]], action_space: gym.Space) -> Tensor:
         self.model.eval()
         with torch.set_grad_enabled(False):
+            x, task_labels = observations
             logits = self.model(x, task_labels)
             y_pred = logits.argmax(-1)
             return y_pred
@@ -179,9 +177,7 @@ class Setting:
 
                         test_accuracy = correct_predictions / total_predictions
                         test_pbar.set_postfix(
-                            {
-                                "average accuracy": f"{test_accuracy:.2%}",
-                            }
+                            {"average accuracy": f"{test_accuracy:.2%}",}
                         )
 
                 transfer_matrix[task_index][test_task_index] = test_accuracy

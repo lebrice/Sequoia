@@ -12,7 +12,7 @@ class SimpleConvNet(nn.Module):
         return self.fc(self.features(x))
 
 
-def cl_experiment(dataset=MNIST, n_tasks: int = 5, learning_rate: float = 1e-3, **etc):
+def cl_experiment(dataset=MNIST, n_tasks: int = 5, lr: float = 1e-3, **etc):
     # Create the training / validation / testing datasets for each task:
     train_datasets: List[Dataset] = make_train_datasets(dataset, n_tasks)
     valid_datasets: List[Dataset] = make_valid_datasets(dataset, n_tasks)

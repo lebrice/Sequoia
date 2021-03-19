@@ -25,22 +25,17 @@ class SimpleConvNet(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(16),
-            nn.AdaptiveAvgPool2d(output_size=(8, 8)),  # [16, 8, 8]
-            nn.Conv2d(
-                16, 32, kernel_size=3, stride=1, padding=0, bias=False
-            ),  # [32, 6, 6]
+            nn.AdaptiveAvgPool2d(output_size=(8, 8)),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
-            nn.Conv2d(
-                32, 32, kernel_size=3, stride=1, padding=0, bias=False
-            ),  # [32, 4, 4]
+            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(32),
             nn.Flatten(),
         )
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(512, 120),  # NOTE: This '512' is what gets used as the
-            # hidden size of the encoder.
+            nn.Linear(512, 120),
             nn.ReLU(),
             nn.Linear(120, 84),
             nn.ReLU(),
@@ -51,7 +46,7 @@ class SimpleConvNet(nn.Module):
         return self.fc(self.features(x))
 
 
-def task_incremental_experiment(
+def cl_experiment(
     dataset_type=MNIST,
     data_dir: str = "data",
     n_epochs_per_task: int = 1,
@@ -67,7 +62,6 @@ def task_incremental_experiment(
     test_cl_scenario = ClassIncremental(test_dataset, nb_tasks=nb_tasks)
 
     in_channels = 1 if dataset_type is MNIST else 3
-
     model = SimpleConvNet(
         in_channels=in_channels, n_classes=train_cl_scenario.nb_classes
     )
@@ -156,20 +150,7 @@ def task_incremental_experiment(
 
     return transfer_matrix
 
-
-if __name__ == "__main__":
-    nb_tasks = 5
-    transfer_matrix = task_incremental_experiment(
-        dataset_type=MNIST,
-        data_dir="data",
-        n_epochs_per_task=1,
-        nb_tasks=nb_tasks,
-        loss_function=F.cross_entropy,
-        optimizer_type=torch.optim.Adam,
-        show=True,
-        learning_rate=1e-3,
-    )
-
+def plot_results(transfer_matrix: np.ndarray):
     import matplotlib.pyplot as plt
 
     ax: plt.Axes
@@ -202,6 +183,20 @@ if __name__ == "__main__":
     ax.set_title("Transfer Matrix")
     fig.tight_layout()
     plt.show()
+
+if __name__ == "__main__":
+    nb_tasks = 5
+    transfer_matrix = cl_experiment(
+        dataset_type=MNIST,
+        data_dir="data",
+        n_epochs_per_task=1,
+        nb_tasks=nb_tasks,
+        loss_function=F.cross_entropy,
+        optimizer_type=torch.optim.Adam,
+        show=True,
+        learning_rate=1e-3,
+    )
+    plot_results(transfer_matrix)
 
     objective = transfer_matrix[-1].mean()
     print(f"Average final accuracy across all tasks: {objective}")
