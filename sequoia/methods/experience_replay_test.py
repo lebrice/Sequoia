@@ -4,6 +4,7 @@ from .experience_replay import ExperienceReplayMethod
 from sequoia.common.config import Config
 
 
+@pytest.mark.timeout(300)
 def test_class_incremental_mnist(config: Config):
     method = ExperienceReplayMethod(buffer_capacity=200, epochs_per_task=1)
     setting = ClassIncrementalSetting(
