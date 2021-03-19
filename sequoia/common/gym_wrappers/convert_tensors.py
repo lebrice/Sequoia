@@ -17,17 +17,17 @@ S = TypeVar("S", bound=Space)
 
 class ConvertToFromTensors(gym.Wrapper):
     """ Wrapper that converts Tensors into samples/ndarrays and vice versa.
-    
+
     Whatever comes into the env is converted into np.ndarrays or samples from
     the action space, and whatever comes out of the environment (observations,
     rewards, dones, etc.) get converted to Tensors.
-    
+
     Also supports Dict/Tuple/etc observation/action spaces.
-    
+
     Also makes it so the `sample` methods of both the observation and
     action spaces return Tensors, and that their `contains` methods also accept
     Tensors as an input.
-    
+
     If `device` is given, created Tensors are moved to the provided device.
     """
     def __init__(self, env: gym.Env, device: Union[torch.device, str] = None):
@@ -45,10 +45,10 @@ class ConvertToFromTensors(gym.Wrapper):
     def step(self, action: Tensor) -> Tuple[Tensor, Tensor, Tensor, List[Dict]]:
         action = from_tensor(self.action_space, action)
         assert action in self.env.action_space, (action, self.env.action_space)
-        
+
         result = self.env.step(action)
         observation, reward, done, info = result
-        
+
         observation = to_tensor(self.observation_space, observation, self.device)
 
         if hasattr(self, "reward_space"):
@@ -73,18 +73,18 @@ def _mark_supports_tensors(space: S) -> None:
 def add_tensor_support(space: S, device: torch.device = None) -> S:
     """Modifies `space` so its `sample()` method produces Tensors, and its
     `contains` method also accepts Tensors.
-    
+
     For Dict and Tuple spaces, all the subspaces are also modified recursively.
-            
+
     Returns the modified Space.
     """
     # Save the original methods so we can use them.
     sample = space.sample
     contains = space.contains
     if supports_tensors(space):
-        logger.debug(f"Space {space} already supports Tensors.")
+        # logger.debug(f"Space {space} already supports Tensors.")
         return space
-    
+
     @wraps(space.sample)
     def _sample(*args, **kwargs):
         samples = sample(*args, **kwargs)

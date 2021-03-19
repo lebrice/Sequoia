@@ -66,9 +66,9 @@ def _concatenate_dicts(first_item: Dict, *others: Dict, **kwargs) -> Dict:
         for key in first_item.keys()
     })
 
+
 @concatenate.register(Categorical)
 def _concatenate_distributions(first_item: Categorical, *others: Categorical, **kwargs) -> Categorical:
     return Categorical(logits=torch.cat([
         first_item.logits, *(other.logits for other in others)
     ], *kwargs))
-
