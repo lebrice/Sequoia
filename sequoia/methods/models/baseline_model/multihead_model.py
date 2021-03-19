@@ -191,13 +191,14 @@ class MultiHeadModel(BaseModel[SettingType]):
             # (could be done in parallel but whatever.)
             # TODO: Also, not sure if this will play well with DP, DDP, etc.
             for task_id, task_indices in all_task_indices.items():
-                # # Make a partial observation without the task labels, so that
-                # # super().forward will use the current output head.
+                # Make a partial observation without the task labels, so that
+                # super().forward will use the current output head.
                 logger.debug(
-                    f"Getting output head loss"
+                    f"Getting output head loss for "
                     f"{len(task_indices)/batch_size:.0%} of the batch which "
                     f"has task_id of '{task_id}'."
                 )
+
                 self.setup_for_task(task_id)
                 task_loss = super().output_head_loss(
                     forward_pass=get_slice(forward_pass, task_indices),
