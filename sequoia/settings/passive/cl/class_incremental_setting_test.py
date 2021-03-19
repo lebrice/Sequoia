@@ -6,14 +6,33 @@ from gym.spaces import Discrete, Space
 from sequoia.common.gym_wrappers.convert_tensors import has_tensor_support
 from sequoia.common.spaces import Sparse
 from sequoia.methods import RandomBaselineMethod
+from sequoia.conftest import xfail_param
 
-from .class_incremental_setting import (ClassIncrementalSetting,
-                                        base_observation_spaces, reward_spaces)
+from .class_incremental_setting import (
+    ClassIncrementalSetting,
+    base_observation_spaces,
+    reward_spaces,
+)
 
 # TODO: Add a fixture that specifies a data folder common to all tests.
 
-
-@pytest.mark.parametrize("dataset_name", ["mnist"])
+@pytest.mark.parametrize(
+    "dataset_name",
+    [
+        "mnist",
+        "synbols",
+        "cifar10",
+        "cifar100",
+        "fashionmnist",
+        "kmnist",
+        xfail_param("emnist", reason="Bug in emnist, requires split positional arg?"),
+        xfail_param("qmnist", reason="Bug in qmnist, 229421 not in list"),
+        "mnistfellowship",
+        "cifar10",
+        "cifarfellowship",
+    ],
+)
+@pytest.mark.timeout(60)
 def test_observation_spaces_match_dataset(dataset_name: str):
     """ Test to check that the `observation_spaces` and `reward_spaces` dict
     really correspond to the entries of the corresponding datasets, before we do
@@ -30,7 +49,8 @@ def test_observation_spaces_match_dataset(dataset_name: str):
     for task_dataset in ClassIncremental(dataset, nb_tasks=1):
         first_item = task_dataset[0]
         x, t, y = first_item
-        assert x in observation_space
+        assert x.shape == observation_space.shape
+        assert x in observation_space, (x.min(), x.max(), observation_space)
         assert y in reward_space
 
 

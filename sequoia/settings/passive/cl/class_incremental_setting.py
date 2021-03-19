@@ -74,77 +74,33 @@ from .measure_performance_wrapper import MeasureSLPerformanceWrapper
 
 logger = get_logger(__file__)
 
-num_classes_in_dataset: Dict[str, int] = {
-    "mnist": 10,
-    "fashionmnist": 10,
-    "kmnist": 10,
-    "emnist": 10,
-    "qmnist": 10,
-    "mnistfellowship": 30,
-    "cifar10": 10,
-    "cifar100": 100,
-    "cifarfellowship": 110,
-    "imagenet100": 100,
-    "imagenet1000": 1000,
-    "permutedmnist": 10,
-    "rotatedmnist": 10,
-    "core50": 50,
-    "core50-v2-79": 50,
-    "core50-v2-196": 50,
-    "core50-v2-391": 50,
-    "synbols": 48,
-}
-
-
-dims_for_dataset: Dict[str, Tuple[int, int, int]] = {
-    "mnist": (1, 28, 28),
-    "fashionmnist": (1, 28, 28),
-    "kmnist": (1, 28, 28),
-    "emnist": (1, 28, 28),
-    "qmnist": (1, 28, 28),
-    "mnistfellowship": (1, 28, 28),
-    "cifar10": (3, 32, 32),
-    "cifar100": (3, 32, 32),
-    "cifarfellowship": (3, 32, 32),
-    "imagenet100": (3, 224, 224),
-    "imagenet1000": (3, 224, 224),
-    # "permutedmnist": (28, 28, 1),
-    # "rotatedmnist": (28, 28, 1),
-    "core50": (3, 224, 224),
-    "core50-v2-79": (3, 224, 224),
-    "core50-v2-196": (3, 224, 224),
-    "core50-v2-391": (3, 224, 224),
-    "synbols": (3, 224, 224),
-}
-
-from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 
 # NOTE: This dict reflects the observation space of the different datasets
 # *BEFORE* any transforms are applied. The resulting property on the Setting is
 # based on this 'base' observation space, passed through the transforms.
+# TODO: Make it possible to automatically add tensor support if the dtype passed to a
+# gym space is a `torch.dtype`.
+tensor_space = add_tensor_support
 
 base_observation_spaces: Dict[str, Space] = {
-    dataset_name: add_tensor_support(Image(0, 1, image_shape, np.float32))
-    for dataset_name, image_shape in {
-        "mnist": (1, 28, 28),
-        "fashionmnist": (1, 28, 28),
-        "kmnist": (28, 28, 1),
-        "emnist": (28, 28, 1),
-        "qmnist": (28, 28, 1),
-        "mnistfellowship": (28, 28, 1),
-        "cifar10": (32, 32, 3),
-        "cifar100": (32, 32, 3),
-        "cifarfellowship": (32, 32, 3),
-        "imagenet100": (224, 224, 3),
-        "imagenet1000": (224, 224, 3),
-        # "permutedmnist": (28, 28, 1),
-        # "rotatedmnist": (28, 28, 1),
-        "core50": (224, 224, 3),
-        "core50-v2-79": (224, 224, 3),
-        "core50-v2-196": (224, 224, 3),
-        "core50-v2-391": (224, 224, 3),
-    "synbols": (224, 224, 3),
-    }.items()
+    "mnist": tensor_space(Image(0, 1, shape=(1, 28, 28))),
+    "fashionmnist": tensor_space(Image(0, 1, shape=(1, 28, 28))),
+    "kmnist": tensor_space(Image(0, 1, shape=(1, 28, 28))),
+    "emnist": tensor_space(Image(0, 1, shape=(1, 28, 28))),
+    "qmnist": tensor_space(Image(0, 1, shape=(1, 28, 28))),
+    "mnistfellowship": tensor_space(Image(0, 1, shape=(1, 28, 28))),
+    # TODO: Determine the true bounds on the image values in cifar10.
+    # Appears to be  ~= [-2.5, 2.5]
+    "cifar10": tensor_space(Image(-np.inf, np.inf, shape=(3, 32, 32))),
+    "cifar100": tensor_space(Image(-np.inf, np.inf, shape=(3, 32, 32))),
+    "cifarfellowship": tensor_space(Image(-np.inf, np.inf, shape=(3, 32, 32))),
+    "imagenet100": tensor_space(Image(0, 1, shape=(224, 224, 3))),
+    "imagenet1000": tensor_space(Image(0, 1, shape=(224, 224, 3))),
+    "core50": tensor_space(Image(0, 1, shape=(224, 224, 3))),
+    "core50-v2-79": tensor_space(Image(0, 1, shape=(224, 224, 3))),
+    "core50-v2-196": tensor_space(Image(0, 1, shape=(224, 224, 3))),
+    "core50-v2-391": tensor_space(Image(0, 1, shape=(224, 224, 3))),
+    "synbols": tensor_space(Image(0, 1, shape=(3, 32, 32))),
 }
 
 reward_spaces: Dict[str, Space] = {
