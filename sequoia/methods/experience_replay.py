@@ -137,7 +137,6 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
                 if rew is None:
                     y_pred = logits.argmax(-1)
                     rew = valid_env.send(y_pred)
-                    assert False, (y_pred.shape, rew.y.shape)
 
                 assert rew is not None
                 rew = rew.to(device=self.device)
