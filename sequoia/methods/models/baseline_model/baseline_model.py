@@ -152,12 +152,12 @@ class BaselineModel(SemiSupervisedModel,
             logger.debug("Hparams:")
             logger.debug(self.hp.dumps(indent="\t"))
 
-        # Upgrade the type of hparams for the output head, based on the setting.
-        output_head_type = self.output_head_type(setting)
-        if not isinstance(self.hp.output_head, output_head_type.HParams):
-            self.hp.output_head = self.hp.output_head.upgrade(target_type=output_head_type.HParams)
+        # # Upgrade the type of hparams for the output head, based on the setting.
+        # output_head_type = self.output_head_type(setting)
+        # if not isinstance(self.hp.output_head, output_head_type.HParams):
+        #     self.hp.output_head = self.hp.output_head.upgrade(target_type=output_head_type.HParams)
         
-        self.output_head: OutputHead = self.create_output_head(setting, task_id=None)
+        # self.output_head: OutputHead = self.create_output_head(task_id=None)
 
         # Dictionary of auxiliary tasks.
         self.tasks: Dict[str, AuxiliaryTask] = self.create_auxiliary_tasks()
@@ -215,7 +215,7 @@ class BaselineModel(SemiSupervisedModel,
             forward_pass = forward_pass.remove_batch_dimension()
         return forward_pass
 
-    def create_output_head(self, setting: Setting, task_id: Optional[int]) -> OutputHead:
+    def create_output_head(self, task_id: Optional[int]) -> OutputHead:
         """Create an output head for the current action and reward spaces.
         
         NOTE: This assumes that the input, action and reward spaces don't change
@@ -223,10 +223,6 @@ class BaselineModel(SemiSupervisedModel,
 
         Parameters
         ----------
-        setting : Setting
-            Current Setting. This is the same as `self.setting`, but provided because at
-            some point the idea was to use a singledispatchmethod to choose which kind
-            of output head to create based on the type of Setting.
         task_id : Optional[int]
             ID of the task associated with this new output head. Can be `None`, which is
             interpreted as saying that either that task labels aren't available, or that
@@ -239,7 +235,7 @@ class BaselineModel(SemiSupervisedModel,
         """
         # NOTE: Actual implementation is in `base_model.py`. This is added here just for
         # convenience when extending the baseline model.
-        return super().create_output_head(setting, task_id=task_id)
+        return super().create_output_head(task_id=task_id)
 
     def output_head_type(self, setting: SettingType) -> Type[OutputHead]:
         """ Return the type of output head we should use in a given setting.

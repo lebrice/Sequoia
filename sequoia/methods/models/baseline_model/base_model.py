@@ -5,7 +5,7 @@ This is meant
 TODO: There is a bunch of work to be done here.
 """
 from dataclasses import dataclass
-from typing import Any, Dict, Generic, Optional, Tuple, Type
+from typing import Any, Dict, Generic, Optional, Tuple, Type, TypeVar
 
 import gym
 import numpy as np
@@ -24,14 +24,9 @@ from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.loss import Loss
 from sequoia.common.transforms import SplitBatch
 from sequoia.common.spaces import Image
-from sequoia.settings import (
-    ActiveSetting,
-    ContinualRLSetting,
-    Environment,
-    PassiveSetting,
-    Setting,
-    SettingType,
-)
+from sequoia.settings.active import ActiveSetting, ContinualRLSetting
+from sequoia.settings.passive import PassiveSetting
+from sequoia.settings.base import Environment
 from sequoia.settings.assumptions.incremental import IncrementalSetting
 from sequoia.settings.base.setting import Actions, Observations, Rewards
 from sequoia.utils.logging_utils import get_logger
@@ -50,6 +45,7 @@ from ..output_heads.rl.episodic_a2c import EpisodicA2C
 from .base_hparams import BaseHParams
 
 logger = get_logger(__file__)
+SettingType = TypeVar("SettingType", bound=IncrementalSetting)
 
 
 class BaseModel(LightningModule, Generic[SettingType]):
@@ -94,6 +90,10 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.Actions: Type[Actions] = setting.Actions
         self.Rewards: Type[Rewards] = setting.Rewards
 
+        # Choose what type of output head to use depending on the kind of
+        # Setting.
+        self.OutputHead: Type[OutputHead] = self.output_head_type(setting)
+
         self.observation_space: gym.Space = setting.observation_space
         self.action_space: gym.Space = setting.action_space
         self.reward_space: gym.Space = setting.reward_space
@@ -101,6 +101,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.input_shape = self.observation_space[0].shape
         self.reward_shape = self.reward_space.shape
 
+        # TODO: Remove this:
         self.split_batch_transform = SplitBatch(
             observation_type=self.Observations, reward_type=self.Rewards
         )
@@ -149,7 +150,15 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.encoder = self.encoder.to(self.config.device)
 
         self.representation_space = add_tensor_support(self.representation_space)
-        self.output_head: OutputHead = self.create_output_head(setting, task_id=None)
+
+        # Upgrade the type of hparams for the output head based on the setting, if
+        # needed.
+        if not isinstance(self.hp.output_head, self.OutputHead.HParams):
+            self.hp.output_head = self.hp.output_head.upgrade(
+                target_type=self.OutputHead.HParams
+            )
+        # Then, create the 'default' output head.
+        self.output_head: OutputHead = self.create_output_head(task_id=0)
 
     @auto_move_data
     def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:
@@ -217,9 +226,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             h_x = torch.as_tensor(h_x, device=self.device, dtype=self.dtype)
         return h_x
 
-    def create_output_head(
-        self, setting: Setting, task_id: Optional[int]
-    ) -> OutputHead:
+    def create_output_head(self, task_id: Optional[int]) -> OutputHead:
         """Create an output head for the current action and reward spaces.
 
         NOTE: This assumes that the input, action and reward spaces don't change
@@ -227,11 +234,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
         Parameters
         ----------
-        setting : Setting
-            Current Setting. This is the same as `self.setting`, but provided because at
-            some point the idea was to use a singledispatchmethod to choose which kind
-            of output head to create based on the type of Setting.
-
         task_id : Optional[int]
             ID of the task associated with this new output head. Can be `None`, which is
             interpreted as saying that either that task labels aren't available, or that
@@ -244,18 +246,15 @@ class BaseModel(LightningModule, Generic[SettingType]):
         """
         # NOTE: This assumes that the input, action and reward spaces don't change
         # between tasks.
-        # TODO: Maybe add something like `setting.get_observation_space(task_id)`
+        # TODO: Maybe add something like `setting.get_action_space(task_id)`
         input_space: Space = self.representation_space
         action_space: Space = self.action_space
         reward_space: Space = self.reward_space
         hparams: OutputHead.HParams = self.hp.output_head
-        # Choose what type of output head to use depending on the kind of
-        # Setting.
-        output_head_type: Type[OutputHead] = self.output_head_type(setting)
-        # Use the name defined on the output head.
-        # NOTE: Could also use a name in relation to the task, for example.
-        output_head_name = None
-        output_head = output_head_type(
+        # NOTE: self.OutputHead is the type of output head used for the current setting.
+        # NOTE: Could also use a name for the output head using the task id, for example
+        output_head_name = None  # Use the name defined on the output head.
+        output_head = self.OutputHead(
             input_space=input_space,
             action_space=action_space,
             reward_space=reward_space,
@@ -473,7 +472,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self, forward_pass: ForwardPass, actions: Actions, rewards: Rewards
     ) -> Loss:
         """ Gets the Loss of the output head. """
-        assert actions.device == rewards.device == self.device
+        # TODO: The rewards can still contain just numpy arrays, keeping it so for now.
+        assert actions.device == self.device  # == rewards.device (would be None)
         return self.output_head.get_loss(
             forward_pass, actions=actions, rewards=rewards,
         )
@@ -582,6 +582,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # assert False, self.setting.train_env.observation_space
 
         return not len(observations.x.shape) == len(x_space.shape)
+
 
 from simple_parsing.helpers.serialization import register_decoding_fn
 
