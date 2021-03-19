@@ -56,6 +56,7 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
 # we still import them so we can do `from methods import BaselineMethod`.
 from .baseline_method import BaselineMethod
 from .random_baseline import RandomBaselineMethod
+from .pnn import PnnMethod
 
 ## A bit hacky: Dynamically import all the modules/packages defined in this
 # folder. This way, we register the methods as they are declared.

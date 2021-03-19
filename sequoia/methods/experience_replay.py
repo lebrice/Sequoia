@@ -16,14 +16,13 @@ import torch.nn.functional as F
 import torchvision.models as models
 import tqdm
 from torch import Tensor
-from torchvision.models import ResNet, resnet18
+from torchvision.models import ResNet
 from wandb.wandb_run import Run
 
-from sequoia.common.metrics import ClassificationMetrics
 from sequoia.methods import register_method
-from sequoia.settings import ClassIncrementalSetting, Setting
+from sequoia.settings import ClassIncrementalSetting
 from sequoia.settings.base import Actions, Environment, Method, Observations
-from sequoia.utils import get_logger, singledispatchmethod
+from sequoia.utils import get_logger
 
 
 logger = get_logger(__file__)
@@ -48,6 +47,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
         self.optim: torch.optim.Optimizer
         self.task: int = 0
         self.rng = np.random.RandomState(seed)
+        self.seed = seed
         if seed:
             torch.manual_seed(seed)
             torch.set_deterministic(True)
