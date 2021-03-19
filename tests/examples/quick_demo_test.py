@@ -46,6 +46,6 @@ def test_quick_demo(monkeypatch):
 
     assert 0.48 <= results.final_performance_metrics[0].accuracy <= 0.55
     assert 0.48 <= results.final_performance_metrics[1].accuracy <= 0.70
-    assert 0.60 <= results.final_performance_metrics[2].accuracy <= 0.95
+    assert 0.60 <= results.final_performance_metrics[2].accuracy <= 1.00
     assert 0.75 <= results.final_performance_metrics[3].accuracy <= 1.00
     assert 0.99 <= results.final_performance_metrics[4].accuracy <= 1.00
