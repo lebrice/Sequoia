@@ -212,10 +212,10 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         if isinstance(setting, IncrementalSetting):
             if self.hparams.multihead is None:
                 # Use a multi-head model by default if the task labels are
-                # available at both train and test time.
+                # available at training time and has more than one task.
                 if setting.task_labels_at_test_time:
                     assert setting.task_labels_at_train_time
-                self.hparams.multihead = setting.task_labels_at_test_time
+                self.hparams.multihead = setting.nb_tasks > 1
 
         if isinstance(setting, ContinualRLSetting):
             setting.add_done_to_observations = True

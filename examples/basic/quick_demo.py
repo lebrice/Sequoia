@@ -225,6 +225,7 @@ class DemoMethod(Method, target_setting=DomainIncrementalSetting):
                 best_epoch = i
             if i - best_epoch > self.early_stop_patience:
                 print(f"Early stopping at epoch {i}.")
+                break
 
     def get_actions(
         self, observations: Observations, action_space: gym.Space

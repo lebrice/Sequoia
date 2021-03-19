@@ -598,6 +598,11 @@ class Method(Generic[SettingType], Parseable, ABC):
         It is required that this method be implemented if you want to perform HPO sweeps
         with Orion.
 
+        NOTE: It is very strongly recommended that you always re-create your model and
+        any modules / components that depend on these hyper-parameters inside the
+        `configure` method! (Otherwise these new hyper-parameters will not be used in
+        the next run)
+
         Parameters
         ----------
         new_hparams : Dict[str, Any]

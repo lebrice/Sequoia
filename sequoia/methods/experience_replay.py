@@ -4,7 +4,7 @@ Should be applicable to any Setting.
 """
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Type
+from typing import Optional, Tuple, Dict, Type, Any
 from argparse import ArgumentParser, Namespace
 
 import gym
@@ -17,6 +17,7 @@ import torchvision.models as models
 import tqdm
 from torch import Tensor
 from torchvision.models import ResNet, resnet18
+from wandb.wandb_run import Run
 
 from sequoia.common.metrics import ClassificationMetrics
 from sequoia.methods import register_method
@@ -37,6 +38,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
     def __init__(self,
                  learning_rate: float = 0.1,
                  buffer_capacity: int = 200,
+                 max_epochs_per_task: int = 10,
                  seed: int = None):
         self.learning_rate = learning_rate
         self.buffer_capacity = buffer_capacity
@@ -49,11 +51,11 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
         if seed:
             torch.manual_seed(seed)
             torch.set_deterministic(True)
-        
-        self.epochs_per_task: int = 0
-        
+
+        self.epochs_per_task: int = max_epochs_per_task
+        self.early_stop_patience: int = 3
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
 
     def configure(self, setting: ClassIncrementalSetting):
         # create the model
@@ -63,74 +65,127 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
             self.net = self.net.to(device=self.device)
 
         image_space: spaces.Box = setting.observation_space[0]
-        # create the buffer
-        
-        if self.buffer_capacity:    
+        # Create the buffer.
+        if self.buffer_capacity:
             self.buffer = Buffer(
                 capacity=self.buffer_capacity,
                 input_shape=image_space.shape,
                 extra_buffers={"t": torch.LongTensor},
                 rng=self.rng
             ).to(device=self.device)
-        # optimizer
+        # Create the optimizer.
         self.optim = torch.optim.SGD(self.net.parameters(), lr=self.learning_rate)
 
     def fit(self, train_env: Environment, valid_env: Environment):
         self.net.train()
         # Simple example training loop, not using the validation loader.
-        with tqdm.tqdm(train_env) as train_pbar:
+        best_val_loss = np.inf
+        best_epoch = 0
+        for epoch in range(self.epochs_per_task):
+            train_pbar = tqdm.tqdm(train_env, desc=f"Training Epoch {epoch}")
             postfix = {}
-            train_pbar.set_description(f"Training")
-            for i, batch in enumerate(train_pbar):
+            
+            obs: ClassIncrementalSetting.Observations
+            rew: ClassIncrementalSetting.Rewards
+            for i, (obs, rew) in enumerate(train_pbar):
                 self.optim.zero_grad()
-
-                obs, rew = batch
+                
                 obs = obs.to(device=self.device)
-                rew = rew.to(device=self.device)
-                x, y = obs.x, rew.y
+                x = obs.x
                 logits = self.net(x)
+                
+                if rew is None:
+                    # If our online training performance is being measured, we might
+                    # need to provide actions before we can get the corresponding
+                    # rewards (image labels in this case).
+                    y_pred = logits.argmax(1)
+                    rew = train_env.send(y_pred)
+
+                rew = rew.to(device=self.device)
+                y = rew.y
                 loss = F.cross_entropy(logits, y)
 
+                postfix["loss"] = loss.detach().item()
                 if self.task > 0 and self.buffer:
                     b_samples = self.buffer.sample(x.size(0))
                     b_logits = self.net(b_samples['x'])
-                    loss += F.cross_entropy(logits, b_samples['y'])
+                    loss_replay = F.cross_entropy(b_logits, b_samples['y'])
+                    loss += loss_replay
+                    postfix["replay loss"] = loss_replay.detach().item()
 
                 loss.backward()
                 self.optim.step()
 
-                # add to buffer
-                if self.buffer:
+                train_pbar.set_postfix(postfix)
+
+                # Only add new samples to the buffer (only during first epoch).
+                if self.buffer and epoch == 0:
                     self.buffer.add_reservoir({'x': x, 'y': y, 't': self.task})
+
+            # Validation loop:
+            self.net.eval()
+            torch.set_grad_enabled(False)
+            val_pbar = tqdm.tqdm(valid_env)
+            val_pbar.set_description(f"Validation Epoch {epoch}")
+            epoch_val_loss = 0.0
+
+            for i, (obs, rew) in enumerate(val_pbar):
+                obs = obs.to(device=self.device)
+                x = obs.x
+                logits = self.net(x)
+
+                if rew is None:
+                    y_pred = logits.argmax(-1)
+                    rew = valid_env.send(y_pred)
+
+                assert rew is not None
+                rew = rew.to(device=self.device)
+                y = rew.y
+                val_loss = F.cross_entropy(logits, y).item()
+
+                epoch_val_loss += val_loss
+                postfix["validation loss"] = epoch_val_loss
+                val_pbar.set_postfix(postfix)
+            torch.set_grad_enabled(True)
+
+            if epoch_val_loss < best_val_loss:
+                best_val_loss = valid_env
+                best_epoch = i
+            if i - best_epoch > self.early_stop_patience:
+                print(f"Early stopping at epoch {i}.")
+                # TODO: Reload the weights from the best epoch.
+                break
 
     def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         observations = observations.to(device=self.device)
         logits = self.net(observations.x)
-        pred = logits.max(1)[1]
-        return pred
+        pred = logits.argmax(1)
+        return pred  # Note: Here it's also fine to just return the predictions.
 
     def on_task_switch(self, task_id: Optional[int]):
         print(f"Switching from task {self.task} to task {task_id}")
-        self.task = task_id
+        if self.training:
+            self.task = task_id
 
     @classmethod
-    def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
+    def add_argparse_args(cls, parser: ArgumentParser, dest: str = "") -> None:
         """Add the command-line arguments for this Method to the given parser.
-        
+
         Parameters
         ----------
         parser : ArgumentParser
-            The ArgumentParser. 
+            The ArgumentParser.
         dest : str, optional
             The 'base' destination where the arguments should be set on the
-            namespace, by default None, in which case the arguments can be at
+            namespace, by default empty, in which case the arguments can be at
             the "root" level on the namespace.
         """
         prefix = f"{dest}." if dest else ""
         parser.add_argument(f"--{prefix}learning_rate", type=float, default=0.1)
         parser.add_argument(f"--{prefix}buffer_capacity", type=int, default=200)
+        parser.add_argument(f"--{prefix}max_epochs_per_task", type=int, default=10)
         parser.add_argument(f"--{prefix}seed", type=int, default=None, help="Random seed")
-    
+
     @classmethod
     def from_argparse_args(cls, args: Namespace, dest: str = None):
         """Extract the parsed command-line arguments from the namespace and
@@ -152,8 +207,60 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
         return cls(
             learning_rate=args.learning_rate,
             buffer_capacity=args.buffer_capacity,
+            max_epochs_per_task=args.max_epochs_per_task,
             seed=args.seed,
         )
+
+    def get_search_space(self, setting: ClassIncrementalSetting) -> Dict:
+        return {
+            "learning_rate": "loguniform(1e-5, 1e-1, default_value=1e-3)",
+            "buffer_capacity": "uniform(100, 1000, default_value=200, discrete=True)",
+        }
+
+    def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
+        """Adapts the Method when it receives new Hyper-Parameters to try for a new run.
+
+        It is required that this method be implemented if you want to perform HPO sweeps
+        with Orion.
+
+        NOTE: It is very strongly recommended that you always re-create your model and
+        any modules / components that depend on these hyper-parameters inside the
+        `configure` method! (Otherwise these new hyper-parameters will not be used in
+        the next run)
+
+        Parameters
+        ----------
+        new_hparams : Dict[str, Any]
+            The new hyper-parameters being recommended by the HPO algorithm. These will
+            have the same structure as the search space.
+        """
+        # Here we overwrite the corresponding attributes with the new suggested values
+        # leaving other fields unchanged.
+        # NOTE: These new hyper-paramers will be used in the next run in the sweep,
+        # since each call to `configure` will create a new Model.
+        self.learning_rate = new_hparams["learning_rate"]
+        self.buffer_capacity = new_hparams["buffer_capacity"]
+
+    def setup_wandb(self, run: Run) -> None:
+        """ Called by the Setting when using Weights & Biases, after `wandb.init`.
+
+        This method is here to provide Methods with the opportunity to log some of their
+        configuration options or hyper-parameters to wandb.
+
+        NOTE: The Setting has already set the `"setting"` entry in the `wandb.config` by
+        this point.
+
+        Parameters
+        ----------
+        run : wandb.Run
+            Current wandb Run.
+        """
+        run.config.update(dict(
+            learning_rate=self.learning_rate,
+            buffer_capacity=self.buffer_capacity,
+            epochs_per_task=self.epochs_per_task,
+            seed=self.seed,
+        ))
 
 
 class Buffer(nn.Module):
