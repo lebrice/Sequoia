@@ -79,11 +79,6 @@ def test_launch_sweep_with_constructor(
         pytest.skip("BUG: RandomBaselineMethod has a hparam space that causes the HPO algo to go into an infinite loop.")
         return
 
-    from sequoia.methods.experience_replay import ExperienceReplayMethod
-    if issubclass(method_type, ExperienceReplayMethod):
-        pytest.xfail("TODO: ExperienceReplay doesn't implement `get_search_space` yet")
-        return
-
     experiment = HPOSweep(
         method=method_type,
         setting=setting_type,
