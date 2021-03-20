@@ -149,7 +149,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
             torch.set_grad_enabled(True)
 
             if epoch_val_loss < best_val_loss:
-                best_val_loss = valid_env
+                best_val_loss = epoch_val_loss
                 best_epoch = i
             if i - best_epoch > self.early_stop_patience:
                 print(f"Early stopping at epoch {i}.")
