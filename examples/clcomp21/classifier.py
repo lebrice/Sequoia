@@ -260,11 +260,12 @@ class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
 
             if epoch_val_loss < best_val_loss:
                 best_val_loss = epoch_val_loss
-                best_epoch = i
-            if i - best_epoch > self.hparams.early_stop_patience:
+                best_epoch = epoch
+            if epoch - best_epoch > self.hparams.early_stop_patience:
                 print(f"Early stopping at epoch {i}.")
                 # NOTE: You should probably reload the model weights as they were at the
                 # best epoch.
+                break
 
     def get_actions(
         self, observations: Observations, action_space: gym.Space

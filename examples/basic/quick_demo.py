@@ -145,16 +145,8 @@ class DemoMethod(Method, target_setting=DomainIncrementalSetting):
         # Learning rate of the optimizer.
         learning_rate: float = 0.001
 
-        @classmethod
-        def from_args(cls) -> "HParams":
-            """ Get the hparams of the method from the command-line. """
-            parser = ArgumentParser(description=cls.__doc__)
-            parser.add_arguments(cls, dest="hparams")
-            args, _ = parser.parse_known_args()
-            return args.hparams
-
     def __init__(self, hparams: HParams = None):
-        self.hparams: DemoMethod.HParams = hparams or self.HParams.from_args()
+        self.hparams: DemoMethod.HParams = hparams or self.HParams()
         self.max_epochs: int = 1
         self.early_stop_patience: int = 2
 
@@ -221,9 +213,9 @@ class DemoMethod(Method, target_setting=DomainIncrementalSetting):
             torch.set_grad_enabled(True)
 
             if epoch_val_loss < best_val_loss:
-                best_val_loss = valid_env
-                best_epoch = i
-            if i - best_epoch > self.early_stop_patience:
+                best_val_loss = epoch_val_loss
+                best_epoch = epoch
+            if epoch - best_epoch > self.early_stop_patience:
                 print(f"Early stopping at epoch {i}.")
                 break
 

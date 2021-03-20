@@ -33,7 +33,7 @@ logger = get_logger(__file__)
 class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
     """ Simple method that uses a replay buffer to reduce forgetting.
     """
-    
+
     def __init__(self,
                  learning_rate: float = 0.1,
                  buffer_capacity: int = 200,
@@ -53,7 +53,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
             torch.set_deterministic(True)
 
         self.epochs_per_task: int = max_epochs_per_task
-        self.early_stop_patience: int = 3
+        self.early_stop_patience: int = 2
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -84,16 +84,16 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
         for epoch in range(self.epochs_per_task):
             train_pbar = tqdm.tqdm(train_env, desc=f"Training Epoch {epoch}")
             postfix = {}
-            
+
             obs: ClassIncrementalSetting.Observations
             rew: ClassIncrementalSetting.Rewards
             for i, (obs, rew) in enumerate(train_pbar):
                 self.optim.zero_grad()
-                
+
                 obs = obs.to(device=self.device)
                 x = obs.x
                 logits = self.net(x)
-                
+
                 if rew is None:
                     # If our online training performance is being measured, we might
                     # need to provide actions before we can get the corresponding
@@ -150,9 +150,9 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
 
             if epoch_val_loss < best_val_loss:
                 best_val_loss = epoch_val_loss
-                best_epoch = i
-            if i - best_epoch > self.early_stop_patience:
-                print(f"Early stopping at epoch {i}.")
+                best_epoch = epoch
+            if epoch - best_epoch > self.early_stop_patience:
+                print(f"Early stopping at epoch {epoch}.")
                 # TODO: Reload the weights from the best epoch.
                 break
 
