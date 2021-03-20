@@ -4,17 +4,12 @@
 
 class SimpleConvNet(nn.Module):
     def __init__(self, input_shape: Tuple, n_classes: int = 10):
-        super().__init__()
-        self.features = nn.Sequential(...)
-        self.fc = nn.Sequential(...,)
+        ...
+    def forward(self, observations: Setting.Observations) -> Tensor:
+        ...
 
-    def forward(self, x: Tensor, task_labels: Optional[Tensor] = None) -> Tensor:
-        return self.fc(self.features(x))
-
-
-class Method:
+class Method(target_setting=Setting):
     def __init__(self, lr: float = 1e-3, **method_options):
-        self.lr = lr
         ...
 
     def configure(self, setting: Setting):
@@ -24,20 +19,25 @@ class Method:
     def fit(self, train_env: DataLoader, valid_env: DataLoader):
         # Train on a task:
         for epoch in range(self.epochs_per_task):
-            self.model.train()
             for train_batch in train_env:
                 ...  # Training loop
-            self.model.eval()
             for valid_batch in valid_env:
                 ...  # Validation loop
 
-    def get_actions(self, observations, action_space: gym.Space):
-        x, task_labels = observations
-        actions = y_pred = self.model(x, task_labels).argmax(-1)
+    def get_actions(self, observations: Setting.Observations, action_space: gym.Space):
+        actions = y_pred = self.model(observations).argmax(-1)
         return actions
 
     def on_task_switch(self, task_id: Optional[int]):
         self.model.prepare_for_new_task(new_task=task_id)
+
+method = MyMethod()
+
+for setting in [ClassIncrementalSetting("mnist"), TaskIncrementalSetting("mnist"),
+                DomainIncrementalSetting("mnist"), MultiTaskSetting("mnist"),
+                IIDSetting("mnist"),]:
+    results = setting.apply(method)
+    results.make_plots()
 
 
 class Setting(LightningDataModule):
@@ -97,15 +97,12 @@ class Setting(LightningDataModule):
         # Main objective: average performance on all tasks at the end of training.
         cl_objective = transfer_matrix[-1].mean()
         return cl_objective
-            
-
-def cl_experiment(dataset=MNIST, n_tasks: int = 5, lr: float = 1e-3, **etc):
-
-    # Create the Model, optimizer, etc:
-    model = SimpleConvNet(...)
-    optimizer = ...
 
 
 if __name__ == "__main__":
-    cl_objective = cl_experiment(dataset=MNIST, n_tasks=5, ...)
-    print("Objective: ", cl_objective)
+    setting = Setting(dataset_type=MNIST, data_dir="data", nb_tasks=5)
+    method = Method(n_epochs_per_task=1, learning_rate=1e-3)
+
+    results = setting.apply(method)
+    print(f"Result: {results.objective}")
+    results.show()

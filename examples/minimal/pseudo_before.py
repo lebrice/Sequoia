@@ -31,10 +31,8 @@ def cl_experiment(dataset=MNIST, n_tasks: int = 5, lr: float = 1e-3, **etc):
 
         # Train on task `i`:
         for epoch in range(epochs_per_task):
-            model.train()
             for train_batch in train_loader:
                 ...  # Training loop
-            model.eval()
             for valid_batch in valid_loader:
                 ...  # Validation loop
 
