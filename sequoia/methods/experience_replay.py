@@ -78,7 +78,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
                 rng=self.rng,
             ).to(device=self.device)
         # Create the optimizer.
-        self.optim = torch.optim.ADAM(
+        self.optim = torch.optim.Adam(
             self.net.parameters(),
             lr=self.learning_rate,
             weight_decay=self.weight_decay,
