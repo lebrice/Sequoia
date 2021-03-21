@@ -136,6 +136,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
             val_pbar = tqdm.tqdm(valid_env)
             val_pbar.set_description(f"Validation Epoch {epoch}")
             epoch_val_loss = 0.0
+            epoch_val_loss_list = []
 
             for i, (obs, rew) in enumerate(val_pbar):
                 obs = obs.to(device=self.device)
@@ -151,12 +152,14 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
                 y = rew.y
                 val_loss = F.cross_entropy(logits, y).item()
 
-                epoch_val_loss += val_loss
-                postfix["validation loss"] = epoch_val_loss
+                epoch_val_loss_list += [val_loss]
+                # epoch_val_loss += val_loss
+                postfix["validation loss"] = val_loss
                 val_pbar.set_postfix(postfix)
             torch.set_grad_enabled(True)
+            epoch_val_loss_mean = np.mean(epoch_val_loss_list)
 
-            if epoch_val_loss < best_val_loss:
+            if epoch_val_loss_mean < best_val_loss:
                 best_val_loss = epoch_val_loss
                 best_epoch = epoch
             if epoch - best_epoch > self.early_stop_patience:
@@ -227,8 +230,8 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
 
     def get_search_space(self, setting: ClassIncrementalSetting) -> Dict:
         return {
-            "learning_rate": "loguniform(1e-5, 1e-2, default_value=1e-3)",
-            "buffer_capacity": "uniform(100, 1000, default_value=200, discrete=True)",
+            "learning_rate": "loguniform(1e-4, 5e-1, default_value=1e-3)",
+            "buffer_capacity": "uniform(1000, 10000, default_value=5000, discrete=True)",
             "weight_decay": "loguniform(1e-12, 1e-3, default_value=1e-6)",
         }
 
