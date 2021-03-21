@@ -34,12 +34,16 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
     """ Simple method that uses a replay buffer to reduce forgetting.
     """
 
-    def __init__(self,
-                 learning_rate: float = 0.1,
-                 buffer_capacity: int = 200,
-                 max_epochs_per_task: int = 10,
-                 seed: int = None):
+    def __init__(
+        self,
+        learning_rate: float = 1e-3,
+        buffer_capacity: int = 200,
+        max_epochs_per_task: int = 10,
+        weight_decay: float = 1e-6,
+        seed: int = None,
+    ):
         self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
         self.buffer_capacity = buffer_capacity
 
         self.net: ResNet
@@ -71,10 +75,14 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
                 capacity=self.buffer_capacity,
                 input_shape=image_space.shape,
                 extra_buffers={"t": torch.LongTensor},
-                rng=self.rng
+                rng=self.rng,
             ).to(device=self.device)
         # Create the optimizer.
-        self.optim = torch.optim.SGD(self.net.parameters(), lr=self.learning_rate)
+        self.optim = torch.optim.ADAM(
+            self.net.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay,
+        )
 
     def fit(self, train_env: Environment, valid_env: Environment):
         self.net.train()
@@ -108,8 +116,8 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
                 postfix["loss"] = loss.detach().item()
                 if self.task > 0 and self.buffer:
                     b_samples = self.buffer.sample(x.size(0))
-                    b_logits = self.net(b_samples['x'])
-                    loss_replay = F.cross_entropy(b_logits, b_samples['y'])
+                    b_logits = self.net(b_samples["x"])
+                    loss_replay = F.cross_entropy(b_logits, b_samples["y"])
                     loss += loss_replay
                     postfix["replay loss"] = loss_replay.detach().item()
 
@@ -120,7 +128,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
 
                 # Only add new samples to the buffer (only during first epoch).
                 if self.buffer and epoch == 0:
-                    self.buffer.add_reservoir({'x': x, 'y': y, 't': self.task})
+                    self.buffer.add_reservoir({"x": x, "y": y, "t": self.task})
 
             # Validation loop:
             self.net.eval()
@@ -156,7 +164,9 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
                 # TODO: Reload the weights from the best epoch.
                 break
 
-    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
+    def get_actions(
+        self, observations: Observations, action_space: gym.Space
+    ) -> Actions:
         observations = observations.to(device=self.device)
         logits = self.net(observations.x)
         pred = logits.argmax(1)
@@ -181,10 +191,13 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
             the "root" level on the namespace.
         """
         prefix = f"{dest}." if dest else ""
-        parser.add_argument(f"--{prefix}learning_rate", type=float, default=0.1)
+        parser.add_argument(f"--{prefix}learning_rate", type=float, default=1e-3)
+        parser.add_argument(f"--{prefix}weight_decay", type=float, default=1e-6)
         parser.add_argument(f"--{prefix}buffer_capacity", type=int, default=200)
         parser.add_argument(f"--{prefix}max_epochs_per_task", type=int, default=10)
-        parser.add_argument(f"--{prefix}seed", type=int, default=None, help="Random seed")
+        parser.add_argument(
+            f"--{prefix}seed", type=int, default=None, help="Random seed"
+        )
 
     @classmethod
     def from_argparse_args(cls, args: Namespace, dest: str = None):
@@ -208,13 +221,15 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
             learning_rate=args.learning_rate,
             buffer_capacity=args.buffer_capacity,
             max_epochs_per_task=args.max_epochs_per_task,
+            weight_decay=args.weight_decay,
             seed=args.seed,
         )
 
     def get_search_space(self, setting: ClassIncrementalSetting) -> Dict:
         return {
-            "learning_rate": "loguniform(1e-5, 1e-1, default_value=1e-3)",
+            "learning_rate": "loguniform(1e-5, 1e-2, default_value=1e-3)",
             "buffer_capacity": "uniform(100, 1000, default_value=200, discrete=True)",
+            "weight_decay": "loguniform(1e-12, 1e-3, default_value=1e-6)",
         }
 
     def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
@@ -239,6 +254,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
         # NOTE: These new hyper-paramers will be used in the next run in the sweep,
         # since each call to `configure` will create a new Model.
         self.learning_rate = new_hparams["learning_rate"]
+        self.weight_decay = new_hparams["weight_decay"]
         self.buffer_capacity = new_hparams["buffer_capacity"]
 
     def setup_wandb(self, run: Run) -> None:
@@ -255,56 +271,60 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
         run : wandb.Run
             Current wandb Run.
         """
-        run.config.update(dict(
-            learning_rate=self.learning_rate,
-            buffer_capacity=self.buffer_capacity,
-            epochs_per_task=self.epochs_per_task,
-            seed=self.seed,
-        ))
+        run.config.update(
+            dict(
+                learning_rate=self.learning_rate,
+                weight_decay=self.weight_decay,
+                buffer_capacity=self.buffer_capacity,
+                epochs_per_task=self.epochs_per_task,
+                seed=self.seed,
+            )
+        )
 
 
 class Buffer(nn.Module):
-    def __init__(self,
-                 capacity: int,
-                 input_shape: Tuple[int, ...],
-                 extra_buffers: Dict[str, Type[torch.Tensor]] = None,
-                 rng: np.random.RandomState = None,
-                 ):
+    def __init__(
+        self,
+        capacity: int,
+        input_shape: Tuple[int, ...],
+        extra_buffers: Dict[str, Type[torch.Tensor]] = None,
+        rng: np.random.RandomState = None,
+    ):
         super().__init__()
         self.rng = rng or np.random.RandomState()
 
         bx = torch.zeros([capacity, *input_shape], dtype=torch.float)
         by = torch.zeros([capacity], dtype=torch.long)
 
-        self.register_buffer('bx', bx)
-        self.register_buffer('by', by)
-        self.buffers = ['bx', 'by']
+        self.register_buffer("bx", bx)
+        self.register_buffer("by", by)
+        self.buffers = ["bx", "by"]
 
         extra_buffers = extra_buffers or {}
         for name, dtype in extra_buffers.items():
             tmp = dtype(capacity).fill_(0)
-            self.register_buffer(f'b{name}', tmp)
-            self.buffers += [f'b{name}']
+            self.register_buffer(f"b{name}", tmp)
+            self.buffers += [f"b{name}"]
 
         self.current_index = 0
         self.n_seen_so_far = 0
-        self.is_full       = 0
+        self.is_full = 0
         # (@lebrice) args isn't defined here:
         # self.to_one_hot  = lambda x : x.new(x.size(0), args.n_classes).fill_(0).scatter_(1, x.unsqueeze(1), 1)
-        self.arange_like = lambda x : torch.arange(x.size(0)).to(x.device)
-        self.shuffle     = lambda x : x[torch.randperm(x.size(0))]
+        self.arange_like = lambda x: torch.arange(x.size(0)).to(x.device)
+        self.shuffle = lambda x: x[torch.randperm(x.size(0))]
 
     @property
     def x(self):
-        return self.bx[:self.current_index]
+        return self.bx[: self.current_index]
 
     @property
     def y(self):
         raise NotImplementedError("Can't make y one-hot, dont have n_classes.")
-        return self.to_one_hot(self.by[:self.current_index])
+        return self.to_one_hot(self.by[: self.current_index])
 
     def add_reservoir(self, batch: Dict[str, Tensor]) -> None:
-        n_elem = batch['x'].size(0)
+        n_elem = batch["x"].size(0)
 
         # add whatever still fits in the buffer
         place_left = max(0, self.bx.size(0) - self.current_index)
@@ -313,27 +333,34 @@ class Buffer(nn.Module):
             offset = min(place_left, n_elem)
 
             for name, data in batch.items():
-                buffer = getattr(self, f'b{name}')
+                buffer = getattr(self, f"b{name}")
                 if isinstance(data, Iterable):
-                    buffer[self.current_index: self.current_index + offset].data.copy_(data[:offset])
+                    buffer[self.current_index : self.current_index + offset].data.copy_(
+                        data[:offset]
+                    )
                 else:
-                    buffer[self.current_index: self.current_index + offset].fill_(data)
+                    buffer[self.current_index : self.current_index + offset].fill_(data)
 
             self.current_index += offset
             self.n_seen_so_far += offset
 
             # everything was added
-            if offset == batch['x'].size(0):
+            if offset == batch["x"].size(0):
                 return
 
-        x = batch['x']
+        x = batch["x"]
         self.place_left = False
 
-        indices = torch.FloatTensor(x.size(0)-place_left).to(x.device).uniform_(0, self.n_seen_so_far).long()
+        indices = (
+            torch.FloatTensor(x.size(0) - place_left)
+            .to(x.device)
+            .uniform_(0, self.n_seen_so_far)
+            .long()
+        )
         valid_indices: Tensor = (indices < self.bx.size(0)).long()
 
         idx_new_data = valid_indices.nonzero(as_tuple=False).squeeze(-1)
-        idx_buffer   = indices[idx_new_data]
+        idx_buffer = indices[idx_new_data]
 
         self.n_seen_so_far += x.size(0)
 
@@ -342,7 +369,7 @@ class Buffer(nn.Module):
 
         # perform overwrite op
         for name, data in batch.items():
-            buffer = getattr(self, f'b{name}')
+            buffer = getattr(self, f"b{name}")
             if isinstance(data, Iterable):
                 data = data[place_left:]
                 buffer[idx_buffer] = data[idx_new_data]
@@ -352,21 +379,21 @@ class Buffer(nn.Module):
     def sample(self, n_samples: int, exclude_task: int = None) -> Dict[str, Tensor]:
         buffers = {}
         if exclude_task is not None:
-            assert hasattr(self, 'bt')
+            assert hasattr(self, "bt")
             valid_indices = (self.bt != exclude_task).nonzero().squeeze()
             for buffer_name in self.buffers:
                 buffers[buffer_name] = getattr(self, buffer_name)[valid_indices]
         else:
             for buffer_name in self.buffers:
-                buffers[buffer_name] = getattr(self, buffer_name)[:self.current_index]
+                buffers[buffer_name] = getattr(self, buffer_name)[: self.current_index]
 
-        bx = buffers['bx']
+        bx = buffers["bx"]
         if bx.size(0) < n_samples:
             return buffers
         else:
             indices_np = self.rng.choice(bx.size(0), n_samples, replace=False)
             indices = torch.from_numpy(indices_np).to(self.bx.device)
-            return {k[1:]: v[indices] for (k,v) in buffers.items()}
+            return {k[1:]: v[indices] for (k, v) in buffers.items()}
 
 
 if __name__ == "__main__":
