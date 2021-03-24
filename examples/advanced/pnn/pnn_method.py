@@ -67,7 +67,7 @@ class PnnMethod(Method, target_setting=Setting):
         # Defaults to None in RL, and 32 when in SL.
         batch_size: Optional[int] = None
         # Maximum number of training epochs per task. (only used in SL Settings)
-        max_epochs_per_task: int = 2
+        max_epochs_per_task: int = 5
 
     def __init__(self, hparams: HParams = None):
         # We will create those when `configure` will be called, before training.
@@ -127,10 +127,11 @@ class PnnMethod(Method, target_setting=Setting):
             self.model = PnnA2CAgent(self.arch, self.hparams.hidden_size)
 
         else:
+            arch = 'conv'
             # If we're applied to a Supervised Learning setting:
             # Used these as the default hparams in SL:
             self.hparams = self.hparams or self.HParams(
-                learning_rate=0.0001, batch_size=32,
+                learning_rate=0.001, batch_size=32,
             )
             if self.hparams.batch_size is None:
                 self.hparams.batch_size = 32
@@ -151,8 +152,25 @@ class PnnMethod(Method, target_setting=Setting):
             # as many outputs as is required, and then reshape / offset the predictions.
             n_outputs = setting.increment
             n_outputs = setting.action_space.n
-            self.layer_size = [self.num_inputs, 256, n_outputs]
-            self.model = PnnClassifier(n_layers=len(self.layer_size) - 1,)
+            if arch == 'mlp':
+                self.layer_size = [self.num_inputs, 512, n_outputs]
+            else:
+                self.layer_size = [3, 6, 16, 400, n_outputs]
+            self.model = PnnClassifier(n_layers=len(self.layer_size) - 1, arch=arch)
+
+        # if not setting.known_task_boundaries_at_test_time:
+        #     for i in range(setting.nb_tasks):
+        #         if i not in self.added_tasks:
+        #             if isinstance(self.model, PnnA2CAgent):
+        #                 self.model.new_task(
+        #                     device=self.device,
+        #                     num_inputs=self.num_inputs,
+        #                     num_actions=self.num_actions,
+        #                 )
+        #             else:
+        #                 self.model.new_task(device=self.device, sizes=self.layer_size)
+
+        #             self.added_tasks.append(i)
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
         """ Called when switching tasks in a CL setting. """
@@ -161,7 +179,7 @@ class PnnMethod(Method, target_setting=Setting):
         # the index of the new task. If not, task_id will be None.
         # For example, you could do something like this:
         # self.model.current_task = task_id
-        self.model.freeze_columns([task_id])
+
         if task_id not in self.added_tasks:
             if isinstance(self.model, PnnA2CAgent):
                 self.model.new_task(
@@ -173,12 +191,15 @@ class PnnMethod(Method, target_setting=Setting):
                 self.model.new_task(device=self.device, sizes=self.layer_size)
 
             self.added_tasks.append(task_id)
+            self.model.added_tasks = self.added_tasks
 
+        self.model.freeze_columns([task_id])
         self.task_id = task_id
 
     def set_optimizer(self):
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(self.task_id), lr=self.hparams.learning_rate,
+            self.model.parameters(self.task_id), 
+            lr=self.hparams.learning_rate,
         )
 
     def get_actions(
@@ -308,6 +329,7 @@ class PnnMethod(Method, target_setting=Setting):
             with torch.set_grad_enabled(True), tqdm.tqdm(train_env) as train_pbar:
                 postfix: Dict[str, Any] = {}
                 train_pbar.set_description(f"Training Epoch {epoch}")
+                epoch_train_loss = []
                 for i, batch in enumerate(train_pbar):
                     loss, metrics_dict = self.model.shared_step(
                         batch, environment=train_env,
@@ -315,7 +337,9 @@ class PnnMethod(Method, target_setting=Setting):
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
-                    postfix.update(metrics_dict)
+                    epoch_train_loss.append(loss.item())
+
+                    postfix.update(metrics_dict, train_loss=np.mean(epoch_train_loss))
                     train_pbar.set_postfix(postfix)
 
             # Validation loop:
@@ -329,7 +353,7 @@ class PnnMethod(Method, target_setting=Setting):
                     batch_val_loss, metrics_dict = self.model.shared_step(
                         batch, environment=valid_env,
                     )
-                    epoch_val_loss += batch_val_loss
+                    epoch_val_loss += batch_val_loss.item()
                     postfix.update(metrics_dict, val_loss=epoch_val_loss)
                     val_pbar.set_postfix(postfix)
 
@@ -412,9 +436,32 @@ def main_sl():
     print(results.summary())
     return results
 
+"""
+TODO:
+- Fix the amount of classes per task. Each output head has as many outputs as 
+there are classes in total.
+"""
+def challenge_sl():
+    method = PnnMethod()
+
+    from sequoia.client import SettingProxy
+    # setting = SettingProxy(TaskIncrementalSetting, "sl_track.yaml")
+    setting = TaskIncrementalSetting(
+        dataset="synbols",
+        nb_tasks=12,
+        known_task_boundaries_at_test_time=False,
+        monitor_training_performance=True,
+        batch_size=32,
+        num_workers=4,
+    )
+
+    results = setting.apply(method, config=Config(data_dir="data"))
+    print(results.summary())
 
 if __name__ == "__main__":
     # Run RL Setting
-    main_sl()
+    # main_sl()
     # Run SL Setting
     # main_rl()
+
+    challenge_sl()

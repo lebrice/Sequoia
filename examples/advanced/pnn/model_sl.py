@@ -1,4 +1,5 @@
 from typing import Dict, Optional, Tuple, List
+import random
 
 import numpy as np
 import torch
@@ -20,7 +21,7 @@ class PnnClassifier(nn.Module):
     }
     """
 
-    def __init__(self, n_layers):
+    def __init__(self, n_layers, arch = 'mlp'):
         super().__init__()
         self.n_layers = n_layers
         self.columns = nn.ModuleList([])
@@ -30,29 +31,48 @@ class PnnClassifier(nn.Module):
         self.n_tasks = 0
         self.n_classes_per_task: List[int] = []
 
+        self.arch = arch
+
     def forward(self, observations):
         assert (
             self.columns
         ), "PNN should at least have one column (missing call to `new_task` ?)"
         x = observations.x
-        x = torch.flatten(x, start_dim=1)
-        labels = observations.task_labels
-        # TODO: Debug this:
-        inputs = [
-            c[0](x) + n_classes_in_task
-            for n_classes_in_task, c in zip(self.n_classes_per_task, self.columns)
-        ]
-        for l in range(1, self.n_layers):
+
+        if self.arch == 'mlp':
+            x = torch.flatten(x, start_dim=1)
+            # TODO: Debug this:
+            #inputs = [
+            #    c[0](x) + n_classes_in_task
+            #    for n_classes_in_task, c in zip(self.n_classes_per_task, self.columns)
+            #]
+            inputs = [ c[0](x) for c in self.columns ]
+
+            for l in range(1, self.n_layers):
+                outputs = []
+                for i, column in enumerate(self.columns):
+                    outputs.append(column[l](inputs[: i + 1]))
+
+                inputs = outputs
+
+        else:
+            inputs = [ c[0](x) for c in self.columns ]
+
             outputs = []
-
             for i, column in enumerate(self.columns):
-                outputs.append(column[l](inputs[: i + 1]))
+                outputs.append(column[1](inputs[: i + 1]))
 
-            inputs = outputs
+            outputs = [ c[2](outputs[i]) for i,c in enumerate(self.columns) ]
+            inputs = [ c[3](outputs[i]) for i,c in enumerate(self.columns) ]
 
+
+        labels = observations.task_labels
         y: Optional[Tensor] = None
         task_masks = {}
         for task_id in set(labels.tolist()):
+            if task_id not in self.added_tasks:
+                task_id = random.sample(self.added_tasks, k=1)[0]
+                
             task_mask = labels == task_id
             task_masks[task_id] = task_mask
 
@@ -71,18 +91,33 @@ class PnnClassifier(nn.Module):
             f"sizes but {self.n_layers} layers)."
         )
         self.n_tasks += 1
-        # TODO: Fix this to use the actual number of classes per task.
-        self.n_classes_per_task.append(2)
         task_id = len(self.columns)
-        modules = []
-        for i in range(0, self.n_layers):
-            modules.append(
-                PNNLinearBlock(col=task_id, depth=i, n_in=sizes[i], n_out=sizes[i + 1])
-            )
+        # TODO: Fix this to use the actual number of classes per task.
+        #self.n_classes_per_task.append(2)
+        
+        if self.arch == 'conv':
+            modules_conv = nn.Sequential()
 
-        new_column = nn.ModuleList(modules).to(device)
-        self.columns.append(new_column)
+            modules_conv.add_module('Conv1', PNNConvLayer(task_id, 0, sizes[0], sizes[1], 5))
+            modules_conv.add_module('Conv2', PNNConvLayer(task_id, 1, sizes[1], sizes[2], 5))
+            #modules_conv.add_module('globavgpool2d', nn.AdaptiveAvgPool2d((1,1)))
+            modules_conv.add_module('Flatten', nn.Flatten())
+            # modules_conv.add_module('Linear', PNNLinearBlock(task_id, 3, sizes[3],sizes[4]))
+            modules_conv.add_module('clf',nn.Linear(sizes[3],sizes[4]))
+            self.columns.append(modules_conv.to(device))
+
+        else:
+            modules = []
+            for i in range(0, self.n_layers):
+                modules.append(
+                    PNNLinearBlock(col=task_id, depth=i, n_in=sizes[i], n_out=sizes[i + 1])
+                )
+
+            new_column = nn.ModuleList(modules).to(device)
+            self.columns.append(new_column)
         self.device = device
+
+        # self.encoder.to(device)
 
         print("Add column of the new task")
 
@@ -149,8 +184,12 @@ class PnnClassifier(nn.Module):
         loss = self.loss(logits, image_labels)
 
         accuracy = (y_pred == image_labels).sum().float() / len(image_labels)
-        metrics_dict = {"accuracy": accuracy}
+        metrics_dict = {"accuracy": accuracy.item()}
         return loss, metrics_dict
 
     def parameters(self, task_id):
-        return self.columns[task_id].parameters()
+        params = []
+        for p in self.columns[task_id].parameters():
+            params.append(p)
+
+        return params 
