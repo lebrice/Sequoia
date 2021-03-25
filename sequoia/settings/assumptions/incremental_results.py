@@ -67,12 +67,15 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
     task, hence why we get a nb_tasks x nb_tasks matrix of results.
     """
 
+    min_runtime_hours: ClassVar[float] = 0.0
     max_runtime_hours: ClassVar[float]
 
     def __init__(self, *args):
         super().__init__(*args)
         self._runtime: Optional[float] = None
         self._online_training_performance: Optional[List[Dict[int, Metrics]]] = None
+        # Factor used to scale the 'objective' to a 'score' between 0 and 1.
+        self._objective_scaling_factor: float = 1.0
 
     @property
     def runtime_minutes(self) -> Optional[float]:
@@ -137,9 +140,9 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
         """
         # TODO: Determine the function to use to get a runtime score between 0 and 1.
         score = (
-            +0.25 * self._online_performance_score()
-            + 0.50 * self._final_performance_score()
-            + 0.25 * self._runtime_score()
+            + 0.30 * self._online_performance_score()
+            + 0.40 * self._final_performance_score()
+            + 0.30 * self._runtime_score()
         )
         return score
 
@@ -161,24 +164,41 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
         runtime_hours = runtime_seconds / 3600
 
         # Get the maximum runtime for this type of Results (and Setting)
+        min_runtime_hours = type(self).min_runtime_hours
         max_runtime_hours = type(self).max_runtime_hours
 
-        assert max_runtime_hours > 0
-        assert runtime_hours > 0
-        if runtime_hours > max_runtime_hours:
-            runtime_hours = max_runtime_hours
-
-        return 1 - (runtime_hours / max_runtime_hours)
+        assert 0 <= min_runtime_hours < max_runtime_hours
+        assert 0 < runtime_hours
+        if runtime_hours <= min_runtime_hours:
+            return 1.0
+        if max_runtime_hours <= runtime_hours:
+            return 0.0
+        return 1 - (
+            (runtime_hours - min_runtime_hours)
+            / (max_runtime_hours - min_runtime_hours)
+        )
 
     def _online_performance_score(self) -> float:
-        # TODO: function that takes the 'objective' of the Metrics from the average
+        # Function that takes the 'objective' of the Metrics from the average
         # online performance, and returns a normalized float score between 0 and 1.
-        return self.average_online_performance.objective
+        # TODO: Use the 'average of the averages' instead of the "true", sample-aware
+        # average.
+        objectives: List[float] = [
+            task_online_metric.objective for task_online_metric
+            in self.online_performance_metrics
+        ]
+        return self._objective_scaling_factor * np.mean(objectives)
+        # return type(self).objective_scaling_factor * self.average_online_performance.objective
 
     def _final_performance_score(self) -> float:
         # TODO: function that takes the 'objective' of the Metrics from the average
         # final performance, and returns a normalized float score between 0 and 1.
-        return self.average_final_performance.objective
+        objectives: List[float] = [
+            task_metric.objective for task_metric
+            in self.final_performance_metrics
+        ]
+        return self._objective_scaling_factor * np.mean(objectives)
+        # return type(self).objective_scaling_factor * self.average_final_performance.objective
 
     @property
     def objective(self) -> float:

@@ -1095,6 +1095,16 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             new_random_task_on_reset=self._new_random_task_on_reset,
         )
 
+    def _get_objective_scaling_factor(self) -> float:
+        # TODO: remove this, currently used just so we can get a 'scaling factor' to use
+        # to scale the 'mean reward per episode' to a score between 0 and 1.
+        # TODO: Add other environments, for instance 1/200 for cartpole.
+        return (
+            0.01 if self.dataset.startswith("MetaMonsterKong") else 1.0
+        )
+
+
+
 
 class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
     def __init__(self, *args, task_schedule: Dict, **kwargs):

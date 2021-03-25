@@ -197,6 +197,10 @@ class IncrementalSetting(ContinualSetting):
         if self.monitor_training_performance:
             results._online_training_performance = []
 
+        # TODO: Fix this up, need to set the '_objective_scaling_factor' to a different
+        # value depending on the 'dataset' / environment.
+        results._objective_scaling_factor = self._get_objective_scaling_factor()
+        
         if self.wandb:
             # Init wandb, and then log the setting's options.
             self.wandb_run = self.setup_wandb(method)
@@ -478,6 +482,8 @@ class IncrementalSetting(ContinualSetting):
         """ Returns the Test Environment (for all the tasks). """
         return super().test_dataloader(*args, **kwargs)
 
+    def _get_objective_scaling_factor(self) -> float:
+        return 1.0
 
 class TestEnvironment(gym.wrappers.Monitor, IterableWrapper, ABC):
     """ Wrapper around a 'test' environment, which limits the number of steps

@@ -50,8 +50,12 @@ class ClassIncrementalResults(IncrementalSetting.Results):
     lower_is_better: ClassVar[bool] = False
     objective_name: ClassVar[str] = "Average Accuracy"
 
+    # Minimum runtime considered (in hours).
+    # (No extra points are obtained when going faster than this.)
+    min_runtime_hours: ClassVar[float] = 5.0 / 60.0  # 5 minutes
     # Maximum runtime allowed (in hours).
-    max_runtime_hours: ClassVar[float] = 5.0
+    max_runtime_hours: ClassVar[float] = 1.0  # one hour.
+
 
     def make_plots(self):
         plots_dict = {}
