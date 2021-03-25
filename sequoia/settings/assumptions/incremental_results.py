@@ -261,8 +261,8 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
             )
         log_dict.update(
             {
-                "Final/Average Online Performance": self.average_online_performance.objective,
-                "Final/Average Final Performance": self.average_final_performance.objective,
+                "Final/Average Online Performance": self._online_performance_score(),
+                "Final/Average Final Performance": self._final_performance_score(),
                 "Final/Runtime (seconds)": self._runtime,
                 "Final/CL Score": self.cl_score,
             }

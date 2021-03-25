@@ -1100,10 +1100,11 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # to scale the 'mean reward per episode' to a score between 0 and 1.
         # TODO: Add other environments, for instance 1/200 for cartpole.
         return (
-            0.01 if self.dataset.startswith("MetaMonsterKong") else 1.0
+            0.01
+            if isinstance(self.dataset, str)
+            and self.dataset.startswith("MetaMonsterKong")
+            else 1.0
         )
-
-
 
 
 class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
