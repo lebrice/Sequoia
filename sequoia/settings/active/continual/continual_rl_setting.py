@@ -793,12 +793,26 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     def phases(self) -> int:
         """The number of training 'phases', i.e. how many times `method.fit` will be
         called.
-        
+
         In the case of ContinualRL, fit is only called once, with an environment that
         shifts between all the tasks.
         """
         return 1
-    
+
+    @property
+    def steps_per_phase(self) -> Optional[int]:
+        """Returns the number of steps per training "phase".
+
+        In most settings, this is the same as `steps_per_task`.
+
+        Returns
+        -------
+        Optional[int]
+            `None` if `max_steps` is None, else `max_steps // phases`.
+        """
+        # TODO: This doesn't work when the schedule has tasks of different length.
+        return None if self.max_steps is None else self.max_steps // self.phases
+
     @staticmethod
     def _make_env(
         base_env: Union[str, gym.Env, Callable[[], gym.Env]],
@@ -902,7 +916,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         max_steps = starting_step + self.steps_per_task - 1
         return self._make_wrappers(
             task_schedule=self.train_task_schedule,
-            sharp_task_boundaries=self.known_task_boundaries_at_train_time,
+            # TODO: Removing this, but we have to check that it doesn't change when/how
+            # the task boundaries are given to the Method.
+            # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
             task_labels_available=self.task_labels_at_train_time,
             transforms=self.train_transforms,
             starting_step=starting_step,
@@ -931,7 +947,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         max_steps = starting_step + self.steps_per_task - 1
         return self._make_wrappers(
             task_schedule=self.valid_task_schedule,
-            sharp_task_boundaries=self.known_task_boundaries_at_train_time,
+            # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
             task_labels_available=self.task_labels_at_train_time,
             transforms=self.val_transforms,
             starting_step=starting_step,
@@ -952,7 +968,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         """
         return self._make_wrappers(
             task_schedule=self.test_task_schedule,
-            sharp_task_boundaries=self.known_task_boundaries_at_test_time,
+            # sharp_task_boundaries=self.known_task_boundaries_at_test_time,
             task_labels_available=self.task_labels_at_test_time,
             transforms=self.test_transforms,
             starting_step=0,
@@ -969,7 +985,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     def _make_wrappers(
         self,
         task_schedule: Dict[int, Dict],
-        sharp_task_boundaries: bool,
+        # sharp_task_boundaries: bool,
         task_labels_available: bool,
         transforms: List[Transforms],
         starting_step: int,
@@ -981,8 +997,6 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         These wrappers get applied *before* the batching, if applicable.
         """
         wrappers: List[Callable[[gym.Env], gym.Env]] = []
-        # NOTE: When transitions are smooth, there are no "task boundaries".
-        assert sharp_task_boundaries == (not self.smooth_task_boundaries)
 
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised?
@@ -1027,16 +1041,16 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # Add a wrapper which will add non-stationarity to the environment.
         # The "task" transitions will either be sharp or smooth.
         # In either case, the task ids for each sample are added to the
-        # observations, and the dicts containing the task information (i.e. the
+        # observations, and the dicts containing the task information (e.g. the
         # current values of the env attributes from the task schedule) get added
         # to the 'info' dicts.
-        if sharp_task_boundaries:
+        if self.smooth_task_boundaries:
+            # Add a wrapper that creates smooth tasks.
+            cl_wrapper = SmoothTransitions
+        else:
             assert self.nb_tasks >= 1
             # Add a wrapper that creates sharp tasks.
             cl_wrapper = MultiTaskEnvironment
-        else:
-            # Add a wrapper that creates smooth tasks.
-            cl_wrapper = SmoothTransitions
 
         wrappers.append(
             partial(
@@ -1072,7 +1086,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         """
         return self._make_wrappers(
             task_schedule=self.train_task_schedule,
-            sharp_task_boundaries=self.known_task_boundaries_at_train_time,
+            # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
             task_labels_available=self.task_labels_at_train_time,
             transforms=self.train_transforms,
             # These two shouldn't matter really:

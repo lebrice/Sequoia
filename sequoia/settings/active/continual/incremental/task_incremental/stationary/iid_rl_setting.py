@@ -47,7 +47,7 @@ class RLSetting(TaskIncrementalRLSetting):
             new_random_task_on_reset = False
         return self._make_wrappers(
             task_schedule=self.test_task_schedule,
-            sharp_task_boundaries=self.known_task_boundaries_at_test_time,
+            # sharp_task_boundaries=self.known_task_boundaries_at_test_time,
             task_labels_available=self.task_labels_at_test_time,
             transforms=self.test_transforms,
             starting_step=0,
