@@ -51,15 +51,15 @@ SettingType = TypeVar("SettingType", bound=Setting)
 
 class SettingProxy(SettingABC, Generic[SettingType]):
     """ Proxy for a Setting.
-    
+
     TODO: Creating the Setting locally for now, but we'd spin-up or contact a gRPC
     service" that would have at least the following endpoints:
 
     - get_attribute(name: str) -> Any:
         returns the attribute from the setting, if that attribute can be read.
- 
+
     - set_attribute(name: str, value: Any) -> bool:
-        Sets the given attribute to the given value, if that is allowed. 
+        Sets the given attribute to the given value, if that is allowed.
 
     - train_dataloader()
     - val_dataloader()
@@ -86,11 +86,10 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             self.__setting = setting_type(**setting_kwargs)
         self.__setting.monitor_training_performance = True
         super().__init__()
-        
+
         self._train_env = None
         self._val_env = None
         self._test_env = None
-        
 
     @property
     def observation_space(self) -> gym.Space:
@@ -108,15 +107,15 @@ class SettingProxy(SettingABC, Generic[SettingType]):
     @property
     def val_env(self) -> EnvironmentProxy:
         return self._val_env
-    
+
     @property
     def train_env(self) -> EnvironmentProxy:
         return self._train_env
-    
+
     @property
     def test_env(self) -> EnvironmentProxy:
         return self._test_env
-    
+
     @property
     def config(self) -> Config:
         return self.get_attribute("config")
@@ -132,7 +131,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
     def _is_readable(self, attribute: str) -> bool:
         if self._setting_type not in _hidden_attributes:
             return True
-        return  attribute not in _hidden_attributes[self._setting_type]
+        return attribute not in _hidden_attributes[self._setting_type]
 
     def _is_writeable(self, attribute: str) -> bool:
         return attribute not in _readonly_attributes[self._setting_type]
@@ -148,7 +147,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
     @property
     def train_transforms(self) -> List[Callable]:
         return self.__setting.train_tansforms
-    
+
     @train_transforms.setter
     def train_transforms(self, value: List[Callable]):
         self.__setting.train_transforms = value
@@ -273,8 +272,16 @@ class SettingProxy(SettingABC, Generic[SettingType]):
 
         test_results = self._setting_type.Results()
         test_results._online_training_performance = []
+
+        # TODO: Fix this up, need to get the 'scaling factor' to use for the objective
+        # here.
+        dataset: str = self.get_attribute("dataset")
+        test_results._objective_scaling_factor = (
+            0.01 if dataset.startswith("MetaMonsterKong") else 1.0
+        )
+
         method.set_training()
-        
+
         nb_tasks = self.get_attribute("nb_tasks")
         known_task_boundaries_at_train_time = self.get_attribute(
             "known_task_boundaries_at_train_time"
@@ -285,7 +292,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         # Send the train / val transforms to the 'remote' env.
         self.set_attribute("train_transforms", self.train_transforms)
         self.set_attribute("val_transforms", self.val_transforms)
-        
+
         for task_id in range(nb_tasks):
             logger.info(
                 f"Starting training" + (f" on task {task_id}." if nb_tasks > 1 else ".")
@@ -344,11 +351,11 @@ class SettingProxy(SettingABC, Generic[SettingType]):
 
         The idea is that this loop should be exactly the same, regardless of if
         you're on the RL or the CL side of the tree.
-        
+
         NOTE: If `self.known_task_boundaries_at_test_time` is `True` and the
         method has the `on_task_switch` callback defined, then a callback
         wrapper is added that will invoke the method's `on_task_switch` and pass
-        it the task id (or `None` if `not self.task_labels_available_at_test_time`) 
+        it the task id (or `None` if `not self.task_labels_available_at_test_time`)
         when a task boundary is encountered.
 
         This `on_task_switch` 'callback' wrapper gets added the same way for
@@ -394,11 +401,18 @@ class SettingProxy(SettingABC, Generic[SettingType]):
                 # size, even for the last batch!
                 obs_batch_size = obs.x.shape[0] if obs.x.shape else None
                 action_space_batch_size = (
-                    test_env.action_space.shape[0] if test_env.action_space.shape else None
+                    test_env.action_space.shape[0]
+                    if test_env.action_space.shape
+                    else None
                 )
-                if obs_batch_size is not None and obs_batch_size != action_space_batch_size:
-                    action_space = batch_space(test_env.single_action_space, obs_batch_size)
-                        
+                if (
+                    obs_batch_size is not None
+                    and obs_batch_size != action_space_batch_size
+                ):
+                    action_space = batch_space(
+                        test_env.single_action_space, obs_batch_size
+                    )
+
             action = method.get_actions(obs, action_space)
 
             # logger.debug(f"action: {action}")
@@ -415,10 +429,10 @@ class SettingProxy(SettingABC, Generic[SettingType]):
 
         test_env.close()
         test_results = test_env.get_results()
-        
+
         if was_training:
             method.set_training()
-        
+
         return test_results
 
     # NOTE: Was experimenting with the idea of allowing the regular getattr and setattr

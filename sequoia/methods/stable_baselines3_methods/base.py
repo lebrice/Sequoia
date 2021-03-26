@@ -239,18 +239,17 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         logger.debug(f"Will use {self.hparams.policy} as the policy.")
         # TODO: Double check that some settings might not impose a limit on
         # number of training steps per environment (e.g. task-incremental RL?)
-        if setting.steps_per_task:
-
-            if self.train_steps_per_task > setting.steps_per_task:
+        if setting.steps_per_phase:
+            if self.train_steps_per_task > setting.steps_per_phase:
                 warnings.warn(
                     RuntimeWarning(
                         f"Can't train for the requested {self.train_steps_per_task} "
                         f"steps, since we're (currently) only allowed one 'pass' "
-                        f"through the environment (max {setting.steps_per_task} steps.)"
+                        f"through the environment (max {setting.steps_per_phase} steps.)"
                     )
                 )
             # Use as many training steps as possible.
-            self.train_steps_per_task = setting.steps_per_task
+            self.train_steps_per_task = setting.steps_per_phase
         # Otherwise, we can train basically as long as we want on each task.
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> BaseAlgorithm:

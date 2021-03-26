@@ -27,8 +27,12 @@ class RLResults(IncrementalResults[EpisodeMetrics]):
 
     objective_name: ClassVar[str] = "Mean reward per episode"
 
+    # Minimum runtime considered (in hours).
+    # (No extra points are obtained for going faster than this.)
+    min_runtime_hours: ClassVar[float] = 1.5
     # Maximum runtime allowed (in hours).
     max_runtime_hours: ClassVar[float] = 12.0
+
 
     def mean_reward_plot(self):
         raise NotImplementedError("TODO")
@@ -44,3 +48,26 @@ class RLResults(IncrementalResults[EpisodeMetrics]):
         axes.set_ylim(0, 1.0)
         autolabel(axes, rects)
         return figure
+
+    @property
+    def cl_score(self) -> float:
+        """ CL Score, as a weigted sum of three objectives:
+        - The average final performance over all tasks
+        - The average 'online' performance over all tasks
+        - Runtime
+
+        TODO: @optimass Determine the weights for each factor.
+
+        Returns
+        -------
+        float
+            [description]
+        """
+        # TODO: Determine the function to use to get a runtime score between 0 and 1.
+        # TODO: Add a property on the Results, which is based on the environment used.
+        score = (
+            +0.25 * self._online_performance_score()
+            + 0.50 * self._final_performance_score()
+            + 0.25 * self._runtime_score()
+        )
+        return score
