@@ -69,6 +69,7 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
         return observations, rewards, done, info
 
     def __iter__(self):
+        self.__environment.reset()
         return iter(self.__environment)
         # env_iterator = self._environment.__iter__()
         # print(f"Env iterator: {env_iterator}")
