@@ -1,33 +1,33 @@
 import gym
+from typing import Optional
+from torch import Tensor
 import numpy as np
 import tqdm
-from sequoia import (
-    Actions,
-    ClassIncrementalSetting,
-    Environment,
-    Method,
-    Observations,
-    PassiveEnvironment,
-    Rewards,
-)
-from torch import Tensor
 
-class DummyMethod(Method, target_setting=ClassIncrementalSetting):
-    """ dummy method that does nothing and always returns 0    
+from sequoia.settings import Setting, Environment, Observations, Actions
+from sequoia.methods import Method
+from sequoia.settings.passive import PassiveSetting
+
+
+class DummyMethod(Method, target_setting=Setting):
+    """ Dummy method that returns random actions for each observation.
     """
 
     def __init__(self):
-        pass
+        self.max_train_episodes: Optional[int] = None
 
-    def configure(self, setting: ClassIncrementalSetting):
-        """ Called before the method is applied on a setting (before training). 
+    def configure(self, setting: Setting):
+        """ Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
         """
+        if isinstance(setting, PassiveSetting):
+            # Being applied in SL, we will only do one 'epoch" (a.k.a. "episode").
+            self.max_train_episodes = 1
         pass
 
-    def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
+    def fit(self, train_env: Environment, valid_env: Environment):
         """ Example train loop.
         You can do whatever you want with train_env and valid_env here.
 
@@ -35,33 +35,45 @@ class DummyMethod(Method, target_setting=ClassIncrementalSetting):
         the supervised CL settings), this will be called once per task.
         """
         # configure() will have been called by the setting before we get here.
-        with tqdm.tqdm(train_env) as train_pbar:
-            for i, batch in enumerate(train_pbar):
-                if isinstance(batch, Observations):
-                    observations, rewards = batch, None
-                else:
-                    observations, rewards = batch
-                    
-                batch_size = observations.x.shape[0]
+        episodes = 0
+        with tqdm.tqdm(desc="training") as train_pbar:
 
-                y_pred = train_env.action_space.sample()
+            while not train_env.is_closed():
+                for i, batch in enumerate(train_env):
+                    if isinstance(batch, Observations):
+                        observations, rewards = batch, None
+                    else:
+                        observations, rewards = batch
 
-                # If we're at the last batch, it might have a different size, so we give
-                # only the required number of values.
-                if isinstance(y_pred, (Tensor, np.ndarray)):
-                    if y_pred.shape[0] != batch_size:
-                        y_pred = y_pred[:batch_size]
+                    batch_size = observations.x.shape[0]
 
-                if rewards is None:
-                    rewards = train_env.send(y_pred)
-                # train as you usually would.
+                    y_pred = train_env.action_space.sample()
+
+                    # If we're at the last batch, it might have a different size, so w
+                    # give only the required number of values.
+                    if isinstance(y_pred, (np.ndarray, Tensor)):
+                        if y_pred.shape[0] != batch_size:
+                            y_pred = y_pred[:batch_size]
+
+                    if rewards is None:
+                        rewards = train_env.send(y_pred)
+
+                    train_pbar.set_postfix({
+                        "Episode": episodes,
+                        "Step": i,
+                    })
+                    # train as you usually would.
+
+                episodes += 1
+                if self.max_train_episodes and episodes >= self.max_train_episodes:
+                    train_env.close()
+                    break
 
     def get_actions(
         self, observations: Observations, action_space: gym.Space
     ) -> Actions:
         """ Get a batch of predictions (aka actions) for these observations. """
         y_pred = action_space.sample()
-        return y_pred
         return self.target_setting.Actions(y_pred)
 
 
@@ -77,6 +89,7 @@ if __name__ == "__main__":
     # NOTE: This Setting is very similar to the one used for the SL track of the
     # competition.
     from sequoia.client import SettingProxy
+
     setting = SettingProxy(ClassIncrementalSetting, "sl_track.yaml")
     # setting = SettingProxy(ClassIncrementalSetting,
     #     dataset="synbols",
