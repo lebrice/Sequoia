@@ -121,10 +121,22 @@ spaces.Tuple.__eq__ = __eq__
 
 
 from gym.vector.utils import batch_space
-
+from gym.spaces.utils import flatten, flatten_space
 
 @batch_space.register(NamedTupleSpace)
 def batch_namedtuple_space(space: NamedTupleSpace, n: int = 1):
     return NamedTupleSpace(**{
         key: batch_space(space[key], n) for key in space.names
     }, dtype=space.dtype)
+
+
+from sequoia.common.batch import Batch
+
+
+@flatten.register
+def flatten_namedtuple_space_sample(space: NamedTupleSpace, x: NamedTuple):
+    if isinstance(x, Batch):
+        x = x.as_tuple()
+    return np.concatenate([
+                flatten(s, x_part) for x_part, s in zip(x, space.spaces)
+        ])
