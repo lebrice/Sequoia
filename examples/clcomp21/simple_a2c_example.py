@@ -1,30 +1,25 @@
 import sys
-import torch
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional, Tuple, Dict
+
 import gym
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
-from torch.autograd import Variable
-import matplotlib.pyplot as plt
-from dataclasses import dataclass
-import pandas as pd
-from typing import Tuple
+from gym import spaces
+from gym.spaces.utils import flatdim
+from sequoia.common.hparams import HyperParameters, log_uniform, uniform
 from sequoia.methods import Method
-from simple_parsing import ArgumentParser
+from sequoia.settings.active import ActiveEnvironment, ActiveSetting
 # TODO: Migrate stuff to directly import simple-parsing's hparams module.
 # from simple_parsing.helpers.hparams import HyperParameters
-from sequoia.common.hparams import HyperParameters
-from sequoia.settings.active import (
-    ActiveSetting,
-    IncrementalRLSetting,
-    ActiveEnvironment,
-)
+from simple_parsing import ArgumentParser
 from torch import Tensor
-from sequoia.settings import Observations, Actions, Rewards
-from gym import spaces
 from torch.distributions import Categorical
-from gym.spaces.utils import flatten, flatdim, unflatten, flatten_space
 
 
 class ActorCritic(nn.Module):
@@ -96,24 +91,28 @@ class ActorCritic(nn.Module):
 class ExampleA2CMethod(Method, target_setting=ActiveSetting):
     """ Example A2C method.
 
-    Most of the code here was taken from https://towardsdatascience.com/understanding-actor-critic-methods-931b97b6df3f
+    Most of the code here was taken from:
+    https://towardsdatascience.com/understanding-actor-critic-methods-931b97b6df3f
     """
 
     @dataclass
     class HParams(HyperParameters):
         # hyperparameters
-        hidden_size: int = 256
-        learning_rate: float = 1e-3
+        hidden_size: int = uniform(16, 512, default=256)
+        learning_rate: float = log_uniform(1e-6, 1e-2, default=1e-3)
+
+        gamma: float = 0.99
+        entropy_term_coefficient: float = 0.001
 
         # Constants
-        GAMMA = 0.99
-        num_steps = 300
-        max_episodes = 3000
-        entropy_term_coefficient = 0.001
+        max_episode_steps: int = 300
+        max_episodes: int = 3000
 
     def __init__(self, hparams: HParams = None, render: bool = False):
         self.hparams = hparams or self.HParams()
         self.render: bool = True
+        self.task: int = 0
+        self.plots_dir: Path = Path("plots")
 
     def configure(self, setting: ActiveSetting):
         self.num_inputs = setting.observation_space.x.shape[0]
@@ -130,18 +129,18 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
     def fit(self, train_env: ActiveEnvironment, valid_env: ActiveEnvironment):
         assert isinstance(train_env, gym.Env)  # Just to illustrate that it's a gym Env.
 
-        all_lengths = []
-        average_lengths = []
-        all_rewards = []
+        all_lengths: List[int] = []
+        average_lengths: List[float] = []
+        all_rewards: List[float] = []
 
         for episode in range(self.hparams.max_episodes):
             log_probs = []
             values = []
             rewards = []
             entropy_term = 0
-
             observation: ActiveSetting.Observations = train_env.reset()
-            for steps in range(self.hparams.num_steps):
+
+            for steps in range(self.hparams.max_episode_steps):
                 value, policy_dist = self.actor_critic.forward(observation)
                 value = value.detach().numpy()
                 action = policy_dist.sample()
@@ -168,9 +167,10 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
                 values.append(value)
                 log_probs.append(log_prob)
                 entropy_term += entropy
+
                 observation = new_observation
 
-                if done or steps == self.hparams.num_steps - 1:
+                if done or steps == self.hparams.max_episode_steps - 1:
                     Qval, _ = self.actor_critic.forward(new_observation)
                     Qval = Qval.detach().numpy()
                     all_rewards.append(np.sum(rewards))
@@ -187,7 +187,7 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
             # compute Q values
             Qvals = np.zeros_like(values)
             for t in reversed(range(len(rewards))):
-                Qval = rewards[t] + self.hparams.GAMMA * Qval
+                Qval = rewards[t] + self.hparams.gamma * Qval
                 Qvals[t] = Qval
 
             # update actor critic
@@ -198,7 +198,11 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
             advantage = Qvals - values
             actor_loss = (-log_probs * advantage).mean()
             critic_loss = 0.5 * advantage.pow(2).mean()
-            ac_loss = actor_loss + critic_loss + self.hparams.entropy_term_coefficient * entropy_term
+            ac_loss = (
+                actor_loss
+                + critic_loss
+                + self.hparams.entropy_term_coefficient * entropy_term
+            )
 
             self.ac_optimizer.zero_grad()
             ac_loss.backward()
@@ -212,19 +216,36 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
         plt.plot()
         plt.xlabel("Episode")
         plt.ylabel("Reward")
-        plt.show()
+        plt.savefig(self.plots_dir / f"task_{self.task}_0.png")
+        # plt.show()
 
         plt.plot(all_lengths)
         plt.plot(average_lengths)
         plt.xlabel("Episode")
         plt.ylabel("Episode length")
-        plt.show()
+        plt.savefig(self.plots_dir / f"task_{self.task}_1.png")
+        # plt.show()
 
     def get_actions(
         self, observations: ActiveSetting.Observations, action_space: gym.Space
     ) -> ActiveSetting.Actions:
         value, action_dist = self.actor_critic(observations)
         return ActiveSetting.Actions(y_pred=action_dist.sample())
+
+    # The methods below aren't required, but are good to add.
+
+    def on_task_switch(self, task_id: Optional[int]) -> None:
+        """Called by the Setting when switching between tasks.
+
+        Parameters
+        ----------
+        task_id : Optional[int]
+            the id of the new task. When None, we are
+            basically being informed that there is a task boundary, but without
+            knowing what task we're switching to.
+        """
+        if isinstance(task_id, int):
+            self.task = task_id
 
     @classmethod
     def add_argparse_args(cls, parser: ArgumentParser, dest: str = ""):
@@ -237,12 +258,27 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
         hparams: ExampleA2CMethod.HParams = args.hparams
         return cls(hparams=hparams)
 
+    def get_search_space(self, setting: ActiveSetting) -> Dict:
+        return self.hparams.get_orion_space()
+
+    def adapt_to_new_hparams(self, new_hparams: Dict) -> None:
+        self.hparams = self.HParams.from_dict(new_hparams)
+
 
 if __name__ == "__main__":
     from sequoia.settings.active import RLSetting
-
-    setting = RLSetting(dataset="CartPole-v0", observe_state_directly=True, max_steps=1000, steps_per_task=1000)
+    # Create the Setting.
+    setting = RLSetting(
+        dataset="CartPole-v0",
+        observe_state_directly=True,
+        max_steps=1000,
+        steps_per_task=1000,
+    )
+    # Create the Method:
     method = ExampleA2CMethod()
-
+    # Apply the Method onto the Setting to get Results.
     results = setting.apply(method)
     print(results.summary())
+
+    # BONUS: Running a hyper-parameter sweep:
+    # method.hparam_sweep(setting)
