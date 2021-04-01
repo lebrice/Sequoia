@@ -216,6 +216,7 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
         plt.plot()
         plt.xlabel("Episode")
         plt.ylabel("Reward")
+        self.plots_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(self.plots_dir / f"task_{self.task}_0.png")
         # plt.show()
 
