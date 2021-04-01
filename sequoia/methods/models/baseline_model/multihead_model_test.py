@@ -2,7 +2,7 @@
 """
 # from sequoia.conftest import config
 from collections import defaultdict
-from typing import Dict, List, Tuple, Type
+from typing import Dict, List, Tuple, Type, Optional
 
 import gym
 import numpy as np
@@ -63,7 +63,10 @@ class MockOutputHead(OutputHead):
         # actions = torch.stack([x_i.mean() * self.task_id for x_i in x])
         actions = [x_i.mean() * self.task_id for x_i in x]
         actions = torch.stack(actions)
-        return self.Actions(actions)
+        fake_logits = torch.rand([actions.shape[0], self.action_space.n])
+        from sequoia.methods.models.output_heads.classification_head import ClassificationOutput
+        assert issubclass(ClassificationOutput, self.Actions)
+        return ClassificationOutput(y_pred=actions, logits=fake_logits)
 
     def get_loss(self, forward_pass, actions, rewards):
         return Loss(self.name, 0.0)
@@ -333,3 +336,60 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
 def test_get_task_indices(input, expected):
     actual = get_task_indices(input)
     assert str(actual) == str(expected)
+
+
+@pytest.mark.parametrize(
+    "indices",
+    [
+        slice(0, 10),  # all the same task (0)
+        slice(0, 20),  # 10 from task 0, 10 from task 1
+        slice(0, 30),  # 10 from task 0, 10 from task 1, 10 from task 2
+        slice(0, 50),  # 10 from each task.
+    ],
+)
+def test_task_inference_sl(
+    mixed_samples: Dict[int, Tuple[Tensor, Tensor, Tensor]],
+    indices: slice,
+    config: Config,
+):
+    """ TODO: Write out a test that checks that when given a batch with data
+    from different tasks, and when the model is multiheaded, it will use the
+    right output head for each image.
+    """
+    # Get a mixed batch
+    xs, ys, ts = map(torch.cat, zip(*mixed_samples.values()))
+    xs = xs[indices]
+    ys = ys[indices]
+    ts = ts[indices].int()
+    obs = ClassIncrementalSetting.Observations(x=xs, task_labels=None)
+
+    setting = ClassIncrementalSetting()
+    model = MultiHeadModel(
+        setting=setting,
+        hparams=MultiHeadModel.HParams(batch_size=30, multihead=True),
+        config=config,
+    )
+
+    class MockEncoder(nn.Module):
+        def forward(self, x: Tensor):
+            return x.new_ones([x.shape[0], model.hidden_size])
+
+    mock_encoder = MockEncoder()
+    model.encoder = mock_encoder
+
+    for i in range(5):
+        model.output_heads[str(i)] = MockOutputHead(
+            input_space=spaces.Box(0, 1, [model.hidden_size]),
+            action_space=spaces.Discrete(setting.action_space.n),
+            Actions=setting.Actions,
+            task_id=i,
+        )
+    model.output_head = model.output_heads["0"]
+
+    forward_pass = model(obs)
+    y_preds = forward_pass.actions.y_pred
+
+    assert y_preds.shape == ts.shape
+    # TODO: Check that the task inference works by changing the logits to be based on
+    # the assigned task in the Mock output head.
+    # assert torch.all(y_preds == ts * xs.view([xs.shape[0], -1]).mean(1))

@@ -53,7 +53,7 @@ class Config(Serializable, Parseable):
     seed: Optional[int] = None
     # Which device to use. Defaults to 'cuda' if available.
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     def __post_init__(self):
         self.seed_everything()
         self._display: Optional[Display] = None

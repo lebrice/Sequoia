@@ -6,12 +6,14 @@ import torch
 from pytorch_lightning.core.decorators import auto_move_data
 from torch import Tensor, nn
 
+from dataclasses import replace
 from sequoia.common import Batch, Config, Loss
 from sequoia.settings import Actions, Environment, Observations, Rewards
 from sequoia.settings.assumptions.incremental import IncrementalSetting
 from sequoia.utils.generic_functions import concatenate, get_slice
 from sequoia.utils.logging_utils import get_logger
-
+from sequoia.utils.generic_functions import stack
+import torch.nn.functional as F
 from ..forward_pass import ForwardPass
 from ..output_heads import OutputHead
 
@@ -490,7 +492,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         # These are used below to indicate the shape of the different tensors.
         B = observations.x.shape[0]
         T = n_known_tasks = len(self.output_heads)
-        N = self.n_classes
+        N = self.action_space.n
         # Tasks encountered previously and for which we have an output head.
         known_task_ids: list[int] = list(range(n_known_tasks))
         assert known_task_ids
@@ -507,16 +509,17 @@ class MultiHeadModel(BaseModel[SettingType]):
             task_observations = replace(observations, task_labels=task_labels)
 
             # Setup the model for task `task_id`, and then do a forward pass.
-            task_logits = self.forward(task_observations)
+            task_forward_pass = self.forward(task_observations)
 
-            task_outputs[task_id] = task_logits
+            task_outputs[task_id] = task_forward_pass
 
         # 'Merge' the predictions from each output head using some kind of task
         # inference.
         assert all(item is not None for item in task_outputs)
         # Stack the predictions (logits) from each output head.
-        logits_from_each_head: Tensor = torch.stack(task_outputs, dim=1)
-        assert logits_from_each_head.shape == (B, T, N)
+        stacked_forward_pass: ForwardPass = stack(task_outputs, dim=1)
+        logits_from_each_head = stacked_forward_pass.actions.logits
+        assert logits_from_each_head.shape == (B, T, N), (logits_from_each_head.shape, (B, T, N))
 
         # Normalize the logits from each output head with softmax.
         # Example with batch size of 1, output heads = 2, and classes = 4:
@@ -559,9 +562,9 @@ class MultiHeadModel(BaseModel[SettingType]):
         )
         assert selected_mask.shape == (B, T)
         # Select the logits using the mask:
-        logits = logits_from_each_head[selected_mask]
-        assert logits.shape == (B, N)
-        return logits
+        selected_forward_pass = stacked_forward_pass[selected_mask]
+        assert selected_forward_pass.actions.logits.shape == (B, N)
+        return selected_forward_pass
 
 
 from functools import singledispatch

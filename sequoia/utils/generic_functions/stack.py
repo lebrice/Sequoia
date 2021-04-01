@@ -25,7 +25,7 @@ T = TypeVar("T")
 
 
 @singledispatch
-def stack(first_item: Union[T, List[T]], *others: T) -> Any:
+def stack(first_item: Union[T, List[T]], *others: T, **kwargs) -> Any:
     # By default, if we don't know how to handle the item type, just
     # return an ndarray with with all the items.
     # note: We could also try to return a tensor, rather than an ndarray
@@ -36,31 +36,38 @@ def stack(first_item: Union[T, List[T]], *others: T) -> Any:
         assert isinstance(first_item, (list, tuple))
         assert len(first_item) > 1
         items = first_item
-        return stack(items[0], *items[1:])
-    return np.asarray([first_item, *others])
+        return stack(items[0], *items[1:], **kwargs)
+    return np.asarray([first_item, *others], **kwargs)
 
 
 @stack.register(np.ndarray)
-def _stack_ndarrays(first_item: np.ndarray, *others: np.ndarray) -> np.ndarray:
-    return np.stack([first_item, *others])
+def _stack_ndarrays(
+    first_item: np.ndarray, *others: np.ndarray, **kwargs
+) -> np.ndarray:
+    return np.stack([first_item, *others], **kwargs)
 
 
 @stack.register(Tensor)
-def _stack_tensors(first_item: Tensor, *others: Tensor) -> Tensor:
-    return torch.stack([first_item, *others])
+def _stack_tensors(first_item: Tensor, *others: Tensor, **kwargs) -> Tensor:
+    return torch.stack([first_item, *others], **kwargs)
 
 
 @stack.register(Mapping)
-def _stack_dicts(first_item: Dict, *others: Dict) -> Dict:
-    return type(first_item)(**{
-        key: stack(first_item[key], *(other[key] for other in others))
-        for key in first_item.keys()
-    })
+def _stack_dicts(first_item: Dict, *others: Dict, **kwargs) -> Dict:
+    return type(first_item)(
+        **{
+            key: stack(first_item[key], *(other[key] for other in others), **kwargs)
+            for key in first_item.keys()
+        }
+    )
 
 
 @stack.register(Categorical)
-def _stack_distributions(first_item: Categorical, *others: Categorical) -> Categorical:
-    return Categorical(logits=torch.stack([
-        first_item.logits, *(other.logits for other in others)
-    ]))
-
+def _stack_distributions(
+    first_item: Categorical, *others: Categorical, **kwargs
+) -> Categorical:
+    return Categorical(
+        logits=torch.stack(
+            [first_item.logits, *(other.logits for other in others)], **kwargs
+        )
+    )

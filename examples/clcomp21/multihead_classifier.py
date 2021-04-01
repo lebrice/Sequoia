@@ -303,8 +303,11 @@ class ExampleTaskInferenceMethod(ExampleMethod):
 
 
 if __name__ == "__main__":
-    from sequoia.settings.passive.cl import (ClassIncrementalSetting,
-                                             TaskIncrementalSetting)
+    from sequoia.settings.passive.cl import (
+        ClassIncrementalSetting,
+        TaskIncrementalSetting,
+    )
+
     # Create the Method, either manually:
     # method = ExampleTaskInferenceMethod()
     # Or, from the command-line:
