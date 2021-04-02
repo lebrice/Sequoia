@@ -5,14 +5,17 @@ with open(os.path.join(os.path.dirname(__file__), "requirements.txt"), "r") as f
     lines = [ln.strip() for ln in file.readlines()]
 
 packages_pip = []
+packages_git = []
 
 for ln in lines:
     if ln.startswith("#"):
         continue
     if ln:  # if requirement is not empty
-        packages_pip.append(ln)
+        if "https://" in ln:
+            packages_git.append(ln)
+        else:
+            packages_pip.append(ln)
 
-packages_git = []
 
 setup(
     name="sequoia",
