@@ -1,2 +1,2 @@
-from .hparam import log_uniform, loguniform, uniform, categorical
-from .hyperparameters import HyperParameters, Point
+from simple_parsing.helpers.hparams.hparam import log_uniform, loguniform, uniform, categorical
+from simple_parsing.helpers.hparams.hyperparameters import HyperParameters
