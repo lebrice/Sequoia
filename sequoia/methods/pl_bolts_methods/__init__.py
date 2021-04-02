@@ -3,5 +3,5 @@ targetting the IID Setting.
 
 TODO: Also figure out a way to consider LightningDataModules that aren't Settings
 as 'IID' settings, so we can get all the methods and models and datamodules
-from pl_bolts for free. 
+from pl_bolts for free.
 """
