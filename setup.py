@@ -31,7 +31,7 @@ setup(
             "meta-monsterkong"
         ],
         "atari": [
-            "gym[atari] @ git+https://www.github.com/lebrice/gym@easier_custom_spaces#egg=gym"
+            "gym[atari]"
         ],
         "hpo": ["orion", "orion.algo.skopt"],
     },
