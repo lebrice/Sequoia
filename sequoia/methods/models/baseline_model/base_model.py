@@ -544,20 +544,16 @@ class BaseModel(LightningModule, Generic[SettingType]):
         """ Returns wether these observations are batched. """
         assert isinstance(self.observation_space, spaces.Tuple)
 
-        if observations.task_labels is not None:
-            if isinstance(observations.task_labels, int):
-                return True
-            assert isinstance(observations.task_labels, (np.ndarray, Tensor))
-            return observations.task_labels.shape and observations.task_labels.shape[0]
+        # if observations.task_labels is not None:
+        #     if isinstance(observations.task_labels, int):
+        #         return True
+        #     assert isinstance(observations.task_labels, (np.ndarray, Tensor))
+        #     assert False, observations.shapes
+        #     return observations.task_labels.shape and observations.task_labels.shape[0]
 
         x_space: spaces.Box = self.observation_space[0]
 
-        if isinstance(x_space, Image):
-            return observations.x.ndim == 4
-
-        if len(x_space.shape) == 4:
-            # This would occur when the observation space isn't an Image space, for some
-            # reason.
+        if isinstance(x_space, Image) or len(x_space.shape) == 4:
             return observations.x.ndim == 4
 
         if not isinstance(x_space, spaces.Box):
@@ -568,20 +564,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
         # self.observation_space *should* usually reflect the shapes of individual
         # (non-batched) observations.
-        if len(x_space.shape) == 1:
-            return observations.x.ndim == 2
-
-        if len(x_space.shape) == 3:
-            return observations.x.ndim == 4
-
-        if len(x_space.shape) == 2:
-            # TODO: This assumes that any observation space with ndim == 2 is already
-            # batched. This currently only makes sense for cartpole.
-            if self.setting.dataset == "CartPole-v0":
-                return observations.x.ndim == 2
-            # assert False, self.setting.train_env.observation_space
-
-        return not len(observations.x.shape) == len(x_space.shape)
+        return observations.x.ndim == len(x_space.shape) + 1
 
 
 from simple_parsing.helpers.serialization import register_decoding_fn

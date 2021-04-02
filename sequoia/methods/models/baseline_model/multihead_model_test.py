@@ -64,7 +64,10 @@ class MockOutputHead(OutputHead):
         actions = [x_i.mean() * self.task_id for x_i in x]
         actions = torch.stack(actions)
         fake_logits = torch.rand([actions.shape[0], self.action_space.n])
-        from sequoia.methods.models.output_heads.classification_head import ClassificationOutput
+        from sequoia.methods.models.output_heads.classification_head import (
+            ClassificationOutput,
+        )
+
         assert issubclass(ClassificationOutput, self.Actions)
         return ClassificationOutput(y_pred=actions, logits=fake_logits)
 
@@ -393,3 +396,54 @@ def test_task_inference_sl(
     # TODO: Check that the task inference works by changing the logits to be based on
     # the assigned task in the Mock output head.
     # assert torch.all(y_preds == ts * xs.view([xs.shape[0], -1]).mean(1))
+
+
+@pytest.mark.timeout(120)
+def test_task_inference_rl_easy(config: Config):
+    from sequoia.methods.baseline_method import BaselineMethod
+
+    method = BaselineMethod(config=config)
+    from sequoia.settings.active import IncrementalRLSetting
+
+    setting = IncrementalRLSetting(
+        dataset="cartpole",
+        observe_state_directly=True,
+        nb_tasks=2,
+        steps_per_task=1000,
+        test_steps_per_task=1000,
+    )
+    results = setting.apply(method)
+    assert results
+    # assert False, results.to_log_dict()
+
+
+@pytest.mark.timeout(120)
+def test_task_inference_rl_hard(config: Config):
+    from sequoia.methods.baseline_method import BaselineMethod
+
+    method = BaselineMethod(config=config)
+    from sequoia.settings.active import RLSetting
+
+    setting = RLSetting(
+        dataset="cartpole",
+        observe_state_directly=True,
+        nb_tasks=2,
+        max_steps=1000,
+        test_steps_per_task=1000,
+    )
+    results = setting.apply(method)
+    assert results
+    # assert False, results.to_log_dict()
+
+
+@pytest.mark.timeout(180)
+def test_task_inference_multi_task_sl(config: Config):
+    # TODO Create a dummy supervised dataset for testing
+    from sequoia.methods.baseline_method import BaselineMethod
+
+    method = BaselineMethod(config=config, max_epochs=1)
+    from sequoia.settings.passive import MultiTaskSetting
+
+    setting = MultiTaskSetting(dataset="mnist", nb_tasks=2,)
+    results = setting.apply(method)
+    assert 0.95 <= results.average_final_performance.objective

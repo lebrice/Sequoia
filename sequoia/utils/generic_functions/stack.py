@@ -34,7 +34,7 @@ def stack(first_item: Union[T, List[T]], *others: T, **kwargs) -> Any:
         # If this was called like stack(tensor_list), then we just split off
         # the list of items.
         assert isinstance(first_item, (list, tuple))
-        assert len(first_item) > 1
+        # assert len(first_item) > 1, first_item
         items = first_item
         return stack(items[0], *items[1:], **kwargs)
     return np.asarray([first_item, *others], **kwargs)
