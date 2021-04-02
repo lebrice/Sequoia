@@ -95,8 +95,8 @@ class Compose(List[T], ComposeBase):
     >>> pprint(transforms)
     [<Transforms.to_tensor: ToTensor()>,
      <Transforms.three_channels: ThreeChannels()>,
-     <Transforms.resize_32x32: Resize(size=(32, 32), interpolation=PIL.Image.BILINEAR)>]
-    
+     <Transforms.resize_32x32: Resize(size=(32, 32), interpolation=bilinear)>]
+
     NEW: This Compose transform also applies on gym spaces:
 
     >>> import numpy as np
