@@ -2,74 +2,102 @@ name: sequoia
 channels:
   - defaults
 dependencies:
-  - _libgcc_mutex=0.1=main
-  - ca-certificates=2021.1.19=h06a4308_0
-  - ld_impl_linux-64=2.33.1=h53a641e_7
-  - libedit=3.1.20191231=h14c3975_1
-  - libffi=3.3=he6710b0_2
-  - libgcc-ng=9.1.0=hdf63c60_0
-  - libstdcxx-ng=9.1.0=hdf63c60_0
-  - ncurses=6.2=he6710b0_1
-  - openssl=1.1.1i=h27cfd23_0
-  - pip=20.3.3=py38h06a4308_0
-  - python=3.8.5=h7579374_1
-  - readline=8.1=h27cfd23_0
-  - sqlite=3.33.0=h62c20be_0
-  - tk=8.6.10=hbc83047_0
-  - xz=5.2.5=h7b6447c_0
-  - zlib=1.2.11=h7b6447c_3
+  - _libgcc_mutex=0.1
+  - appdirs=1.4.4
+  - attrs=20.3.0
+  - black=19.10b0
+  - ca-certificates=2021.1.19
+  - certifi=2020.12.5
+  - click=7.1.2
+  - flake8=3.8.4
+  - importlib-metadata=2.0.0
+  - iniconfig=1.1.1
+  - ld_impl_linux-64=2.33.1
+  - libedit=3.1.20191231
+  - libffi=3.3
+  - libgcc-ng=9.1.0
+  - libstdcxx-ng=9.1.0
+  - mccabe=0.6.1
+  - more-itertools=8.7.0
+  - mypy=0.812
+  - mypy_extensions=0.4.3
+  - ncurses=6.2
+  - openssl=1.1.1k
+  - packaging=20.9
+  - pathspec=0.7.0
+  - pip=20.3.3
+  - pluggy=0.13.1
+  - psutil=5.8.0
+  - py=1.10.0
+  - pycodestyle=2.6.0
+  - pyflakes=2.2.0
+  - pyparsing=2.4.7
+  - pytest=6.2.2
+  - python=3.8.5
+  - readline=8.1
+  - regex=2020.11.13
+  - setuptools=52.0.0
+  - six=1.15.0
+  - sqlite=3.33.0
+  - tk=8.6.10
+  - toml=0.10.2
+  - typed-ast=1.4.2
+  - typing_extensions=3.7.4.3
+  - wheel=0.36.2
+  - xz=5.2.5
+  - zipp=3.4.0
+  - zlib=1.2.11
   - pip:
-    - absl-py==0.11.0
-    - aiohttp==3.7.3
+    - absl-py==0.12.0
+    - aiohttp==3.7.4.post0
     - apipkg==1.5
     - async-timeout==3.0.1
-    - attrs==20.3.0
     - cachetools==4.2.1
-    - certifi==2020.12.5
-    - chardet==3.0.4
-    - click==7.1.2
+    - chardet==4.0.0
     - cloudpickle==1.6.0
-    - configparser==5.0.1
-    - continuum==1.0.7
+    - configparser==5.0.2
+    - continuum==1.0.8
     - cycler==0.10.0
     - docker-pycreds==0.4.0
     - easyprocess==0.3
     - execnet==1.8.0
-    - fsspec==0.8.5
+    - falcon==2.0.0
+    - filelock==3.0.12
+    - fsspec==0.8.7
     - future==0.18.2
-    - gitdb==4.0.5
-    - gitpython==3.1.13
-    - google-auth==1.26.1
-    - google-auth-oauthlib==0.4.2
-    - grpcio==1.35.0
+    - gitdb==4.0.7
+    - gitpython==3.1.14
+    - google-auth==1.28.0
+    - google-auth-oauthlib==0.4.4
+    - grpcio==1.36.1
+    - gunicorn==20.1.0
     - gym==0.17.3
-    - h5py==3.1.0
+    - h5py==3.2.1
     - idna==2.10
-    - iniconfig==1.1.1
     - joblib==1.0.1
     - kiwisolver==1.3.1
-    - markdown==3.3.3
-    - matplotlib==3.3.4
+    - markdown==3.3.4
+    - matplotlib==3.4.1
+    - meta-monsterkong==0.0.1
     - multidict==5.1.0
-    - mypy-extensions==0.4.3
-    - numpy==1.20.1
+    - nngeometry==0.1
+    - numpy==1.20.2
     - oauthlib==3.1.0
     - opencv-python==4.5.1.48
-    - packaging==20.9
-    - pandas==1.2.2
+    - orion==0.1.13
+    - orion-algo-skopt==0.1.4
+    - pandas==1.2.3
     - pathtools==0.1.2
     - pillow==7.2.0
     - plotly==4.14.3
-    - pluggy==0.13.1
     - promise==2.3
-    - protobuf==3.14.0
-    - psutil==5.8.0
-    - py==1.10.0
+    - protobuf==3.15.6
+    - pyaml==20.4.0
     - pyasn1==0.4.8
     - pyasn1-modules==0.2.8
+    - pygame==2.0.1
     - pyglet==1.5.0
-    - pyparsing==2.4.7
-    - pytest==6.2.2
+    - pymongo==3.11.3
     - pytest-forked==1.3.0
     - pytest-timeout==1.4.2
     - pytest-xdist==2.2.1
@@ -78,34 +106,31 @@ dependencies:
     - pytorch-lightning==1.1.8
     - pytorch-lightning-bolts==0.3.0
     - pytz==2021.1
-    - pyvirtualdisplay==2.0
+    - pyvirtualdisplay==2.1
     - pyyaml==5.3.1
     - requests==2.25.1
     - requests-oauthlib==1.3.0
     - retrying==1.3.3
-    - rsa==4.7.1
+    - rsa==4.7.2
     - scikit-learn==0.24.1
-    - scipy==1.6.0
-    - sentry-sdk==0.20.2
-    - setuptools==53.0.0
+    - scikit-optimize==0.8.1
+    - scipy==1.6.2
+    - sentry-sdk==1.0.0
     - shortuuid==1.0.1
-    - simple-parsing==0.0.12.post7
-    - six==1.15.0
-    - smmap==3.0.5
-    - stable-baselines3==0.10.0
+    - simple-parsing==0.0.14
+    - smmap==4.0.0
+    - stable-baselines3==1.0
     - subprocess32==3.5.4
+    - tabulate==0.8.9
     - tensorboard==2.4.1
     - tensorboard-plugin-wit==1.8.0
     - threadpoolctl==2.1.0
-    - toml==0.10.2
-    - torch==1.7.1
-    - torchvision==0.8.2
-    - tqdm==4.56.2
-    - typing-extensions==3.7.4.3
+    - torch==1.8.1
+    - torchvision==0.9.1
+    - tqdm==4.59.0
     - typing-inspect==0.6.0
-    - urllib3==1.26.3
-    - wandb==0.10.19
+    - urllib3==1.26.4
+    - wandb==0.10.24
     - werkzeug==1.0.1
-    - wheel==0.36.2
     - yarl==1.6.3
 

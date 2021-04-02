@@ -25,12 +25,12 @@ setup(
     packages=[package for package in find_packages() if package.startswith("sequoia")],
     extras_require={
         "monsterkong": [
-            "meta_monsterkong @ git+https://github.com/lebrice/MetaMonsterkong.git#egg=meta_monsterkong"
+            "meta-monsterkong"
         ],
         "atari": [
             "gym[atari] @ git+https://www.github.com/lebrice/gym@easier_custom_spaces#egg=gym"
         ],
-        "hpo": ["orion", "orion.algo.skopt",],
+        "hpo": ["orion", "orion.algo.skopt"],
     },
     install_requires=packages_pip,
     dependency_links=packages_git,
