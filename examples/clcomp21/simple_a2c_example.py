@@ -1,7 +1,7 @@
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict
+from typing import Dict, List, Optional, Tuple
 
 import gym
 import matplotlib.pyplot as plt
@@ -12,14 +12,17 @@ import torch.nn as nn
 import torch.optim as optim
 from gym import spaces
 from gym.spaces.utils import flatdim
+from sequoia.common.spaces import Image
 from sequoia.common.hparams import HyperParameters, log_uniform, uniform
 from sequoia.methods import Method
 from sequoia.settings.active import ActiveEnvironment, ActiveSetting
+
 # TODO: Migrate stuff to directly import simple-parsing's hparams module.
 # from simple_parsing.helpers.hparams import HyperParameters
 from simple_parsing import ArgumentParser
 from torch import Tensor
 from torch.distributions import Categorical
+from torch.utils.data import DataLoader
 
 
 class ActorCritic(nn.Module):
@@ -30,7 +33,7 @@ class ActorCritic(nn.Module):
         hidden_size: int,
         learning_rate: float = 3e-4,
     ):
-        super(ActorCritic, self).__init__()
+        super().__init__()
         self.observation_space = observation_space
         # NOTE: See note below for why we don't use the task label portion of the space
         # here.
@@ -44,18 +47,53 @@ class ActorCritic(nn.Module):
         self.action_space = action_space
         self.num_actions = self.action_space.n
 
-        self.critic = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(self.num_inputs, self.hidden_size),
-            nn.ReLU(inplace=True),
-            nn.Linear(self.hidden_size, 1),
-        )
-        self.actor = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(self.num_inputs, self.hidden_size),
-            nn.ReLU(inplace=True),
-            nn.Linear(self.hidden_size, self.num_actions),
-        )
+        if self.num_inputs < 100:
+            # If we have a reasonably-small input space, use an MLP architecture.
+            self.critic = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(self.num_inputs, self.hidden_size),
+                nn.ReLU(inplace=True),
+                nn.Linear(self.hidden_size, 1),
+            )
+            self.actor = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(self.num_inputs, self.hidden_size),
+                nn.ReLU(inplace=True),
+                nn.Linear(self.hidden_size, self.num_actions),
+            )
+        else:
+            assert isinstance(self.observation_space.x, Image)
+            channels = self.observation_space.x.channels
+            self.encoder = nn.Sequential(
+                nn.Conv2d(channels, 6, kernel_size=5, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(6),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(6, 16, kernel_size=5, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(16),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(16),
+                nn.AdaptiveAvgPool2d(output_size=(8, 8)),  # [16, 8, 8]
+                nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=0, bias=False),
+                nn.BatchNorm2d(32),  # [32, 6, 6]
+                nn.ReLU(inplace=True),
+                nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=0, bias=False),
+                nn.BatchNorm2d(32),  # [32, 4, 4]
+                nn.Flatten(),
+            )
+            # NOTE: Here we share the encoder for both the actor and critic.
+            self.critic = nn.Sequential(
+                self.encoder,
+                nn.Linear(512, self.hidden_size),
+                nn.ReLU(inplace=True),
+                nn.Linear(self.hidden_size, 1),
+            )
+            self.actor = nn.Sequential(
+                self.encoder,
+                nn.Linear(512, self.hidden_size),
+                nn.ReLU(inplace=True),
+                nn.Linear(self.hidden_size, self.num_actions),
+            )
 
     def forward(
         self, observation: ActiveSetting.Observations
@@ -68,7 +106,8 @@ class ActorCritic(nn.Module):
         # or above, you might not have these task labels at test-time, so that would
         # have to be taken into consideration (e.g. can't concat None to a Tensor)
         # task_labels = observation.task_labels
-        batched_inputs = state.ndim > 1
+        x_space = self.observation_space.x
+        batched_inputs = state.ndim > len(x_space.shape)
         if not batched_inputs:
             # Add a batch dimension if necessary.
             state = state.unsqueeze(0)
@@ -97,15 +136,22 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
 
     @dataclass
     class HParams(HyperParameters):
-        # hyperparameters
+        """ Hyper-Parameters of the model, as a dataclass.
+
+        Fields get command-line arguments with simple-parsing.
+        """
+
+        # Hidden size (representation size).
         hidden_size: int = uniform(16, 512, default=256)
+        # Learning rate of the optimizer.
         learning_rate: float = log_uniform(1e-6, 1e-2, default=1e-3)
-
+        # Discount factor
         gamma: float = 0.99
+        # Coefficient for the entropy term in the loss formula.
         entropy_term_coefficient: float = 0.001
-
-        # Constants
+        # Maximum length of an episode. (Probably shouldn't use this for the RL track)
         max_episode_steps: int = 300
+        # Maximum number of training episodes per task.
         max_episodes: int = 3000
 
     def __init__(self, hparams: HParams = None, render: bool = False):
@@ -113,36 +159,37 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
         self.render: bool = True
         self.task: int = 0
         self.plots_dir: Path = Path("plots")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def configure(self, setting: ActiveSetting):
-        self.num_inputs = setting.observation_space.x.shape[0]
-        self.num_outputs = setting.action_space.n
         self.actor_critic = ActorCritic(
             observation_space=setting.observation_space,
             action_space=setting.action_space,
             hidden_size=self.hparams.hidden_size,
-        )
+        ).to(self.device)
         self.ac_optimizer = optim.Adam(
             self.actor_critic.parameters(), lr=self.hparams.learning_rate
         )
 
     def fit(self, train_env: ActiveEnvironment, valid_env: ActiveEnvironment):
         assert isinstance(train_env, gym.Env)  # Just to illustrate that it's a gym Env.
+        assert isinstance(train_env, DataLoader)  # And a dataloader!
 
         all_lengths: List[int] = []
         average_lengths: List[float] = []
         all_rewards: List[float] = []
 
         for episode in range(self.hparams.max_episodes):
-            log_probs = []
-            values = []
-            rewards = []
+            log_probs: List[Tensor] = []
+            values: List[Tensor] = []
+            rewards: List[Tensor] = []
             entropy_term = 0
             observation: ActiveSetting.Observations = train_env.reset()
+            observation = observation.to(self.device)
 
             for steps in range(self.hparams.max_episode_steps):
                 value, policy_dist = self.actor_critic.forward(observation)
-                value = value.detach().numpy()
+                value = value.cpu().detach().numpy()
                 action = policy_dist.sample()
 
                 if self.render:
@@ -153,11 +200,12 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
                 # NOTE: 'correct' thing to do would be to pass Actions objects of the
                 # right type. This is for future-proofing this Method so it can
                 # still function in the future if new settings are added.
-                action = ActiveSetting.Actions(y_pred=action.detach().numpy())
+                action = ActiveSetting.Actions(y_pred=action.cpu().detach().numpy())
 
                 new_observation: ActiveSetting.Observations
                 reward: ActiveSetting.Rewards
                 new_observation, reward, done, _ = train_env.step(action)
+                new_observation = new_observation.to(self.device)
                 # Likewise, in order to support different future settings, we receive a
                 # Rewards object, which contains the reward value (the float when the
                 # env isn't batched.).
@@ -172,7 +220,7 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
 
                 if done or steps == self.hparams.max_episode_steps - 1:
                     Qval, _ = self.actor_critic.forward(new_observation)
-                    Qval = Qval.detach().numpy()
+                    Qval = Qval.detach().cpu().numpy()
                     all_rewards.append(np.sum(rewards))
                     all_lengths.append(steps)
                     average_lengths.append(np.mean(all_lengths[-10:]))
@@ -191,8 +239,8 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
                 Qvals[t] = Qval
 
             # update actor critic
-            values = torch.as_tensor(values, dtype=torch.float)
-            Qvals = torch.as_tensor(Qvals, dtype=torch.float)
+            values = torch.as_tensor(values, dtype=torch.float, device=self.device)
+            Qvals = torch.as_tensor(Qvals, dtype=torch.float, device=self.device)
             log_probs = torch.stack(log_probs)
 
             advantage = Qvals - values
@@ -268,13 +316,13 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
 
 if __name__ == "__main__":
     from sequoia.settings.active import RLSetting
+
     # Create the Setting.
-    setting = RLSetting(
-        dataset="CartPole-v0",
-        observe_state_directly=True,
-        max_steps=1000,
-        steps_per_task=1000,
-    )
+    setting = RLSetting(dataset="CartPole-v0", observe_state_directly=True,)
+    # from meta_monsterkong.make_env import MetaMonsterKongEnv
+
+    assert setting.nb_tasks == 1
+    setting = RLSetting(dataset="monsterkong",)
     # Create the Method:
     method = ExampleA2CMethod()
     # Apply the Method onto the Setting to get Results.
