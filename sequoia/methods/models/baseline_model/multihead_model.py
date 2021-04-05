@@ -1,37 +1,25 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, Set, Sequence
-from contextlib import contextmanager
+from typing import Any, Dict, List, Optional, Sequence, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
-from torch import Tensor, nn
-from torch.utils.data import DataLoader
 from pytorch_lightning.core.decorators import auto_move_data
+from torch import Tensor, nn
 
-from sequoia.common import Config, Batch, Loss
-
-from sequoia.settings import (
-    ClassIncrementalSetting,
-    Environment,
-    Observations,
-    Actions,
-    Rewards,
-)
+from dataclasses import replace
+from sequoia.common import Batch, Config, Loss
+from sequoia.settings import Actions, Environment, Observations, Rewards
 from sequoia.settings.assumptions.incremental import IncrementalSetting
-
-from sequoia.utils import dict_intersection, zip_dicts, prod
+from sequoia.utils.generic_functions import concatenate, get_slice
 from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.generic_functions import get_slice, set_slice
+from sequoia.utils.generic_functions import stack
+import torch.nn.functional as F
 from ..forward_pass import ForwardPass
-
-# from .semi_supervised_model import SemiSupervisedModel
-from .base_model import BaseModel
 from ..output_heads import OutputHead
 
+from .base_model import BaseModel, SettingType
+
 logger = get_logger(__file__)
-
-
-SettingType = TypeVar("SettingType", bound=IncrementalSetting)
 
 
 class MultiHeadModel(BaseModel[SettingType]):
@@ -67,155 +55,12 @@ class MultiHeadModel(BaseModel[SettingType]):
 
         self.previous_task_labels: Optional[Sequence[int]] = None
 
-    @property
-    def default_output_head(self) -> OutputHead:
-        return self.output_heads["0"]
-
-    @contextmanager
-    def switch_output_head(self, task_id: int):
-        """Temporarily switches out the output head for the one for task `task_id`.
-        
-        Also temporarily changes the value of `self.current_task`.
-        If `task_id` is not a known task and doesn't already have an associated output
-        head, then a new output head is created and stored in the `output_heads` dict.
-
-        TODO: Not sure if there would be some value in making this a bit more 'general',
-        since after all the entire forward pass is "multiplexed"
-        
-        Parameters
-        ----------
-        task_id : int
-            The index of the task to switch to.
-        """
-        assert isinstance(task_id, int), f"Not sure what to do! (task_id={task_id})"
-        starting_output_head = self.output_head
-        starting_task = self.current_task
-
-        # Only perform this 'switch' if need to.
-        if task_id != self.current_task:
-            # Note: ModuleDicts only accept string keys, for some reason.
-            if str(task_id) not in self.output_heads:
-                task_output_head = self.create_output_head(
-                    self.setting, task_id=task_id
-                )
-                self.output_heads[str(task_id)] = task_output_head
-            else:
-                task_output_head = self.output_heads[str(task_id)]
-
-            self.current_task = task_id
-            self.output_head = task_output_head
-
-            logger.debug(f"Switching output heads")
-        # Yield to "give back control" to the inner portion of the 'with' statement.
-        yield
-
-        # Reset the original values.
-        self.current_task = starting_task
-        self.output_head = starting_output_head
-
-    @auto_move_data
-    def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:
-        """Forward pass of the Model. Performs a split-batch forward for each task.
-        
-        IDEA: This calls super.forward() on the slices of the batch for each task, and
-        then re-combines the forward passes from each task into a single result.
-        It's a bit extra. Maybe we only really ever want to have the output task be the
-        'branched-out/multi-task' portion.
-
-        Parameters
-        ----------
-        observations : IncrementalSetting.Observations
-            Observations from an environment. So far, this will always be from an
-            `IncrementalSetting`, i.e. descendant of `ContinualRLSetting` or
-            `ClassIncrementalSetting`.
-
-        Returns
-        -------
-        ForwardPass
-            A merged ForwardPass object containing the forward pass for each task.
-        """
-        # The forward pass to be returned:
-        forward_pass: Optional[ForwardPass] = None
-
-        # TODO: Remove this.
-        if not self.batch_size:
-            self.batch_size = observations.batch_size
-            logger.debug(f"Setting batch_size to {self.batch_size}.")
-
-        assert isinstance(observations, self.Observations), observations
-        if not self._are_batched(observations):
-            raise RuntimeError(
-                f"Observations should be batched, but have shapes {observations.shapes}"
-            )
-
-        assert not isinstance(observations.task_labels, int), observations.shapes
-        # Get the task labels from the observation.
-        # TODO: It isn't exactly nice that we have to do this here. Would be nicer if we
-        # always had task labels for each sample as a numpy array, or just None.
-        task_labels: Optional[np.ndarray] = cleanup_task_labels(
-            observations.task_labels
-        )
-        # Get the indices corresponding to the elements from each task within the batch.
-        task_indices: Dict[Optional[int], np.ndarray] = get_task_indices(task_labels)
-
-        if task_labels is None:
-            # Default back to the behaviour of the base class, which will use
-            # the current output head (at attribute `self.output_head`), whatever that
-            # may be.
-            forward_pass = super().forward(observations)
-
-        elif len(task_indices) == 1:
-            # If everything is in the same task, no need to split/merge stuff, which is
-            # a bit easier to deal with.
-            task_id = list(task_indices.keys())[0]
-
-            if task_id != self.current_task:
-                logger.warning(
-                    RuntimeWarning(
-                        f"All data in the batch comes from task {task_id}, but the "
-                        f"current task is set to {self.current_task}.. "
-                        f"Calling on_task_switch({task_id}) manually?."
-                    )
-                )
-                # TODO: Not sure about this!
-                self.on_task_switch(task_id)
-            forward_pass = super().forward(observations)
-
-        else:
-            logger.debug(f"Batch contains a mix of tasks!")
-            batch_size = len(task_labels)
-            # Split off the input batch, do a forward pass for each sub-task.
-            # (could be done in parallel but whatever.)
-            for task_id, task_indices in task_indices.items():
-                # Take the elements for that task and create a new Observation of the
-                # same type.
-                partial_observation = observations.slice(task_indices)
-                logger.debug(
-                    f"Doing partial forward for "
-                    f"{len(task_indices)/batch_size:.0%} of the batch which "
-                    f"has task_id of '{task_id}'."
-                )
-
-                # TODO: Here instead of calling on_task_switch, or anything fancy, I think
-                # it might be simplest to just change the output head for now.
-                with self.switch_output_head(task_id):
-                    task_forward_pass = super().forward(partial_observation)
-
-                if not forward_pass:
-                    # Create the merged results, filled with empty tensors, based on
-                    # the shape of the first results we get, but with the right
-                    # batch size.
-                    forward_pass = create_placeholder(task_forward_pass, batch_size)
-
-                # Set the partial results at the right indices in the placeholders.
-                set_slice(forward_pass, task_indices, task_forward_pass)
-
-        assert forward_pass
-        return forward_pass
-
     def output_head_loss(
         self, forward_pass: ForwardPass, actions: Actions, rewards: Rewards
     ) -> Loss:
+        """ TODO: Need to then re-split stuff (undo the work we did in forward) to get a
+            loss per output head?
+        """
         # Asks each output head for its contribution to the loss.
         observations: IncrementalSetting.Observations = forward_pass.observations
         task_labels = observations.task_labels
@@ -232,10 +77,11 @@ class MultiHeadModel(BaseModel[SettingType]):
                 task_labels = self.task_inference_module(forward_pass)
             else:
                 raise NotImplementedError(
-                    f"Multihead model doesn't have access to task labels and "
-                    f"doesn't have a task inference module!"
+                    "Multihead model doesn't have access to task labels and "
+                    "doesn't have a task inference module!"
                 )
                 # TODO: Maybe use the last trained output head, by default?
+
         # BUG: We get no loss from the output head for the first episode after a task
         # switch.
         # NOTE: The problem is that the `done` in the observation isn't necessarily
@@ -256,10 +102,9 @@ class MultiHeadModel(BaseModel[SettingType]):
         total_loss = Loss(self.output_head.name)
 
         task_switched_in_env = task_labels != self.previous_task_labels
-        # TODO: This `done` attribute isn't added in supervised settings.
+        # This `done` attribute isn't added in supervised settings.
         episode_ended = getattr(observations, "done", np.zeros(batch_size, dtype=bool))
-        # TODO: Remove all this useless conversion from Tensors to ndarrays, by making
-        # Sequoia more numpy-centric.
+        # TODO: Remove all this useless conversion from Tensors to ndarrays
         if isinstance(episode_ended, Tensor):
             episode_ended = episode_ended.cpu().numpy()
 
@@ -273,7 +118,6 @@ class MultiHeadModel(BaseModel[SettingType]):
             if self.batch_size in {None, 1}:
                 # If the batch size is 1, this is a little bit simpler to deal with.
                 previous_task: int = self.previous_task_labels[0].item()
-                # IDEA:
                 from sequoia.methods.models.output_heads.rl import PolicyHead
 
                 previous_output_head = self.output_heads[str(previous_task)]
@@ -334,35 +178,37 @@ class MultiHeadModel(BaseModel[SettingType]):
         if len(all_task_indices) == 1:
             # If everything is in the same task (only one key), no need to split/merge
             # stuff, so it's a bit easier:
-            task_id: int = list(all_task_indices.keys())[0]
+            task_id: int = task_labels[0].item()
 
-            with self.switch_output_head(task_id):
-                # task_output_head = self.output_heads[str(task_id)]
-                total_loss += self.output_head.get_loss(
-                    forward_pass, actions=actions, rewards=rewards,
-                )
+            self.setup_for_task(task_id)
+            # task_output_head = self.output_heads[str(task_id)]
+            total_loss += super().output_head_loss(
+                forward_pass, actions=actions, rewards=rewards
+            )
+            # total_loss += self.output_head.get_loss(
+            #     forward_pass, actions=actions, rewards=rewards,
+            # )
         else:
             # Split off the input batch, do a forward pass for each sub-task.
             # (could be done in parallel but whatever.)
             # TODO: Also, not sure if this will play well with DP, DDP, etc.
             for task_id, task_indices in all_task_indices.items():
-                # # Make a partial observation without the task labels, so that
-                # # super().forward will use the current output head.
-                forward_pass_slice = get_slice(forward_pass, task_indices)
-                actions_slice = get_slice(actions, task_indices)
-                rewards_slice = get_slice(rewards, task_indices)
-
+                # Make a partial observation without the task labels, so that
+                # super().forward will use the current output head.
                 logger.debug(
-                    f"Getting output head loss"
+                    f"Getting output head loss for "
                     f"{len(task_indices)/batch_size:.0%} of the batch which "
                     f"has task_id of '{task_id}'."
                 )
-                task_output_head = self.output_heads[str(task_id)]
-                task_loss = task_output_head.get_loss(
-                    forward_pass_slice, actions=actions_slice, rewards=rewards_slice,
+
+                self.setup_for_task(task_id)
+                task_loss = super().output_head_loss(
+                    forward_pass=get_slice(forward_pass, task_indices),
+                    actions=get_slice(actions, task_indices),
+                    rewards=get_slice(rewards, task_indices),
                 )
-                # FIXME: debugging
-                # task_output_head_loss.name += f"(task {task_id})"
+                # NOTE: useful for debugging, but shouldn't be enabled normally.
+                # task_loss.name += f"(task {task_id})"
                 logger.debug(f"Task {task_id} loss: {task_loss}")
                 total_loss += task_loss
 
@@ -373,16 +219,12 @@ class MultiHeadModel(BaseModel[SettingType]):
 
         return total_loss
 
-    def on_after_backward(self):
-        super().on_after_backward()
-
     def on_before_zero_grad(self, optimizer):
         super().on_before_zero_grad(optimizer)
         from sequoia.methods.models.output_heads.rl import PolicyHead
 
         for task_id_string, output_head in self.output_heads.items():
             if isinstance(output_head, PolicyHead):
-                output_head: PolicyHead
                 output_head.detach_all_buffers()
 
     def shared_step(
@@ -413,124 +255,29 @@ class MultiHeadModel(BaseModel[SettingType]):
             optimizer_idx=optimizer_idx,
         )
 
-    def on_task_switch(
-        self, task_id: Optional[int], clear_buffers: bool = False
-    ) -> None:
+    def on_task_switch(self, task_id: Optional[int]):
         """Called when switching between tasks.
-        
+
         Args:
             task_id (int, optional): the id of the new task. When None, we are
             basically being informed that there is a task boundary, but without
             knowing what task we're switching to.
-        """
-        # if task_id != self.current_task:
-        #     logger.debug(f"Destroying all buffer contents in the output heads.")
-        #     logger.debug(f"self.current_task = {self.current_task}, new task: {task_id})")
-        #     self.output_head.clear_all_buffers()
-        #     for output_head in self.output_heads.values():
-        #         output_head.clear_all_buffers()
 
+        NOTE: You can check wether this task switch is occuring at train or test time
+        using `self.training`.
+        """
         logger.info(f"Switching from task {self.current_task} -> {task_id}.")
 
-        super().on_task_switch(task_id=task_id)
+        # TODO: Move these to the base model perhaps? (In case there is ever a
+        # re-ordering of the mixins that make up the BaselineModel)
+        super().on_task_switch(task_id)
 
         self.previous_task = self.current_task
         self.current_task = task_id
 
-        if task_id is None:
-            # TODO: Try to do some kind of task inference here, if possible!
-            # TODO: Should we revert back to using a 'default' output head?
-            # ('None' key?) or just use the last trained output head?
-            # self.output_head = self.output_heads[str(None)]
-            pass
-
-        # TODO: Do we need to 'save' the output head back into
-        # `self.output_heads`? do `self.output_head` and
-        # `self.output_heads[str(self.previous_task)]` reference the same
-        # object? or does assigning a new value to self.output_head perform a
-        # copy under the hood in nn.Module?
-        if str(self.previous_task) in self.output_heads:
-            assert id(self.output_head) == id(
-                self.output_heads[str(self.previous_task)]
-            )
-        self.output_heads[str(self.previous_task)] = self.output_head
-
-        key = str(task_id)
-        if self.hp.multihead:
-            if key not in self.output_heads:
-                logger.info(f"Creating a new output head for task {key}.")
-                self.output_heads[key] = self.create_output_head(
-                    self.setting, task_id=task_id
-                )
-            # Update `self.output_head` to be the one for the current task.
-            self.output_head = self.output_heads[key]
-
-        # NOTE: IF the model *isn't* multi-headed, then we always use the output
-        # head at key 'None' anyway, so we don't create a new head here.
-
-    @contextmanager
-    def temporarily_in_task(self, task_id: Optional[int]):
-        """ This is used to temporarily change the 'output_head' attribute.
-        """
-        logger.debug(f"Temporarily switching to task {task_id}")
-        start_task_id = self.current_task
-        start_output_head = self.output_head
-        assert isinstance(task_id, int) or task_id is None
-
-        output_head_key = str(task_id)
-        if self.hp.multihead and task_id is None:
-            # Multi-headed model, but we don't know the task id: need to use
-            # some kind of task inference module?
-            raise NotImplementedError("todo")
-        elif not self.hp.multihead:
-            # We are using a single-head model, so we will use the 'default'
-            # output head.
-            output_head_key = str(None)
-
-        self.current_task = task_id
-        # NOTE: May need to create new output heads here, since on_task_switch isn't
-        # always called before we see data of a new task (as is the case in so-called
-        # "Multi-Task" RL.)
-        if output_head_key not in self.output_heads:
-            logger.info(f"Creating a new output head for task {output_head_key}.")
-            new_output_head = self.create_output_head(self.setting, task_id=task_id)
-            self.output_heads[output_head_key] = new_output_head
-
-        # # TODO: BUG: There is "old" state left in the buffers of the output head from
-        # # previous forward/backward passes!
-        # # Need to clear the output head's state somehow when we're done with it, but
-        # # also somehow allow it to accumulate state when it is being applied on the same
-        # # task over multiple steps!
-
-        # TODO: IDEA: Rather than try to clear this state ourselves here or in
-        # `on_task_switch`, we could add some sort of method on the OutputHead class
-        # that gets called before/after the model update, so that we get to detach all
-        # the tensors and clear any buffers that need to be cleared, once the model has
-        # performed an update.
-
-        # TODO: The RL output heads and interleaved episodes in different tasks will
-        # most definitely not work with our current mechanism for the multi-headed
-        # model. Would need to share the buffers between the output heads, and then
-        # indicate to each head the indices of the environments it is responsible for
-        # somehow..
-        self.output_head = self.output_heads[output_head_key]
-
-        # Yield, during which the forward pass or whatever else will be performed.
-        yield
-
-        # Reset everything to their starting values.
-
-        # TODO: Not sure we need to do this, but just to be safe:
-        self.output_heads[output_head_key] = self.output_head
-
-        # Restore the previous task id and output head.
-        self.current_task = start_task_id
-        self.output_head = start_output_head
-
-    @property
-    def current_task_classes(self) -> List[int]:
-        # TODO: detect wether we are training or testing.
-        return self.setting.current_task_classes(self.training)
+        if task_id is not None and self.hp.multihead:
+            # Switch the output head to use.
+            self.output_head = self.get_or_create_output_head(task_id)
 
     def shared_modules(self) -> Dict[str, nn.Module]:
         """Returns any trainable modules in `self` that are shared across tasks.
@@ -592,77 +339,247 @@ class MultiHeadModel(BaseModel[SettingType]):
 
         return missing_keys, unexpected_keys
 
+    def get_or_create_output_head(self, task_id: int) -> nn.Module:
+        """ Retrieves or creates a new output head for the given task index.
+
+        Also stores it in the `output_heads`, and adds its parameters to the
+        optimizer.
+        """
+        task_output_head: nn.Module
+        assert self.hp.multihead, "This should get called when model isnt multi-headed!"
+        if str(task_id) in self.output_heads.keys():
+            task_output_head = self.output_heads[str(task_id)]
+        else:
+            logger.info(f"Creating a new output head for task {task_id}.")
+            # NOTE: This also takes care to add the output head's parameters to the
+            # optimizer.
+            task_output_head = self.create_output_head(task_id=task_id)
+            self.output_heads[str(task_id)] = task_output_head
+        return task_output_head
+
+    @auto_move_data
+    def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:
+        """Smart forward pass with multi-head predictions and task inference.
+
+        This forward pass can handle three different scenarios, depending on the
+        contents of `observations.task_labels`:
+        1.  Base case: task labels are present, and all examples are from the same task.
+            - Perform the 'usual' forward pass (e.g. `super().forward(observations)`).
+        2.  Task labels are present, and the batch contains a mix of samples from
+            different tasks:
+            - Create slices of the batch for each task, where all items in each
+              'sub-batch' come from the same task.
+            - Perform a forward pass for each task, by calling `forward` recursively
+              with the sub-batch for each task as an argument (Case 1).
+        3.  Task labels are *not* present. Perform some type of task inference, using
+            the `task_inference_forward_pass` method. Check its docstring for more info.
+
+        Parameters
+        ----------
+        observations : Observations
+            Observations from an environment. As of right now, all Settings produce
+            observations with (at least) the two following attributes:
+            - x: Tensor (the images/inputs)
+            - task_labels: Optional[Tensor] (The task labels, when available, else None)
+
+        Returns
+        -------
+        Tensor
+            The outputs, which in this case are the classification logits.
+            All three cases above produce the same kind of outputs.
+        """
+        # TODO: Shouldn't have to do this here, since we have the @auto_move_data dec...
+        observations = observations.to(self.device)
+        task_ids: Optional[Tensor] = observations.task_labels
+
+        if task_ids is None:
+            # Run the forward pass with task inference turned on.
+            return self.task_inference_forward_pass(observations)
+        task_ids = torch.as_tensor(task_ids, device=self.device, dtype=int)
+
+        task_ids_present_in_batch = torch.unique(task_ids)
+        if len(task_ids_present_in_batch) > 1:
+            # Case 2: The batch contains data from more than one task.
+            return self.split_forward_pass(observations)
+
+        # Base case: "Normal" forward pass, where all items come from the same task.
+        # - Setup the model for this task, however you want, and then do a forward pass,
+        # as you normally would.
+        # NOTE: If you want to reuse this cool multi-headed forward pass in your
+        # own model, these lines here are what you'd want to change.
+        task_id: int = task_ids_present_in_batch.item()
+
+        if task_id != self.current_task and self.hp.multihead:
+            # Setup the model for this task. For now we just switch the output head.
+            self.output_head = self.get_or_create_output_head(task_id)
+
+        return super().forward(observations)
+
+    def setup_for_task(self, task_id: int) -> None:
+        if task_id is not None and self.hp.multihead:
+            # Setup the model for this task. For now we just switch the output head.
+            self.output_head = self.get_or_create_output_head(task_id)
+
+    def split_forward_pass(self, observations: Observations) -> Tensor:
+        """Perform a forward pass for a batch of observations from different tasks.
+
+        This is called in `forward` when there is more than one unique task label in the
+        batch.
+        This will call `forward` for each task id present in the batch, passing it a
+        slice of the batch, in which all items are from that task.
+
+        NOTE: This cannot cause recursion problems, because `forward`(d=2) will be
+        called with a bach of items, all of which come from the same task. This makes it
+        so `split_forward_pass` cannot then be called again.
+
+        Parameters
+        ----------
+        observations : Observations
+            Observations, in which the task labels might not all be the same.
+
+        Returns
+        -------
+        Tensor
+            The outputs/logits from each task, re-assembled into a single batch, with
+            the task ordering from `observations` preserved.
+        """
+        assert observations.task_labels is not None
+        assert self.hp.multihead, "Can only use split forward pass with multiple heads."
+        # We have task labels.
+        task_labels = observations.task_labels
+        if isinstance(task_labels, Tensor):
+            task_labels = task_labels.cpu().numpy()
+
+        # Get the indices of the items from each task.
+        all_task_indices_dict: Dict[int, np.ndarray] = get_task_indices(task_labels)
+
+        if len(all_task_indices_dict) == 1:
+            # No need to split the input, since everything is from the same task.
+            task_id: int = task_labels[0].item()
+            self.setup_for_task(task_id)
+            return self.forward(observations)
+
+        # Placeholder for the predicitons for each item in the batch.
+        # NOTE: We put each item in the batch in this list and then stack the results.
+        batch_size = len(task_labels)
+        task_outputs: List[Batch] = [None for _ in range(batch_size)]
+
+        for task_id, task_indices in all_task_indices_dict.items():
+            # Take a slice of the observations, in which all items come from this task.
+            task_observations = get_slice(observations, task_indices)
+            # Perform a "normal" forward pass (Base case).
+            task_output = self.forward(task_observations)
+
+            # Store the outputs for the items from this task in the list.
+            for i, index in enumerate(task_indices):
+                task_outputs[index] = get_slice(task_output, i)
+
+        # Stack the results.
+        assert all(item is not None for item in task_outputs)
+        merged_outputs = concatenate(task_outputs)
+        return merged_outputs
+
+    def task_inference_forward_pass(self, observations: Observations) -> Tensor:
+        """ Forward pass with a simple form of task inference.
+        """
+        # We don't have access to task labels (`task_labels` is None).
+        # --> Perform a simple kind of task inference:
+        # 1. Perform a forward pass with each task's output head;
+        # 2. Merge these predictions into a single prediction somehow.
+        assert observations.task_labels is None
+
+        # NOTE: This assumes that the observations are batched.
+        # These are used below to indicate the shape of the different tensors.
+        B = observations.x.shape[0]
+        T = n_known_tasks = len(self.output_heads)
+        N = self.action_space.n
+        # Tasks encountered previously and for which we have an output head.
+        known_task_ids: list[int] = list(range(n_known_tasks))
+        assert known_task_ids
+        # Placeholder for the predictions from each output head for each item in the
+        # batch
+        task_outputs = [None for _ in known_task_ids]  # [T, B, N]
+
+        # Get the forward pass for each task.
+        for task_id in known_task_ids:
+            # Create 'fake' Observations for this forward pass, with 'fake' task labels.
+            # NOTE: We do this so we can call `self.forward` and not get an infinite
+            # recursion.
+            task_labels = torch.full([B], task_id, device=self.device, dtype=int)
+            task_observations = replace(observations, task_labels=task_labels)
+
+            # Setup the model for task `task_id`, and then do a forward pass.
+            task_forward_pass = self.forward(task_observations)
+
+            task_outputs[task_id] = task_forward_pass
+
+        # 'Merge' the predictions from each output head using some kind of task
+        # inference.
+        assert all(item is not None for item in task_outputs)
+        # Stack the predictions (logits) from each output head.
+        stacked_forward_pass: ForwardPass = stack(task_outputs, dim=1)
+        logits_from_each_head = stacked_forward_pass.actions.logits
+        assert logits_from_each_head.shape == (B, T, N), (logits_from_each_head.shape, (B, T, N))
+
+        # Normalize the logits from each output head with softmax.
+        # Example with batch size of 1, output heads = 2, and classes = 4:
+        # logits from each head:  [[[123, 456, 123, 123], [1, 1, 2, 1]]]
+        # 'probs' from each head: [[[0.1, 0.6, 0.1, 0.1], [0.2, 0.2, 0.4, 0.2]]]
+        probs_from_each_head = torch.softmax(logits_from_each_head, dim=-1)
+        assert probs_from_each_head.shape == (B, T, N)
+
+        # Simple kind of task inference:
+        # For each item in the batch, use the class that has the highest probability
+        # accross all output heads.
+        max_probs_across_heads, chosen_head_per_class = probs_from_each_head.max(dim=1)
+        assert max_probs_across_heads.shape == (B, N)
+        assert chosen_head_per_class.shape == (B, N)
+        # Example (continued):
+        # max probs across heads:        [[0.2, 0.6, 0.4, 0.2]]
+        # chosen output heads per class: [[1, 0, 1, 1]]
+
+        # Determine which output head has highest "confidence":
+        max_prob_value, most_probable_class = max_probs_across_heads.max(dim=1)
+        assert max_prob_value.shape == (B,)
+        assert most_probable_class.shape == (B,)
+        # Example (continued):
+        # max_prob_value: [0.6]
+        # max_prob_class: [1]
+
+        # A bit of boolean trickery to get what we need, which is, for each item, the
+        # index of the output head that gave the most confident prediction.
+        mask = F.one_hot(most_probable_class, N).to(dtype=bool, device=self.device)
+        chosen_output_head_per_item = chosen_head_per_class[mask]
+        assert mask.shape == (B, N)
+        assert chosen_output_head_per_item.shape == (B,)
+        # Example (continued):
+        # mask: [[False, True, False, True]]
+        # chosen_output_head_per_item: [0]
+
+        # Create a bool tensor to select items associated with the chosen output head.
+        selected_mask = F.one_hot(chosen_output_head_per_item, T).to(
+            dtype=bool, device=self.device
+        )
+        assert selected_mask.shape == (B, T)
+        # Select the logits using the mask:
+        selected_forward_pass = stacked_forward_pass[selected_mask]
+        assert selected_forward_pass.actions.logits.shape == (B, N)
+        return selected_forward_pass
+
 
 from functools import singledispatch
-from typing import Any, Tuple, Dict, TypeVar
+from typing import Any, Dict, Tuple, TypeVar
+
 from sequoia.utils import NamedTuple
 
-K = TypeVar("K")
-V = TypeVar("V")
-T = TypeVar("T")
-
-
-@singledispatch
-def create_placeholder(original: Any, batch_size: int) -> Any:
-    """ IDEA: Creates a 'placeholder', which will be later populated with the values
-    from different tasks.
-    """
-    raise NotImplementedError(original)
-
-
-@create_placeholder.register(Tensor)
-def _create_placeholder_tensor(original: Tensor, batch_size: int) -> Tensor:
-    return original.new_empty([batch_size, *original.shape[1:]])
-
-
-@create_placeholder.register(dict)
-def _create_placeholder_dict(original: Dict[K, V], batch_size: int) -> Dict[K, V]:
-    return type(original)(
-        (key, create_placeholder(value, batch_size)) for key, value in original.items()
-    )
-
-
-@create_placeholder.register(tuple)
-def _create_placeholder_tuple(original: Tuple[T], batch_size: int) -> Tuple[T]:
-    return type(original)(create_placeholder(value, batch_size) for value in original)
-
-
-from sequoia.utils.categorical import Categorical
-
-
-@create_placeholder.register(Categorical)
-def _create_placeholder_categorical(original: Categorical, batch_size: int) -> Tuple[T]:
-    placeholder = type(original)(
-        logits=torch.randn(
-            [batch_size, *original.logits.shape[1:]],
-            dtype=original.logits.dtype,
-            device=original.logits.device,
-        )
-    )
-    return placeholder
-
-
 Dataclass = TypeVar("Dataclass", bound=Batch)
-
-# IDEA: Maybe replace `create_placeholder` with simply `Batch.new_empty()` or something
-# similar?
-
-# @create_placeholder.register(NamedTuple)
-@create_placeholder.register(Batch)
-def _create_placeholder_dataclass(original: Dataclass, batch_size: int) -> Dataclass:
-    return type(original)(
-        **{
-            key: create_placeholder(value, batch_size)
-            for key, value in original.items()
-        }
-    )
 
 
 def get_task_indices(
     task_labels: Union[List[Optional[int]], np.ndarray, Tensor]
 ) -> Dict[Optional[int], Union[np.ndarray, Tensor]]:
     """Given an array-like of task labels, gives back a dictionary mapping from task id
-    to an array-like of indices for the corresponding indices in the batch. 
+    to an array-like of indices for the corresponding indices in the batch.
 
     Parameters
     ----------
@@ -717,7 +634,7 @@ def cleanup_task_labels(
     TODO: Not clear why we really have to do this in the first place. The point is, if
     we wanted to allow only a fraction of task labels for instance, then we have to deal
     with np.ndarrays with `object` dtypes.
-    
+
     Parameters
     ----------
     task_labels : Optional[Sequence[Optional[int]]]
@@ -754,3 +671,4 @@ def cleanup_task_labels(
         task_labels = task_labels.astype(int)
     assert task_labels is None or isinstance(task_labels, np.ndarray)
     return task_labels
+

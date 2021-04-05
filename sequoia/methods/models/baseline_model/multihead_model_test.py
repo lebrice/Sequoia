@@ -2,7 +2,7 @@
 """
 # from sequoia.conftest import config
 from collections import defaultdict
-from typing import Dict, List, Tuple, Type
+from typing import Dict, List, Tuple, Type, Optional
 
 import gym
 import numpy as np
@@ -22,9 +22,12 @@ from sequoia.common import Loss
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
 from sequoia.methods.models.forward_pass import ForwardPass
+from sequoia.methods.models.output_heads.rl.episodic_a2c import EpisodicA2C
 from sequoia.settings import ClassIncrementalSetting, RLSetting
 from sequoia.settings.base import Environment
 from sequoia.utils import take
+
+from .baseline_model import BaselineModel
 from .multihead_model import MultiHeadModel, OutputHead, get_task_indices
 
 
@@ -39,7 +42,7 @@ def mixed_samples(config: Config):
         i: tuple(map(torch.as_tensor, taskset.get_samples(indices)))
         for i, taskset in enumerate(datasets)
     }
-    yield samples_per_task
+    return samples_per_task
 
 
 class MockOutputHead(OutputHead):
@@ -50,13 +53,23 @@ class MockOutputHead(OutputHead):
         self.name = f"task_{task_id}"
 
     def forward(self, observations, representations) -> Tensor:  # type: ignore
+        """ This mock forward just creates an action that is related to the observation
+        and the task id for this output head.
+        """
         x: Tensor = observations.x
+        assert (observations.task_labels == self.task_id).all()
         h_x = representations
         # actions = torch.stack([h_i.mean() * self.task_id for h_i in h_z])
         # actions = torch.stack([x_i.mean() * self.task_id for x_i in x])
         actions = [x_i.mean() * self.task_id for x_i in x]
         actions = torch.stack(actions)
-        return self.Actions(actions)
+        fake_logits = torch.rand([actions.shape[0], self.action_space.n])
+        from sequoia.methods.models.output_heads.classification_head import (
+            ClassificationOutput,
+        )
+
+        assert issubclass(ClassificationOutput, self.Actions)
+        return ClassificationOutput(y_pred=actions, logits=fake_logits)
 
     def get_loss(self, forward_pass, actions, rewards):
         return Loss(self.name, 0.0)
@@ -88,6 +101,13 @@ def test_multiple_tasks_within_same_batch(
     from different tasks, and when the model is multiheaded, it will use the
     right output head for each image.
     """
+    # Get a mixed batch
+    xs, ys, ts = map(torch.cat, zip(*mixed_samples.values()))
+    xs = xs[indices]
+    ys = ys[indices]
+    ts = ts[indices].int()
+    obs = ClassIncrementalSetting.Observations(x=xs, task_labels=ts)
+
     setting = ClassIncrementalSetting()
     model = MultiHeadModel(
         setting=setting,
@@ -100,90 +120,22 @@ def test_multiple_tasks_within_same_batch(
             return x.new_ones([x.shape[0], model.hidden_size])
 
     mock_encoder = MockEncoder()
-    # monkeypatch.setattr(model, "forward", mock_encoder_forward)
     model.encoder = mock_encoder
-    # model.output_task = mock_output_task
 
-    # model.output_head = MockOutputHead(
-    #     input_space=spaces.Box(0, 1, [model.hidden_size]),
-    #     Actions=setting.Actions,
-    #     action_space=spaces.Discrete(2),
-    #     task_id=None,
-    # )
     for i in range(5):
         model.output_heads[str(i)] = MockOutputHead(
             input_space=spaces.Box(0, 1, [model.hidden_size]),
-            Actions=setting.Actions,
             action_space=spaces.Discrete(2),
+            Actions=setting.Actions,
             task_id=i,
         )
     model.output_head = model.output_heads["0"]
 
-    xs, ys, ts = map(torch.cat, zip(*mixed_samples.values()))
-
-    xs = xs[indices]
-    ys = ys[indices]
-    ts = ts[indices].int()
-
-    obs = setting.Observations(x=xs, task_labels=ts)
-    with torch.no_grad():
-        forward_pass = model(obs)
-        y_preds = forward_pass["y_pred"]
+    forward_pass = model(obs)
+    y_preds = forward_pass["y_pred"]
 
     assert y_preds.shape == ts.shape
     assert torch.all(y_preds == ts * xs.view([xs.shape[0], -1]).mean(1))
-
-    # Test that the output head predictions make sense:
-    # print(ts)
-    # for x, y_pred, task_id in zip(xs, y_preds, ts):
-    #     assert y_pred.tolist() == (x.mean() * task_id).tolist()
-    # assert y_pred.tolist() == (x.mean() * task_id).tolist()
-
-    # assert False, y_preds[0]
-
-    # assert False, {i: [vi.shape for vi in v] for i, v in mixed_samples.items()}
-
-
-def get_multi_task_env(
-    batch_size: int = 1,
-) -> Environment[RLSetting.Observations, RLSetting.Actions, RLSetting.Rewards]:
-    def single_env_fn() -> gym.Env:
-        env = gym.make("CartPole-v0")
-        env = TimeLimit(env, max_episode_steps=10)
-        env = MultiTaskEnvironment(
-            env,
-            task_schedule={
-                0: {"length": 0.1},
-                100: {"length": 0.2},
-                200: {"length": 0.3},
-                300: {"length": 0.4},
-                400: {"length": 0.5},
-            },
-            add_task_id_to_obs=True,
-            new_random_task_on_reset=True,
-        )
-        return env
-
-    batch_size = 1
-    env = SyncVectorEnv([single_env_fn for _ in range(batch_size)])
-    from sequoia.common.gym_wrappers import AddDoneToObservation
-    from sequoia.settings.active import TypedObjectsWrapper
-
-    env = AddDoneToObservation(env)
-    # Wrap the observations so they appear as though they are from the given setting.
-    env = TypedObjectsWrapper(
-        env,
-        observations_type=RLSetting.Observations,
-        actions_type=RLSetting.Actions,
-        rewards_type=RLSetting.Rewards,
-    )
-    env.seed(123)
-    return env
-
-
-from sequoia.methods.models.output_heads.rl.episodic_a2c import EpisodicA2C
-
-from .baseline_model import BaselineModel
 
 
 def test_multitask_rl_bug_without_PL(monkeypatch):
@@ -352,19 +304,6 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
                 print(f"Loss at step {step}: {loss}")
                 losses[step].append(loss)
 
-                # # Manually perform the optimization step.
-                # output_head_loss = loss.losses.get(model.output_head.name)
-                # update_model = output_head_loss is not None and output_head_loss.requires_grad
-
-                # assert update_model
-                # model.manual_backward(loss_tensor, optimizer, retain_graph=not update_model)
-                # model.optimizer_step()
-                # if update_model:
-                #     optimizer.step()
-                #     optimizer.zero_grad()
-                # else:
-                #     assert False, (loss, output_head_loss, model.output_head.name)
-
             else:
                 assert step_results is None
 
@@ -400,3 +339,111 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
 def test_get_task_indices(input, expected):
     actual = get_task_indices(input)
     assert str(actual) == str(expected)
+
+
+@pytest.mark.parametrize(
+    "indices",
+    [
+        slice(0, 10),  # all the same task (0)
+        slice(0, 20),  # 10 from task 0, 10 from task 1
+        slice(0, 30),  # 10 from task 0, 10 from task 1, 10 from task 2
+        slice(0, 50),  # 10 from each task.
+    ],
+)
+def test_task_inference_sl(
+    mixed_samples: Dict[int, Tuple[Tensor, Tensor, Tensor]],
+    indices: slice,
+    config: Config,
+):
+    """ TODO: Write out a test that checks that when given a batch with data
+    from different tasks, and when the model is multiheaded, it will use the
+    right output head for each image.
+    """
+    # Get a mixed batch
+    xs, ys, ts = map(torch.cat, zip(*mixed_samples.values()))
+    xs = xs[indices]
+    ys = ys[indices]
+    ts = ts[indices].int()
+    obs = ClassIncrementalSetting.Observations(x=xs, task_labels=None)
+
+    setting = ClassIncrementalSetting()
+    model = MultiHeadModel(
+        setting=setting,
+        hparams=MultiHeadModel.HParams(batch_size=30, multihead=True),
+        config=config,
+    )
+
+    class MockEncoder(nn.Module):
+        def forward(self, x: Tensor):
+            return x.new_ones([x.shape[0], model.hidden_size])
+
+    mock_encoder = MockEncoder()
+    model.encoder = mock_encoder
+
+    for i in range(5):
+        model.output_heads[str(i)] = MockOutputHead(
+            input_space=spaces.Box(0, 1, [model.hidden_size]),
+            action_space=spaces.Discrete(setting.action_space.n),
+            Actions=setting.Actions,
+            task_id=i,
+        )
+    model.output_head = model.output_heads["0"]
+
+    forward_pass = model(obs)
+    y_preds = forward_pass.actions.y_pred
+
+    assert y_preds.shape == ts.shape
+    # TODO: Check that the task inference works by changing the logits to be based on
+    # the assigned task in the Mock output head.
+    # assert torch.all(y_preds == ts * xs.view([xs.shape[0], -1]).mean(1))
+
+
+@pytest.mark.timeout(120)
+def test_task_inference_rl_easy(config: Config):
+    from sequoia.methods.baseline_method import BaselineMethod
+
+    method = BaselineMethod(config=config)
+    from sequoia.settings.active import IncrementalRLSetting
+
+    setting = IncrementalRLSetting(
+        dataset="cartpole",
+        observe_state_directly=True,
+        nb_tasks=2,
+        steps_per_task=1000,
+        test_steps_per_task=1000,
+    )
+    results = setting.apply(method)
+    assert results
+    # assert False, results.to_log_dict()
+
+
+@pytest.mark.timeout(120)
+def test_task_inference_rl_hard(config: Config):
+    from sequoia.methods.baseline_method import BaselineMethod
+
+    method = BaselineMethod(config=config)
+    from sequoia.settings.active import RLSetting
+
+    setting = RLSetting(
+        dataset="cartpole",
+        observe_state_directly=True,
+        nb_tasks=2,
+        max_steps=1000,
+        test_steps_per_task=1000,
+    )
+    results = setting.apply(method)
+    assert results
+    # assert False, results.to_log_dict()
+
+
+@pytest.mark.timeout(180)
+def test_task_inference_multi_task_sl(config: Config):
+    # TODO Create a dummy supervised dataset for testing
+    from sequoia.methods.baseline_method import BaselineMethod
+
+    method = BaselineMethod(config=config, max_epochs=1)
+    from sequoia.settings.passive import MultiTaskSetting
+
+    setting = MultiTaskSetting(dataset="mnist", nb_tasks=2,)
+    results = setting.apply(method)
+    assert 0.95 <= results.average_final_performance.objective
