@@ -866,6 +866,12 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 # TODO: Still debugging shared memory + custom spaces (e.g. Sparse).
                 shared_memory=False,
             )
+        if max_steps:
+            from sequoia.common.gym_wrappers.action_limit import ActionLimit
+            env = ActionLimit(env, max_steps=max_steps)
+        if max_episodes:
+            from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
+            env = EpisodeLimit(env, max_episodes=max_episodes)
 
         ## Apply the "post-batch" wrappers:
         # from sequoia.common.gym_wrappers import ConvertToFromTensors

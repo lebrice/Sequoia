@@ -1,6 +1,7 @@
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+import itertools
 from typing import Dict, List, Optional, Tuple
 
 import gym
@@ -27,11 +28,7 @@ from torch.utils.data import DataLoader
 
 class ActorCritic(nn.Module):
     def __init__(
-        self,
-        observation_space: gym.Space,
-        action_space: gym.Space,
-        hidden_size: int,
-        learning_rate: float = 3e-4,
+        self, observation_space: gym.Space, action_space: gym.Space, hidden_size: int,
     ):
         super().__init__()
         self.observation_space = observation_space
@@ -142,24 +139,22 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
         """
 
         # Hidden size (representation size).
-        hidden_size: int = uniform(16, 512, default=256)
+        hidden_size: int = 256
         # Learning rate of the optimizer.
-        learning_rate: float = log_uniform(1e-6, 1e-2, default=1e-3)
+        learning_rate: float = log_uniform(1e-6, 1e-2, default=3e-4)
         # Discount factor
         gamma: float = 0.99
         # Coefficient for the entropy term in the loss formula.
         entropy_term_coefficient: float = 0.001
-        # Maximum length of an episode. (Probably shouldn't use this for the RL track)
-        max_episode_steps: int = 300
-        # Maximum number of training episodes per task.
-        max_episodes: int = 3000
+        # Maximum length of an episode, when desired. (Generally not needed).
+        max_episode_steps: Optional[int] = None
 
     def __init__(self, hparams: HParams = None, render: bool = False):
         self.hparams = hparams or self.HParams()
-        self.render: bool = True
         self.task: int = 0
         self.plots_dir: Path = Path("plots")
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.render = render
 
     def configure(self, setting: ActiveSetting):
         self.actor_critic = ActorCritic(
@@ -170,30 +165,42 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
         self.ac_optimizer = optim.Adam(
             self.actor_critic.parameters(), lr=self.hparams.learning_rate
         )
+        # If there is a limit on the number of steps per task, then observe that limit.
+        self.max_training_steps = setting.steps_per_phase
 
     def fit(self, train_env: ActiveEnvironment, valid_env: ActiveEnvironment):
         assert isinstance(train_env, gym.Env)  # Just to illustrate that it's a gym Env.
-        assert isinstance(train_env, DataLoader)  # And a dataloader!
+
+        # NOTE: This example only works if the environment isn't vectorized.
 
         all_lengths: List[int] = []
         average_lengths: List[float] = []
         all_rewards: List[float] = []
+        episode = 0
+        total_steps = 0
 
-        for episode in range(self.hparams.max_episodes):
+        while (
+            not train_env.is_closed()
+            and total_steps < self.max_training_steps
+        ):
+            episode += 1
+
             log_probs: List[Tensor] = []
             values: List[Tensor] = []
             rewards: List[Tensor] = []
             entropy_term = 0
-            observation: ActiveSetting.Observations = train_env.reset()
-            observation = observation.to(self.device)
 
-            for steps in range(self.hparams.max_episode_steps):
+            observation: ActiveSetting.Observations = train_env.reset()
+            # Convert numpy arrays in the observation into Tensors on the right device.
+            observation = observation.torch(device=self.device)
+
+            done = False
+            episode_steps = 0
+            while not done and total_steps < self.max_training_steps:
+                episode_steps += 1
                 value, policy_dist = self.actor_critic.forward(observation)
                 value = value.cpu().detach().numpy()
                 action = policy_dist.sample()
-
-                if self.render:
-                    train_env.render()
 
                 log_prob = policy_dist.log_prob(action)
                 entropy = policy_dist.entropy()
@@ -202,10 +209,15 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
                 # still function in the future if new settings are added.
                 action = ActiveSetting.Actions(y_pred=action.cpu().detach().numpy())
 
+                if self.render:
+                    train_env.render()
+
                 new_observation: ActiveSetting.Observations
                 reward: ActiveSetting.Rewards
                 new_observation, reward, done, _ = train_env.step(action)
-                new_observation = new_observation.to(self.device)
+                new_observation = new_observation.torch(device=self.device)
+                total_steps += 1
+
                 # Likewise, in order to support different future settings, we receive a
                 # Rewards object, which contains the reward value (the float when the
                 # env isn't batched.).
@@ -218,32 +230,41 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
 
                 observation = new_observation
 
-                if done or steps == self.hparams.max_episode_steps - 1:
-                    Qval, _ = self.actor_critic.forward(new_observation)
-                    Qval = Qval.detach().cpu().numpy()
-                    all_rewards.append(np.sum(rewards))
-                    all_lengths.append(steps)
-                    average_lengths.append(np.mean(all_lengths[-10:]))
-                    if episode % 10 == 0:
-                        sys.stdout.write(
-                            f"episode: {episode}, reward: {np.sum(rewards)}, "
-                            f"total length: {steps}, "
-                            f"average length: {average_lengths[-1]} \n"
-                        )
-                    break
+            Qval, _ = self.actor_critic.forward(new_observation)
+            Qval = Qval.detach().cpu().numpy()
+            all_rewards.append(np.sum(rewards))
+            all_lengths.append(episode_steps)
+            average_lengths.append(np.mean(all_lengths[-10:]))
+
+            if episode % 10 == 0:
+                print(
+                    f"step {total_steps}/{self.max_training_steps}, "
+                    f"episode: {episode}, "
+                    f"reward: {np.sum(rewards)}, "
+                    f"total length: {episode_steps}, "
+                    f"average length: {average_lengths[-1]} \n"
+                )
+
+            if total_steps >= self.max_training_steps:
+                print(
+                    f"Reached the limit of {self.max_training_steps} steps."
+                )
+                break
 
             # compute Q values
-            Qvals = np.zeros_like(values)
-            for t in reversed(range(len(rewards))):
-                Qval = rewards[t] + self.hparams.gamma * Qval
-                Qvals[t] = Qval
+            Q_values = np.zeros_like(values)
+            # Use the last value from the critic as the final value estimate.
+            q_value = Qval
+            for t, reward in reversed(list(enumerate(rewards))):
+                q_value = reward + self.hparams.gamma * q_value
+                Q_values[t] = q_value
 
             # update actor critic
             values = torch.as_tensor(values, dtype=torch.float, device=self.device)
-            Qvals = torch.as_tensor(Qvals, dtype=torch.float, device=self.device)
+            Q_values = torch.as_tensor(Q_values, dtype=torch.float, device=self.device)
             log_probs = torch.stack(log_probs)
 
-            advantage = Qvals - values
+            advantage = Q_values - values
             actor_loss = (-log_probs * advantage).mean()
             critic_loss = 0.5 * advantage.pow(2).mean()
             ac_loss = (
@@ -278,6 +299,8 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
     def get_actions(
         self, observations: ActiveSetting.Observations, action_space: gym.Space
     ) -> ActiveSetting.Actions:
+        # Move the observations to the right device, converting numpy arrays to tensors.
+        observations = observations.torch(device=self.device)
         value, action_dist = self.actor_critic(observations)
         return ActiveSetting.Actions(y_pred=action_dist.sample())
 
@@ -315,16 +338,32 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
 
 
 if __name__ == "__main__":
-    from sequoia.settings.active import RLSetting
 
     # Create the Setting.
-    setting = RLSetting(dataset="CartPole-v0", observe_state_directly=True,)
-    # from meta_monsterkong.make_env import MetaMonsterKongEnv
 
-    assert setting.nb_tasks == 1
-    setting = RLSetting(dataset="monsterkong",)
+    # CartPole-state for debugging:
+    from sequoia.settings.active import RLSetting
+
+    setting = RLSetting(dataset="CartPole-v0", observe_state_directly=True)
+
+    # OR: Incremental CartPole-state:
+    from sequoia.settings.active import IncrementalRLSetting
+
+    setting = IncrementalRLSetting(
+        dataset="CartPole-v0",
+        observe_state_directly=True,
+        monitor_training_performance=True,
+        nb_tasks=1,
+        steps_per_task=1_000,
+        test_steps=2000,
+    )
+
+    # OR: Setting of the RL Track of the competition:
+    # setting = IncrementalRLSetting.load_benchmark("rl_track")
+
     # Create the Method:
-    method = ExampleA2CMethod()
+    method = ExampleA2CMethod(render=True)
+
     # Apply the Method onto the Setting to get Results.
     results = setting.apply(method)
     print(results.summary())
