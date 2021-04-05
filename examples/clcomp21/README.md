@@ -17,3 +17,13 @@ As such, it is recommended that you take a look at the examples in the following
 
 3. [CL Regularized Classifier](regularization_example.py):
     Adds a simple CL regularization loss to the multihead classifier above.
+
+## RL Examples:
+
+For RL, you can take a look at these examples:
+
+- [A2C Example](a2c_example.py):
+    Example where A2C is implemented from scratch as a Method for the RL track. The code for A2C was adapted from [this blogpost.](https://towardsdatascience.com/understanding-actor-critic-methods-931b97b6df3f)
+
+- [SB3 Example](sb3_example.py):
+    Example of how we can extend an existing Method from Stable-Baselines3.

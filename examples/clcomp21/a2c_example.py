@@ -1,7 +1,5 @@
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-import itertools
 from typing import Dict, List, Optional, Tuple
 
 import gym
@@ -14,7 +12,7 @@ import torch.optim as optim
 from gym import spaces
 from gym.spaces.utils import flatdim
 from sequoia.common.spaces import Image
-from sequoia.common.hparams import HyperParameters, log_uniform, uniform
+from sequoia.common.hparams import HyperParameters, log_uniform
 from sequoia.methods import Method
 from sequoia.settings.active import ActiveEnvironment, ActiveSetting
 
@@ -23,7 +21,6 @@ from sequoia.settings.active import ActiveEnvironment, ActiveSetting
 from simple_parsing import ArgumentParser
 from torch import Tensor
 from torch.distributions import Categorical
-from torch.utils.data import DataLoader
 
 
 class ActorCritic(nn.Module):

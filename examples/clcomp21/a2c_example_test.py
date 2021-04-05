@@ -1,11 +1,10 @@
 import pytest
 from sequoia.client.setting_proxy import SettingProxy
-from sequoia.conftest import slow
 from sequoia.settings.active import IncrementalRLSetting, RLSetting
 from sequoia.settings.passive import ClassIncrementalSetting
 
 from .dummy_method import DummyMethod
-from .simple_a2c_example import ExampleA2CMethod
+from .a2c_example import ExampleA2CMethod
 
 
 @pytest.mark.timeout(120)
