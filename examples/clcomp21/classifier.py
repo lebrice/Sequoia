@@ -116,7 +116,7 @@ class Classifier(nn.Module):
                 nn.Flatten(),
             )
             features = 256
-        elif image_space.width == image_space.height == 224:
+        elif image_space.width == image_space.height == 32:
             # Synbols dataset: use a resnet18 by default.
             resnet: ResNet = resnet18(pretrained=False)
             features = resnet.fc.in_features

@@ -395,7 +395,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
 
             # BUG: This doesn't work if the env isn't batched.
             action_space = test_env.action_space
-            env_is_batched = getattr(test_env, "num_envs", 0) >= 1
+            env_is_batched = getattr(test_env, "num_envs", getattr(test_env, "batch_size", 0)) >= 1
             if env_is_batched:
                 # NOTE: Need to pass an action space that actually reflects the batch
                 # size, even for the last batch!
