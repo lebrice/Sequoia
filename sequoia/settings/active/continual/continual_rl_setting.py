@@ -644,7 +644,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             env_factory,
             batch_size=batch_size,
             num_workers=num_workers,
-            max_steps=self.steps_per_task,
+            max_steps=self.steps_per_phase,
             max_episodes=self.episodes_per_task,
         )
 
@@ -698,7 +698,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             env_factory,
             batch_size=batch_size or self.batch_size,
             num_workers=num_workers if num_workers is not None else self.num_workers,
-            max_steps=self.steps_per_task,
+            max_steps=self.steps_per_phase,
             max_episodes=self.episodes_per_task,
         )
         self.val_env = env_dataloader
