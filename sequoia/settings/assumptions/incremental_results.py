@@ -184,8 +184,8 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
         # TODO: Use the 'average of the averages' instead of the "true", sample-aware
         # average.
         objectives: List[float] = [
-            task_online_metric.objective for task_online_metric
-            in self.online_performance_metrics
+            task_online_metric.objective
+            for task_online_metric in self.online_performance_metrics
         ]
         return self._objective_scaling_factor * np.mean(objectives)
         # return type(self).objective_scaling_factor * self.average_online_performance.objective
@@ -194,8 +194,7 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
         # TODO: function that takes the 'objective' of the Metrics from the average
         # final performance, and returns a normalized float score between 0 and 1.
         objectives: List[float] = [
-            task_metric.objective for task_metric
-            in self.final_performance_metrics
+            task_metric.objective for task_metric in self.final_performance_metrics
         ]
         return self._objective_scaling_factor * np.mean(objectives)
         # return type(self).objective_scaling_factor * self.average_final_performance.objective
@@ -259,6 +258,15 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
             log_dict[f"Task {task_id}"] = task_sequence_result.to_log_dict(
                 verbose=verbose
             )
+
+        if self._online_training_performance:
+            log_dict["Online Performance"] = {
+                f"Task {task_id}": task_online_metrics.to_log_dict(verbose=verbose)
+                for task_id, task_online_metrics in enumerate(
+                    self.online_performance_metrics
+                )
+            }
+
         log_dict.update(
             {
                 "Final/Average Online Performance": self._online_performance_score(),
