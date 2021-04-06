@@ -1,19 +1,14 @@
 from contextlib import redirect_stdout
 from dataclasses import dataclass
-from functools import partial
 from io import StringIO
-from typing import Callable, ClassVar, Dict, Iterable, List, Tuple
-
-import gym
-from gym.wrappers import TimeLimit
-from pytorch_lightning import LightningModule
+from typing import ClassVar, Dict, List
 
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
-from sequoia.common.transforms import Transforms
 from sequoia.utils import constant, dict_union
 from sequoia.utils.logging_utils import get_logger
-from simple_parsing import choice
-from ..continual_rl_setting import ContinualRLSetting, HideTaskLabelsWrapper
+from simple_parsing import choice, field
+
+from ..continual_rl_setting import ContinualRLSetting
 from ..gym_dataloader import GymDataLoader
 
 logger = get_logger(__file__)
@@ -39,8 +34,10 @@ class IncrementalRLSetting(ContinualRLSetting):
     implement a custom `fit` procedure in the CLTrainer class, that loops over
     the tasks and calls the `on_task_switch` when needed.
     """
-    # Number of tasks.
-    nb_tasks: int = 1
+
+    # The number of tasks. By default 0, which means that it will be set
+    # depending on other fields in __post_init__, or eventually be just 1.
+    nb_tasks: int = field(0, alias=["n_tasks", "num_tasks"])
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = constant(False)
     # Wether to give access to the task labels at train time.
@@ -62,6 +59,8 @@ class IncrementalRLSetting(ContinualRLSetting):
             # TODO: Actually end episodes when reaching a task boundary, to force the
             # level to change?
             self.max_episode_steps = self.max_episode_steps or 500
+        # TODO: Really annoying little bugs with these three arguments!
+        self.nb_tasks = self.max_steps // self.steps_per_task
 
     @property
     def phases(self) -> int:

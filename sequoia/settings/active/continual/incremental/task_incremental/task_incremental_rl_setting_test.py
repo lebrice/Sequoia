@@ -27,7 +27,7 @@ def test_task_schedule_is_used():
         
         observations = env.reset()
         lengths: List[float] = []
-        for i in range(100):
+        for i in range(setting.steps_per_task):
             obs, reward, done, info = env.step(env.action_space.sample())
             if done:
                 env.reset()

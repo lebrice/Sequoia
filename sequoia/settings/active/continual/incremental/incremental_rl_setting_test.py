@@ -16,6 +16,45 @@ from sequoia.utils.utils import take
 from .incremental_rl_setting import IncrementalRLSetting
 
 
+def test_number_of_tasks():
+    setting = IncrementalRLSetting(
+        dataset="CartPole-v0",
+        observe_state_directly=True,
+        monitor_training_performance=True,
+        steps_per_task=1000,
+        max_steps=10_000,
+        test_steps=1000,
+    )
+    assert setting.nb_tasks == 10
+
+
+def test_max_number_of_steps_per_task_is_respected():
+    setting = IncrementalRLSetting(
+        dataset="CartPole-v0",
+        observe_state_directly=True,
+        monitor_training_performance=True,
+        steps_per_task=500,
+        max_steps=1000,
+        test_steps=1000,
+    )
+    train_env = setting.train_dataloader()
+    total_steps = 0
+
+    while not total_steps > 1000:
+        obs = train_env.reset()
+        done = False
+        while not done:
+            if total_steps == setting.steps_per_task:
+                assert train_env.is_closed()
+                with pytest.raises(gym.error.ClosedEnvironmentError):
+                    obs, reward, done, info = train_env.step(train_env.action_space.sample())
+                return
+            else:
+                obs, reward, done, info = train_env.step(train_env.action_space.sample())
+            total_steps += 1
+    assert total_steps == setting.steps_per_phase
+
+
 @pytest.mark.timeout(60)
 @pytest.mark.parametrize("batch_size", [None, 1, 3])
 @pytest.mark.parametrize(

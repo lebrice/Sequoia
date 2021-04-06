@@ -97,6 +97,9 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
     def is_closed(self) -> bool:
         return self.get_attribute("is_closed")
 
+    def render(self, *args, **kwargs):
+        return self.__environment.render(*args, **kwargs)
+
     def get_results(self) -> Results:
         return self.__environment.get_results()
 

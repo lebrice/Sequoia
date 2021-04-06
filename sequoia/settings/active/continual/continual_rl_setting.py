@@ -348,6 +348,10 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 self.steps_per_task = self.max_steps // self.nb_tasks
             elif self.steps_per_task:
                 self.nb_tasks = self.max_steps // self.steps_per_task
+            else:
+                self.nb_tasks = 1
+                self.steps_per_task = self.max_steps
+
 
         if not all([self.nb_tasks, self.max_steps, self.steps_per_task]):
             raise RuntimeError(
@@ -644,7 +648,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             env_factory,
             batch_size=batch_size,
             num_workers=num_workers,
-            max_steps=self.steps_per_task,
+            max_steps=self.steps_per_phase,
             max_episodes=self.episodes_per_task,
         )
 
@@ -698,7 +702,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             env_factory,
             batch_size=batch_size or self.batch_size,
             num_workers=num_workers if num_workers is not None else self.num_workers,
-            max_steps=self.steps_per_task,
+            max_steps=self.steps_per_phase,
             max_episodes=self.episodes_per_task,
         )
         self.val_env = env_dataloader
@@ -866,6 +870,12 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 # TODO: Still debugging shared memory + custom spaces (e.g. Sparse).
                 shared_memory=False,
             )
+        if max_steps:
+            from sequoia.common.gym_wrappers.action_limit import ActionLimit
+            env = ActionLimit(env, max_steps=max_steps)
+        if max_episodes:
+            from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
+            env = EpisodeLimit(env, max_episodes=max_episodes)
 
         ## Apply the "post-batch" wrappers:
         # from sequoia.common.gym_wrappers import ConvertToFromTensors
