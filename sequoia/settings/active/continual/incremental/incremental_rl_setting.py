@@ -52,21 +52,15 @@ class IncrementalRLSetting(ContinualRLSetting):
     dataset: str = choice(available_datasets, default="cartpole")
 
     def __post_init__(self, *args, **kwargs):
-        # TODO: Fix this:
-        if self.nb_tasks == 0:
-            if self.steps_per_task is None:
-                self.nb_tasks = 1  # One task by default.
-            else:
-                self.nb_tasks = self.max_steps // self.steps_per_task
-
         super().__post_init__(*args, **kwargs)
-
 
         if self.dataset == "MetaMonsterKong-v0":
             # TODO: Limit the episode length in monsterkong?
             # TODO: Actually end episodes when reaching a task boundary, to force the
             # level to change?
             self.max_episode_steps = self.max_episode_steps or 500
+        # TODO: Really annoying little bugs with these three arguments!
+        self.nb_tasks = self.max_steps // self.steps_per_task
 
     @property
     def phases(self) -> int:

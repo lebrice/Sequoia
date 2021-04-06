@@ -348,6 +348,10 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 self.steps_per_task = self.max_steps // self.nb_tasks
             elif self.steps_per_task:
                 self.nb_tasks = self.max_steps // self.steps_per_task
+            else:
+                self.nb_tasks = 1
+                self.steps_per_task = self.max_steps
+
 
         if not all([self.nb_tasks, self.max_steps, self.steps_per_task]):
             raise RuntimeError(
