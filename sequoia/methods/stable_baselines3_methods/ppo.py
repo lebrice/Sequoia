@@ -1,6 +1,7 @@
 """ Method that uses the PPO model from stable-baselines3 and targets the RL
 settings in the tree.
 """
+import math
 from dataclasses import dataclass
 from typing import ClassVar, Dict, Mapping, Optional, Type, Union
 
@@ -10,17 +11,24 @@ from gym import spaces
 from simple_parsing import mutable_field
 from stable_baselines3.ppo import PPO
 
-from sequoia.common.hparams import categorical, log_uniform, uniform
+from sequoia.common.hparams import categorical, log_uniform
 from sequoia.methods import register_method
 from sequoia.methods.stable_baselines3_methods.base import (
-    SB3BaseHParams, StableBaselines3Method)
+    SB3BaseHParams,
+    StableBaselines3Method,
+)
 from sequoia.settings.active import ContinualRLSetting
+from sequoia.utils.logging_utils import get_logger
+
+logger = get_logger(__file__)
+
 
 class PPOModel(PPO):
     """ Proximal Policy Optimization algorithm (PPO) (clip version) - from SB3.
 
     Paper: https://arxiv.org/abs/1707.06347
-    Code: The SB3 implementation borrows code from OpenAI Spinning Up (https://github.com/openai/spinningup/)
+    Code: The SB3 implementation borrows code from OpenAI Spinning Up
+    (https://github.com/openai/spinningup/)
     https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail and
     and Stable Baselines (PPO2 from https://github.com/hill-a/stable-baselines)
 
@@ -120,16 +128,16 @@ class PPOModel(PPO):
         # Device (cpu, cuda, ...) on which the code should be run. Setting it to auto,
         # the code will be run on the GPU if possible.
         device: Union[torch.device, str] = "auto"
-        
+
         # Whether or not to build the network at the creation of the instance
         # _init_setup_model: bool = True
-
 
 
 @register_method
 @dataclass
 class PPOMethod(StableBaselines3Method):
     """ Method that uses the PPO model from stable-baselines3. """
+
     Model: ClassVar[Type[PPOModel]] = PPOModel
     # Hyper-parameters of the PPO Model.
     hparams: PPOModel.HParams = mutable_field(PPOModel.HParams)
@@ -137,18 +145,24 @@ class PPOMethod(StableBaselines3Method):
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting=setting)
 
+        if self.hparams.n_steps > setting.steps_per_phase:
+            self.hparams.n_steps = math.ceil(0.1 * setting.steps_per_phase)
+            logger.info(
+                f"Capping the n_steps to 10% of step budget length: "
+                f"{self.hparams.n_steps}"
+            )
+
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> PPOModel:
         return self.Model(env=train_env, **self.hparams.to_dict())
 
     def fit(self, train_env: gym.Env, valid_env: gym.Env):
         super().fit(train_env=train_env, valid_env=valid_env)
 
-    def get_actions(self,
-                    observations: ContinualRLSetting.Observations,
-                    action_space: spaces.Space) -> ContinualRLSetting.Actions:
+    def get_actions(
+        self, observations: ContinualRLSetting.Observations, action_space: spaces.Space
+    ) -> ContinualRLSetting.Actions:
         return super().get_actions(
-            observations=observations,
-            action_space=action_space,
+            observations=observations, action_space=action_space,
         )
 
     def on_task_switch(self, task_id: Optional[int]) -> None:

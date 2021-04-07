@@ -244,12 +244,12 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
                 warnings.warn(
                     RuntimeWarning(
                         f"Can't train for the requested {self.train_steps_per_task} "
-                        f"steps, since we're (currently) only allowed one 'pass' "
-                        f"through the environment (max {setting.steps_per_phase} steps.)"
+                        f"steps, since we're (currently) only allowed a maximum of "
+                        f"{setting.steps_per_phase} steps.)"
                     )
                 )
             # Use as many training steps as possible.
-            self.train_steps_per_task = setting.steps_per_phase
+            self.train_steps_per_task = setting.steps_per_phase - 1
         # Otherwise, we can train basically as long as we want on each task.
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> BaseAlgorithm:

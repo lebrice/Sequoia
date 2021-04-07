@@ -64,7 +64,9 @@ class DQNModel(DQN):
         optimize_memory_usage: bool = False
         # Update the target network every ``target_update_interval`` environment
         # steps.
-        target_update_interval: int = categorical(1, 10, 100, 1_000, 10_000, default=10_000)
+        target_update_interval: int = categorical(
+            1, 10, 100, 1_000, 10_000, default=10_000
+        )
         # Fraction of entire training period over which the exploration rate is
         # reduced.
         exploration_fraction: float = 0.1
@@ -91,13 +93,14 @@ class DQNModel(DQN):
 @dataclass
 class DQNMethod(StableBaselines3Method):
     """ Method that uses a DQN model from the stable-baselines3 package. """
+
     Model: ClassVar[Type[DQNModel]] = DQNModel
 
     # Hyper-parameters of the DQN model.
     hparams: DQNModel.HParams = mutable_field(DQNModel.HParams)
 
     # Approximate limit on the size of the replay buffer, in megabytes.
-    max_buffer_size_megabytes: float = 2_048.
+    max_buffer_size_megabytes: float = 2_048.0
 
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting)
@@ -128,19 +131,18 @@ class DQNMethod(StableBaselines3Method):
         if self.hparams.buffer_size > max_buffer_length:
             calculated_size_bytes = observation_size_bytes * self.hparams.buffer_size
             calculated_size_gb = calculated_size_bytes / 1024 ** 3
-            warnings.warn(RuntimeWarning(
-                f"The selected buffer size ({self.hparams.buffer_size} is "
-                f"too large! (It would take roughly around "
-                f"{calculated_size_gb:.3f}Gb to hold  many observations alone! "
-                f"The buffer size will be capped at {max_buffer_length} "
-                f"entries."
-            ))
+            warnings.warn(
+                RuntimeWarning(
+                    f"The selected buffer size ({self.hparams.buffer_size} is "
+                    f"too large! (It would take roughly around "
+                    f"{calculated_size_gb:.3f}Gb to hold  many observations alone! "
+                    f"The buffer size will be capped at {max_buffer_length} "
+                    f"entries."
+                )
+            )
 
             self.hparams.buffer_size = int(max_buffer_length)
 
-        # Don't use up too many of the observations from the task to fill up the buffer.
-        # Truth is, we should probably get this to work first.
-        
         # NOTE: Need to change some attributes depending on the maximal number of steps
         # in the environment allowed in the given Setting.
         if setting.max_steps:
@@ -148,12 +150,14 @@ class DQNMethod(StableBaselines3Method):
                 f"Total training steps are limited to {setting.steps_per_task} steps "
                 f"per task, {setting.max_steps} steps in total."
             )
-            ten_percent_of_step_budget = setting.steps_per_task // 10
-            
+            ten_percent_of_step_budget = setting.steps_per_phase // 10
+
             if self.hparams.buffer_size > ten_percent_of_step_budget:
-                warnings.warn(RuntimeWarning(
-                    "Reducing max buffer size to ten percent of the step budget."
-                ))
+                warnings.warn(
+                    RuntimeWarning(
+                        "Reducing max buffer size to ten percent of the step budget."
+                    )
+                )
                 self.hparams.buffer_size = ten_percent_of_step_budget
 
             if self.hparams.learning_starts > ten_percent_of_step_budget:
@@ -166,6 +170,16 @@ class DQNMethod(StableBaselines3Method):
                     f"{ten_percent_of_step_budget} steps."
                 )
                 self.hparams.learning_starts = ten_percent_of_step_budget
+                if self.hparams.train_freq != -1:
+                    # Update the model at least 2 times during each task, and at most
+                    # once per step.
+                    self.hparams.train_freq = min(
+                        self.hparams.train_freq,
+                        int(0.5 * ten_percent_of_step_budget),
+                    )
+                    self.hparams.train_freq = max(self.hparams.train_freq, 1)
+
+                logger.info(f"Training frequency: {self.hparams.train_freq}")
 
             if self.hparams.target_update_interval > ten_percent_of_step_budget:
                 # Same for the 'update target network' interval.

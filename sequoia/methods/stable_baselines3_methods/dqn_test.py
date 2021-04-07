@@ -11,11 +11,11 @@ from sequoia.settings.active import (
     TaskIncrementalRLSetting,
 )
 
-from .dqn import DQNMethod
+from .dqn import DQNMethod, DQNModel
 
 
 def test_cartpole_state():
-    method = DQNMethod()
+    method = DQNMethod(hparams=DQNModel.HParams(train_freq=1))
     setting = IncrementalRLSetting(
         dataset="cartpole",
         observe_state_directly=True,
@@ -29,9 +29,10 @@ def test_cartpole_state():
     print(results.summary())
 
 
+@pytest.mark.timeout(60)
 @monsterkong_required
 def test_monsterkong():
-    method = DQNMethod()
+    method = DQNMethod(hparams=DQNModel.HParams(train_freq=1))
     setting = IncrementalRLSetting(
         dataset="monsterkong",
         nb_tasks=2,
