@@ -3,24 +3,27 @@
 Should be applicable to any Setting.
 """
 
+from argparse import Namespace
 from dataclasses import dataclass
+from typing import Any, Dict, Mapping, Optional, Union
 
 import gym
-from typing import Optional, Mapping, Dict, Union, Any
+import numpy as np
+import tqdm
+from simple_parsing import ArgumentParser
+from torch import Tensor
 
 from sequoia.common.metrics import ClassificationMetrics
 from sequoia.methods import register_method
 from sequoia.settings import ClassIncrementalSetting, Setting
 from sequoia.settings.base import Actions, Environment, Method, Observations
+from sequoia.settings.passive import PassiveSetting
 from sequoia.utils import get_logger, singledispatchmethod
-from sequoia.settings.passive import PassiveSetting, PassiveEnvironment
-from sequoia.settings.active import ActiveSetting, ActiveEnvironment
 
 logger = get_logger(__file__)
 
 
 @register_method
-@dataclass
 class RandomBaselineMethod(Method, target_setting=Setting):
     """ Baseline method that gives random predictions for any given setting.
 
@@ -28,45 +31,59 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     action for every observation.
     """
 
-    batch_size: int = 16
+    def __init__(self):
+        self.max_train_episodes: Optional[int] = None
+
+    def configure(self, setting: Setting):
+        """ Called before the method is applied on a setting (before training).
+
+        You can use this to instantiate your model, for instance, since this is
+        where you get access to the observation & action spaces.
+        """
+        if isinstance(setting, PassiveSetting):
+            # Being applied in SL, we will only do one 'epoch" (a.k.a. "episode").
+            self.max_train_episodes = 1
 
     def fit(
         self, train_env: Environment, valid_env: Environment,
     ):
-        # This method doesn't actually train, so we just return immediately.
-        if isinstance(train_env.unwrapped, PassiveEnvironment):
-            # Do one 'epoch' only:
-            for batch in train_env:
-                action = train_env.action_space.sample()
-                rewards = train_env.send(action)
-        else:
+        episodes = 0
+        with tqdm.tqdm(desc="training") as train_pbar:
+
             while not train_env.is_closed():
-                obs = train_env.reset()
-                done = False
-                while not done:
-                    obs, rewards, done, info = train_env.reset()
-        return
+                for i, batch in enumerate(train_env):
+                    if isinstance(batch, Observations):
+                        observations, rewards = batch, None
+                    else:
+                        observations, rewards = batch
 
-    def configure(self, setting):
-        # Set any batch size, really.
-        print(f"Setting the batch size on the setting to {self.batch_size}")
-        setting.batch_size = self.batch_size
+                    batch_size = observations.x.shape[0]
 
-        if setting.task_labels_at_test_time:
-            # TODO: Maybe reduce the action space? Since we're being asked
-            # for actions in a specific task at test-time, maybe we could get the
-            # 'task action space' rather than the action space on the setting itself?
-            pass
+                    y_pred = train_env.action_space.sample()
+
+                    # If we're at the last batch, it might have a different size, so w
+                    # give only the required number of values.
+                    if isinstance(y_pred, (np.ndarray, Tensor)):
+                        if y_pred.shape[0] != batch_size:
+                            y_pred = y_pred[:batch_size]
+
+                    if rewards is None:
+                        rewards = train_env.send(y_pred)
+
+                    train_pbar.set_postfix(
+                        {"Episode": episodes, "Step": i}
+                    )
+                    # train as you usually would.
+
+                episodes += 1
+                if self.max_train_episodes and episodes >= self.max_train_episodes:
+                    train_env.close()
+                    break
 
     def get_actions(
         self, observations: Observations, action_space: gym.Space
     ) -> Actions:
         return action_space.sample()
-
-    @classmethod
-    def from_args(cls, *args, **kwargs):
-        return super().from_args(*args, **kwargs)
-        # return RandomBaselineMethod()
 
     def get_search_space(self, setting: Setting) -> Mapping[str, Union[str, Dict]]:
         """Returns the search space to use for HPO in the given Setting.
@@ -84,7 +101,8 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         """
         logger.warning(
             UserWarning(
-                f"Hey, you seem to be trying to perform an HPO sweep using the random baseline method?"
+                "Hey, you seem to be trying to perform an HPO sweep using the random "
+                "baseline method?"
             )
         )
         # Assuming that this is just used for debugging, so giving back a simple space.
@@ -95,22 +113,25 @@ class RandomBaselineMethod(Method, target_setting=Setting):
 
         It is required that this method be implemented if you want to perform HPO sweeps
         with Orion.
-        
+
         Parameters
         ----------
         new_hparams : Dict[str, Any]
             The new hyper-parameters being recommended by the HPO algorithm. These will
             have the same structure as the search space.
         """
-        logger.warning(
-            UserWarning(
-                f"Hey, you seem to be trying to perform an HPO sweep using the random baseline method?"
-            )
-        )
         foo = new_hparams["foo"]
-        print(f"Using new suggested value")
+        print(f"Using new suggested value {foo}")
 
-    ## Methods below are just here for testing purposes.
+    @classmethod
+    def add_argparse_args(cls, parser: ArgumentParser, dest: str = ""):
+        pass
+
+    @classmethod
+    def from_argparse_args(cls, args: Namespace, dest: str = ""):
+        return cls()
+
+    # Methods below are just here for testing purposes.
 
     @singledispatchmethod
     def validate_results(self, setting: Setting, results: Setting.Results):
@@ -151,26 +172,6 @@ class RandomBaselineMethod(Method, target_setting=Setting):
             # worse than chance, and to 'make the tests pass' (which is bad)
             # we're setting the lower bound super low, which makes no sense.
             assert 0.25 * chance_accuracy <= task_accuracy <= 2.1 * chance_accuracy
-
-    # @singledispatchmethod
-    # def model_class(self, setting: SettingType) -> Type[BaselineModel]:
-    #     raise NotImplementedError(f"No known model for setting of type {type(setting)} (registry: {self.model_class.registry})")
-
-    # @model_class.register
-    # def _(self, setting: ActiveSetting) -> Type[Agent]:
-    #     # TODO: Make a 'random' RL method.
-    #     return RandomAgent
-
-    # @model_class.register
-    # def _(self, setting: ClassIncrementalSetting) -> Type[ClassIncrementalModelMixin]:
-    #     # IDEA: Generate the model dynamically instead of creating one of each.
-    #     # (This doesn't work atm because super() gives back a BaselineModel)
-    #     # return get_random_model_class(super().model_class(setting))
-    #     return RandomClassIncrementalModel
-
-    # @model_class.register
-    # def _(self, setting: TaskIncrementalSetting) -> Type[TaskIncrementalModel]:
-    #     return RandomTaskIncrementalModel
 
 
 if __name__ == "__main__":
