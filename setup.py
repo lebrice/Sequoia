@@ -30,7 +30,7 @@ setup(
         "atari": [
             "gym[atari] @ git+https://www.github.com/lebrice/gym@easier_custom_spaces#egg=gym"
         ],
-        "hpo": ["orion", "orion.algo.skopt",],
+        "hpo": ["orion", "orion.algo.skopt"],
     },
     install_requires=packages_pip,
     dependency_links=packages_git,

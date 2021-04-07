@@ -1,24 +1,18 @@
 import bisect
-import random
-from collections.abc import Mapping
 from functools import singledispatch
-from typing import (Any, Callable, Dict, List, MutableMapping, Optional,
+from typing import (Any, Callable, Dict, List, Optional,
                     Sequence, Tuple, Type, TypeVar, Union)
 
 import gym
-import matplotlib.pyplot as plt
 import numpy as np
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
-from gym.envs.registration import register
-from numpy.random import Generator
 from torch import Tensor
-
 from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 from sequoia.utils.logging_utils import get_logger
 
 task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
-    CartPoleEnv: ["gravity", "masscart", "masspole", "length", "force_mag", "tau",]
+    CartPoleEnv: ["gravity", "masscart", "masspole", "length", "force_mag", "tau"]
     # TODO: Add more of the classic control envs here.
 }
 logger = get_logger(__file__)
@@ -139,7 +133,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         for now.
 
         TODO: Check the case where a task boundary is reached and the episode is not
-        done yet. 
+        done yet.
 
         Args:
             env (gym.Env): The environment to wrap.
@@ -225,7 +219,7 @@ class MultiTaskEnvironment(gym.Wrapper):
     @current_task_id.setter
     def current_task_id(self, value: int) -> None:
         self._current_task_id = value
-    
+
     def set_on_task_switch_callback(self, callback: Callable[[int], None]) -> None:
         self._on_task_switch_callback = callback
 
@@ -250,11 +244,10 @@ class MultiTaskEnvironment(gym.Wrapper):
             # having to add a callback wrapper to use.
             task_id = sorted(self.task_schedule.keys()).index(self.steps)
             self.on_task_switch(task_id)
-        
+
         # elif self.new_random_task_on_reset:
         #     self.current_task_id
-            
-            
+
         observation, rewards, done, info = super().step(*args, **kwargs)
         if self.add_task_id_to_obs:
             # TODO: Not actually using the add_task_labels in this case.
@@ -276,10 +269,10 @@ class MultiTaskEnvironment(gym.Wrapper):
 
     def reset(self, new_random_task: bool = None, **kwargs):
         """ Resets the wrapped environment.
-        
+
         If `new_random_task` is True, this also sets a new random task as the
         current task.
-        
+
         NOTE: This resets the wrapped env, but doesn't reset the number of steps
         taken, hence the 'task' progression according to the task_schedule
         doesn't change.
@@ -305,7 +298,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         observation = self.env.reset(**kwargs)
         if self.add_task_id_to_obs:
             observation = (observation, self.current_task_id)
-            
+
         self._episodes += 1
         return observation
 
@@ -395,7 +388,7 @@ class MultiTaskEnvironment(gym.Wrapper):
 
     def random_task(self) -> Dict:
         """Samples a random 'task'.
-        
+
         If the wrapper already has a task schedule, then one of the tasks (values of the
         task schedule dict) is selected at random.
 
@@ -411,7 +404,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         TODO: It might be cool to give an option for passing a prior that could
         be used for a given attribute, but it would add a bit too much
         complexity and isn't really needed atm.
- 
+
         Raises:
             NotImplementedError: If the default value has an unsupported type.
 
@@ -463,7 +456,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         if kwargs:
             current_task.update(kwargs)
         self.current_task = current_task
-    
+
     def seed(self, seed: Optional[int] = None) -> List[int]:
         self.np_random = np.random.default_rng(seed)
         self.action_space.seed(seed)
@@ -500,4 +493,3 @@ class MultiTaskEnvironment(gym.Wrapper):
 
         if self._steps in self._task_schedule:
             self.current_task = self._task_schedule[self._steps]
-

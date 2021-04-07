@@ -1,39 +1,25 @@
 import itertools
 import json
-import operator
-import warnings
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Callable, ClassVar, Dict, List, Optional, Sequence, Type, Union
-import wandb
 import gym
-import numpy as np
 from gym import spaces
-from gym.envs.classic_control import CartPoleEnv
 from gym.utils import colorize
-from gym.wrappers import AtariPreprocessing, TimeLimit
+from gym.wrappers import TimeLimit
 from simple_parsing import choice, field, list_field
 from simple_parsing.helpers import dict_field
 from stable_baselines3.common.atari_wrappers import AtariWrapper
-from torch import Tensor
 import math
 
-from sequoia.common import Batch, Config, Metrics
+from sequoia.common import Config
 from sequoia.common.gym_wrappers import (
     AddDoneToObservation,
-    AddInfoToObservation,
     MultiTaskEnvironment,
     SmoothTransitions,
-    TransformAction,
     TransformObservation,
-    TransformReward,
-)
-from sequoia.common.gym_wrappers.batch_env import (
-    BatchedVectorEnv,
-    SyncVectorEnv,
-    VectorEnv,
 )
 from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
@@ -41,33 +27,25 @@ from sequoia.common.gym_wrappers.pixel_observation import (
     ImageObservations,
     PixelObservationWrapper,
 )
-from sequoia.common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
 from sequoia.common.gym_wrappers.utils import (
     IterableWrapper,
-    classic_control_env_prefixes,
-    classic_control_envs,
-    has_wrapper,
     is_atari_env,
     is_classic_control_env,
 )
-from sequoia.common.metrics import RegressionMetrics
-from sequoia.common.spaces import Image, Sparse
-from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
+from sequoia.common.spaces import Sparse
+from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.transforms import Transforms
 from sequoia.settings.active import ActiveSetting
 from sequoia.settings.assumptions.incremental import IncrementalSetting, TestEnvironment
 from sequoia.settings.base import Method
-from sequoia.settings.base.results import Results
 
-from sequoia.utils import dict_union, get_logger
+from sequoia.utils import get_logger
 from .. import ActiveEnvironment
 from .gym_dataloader import GymDataLoader
 from .make_env import make_batched_env
 from .rl_results import RLResults
 from .wrappers import (
     HideTaskLabelsWrapper,
-    NoTypedObjectsWrapper,
-    RemoveTaskLabelsWrapper,
     TypedObjectsWrapper,
 )
 
@@ -108,12 +86,6 @@ Environment = ActiveEnvironment[
     "ContinualRLSetting.Observations",
     "ContinualRLSetting.Rewards",
 ]
-from sequoia.settings.assumptions.incremental import (
-    TaskResults,
-    TaskSequenceResults,
-    IncrementalResults,
-)
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 
 
 @dataclass
@@ -250,8 +222,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
         if isinstance(self.dataset, gym.Env) and self.batch_size:
             raise RuntimeError(
-                f"Batch size should be None when a gym.Env "
-                f"object is passed as `dataset`."
+                "Batch size should be None when a gym.Env "
+                "object is passed as `dataset`."
             )
         if not isinstance(self.dataset, (str, gym.Env)) and not callable(self.dataset):
             raise RuntimeError(
@@ -306,8 +278,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 for i in range(len(change_steps) - 1):
                     if change_steps[i + 1] - change_steps[i] != self.steps_per_task:
                         raise NotImplementedError(
-                            f"WIP: This might not work yet if the tasks aren't "
-                            f"equally spaced out at a fixed interval."
+                            "WIP: This might not work yet if the tasks aren't "
+                            "equally spaced out at a fixed interval."
                         )
 
             nb_tasks = len(self.train_task_schedule)
@@ -318,7 +290,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 # when in 'Class'/Task-Incremental RL), the last entry is the start
                 # of the last task.
                 nb_tasks -= 1
-            if self.nb_tasks != 1:
+            if self.nb_tasks not in {0, 1}:
                 if self.nb_tasks != nb_tasks:
                     raise RuntimeError(
                         f"Passed number of tasks {self.nb_tasks} doesn't match the "
@@ -352,11 +324,10 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 self.nb_tasks = 1
                 self.steps_per_task = self.max_steps
 
-
         if not all([self.nb_tasks, self.max_steps, self.steps_per_task]):
             raise RuntimeError(
-                f"You need to provide at least two of 'max_steps', "
-                f"'nb_tasks', or 'steps_per_task'."
+                "You need to provide at least two of 'max_steps', "
+                "'nb_tasks', or 'steps_per_task'."
             )
 
         assert self.max_steps == self.nb_tasks * self.steps_per_task
@@ -501,7 +472,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     ) -> Dict[int, Dict]:
         """ Create the task schedule, which maps from a step to the changes that
         will occur in the environment when that step is reached.
-        
+
         Uses the provided `temp_env` to generate the random tasks at the steps
         given in `change_steps` (a list of integers).
 
@@ -544,7 +515,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             self.config = method.config
             logger.debug(f"Using Config from the Method: {self.config}")
         else:
-            logger.debug(f"Parsing the Config from the command-line.")
+            logger.debug("Parsing the Config from the command-line.")
             self.config = Config.from_args(self._argv, strict=False)
             logger.debug(f"Resulting Config: {self.config}")
 
@@ -566,17 +537,17 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # they aren't json-serializable.)
         if self._new_random_task_on_reset:
             logger.info(
-                f"Train tasks: "
+                "Train tasks: "
                 + json.dumps(list(self.train_task_schedule.values()), indent="\t")
             )
         else:
             logger.info(
-                f"Train task schedule:"
+                "Train task schedule:"
                 + json.dumps(self.train_task_schedule, indent="\t")
             )
         if self.config.debug:
             logger.debug(
-                f"Test task schedule:"
+                "Test task schedule:"
                 + json.dumps(self.test_task_schedule, indent="\t")
             )
 
@@ -601,7 +572,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             self.valid_wrappers = self.create_valid_wrappers()
         elif stage in {"test", None}:
             self.test_wrappers = self.create_test_wrappers()
-    
+
     def prepare_data(self, *args, **kwargs) -> None:
         # We don't really download anything atm.
         if self.config is None:
@@ -612,7 +583,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         self, batch_size: int = None, num_workers: int = None
     ) -> ActiveEnvironment:
         """Create a training gym.Env/DataLoader for the current task.
-        
+
         Parameters
         ----------
         batch_size : int, optional
@@ -659,7 +630,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             env_dataloader = MeasureRLPerformanceWrapper(
                 env_dataloader, wandb_prefix=f"Train/Task {self.current_task_id}"
             )
-        
+
         self.train_env = env_dataloader
         # BUG: There is a mismatch between the train env's observation space and the
         # shape of its observations.
@@ -671,7 +642,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         self, batch_size: int = None, num_workers: int = None
     ) -> Environment:
         """Create a validation gym.Env/DataLoader for the current task.
-        
+
         Parameters
         ----------
         batch_size : int, optional
@@ -712,13 +683,13 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         self, batch_size: int = None, num_workers: int = None
     ) -> TestEnvironment:
         """Create the test 'dataloader/gym.Env' for all tasks.
-        
+
         NOTE: This test environment isn't just for the current task, it actually
         contains the sequence of all tasks. This is different than the train or
         validation environments, since if the task labels are available at train
         time, then calling train/valid_dataloader` returns the envs for the
         current task only, and the `.fit` method is called once per task.
-        
+
         This environment is also different in that it is wrapped with a Monitor,
         which we might eventually use to save the results/gifs/logs of the
         testing runs.
@@ -853,7 +824,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         max_episodes: Optional[int] = None,
     ) -> GymDataLoader:
         """ Helper function for creating a (possibly vectorized) environment.
-        
+
         """
         logger.debug(
             f"batch_size: {batch_size}, num_workers: {num_workers}, seed: {seed}"
@@ -877,7 +848,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
             env = EpisodeLimit(env, max_episodes=max_episodes)
 
-        ## Apply the "post-batch" wrappers:
+        # Apply the "post-batch" wrappers:
         # from sequoia.common.gym_wrappers import ConvertToFromTensors
         # TODO: Only the BaselineMethod requires this, we should enable it only
         # from the BaselineMethod, and leave it 'off' by default.
@@ -910,10 +881,10 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
     def create_train_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to each training environment.
-        
+
         The result of this method must be pickleable when using
         multiprocessing.
-        
+
         Returns
         -------
         List[Callable[[gym.Env], gym.Env]]
@@ -938,7 +909,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
     def create_valid_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to each validation environment.
-        
+
         The result of this method must be pickleable when using
         multiprocessing.
 
@@ -946,9 +917,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         -------
         List[Callable[[gym.Env], gym.Env]]
             [description]
-            
+
         TODO: Decide how this 'validation' environment should behave in
-        comparison with the train and test environments. 
+        comparison with the train and test environments.
         """
         # We add a restriction to prevent users from getting data from
         # previous or future tasks.
@@ -967,7 +938,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
     def create_test_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to a single test environment.
-        
+
         The result of this method must be pickleable when using
         multiprocessing.
 
@@ -1033,7 +1004,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             # wrappers.append(partial(AtariPreprocessing, frame_skip=1))
             wrappers.append(ImageObservations)
             pass
-        
+
         elif is_atari_env(self.dataset):
             # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
             # TODO: Figure out the differences (if there are any) between the
@@ -1088,11 +1059,11 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     def _temp_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """ Gets the minimal wrappers needed to figure out the Spaces of the
         train/valid/test environments.
-        
+
         This is called in the 'constructor' (__post_init__) to set the Setting's
         observation/action/reward spaces, so this should depend on as little
         state from `self` as possible, since not all attributes have been
-        defined at the time when this is called. 
+        defined at the time when this is called.
         """
         return self._make_wrappers(
             task_schedule=self.train_task_schedule,
@@ -1138,7 +1109,6 @@ class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):
         # isn't batched.
         rewards = self.get_episode_rewards()
         lengths = self.get_episode_lengths()
-        total_steps = self.get_total_steps()
 
         task_schedule: Dict[int, Dict] = self.task_schedule
         task_steps = sorted(task_schedule.keys())
