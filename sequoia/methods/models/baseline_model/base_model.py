@@ -16,31 +16,27 @@ from pytorch_lightning import LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
 from simple_parsing import choice
+from simple_parsing.helpers.serialization import register_decoding_fn
 from torch import Tensor, nn
 from torch.optim.optimizer import Optimizer
 
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.loss import Loss
-from sequoia.common.transforms import SplitBatch
 from sequoia.common.spaces import Image
+from sequoia.common.transforms import SplitBatch
 from sequoia.settings.active import ActiveSetting, ContinualRLSetting
-from sequoia.settings.passive import PassiveSetting
-from sequoia.settings.base import Environment
 from sequoia.settings.assumptions.incremental import IncrementalSetting
+from sequoia.settings.base import Environment
 from sequoia.settings.base.setting import Actions, Observations, Rewards
+from sequoia.settings.passive import PassiveSetting
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.module_dict import ModuleDict
 
 from ..fcnet import FCNet
 from ..forward_pass import ForwardPass
-from ..output_heads import (
-    ActorCriticHead,
-    ClassificationHead,
-    OutputHead,
-    PolicyHead,
-    RegressionHead,
-)
+from ..output_heads import (ActorCriticHead, ClassificationHead, OutputHead,
+                            PolicyHead, RegressionHead)
 from ..output_heads.rl.episodic_a2c import EpisodicA2C
 from .base_hparams import BaseHParams
 
@@ -391,7 +387,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             "loss_object": loss,
         }
 
-    def split_batch(self, batch: Any) -> Tuple[Observations, Rewards]:
+    def split_batch(self, batch: Any) -> Tuple[Observations, Optional[Rewards]]:
         """ Splits the batch into the observations and the rewards.
 
         Uses the types defined on the setting that this model is being applied
@@ -567,6 +563,6 @@ class BaseModel(LightningModule, Generic[SettingType]):
         return observations.x.ndim == len(x_space.shape) + 1
 
 
-from simple_parsing.helpers.serialization import register_decoding_fn
-
+# Registering this handler for decoding the type of output head to use (a field in the
+# hparams) from a dictionary.
 register_decoding_fn(Type[OutputHead], lambda v: v)

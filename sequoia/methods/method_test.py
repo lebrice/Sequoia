@@ -6,16 +6,20 @@ from sequoia.settings import Setting
 
 from sequoia.settings.base import Method
 
+
 @dataclass
 class NewSetting(Setting):
     pass
+
 
 @dataclass
 class NewMethod(Method, target_setting=NewSetting):
     def fit(self, train_env, valid_env):
         pass
+
     def get_actions(self, observations, action_space):
         return action_space.sample()
+
     pass
 
 
@@ -36,39 +40,53 @@ def test_target_setting_is_inherited():
     @dataclass
     class NewMethod2(NewMethod):
         pass
+
     assert NewMethod2.target_setting is NewSetting
 
 
 @dataclass
-class SettingA(Setting): pass
+class SettingA(Setting):
+    pass
+
 
 @dataclass
-class SettingA1(SettingA): pass
+class SettingA1(SettingA):
+    pass
+
 
 @dataclass
-class SettingA2(SettingA): pass
+class SettingA2(SettingA):
+    pass
+
 
 @dataclass
-class SettingB(Setting): pass
+class SettingB(Setting):
+    pass
 
 
 class MethodA(Method, target_setting=SettingA):
     def fit(self, train_env, valid_env):
         pass
+
     def get_actions(self, observations, action_space):
         return action_space.sample()
+
 
 class MethodB(Method, target_setting=SettingB):
     def fit(self, train_env, valid_env):
         pass
+
     def get_actions(self, observations, action_space):
         return action_space.sample()
+
 
 class CoolGeneralMethod(Method, target_setting=Setting):
     def fit(self, train_env, valid_env):
         pass
+
     def get_actions(self, observations, action_space):
         return action_space.sample()
+
 
 def test_method_is_applicable_to_setting():
     """Test the mechanism for determining if a method is applicable for a given
@@ -90,16 +108,16 @@ def test_method_is_applicable_to_setting():
     show up in the real setting options.
     """
     # A Method designed for `SettingA` ISN'T applicable on the root node
-    # `Setting`: 
+    # `Setting`:
     assert not MethodA.is_applicable(Setting)
-    
+
     # A Method designed for `SettingA` IS applicable on the target node, and all
-    # nodes below it in the tree: 
+    # nodes below it in the tree:
     assert MethodA.is_applicable(SettingA)
     assert MethodA.is_applicable(SettingA1)
     assert MethodA.is_applicable(SettingA2)
     # A Method designed for `SettingA` ISN'T applicable on some other branch in
-    # the tree: 
+    # the tree:
     assert not MethodA.is_applicable(SettingB)
 
     # Same for Method designed for `SettingB`

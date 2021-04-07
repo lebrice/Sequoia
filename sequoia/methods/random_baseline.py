@@ -4,7 +4,6 @@ Should be applicable to any Setting.
 """
 
 from argparse import Namespace
-from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Union
 
 import gym

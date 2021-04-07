@@ -1,24 +1,14 @@
 """ Typed wrapper around `nn.ModuleDict`, just that just adds a get method. """
-from typing import TypeVar, Union, Optional, overload
+from typing import TypeVar, Union, MutableMapping, Any
 from torch import nn
 
-M = TypeVar("M")
 
-class ModuleDict(nn.ModuleDict):
+M = TypeVar("M", bound=nn.Module)
+T = TypeVar("T")
 
-    @overload
-    def get(self, key: str, default: nn.Module) -> nn.Module:
-        ...
 
-    @overload
-    def get(self, key: str, default: M) -> M:
-        ...
-
-    @overload
-    def get(self, key: str) -> nn.Module:
-        ...
-
-    def get(self, key: str, default: Union[M, nn.Module]=None) -> Union[Optional[nn.Module], Optional[M]]:
+class ModuleDict(nn.ModuleDict, MutableMapping[str, M]):
+    def get(self, key: str, default: Any = None) -> Union[M, Any]:
         """Returns the module at `self[key]` if present, else `default`.
 
         Args:

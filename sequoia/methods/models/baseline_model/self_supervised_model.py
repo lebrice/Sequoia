@@ -28,7 +28,7 @@ HParamsType = TypeVar("HParamsType", bound="SelfSupervisedModel.HParams")
 class SelfSupervisedModel(BaseModel[SettingType]):
     """
     Model 'mixin' that adds support for modular, configurable "auxiliary tasks".
-    
+
     These auxiliary tasks are used to get a self-supervised loss to train on
     when labels aren't available.
     """
@@ -142,7 +142,7 @@ class SelfSupervisedModel(BaseModel[SettingType]):
         regularization-based auxiliary tasks like EWC, for example.
 
         For the base model, this returns a dictionary with the encoder, for example.
-        When using auxiliaryt tasks, they also add their shared weights, if any. 
+        When using auxiliaryt tasks, they also add their shared weights, if any.
 
         Returns
         -------
