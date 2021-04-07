@@ -290,7 +290,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 # when in 'Class'/Task-Incremental RL), the last entry is the start
                 # of the last task.
                 nb_tasks -= 1
-            if self.nb_tasks != 1:
+            if self.nb_tasks not in {0, 1}:
                 if self.nb_tasks != nb_tasks:
                     raise RuntimeError(
                         f"Passed number of tasks {self.nb_tasks} doesn't match the "

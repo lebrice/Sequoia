@@ -65,6 +65,7 @@ def setting_type(request, monkeypatch, set_argv_for_debug):
     return setting_class
 
 
+@pytest.mark.skip(reason="BUG: seems to make other tests hang, because of Orion's bug.")
 def test_launch_sweep_with_constructor(
     method_type: Optional[Type[Method]],
     setting_type: Optional[Type[Setting]],
