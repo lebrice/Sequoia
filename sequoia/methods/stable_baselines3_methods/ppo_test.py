@@ -2,17 +2,14 @@ import pytest
 from sequoia.common.config import Config
 from sequoia.conftest import monsterkong_required
 from sequoia.settings.active import (
-    ContinualRLSetting,
     IncrementalRLSetting,
-    TaskIncrementalRLSetting,
 )
 
-from .ppo import PPOMethod, PPOModel
+from .ppo import PPOMethod
 
 
 def test_cartpole_state():
-    # Steps seems to be batch_size * n_steps * n_epochs, but I might be wrong.
-    method = PPOMethod(hparams=PPOModel.HParams(batch_size=10, n_steps=10, n_epochs=2))
+    method = PPOMethod()
     setting = IncrementalRLSetting(
         dataset="cartpole",
         observe_state_directly=True,
@@ -29,7 +26,7 @@ def test_cartpole_state():
 @pytest.mark.timeout(120)
 @monsterkong_required
 def test_monsterkong():
-    method = PPOMethod(hparams=PPOModel.HParams(batch_size=10, n_steps=10, n_epochs=2))
+    method = PPOMethod()
     setting = IncrementalRLSetting(
         dataset="monsterkong",
         nb_tasks=2,
@@ -40,4 +37,3 @@ def test_monsterkong():
         method, config=Config(debug=True)
     )
     print(results.summary())
-

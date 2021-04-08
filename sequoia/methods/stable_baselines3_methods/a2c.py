@@ -1,31 +1,38 @@
 """ Method that uses the A2C model from stable-baselines3 and targets the RL
 settings in the tree.
 """
+import math
 from dataclasses import dataclass
-from typing import ClassVar, Optional, Type, Union, Mapping, Dict
+from typing import ClassVar, Dict, Mapping, Optional, Type, Union
 
 import gym
+import torch
 from gym import spaces
 from simple_parsing import mutable_field
 from stable_baselines3.a2c import A2C
-import torch
+
+from sequoia.common.hparams import uniform
 from sequoia.methods import register_method
 from sequoia.methods.stable_baselines3_methods.base import (
     SB3BaseHParams,
     StableBaselines3Method,
 )
 from sequoia.settings.active import ContinualRLSetting
-from sequoia.common.hparams import uniform, categorical, log_uniform
+from sequoia.utils import get_logger
+
+logger = get_logger(__file__)
 
 
 class A2CModel(A2C):
     """ Advantage Actor Critic (A2C) model imported from stable-baselines3.
-    
+
     Paper: https://arxiv.org/abs/1602.01783
-    Code: The SB3 implementation borrows code from https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail and
+    Code: The SB3 implementation borrows code from
+    https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail and
     and Stable Baselines (https://github.com/hill-a/stable-baselines)
 
-    Introduction to A2C: https://hackernoon.com/intuitive-rl-intro-to-advantage-actor-critic-a2c-4ff545978752
+    Introduction to A2C:
+    https://hackernoon.com/intuitive-rl-intro-to-advantage-actor-critic-a2c-4ff545978752
     """
 
     @dataclass
@@ -33,30 +40,42 @@ class A2CModel(A2C):
         """ Hyper-parameters of the A2C Model.
 
         TODO: Set actual 'good' priors for these hyper-parameters, as these were set
-        somewhat randomly.
+        somewhat arbitrarily. (They do however use the same defaults as in SB3).
         """
-
+        # The number of steps to run for each environment per update (i.e. batch size
+        # is n_steps * n_env where n_env is number of environment copies running in
+        # parallel)
+        # NOTE: Default value here is much lower than in PPO, which might indicate
+        # that this A2C is more "on-policy"? (i.e. that it requires data to be super
+        # "fresh")?
+        n_steps: int = uniform(3, 64, default=5, discrete=True)
         # Discount factor
         gamma: float = 0.99
         # gamma: float = uniform(0.9, 0.9999, default=0.99)
+
         # Factor for trade-off of bias vs variance for Generalized Advantage Estimator.
         # Equivalent to classic advantage when set to 1.
         gae_lambda: float = 1.0
         # gae_lambda: float = uniform(0.5, 1.0, default=1.0)
+
         # Entropy coefficient for the loss calculation
         ent_coef: float = 0.0
         # ent_coef: float = uniform(0.0, 1.0, default=0.0)
+
         # Value function coefficient for the loss calculation
         vf_coef: float = 0.5
         # vf_coef: float = uniform(0.01, 1.0, default=0.5)
+
         # The maximum value for the gradient clipping
         max_grad_norm: float = 0.5
         # max_grad_norm: float = uniform(0.1, 10, default=0.5)
+
         # RMSProp epsilon. It stabilizes square root computation in denominator of
         # RMSProp update.
         rms_prop_eps: float = 1e-5
         # rms_prop_eps: float = log_uniform(1e-7, 1e-3, default=1e-5)
-        # :param use_rms_prop: Whether to use RMSprop (default) or Adam as optimizer
+
+        # Whether to use RMSprop (default) or Adam as optimizer
         use_rms_prop: bool = True
         # use_rms_prop: bool = categorical(True, False, default=True)
 
@@ -94,7 +113,8 @@ class A2CModel(A2C):
         # Setting it to auto, the code will be run on the GPU if possible.
         device: Union[torch.device, str] = "auto"
 
-        # # :param _init_setup_model: Whether or not to build the network at the creation of the instance
+        # :param _init_setup_model: Whether or not to build the network at the
+        # creation of the instance
         # _init_setup_model: bool = True
 
 
@@ -113,6 +133,22 @@ class A2CMethod(StableBaselines3Method):
 
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting=setting)
+        if setting.steps_per_phase:
+            if self.hparams.n_steps > setting.steps_per_phase:
+                self.hparams.n_steps = math.ceil(0.1 * setting.steps_per_phase)
+                logger.info(
+                    f"Capping the n_steps to 10% of step budget length: "
+                    f"{self.hparams.n_steps}"
+                )
+            # NOTE: We limit the number of trainign steps per task, such that we never
+            # attempt to fill the buffer using more samples than the environment allows.
+            self.train_steps_per_task = min(
+                self.train_steps_per_task,
+                setting.steps_per_phase - self.hparams.n_steps - 1,
+            )
+            logger.info(
+                f"Limitting training steps per task to {self.train_steps_per_task}"
+            )
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> A2CModel:
         return self.Model(env=train_env, **self.hparams.to_dict())

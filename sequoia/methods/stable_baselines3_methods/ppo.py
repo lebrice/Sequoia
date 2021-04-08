@@ -52,7 +52,6 @@ class PPOModel(PPO):
         # The number of steps to run for each environment per update (i.e. batch size
         # is n_steps * n_env where n_env is number of environment copies running in
         # parallel)
-        # TODO: Limit this, as is done in A2C, based on the value of setting.max steps.
         n_steps: int = categorical(32, 128, 256, 1024, 2048, 4096, 8192, default=2048)
 
         # Minibatch size
@@ -144,12 +143,23 @@ class PPOMethod(StableBaselines3Method):
 
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting=setting)
+        if setting.steps_per_phase:
+            # NOTE: We limit the number of trainign steps per task, such that we never
+            # attempt to fill the buffer using more samples than the environment allows.
 
-        if self.hparams.n_steps > setting.steps_per_phase:
-            self.hparams.n_steps = math.ceil(0.1 * setting.steps_per_phase)
+            if self.hparams.n_steps > setting.steps_per_phase:
+                self.hparams.n_steps = math.ceil(0.1 * setting.steps_per_phase)
+                logger.info(
+                    f"Capping the n_steps to 10% of step budget length: "
+                    f"{self.hparams.n_steps}"
+                )
+
+            self.train_steps_per_task = min(
+                self.train_steps_per_task,
+                setting.steps_per_phase - self.hparams.n_steps - 1,
+            )
             logger.info(
-                f"Capping the n_steps to 10% of step budget length: "
-                f"{self.hparams.n_steps}"
+                f"Limitting training steps per task to {self.train_steps_per_task}"
             )
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> PPOModel:

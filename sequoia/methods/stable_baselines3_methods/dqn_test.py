@@ -15,7 +15,7 @@ from .dqn import DQNMethod, DQNModel
 
 
 def test_cartpole_state():
-    method = DQNMethod(hparams=DQNModel.HParams(train_freq=1))
+    method = DQNMethod()
     setting = IncrementalRLSetting(
         dataset="cartpole",
         observe_state_directly=True,
@@ -32,7 +32,7 @@ def test_cartpole_state():
 @pytest.mark.timeout(60)
 @monsterkong_required
 def test_monsterkong():
-    method = DQNMethod(hparams=DQNModel.HParams(train_freq=1))
+    method = DQNMethod()
     setting = IncrementalRLSetting(
         dataset="monsterkong",
         nb_tasks=2,

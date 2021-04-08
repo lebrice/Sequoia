@@ -6,37 +6,26 @@ from sequoia.settings.active import (
     IncrementalRLSetting,
     TaskIncrementalRLSetting,
 )
+from sequoia.settings import Setting
 
 from .ddpg import DDPGMethod
+from typing import Type
 
 
-@pytest.mark.xfail(reason="DDPG needs continuous action spaces.")
-def test_cartpole_state():
+@pytest.mark.parametrize(
+    "Setting", [ContinualRLSetting, IncrementalRLSetting, TaskIncrementalRLSetting]
+)
+@pytest.mark.parametrize("observe_state", [True, False])
+def test_continuous_mountaincar_state(Setting: Type[Setting], observe_state: bool):
     method = DDPGMethod()
-    setting = IncrementalRLSetting(
-        dataset="cartpole",
+    setting = Setting(
+        dataset="MountainCarContinuous-v0",
         observe_state_directly=True,
         nb_tasks=2,
         steps_per_task=1_000,
         test_steps_per_task=1_000,
     )
-    results: IncrementalRLSetting.Results = setting.apply(
-        method, config=Config(debug=True)
-    )
-    print(results.summary())
-
-
-@pytest.mark.xfail(reason="DDPG needs continuous action spaces.")
-@monsterkong_required
-def test_monsterkong():
-    method = DDPGMethod()
-    setting = IncrementalRLSetting(
-        dataset="monsterkong",
-        nb_tasks=2,
-        steps_per_task=1_000,
-        test_steps_per_task=1_000,
-    )
-    results: IncrementalRLSetting.Results = setting.apply(
+    results: ContinualRLSetting.Results = setting.apply(
         method, config=Config(debug=True)
     )
     print(results.summary())
