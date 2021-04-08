@@ -12,7 +12,7 @@ from gym.spaces.utils import flatten_space
 from simple_parsing import mutable_field
 from stable_baselines3.ddpg import DDPG
 
-from sequoia.common.hparams import categorical, log_uniform, uniform
+from sequoia.common.hparams import log_uniform, uniform
 from sequoia.methods import register_method
 from sequoia.settings.active import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
@@ -90,7 +90,7 @@ class DDPGMethod(StableBaselines3Method):
         super().configure(setting)
         # TODO: This is mostly just copied from DQN, there is probably need for a new
         # OffPolicyMethod class that would contain the code common to both?
-
+    
         # The default value for the buffer size in the DQN model is WAY too
         # large, so we re-size it depending on the size of the observations.
         # NOTE: (issue #156) Only consider the images, not the task labels for these

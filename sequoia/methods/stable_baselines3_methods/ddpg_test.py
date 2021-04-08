@@ -1,6 +1,5 @@
 import pytest
 from sequoia.common.config import Config
-from sequoia.conftest import monsterkong_required
 from sequoia.settings.active import (
     ContinualRLSetting,
     IncrementalRLSetting,
@@ -29,4 +28,3 @@ def test_continuous_mountaincar_state(Setting: Type[Setting], observe_state: boo
         method, config=Config(debug=True)
     )
     print(results.summary())
-
