@@ -69,7 +69,7 @@ def test_task_incremental_mnist(monkeypatch):
     assert at_all_points_in_time[4][4] != 0
 
     assert 0.95 <= results.average_online_performance.objective
-    assert 0.25 <= results.average_final_performance.objective
+    assert 0.15 <= results.average_final_performance.objective
 
 
 @pytest.mark.parametrize(

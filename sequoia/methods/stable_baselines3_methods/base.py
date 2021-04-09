@@ -36,13 +36,14 @@ from sequoia.settings.active.continual.wrappers import (
     RemoveTaskLabelsWrapper,
 )
 from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.serialization import register_decoding_fn
 
 logger = get_logger(__file__)
 
 # "Patch" the _wrap_env function of the BaseAlgorithm class of
 # stable_baselines, to make it recognize the VectorEnv from gym.vector as a
 # vectorized environment.
-## Stable-Baselines3 has a lot of duplicated code from openai gym
+# Stable-Baselines3 has a lot of duplicated code from openai gym
 
 
 def _wrap_env(env: GymEnv, verbose: int = 0, monitor_wrapper: bool = True) -> VecEnv:
@@ -94,6 +95,7 @@ class RemoveInfoWrapper(gym.Wrapper):
     """ Wrapper used to remove the 'info' dict, since there seems to be a bug in sb3
     whenever there is something in the 'info' dict.
     """
+
     def step(self, action):
         obs, rewards, done, info = self.env.step(action)
         info = {}
@@ -163,13 +165,13 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     hparams: SB3BaseHParams = mutable_field(SB3BaseHParams)
 
     # The number of training steps to run per task.
-    # NOTE: This shouldn't be set to more than 1 when applying this method on a
-    # ContinualRLSetting, because we don't currently have a way of "resetting"
+    # NOTE: This shouldn't be set to more than the task length when applying this method
+    # on a ContinualRLSetting, because we don't currently have a way of "resetting"
     # the nonstationarity in the environment, and there is only one task,
     # therefore if we trained for say 10 million steps, while the
     # non-stationarity only lasts for 10_000 steps, we'd have seen an almost
-    # stationary distribution, since the environment would have stopped changing after 10_000 steps.
-    #
+    # stationary distribution, since the environment would have stopped changing after
+    # 10_000 steps.
     train_steps_per_task: int = 10_000
 
     # Evaluate the agent every ``eval_freq`` timesteps (this may vary a little)
@@ -213,11 +215,11 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         # some methods support it, some don't, and it doesn't recognize
         # VectorEnvs from gym.
         setting.batch_size = None
-        # assert False, setting.train_transforms
+
         # BUG: Need to fix an issue when using the CnnPolicy and Atary envs, the
         # input shape isn't what they expect (only 2 channels instead of three
         # apparently.)
-        from sequoia.common.transforms import Transforms
+        # from sequoia.common.transforms import Transforms
         # NOTE: Important to not use any transforms, since the SB3 methods want to get
         # the 'raw' np.uint8 image as an input.
         transforms = [
@@ -244,12 +246,12 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
                 warnings.warn(
                     RuntimeWarning(
                         f"Can't train for the requested {self.train_steps_per_task} "
-                        f"steps, since we're (currently) only allowed one 'pass' "
-                        f"through the environment (max {setting.steps_per_phase} steps.)"
+                        f"steps, since we're (currently) only allowed a maximum of "
+                        f"{setting.steps_per_phase} steps.)"
                     )
                 )
             # Use as many training steps as possible.
-            self.train_steps_per_task = setting.steps_per_phase
+            self.train_steps_per_task = setting.steps_per_phase - 1
         # Otherwise, we can train basically as long as we want on each task.
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> BaseAlgorithm:
@@ -329,7 +331,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
 
         It is required that this method be implemented if you want to perform HPO sweeps
         with Orion.
-        
+
         Parameters
         ----------
         new_hparams : Dict[str, Any]
@@ -361,7 +363,6 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
 
 # We do this just to prevent errors when trying to decode the hparams class above, and
 # also to silence the related warnings from simple-parsing's decoding.py module.
-from sequoia.utils.serialization import register_decoding_fn
 
 register_decoding_fn(Type[BasePolicy], lambda v: v)
 register_decoding_fn(Callable, lambda v: v)

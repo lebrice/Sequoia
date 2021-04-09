@@ -4,14 +4,14 @@ from sequoia.conftest import slow
 from sequoia.settings.active import IncrementalRLSetting, RLSetting
 from sequoia.settings.passive import ClassIncrementalSetting
 
-from .sb3_example import CustomPPOMethod
+from .sb3_example import CustomPPOMethod, CustomPPOModel
 
 
 @pytest.mark.timeout(120)
 def test_cartpole_state(cartpole_state_setting: SettingProxy[RLSetting]):
     """ Applies this Method to a simple cartpole-state setting.
     """
-    method = CustomPPOMethod()
+    method = CustomPPOMethod(hparams=CustomPPOModel.HParams(n_steps=64))
     results = cartpole_state_setting.apply(method)
     assert results.to_log_dict()
 
@@ -49,7 +49,6 @@ def test_RL_track(rl_track_setting: SettingProxy[IncrementalRLSetting]):
     results: ClassIncrementalSetting.Results
     online_perf = results.average_online_performance
     # TODO: get an estimate of the upper bound of the random method on the RL track.
-    TODO = 1_000  # this is way too large.
-    assert 0 < online_perf.objective < TODO
+    assert 0 < online_perf.objective
     final_perf = results.average_final_performance
-    assert 0 < final_perf.objective < TODO
+    assert 0 < final_perf.objective

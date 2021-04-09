@@ -1,7 +1,8 @@
-""" Method that uses the A2C model from stable-baselines3 and targets the RL
-settings in the tree.
+""" Base class used to not duplicate the tweaks made all the on-policy algos from SB3.
 """
 import math
+import warnings
+from abc import ABC
 from dataclasses import dataclass
 from typing import Callable, ClassVar, Dict, Mapping, Optional, Type, Union
 
@@ -9,41 +10,27 @@ import gym
 import torch
 from gym import spaces
 from simple_parsing import mutable_field
-from stable_baselines3.a2c import A2C
+from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 
-from sequoia.common.hparams import log_uniform, uniform
-from sequoia.methods import register_method
+from sequoia.common.hparams import uniform, log_uniform
 from sequoia.settings.active import ContinualRLSetting
-from sequoia.utils import get_logger
+from sequoia.utils.logging_utils import get_logger
 
-from .on_policy_method import OnPolicyMethod, OnPolicyModel
+from .base import SB3BaseHParams, StableBaselines3Method
 
 logger = get_logger(__file__)
 
 
-class A2CModel(A2C, OnPolicyModel):
-    """ Advantage Actor Critic (A2C) model imported from stable-baselines3.
-
-    Paper: https://arxiv.org/abs/1602.01783
-    Code: The SB3 implementation borrows code from
-    https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail and
-    and Stable Baselines (https://github.com/hill-a/stable-baselines)
-
-    Introduction to A2C:
-    https://hackernoon.com/intuitive-rl-intro-to-advantage-actor-critic-a2c-4ff545978752
-    """
+class OnPolicyModel(OnPolicyAlgorithm, ABC):
+    """ Tweaked version of the OnPolicyAlgorithm from SB3. """
 
     @dataclass
-    class HParams(OnPolicyModel.HParams):
-        """ Hyper-parameters of the A2C Model.
+    class HParams(SB3BaseHParams):
+        """ Hyper-parameters common to all on-policy algos from SB3. """
 
-        TODO: Set actual 'good' priors for these hyper-parameters, as these were set
-        somewhat arbitrarily. (They do however use the same defaults as in SB3).
-        """
         # learning rate for the optimizer, it can be a function of the current
         # progress remaining (from 1 to 0)
-        learning_rate: Union[float, Callable] = log_uniform(1e-7, 1e-2, default=7e-4)
-
+        learning_rate: Union[float, Callable] = log_uniform(1e-7, 1e-2, default=1e-3)
         # The number of steps to run for each environment per update (i.e. batch size
         # is n_steps * n_env where n_env is number of environment copies running in
         # parallel)
@@ -72,15 +59,6 @@ class A2CModel(A2C, OnPolicyModel):
         max_grad_norm: float = 0.5
         # max_grad_norm: float = uniform(0.1, 10, default=0.5)
 
-        # RMSProp epsilon. It stabilizes square root computation in denominator of
-        # RMSProp update.
-        rms_prop_eps: float = 1e-5
-        # rms_prop_eps: float = log_uniform(1e-7, 1e-3, default=1e-5)
-
-        # Whether to use RMSprop (default) or Adam as optimizer
-        use_rms_prop: bool = True
-        # use_rms_prop: bool = categorical(True, False, default=True)
-
         # Whether to use generalized State Dependent Exploration (gSDE) instead of
         # action noise exploration (default: False)
         use_sde: bool = False
@@ -90,10 +68,6 @@ class A2CModel(A2C, OnPolicyModel):
         # Default: -1 (only sample at the beginning of the rollout)
         sde_sample_freq: int = -1
         # sde_sample_freq: int = categorical(-1, 1, 5, 10, default=-1)
-
-        # Whether to normalize or not the advantage
-        normalize_advantage: bool = False
-        # normalize_advantage: bool = categorical(True, False, default=False)
 
         # The log location for tensorboard (if None, no logging)
         tensorboard_log: Optional[str] = None
@@ -106,7 +80,7 @@ class A2CModel(A2C, OnPolicyModel):
         # policy_kwargs: Optional[Dict[str, Any]] = None
 
         # The verbosity level: 0 no output, 1 info, 2 debug
-        verbose: int = 0
+        verbose: int = 1
 
         # Seed for the pseudo random generators
         seed: Optional[int] = None
@@ -120,28 +94,32 @@ class A2CModel(A2C, OnPolicyModel):
         # _init_setup_model: bool = True
 
 
-@register_method
 @dataclass
-class A2CMethod(OnPolicyMethod):
+class OnPolicyMethod(StableBaselines3Method, ABC):
     """ Method that uses the A2C model from stable-baselines3. """
 
-    # changing the 'name' in this case here, because the default name would be
-    # 'a_2_c'.
-    name: ClassVar[str] = "a2c"
-    Model: ClassVar[Type[A2CModel]] = A2CModel
+    Model: ClassVar[Type[OnPolicyModel]] = OnPolicyModel
 
-    # Hyper-parameters of the A2C model.
-    hparams: A2CModel.HParams = mutable_field(A2CModel.HParams)
+    # Hyper-parameters of the model/algorithm.
+    hparams: OnPolicyModel.HParams = mutable_field(OnPolicyModel.HParams)
 
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting=setting)
         if setting.steps_per_phase:
-            if self.hparams.n_steps > setting.steps_per_phase:
-                self.hparams.n_steps = math.ceil(0.1 * setting.steps_per_phase)
-                logger.info(
-                    f"Capping the n_steps to 10% of step budget length: "
-                    f"{self.hparams.n_steps}"
+            min_model_updates = 20
+            if self.hparams.n_steps > setting.steps_per_phase // min_model_updates:
+                # Set the number of steps per update so that there are *at least*
+                # `min_model_updates` model updates during a single `fit` call.
+                new_n_steps = math.ceil(setting.steps_per_phase / min_model_updates)
+                warnings.warn(
+                    RuntimeWarning(
+                        f"Capping the number of steps per update to {new_n_steps}, in "
+                        f"order to update the model at least {min_model_updates} "
+                        f"times per phase (call to `fit`)."
+                    )
                 )
+                assert new_n_steps > 1
+                self.hparams.n_steps = new_n_steps
             # NOTE: We limit the number of trainign steps per task, such that we never
             # attempt to fill the buffer using more samples than the environment allows.
             self.train_steps_per_task = min(
@@ -152,7 +130,10 @@ class A2CMethod(OnPolicyMethod):
                 f"Limitting training steps per task to {self.train_steps_per_task}"
             )
 
-    def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> A2CModel:
+    def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> OnPolicyModel:
+        logger.info(
+            "Creating model with hparams: \n" + self.hparams.dumps_json(indent="\t")
+        )
         return self.Model(env=train_env, **self.hparams.to_dict())
 
     def fit(self, train_env: gym.Env, valid_env: gym.Env):
@@ -188,8 +169,3 @@ class A2CMethod(OnPolicyMethod):
             search_space.pop("use_sde", None)
             search_space.pop("sde_sample_freq", None)
         return search_space
-
-
-if __name__ == "__main__":
-    results = A2CMethod.main()
-    print(results)

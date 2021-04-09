@@ -50,8 +50,8 @@ def test_task_schedule():
 
 
 @pytest.mark.parametrize("environment_name", supported_environments)
-def test_multi_task(environment_name: str):   
-    original = gym.make(environment_name)  
+def test_multi_task(environment_name: str):
+    original = gym.make(environment_name)
     env = MultiTaskEnvironment(original)
     env.reset()
     env.seed(123)
@@ -83,7 +83,7 @@ def test_monitor_env(environment_name):
     )
     env.seed(123)
     env.reset()
-    
+
     plt.ion()
 
     task_param_values: List[Dict] = []
@@ -109,7 +109,7 @@ def test_update_task():
     """Test that using update_task changes the given values in the environment
     and in the current_task dict, and that when a value isn't passed to
     update_task, it isn't reset to its default but instead keeps its previous
-    value. 
+    value.
     """
     original = gym.make("CartPole-v0")
     env = MultiTaskEnvironment(original)
@@ -123,7 +123,7 @@ def test_update_task():
     assert env.length == 1.0
     assert env.current_task["gravity"] == env.gravity == 20.0
     env.close()
-    
+
 
 def test_add_task_dict_to_info():
     """ Test that the 'info' dict contains the task dict. """
@@ -184,19 +184,19 @@ def test_add_task_id_to_obs():
     )
     env.seed(123)
     env.reset()
-    
+
     assert env.observation_space == NamedTupleSpace(
         x=original.observation_space,
-        task_labels=spaces.Discrete(4),   
+        task_labels=spaces.Discrete(4),
     )
-    
-    
+
+
     for step in range(100):
         obs, _, done, info = env.step(env.action_space.sample())
         # env.render()
 
         x, task_id = obs
-        
+
         if 0 <= step < 10:
             assert env.length == starting_length and env.gravity == starting_gravity
             assert task_id == 0, step
@@ -204,11 +204,11 @@ def test_add_task_id_to_obs():
         elif 10 <= step < 20:
             assert env.length == 0.1
             assert task_id == 1, step
-            
+
         elif 20 <= step < 30:
             assert env.length == 0.2 and env.gravity == -12.0
             assert task_id == 2, step
-            
+
         elif step >= 30:
             assert env.length == starting_length and env.gravity == 0.9
             assert task_id == 3, step
@@ -243,7 +243,7 @@ def test_starting_step_and_max_step():
     )
     env.seed(123)
     env.reset()
-    
+
     assert env.observation_space == NamedTupleSpace(
         x=original.observation_space,
         task_labels=spaces.Discrete(4),
@@ -253,7 +253,7 @@ def test_starting_step_and_max_step():
     # doesn't work.
     env.steps = -123
     assert env.steps == 10
-    
+
     # Trying to set the 'steps' to something greater than the max_steps
     # doesn't work.
     env.steps = 50
@@ -262,18 +262,18 @@ def test_starting_step_and_max_step():
     # Here we reset the steps to 10, and also check that this works.
     env.steps = 10
     assert env.steps == 10
-    
+
     for step in range(0, 100):
         # The environment started at an offset of 10.
         assert env.steps == max(min(step + 10, 19), 10)
-        
+
         obs, _, done, info = env.step(env.action_space.sample())
         # env.render()
 
         x, task_id = obs
 
         # Check that we're always stuck between 10 and 20
-        assert 10 <= env.steps < 20 
+        assert 10 <= env.steps < 20
         assert env.length == 0.1
         assert task_id == 1, step
 
@@ -298,7 +298,7 @@ def test_task_id_is_added_even_when_no_known_task_schedule():
     )
     env.seed(123)
     env.reset()
-    
+
     assert env.observation_space == NamedTupleSpace(
         x=original.observation_space,
         task_labels=spaces.Discrete(1),
@@ -330,11 +330,11 @@ def test_task_schedule_monsterkong():
         400: {"level": 4},
     }, add_task_id_to_obs=True)
     obs = env.reset()
-    
+
     # img, task_labels = obs
     assert obs[1] == 0
     assert env.get_level() == 0
-    
+
     for i in range(500):
         obs, reward, done, info = env.step(env.action_space.sample())
         assert obs[1] == i // 100
@@ -344,7 +344,7 @@ def test_task_schedule_monsterkong():
         if done:
             print(f"End of episode at step {i}")
             obs = env.reset()
-    
+
     assert obs[1] == 4
     assert env.level == 4
     # level stays the same even after reaching that objective.
@@ -363,12 +363,12 @@ def test_task_schedule_monsterkong():
 @monsterkong_required
 def test_task_schedule_with_callables():
     """ Apply functions to the env at a given step.
-    
+
     """
     env: MetaMonsterKongEnv = gym.make("MetaMonsterKong-v1")
     from gym.wrappers import TimeLimit
     env = TimeLimit(env, max_episode_steps=10)
-    
+
     from operator import methodcaller
     env = MultiTaskEnvironment(env, task_schedule={
         0:   methodcaller("set_level", 0),
@@ -378,11 +378,11 @@ def test_task_schedule_with_callables():
         400: methodcaller("set_level", 4),
     }, add_task_id_to_obs=True)
     obs = env.reset()
-    
+
     # img, task_labels = obs
     assert obs[1] == 0
     assert env.get_level() == 0
-    
+
     for i in range(500):
         obs, reward, done, info = env.step(env.action_space.sample())
         assert obs[1] == i // 100
@@ -392,7 +392,7 @@ def test_task_schedule_with_callables():
         if done:
             print(f"End of episode at step {i}")
             obs = env.reset()
-    
+
     assert obs[1] == 4
     assert env.level == 4
     # level stays the same even after reaching that objective.
@@ -428,7 +428,7 @@ def test_random_task_on_each_episode():
         obs = env.reset()
         task_labels.append(obs[1])
     assert len(set(task_labels)) > 1
-    
+
     # Episodes only last 10 steps. Tasks don't have anything to do with the task
     # schedule.
     obs = env.reset()
@@ -437,10 +437,10 @@ def test_random_task_on_each_episode():
         obs, reward, done, info = env.step(env.action_space.sample())
         assert obs[1] == start_task_label
         if i == 9:
-            assert done 
+            assert done
         else:
             assert not done
-    
+
     env.close()
 
 from sequoia.conftest import monsterkong_required
@@ -493,7 +493,7 @@ def env_fn_monsterkong() -> gym.Env:
         new_random_task_on_reset=True,
     )
     return env
-    
+
 
 def env_fn_cartpole() -> gym.Env:
     env = gym.make("CartPole-v0")
@@ -537,7 +537,7 @@ def test_task_sequence_is_reproducible(env: str):
         # Then, we want to check that each run was indentical, for a given seed.
         env = SyncVectorEnv([env_fn for _ in range(batch_size)])
         env.seed(123)
-        
+
         task_ids: List[int] = []
         task_lengths: List[int] = []
         for episode in range(n_episodes_per_run):
@@ -557,8 +557,8 @@ def test_task_sequence_is_reproducible(env: str):
         task_ids_and_lengths = list(zip(task_ids, task_lengths))
         print(f"Task ids and length of each one: {task_ids_and_lengths}")
 
-        assert len(set(task_ids)) > 1, "should have been more than just one task!" 
-        
+        assert len(set(task_ids)) > 1, "should have been more than just one task!"
+
         if not first_results:
             first_results = task_ids_and_lengths
         else:

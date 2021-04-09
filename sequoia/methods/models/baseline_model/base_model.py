@@ -31,7 +31,6 @@ from sequoia.settings.base import Environment
 from sequoia.settings.base.setting import Actions, Observations, Rewards
 from sequoia.settings.passive import PassiveSetting
 from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.module_dict import ModuleDict
 
 from ..fcnet import FCNet
 from ..forward_pass import ForwardPass
@@ -396,19 +395,19 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
         TODO: This is slightly confusing, should probably get rid of this.
         """
-        if isinstance(batch, (tuple, list)) and len(batch) == 2:
-            observations, rewards = batch
-            assert isinstance(observations, self.Observations)
-            assert rewards is None or isinstance(rewards, self.Rewards)
-            # raise NotImplementedError(
-            #     f"Expected to receive observations of type {self.Observations}, but "
-            #     f"got {observations} of type {type(observations)} instead."
-            # )
+        observations: Observations
+        rewards: Optional[Rewards]
+        if isinstance(batch, self.Observations):
+            observations, rewards = batch, None
         else:
-            assert isinstance(batch, self.Observations)
-            observations = batch
-            rewards = None
+            assert isinstance(batch, (tuple, list)) and len(batch) == 2
+            observations, rewards = batch
 
+        assert isinstance(observations, self.Observations)
+        assert rewards is None or isinstance(rewards, self.Rewards)
+
+        # Move the observations to the right device, and convert numpy arrays to
+        # tensors.
         observations = observations.torch(device=self.device)
         if rewards is not None:
             rewards = rewards.torch(device=self.device)
@@ -523,7 +522,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         Dict[str, nn.Module]:
             Dictionary mapping from name to the shared modules, if any.
         """
-        shared_modules: Dict[str, nn.Module] = ModuleDict()
+        shared_modules: Dict[str, nn.Module] = nn.ModuleDict()
 
         if self.encoder:
             shared_modules["encoder"] = self.encoder

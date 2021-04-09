@@ -39,4 +39,3 @@ def test_monsterkong():
         method, config=Config(debug=True)
     )
     print(results.summary())
-

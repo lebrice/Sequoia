@@ -45,7 +45,7 @@ class SelfSupervisedModel(BaseModel[SettingType]):
         super().__init__(setting, hparams, config)
         self.hp: SelfSupervisedModel.HParams
         # Dictionary of auxiliary tasks.
-        self.tasks: Dict[str, AuxiliaryTask] = nn.ModuleDict()
+        self.tasks: Dict[str, AuxiliaryTask] = self.create_auxiliary_tasks()
 
     def get_loss(
         self,

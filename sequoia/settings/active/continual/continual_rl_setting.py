@@ -1,56 +1,49 @@
 import itertools
 import json
+import math
+import warnings
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Callable, ClassVar, Dict, List, Optional, Sequence, Type, Union
+from typing import (Callable, ClassVar, Dict, List, Optional, Sequence, Type,
+                    Union)
+
 import gym
 from gym import spaces
 from gym.utils import colorize
 from gym.wrappers import TimeLimit
-from simple_parsing import choice, field, list_field
-from simple_parsing.helpers import dict_field
-from stable_baselines3.common.atari_wrappers import AtariWrapper
-import math
-
 from sequoia.common import Config
-from sequoia.common.gym_wrappers import (
-    AddDoneToObservation,
-    MultiTaskEnvironment,
-    SmoothTransitions,
-    TransformObservation,
-)
+from sequoia.common.gym_wrappers import (AddDoneToObservation,
+                                         MultiTaskEnvironment,
+                                         SmoothTransitions,
+                                         TransformObservation)
 from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
 from sequoia.common.gym_wrappers.pixel_observation import (
-    ImageObservations,
-    PixelObservationWrapper,
-)
-from sequoia.common.gym_wrappers.utils import (
-    IterableWrapper,
-    is_atari_env,
-    is_classic_control_env,
-)
+    ImageObservations, PixelObservationWrapper)
+from sequoia.common.gym_wrappers.utils import (IterableWrapper, is_atari_env,
+                                               is_classic_control_env)
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 from sequoia.common.spaces import Sparse
 from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.transforms import Transforms
 from sequoia.settings.active import ActiveSetting
-from sequoia.settings.assumptions.incremental import IncrementalSetting, TestEnvironment
+from sequoia.settings.assumptions.incremental import (IncrementalSetting,
+                                                      TaskResults,
+                                                      TaskSequenceResults,
+                                                      TestEnvironment)
 from sequoia.settings.base import Method
-
 from sequoia.utils import get_logger
+from simple_parsing import choice, field, list_field
+from simple_parsing.helpers import dict_field
+from stable_baselines3.common.atari_wrappers import AtariWrapper
+
 from .. import ActiveEnvironment
 from .gym_dataloader import GymDataLoader
 from .make_env import make_batched_env
 from .rl_results import RLResults
-from .wrappers import (
-    HideTaskLabelsWrapper,
-    TypedObjectsWrapper,
-)
-
-from sequoia.settings.assumptions.incremental import TaskSequenceResults, TaskResults
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics
+from .wrappers import HideTaskLabelsWrapper, TypedObjectsWrapper
 
 logger = get_logger(__file__)
 
@@ -447,7 +440,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
             # FIXME: Temporarily, we will actually set the task label space, since there
             # appears to be an error when using monsterkong space.
-            observation_space = NamedTupleSpace(spaces=space_dict, dtype=self.Observations)
+            observation_space = NamedTupleSpace(
+                spaces=space_dict, dtype=self.Observations
+            )
             self.observation_space = observation_space
             # Set the spaces using the temp env.
             # self.observation_space = temp_env.observation_space
@@ -547,8 +542,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             )
         if self.config.debug:
             logger.debug(
-                "Test task schedule:"
-                + json.dumps(self.test_task_schedule, indent="\t")
+                "Test task schedule:" + json.dumps(self.test_task_schedule, indent="\t")
             )
 
         # Run the Training loop (which is defined in IncrementalSetting).
@@ -624,9 +618,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         )
 
         if self.monitor_training_performance:
-            from sequoia.settings.passive.cl.measure_performance_wrapper import (
-                MeasureRLPerformanceWrapper,
-            )
+            from sequoia.settings.passive.cl.measure_performance_wrapper import \
+                MeasureRLPerformanceWrapper
+
             env_dataloader = MeasureRLPerformanceWrapper(
                 env_dataloader, wandb_prefix=f"Train/Task {self.current_task_id}"
             )
@@ -843,9 +837,11 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             )
         if max_steps:
             from sequoia.common.gym_wrappers.action_limit import ActionLimit
+
             env = ActionLimit(env, max_steps=max_steps)
         if max_episodes:
             from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
+
             env = EpisodeLimit(env, max_episodes=max_episodes)
 
         # Apply the "post-batch" wrappers:
@@ -1077,15 +1073,31 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         )
 
     def _get_objective_scaling_factor(self) -> float:
+        """ Return the factor to be multiplied with the mean reward per episode
+        in order to produce a 'performance score' between 0 and 1.
+
+        Returns
+        -------
+        float
+            The scaling factor to use.
+        """
         # TODO: remove this, currently used just so we can get a 'scaling factor' to use
         # to scale the 'mean reward per episode' to a score between 0 and 1.
         # TODO: Add other environments, for instance 1/200 for cartpole.
-        return (
-            0.01
-            if isinstance(self.dataset, str)
-            and self.dataset.startswith("MetaMonsterKong")
-            else 1.0
-        )
+        max_reward_per_episode = 1
+        if isinstance(self.dataset, str) and self.dataset.startswith("MetaMonsterKong"):
+            max_reward_per_episode = 100
+        elif isinstance(self.dataset, str) and self.dataset == "CartPole-v0":
+            max_reward_per_episode = 200
+        else:
+            warnings.warn(
+                RuntimeWarning(
+                    f"Unable to determine the right scaling factor to use for dataset "
+                    f"{self.dataset} when calculating the performance score! "
+                    f"The CL Score of this run will most probably not be accurate."
+                )
+            )
+        return 1 / max_reward_per_episode
 
 
 class ContinualRLTestEnvironment(TestEnvironment, IterableWrapper):

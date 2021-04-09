@@ -17,21 +17,25 @@ from .continual_rl_setting import ContinualRLSetting
 
 
 def test_task_schedule_is_used():
-    # TODO: Figure out a way to test that the tasks are switching over time.
+    """
+    Test that the tasks are switching over time.
+    """
     setting = ContinualRLSetting(
-        dataset="CartPole-v0", max_steps=100, steps_per_task=10, nb_tasks=10
+        dataset="CartPole-v0", max_steps=100, steps_per_task=50, nb_tasks=2
     )
     env = setting.train_dataloader(batch_size=None)
 
     starting_length = env.length
     assert starting_length == 0.5
 
-    observations = env.reset()
+    _ = env.reset()
     lengths: List[float] = []
-    for i in range(100):
+    for i in range(setting.steps_per_phase):
         obs, reward, done, info = env.step(env.action_space.sample())
-        if done:
+        if done and i != setting.steps_per_phase - 1:
+            # NOTE: Don't reset on the last step
             env.reset()
+        # Get the length of the pole from the environment.
         length = env.length
         lengths.append(length)
     assert not all(length == starting_length for length in lengths)

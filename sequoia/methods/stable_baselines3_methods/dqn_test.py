@@ -1,15 +1,10 @@
 import numpy as np
 import pytest
-import torch
 from gym import spaces
 from sequoia.common.config import Config
 from sequoia.common.spaces import Image, NamedTupleSpace, Sparse
 from sequoia.conftest import monsterkong_required
-from sequoia.settings.active import (
-    ContinualRLSetting,
-    IncrementalRLSetting,
-    TaskIncrementalRLSetting,
-)
+from sequoia.settings.active import IncrementalRLSetting
 
 from .dqn import DQNMethod
 
@@ -29,6 +24,7 @@ def test_cartpole_state():
     print(results.summary())
 
 
+@pytest.mark.timeout(60)
 @monsterkong_required
 def test_monsterkong():
     method = DQNMethod()
