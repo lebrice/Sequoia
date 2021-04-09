@@ -19,11 +19,11 @@ from sequoia.methods.stable_baselines3_methods.base import (
 )
 from sequoia.settings.active import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
-
+from .on_policy_method import OnPolicyMethod, OnPolicyModel
 logger = get_logger(__file__)
 
 
-class PPOModel(PPO):
+class PPOModel(PPO, OnPolicyModel):
     """ Proximal Policy Optimization algorithm (PPO) (clip version) - from SB3.
 
     Paper: https://arxiv.org/abs/1707.06347
@@ -36,7 +36,7 @@ class PPOModel(PPO):
     """
 
     @dataclass
-    class HParams(SB3BaseHParams):
+    class HParams(OnPolicyModel.HParams):
         """ Hyper-parameters of the PPO Model. """
 
         # # The policy model to use (MlpPolicy, CnnPolicy, ...)
@@ -134,7 +134,7 @@ class PPOModel(PPO):
 
 @register_method
 @dataclass
-class PPOMethod(StableBaselines3Method):
+class PPOMethod(OnPolicyMethod):
     """ Method that uses the PPO model from stable-baselines3. """
 
     Model: ClassVar[Type[PPOModel]] = PPOModel
@@ -143,24 +143,6 @@ class PPOMethod(StableBaselines3Method):
 
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting=setting)
-        if setting.steps_per_phase:
-            # NOTE: We limit the number of trainign steps per task, such that we never
-            # attempt to fill the buffer using more samples than the environment allows.
-
-            if self.hparams.n_steps > setting.steps_per_phase:
-                self.hparams.n_steps = math.ceil(0.1 * setting.steps_per_phase)
-                logger.info(
-                    f"Capping the n_steps to 10% of step budget length: "
-                    f"{self.hparams.n_steps}"
-                )
-
-            self.train_steps_per_task = min(
-                self.train_steps_per_task,
-                setting.steps_per_phase - self.hparams.n_steps - 1,
-            )
-            logger.info(
-                f"Limitting training steps per task to {self.train_steps_per_task}"
-            )
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> PPOModel:
         return self.Model(env=train_env, **self.hparams.to_dict())
@@ -188,16 +170,7 @@ class PPOMethod(StableBaselines3Method):
     def get_search_space(
         self, setting: ContinualRLSetting
     ) -> Mapping[str, Union[str, Dict]]:
-        search_space = super().get_search_space(setting)
-        if isinstance(setting.action_space, spaces.Discrete):
-            # From stable_baselines3/common/base_class.py", line 170:
-            # > Generalized State-Dependent Exploration (gSDE) can only be used with
-            #   continuous actions
-            # Therefore we remove related entries in the search space, so they keep
-            # their default values.
-            search_space.pop("use_sde", None)
-            search_space.pop("sde_sample_freq", None)
-        return search_space
+        return super().get_search_space(setting)
 
 
 if __name__ == "__main__":

@@ -61,5 +61,7 @@ class ActionLimit(ActionCounter):
         # BUG: If we dont use >=, then iteration with EnvDataset doesn't work.
         if self._action_counter >= self._max_steps:
             self.close()
+            done = True
+            info["truncated"] = True
 
         return obs, reward, done, info

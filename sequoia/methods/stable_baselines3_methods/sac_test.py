@@ -11,6 +11,7 @@ from .sac import SACMethod
 from typing import Type
 
 
+@pytest.mark.timeout(120)
 @pytest.mark.parametrize(
     "Setting", [ContinualRLSetting, IncrementalRLSetting, TaskIncrementalRLSetting]
 )
