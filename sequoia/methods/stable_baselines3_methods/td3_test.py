@@ -15,7 +15,7 @@ from typing import Type
     "Setting", [ContinualRLSetting, IncrementalRLSetting, TaskIncrementalRLSetting]
 )
 @pytest.mark.parametrize("observe_state", [True, False])
-def test_continuous_mountaincar_state(Setting: Type[Setting], observe_state: bool):
+def test_continuous_mountaincar(Setting: Type[Setting], observe_state: bool):
     method = TD3Method()
     setting = Setting(
         dataset="MountainCarContinuous-v0",

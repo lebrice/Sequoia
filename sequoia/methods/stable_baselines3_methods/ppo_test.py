@@ -16,11 +16,11 @@ def test_cartpole_state():
         steps_per_task=5_000,
         test_steps_per_task=1_000,
     )
-    results: IncrementalRLSetting.Results = setting.apply(
+    results = setting.apply(
         method, config=Config(debug=True)
     )
     print(results.summary())
-    assert 150 < results.average_final_performance.mean_reward_per_episode
+    assert 150 < results.average_final_performance.mean_episode_reward
 
 
 def test_incremental_cartpole_state():
@@ -29,12 +29,13 @@ def test_incremental_cartpole_state():
         dataset="cartpole",
         observe_state_directly=True,
         nb_tasks=2,
-        steps_per_task=1_000,
+        steps_per_task=2_000,
         test_steps_per_task=1_000,
     )
     results: IncrementalRLSetting.Results = setting.apply(
         method, config=Config(debug=True)
     )
+    assert 100 < results.average_final_performance.mean_episode_reward
     print(results.summary())
 
 

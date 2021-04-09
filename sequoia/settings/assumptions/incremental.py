@@ -200,7 +200,7 @@ class IncrementalSetting(ContinualSetting):
         # TODO: Fix this up, need to set the '_objective_scaling_factor' to a different
         # value depending on the 'dataset' / environment.
         results._objective_scaling_factor = self._get_objective_scaling_factor()
-        
+
         if self.wandb:
             # Init wandb, and then log the setting's options.
             self.wandb_run = self.setup_wandb(method)

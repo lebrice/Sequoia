@@ -15,7 +15,7 @@ from typing import Type
     "Setting", [ContinualRLSetting, IncrementalRLSetting, TaskIncrementalRLSetting]
 )
 @pytest.mark.parametrize("observe_state", [True, False])
-def test_continuous_mountaincar_state(Setting: Type[Setting], observe_state: bool):
+def test_continuous_mountaincar(Setting: Type[Setting], observe_state: bool):
     method = DDPGMethod()
     setting = Setting(
         dataset="MountainCarContinuous-v0",
@@ -27,4 +27,5 @@ def test_continuous_mountaincar_state(Setting: Type[Setting], observe_state: boo
     results: ContinualRLSetting.Results = setting.apply(
         method, config=Config(debug=True)
     )
+    # TODO: Add some bounds on the expected performance here:
     print(results.summary())

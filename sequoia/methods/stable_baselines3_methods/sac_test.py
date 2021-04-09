@@ -6,17 +6,21 @@ from sequoia.settings.active import (
     TaskIncrementalRLSetting,
 )
 from sequoia.settings import Setting
+from sequoia.conftest import slow
 
 from .sac import SACMethod
 from typing import Type
 
 
+# TODO: Look into why SAC is so slow, there's probably a parameter which isn't being set
+# properly.
+@slow
 @pytest.mark.timeout(120)
 @pytest.mark.parametrize(
     "Setting", [ContinualRLSetting, IncrementalRLSetting, TaskIncrementalRLSetting]
 )
 @pytest.mark.parametrize("observe_state", [True, False])
-def test_continuous_mountaincar_state(Setting: Type[Setting], observe_state: bool):
+def test_continuous_mountaincar(Setting: Type[Setting], observe_state: bool):
     method = SACMethod()
     setting = Setting(
         dataset="MountainCarContinuous-v0",
