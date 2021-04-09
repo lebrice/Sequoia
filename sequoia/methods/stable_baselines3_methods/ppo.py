@@ -1,7 +1,6 @@
 """ Method that uses the PPO model from stable-baselines3 and targets the RL
 settings in the tree.
 """
-import math
 from dataclasses import dataclass
 from typing import ClassVar, Dict, Mapping, Optional, Type, Union
 
@@ -11,15 +10,12 @@ from gym import spaces
 from simple_parsing import mutable_field
 from stable_baselines3.ppo import PPO
 
-from sequoia.common.hparams import categorical, log_uniform
+from sequoia.common.hparams import log_uniform
 from sequoia.methods import register_method
-from sequoia.methods.stable_baselines3_methods.base import (
-    SB3BaseHParams,
-    StableBaselines3Method,
-)
 from sequoia.settings.active import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
 from .on_policy_method import OnPolicyMethod, OnPolicyModel
+
 logger = get_logger(__file__)
 
 
@@ -52,7 +48,7 @@ class PPOModel(PPO, OnPolicyModel):
         # The number of steps to run for each environment per update (i.e. batch size
         # is n_steps * n_env where n_env is number of environment copies running in
         # parallel)
-        n_steps: int = categorical(32, 128, 256, 1024, 2048, 4096, 8192, default=2048)
+        n_steps: int = log_uniform(32, 8192, default=2048, discrete=True)
 
         # Minibatch size
         batch_size: int = 64
@@ -145,6 +141,7 @@ class PPOMethod(OnPolicyMethod):
         super().configure(setting=setting)
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> PPOModel:
+        logger.info("Creating model with hparams: \n" + self.hparams.dumps_json(indent="\t"))
         return self.Model(env=train_env, **self.hparams.to_dict())
 
     def fit(self, train_env: gym.Env, valid_env: gym.Env):

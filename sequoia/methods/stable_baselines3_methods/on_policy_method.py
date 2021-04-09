@@ -1,6 +1,7 @@
 """ Base class used to not duplicate the tweaks made all the on-policy algos from SB3.
 """
 import math
+import warnings
 from abc import ABC
 from dataclasses import dataclass
 from typing import Callable, ClassVar, Dict, Mapping, Optional, Type, Union
@@ -105,12 +106,20 @@ class OnPolicyMethod(StableBaselines3Method, ABC):
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting=setting)
         if setting.steps_per_phase:
-            if self.hparams.n_steps > setting.steps_per_phase:
-                self.hparams.n_steps = math.ceil(0.1 * setting.steps_per_phase)
-                logger.info(
-                    f"Capping the n_steps to 10% of step budget length: "
-                    f"{self.hparams.n_steps}"
+            min_model_updates = 20
+            if self.hparams.n_steps > setting.steps_per_phase // min_model_updates:
+                # Set the number of steps per update so that there are *at least*
+                # `min_model_updates` model updates during a single `fit` call.
+                new_n_steps = math.ceil(setting.steps_per_phase / min_model_updates)
+                warnings.warn(
+                    RuntimeWarning(
+                        f"Capping the number of steps per update to {new_n_steps}, in "
+                        f"order to update the model at least {min_model_updates} "
+                        f"times per phase (call to `fit`)."
+                    )
                 )
+                assert new_n_steps > 1
+                self.hparams.n_steps = new_n_steps
             # NOTE: We limit the number of trainign steps per task, such that we never
             # attempt to fill the buffer using more samples than the environment allows.
             self.train_steps_per_task = min(
@@ -122,6 +131,9 @@ class OnPolicyMethod(StableBaselines3Method, ABC):
             )
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> OnPolicyModel:
+        logger.info(
+            "Creating model with hparams: \n" + self.hparams.dumps_json(indent="\t")
+        )
         return self.Model(env=train_env, **self.hparams.to_dict())
 
     def fit(self, train_env: gym.Env, valid_env: gym.Env):
