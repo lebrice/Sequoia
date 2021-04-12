@@ -30,6 +30,23 @@ class SequoiaExperience(Experience):
         dataset = AvalancheDataset(dataset=dataset, task_labels=t, targets=y)
         self._dataset = dataset
 
+        def train():
+            return env
+
+        env.train = train
+        from avalanche.benchmarks.utils import as_avalanche_dataset
+        from avalanche.benchmarks.utils.avalanche_dataset import _TaskSubsetDict
+        import numpy as np
+        env.tasks_pattern_indices = dict({0: np.arange(len(dataset))})
+        env.task_set = _TaskSubsetDict(env)
+        self._dataset = env
+        from avalanche.benchmarks import GenericScenarioStream
+
+        class FakeStream(GenericScenarioStream):
+            pass
+        self.origin_stream = FakeStream("train", scenario="whatever")
+        # self.origin_stream.name = "train"
+
     @property
     def dataset(self):
         return self._dataset
