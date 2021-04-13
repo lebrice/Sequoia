@@ -812,8 +812,9 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
             TaskResults() for step in self.task_steps
         )
         self._reset = False
+        # NOTE: The task schedule is already in terms of the number of batches.
         self.boundary_steps = [
-            step // (self.batch_size or 1) for step in self.task_schedule.keys()
+            step for step in self.task_schedule.keys()
         ]
 
     def get_results(self) -> ClassIncrementalResults:
