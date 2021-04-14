@@ -35,7 +35,8 @@ def get_tree_string(with_methods: bool = False, with_docstring: bool = False):
         message: List[str] = []
         source_file = get_relative_path_to(setting)
         message += [f"{setting.__name__} ({source_file})"]
-
+        # Little 'hack' for the if below: the Setting class is inside sequoia/settings/base.
+        parent_dir = source_file.parent if setting is not Setting else source_file.parent.parent
         applicable_methods = setting.get_applicable_methods()
 
         n_children = len(setting.get_children())
@@ -60,6 +61,17 @@ def get_tree_string(with_methods: bool = False, with_docstring: bool = False):
         # print(f"Children[0]'s children: {setting.get_children()[0].children}")
         
         for i, child_setting in enumerate(setting.get_children()):
+            # TODO: Do not recurse into this child if it is not located in a subfolder
+            # of the parent.
+            child_setting: Setting
+            child_path: Path = child_setting.get_path_to_source_file()
+            try:
+                relative_path = child_path.relative_to(parent_dir)
+                # print(f"Relative path {relative_path}")
+            except ValueError as e:
+                # print(f"Didnt work: {e}")
+                continue
+
             child_prefix = prefix + ""
             # Recurse!
             child_message = _setting_tree(child_setting, child_prefix, indentation + 1)
