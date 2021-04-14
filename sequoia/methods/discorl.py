@@ -8,16 +8,17 @@ from typing import Optional
 
 import gym
 import torch
+import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset, ConcatDataset
 
 from sequoia.methods import register_method
-from sequoia.settings import IncrementalRLSetting, ActiveSetting
+from sequoia.settings import IncrementalRLSetting, TaskIncrementalRLSetting
 from sequoia.settings.active.continual import ContinualRLSetting
 from sequoia.settings.base import Actions, Environment, Method, Observations
 from sequoia.utils import get_logger
 
 from sequoia.methods.stable_baselines3_methods import StableBaselines3Method
-from sequoia.methods.stable_baselines3_methods import PPOMethod, PPOModel
+from sequoia.methods.stable_baselines3_methods import PPOModel, A2CModel
 from sequoia.methods.experience_replay import Buffer
 from copy import deepcopy
 from sequoia.utils.categorical import Categorical
@@ -37,45 +38,49 @@ class DiscoRLMethod(StableBaselines3Method):
     - student model: trained with some kind of immitation learning / behaviour cloning
     """
 
-    Model = PPOModel
+    #Model = PPOModel
+    Model = A2CModel
 
     def configure(self, setting: ContinualRLSetting):
         self.num_inputs = setting.observation_space.x.shape[0]
         self.num_outputs = setting.action_space.n
 
-        setting.max_steps  # Total training steps (all tasks)
-        setting.steps_per_task  # Total steps per task
-        setting.max_episodes  # Not 100% tested yet
-        setting.episodes_per_task  # Not 100% tested yet
+        # setting.max_steps  # Total training steps (all tasks)
+        # setting.steps_per_task  # Total steps per task
+        # setting.max_episodes  # Not 100% tested yet
+        # setting.episodes_per_task  # Not 100% tested yet
 
         # empty
-        self.buffer = TensorDataset([torch.tensor(0), torch.tensor(0)])
+        self.buffer = None
+        self.criterion = torch.nn.MSELoss()
+        self.epoch_distillation = 1
 
-        # shematic declaration of student
-        self.student = deepcopy(self.model.policy)
-
-        # IDEA: Pretend that the setting has fewer steps than it actually doe, just for
-        # the call to `configure`.
-        # super().configure(setting)
-
-        # we want to sample on policy 10% des episodes et les annoter avec le teacher
-        self.num_epidodes_saved = self.hparams.max_episode_steps * 0.1
-        self.train_steps_per_task = int(self.hparams.max_episode_steps * 0.9) - 1
 
     def fit(self, train_env: gym.Env, valid_env: gym.Env):
+
+        if self.model is None:
+            #declare model and student
+            self.model = self.create_model(train_env, valid_env)
+            self.student = deepcopy(self.model.policy)
+            self.opt_student = optim.SGD(params=self.student.parameters(), lr=0.001, momentum=0.9)
+        else:
+            # TODO: "Adapt"/re-train the model on the new environment.
+            self.model.set_env(train_env)
+
         steps_per_task = self.train_steps_per_task
         self.train_steps_per_task = round(steps_per_task * 0.9)
         # Train the teacher for a portion of the step budget
         super().fit(train_env, valid_env)
 
+
         self.train_steps_per_task = steps_per_task
 
         observation_collection = []
         distill_label_collection = []
-        previous_task_env: gym.Env = self.model.env
 
+        # sample observations and annotate them with teacher
         while len(observation_collection) < self.num_epidodes_saved:
-            state = previous_task_env.reset()
+            state = train_env.reset()
             done = False
 
             while not done:
@@ -88,49 +93,60 @@ class DiscoRLMethod(StableBaselines3Method):
                 observation_collection.append(x)
                 distill_label_collection.append(logits)
 
-                state, _, done, _ = previous_task_env.step(actions)
+                state, _, done, _ = train_env.reset.step(actions)
 
+        # concat observations into dataser
         new_observations = TensorDataset(
             torch.cat(observation_collection), torch.cat(distill_label_collection)
         )
-        self.buffer = ConcatDataset(self.buffer, new_observations)
+        if self.buffer is None:
+            self.buffer = new_observations
+        else:
+            self.buffer = ConcatDataset(self.buffer, new_observations)
         dataloader = DataLoader(self.buffer, batch_size=100, shuffle=False)
 
-        for x, y in dataloader:
-            actions, values, log_probs = self.student.forward(state)
-            # TODO
+        # distillate all knowledge in student
+        for epoch in range(self.epoch_distillation):
+            for x, y in dataloader:
+                self.opt_student.zero_grad()
+                actions, values, log_probs = self.student.forward(x)
+
+                loss = self.criterion(actions, y)
+                loss.backward()
+                self.opt_student.step()
+
+
 
     def get_actions(
         self, observations: ContinualRLSetting.Observations, action_space: gym.Space
     ) -> ContinualRLSetting.Actions:
-        # TODO: Use the student rather than the Teacher.
-        return super().get_actions(observations, action_space)
+        # Use the student rather than the Teacher.
+        obs = observations.x
+        actions, values, log_probs = self.student.forward(obs)
+        return actions
 
     def set_testing(self):
+        # todo: quel est le model a set pour l'eval?
         return super().set_testing()
-
-    def test_prediction(self, observation):
-        return self.student(observation)
-
-    def on_task_switch(self, task_id: Optional[int]):
-        print(f"Switching from task {self.task} to task {task_id}")
-        if task_id == 0:
-            return
-        # supervised training of student model on the buffer with 10% episodes and teacher annotation
-        self.student.fit(dataloader)
-        # todo
-
-        if self.training:
-            self.task = task_id
 
 
 if __name__ == "__main__":
-    setting = IncrementalRLSetting(
+    # setting = IncrementalRLSetting(
+    #     dataset="cartpole",
+    #     observe_state_directly=True,
+    #     nb_tasks=2,
+    #     steps_per_task=1_000,
+    #     test_steps_per_task=1_000,
+    # )
+    setting = TaskIncrementalRLSetting(
         dataset="cartpole",
         observe_state_directly=True,
         nb_tasks=2,
-        steps_per_task=1_000,
-        test_steps_per_task=1_000,
+        train_task_schedule={
+            0: {"gravity": 10, "length": 0.3},
+            1000: {"gravity": 10, "length": 0.5},  # second task is 'easier' than the first one.
+        },
+        max_steps=2000,
     )
     method = DiscoRLMethod()
     results = setting.apply(method)
