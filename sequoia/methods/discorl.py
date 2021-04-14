@@ -15,6 +15,7 @@ from sequoia.utils import get_logger
 
 from sequoia.methods.stable_baselines3_methods import PPOMethod, PPOModel
 from sequoia.methods.experience_replay import  Buffer
+from copy import deepcopy
 
 logger = get_logger(__file__)
 
@@ -44,6 +45,9 @@ class DiscoRLMethod(Method, target_setting=IncrementalRLSetting):
             env=setting
         )
 
+        # shematic declaration of student
+        self.student = deepcopy(self.model.actor_net)
+
     def fit(self, train_env: Environment, valid_env: Environment):
         assert isinstance(train_env, gym.Env)  # Just to illustrate that it's a gym Env.
 
@@ -55,13 +59,11 @@ class DiscoRLMethod(Method, target_setting=IncrementalRLSetting):
         self.buffer.add(dix_pourcent_episode)
 
 
-
-
     def on_task_switch(self, task_id: Optional[int]):
         print(f"Switching from task {self.task} to task {task_id}")
 
-        # supervised training of a model with same architecture than the actor on the saved samples
-
+        # supervised training of student model on the buffer with 10% episodes and teacher annotation
+        self.student.train_on_buffer(self.buffer)
         # todo
 
         if self.training:
