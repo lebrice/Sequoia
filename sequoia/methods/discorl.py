@@ -2,22 +2,11 @@
 
 Should be applicable to any Setting.
 """
-from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Type, Any
-from argparse import ArgumentParser, Namespace
+from typing import Optional
 
 import gym
-from gym import spaces
-import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torchvision.models as models
-import tqdm
-from torch import Tensor
-from torchvision.models import ResNet
-from wandb.wandb_run import Run
 
 from sequoia.methods import register_method
 from sequoia.settings import IncrementalRLSetting, ActiveSetting
@@ -36,32 +25,6 @@ class DiscoRLMethod(Method, target_setting=IncrementalRLSetting):
     """ Simple method that uses a replay buffer and distillation to reduce forgetting in reinforcement learning.
     """
 
-    def __init__(
-        self,
-        learning_rate: float = 1e-3,
-        buffer_capacity: int = 200,
-        max_epochs_per_task: int = 10,
-        weight_decay: float = 1e-6,
-        seed: int = None,
-    ):
-        self.learning_rate = learning_rate
-        self.weight_decay = weight_decay
-        self.buffer_capacity = buffer_capacity
-
-        self.net: ResNet
-        self.buffer: Optional[Buffer] = None
-        self.optim: torch.optim.Optimizer
-        self.task: int = 0
-        self.rng = np.random.RandomState(seed)
-        self.seed = seed
-        if seed:
-            torch.manual_seed(seed)
-            torch.set_deterministic(True)
-
-        self.epochs_per_task: int = max_epochs_per_task
-        self.early_stop_patience: int = 2
-
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def configure(self, setting: ActiveSetting):
         self.num_inputs = setting.observation_space.x.shape[0]
@@ -88,6 +51,9 @@ class DiscoRLMethod(Method, target_setting=IncrementalRLSetting):
         # train PPO sur 90% de episodes
 
         # sample on policy 10% des episodes et les annoter avec PPO
+        dix_pourcent_episode=None # todo
+        self.buffer.add(dix_pourcent_episode)
+
 
 
 
