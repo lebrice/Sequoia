@@ -488,3 +488,21 @@ def test_action_space_always_matches_obs_batch_size_in_RL(config: Config):
     expected_total = total_samples * nb_tasks
     actual_total_obs = sum(method.batch_sizes)
     assert actual_total_obs == expected_total + nb_tasks
+
+
+def test_meta_world_support():
+    from mtenv import make
+    env = make("MT-MetaWorld-MT10-v0")
+    obs = env.reset()
+    print(obs)
+    assert False, obs
+
+    setting = IncrementalRLSetting(
+        dataset="CartPole-v0",
+        observe_state_directly=True,
+        monitor_training_performance=True,
+        steps_per_task=1000,
+        max_steps=10_000,
+        test_steps=1000,
+    )
+    assert setting.nb_tasks == 10
