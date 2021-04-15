@@ -59,12 +59,14 @@ def get_tree_string(with_methods: bool = False, with_docstring: bool = False):
         # message = "\n".join(message) + "\n"
         # print(f"Children: {setting.get_children()}")
         # print(f"Children[0]'s children: {setting.get_children()[0].children}")
-        
+
         for i, child_setting in enumerate(setting.get_children()):
             # TODO: Do not recurse into this child if it is not located in a subfolder
             # of the parent.
             child_setting: Setting
             child_path: Path = child_setting.get_path_to_source_file()
+            if child_path.parent.name == "assumptions":
+                continue
             try:
                 relative_path = child_path.relative_to(parent_dir)
                 # print(f"Relative path {relative_path}")

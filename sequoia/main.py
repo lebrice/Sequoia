@@ -124,11 +124,11 @@ def main():
     )
     from readme import get_tree_string
 
-    tree_action.set_defaults(action=lambda v: get_tree_string)
+    tree_action.set_defaults(action=get_tree_string)
 
     args = parser.parse_args()
 
-    return args.action(args)
+    return args.action()
     # assert False, args
     # assert False, args
 

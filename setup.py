@@ -54,7 +54,8 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "sequoia = sequoia.experiments.experiment:main",
+            # "sequoia = sequoia.experiments.experiment:main",
+            "sequoia = sequoia.main:main",
             # TODO: This entry-point is added temporarily while we redesign the
             # command-line API (See https://github.com/lebrice/Sequoia/issues/47)
             "sequoia_sweep = sequoia.experiments.hpo_sweep:main"
