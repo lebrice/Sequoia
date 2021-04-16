@@ -164,12 +164,26 @@ class Setting(SettingABC,
         command-line.
         """
         logger.debug(f"__post_init__ of Setting")
+        # BUG: simple-parsing sometimes parses a list of list instead of a list, not
+        # sure if this still happens now.
         if len(self.train_transforms) == 1 and isinstance(self.train_transforms[0], list):
             self.train_transforms = self.train_transforms[0]
         if len(self.val_transforms) == 1 and isinstance(self.val_transforms[0], list):
             self.val_transforms = self.val_transforms[0]
         if len(self.test_transforms) == 1 and isinstance(self.test_transforms[0], list):
             self.test_transforms = self.test_transforms[0]
+
+        # If the constructor is called with just the `transforms` argument, like this:
+        # <SomeSetting>(dataset="bob", transforms=foo_transform)
+        # Then we use this value as the default for the train, val and test transforms.
+        if self.transforms and not any(
+            [self.train_transforms, self.val_transforms, self.test_transforms]
+        ):
+            if not isinstance(self.transforms, list):
+                self.transforms = Compose([self.transforms])
+            self.train_transforms = self.transforms.copy()
+            self.val_transforms = self.transforms.copy()
+            self.test_transforms = self.transforms.copy()
 
         # Actually compose the list of Transforms or callables into a single transform.
         self.train_transforms: Compose = Compose(self.train_transforms)

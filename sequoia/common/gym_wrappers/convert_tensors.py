@@ -130,3 +130,16 @@ def _add_tensor_support(space: Dict, device: torch.device = None) -> Dict:
     ])
     _mark_supports_tensors(space)
     return space
+
+
+from sequoia.common.spaces.tensor_box import TensorBox
+
+
+@add_tensor_support.register(spaces.Box)
+def _add_tensor_support(space: spaces.Box, device: torch.device = None) -> spaces.Box:
+    space = TensorBox(space.low, space.high, shape=space.shape, device=device)
+    _mark_supports_tensors(space)
+    return space
+
+
+

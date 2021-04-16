@@ -8,7 +8,12 @@ from gym import spaces
 from sequoia.common.config import Config
 from sequoia.common.spaces import Image, Sparse
 from sequoia.common.transforms import ChannelsFirstIfNeeded, ToTensor, Transforms
-from sequoia.conftest import xfail_param, monsterkong_required, param_requires_atari_py
+from sequoia.conftest import (
+    xfail_param,
+    monsterkong_required,
+    param_requires_atari_py,
+    metaworld_required,
+)
 from sequoia.settings import Method
 from sequoia.settings.assumptions.incremental import TestEnvironment
 from sequoia.utils.utils import take
@@ -47,10 +52,14 @@ def test_max_number_of_steps_per_task_is_respected():
             if total_steps == setting.steps_per_task:
                 assert train_env.is_closed()
                 with pytest.raises(gym.error.ClosedEnvironmentError):
-                    obs, reward, done, info = train_env.step(train_env.action_space.sample())
+                    obs, reward, done, info = train_env.step(
+                        train_env.action_space.sample()
+                    )
                 return
             else:
-                obs, reward, done, info = train_env.step(train_env.action_space.sample())
+                obs, reward, done, info = train_env.step(
+                    train_env.action_space.sample()
+                )
             total_steps += 1
     assert total_steps == setting.steps_per_phase
 
@@ -63,15 +72,24 @@ def test_max_number_of_steps_per_task_is_respected():
         ("CartPole-v0", (3, 400, 600)),
         # param_requires_atari_py("Breakout-v0", (3, 210, 160)),
         param_requires_atari_py(
-            "Breakout-v0", (3, 84, 84)
+            "Breakout-v0", (1, 84, 84)
         ),  # Since the Atari Preprocessing is added by default.
+        # TODO: Add support for the duckietown env!
         # ("duckietown", (120, 160, 3)),
     ],
 )
 def test_check_iterate_and_step(
     dataset: str, expected_obs_shape: Tuple[int, ...], batch_size: int
 ):
-    setting = IncrementalRLSetting(dataset=dataset, nb_tasks=5)
+    setting = IncrementalRLSetting(
+        dataset=dataset, nb_tasks=5, transforms=[Transforms.to_tensor]
+    )
+    assert setting.train_transforms == [Transforms.to_tensor]
+    assert setting.val_transforms == [Transforms.to_tensor]
+    assert setting.test_transforms == [Transforms.to_tensor]
+    # TODO: Interesting issue: can't pickle only the to_tensor transform, as it modifies
+    # the given class in-place?
+
     assert len(setting.train_task_schedule) == 5
     assert not setting.smooth_task_boundaries
     assert setting.task_labels_at_train_time
@@ -145,6 +163,7 @@ def test_check_iterate_and_step(
 
     env.close()
 
+
 from sequoia.settings.assumptions.incremental_test import DummyMethod
 from sequoia.conftest import DummyEnvironment
 
@@ -194,6 +213,7 @@ def test_on_task_switch_is_called_incremental_rl():
         *[False for _ in range(5)],
     ]
 
+
 def test_on_task_switch_is_called_task_incremental_rl():
     setting = IncrementalRLSetting(
         dataset=DummyEnvironment,
@@ -238,11 +258,12 @@ def test_on_task_switch_is_called_task_incremental_rl():
 @pytest.mark.timeout(120)
 @monsterkong_required
 @pytest.mark.parametrize("task_labels_at_test_time", [False, True])
-def test_monsterkong_state(task_labels_at_test_time: bool):
+@pytest.mark.parametrize("state", [False, True])
+def test_monsterkong_state(task_labels_at_test_time: bool, state: bool):
     """ checks that the MonsterKong env works fine with monsterkong and state input. """
     setting = IncrementalRLSetting(
         dataset="monsterkong",
-        observe_state_directly=True,
+        observe_state_directly=state,
         nb_tasks=5,
         steps_per_task=100,
         test_steps_per_task=100,
@@ -252,6 +273,22 @@ def test_monsterkong_state(task_labels_at_test_time: bool):
         task_labels_at_test_time=task_labels_at_test_time,
         max_episode_steps=10,
     )
+    from sequoia.common.spaces import NamedTupleSpace, Image
+
+    if state:
+        # State-based monsterkong: We observe a flattened version of the game state
+        # (20 x 20 grid + player cell and goal cell, IIRC.)
+        assert setting.observation_space.x == spaces.Box(0, 292, (402,), np.int16)
+    else:
+        assert setting.observation_space.x == Image(0, 255, (64, 64, 3), np.uint8)
+
+    if task_labels_at_test_time:
+        assert setting.observation_space.task_labels == spaces.Discrete(5)
+    else:
+        assert setting.observation_space.task_labels == Sparse(
+            spaces.Discrete(5), sparsity=0.0
+        )
+
     assert setting.test_steps == 500
     with setting.train_dataloader() as env:
         obs = env.reset()
@@ -368,8 +405,6 @@ def test_monsterkong_pixels(task_labels_at_test_time: bool):
     ]
 
 
- 
-
 from gym import Space, spaces
 from gym.vector.utils.spaces import batch_space
 from sequoia.methods import Method
@@ -379,7 +414,7 @@ from sequoia.settings import Actions, Environment, Observations, Setting
 class OtherDummyMethod(Method, target_setting=Setting):
     def __init__(self):
         self.batch_sizes: List[int] = []
-    
+
     def fit(self, train_env: Environment, valid_env: Environment):
         for i, batch in enumerate(train_env):
             if isinstance(batch, Observations):
@@ -387,7 +422,7 @@ class OtherDummyMethod(Method, target_setting=Setting):
             else:
                 assert isinstance(batch, tuple) and len(batch) == 2
                 observations, rewards = batch
-                
+
             y_preds = train_env.action_space.sample()
             if rewards is None:
                 action_space = train_env.action_space
@@ -399,7 +434,9 @@ class OtherDummyMethod(Method, target_setting=Setting):
                     # dimension match between those.
                     action_space_batch_size = action_space.shape[0]
                     if obs_batch_size != action_space_batch_size:
-                        action_space = batch_space(train_env.single_action_space, obs_batch_size)
+                        action_space = batch_space(
+                            train_env.single_action_space, obs_batch_size
+                        )
 
                 rewards = train_env.send(Actions(action_space.sample()))
 
@@ -413,7 +450,7 @@ class OtherDummyMethod(Method, target_setting=Setting):
                 batch_size = observations.x.shape[0]
             self.batch_sizes.append(batch_size)
         else:
-            self.batch_sizes.append(0) # X isn't batched.
+            self.batch_sizes.append(0)  # X isn't batched.
         return action_space.sample()
 
 
@@ -443,7 +480,7 @@ def test_action_space_always_matches_obs_batch_size(config: Config):
 
     method = OtherDummyMethod()
     results = setting.apply(method, config=config)
-    
+
     # Multiply by nb_tasks because the test loop is ran after each training task.
     assert sum(method.batch_sizes) == total_samples * nb_tasks
     assert len(method.batch_sizes) == math.ceil(total_samples / batch_size) * nb_tasks
@@ -454,6 +491,7 @@ def test_action_space_always_matches_obs_batch_size(config: Config):
 def test_action_space_always_matches_obs_batch_size_in_RL(config: Config):
     """ Same test as above, but in RL. """
     from sequoia.settings import TaskIncrementalRLSetting
+
     nb_tasks = 2
     batch_size = 1
     setting = TaskIncrementalRLSetting(
@@ -463,7 +501,7 @@ def test_action_space_always_matches_obs_batch_size_in_RL(config: Config):
         batch_size=batch_size,
         steps_per_task=100,
         test_steps_per_task=100,
-        num_workers=4, # Intentionally wrong
+        num_workers=4,  # Intentionally wrong
         # monitor_training_performance=True, # This is still a TODO in RL.
     )
     # 500 "examples" in the test dataloader, since 5 * 100 steps per task..
@@ -471,38 +509,159 @@ def test_action_space_always_matches_obs_batch_size_in_RL(config: Config):
 
     method = OtherDummyMethod()
     results = setting.apply(method, config=config)
-    
+
     expected_encountered_batch_sizes = {batch_size or 1}
     last_batch_size = total_samples % (batch_size or 1)
     if last_batch_size != 0:
         expected_encountered_batch_sizes.add(last_batch_size)
     assert set(method.batch_sizes) == expected_encountered_batch_sizes
-    
+
     # NOTE: Multiply by nb_tasks because the test loop is ran after each training task.
     actual_num_batches = len(method.batch_sizes)
-    expected_num_batches =  math.ceil(total_samples / (batch_size or 1)) * nb_tasks
+    expected_num_batches = math.ceil(total_samples / (batch_size or 1)) * nb_tasks
     # MINOR BUG: There's an extra batch for each task. Might make sense, or might not,
     # not sure.
     assert actual_num_batches == expected_num_batches + nb_tasks
-    
+
     expected_total = total_samples * nb_tasks
     actual_total_obs = sum(method.batch_sizes)
     assert actual_total_obs == expected_total + nb_tasks
 
 
-def test_meta_world_support():
-    from mtenv import make
-    env = make("MT-MetaWorld-MT10-v0")
-    obs = env.reset()
-    print(obs)
-    assert False, obs
+from sequoia.conftest import mtenv_required
 
-    setting = IncrementalRLSetting(
-        dataset="CartPole-v0",
-        observe_state_directly=True,
-        monitor_training_performance=True,
+
+@mtenv_required
+@pytest.mark.xfail(reason="don't know how to get the max path length through mtenv!")
+def test_mtenv_meta_world_support():
+    from mtenv import make, MTEnv
+    from mtenv.envs.metaworld.env import MetaWorldMTWrapper
+
+    env: MTEnv = make("MT-MetaWorld-MT10-v0")
+    env.set_task_state(0)
+    env.seed(123)
+    env.seed_task(123)
+    obs = env.reset()
+    assert isinstance(obs, dict)
+    assert list(obs.keys()) == ["env_obs", "task_obs"]
+    print(obs)
+    done = False
+    # BUG: No idea how to get the max path length, since I'm getting
+    # 'MetaWorldMTWrapper' object has no attribute 'max_path_length'
+    assert False, env.max_path_length
+
+    while not done:
+        obs, reward, done, info = env.step(env.action_space.sample())
+        # BUG: Can't render when using metaworld through mtenv, since mtenv *contains* a
+        # straight-up copy-pasted old version of meta-world, which doesn't support it.
+        env.render()
+    env.close()
+
+    env_obs_space = env.observation_space["env_obs"]
+    task_obs_space = env.observation_space["task_obs"]
+    # TODO: If the task observation space is Discrete(10), then we can't create a
+    # setting with more than 10 tasks! We could add a check for this.
+    # TODO: Figure out the default number of tasks depending on the chosen dataset.
+    setting = IncrementalRLSetting(dataset="MT-MetaWorld-MT10-v0", nb_tasks=3)
+    assert setting.observation_space.x == env_obs_space
+    assert setting.nb_tasks == 3
+
+    train_env = setting.train_dataloader()
+    assert train_env.observation_space.x == env_obs_space
+    assert train_env.observation_space.task_labels == spaces.Discrete(3)
+
+    n_episodes = 1
+    for episode in range(n_episodes):
+        obs = train_env.reset()
+        done = False
+        steps = 0
+        while not done and steps < env.max_path_length:
+            obs, reward, done, info = train_env.step(train_env.action_space.sample())
+            # BUG: Can't render meta-world env when using mtenv.
+            train_env.render()
+            steps += 1
+
+
+@metaworld_required
+def test_metaworld_support():
+    import metaworld
+    import random
+    from typing import Type
+    from metaworld import MetaWorldEnv
+    from sequoia.settings.active import TaskIncrementalRLSetting
+
+    benchmark = metaworld.ML10()  # Construct the benchmark, sampling tasks
+
+    env_name = "reach-v1"
+    env_type: Type[MetaWorldEnv] = benchmark.train_classes[env_name]
+    env = env_type()
+
+    import operator
+
+    training_tasks = [
+        task for task in benchmark.train_tasks if task.env_name == env_name
+    ]
+    setting = TaskIncrementalRLSetting(
+        dataset=env,
+        train_task_schedule={
+            i: operator.methodcaller("set_task", task)
+            for i, task in enumerate(training_tasks)
+        },
         steps_per_task=1000,
-        max_steps=10_000,
-        test_steps=1000,
     )
-    assert setting.nb_tasks == 10
+    assert setting.nb_tasks == 50
+    assert setting.steps_per_task == 1000
+    assert sorted(setting.train_task_schedule.keys()) == list(range(0, 50_000, 1000))
+
+    # TODO: Clear the transforms by default, and add it back if needed?
+    assert setting.train_transforms == []
+    assert setting.val_transforms == []
+    assert setting.test_transforms == []
+
+    assert setting.observation_space.x == env.observation_space
+
+    for task_id in range(3):
+        setting.current_task_id = task_id
+
+        train_env = setting.train_dataloader()
+        assert train_env.observation_space.x == env.observation_space
+        assert train_env.observation_space.task_labels == spaces.Discrete(
+            setting.nb_tasks
+        )
+
+        n_episodes = 1
+        for episode in range(n_episodes):
+            obs = train_env.reset()
+            done = False
+            steps = 0
+            while not done and steps < env.max_path_length:
+                obs, reward, done, info = train_env.step(
+                    train_env.action_space.sample()
+                )
+                # BUG: Can't render meta-world env when using mtenv.
+                train_env.render()
+                steps += 1
+
+
+@pytest.mark.xfail(reason="WIP: Adding dm_control support")
+def test_dm_control_support():
+    from dm_control import suite
+    import numpy as np
+
+    # Load one task:
+    env = suite.load(domain_name="cartpole", task_name="swingup")
+
+    # Iterate over a task set:
+    for domain_name, task_name in suite.BENCHMARKING:
+        task_env = suite.load(domain_name, task_name)
+
+    # Step through an episode and print out reward, discount and observation.
+    action_spec = env.action_spec()
+    time_step = env.reset()
+    while not time_step.last():
+        action = np.random.uniform(
+            action_spec.minimum, action_spec.maximum, size=action_spec.shape
+        )
+        time_step = env.step(action)
+        print(time_step.reward, time_step.discount, time_step.observation)
+

@@ -127,8 +127,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # Which environment (a.k.a. "dataset") to learn on.
     # The dataset could be either a string (env id or a key from the
     # available_datasets dict), a gym.Env, or a callable that returns a single environment.
-    # If self.dataset isn't one of those, an error will be raised.
-    dataset: str = choice(available_datasets, default="cartpole")
+    dataset: str = "CartPole-v0"
 
     # The number of tasks. By default 1 for this setting.
     nb_tasks: int = field(1, alias=["n_tasks", "num_tasks"])
@@ -191,6 +190,17 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
     batch_size: Optional[int] = field(default=None, cmd=False)
     num_workers: Optional[int] = field(default=None, cmd=False)
+
+    # Transforms to be applied to the observatons of the train/valid/test
+    # environments.
+    transforms: List[Transforms] = list_field()
+
+    # Transforms to be applied to the training datasets.
+    train_transforms: List[Transforms] = list_field()
+    # Transforms to be applied to the validation datasets.
+    val_transforms: List[Transforms] = list_field()
+    # Transforms to be applied to the testing datasets.
+    test_transforms: List[Transforms] = list_field()
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
@@ -323,7 +333,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 "'nb_tasks', or 'steps_per_task'."
             )
 
-        assert self.max_steps == self.nb_tasks * self.steps_per_task
+        assert self.nb_tasks == self.max_steps // self.steps_per_task
 
         if self.test_task_schedule:
             if 0 not in self.test_task_schedule:
@@ -403,10 +413,13 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             # pass down a dtype to be set on its observation_space's `dtype`
             # attribute, which would be ugly.
             assert isinstance(temp_env.observation_space, NamedTupleSpace)
+
             temp_env.observation_space.dtype = self.Observations
             # Populate the task schedules created above.
             if not self.train_task_schedule:
-                train_change_steps = list(range(0, self.max_steps, self.steps_per_task))
+                train_change_steps = [i * self.steps_per_task for i in range(self.nb_tasks)]
+                assert len(train_change_steps) == self.nb_tasks
+
                 if self.smooth_task_boundaries:
                     # Add a last 'task' at the end of the 'epoch', so that the
                     # env changes smoothly right until the end.

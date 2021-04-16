@@ -31,6 +31,12 @@ setup(
             "gym[atari] @ git+https://www.github.com/lebrice/gym@easier_custom_spaces#egg=gym"
         ],
         "hpo": ["orion", "orion.algo.skopt"],
+        "mtenv": [
+            "mtenv @ git+https://github.com/facebookresearch/mtenv.git@main#egg='mtenv[metaworld]'"
+        ],
+        "metaworld": [
+            "metaworld @ git+https://github.com/rlworkgroup/metaworld.git@master#egg=metaworld"
+        ],
     },
     install_requires=packages_pip,
     dependency_links=packages_git,
