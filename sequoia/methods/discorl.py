@@ -58,6 +58,12 @@ class DiscoRLMethod(StableBaselines3Method):
 
     def fit(self, train_env: gym.Env, valid_env: gym.Env):
 
+        for wrapper in self.extra_train_wrappers:
+            train_env = wrapper(train_env)
+
+        for wrapper in self.extra_valid_wrappers:
+            valid_env = wrapper(valid_env)
+
         if self.model is None:
             #declare model and student
             self.model = self.create_model(train_env, valid_env)
@@ -95,7 +101,7 @@ class DiscoRLMethod(StableBaselines3Method):
 
                 state, _, done, _ = train_env.reset.step(actions)
 
-        # concat observations into dataser
+        # concat observations into dataset
         new_observations = TensorDataset(
             torch.cat(observation_collection), torch.cat(distill_label_collection)
         )
