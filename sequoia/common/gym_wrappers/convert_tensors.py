@@ -14,7 +14,6 @@ logger = get_logger(__file__)
 S = TypeVar("S", bound=Space)
 
 
-
 class ConvertToFromTensors(gym.Wrapper):
     """ Wrapper that converts Tensors into samples/ndarrays and vice versa.
 
