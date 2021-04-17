@@ -1,4 +1,4 @@
-""" This module defines the `Setting` class, an ML "problem" to solve. 
+""" This module defines the `Setting` class, an ML "problem" to solve.
 
 The `Setting` class is an abstract base class which should represent the most
 general learning setting imaginable, i.e. with the fewest assumptions about the
@@ -14,81 +14,70 @@ The hope is that by staying close to that API, we can make it easier for people
 to adopt the repo, and also, if possible, directly reuse existing models from
 pytorch-lightning.
 
-See: [Pytorch-Lightning](https://pytorch-lightning.readthedocs.io/en/latest/)  
+See: [Pytorch-Lightning](https://pytorch-lightning.readthedocs.io/en/latest/)
 See: [LightningDataModule](https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html)
 
 """
-import inspect
 import itertools
-import os
-import shlex
 import sys
 from abc import abstractmethod
-from argparse import Namespace
-from dataclasses import InitVar, dataclass, fields, is_dataclass
-from functools import partial
-from inspect import getsourcefile, isclass
+from dataclasses import dataclass
 from pathlib import Path
-from typing import *
+from typing import Optional, TypeVar, Generic, ClassVar, Type, Dict, Any, List, Union, Iterable
 
 import gym
 import numpy as np
 import torch
 from gym import spaces
 from pytorch_lightning import LightningDataModule
-from pytorch_lightning.core.datamodule import _DataModuleWrapper
-from simple_parsing import (ArgumentParser, Serializable, choice, field,
-                            list_field, mutable_field, subparsers)
-from torch import Tensor
-from torch.utils.data import DataLoader
-
 from sequoia.common.config import Config
-from sequoia.common.loss import Loss
 from sequoia.common.metrics import Metrics
-from sequoia.common.transforms import (Compose, SplitBatch, Transform,
-                                       Transforms)
+from sequoia.common.transforms import Compose, Transforms
 from sequoia.settings.presets import setting_presets
-from sequoia.utils import (Parseable, camel_case, dict_union, get_logger,
-                           remove_suffix, take)
+from sequoia.utils import Parseable, get_logger, take
+from simple_parsing import Serializable, field
+from torch import Tensor
+
+from .bases import Method, SettingABC
 from .environment import Actions, Environment, Observations, Rewards
-from .results import Results
+from .results import Results, ResultsType
 from .setting_meta import SettingMeta
 
 logger = get_logger(__file__)
 
 SettingType = TypeVar("SettingType", bound="Setting")
-
-from  .bases import SettingABC, Method, SettingType
-
 EnvironmentType = TypeVar("EnvironmentType", bound=Environment)
 
+
 @dataclass
-class Setting(SettingABC,
-              Parseable,
-              Serializable,
-              LightningDataModule,
-              Generic[EnvironmentType],
-              metaclass=SettingMeta):
-    """ Base class for all research settings in ML: Root node of the tree. 
+class Setting(
+    SettingABC,
+    Parseable,
+    Serializable,
+    LightningDataModule,
+    Generic[EnvironmentType],
+    metaclass=SettingMeta,
+):
+    """ Base class for all research settings in ML: Root node of the tree.
 
     A 'setting' is loosely defined here as a learning problem with a specific
     set of assumptions, restrictions, and an evaluation procedure.
-    
+
     For example, Reinforcement Learning is a type of Setting in which we assume
-    that an Agent is able to observe an environment, take actions upon it, and 
+    that an Agent is able to observe an environment, take actions upon it, and
     receive rewards back from the environment. Some of the assumptions include
     that the reward is dependant on the action taken, and that the actions have
     an impact on the environment's state (and on the next observations the agent
     will receive). The evaluation procedure consists in trying to maximize the
     reward obtained from an environment over a given number of steps.
-        
+
     This 'Setting' class should ideally represent the most general learning
     problem imaginable, with almost no assumptions about the data or evaluation
     procedure.
 
     This is a dataclass. Its attributes are can also be used as command-line
     arguments using `simple_parsing`.
-    
+
     Abstract (required) methods:
     - **apply** Applies a given Method on this setting to produce Results.
     - **prepare_data** (things to do on 1 GPU/TPU not on every GPU/TPU in distributed mode).
@@ -106,10 +95,11 @@ class Setting(SettingABC,
     - `Rewards`: The type of Rewards that this setting will (potentially) return
       upon receiving an action from the method.
     """
-    ## ---------- Class Variables ------------- 
-    ## Fields in this block are class attributes. They don't create command-line
-    ## arguments.
-    
+
+    # ---------- Class Variables -------------
+    # Fields in this block are class attributes. They don't create command-line
+    # arguments.
+
     # Type of Observations that the dataloaders (a.k.a. "environments") will
     # produce for this type of Setting.
     Observations: ClassVar[Type[Observations]] = Observations
@@ -119,26 +109,24 @@ class Setting(SettingABC,
     # Type of Rewards that the dataloaders (a.k.a. "environments") will return
     # after receiving an action, for this type of Setting.
     Rewards: ClassVar[Type[Rewards]] = Rewards
-    
+
     # The type of Results that are given back when a method is applied on this
     # Setting. The `Results` class basically defines the 'evaluation metric' for
     # a given type of setting. See the `Results` class for more info.
     Results: ClassVar[Type[Results]] = Results
-    
+
     available_datasets: ClassVar[Dict[str, Any]] = {}
-    
-    ##
-    ##   -------------
+
     # Transforms to be applied to the observatons of the train/valid/test
     # environments.
-    transforms: List[Transforms] = list_field()
+    transforms: Optional[List[Transforms]] = None
 
     # Transforms to be applied to the training datasets.
-    train_transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
-    # Transforms to be applied to the validation datasets. 
-    val_transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
+    train_transforms: Optional[List[Transforms]] = None
+    # Transforms to be applied to the validation datasets.
+    val_transforms: Optional[List[Transforms]] = None
     # Transforms to be applied to the testing datasets.
-    test_transforms: List[Transforms] = list_field(Transforms.to_tensor, Transforms.three_channels)
+    test_transforms: Optional[List[Transforms]] = None
 
     # Fraction of training data to use to create the validation set.
     # (Only applicable in Passive settings.)
@@ -149,29 +137,48 @@ class Setting(SettingABC,
     # that they can be passed to the constructor of the Setting.
     batch_size: Optional[int] = field(default=None, cmd=False)
     num_workers: Optional[int] = field(default=None, cmd=False)
-    
+
     # # TODO: Add support for semi-supervised training.
     # # Fraction of the dataset that is labeled.
     # labeled_data_fraction: int = 1.0
     # # Number of labeled examples.
     # n_labeled_examples: Optional[int] = None
 
-    def __post_init__(self,
-                      observation_space: gym.Space = None,
-                      action_space: gym.Space = None,
-                      reward_space: gym.Space = None):
+    def __post_init__(
+        self,
+        observation_space: gym.Space = None,
+        action_space: gym.Space = None,
+        reward_space: gym.Space = None,
+    ):
         """ Initializes the fields of the setting that weren't set from the
         command-line.
         """
-        logger.debug(f"__post_init__ of Setting")
-        # BUG: simple-parsing sometimes parses a list of list instead of a list, not
-        # sure if this still happens now.
-        if len(self.train_transforms) == 1 and isinstance(self.train_transforms[0], list):
+        logger.debug("__post_init__ of Setting")
+        # BUG: simple-parsing sometimes parses a list with a single item, itself the
+        # list of transforms. Not sure if this still happens.
+
+        def is_list_of_list(v: Any) -> bool:
+            return isinstance(v, list) and len(v) == 1 and isinstance(v[0], list)
+
+        if is_list_of_list(self.train_transforms):
             self.train_transforms = self.train_transforms[0]
-        if len(self.val_transforms) == 1 and isinstance(self.val_transforms[0], list):
+        if is_list_of_list(self.val_transforms):
             self.val_transforms = self.val_transforms[0]
-        if len(self.test_transforms) == 1 and isinstance(self.test_transforms[0], list):
+        if is_list_of_list(self.test_transforms):
             self.test_transforms = self.test_transforms[0]
+
+        if all(
+            t is None
+            for t in [
+                self.transforms,
+                self.train_transforms,
+                self.val_transforms,
+                self.test_transforms,
+            ]
+        ):
+            # Use these two transforms by default if no transforms are passed at all.
+            # TODO: Remove this after the competition perhaps.
+            self.transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
 
         # If the constructor is called with just the `transforms` argument, like this:
         # <SomeSetting>(dataset="bob", transforms=foo_transform)
@@ -186,16 +193,17 @@ class Setting(SettingABC,
             self.test_transforms = self.transforms.copy()
 
         # Actually compose the list of Transforms or callables into a single transform.
-        self.train_transforms: Compose = Compose(self.train_transforms)
-        self.val_transforms: Compose = Compose(self.val_transforms)
-        self.test_transforms: Compose = Compose(self.test_transforms)
+        self.train_transforms: Compose = Compose(self.train_transforms or [])
+        self.val_transforms: Compose = Compose(self.val_transforms or [])
+        self.test_transforms: Compose = Compose(self.test_transforms or [])
 
-        LightningDataModule.__init__(self,
+        LightningDataModule.__init__(
+            self,
             train_transforms=self.train_transforms,
             val_transforms=self.val_transforms,
             test_transforms=self.test_transforms,
         )
-        
+
         self._observation_space = observation_space
         self._action_space = action_space
         self._reward_space = reward_space
@@ -207,18 +215,16 @@ class Setting(SettingABC,
         self.train_env: Environment = None  # type: ignore
         self.val_env: Environment = None  # type: ignore
         self.test_env: Environment = None  # type: ignore
-    
 
     @abstractmethod
     def apply(self, method: Method, config: Config = None) -> "Setting.Results":
         # NOTE: The actual train/test loop should be defined in a more specific
         # setting. This is just here as an illustration of what that could look
-        # like. 
+        # like.
         assert False, "this is just here for illustration purposes. "
-        
+
         method.fit(
-            train_env=self.train_dataloader(),
-            valid_env=self.val_dataloader(),
+            train_env=self.train_dataloader(), valid_env=self.val_dataloader(),
         )
 
         # Test loop:
@@ -231,35 +237,34 @@ class Setting(SettingABC,
         for episode in range(n_test_episodes):
             # Get initial observations.
             observations = test_env.reset()
-            
+
             for i in itertools.count():
                 # Get the predictions/actions for a batch of observations.
                 actions = method.get_actions(observations, test_env.action_space)
                 observations, rewards, done, info = test_env.step(actions)
                 # Calculate the 'metrics' (TODO: This should be done be in the env!)
-                batch_metrics = self.get_metrics(actions=actions, rewards=rewards)
+                batch_metrics = ...
                 test_metrics.append(batch_metrics)
                 if done:
                     break
 
         return self.Results(test_metrics=test_metrics)
 
-    def get_metrics(self,
-                    actions: Actions,
-                    rewards: Rewards) -> Union[float, Metrics]:
+    def get_metrics(self, actions: Actions, rewards: Rewards) -> Union[float, Metrics]:
         """ Calculate the "metric" from the model predictions (actions) and the true labels (rewards).
-        
+
         In this example, we return a 'Metrics' object:
         - `ClassificationMetrics` for classification problems,
         - `RegressionMetrics` for regression problems.
-        
+
         We use these objects because they are awesome (they basically simplify
         making plots, wandb logging, and serialization), but you can also just
         return floats if you want, no problem.
-        
+
         TODO: This is duplicated from Incremental. Need to fix this.
         """
         from sequoia.common.metrics import get_metrics
+
         # In this particular setting, we only use the y_pred from actions and
         # the y from the rewards.
         if isinstance(actions, Actions):
@@ -273,14 +278,13 @@ class Setting(SettingABC,
             actions = actions.cpu().numpy()
         if isinstance(rewards, Tensor):
             rewards = rewards.cpu().numpy()
-        
-        # assert actions in self.action_space, f"Invalid actions {actions} (space = {self.action_space})"
-        # assert rewards in self.reward_space, f"Invalid rewards? {rewards} (space = {self.reward_space})"
-        
+
         if isinstance(self.action_space, spaces.Discrete):
             batch_size = rewards.shape[0]
             actions = torch.as_tensor(actions)
-            if len(actions.shape) == 1 or (actions.shape[-1] == 1 and self.action_space.n != 2):
+            if len(actions.shape) == 1 or (
+                actions.shape[-1] == 1 and self.action_space.n != 2
+            ):
                 fake_logits = torch.zeros([batch_size, self.action_space.n], dtype=int)
                 # FIXME: There must be a smarter way to do this indexing.
                 for i, action in enumerate(actions):
@@ -288,7 +292,7 @@ class Setting(SettingABC,
                 actions = fake_logits
 
         return get_metrics(y_pred=actions, y=rewards)
-    
+
     @property
     def image_space(self) -> Optional[gym.Space]:
         if isinstance(self.observation_space, spaces.Box):
@@ -298,8 +302,10 @@ class Setting(SettingABC,
             return self.observation_space[0]
         if isinstance(self.observation_space, spaces.Dict):
             return self.observation_space.spaces["x"]
-        logger.warning(f"Don't know what the image space is. "
-                       f"(self.observation_space={self.observation_space})")
+        logger.warning(
+            f"Don't know what the image space is. "
+            f"(self.observation_space={self.observation_space})"
+        )
         return None
 
     @property
@@ -309,7 +315,7 @@ class Setting(SettingABC,
     @observation_space.setter
     def observation_space(self, value: gym.Space) -> None:
         """Sets a the observation space.
-        
+
         NOTE: This also changes the value of the `dims` attribute and the result
         of the `size()` method from LightningDataModule.
         """
@@ -344,15 +350,16 @@ class Setting(SettingABC,
     @reward_space.setter
     def reward_space(self, value: gym.Space) -> None:
         self._reward_space = value
-    
+
     @classmethod
     def get_available_datasets(cls) -> Iterable[str]:
         """ Returns an iterable of strings which represent the names of datasets. """
         return cls.available_datasets
 
     @classmethod
-    def main(cls, argv: Optional[Union[str, List[str]]]=None) -> Results:
+    def main(cls, argv: Optional[Union[str, List[str]]] = None) -> Results:
         from sequoia.main import Experiment
+
         experiment: Experiment
         # Create the Setting object from the command-line:
         setting = cls.from_args(argv)
@@ -364,9 +371,12 @@ class Setting(SettingABC,
         results: ResultsType = experiment.launch(argv)
         return results
 
-    def apply_all(self, argv: Union[str, List[str]] = None) -> Dict[Type["Method"], Results]:
+    def apply_all(
+        self, argv: Union[str, List[str]] = None
+    ) -> Dict[Type["Method"], Results]:
         applicable_methods = self.get_applicable_methods()
         from sequoia.methods import Method
+
         all_results: Dict[Type[Method], Results] = {}
         config = Config.from_args(argv)
         for method_type in applicable_methods:
@@ -374,39 +384,46 @@ class Setting(SettingABC,
             results = self.apply(method, config)
             all_results[method_type] = results
         logger.info(f"All results for setting of type {type(self)}:")
-        logger.info({
-            method.get_name(): (results.get_metric() if results else "crashed")
-            for method, results in all_results.items()
-        })
+        logger.info(
+            {
+                method.get_name(): (results.get_metric() if results else "crashed")
+                for method, results in all_results.items()
+            }
+        )
         return all_results
 
     @classmethod
     def get_path_to_source_file(cls: Type) -> Path:
         from sequoia.utils.utils import get_path_to_source_file
+
         return get_path_to_source_file(cls)
 
     def _check_environments(self):
         """ Do a quick check to make sure that interacting with the envs/dataloaders
         works correctly.
         """
-        from sequoia.settings.passive import PassiveEnvironment
-        from sequoia.settings.active import ActiveEnvironment
-        
         # Check that the env's spaces are batched versions of the settings'.
         from gym.vector.utils import batch_space
+        from sequoia.settings.passive import PassiveEnvironment
 
         batch_size = self.batch_size
-        for loader_method in [self.train_dataloader, self.val_dataloader, self.test_dataloader]:
+        for loader_method in [
+            self.train_dataloader,
+            self.val_dataloader,
+            self.test_dataloader,
+        ]:
             print(f"\n\nChecking loader method {loader_method.__name__}\n\n")
             env = loader_method(batch_size=batch_size)
-            
+
             batch_size = env.batch_size
 
             # We could compare the spaces directly, but that's a bit messy, and
             # would be depends on the type of spaces for each. Instead, we could
-            # check samples from such spaces on how the spaces are batched. 
+            # check samples from such spaces on how the spaces are batched.
             if batch_size:
-                expected_observation_space = batch_space(self.observation_space, n=batch_size)
+                expected_observation_space = batch_space(
+                    self.observation_space, n=batch_size
+                )
                 expected_action_space = batch_space(self.action_space, n=batch_size)
                 expected_reward_space = batch_space(self.reward_space, n=batch_size)
             else:
@@ -416,15 +433,18 @@ class Setting(SettingABC,
 
             # TODO: Batching the 'Sparse' makes it really ugly, so just
             # comparing the 'image' portion of the space for now.
-            assert env.observation_space[0].shape == expected_observation_space[0].shape, (env.observation_space[0], expected_observation_space[0])
-            # assert env.observation_space[0] == expected_observation_space[0], (env.observation_space[0], expected_observation_space[0])
-            # assert env.observation_space[1] == expected_observation_space[1], (
-            #     f"env obs space: {env.observation_space[1]}, \n"
-            #     f"expected obs space: {expected_observation_space[1]}"
-            # )
+            assert (
+                env.observation_space[0].shape == expected_observation_space[0].shape
+            ), (env.observation_space[0], expected_observation_space[0])
 
-            assert env.action_space == expected_action_space, (env.action_space, expected_action_space)
-            assert env.reward_space == expected_reward_space, (env.reward_space, expected_reward_space)
+            assert env.action_space == expected_action_space, (
+                env.action_space,
+                expected_action_space,
+            )
+            assert env.reward_space == expected_reward_space, (
+                env.reward_space,
+                expected_reward_space,
+            )
 
             # Check that the 'gym API' interaction is working correctly.
             reset_obs: Observations = env.reset()
@@ -445,7 +465,7 @@ class Setting(SettingABC,
             for batch in take(env, 5):
                 observations: Observations
                 rewards: Optional[Rewards]
-                
+
                 if isinstance(env, PassiveEnvironment):
                     observations, rewards = batch
                 else:
@@ -456,7 +476,7 @@ class Setting(SettingABC,
                 self._check_observations(env, observations)
                 if rewards is not None:
                     self._check_rewards(env, rewards)
-                
+
                 if batch_size:
                     actions = tuple(
                         self.action_space.sample() for _ in range(batch_size)
@@ -468,10 +488,10 @@ class Setting(SettingABC,
                 self._check_rewards(env, rewards)
 
             env.close()
-    
+
     def _check_observations(self, env: Environment, observations: Any):
         """ Check that the given observation makes sense for the given environment.
-        
+
         TODO: This should probably not be in this file here. It's more used for
         testing than anything else.
         """
@@ -480,17 +500,19 @@ class Setting(SettingABC,
         assert isinstance(images, (torch.Tensor, np.ndarray))
         if isinstance(images, Tensor):
             images = images.cpu().numpy()
-        
+
         # Find the 'image' space:
         if isinstance(env.observation_space, spaces.Box):
             image_space = env.observation_space
         elif isinstance(env.observation_space, spaces.Tuple):
             image_space = env.observation_space[0]
         else:
-            raise RuntimeError(f"Don't know how to find the image space in the "
-                               f"env's obs space ({env.observation_space}).")
+            raise RuntimeError(
+                f"Don't know how to find the image space in the "
+                f"env's obs space ({env.observation_space})."
+            )
         assert images in image_space
-    
+
     def _check_actions(self, env: Environment, actions: Any):
         if isinstance(actions, Actions):
             assert isinstance(actions, self.Actions)
@@ -500,7 +522,7 @@ class Setting(SettingABC,
         elif isinstance(actions, np.ndarray):
             actions = actions
         assert actions in env.action_space
-    
+
     def _check_rewards(self, env: Environment, rewards: Any):
         if isinstance(rewards, Rewards):
             assert isinstance(rewards, self.Rewards)
@@ -518,10 +540,11 @@ class Setting(SettingABC,
     def __new__(cls, *args, **kwargs):
         return super().__new__(cls, *args, **kwargs)
 
-    
     @classmethod
-    def load_benchmark(cls: Type[SettingType], benchmark: Union[str, Path]) -> SettingType:
-        """ Load the given "benchmark" (pre-configured Setting) of this type. 
+    def load_benchmark(
+        cls: Type[SettingType], benchmark: Union[str, Path]
+    ) -> SettingType:
+        """ Load the given "benchmark" (pre-configured Setting) of this type.
 
         Parameters
         ----------
@@ -543,7 +566,7 @@ class Setting(SettingABC,
             If `benchmark` isn't an existing file or a known preset.
         RuntimeError
             If any command-line arguments are present in sys.argv which would be ignored
-            when creating this setting. 
+            when creating this setting.
         """
         # If the provided benchmark isn't a path, try to get the value from
         # the `setting_presets` dict. If it isn't in the dict, raise an
@@ -561,8 +584,10 @@ class Setting(SettingABC,
         # Creating an experiment for the given setting, loaded from the
         # config file.
         # TODO: IDEA: Do the same thing for loading the Method?
-        logger.info(f"Will load the options for setting {cls} from the file "
-                    f"at path {benchmark}.")
+        logger.info(
+            f"Will load the options for setting {cls} from the file "
+            f"at path {benchmark}."
+        )
 
         # Raise an error if any of the args in sys.argv would have been used
         # up by the Setting, just to prevent any ambiguities.
@@ -570,7 +595,7 @@ class Setting(SettingABC,
         consumed_args = list(set(sys.argv[1:]) - set(unused_args))
         if consumed_args:
             # TODO: This could also be trigerred if there were arguments
-            # in the method with the same name as some from the Setting. 
+            # in the method with the same name as some from the Setting.
             raise RuntimeError(
                 f"Cannot pass command-line arguments for the Setting when "
                 f"loading a benchmark, since these arguments whould have been "

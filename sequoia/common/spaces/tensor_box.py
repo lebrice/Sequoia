@@ -29,7 +29,7 @@ class TensorBox(spaces.Box):
     """ Box space that accepts both Tensor and ndarrays. """
 
     def __init__(
-        self, low, high, shape=None, dtype=torch.float32, device: torch.device = None
+        self, low, high, shape=None, dtype=np.float32, device: torch.device = None
     ):
         if dtype in numpy_to_torch_dtypes:
             self._numpy_dtype = dtype
@@ -37,16 +37,13 @@ class TensorBox(spaces.Box):
         elif dtype in torch_to_numpy_dtypes:
             self._numpy_dtype = torch_to_numpy_dtypes[dtype]
             self._torch_dtype = dtype
+        elif str(dtype) == "float32":
+            self._numpy_dtype = np.float32
+            self._torch_dtype = torch.float32
         else:
-            assert dtype is np.float32, type(dtype).__name__
-            self._numpy_dtype = torch_to_numpy_dtypes[dtype]
-            self._numpy_dtype = torch_to_numpy_dtypes[dtype]
-            
-            pass
-            # raise NotImplementedError(
-            #     f"Unsupported dtype {dtype} (of type {type(dtype)})"
-            # )
-
+            raise NotImplementedError(
+                f"Unsupported dtype {dtype} (of type {type(dtype)})"
+            )
         super().__init__(low, high, shape=shape, dtype=self._numpy_dtype)
         self.device: Optional[torch.device] = torch.device(device) if device else None
 

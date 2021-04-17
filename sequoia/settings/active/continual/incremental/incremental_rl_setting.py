@@ -2,16 +2,16 @@ import operator
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from io import StringIO
-from typing import Callable, ClassVar, Dict, List, Union
+from typing import Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
-from sequoia.common.gym_wrappers import MultiTaskEnvironment
-from sequoia.utils import constant, dict_union
-from sequoia.utils.logging_utils import get_logger
 from simple_parsing import field
 
+from sequoia.common.gym_wrappers import MultiTaskEnvironment, TransformObservation
+from sequoia.utils import constant, dict_union
+from sequoia.utils.logging_utils import get_logger
+
 from ..continual_rl_setting import ContinualRLSetting
-from ..gym_dataloader import GymDataLoader
 
 logger = get_logger(__file__)
 
@@ -22,22 +22,6 @@ except ImportError:
     monsterkong_installed = False
 else:
     monsterkong_installed = True
-
-
-mtenv_installed = False
-try:
-    from mtenv import MTEnv
-    from mtenv.envs.registration import mtenv_registry
-
-    mtenv_envs = [env_spec.id for env_spec in mtenv_registry.all()]
-    mtenv_installed = True
-except ImportError:
-    mtenv_envs = []
-    # Create a 'dummy' class so we can safely use MTEnv in the type hints below.
-    # Additionally, isinstance(some_env, MTEnv) will always fail, which is good.
-
-    class MTEnv(gym.Env):
-        pass
 
 
 mtenv_installed = False
@@ -61,7 +45,7 @@ metaworld_envs = []
 try:
     import metaworld
     from metaworld import MetaWorldEnv
-    from mtenv.envs.registration import mtenv_registry
+    from metaworld.envs.mujoco.mujoco_env import MujocoEnv
 
     metaworld_envs = list(metaworld.ML10().train_classes.keys())
     metaworld_installed = True
@@ -70,6 +54,9 @@ except ImportError:
     # Additionally, isinstance(some_env, MetaWorldEnv) will always fail when metaworld
     # isn't installed, which is good.
     class MetaWorldEnv(gym.Env):
+        pass
+
+    class MujocoEnv(gym.Env):
         pass
 
 
@@ -103,6 +90,11 @@ class IncrementalRLSetting(ContinualRLSetting):
     dataset: str = "CartPole-v0"
 
     def __post_init__(self, *args, **kwargs):
+        if not self.nb_tasks:
+            # TODO: In case of the metaworld envs, we could device the 'default' nb of
+            # tasks to use based on the number of available tasks
+            pass
+
         super().__post_init__(*args, **kwargs)
 
         if self.dataset == "MetaMonsterKong-v0":
@@ -110,11 +102,23 @@ class IncrementalRLSetting(ContinualRLSetting):
             # TODO: Actually end episodes when reaching a task boundary, to force the
             # level to change?
             self.max_episode_steps = self.max_episode_steps or 500
-        # TODO: Really annoying little bugs with these three arguments!
+
+        # FIXME: Really annoying little bugs with these three arguments!
         self.nb_tasks = self.max_steps // self.steps_per_task
 
-        # TODO: If the dataset is an mtenv or metaworld env, don't try to use rendered
-        # observations.
+    def _setup_fields_using_temp_env(self, temp_env: MultiTaskEnvironment):
+        """ Setup some of the fields on the Setting using a temporary environment.
+
+        This temporary environment only lives during the __post_init__() call.
+        """
+        super()._setup_fields_using_temp_env(temp_env)
+        # TODO: If the dataset has a `max_path_length` attribute, then it's probably
+        # a Mujoco / metaworld / etc env, and so we set a limit on the episode length to
+        # avoid getting an error.
+        max_path_length: Optional[int] = getattr(temp_env, "max_path_length", None)
+        if self.max_episode_steps is None and max_path_length is not None:
+            assert max_path_length > 0
+            self.max_episode_steps = temp_env.max_path_length
 
     @property
     def phases(self) -> int:
@@ -138,26 +142,34 @@ class IncrementalRLSetting(ContinualRLSetting):
         isn't registered in gym. This happens for example when using an environment from
         meta-world (or mtenv).
         """
-        # Check if the env is registed in mtenv, and create the base env that way, since
-        # it won't be possible to register the env that way.
+        # Check if the env is registed in a known 'third party' gym-like package, and if
+        # needed, create the base env in the way that package requires.
         if isinstance(base_env, str):
             env_id = base_env
-            if env_id in mtenv_envs:
-                assert mtenv_installed, "mtenv is required to use this env."
+
+            # Check if the id belongs to mtenv
+            if mtenv_installed and env_id in mtenv_envs:
                 from mtenv import make
 
                 base_env = make(env_id)
-                # Add a wrapper that will remove the "tas"
+                # Add a wrapper that will remove the task information, because we use
+                # the same MultiTaskEnv wrapper for all the environments.
                 wrappers.insert(0, MTEnvAdapterWrapper)
 
-            if env_id in metaworld_envs:
-                assert metaworld_installed, "metaworld is required to use this env."
+            if metaworld_installed and env_id in metaworld_envs:
                 # TODO: Should we use a particular benchmark here?
-                # IDEA: Find the first benchmark that has an env with this name.
+                # For now, we find the first benchmark that has an env with this name.
                 for benchmark_class in [metaworld.ML10]:
                     benchmark = benchmark_class()
                     if env_id in benchmark.train_classes.keys():
-                        base_env = benchmark.train_classes[env_id]
+                        # TODO: We can either let the base_env be an env type, or
+                        # actually instantiate it.
+                        base_env: Type[MetaWorldEnv] = benchmark.train_classes[env_id]
+                        # NOTE: (@lebrice) Here I believe it's better to just have the
+                        # constructor, that way we re-create the env for each task.
+                        # I think this might be better, as I don't know for sure that
+                        # the `set_task` can be called more than once in metaworld.
+                        # base_env = base_env_type()
                         break
                 else:
                     raise NotImplementedError(
@@ -186,6 +198,37 @@ class IncrementalRLSetting(ContinualRLSetting):
                 task_schedule[task_step] = operator.methodcaller("set_task_state", i)
             return task_schedule
 
+        if isinstance(temp_env.unwrapped, (MetaWorldEnv, MujocoEnv)):
+            # TODO: Which benchmark to choose?
+            base_env = temp_env.unwrapped
+            found = False
+            # Find the benchmark that contains this type of env.
+            for benchmark_class in [metaworld.ML10]:
+                benchmark = benchmark_class()
+                for env_name, env_class in benchmark.train_classes.items():
+                    if isinstance(base_env, env_class):
+                        # Found the right benchmark that contains this env class, now
+                        # create the task schedule using
+                        # the tasks.
+                        found = True
+                        break
+                if found:
+                    break
+            if not found:
+                raise NotImplementedError(
+                    f"Can't find a benchmark with env class {type(base_env)}!"
+                )
+
+            # `benchmark` is here the right benchmark to use to create the tasks.
+            training_tasks = [
+                task for task in benchmark.train_tasks if task.env_name == env_name
+            ]
+            task_schedule = {
+                step: operator.methodcaller("set_task", task)
+                for step, task in zip(change_steps, training_tasks)
+            }
+            return task_schedule
+
         return super().create_task_schedule(
             temp_env=temp_env, change_steps=change_steps
         )
@@ -194,13 +237,9 @@ class IncrementalRLSetting(ContinualRLSetting):
         return super().create_train_wrappers()
 
 
-from sequoia.common.gym_wrappers import TransformObservation
-import operator
-
-
 class MTEnvAdapterWrapper(TransformObservation):
     # TODO: For now, we remove the task id portion of the space
-    def __init__(self, env: "MTEnv", f: Callable = operator.itemgetter("env_obs")):
+    def __init__(self, env: MTEnv, f: Callable = operator.itemgetter("env_obs")):
         super().__init__(env=env, f=f)
         # self.observation_space = self.env.observation_space["env_obs"]
 
