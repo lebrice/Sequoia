@@ -23,7 +23,18 @@ import sys
 from abc import abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, TypeVar, Generic, ClassVar, Type, Dict, Any, List, Union, Iterable
+from typing import (
+    Optional,
+    TypeVar,
+    Generic,
+    ClassVar,
+    Type,
+    Dict,
+    Any,
+    List,
+    Union,
+    Iterable,
+)
 
 import gym
 import numpy as np
@@ -191,6 +202,21 @@ class Setting(
             self.train_transforms = self.transforms.copy()
             self.val_transforms = self.transforms.copy()
             self.test_transforms = self.transforms.copy()
+
+        if self.train_transforms is not None and not isinstance(
+            self.train_transforms, list
+        ):
+            self.train_transforms = [self.train_transforms]
+
+        if self.val_transforms is not None and not isinstance(
+            self.val_transforms, list
+        ):
+            self.val_transforms = [self.val_transforms]
+
+        if self.test_transforms is not None and not isinstance(
+            self.test_transforms, list
+        ):
+            self.test_transforms = [self.test_transforms]
 
         # Actually compose the list of Transforms or callables into a single transform.
         self.train_transforms: Compose = Compose(self.train_transforms or [])
