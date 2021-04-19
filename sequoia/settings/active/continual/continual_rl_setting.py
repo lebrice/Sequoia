@@ -53,9 +53,10 @@ logger = get_logger(__file__)
 # that method is being called because of the training or because of the
 # validation environment.
 
+from gym.envs.classic_control import CartPoleEnv, PendulumEnv, MountainCarEnv
 
 task_params: Dict[Union[Type[gym.Env], str], List[str]] = {
-    "CartPole-v0": [
+    CartPoleEnv: [
         "gravity",  #: 9.8,
         "masscart",  #: 1.0,
         "masspole",  #: 0.1,
@@ -80,6 +81,19 @@ Environment = ActiveEnvironment[
     "ContinualRLSetting.Rewards",
 ]
 
+# TODO: Update the 'available environments' to show all available gym envs? or only
+# those that are explicitly supported ?
+env_ids = [env_spec.id for env_spec in gym.envs.registry.all()]
+
+try:
+    # Add the mtenv known environments:
+    from mtenv.envs.registration import mtenv_registry
+    env_ids.extend(env_spec.id for env_spec in mtenv_registry.all())
+except ImportError:
+    pass
+
+available_environments = env_ids
+
 
 @dataclass
 class ContinualRLSetting(ActiveSetting, IncrementalSetting):
@@ -93,7 +107,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     """
 
     # The type of results returned by an RL experiment.
-    Results: ClassVar[Type[Results]] = RLResults
+    Results: ClassVar[Type[RLResults]] = RLResults
 
     @dataclass(frozen=True)
     class Observations(IncrementalSetting.Observations):
@@ -127,8 +141,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # Which environment (a.k.a. "dataset") to learn on.
     # The dataset could be either a string (env id or a key from the
     # available_datasets dict), a gym.Env, or a callable that returns a single environment.
-    # If self.dataset isn't one of those, an error will be raised.
-    dataset: str = choice(available_datasets, default="cartpole")
+    dataset: str = "CartPole-v0"
 
     # The number of tasks. By default 1 for this setting.
     nb_tasks: int = field(1, alias=["n_tasks", "num_tasks"])
@@ -191,6 +204,17 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
     batch_size: Optional[int] = field(default=None, cmd=False)
     num_workers: Optional[int] = field(default=None, cmd=False)
+
+    # Transforms to be applied by default to the observatons of the train/valid/test
+    # environments.
+    transforms: Optional[List[Transforms]] = None
+
+    # Transforms to be applied to the training datasets.
+    train_transforms: Optional[List[Transforms]] = None
+    # Transforms to be applied to the validation datasets.
+    val_transforms: Optional[List[Transforms]] = None
+    # Transforms to be applied to the testing datasets.
+    test_transforms: Optional[List[Transforms]] = None
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
@@ -323,7 +347,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 "'nb_tasks', or 'steps_per_task'."
             )
 
-        assert self.max_steps == self.nb_tasks * self.steps_per_task
+        assert self.nb_tasks == self.max_steps // self.steps_per_task
 
         if self.test_task_schedule:
             if 0 not in self.test_task_schedule:
@@ -396,72 +420,81 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # the task schedules.
         with self._make_env(
             self.dataset, self._temp_wrappers(), self.observe_state_directly
-        ) as temp_env:
-            # FIXME: Replacing the observation space dtypes from their original
-            # 'generated' NamedTuples to self.Observations. The alternative
-            # would be to add another argument to the MultiTaskEnv wrapper, to
-            # pass down a dtype to be set on its observation_space's `dtype`
-            # attribute, which would be ugly.
-            assert isinstance(temp_env.observation_space, NamedTupleSpace)
-            temp_env.observation_space.dtype = self.Observations
-            # Populate the task schedules created above.
-            if not self.train_task_schedule:
-                train_change_steps = list(range(0, self.max_steps, self.steps_per_task))
-                if self.smooth_task_boundaries:
-                    # Add a last 'task' at the end of the 'epoch', so that the
-                    # env changes smoothly right until the end.
-                    train_change_steps.append(self.max_steps)
-                self.train_task_schedule = self.create_task_schedule(
-                    temp_env, train_change_steps,
-                )
-
-            assert self.train_task_schedule is not None
-            # The validation task schedule is the same as the one used in
-            # training by default.
-            if not self.valid_task_schedule:
-                self.valid_task_schedule = deepcopy(self.train_task_schedule)
-
-            if not self.test_task_schedule:
-                # The test task schedule is by default the same as in validation
-                # except that the interval between the tasks may be different,
-                # depending on the value of `self.test_steps_per_task`.
-                valid_steps = sorted(self.valid_task_schedule.keys())
-                valid_tasks = [self.valid_task_schedule[step] for step in valid_steps]
-                self.test_task_schedule = {
-                    i * self.test_steps_per_task: deepcopy(task)
-                    for i, task in enumerate(valid_tasks)
-                }
-
-            space_dict = dict(temp_env.observation_space.items())
-            task_label_space = spaces.Discrete(self.nb_tasks)
-            if not self.task_labels_at_train_time or not self.task_labels_at_test_time:
-                task_label_space = Sparse(task_label_space)
-            space_dict["task_labels"] = task_label_space
-
-            # FIXME: Temporarily, we will actually set the task label space, since there
-            # appears to be an error when using monsterkong space.
-            observation_space = NamedTupleSpace(
-                spaces=space_dict, dtype=self.Observations
-            )
-            self.observation_space = observation_space
-            # Set the spaces using the temp env.
-            # self.observation_space = temp_env.observation_space
-            self.action_space = temp_env.action_space
-            self.reward_range = temp_env.reward_range
-            self.reward_space = getattr(
-                temp_env,
-                "reward_space",
-                spaces.Box(
-                    low=self.reward_range[0], high=self.reward_range[1], shape=()
-                ),
-            )
-
+        ) as temp_env:  
+            self._setup_fields_using_temp_env(temp_env)
         del temp_env
 
         self.train_env: gym.Env
         self.valid_env: gym.Env
         self.test_env: gym.Env
 
+    def _setup_fields_using_temp_env(self, temp_env: MultiTaskEnvironment):
+        """ Setup some of the fields on the Setting using a temporary environment.
+
+        This temporary environment only lives during the __post_init__() call.
+        """
+        # FIXME: Replacing the observation space dtypes from their original
+        # 'generated' NamedTuples to self.Observations. The alternative
+        # would be to add another argument to the MultiTaskEnv wrapper, to
+        # pass down a dtype to be set on its observation_space's `dtype`
+        # attribute, which would be ugly.
+        assert isinstance(temp_env.observation_space, NamedTupleSpace)
+
+        temp_env.observation_space.dtype = self.Observations
+        # Populate the task schedules created above.
+        if not self.train_task_schedule:
+            train_change_steps = [i * self.steps_per_task for i in range(self.nb_tasks)]
+            assert len(train_change_steps) == self.nb_tasks
+
+            if self.smooth_task_boundaries:
+                # Add a last 'task' at the end of the 'epoch', so that the
+                # env changes smoothly right until the end.
+                train_change_steps.append(self.max_steps)
+            self.train_task_schedule = self.create_task_schedule(
+                temp_env, train_change_steps,
+            )
+
+        assert self.train_task_schedule is not None
+        # The validation task schedule is the same as the one used in
+        # training by default.
+        if not self.valid_task_schedule:
+            self.valid_task_schedule = deepcopy(self.train_task_schedule)
+
+        if not self.test_task_schedule:
+            # The test task schedule is by default the same as in validation
+            # except that the interval between the tasks may be different,
+            # depending on the value of `self.test_steps_per_task`.
+            valid_steps = sorted(self.valid_task_schedule.keys())
+            valid_tasks = [self.valid_task_schedule[step] for step in valid_steps]
+            self.test_task_schedule = {
+                i * self.test_steps_per_task: deepcopy(task)
+                for i, task in enumerate(valid_tasks)
+            }
+
+        space_dict = dict(temp_env.observation_space.items())
+        task_label_space = spaces.Discrete(self.nb_tasks)
+        if not self.task_labels_at_train_time or not self.task_labels_at_test_time:
+            task_label_space = Sparse(task_label_space)
+        space_dict["task_labels"] = task_label_space
+
+        # FIXME: Temporarily, we will actually set the task label space, since there
+        # appears to be an error when using monsterkong space.
+        observation_space = NamedTupleSpace(
+            spaces=space_dict, dtype=self.Observations
+        )
+        self.observation_space = observation_space
+        # Set the spaces using the temp env.
+        # self.observation_space = temp_env.observation_space
+        self.action_space = temp_env.action_space
+        self.reward_range = temp_env.reward_range
+        self.reward_space = getattr(
+            temp_env,
+            "reward_space",
+            spaces.Box(
+                low=self.reward_range[0], high=self.reward_range[1], shape=()
+            ),
+        )
+    
     def create_task_schedule(
         self, temp_env: MultiTaskEnvironment, change_steps: List[int]
     ) -> Dict[int, Dict]:
@@ -536,10 +569,17 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 + json.dumps(list(self.train_task_schedule.values()), indent="\t")
             )
         else:
-            logger.info(
-                "Train task schedule:"
-                + json.dumps(self.train_task_schedule, indent="\t")
-            )
+            try:
+                logger.info(
+                    "Train task schedule:"
+                    + json.dumps(self.train_task_schedule, indent="\t")
+                )
+                # BUG: Sometimes the task schedule isnt json-serializable!
+            except TypeError:
+                logger.info("Train task schedule: ")
+                for key, value in self.train_task_schedule.items():
+                    logger.info(f"{key}: {value}")
+
         if self.config.debug:
             logger.debug(
                 "Test task schedule:" + json.dumps(self.test_task_schedule, indent="\t")

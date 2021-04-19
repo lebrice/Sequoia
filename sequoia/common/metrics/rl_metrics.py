@@ -86,6 +86,14 @@ class EpisodeMetrics(Metrics):
             )
         return log_dict
 
+    @property
+    def episodes(self) -> int:
+        return self.n_samples
+
+    @property
+    def mean_reward_per_episode(self) -> float:
+        return self.mean_episode_reward
+
 
 # @dataclass
 # class RLMetrics(Metrics):

@@ -291,3 +291,41 @@ def param_requires_atari_py(*args):
         *args,
         reason="atari_py is required for this parameter.",
     )
+
+
+try:
+    from mtenv import MTEnv
+    mtenv_installed = True
+except ImportError:
+    mtenv_installed = False
+
+mtenv_required = pytest.mark.skipif(
+    not mtenv_installed, reason="mtenv is required for this test."
+)
+
+
+def param_requires_mtenv(*args):
+    return skipif_param(
+        not mtenv_installed,
+        *args,
+        reason="mtenv is required for this parameter.",
+    )
+
+
+try:
+    from metaworld import MetaWorldEnv
+    metaworld_installed = True
+except ImportError:
+    metaworld_installed = False
+
+metaworld_required = pytest.mark.skipif(
+    not metaworld_installed, reason="metaworld is required for this test."
+)
+
+
+def param_requires_metaworld(*args):
+    return skipif_param(
+        not metaworld_installed,
+        *args,
+        reason="metaworld is required for this parameter.",
+    )

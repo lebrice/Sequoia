@@ -40,6 +40,7 @@ class TD3Model(TD3, OffPolicyModel):
         gradient_steps: int = -1
         # gradient_steps: int = categorical(1, -1, default=1)
 
+
 @register_method
 @dataclass
 class TD3Method(OffPolicyMethod):

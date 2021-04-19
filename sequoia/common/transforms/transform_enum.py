@@ -34,12 +34,12 @@ from .resize import Resize
 # from pl_bolts.models.self_supervised.simclr import (SimCLREvalDataTransform,
 #                                                     SimCLRTrainDataTransform)
 class Transforms(Enum):
-    """ Enum of possible transforms. 
+    """ Enum of possible transforms.
 
     By having this as an Enum, we can choose which transforms to use from the
     command-line.
     This also makes it easier to check for identity, e.g. to check wether a
-    particular transform was used.  
+    particular transform was used.
 
     TODO: Add the SimCLR/MOCO/etc transforms from  https://pytorch-lightning-bolts.readthedocs.io/en/latest/transforms.html
     TODO: Figure out a way to let people customize the arguments to the transforms?
@@ -68,7 +68,7 @@ class Transforms(Enum):
             elif type(e.value) == type(value):
                 return e
         return super()._missing_(value)
-    
+
     def shape_change(self, input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
         raise NotImplementedError(f"TODO: Add shape (tuple) support to {self}")
         if isinstance(self.value, Transform):
@@ -84,7 +84,7 @@ T = TypeVar("T", bound=Callable)
 
 class Compose(List[T], ComposeBase):
     """ Extend the Compose class of torchvision with methods of `list`.
-    
+
     This can also be passed in members of the `Transforms` enum, which makes it
     possible to do something like this:
     >>> transforms = Compose([Transforms.to_tensor, Transforms.three_channels,])
@@ -96,14 +96,14 @@ class Compose(List[T], ComposeBase):
     [<Transforms.to_tensor: ToTensor()>,
      <Transforms.three_channels: ThreeChannels()>,
      <Transforms.resize_32x32: Resize(size=(32, 32), interpolation=bilinear)>]
-    
+
     NEW: This Compose transform also applies on gym spaces:
 
     >>> import numpy as np
     >>> from gym.spaces import Box
     >>> image_space = Box(0, 255, (28, 28, 1), dtype=np.uint8)
     >>> transforms(image_space)
-    Box(0.0, 1.0, (3, 32, 32), float32)
+    TensorBox(0.0, 1.0, (3, 32, 32), float32, device=None)
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

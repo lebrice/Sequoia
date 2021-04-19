@@ -1,7 +1,6 @@
 """ This module defines the base classes for Settings and Methods.
 """
 import json
-import sys
 import traceback
 from abc import ABC, abstractmethod
 from functools import partial
@@ -110,35 +109,7 @@ class SettingABC:
             An object that is used to measure or quantify the performance of the
             Method on this experimental Setting.
         """
-        # For illustration purposes only:
-        self.config = config or Config.from_args()
-        method.configure(self)
-        # IDEA: Maybe instead of passing the train_dataloader or test_dataloader,
-        # objects, we could instead pass the methods of the LightningDataModule
-        # themselves, so we wouldn't have to configure the 'batch_size' etc
-        # arguments, and this way we could also directly control how many times
-        # the dataloader method can be called, for instance to limit the number
-        # of samples that a user can have access to (the number of epochs, etc).
-        # Or the dataloader would only allow a given number of iterations!
-        method.fit(
-            train_env=self.train_dataloader(), valid_env=self.val_dataloader(),
-        )
-
-        test_metrics = []
-        test_environment = self.test_dataloader()
-        for observations in test_environment:
-            # Get the predictions/actions:
-            actions = method.get_actions(observations, test_environment.action_space)
-            # Get the rewards for the given predictions.
-            rewards = test_environment.send(actions)
-            # Calculate the 'metrics' (TODO: This should be done be in the env!)
-            metrics = self.get_metrics(actions=actions, rewards=rewards)
-            test_metrics.append(metrics)
-
-        results = self.Results(test_metrics)
-        # TODO: allow the method to observe a 'copy' of the results, maybe?
-        method.receive_results(self, results)
-        return results
+        raise NotImplementedError()
 
     @abstractmethod
     def prepare_data(self, *args, **kwargs):
@@ -165,12 +136,6 @@ class SettingABC:
         self, *args, **kwargs
     ) -> Environment[Observations, Actions, Rewards]:
         pass
-
-    @abstractmethod
-    def get_metrics(self, actions: Actions, rewards: Rewards) -> Union[float, Metrics]:
-        """ Calculate the "metric" from the model predictions (actions) and the
-        true labels (rewards).
-        """
 
     @classmethod
     @abstractmethod

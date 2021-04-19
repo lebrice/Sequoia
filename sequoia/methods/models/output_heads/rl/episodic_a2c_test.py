@@ -14,8 +14,6 @@ from sequoia.common.gym_wrappers import (
     ConvertToFromTensors,
     EnvDataset,
 )
-from sequoia.common.gym_wrappers import PixelObservationWrapper
-from sequoia.settings.active.continual.make_env import make_batched_env
 from sequoia.common.gym_wrappers.batch_env import BatchedVectorEnv
 from sequoia.common.loss import Loss
 from sequoia.conftest import DummyEnvironment
@@ -23,6 +21,7 @@ from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.settings.active.continual import ContinualRLSetting
 from torch import Tensor, nn
 
+from .episodic_a2c import A2CHeadOutput, EpisodicA2C
 from .policy_head import PolicyHead
 
 
@@ -67,10 +66,13 @@ class FakeEnvironment(SyncVectorEnv):
         return obs, reward, done, info
 
 
-@pytest.mark.parametrize("batch_size", [2, 5])
+@pytest.mark.xfail(
+    reason="TODO: Adapt this test for EpisodicA2C (copied form policy_head_test.py)"
+)
+@pytest.mark.parametrize("batch_size", [1, 2, 5])
 def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
-    """ TODO: Test out the PolicyHead in a very controlled environment, where we
-    know exactly the lengths of each episode.
+    """ TODO: Test out the EpisodicA2C output head in a very controlled environment,
+    where we know exactly the lengths of each episode.
     """
     env = FakeEnvironment(
         partial(gym.make, "CartPole-v0"),
@@ -88,7 +90,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
     encoder = nn.Linear(x_dim, x_dim)
     representation_space = obs_space[0]
 
-    output_head = PolicyHead(
+    output_head = EpisodicA2C(
         input_space=representation_space,
         action_space=env.single_action_space,
         reward_space=env.single_reward_space,
@@ -98,22 +100,8 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             accumulate_losses_before_backward=False,
         ),
     )
-    # TODO: Simulating as if the output head were attached to a BaselineModel.
-    PolicyHead.base_model_optimizer = torch.optim.Adam(
-        output_head.parameters(), lr=1e-3
-    )
-
-    # Simplify the loss function so we know exactly what the loss should be at
-    # each step.
-
-    def mock_policy_gradient(
-        rewards: Sequence[float], log_probs: Sequence[float], gamma: float = 0.95
-    ) -> Optional[Loss]:
-        log_probs = (log_probs - log_probs.clone()) + 1
-        # Return the length of the episode, but with a "gradient" flowing back into log_probs.
-        return len(rewards) * log_probs.mean()
-
-    monkeypatch.setattr(output_head, "policy_gradient", mock_policy_gradient)
+    # TODO: Simplify the loss function somehow using monkeypatch so we know exactly what
+    # the loss should be at each step.
 
     batch_size = env.batch_size
 
@@ -206,7 +194,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             assert loss.loss == 0.0, step
 
 
-@pytest.mark.parametrize("batch_size", [1, 2, 5])
+@pytest.mark.parametrize("batch_size", [1, 2, 5,])
 def test_loss_is_nonzero_at_episode_end(batch_size: int):
     """ Test that when stepping through the env, when the episode ends, a
     non-zero loss is returned by the output head.
@@ -224,14 +212,12 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
     env = ConvertToFromTensors(env)
     env = EnvDataset(env)
 
-    head = PolicyHead(
+    head = EpisodicA2C(
         input_space=obs_space[0],
         action_space=action_space,
         reward_space=reward_space,
-        hparams=PolicyHead.HParams(accumulate_losses_before_backward=False),
+        hparams=EpisodicA2C.HParams(accumulate_losses_before_backward=False),
     )
-    # TODO: Simulating as if the output head were attached to a BaselineModel.
-    PolicyHead.base_model_optimizer = torch.optim.Adam(head.parameters(), lr=1e-3)
     head.train()
 
     env.seed(123)
@@ -289,23 +275,10 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
     assert non_zero_losses > 0
 
 
-@pytest.mark.parametrize("batch_size", [1, 2, 5])
-def test_done_is_sometimes_True_when_iterating_through_env(batch_size: int):
-    """ Test that when *iterating* through the env, done is sometimes 'True'.
-    """
-    env = gym.vector.make("CartPole-v0", num_envs=batch_size, asynchronous=True)
-    env = AddDoneToObservation(env)
-    env = ConvertToFromTensors(env)
-    env = EnvDataset(env)
-    for i, obs in zip(range(100), env):
-        print(i, obs[1])
-        _ = env.send(env.action_space.sample())
-        if any(obs[1]):
-            break
-    else:
-        assert False, "Never encountered done=True!"
 
-
+@pytest.mark.xfail(
+    reason="TODO: Adapt this test for EpisodicA2C (copied form policy_head_test.py)"
+)
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
 def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
     """ Test that when *iterating* through the env (active-dataloader style),
@@ -325,12 +298,12 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
     env = ConvertToFromTensors(env)
     env = EnvDataset(env)
 
-    head = PolicyHead(
+    head = EpisodicA2C(
         # observation_space=obs_space,
         input_space=obs_space[0],
         action_space=action_space,
         reward_space=reward_space,
-        hparams=PolicyHead.HParams(accumulate_losses_before_backward=False),
+        hparams=EpisodicA2C.HParams(accumulate_losses_before_backward=False),
     )
 
     env.seed(123)
@@ -379,6 +352,9 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
     assert non_zero_losses > 0
 
 
+@pytest.mark.xfail(
+    reason="TODO: Adapt this test for EpisodicA2C (copied form policy_head_test.py)"
+)
 @pytest.mark.xfail(reason="TODO: Fix this test")
 def test_buffers_are_stacked_correctly(monkeypatch):
     """TODO: Test that when "de-synced" episodes, when fed to the output head,
@@ -408,7 +384,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
     # Set the max window length, for testing.
     output_head.hparams.max_episode_window_length = 100
 
-    obs = env.reset()
+    obs = initial_obs = env.reset()
     done = np.zeros(batch_size, dtype=bool)
 
     obs = torch.from_numpy(obs)
@@ -473,7 +449,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
         done = torch.from_numpy(done)
 
         rewards = ContinualRLSetting.Rewards(y=rewards)
-        _ = output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
+        loss = output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
 
         # Check the contents of the episode buffers.
 
@@ -489,7 +465,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
                 if step + env_index == targets[env_index]:
                     assert (
                         len(representations_buffer) == 1
-                        and not output_head.done[env_index]
+                        and output_head.done[env_index] == False
                     )
                 # if env_index == step - batch_size:
                 continue
@@ -519,22 +495,3 @@ def test_buffers_are_stacked_correctly(monkeypatch):
 
     # assert False, (obs, rewards, done, info)
     # loss: Loss = output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
-
-
-def test_sanity_check_cartpole_done_vector():
-    """TODO: Sanity check, make sure that cartpole has done=True at some point
-    when using a BatchedEnv.
-    """
-    env = make_batched_env(
-        "CartPole-v0", batch_size=5, wrappers=[PixelObservationWrapper]
-    )
-    env = AddDoneToObservation(env)
-    obs = env.reset()
-
-    for i in range(100):
-        obs, rewards, done, info = env.step(env.action_space.sample())
-        assert all(obs[1] == done), i
-        if any(done):
-            break
-    else:
-        assert False, "Should have had at least one done=True, over the 100 steps!"

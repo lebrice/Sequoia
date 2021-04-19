@@ -90,7 +90,7 @@ if __name__ == "__main__":
     # competition.
     from sequoia.client import SettingProxy
 
-    setting = SettingProxy(ClassIncrementalSetting, "sl_track.yaml")
+    setting = SettingProxy(ClassIncrementalSetting, "sl_track")
     # setting = SettingProxy(ClassIncrementalSetting,
     #     dataset="synbols",
     #     nb_tasks=12,
