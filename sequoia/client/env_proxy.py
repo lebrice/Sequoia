@@ -46,6 +46,9 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
         obs = self.__environment.reset()
         return obs
 
+    def __len__(self) -> int:
+        return len(self.__environment)
+
     def step(
         self, actions: ActionType
     ) -> Tuple[

@@ -82,6 +82,10 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         self.__setting: SettingType
         if setting_config_path:
             self.__setting = setting_type.load_benchmark(setting_config_path)
+            if setting_kwargs:
+                raise RuntimeError(
+                    f"Can't use keyword arguments when passing a path to a yaml file!"
+                )
         else:
             self.__setting = setting_type(**setting_kwargs)
         self.__setting.monitor_training_performance = True
@@ -114,7 +118,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
 
     @property
     def test_env(self) -> EnvironmentProxy:
-        return self._test_env
+        raise RuntimeError("You don't have access to the test_env attribute!")
 
     @property
     def config(self) -> Config:
@@ -244,7 +248,10 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         )
         return self._val_env
 
-    def test_dataloader(
+    def test_dataloader(self, batch_size: int = None, num_workers: int = None):
+        raise RuntimeError("You don't have access to the test_dataloader method!")
+
+    def __test_dataloader(
         self, batch_size: int = None, num_workers: int = None
     ) -> EnvironmentProxy:
 
@@ -365,11 +372,13 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         known_task_boundaries_at_test_time = self.get_attribute(
             "known_task_boundaries_at_test_time"
         )
+        # TODO: Always setting this to False for now.
         task_labels_at_test_time = self.get_attribute("task_labels_at_test_time")
+        assert not task_labels_at_test_time, "assuming this for now (e.g. competition)"
 
         was_training = method.training
         method.set_testing()
-        test_env = self.test_dataloader()
+        test_env = self.__test_dataloader()
 
         if known_task_boundaries_at_test_time and nb_tasks > 1:
             # TODO: We need to have a way to inform the Method of task boundaries, if the
