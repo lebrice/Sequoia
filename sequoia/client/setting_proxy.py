@@ -374,7 +374,12 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         )
         # TODO: Always setting this to False for now.
         task_labels_at_test_time = self.get_attribute("task_labels_at_test_time")
-        assert not task_labels_at_test_time, "assuming this for now (e.g. competition)"
+        if task_labels_at_test_time:
+            warnings.warn(
+                RuntimeWarning(
+                    "no task labels at test time for now when using a SettingProxy"
+                )
+            )
 
         was_training = method.training
         method.set_testing()
@@ -404,7 +409,9 @@ class SettingProxy(SettingABC, Generic[SettingType]):
 
             # BUG: This doesn't work if the env isn't batched.
             action_space = test_env.action_space
-            batch_size = getattr(test_env, "num_envs", getattr(test_env, "batch_size", 0))
+            batch_size = getattr(
+                test_env, "num_envs", getattr(test_env, "batch_size", 0)
+            )
             env_is_batched = batch_size is not None and batch_size >= 1
             if env_is_batched:
                 # NOTE: Need to pass an action space that actually reflects the batch

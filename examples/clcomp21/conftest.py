@@ -1,5 +1,4 @@
 import pytest
-import sys
 
 from sequoia.client.setting_proxy import SettingProxy
 from sequoia.settings.passive import ClassIncrementalSetting
@@ -70,8 +69,6 @@ def rl_track_setting(tmp_path):
     # directly, because we want to reduce the length of the task for testing, and it
     # isn't currently possible to both pass a preset yaml file and also pass kwargs to
     # the SettingProxy.
-    rl_track_yaml_file = "rl_track.yaml"
-    
     setting = SettingProxy(
         IncrementalRLSetting,
         dataset="monsterkong",
@@ -91,5 +88,5 @@ def rl_track_setting(tmp_path):
         task_labels_at_train_time=True,
     )
     assert setting.steps_per_phase == 2000
-    assert sorted(setting.train_task_schedule.keys()) == list(range(0, 16_000, 2000)) 
+    assert sorted(setting.train_task_schedule.keys()) == list(range(0, 16_000, 2000))
     return setting
