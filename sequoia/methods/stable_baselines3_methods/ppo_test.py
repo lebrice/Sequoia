@@ -20,7 +20,7 @@ def test_cartpole_state():
         method, config=Config(debug=True)
     )
     print(results.summary())
-    assert 150 < results.average_final_performance.mean_episode_reward
+    assert 135 < results.average_final_performance.mean_episode_reward
 
 
 def test_incremental_cartpole_state():
@@ -35,7 +35,7 @@ def test_incremental_cartpole_state():
     results: IncrementalRLSetting.Results = setting.apply(
         method, config=Config(debug=True)
     )
-    assert 100 < results.average_final_performance.mean_episode_reward
+    assert 89 < results.average_final_performance.mean_episode_reward
     print(results.summary())
 
 

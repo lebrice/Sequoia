@@ -81,6 +81,19 @@ Environment = ActiveEnvironment[
     "ContinualRLSetting.Rewards",
 ]
 
+# TODO: Update the 'available environments' to show all available gym envs? or only
+# those that are explicitly supported ?
+env_ids = [env_spec.id for env_spec in gym.envs.registry.all()]
+
+try:
+    # Add the mtenv known environments:
+    from mtenv.envs.registration import mtenv_registry
+    env_ids.extend(env_spec.id for env_spec in mtenv_registry.all())
+except ImportError:
+    pass
+
+available_environments = env_ids
+
 
 @dataclass
 class ContinualRLSetting(ActiveSetting, IncrementalSetting):

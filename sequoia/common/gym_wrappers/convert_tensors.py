@@ -116,6 +116,15 @@ def add_tensor_support(space: S, device: torch.device = None) -> S:
 
 
 from sequoia.common.spaces.named_tuple import NamedTupleSpace, NamedTuple
+from sequoia.common.spaces.image import Image, ImageTensorSpace
+
+
+@add_tensor_support.register
+def _add_tensor_support(space: Image, device: torch.device = None) -> Image:
+    tensor_box = TensorBox(
+        space.low, space.high, shape=space.shape, dtype=space.dtype, device=device
+    )
+    return ImageTensorSpace.from_box(tensor_box)
 
 
 @add_tensor_support.register

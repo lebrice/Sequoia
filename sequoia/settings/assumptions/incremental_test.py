@@ -70,17 +70,31 @@ class OtherDummyMethod(Method, target_setting=IncrementalSetting):
             if rewards is None:
                 action_space = train_env.action_space
                 if train_env.action_space.shape:
-                    obs_batch_size = observations.x.shape[0]
-                    # BUG: Fix the `batch_size` attribute on `Batch` so it works
-                    # even when task labels are None, by checking wether there is
-                    # one or more shapes, and then if there are, then that the first
-                    # dimension match between those.
-                    action_space_batch_size = action_space.shape[0]
-                    if obs_batch_size != action_space_batch_size:
-                        action_space = batch_space(
-                            train_env.single_action_space, obs_batch_size
+                    # This is a bit complicated, but it's needed because the last batch
+                    # might have a different batch dimension than the env's action
+                    # space, (only happens on the last batch in supervised learning).
+                    # TODO: Should we perhaps drop the last batch?
+                    action_space = train_env.action_space
+                    batch_size = getattr(train_env, "num_envs", getattr(train_env, "batch_size", 0))
+                    env_is_batched = batch_size is not None and batch_size >= 1
+                    if env_is_batched:
+                        # NOTE: Need to pass an action space that actually reflects the batch
+                        # size, even for the last batch!
+                        obs_batch_size = observations.x.shape[0] if observations.x.shape else None
+                        action_space_batch_size = (
+                            train_env.action_space.shape[0]
+                            if train_env.action_space.shape
+                            else None
                         )
+                        if (
+                            obs_batch_size is not None
+                            and obs_batch_size != action_space_batch_size
+                        ):
+                            action_space = batch_space(
+                                train_env.single_action_space, obs_batch_size
+                            )
 
+                y_preds = action_space.sample()
                 rewards = train_env.send(Actions(y_pred=y_preds))
 
     def get_actions(self, observations: Observations, action_space: Space) -> Actions:
