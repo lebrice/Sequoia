@@ -136,7 +136,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
             val_pbar = tqdm.tqdm(valid_env)
             val_pbar.set_description(f"Validation Epoch {epoch}")
             epoch_val_loss = 0.0
-            epoch_val_loss_list = []
+            epoch_val_loss_list: List[float] = []
 
             for i, (obs, rew) in enumerate(val_pbar):
                 obs = obs.to(device=self.device)
@@ -152,15 +152,14 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
                 y = rew.y
                 val_loss = F.cross_entropy(logits, y).item()
 
-                epoch_val_loss_list += [val_loss]
-                # epoch_val_loss += val_loss
+                epoch_val_loss_list.append(val_loss)
                 postfix["validation loss"] = val_loss
                 val_pbar.set_postfix(postfix)
             torch.set_grad_enabled(True)
             epoch_val_loss_mean = np.mean(epoch_val_loss_list)
 
             if epoch_val_loss_mean < best_val_loss:
-                best_val_loss = epoch_val_loss
+                best_val_loss = epoch_val_loss_mean
                 best_epoch = epoch
             if epoch - best_epoch > self.early_stop_patience:
                 print(f"Early stopping at epoch {epoch}.")
