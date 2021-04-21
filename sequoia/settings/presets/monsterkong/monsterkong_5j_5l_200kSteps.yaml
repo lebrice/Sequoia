@@ -1,0 +1,28 @@
+dataset: monsterkong
+steps_per_task: 200_000
+test_steps_per_task: 4000
+monitor_training_performance: True
+wandb:
+  project: monsterkong_sweep2
+  wandb_api_key: 799759daba56493c8f8c0bd47660901e9efef01e
+train_task_schedule:
+  0:
+    level: 0
+  1:
+    level: 2
+  2: 
+    level: 4
+  3: 
+    level: 6
+  4:
+    level: 8
+  5:
+    level: 10
+  6:
+    level: 12
+  7: 
+    level: 14
+  8: 
+    level: 16
+  9: 
+    level: 18
