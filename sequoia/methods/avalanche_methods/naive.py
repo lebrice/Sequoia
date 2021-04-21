@@ -99,24 +99,25 @@ class NaiveMethod(AvalancheMethod):
     def create_cl_strategy(self, setting: TaskIncrementalSetting) -> BaseStrategy:
         self.optimizer = SGD(self.model.parameters(), lr=0.001, momentum=0.9)
         self.criterion = CrossEntropyLoss()
-        from .naive import Naive
-        return Naive(
+        strategy = Naive(
             self.model,
             self.optimizer,
             self.criterion,
-            train_mb_size=1,
+            train_mb_size=64,
             train_epochs=1,
             eval_mb_size=1,
             device=self.device,
             eval_every=0,
         )
+        strategy.setting = setting
+        return strategy
 
 
 if __name__ == "__main__":
     from sequoia.settings.passive import TaskIncrementalSetting
     from .base import AvalancheMethod
 
-    setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
+    setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5, monitor_training_performance=True)
     method = NaiveMethod()
     results = setting.apply(method)
 

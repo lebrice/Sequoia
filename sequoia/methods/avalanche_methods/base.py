@@ -102,8 +102,8 @@ class AvalancheMethod(Method, target_setting=TaskIncrementalSetting):
             # cl_strategy and the plugins know.
             # TODO: Get this working, figure out what the plugins expect to retrieve
             # from the cl_strategy in this callback.
-            assert False, self.cl_strategy.experience
-            self.cl_strategy.after_eval_exp()
-            self.cl_strategy.before_eval_exp()
+            if self.cl_strategy.experience is not None:
+                self.cl_strategy.after_eval_exp()
+                self.cl_strategy.before_eval_exp()
             
         self._was_training = self.training

@@ -30,47 +30,52 @@ class SequoiaExperience(IterableWrapper, Experience):
 
         self.task_id = setting.current_task_id
 
-        all_observations: List[Observations] = []
-        all_rewards: List[Rewards] = []
+        # all_observations: List[Observations] = []
+        # all_rewards: List[Rewards] = []
 
-        for batch in tqdm.tqdm(self, desc="Converting environment into TensorDataset"):
-            observations: Observations
-            rewards: Optional[Rewards]
-            if isinstance(batch, Observations):
-                observations = batch
-                rewards = None
-            else:
-                assert isinstance(batch, tuple) and len(batch) == 2
-                observations, rewards = batch
+        # for batch in tqdm.tqdm(self, desc="Converting environment into TensorDataset"):
+        #     observations: Observations
+        #     rewards: Optional[Rewards]
+        #     if isinstance(batch, Observations):
+        #         observations = batch
+        #         rewards = None
+        #     else:
+        #         assert isinstance(batch, tuple) and len(batch) == 2
+        #         observations, rewards = batch
 
-            if rewards is None:
-                # Need to send actions to the env before we can actually get the
-                # associated Reward.
-                # Here we sample a random action (no other choice really..) and so we
-                # are going to get bad results in case the online performance is being
-                # evaluated.
-                action = self.env.action_space.sample()
-                rewards = self.env.send(action)
-                assert False, (observations.shapes, action.shapes, rewards.shapes)
-            all_observations.append(observations)
-            all_rewards.append(rewards)
-        # TODO: This will be absolutely unfeasable for larger dataset like ImageNet.
-        stacked_observations: Observations = Observations.concatenate(all_observations)
+        #     if rewards is None:
+        #         # Need to send actions to the env before we can actually get the
+        #         # associated Reward.
+        #         # Here we sample a random action (no other choice really..) and so we
+        #         # are going to get bad results in case the online performance is being
+        #         # evaluated.
+        #         action = self.env.action_space.sample()
+        #         rewards = self.env.send(action)
+        #         assert False, (observations.shapes, action.shapes, rewards.shapes)
+        #     all_observations.append(observations)
+        #     all_rewards.append(rewards)
+        # # TODO: This will be absolutely unfeasable for larger dataset like ImageNet.
+        # stacked_observations: Observations = Observations.concatenate(all_observations)
 
-        assert all(
-            y_i is not None for y in all_rewards for y_i in y
-        ), "Need fully labeled train dataset for now."
-        stacked_rewards: Rewards = Rewards.concatenate(all_rewards)
+        # assert all(
+        #     y_i is not None for y in all_rewards for y_i in y
+        # ), "Need fully labeled train dataset for now."
+        # stacked_rewards: Rewards = Rewards.concatenate(all_rewards)
 
-        dataset = TensorDataset(stacked_observations.x, stacked_rewards.y)
-        dataset = AvalancheDataset(
-            dataset=dataset,
-            task_labels=stacked_observations.task_labels.tolist(),
-            targets=stacked_rewards.y.tolist(),
-        )
-        self._dataset = dataset
-        self.tasks_pattern_indices = dict({0: np.arange(len(self._dataset))})
-        self.task_set = _TaskSubsetDict(self._dataset)
+        # dataset = TensorDataset(stacked_observations.x, stacked_rewards.y)
+        # dataset = AvalancheDataset(
+        #     dataset=dataset,
+        #     task_labels=stacked_observations.task_labels.tolist(),
+        #     targets=stacked_rewards.y.tolist(),
+        # )
+        class DummyDataset(AvalancheDataset):
+            pass
+            def train(self):
+                return self
+ 
+        self._dataset = ...
+        self.tasks_pattern_indices = {} #dict({0: np.arange(len(self._dataset))})
+        self.task_set = ... #_TaskSubsetDict(self._dataset)
         # self._dataset = env
         # from avalanche.benchmarks import GenericScenarioStream
         # class FakeStream(GenericScenarioStream):
