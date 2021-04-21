@@ -9,7 +9,7 @@
 # Website: avalanche.continualai.org                                           #
 ################################################################################
 from typing import List, Optional, Sequence, Union
-
+from sequoia.settings.passive import TaskIncrementalSetting
 from avalanche.training import default_logger
 from avalanche.training.plugins import (
     AGEMPlugin,
@@ -23,13 +23,17 @@ from avalanche.training.plugins import (
     StrategyPlugin,
     SynapticIntelligencePlugin,
 )
+from torch.nn import CrossEntropyLoss
+from torch.optim import SGD
+from avalanche.training.strategies import Naive as Naive_
 from torch.nn import Module
 from torch.optim import Optimizer
+from .base import AvalancheMethod
+from .base_strategy import BaseStrategy
+from avalanche.models import SimpleMLP
 
-from .new_base_strategy import BaseStrategy
 
-
-class Naive(BaseStrategy):
+class Naive(Naive_, BaseStrategy):
     """
     The simplest (and least effective) Continual Learning strategy. Naive just
     incrementally fine tunes a single model without employing any method
@@ -88,11 +92,31 @@ class Naive(BaseStrategy):
         )
 
 
+class NaiveMethod(AvalancheMethod):
+    def create_model(self, setting: TaskIncrementalSetting) -> SimpleMLP:
+        return super().create_model(setting)
+
+    def create_cl_strategy(self, setting: TaskIncrementalSetting) -> BaseStrategy:
+        self.optimizer = SGD(self.model.parameters(), lr=0.001, momentum=0.9)
+        self.criterion = CrossEntropyLoss()
+        from .naive import Naive
+        return Naive(
+            self.model,
+            self.optimizer,
+            self.criterion,
+            train_mb_size=1,
+            train_epochs=1,
+            eval_mb_size=1,
+            device=self.device,
+            eval_every=0,
+        )
+
+
 if __name__ == "__main__":
     from sequoia.settings.passive import TaskIncrementalSetting
     from .base import AvalancheMethod
 
     setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
-    method = AvalancheMethod()
+    method = NaiveMethod()
     results = setting.apply(method)
 
