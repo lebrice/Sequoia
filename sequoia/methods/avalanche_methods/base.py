@@ -1,50 +1,93 @@
+from typing import List, Optional
+
 import gym
+import numpy as np
 import torch
+import tqdm
 from avalanche.benchmarks.classic import PermutedMNIST
 from avalanche.benchmarks.scenarios import Experience
+from avalanche.benchmarks.utils import as_avalanche_dataset
+from avalanche.benchmarks.utils.avalanche_dataset import (AvalancheDataset,
+                                                          _TaskSubsetDict)
 from avalanche.models import SimpleMLP
+from continuum import TaskSet
 from gym import spaces
+from gym.spaces.utils import flatdim
+from sequoia.common.gym_wrappers.utils import IterableWrapper
+from sequoia.common.spaces import Image
 from sequoia.methods import Method
-from sequoia.settings.passive import PassiveEnvironment, TaskIncrementalSetting
+from sequoia.settings.passive import (ClassIncrementalSetting,
+                                      PassiveEnvironment, PassiveSetting,
+                                      TaskIncrementalSetting)
+from sequoia.settings.passive.cl.objects import Actions, Observations, Rewards
+from torch import Tensor
 from torch.nn import CrossEntropyLoss
 from torch.optim import SGD
-from sequoia.settings.passive import PassiveSetting
+from torch.utils.data import TensorDataset
 
 from .naive import Naive
 
 
-class SequoiaExperience(Experience):
-    def __init__(self, env: PassiveEnvironment, setting: PassiveSetting):
-        super().__init__()
-        self.env = env
+class SequoiaExperience(IterableWrapper, Experience):
+    def __init__(self, env: PassiveEnvironment, setting: ClassIncrementalSetting):
+        super().__init__(env=env)
         self.setting = setting
-        from continuum import TaskSet
-        from avalanche.benchmarks.utils.avalanche_dataset import AvalancheDataset
-        task_set: TaskSet = env.dataset
-        x, y, t = task_set._x, task_set._y, task_set._t
-        from torch.utils.data import TensorDataset
-        import torch
-        x = torch.as_tensor(x)
-        y = torch.as_tensor(y)
-        dataset = TensorDataset(x, y)
-        dataset = AvalancheDataset(dataset=dataset, task_labels=t, targets=y)
+        if env is setting.train_env:
+            self.transforms = setting.train_transforms
+        elif env is setting.val_env:
+            self.transforms = setting.val_transforms
+        else:
+            assert env is setting.test_env
+            self.transforms = setting.test_transforms
+
+        self.task_id = setting.current_task_id
+
+        all_observations: List[Observations] = []
+        all_rewards: List[Rewards] = []
+
+        for batch in tqdm.tqdm(self, desc="Converting environment into TensorDataset"):
+            observations: Observations
+            rewards: Optional[Rewards]
+            if isinstance(batch, Observations):
+                observations = batch
+                rewards = None
+            else:
+                assert isinstance(batch, tuple) and len(batch) == 2
+                observations, rewards = batch
+
+            if rewards is None:
+                # Need to send actions to the env before we can actually get the
+                # associated Reward.
+                # Here we sample a random action (no other choice really..) and so we
+                # are going to get bad results in case the online performance is being
+                # evaluated.
+                action = self.env.action_space.sample()
+                rewards = self.env.send(action)
+                assert False, (observations.shapes, action.shapes, rewards.shapes)
+            all_observations.append(observations)
+            all_rewards.append(rewards)
+        # TODO: This will be absolutely unfeasable for larger dataset like ImageNet.
+        stacked_observations: Observations = Observations.concatenate(all_observations)
+
+        assert all(
+            y_i is not None for y in all_rewards for y_i in y
+        ), "Need fully labeled train dataset for now."
+        stacked_rewards: Rewards = Rewards.concatenate(all_rewards)
+
+        dataset = TensorDataset(stacked_observations.x, stacked_rewards.y)
+        dataset = AvalancheDataset(
+            dataset=dataset,
+            task_labels=stacked_observations.task_labels.tolist(),
+            targets=stacked_rewards.y.tolist(),
+        )
         self._dataset = dataset
-
-        def train():
-            return env
-
-        env.train = train
-        from avalanche.benchmarks.utils import as_avalanche_dataset
-        from avalanche.benchmarks.utils.avalanche_dataset import _TaskSubsetDict
-        import numpy as np
-        env.tasks_pattern_indices = dict({0: np.arange(len(dataset))})
-        env.task_set = _TaskSubsetDict(env)
-        self._dataset = env
-        from avalanche.benchmarks import GenericScenarioStream
-
-        class FakeStream(GenericScenarioStream):
-            pass
-        self.origin_stream = FakeStream("train", scenario="whatever")
+        self.tasks_pattern_indices = dict({0: np.arange(len(self._dataset))})
+        self.task_set = _TaskSubsetDict(self._dataset)
+        # self._dataset = env
+        # from avalanche.benchmarks import GenericScenarioStream
+        # class FakeStream(GenericScenarioStream):
+        #     pass
+        # self.origin_stream = FakeStream("train", scenario="whatever")
         # self.origin_stream.name = "train"
 
     @property
@@ -61,10 +104,21 @@ class SequoiaExperience(Experience):
 
     @property
     def current_experience(self):
+        # Return the index of the
+        return self.task_id
+
+    @property
+    def origin_stream(self) -> PassiveSetting:
+        # NOTE: This 
+        return self.setting
+
+    def train(self):
         return self
 
 
-def environment_to_experience(env: PassiveEnvironment, setting: PassiveSetting) -> Experience:
+def environment_to_experience(
+    env: PassiveEnvironment, setting: PassiveSetting
+) -> Experience:
     """
     TODO: Somehow convert our 'Environments' / dataloaders into an Experience object?
     """
@@ -79,7 +133,9 @@ class AvalancheMethod(Method, target_setting=TaskIncrementalSetting):
     def configure(self, setting: TaskIncrementalSetting):
         # model
         self.setting = setting
-        self.model = SimpleMLP(num_classes=10)
+        image_space: Image = setting.observation_space.x
+        input_dims = flatdim(image_space)
+        self.model = SimpleMLP(input_size=input_dims, num_classes=10)
         # Prepare for training & testing
         self.optimizer = SGD(self.model.parameters(), lr=0.001, momentum=0.9)
         self.criterion = CrossEntropyLoss()
@@ -88,44 +144,24 @@ class AvalancheMethod(Method, target_setting=TaskIncrementalSetting):
             self.model,
             self.optimizer,
             self.criterion,
-            train_mb_size=32,
+            train_mb_size=1,
             train_epochs=2,
-            eval_mb_size=32,
+            eval_mb_size=1,
             device=self.device,
+            eval_every=0,
         )
 
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
         train_exp = environment_to_experience(train_env, setting=self.setting)
         valid_exp = environment_to_experience(valid_env, setting=self.setting)
-        self.cl_strategy.train(train_exp, eval_streams=[valid_exp], num_workers=4)
+        self.cl_strategy.train(train_exp, eval_streams=[valid_exp], num_workers=0)
         # return super().fit(train_env, valid_env)
 
     def get_actions(
         self, observations: TaskIncrementalSetting.Observations, action_space: gym.Space
     ) -> TaskIncrementalSetting.Actions:
         # TODO: Perform inference with the model.
-        y_pred = self.model(observations.x)
-        return self.target_setting.Actions(y_pred=y_pred)
-
-
-
-
-# from sequoia.settings.base import SettingABC
-# class AvalancheSetting(SettingABC):
-#     def __init__(self):
-#         self.scenario = PermutedMNIST()
-
-#     def apply(self, method, config=None):
-#         return super().apply(method, config=config)
-
-
-
-
-if __name__ == "__main__":
-    setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
-    method = AvalancheMethod()
-    results = setting.apply(method)
-
-
-
-
+        with torch.no_grad():
+            logits = self.model(observations.x.to(self.device))
+            y_pred = logits.argmax(-1)
+            return self.target_setting.Actions(y_pred=y_pred)

@@ -11,11 +11,18 @@
 from typing import List, Optional, Sequence, Union
 
 from avalanche.training import default_logger
-from avalanche.training.plugins import (AGEMPlugin, CWRStarPlugin,
-                                        EvaluationPlugin, EWCPlugin,
-                                        GDumbPlugin, GEMPlugin, LwFPlugin,
-                                        ReplayPlugin, StrategyPlugin,
-                                        SynapticIntelligencePlugin)
+from avalanche.training.plugins import (
+    AGEMPlugin,
+    CWRStarPlugin,
+    EvaluationPlugin,
+    EWCPlugin,
+    GDumbPlugin,
+    GEMPlugin,
+    LwFPlugin,
+    ReplayPlugin,
+    StrategyPlugin,
+    SynapticIntelligencePlugin,
+)
 from torch.nn import Module
 from torch.optim import Optimizer
 
@@ -33,11 +40,19 @@ class Naive(BaseStrategy):
     performing baseline.
     """
 
-    def __init__(self, model: Module, optimizer: Optimizer, criterion,
-                 train_mb_size: int = 1, train_epochs: int = 1,
-                 eval_mb_size: int = None, device=None,
-                 plugins: Optional[List[StrategyPlugin]] = None,
-                 evaluator: EvaluationPlugin = default_logger, eval_every=-1):
+    def __init__(
+        self,
+        model: Module,
+        optimizer: Optimizer,
+        criterion,
+        train_mb_size: int = 1,
+        train_epochs: int = 1,
+        eval_mb_size: int = None,
+        device=None,
+        plugins: Optional[List[StrategyPlugin]] = None,
+        evaluator: EvaluationPlugin = default_logger,
+        eval_every=-1,
+    ):
         """
         Creates an instance of the Naive strategy.
 
@@ -60,7 +75,24 @@ class Naive(BaseStrategy):
                     of all the epochs for a single experience.
         """
         super().__init__(
-            model, optimizer, criterion,
-            train_mb_size=train_mb_size, train_epochs=train_epochs,
-            eval_mb_size=eval_mb_size, device=device, plugins=plugins,
-            evaluator=evaluator, eval_every=eval_every)
+            model,
+            optimizer,
+            criterion,
+            train_mb_size=train_mb_size,
+            train_epochs=train_epochs,
+            eval_mb_size=eval_mb_size,
+            device=device,
+            plugins=plugins,
+            evaluator=evaluator,
+            eval_every=eval_every,
+        )
+
+
+if __name__ == "__main__":
+    from sequoia.settings.passive import TaskIncrementalSetting
+    from .base import AvalancheMethod
+
+    setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
+    method = AvalancheMethod()
+    results = setting.apply(method)
+

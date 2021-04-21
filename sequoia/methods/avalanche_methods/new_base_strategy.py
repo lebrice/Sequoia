@@ -14,6 +14,7 @@ from typing import Optional, Sequence, Union, List
 from torch.nn import Module
 from torch.optim import Optimizer
 import gym
+from torch.utils.data import DataLoader
 from gym import Env
 from avalanche.benchmarks.utils.avalanche_dataset import AvalancheDataset
 from avalanche.benchmarks.scenarios import Experience
@@ -197,7 +198,7 @@ class BaseStrategy(_BaseStrategy):
         eval_streams: Optional[
             Sequence[Union[Experience, Sequence[Experience]]]
         ] = None,
-        **kwargs
+        **kwargs,
     ):
         """ Training loop. if experiences is a single element trains on it.
         If it is a sequence, trains the model on each experience in order.
@@ -302,20 +303,7 @@ class BaseStrategy(_BaseStrategy):
 
     def train_dataset_adaptation(self, **kwargs):
         """ Initialize `self.adapted_dataset`. """
-        # TODO:
-        if isinstance(self.experience, gym.Env):
-            from continuum import TaskSet
-            task_set: TaskSet = self.experience.dataset
-            x, y, t = task_set._x, task_set._y, task_set._t
-            from torch.utils.data import TensorDataset
-            import torch
-            x = torch.as_tensor(x)
-            y = torch.as_tensor(y)
-            dataset = TensorDataset(x, y)
-            dataset = AvalancheDataset(dataset=dataset, task_labels=t, targets=y)
-            self.adapted_dataset = dataset
-        else:
-            self.adapted_dataset = self.experience.dataset
+        self.adapted_dataset = self.experience.dataset
         self.adapted_dataset = self.adapted_dataset.train()
 
     def eval(self, exp_list: Union[Experience, Sequence[Experience]], **kwargs):
