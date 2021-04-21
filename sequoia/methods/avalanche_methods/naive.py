@@ -1,13 +1,3 @@
-################################################################################
-# Copyright (c) 2021 ContinualAI.                                              #
-# Copyrights licensed under the MIT License.                                   #
-# See the accompanying LICENSE file for terms.                                 #
-#                                                                              #
-# Date: 01-12-2020                                                             #
-# Author(s): Antonio Carta, Andrea Cossu                                       #
-# E-mail: contact@continualai.org                                              #
-# Website: avalanche.continualai.org                                           #
-################################################################################
 from typing import List, Optional, Sequence, Union
 from sequoia.settings.passive import TaskIncrementalSetting
 from avalanche.training import default_logger

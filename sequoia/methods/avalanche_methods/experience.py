@@ -72,8 +72,8 @@ class SequoiaExperience(IterableWrapper, Experience):
             pass
             def train(self):
                 return self
- 
-        self._dataset = ...
+
+        self._dataset = self
         self.tasks_pattern_indices = {} #dict({0: np.arange(len(self._dataset))})
         self.task_set = ... #_TaskSubsetDict(self._dataset)
         # self._dataset = env
@@ -87,6 +87,10 @@ class SequoiaExperience(IterableWrapper, Experience):
     def dataset(self):
         return self._dataset
 
+    @dataset.setter
+    def dataset(self, value):
+        self._dataset = value
+    
     @property
     def task_label(self):
         return self.setting.current_task_id

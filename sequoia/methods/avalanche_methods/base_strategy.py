@@ -1,14 +1,3 @@
-################################################################################
-# Copyright (c) 2021 ContinualAI.                                              #
-# Copyrights licensed under the MIT License.                                   #
-# See the accompanying LICENSE file for terms.                                 #
-#                                                                              #
-# Date: 01-12-2020                                                             #
-# Author(s): Antonio Carta                                                     #
-# E-mail: contact@continualai.org                                              #
-# Website: avalanche.continualai.org                                           #
-################################################################################
-from collections import defaultdict
 from typing import TYPE_CHECKING, List, Optional, Sequence, Union
 
 import gym
@@ -16,34 +5,94 @@ import tqdm
 from avalanche.benchmarks.scenarios import Experience
 from avalanche.benchmarks.utils.avalanche_dataset import AvalancheDataset
 from avalanche.benchmarks.utils.data_loader import (
-    MultiTaskDataLoader,
-    MultiTaskMultiBatchDataLoader,
-)
+    MultiTaskDataLoader, MultiTaskMultiBatchDataLoader)
 from avalanche.training import default_logger
-from avalanche.training.plugins import EvaluationPlugin
-from gym import Env
-from sequoia.settings.passive import (
-    ClassIncrementalSetting,
-    PassiveEnvironment,
-    PassiveSetting,
-)
-from sequoia.settings.passive.cl.objects import Observations, Rewards
+from avalanche.training.plugins import StrategyPlugin
+from sequoia.settings.passive import (ClassIncrementalSetting,
+                                      PassiveEnvironment)
+from torch import Tensor
 from torch.nn import Module
 from torch.optim import Optimizer
-from torch.utils.data import DataLoader
 
 if TYPE_CHECKING:
     from avalanche.training.plugins import StrategyPlugin
 
-from avalanche.training.strategies.base_strategy import BaseStrategy as _BaseStrategy
-from sequoia.settings.assumptions.incremental import TestEnvironment
-from sequoia.settings.passive.cl.class_incremental_setting import (
-    ClassIncrementalSetting,
-    ClassIncrementalTestEnvironment,
-)
+import torch
+from avalanche.training.strategies.base_strategy import \
+    BaseStrategy as _BaseStrategy
+from sequoia.settings.passive.cl.class_incremental_setting import \
+    ClassIncrementalTestEnvironment
+from sequoia.settings.passive.cl.objects import Actions, Observations
+from torch.utils.data import TensorDataset
 
-# TODO: Chat with Lorenzo Pellegrini for typing stuff
-from sequoia.settings.passive.cl.objects import Actions, Observations, Rewards
+
+class GatherDataset(StrategyPlugin):
+    """ IDEA: A Plugin that accumulates the tensors from the env to create a "proper"
+    Dataset to be used by the plugins.
+    """
+    def __init__(self):
+        self.train_xs: List[Tensor] = []
+        self.train_ys: List[Tensor] = []
+        self.train_ts: List[Tensor] = []
+        self.train_dataset: TensorDataset
+        self.eval_xs: List[Tensor] = []
+        self.eval_ys: List[Tensor] = []
+        self.eval_ts: List[Tensor] = []
+        self.eval_dataset: TensorDataset
+
+    def after_forward(self, strategy, **kwargs):
+        x, y, t = strategy.mb_x, strategy.mb_task_id, strategy.mb_y
+        self.train_xs.append(x)
+        self.train_ys.append(y)
+        self.train_ts.append(t)
+        return super().after_forward(strategy, **kwargs)
+
+    def after_training_epoch(self, strategy, **kwargs):
+        self.train_dataset = TensorDataset(
+            torch.cat(self.train_xs), torch.cat(self.train_ys), torch.cat(self.train_ts)
+        )
+        self.train_xs.clear()
+        self.train_ys.clear()
+        self.train_ts.clear()
+        return super().after_training_epoch(strategy, **kwargs)
+
+    def after_eval_forward(self, strategy, **kwargs):
+        x, y, t = strategy.mb_x, strategy.mb_task_id, strategy.mb_y
+        self.eval_xs.append(x)
+        self.eval_ys.append(y)
+        self.eval_ts.append(t)
+        return super().after_eval_forward(strategy, **kwargs)
+
+    def after_eval_epoch(self, strategy, **kwargs):
+        self.eval_dataset = TensorDataset(
+            torch.cat(self.eval_xs), torch.cat(self.eval_ys), torch.cat(self.eval_ts)
+        )
+        self.eval_xs.clear()
+        self.eval_ys.clear()
+        self.eval_ts.clear()
+        return super().after_eval_epoch(strategy, **kwargs)
+
+    def train(self):
+        return self.train_dataset
+
+    def eval(self):
+        return self.eval_dataset
+
+    def after_training_exp(self, strategy: "BaseStrategy", **kwargs):
+        """
+        Compute importances of parameters after each experience.
+        """
+        if strategy.setting:
+            strategy.experience.dataset = self.train_dataset
+        return super().after_training_exp(strategy, **kwargs)
+
+    def after_eval_exp(self, strategy: "BaseStrategy", **kwargs):
+        """
+        Compute importances of parameters after each experience.
+        """
+        if strategy.setting:
+            strategy.experience.dataset = self.eval_dataset
+        return super().after_eval_exp(strategy, **kwargs)
 
 
 class BaseStrategy(_BaseStrategy):
@@ -73,45 +122,20 @@ class BaseStrategy(_BaseStrategy):
             eval_every=eval_every,
         )
         self.setting: Optional[ClassIncrementalSetting] = None
+        
+        self.plugins.insert(0, GatherDataset())
+        
+        # IDEA: Construct the 'AvalancheDataset' by collecting the tensors when iterating
+        # over the training env them during the first epoch! That way the plugins can
+        # rely on there being a dataset!
+        self.xs: List[Tensor] = []
+        self.ys: List[Tensor] = []
+        self.task_labels: List[Tensor] = []
+        # self.dataset = strategy.experience.dataset
 
-    def train(self, experiences: Union[Experience, Sequence[Experience]],
-              eval_streams: Optional[Sequence[Union[Experience,
-                                                    Sequence[
-                                                        Experience]]]] = None,
-              **kwargs):
-        """ Training loop. if experiences is a single element trains on it.
-        If it is a sequence, trains the model on each experience in order.
-        This is different from joint training on the entire stream.
-        It returns a dictionary with last recorded value for each metric.
-
-        :param experiences: single Experience or sequence.
-        :param eval_streams: list of streams for evaluation.
-            If None: use training experiences for evaluation.
-            Use [] if you do not want to evaluate during training.
-
-        :return: dictionary containing last recorded value for
-            each metric name.
-        """
-        self.is_training = True
-        self.model.train()
-        self.model.to(self.device)
-
-        # Normalize training and eval data.
-        if isinstance(experiences, Experience):
-            experiences = [experiences]
-        if eval_streams is None:
-            eval_streams = [experiences]
-        for i, exp in enumerate(eval_streams):
-            if isinstance(exp, Experience):
-                eval_streams[i] = [exp]
-
-        self.before_training(**kwargs)
-        for exp in experiences:
-            self.train_exp(exp, eval_streams, **kwargs)
-        self.after_training(**kwargs)
-
-        res = self.evaluator.get_last_metrics()
-        return res
+    @property
+    def dataset_plugin(self) -> GatherDataset:
+        return [plugin for plugin in self.plugins if isinstance(plugin, GatherDataset)][0]
 
     def train_dataset_adaptation(self, **kwargs):
         """ Initialize `self.adapted_dataset`. """
@@ -221,7 +245,7 @@ class BaseStrategy(_BaseStrategy):
                         rewards.y.to(self.device) if rewards is not None else None
                     )
                     # TODO: Does `after_forward` need access to self.mb_y?
-                    self.after_eval_forward(**kwargs)
+                    self.after_forward(**kwargs)
                     self.mb_it += 1
                     pbar.update()
 
@@ -248,7 +272,6 @@ class BaseStrategy(_BaseStrategy):
                     )
 
             episode += 1
-
 
     def eval_epoch(self, **kwargs):
         if isinstance(self.experience, gym.Env):
@@ -277,7 +300,6 @@ class BaseStrategy(_BaseStrategy):
 
                     self.before_eval_forward(**kwargs)
                     self.logits = self.model(self.mb_x)
-                    self.after_eval_forward(**kwargs)  # Where to put this? Here?
 
                     y_pred = self.logits.argmax(-1)
                     actions = Actions(y_pred=y_pred)
@@ -293,7 +315,7 @@ class BaseStrategy(_BaseStrategy):
                     self.mb_y = (
                         rewards.y.to(self.device) if rewards is not None else None
                     )
-                    self.after_eval_forward(**kwargs)  # Or Here?
+                    self.after_eval_forward(**kwargs)
                     self.mb_it += 1
 
                     self.loss = self.criterion(self.logits, self.mb_y)
