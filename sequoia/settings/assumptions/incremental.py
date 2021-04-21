@@ -444,7 +444,7 @@ class IncrementalSetting(ContinualSetting):
                 if isinstance(action, Actions):
                     action = action.y_pred
                 if isinstance(action, Tensor):
-                    action = action.cpu().numpy()
+                    action = action.detach().cpu().numpy()
 
                 if test_env.is_closed():
                     break
