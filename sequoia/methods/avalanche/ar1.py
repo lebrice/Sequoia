@@ -1,26 +1,24 @@
 """ AR1 Method from Avalanche. """
 from dataclasses import dataclass
-from typing import ClassVar, Optional, Type
+from typing import ClassVar, Type
 
-import gym
 from avalanche.training.strategies import AR1, BaseStrategy
 from sequoia.methods import register_method
-from sequoia.settings.passive import (ClassIncrementalSetting,
-                                      PassiveEnvironment,
-                                      TaskIncrementalSetting)
-from torch.nn import Module
-from torch.optim.optimizer import Optimizer
+from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
 
 from .base import AvalancheMethod
 
 
 @register_method
 @dataclass
-class AR1Method(AvalancheMethod, target_setting=ClassIncrementalSetting):
+class AR1Method(AvalancheMethod[AR1], target_setting=ClassIncrementalSetting):
     """ AR1 strategy from Avalanche.
     See AR1 plugin for details.
     This strategy does not use task identities.
+
+    See the parent class `AvalancheMethod` for the other hyper-parameters and methods.
     """
+
     # The learning rate (SGD optimizer).
     lr: float = 0.001
     # The momentum (SGD optimizer).
@@ -57,33 +55,6 @@ class AR1Method(AvalancheMethod, target_setting=ClassIncrementalSetting):
     eval_mb_size: int = 128
 
     strategy_class: ClassVar[Type[BaseStrategy]] = AR1
-
-    def configure(self, setting: ClassIncrementalSetting) -> None:
-        super().configure(setting)
-
-    def create_cl_strategy(self, setting: ClassIncrementalSetting) -> AR1:
-        return super().create_cl_strategy(setting)
-
-    def create_model(self, setting: ClassIncrementalSetting) -> Module:
-        return super().create_model(setting)
-
-    def make_optimizer(self, **kwargs) -> Optimizer:
-        """ Creates the Optimizer object from the options. """
-        return super().make_optimizer(**kwargs)
-
-    def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
-        return super().fit(train_env=train_env, valid_env=valid_env)
-
-    def get_actions(
-        self, observations: TaskIncrementalSetting.Observations, action_space: gym.Space
-    ) -> TaskIncrementalSetting.Actions:
-        return super().get_actions(observations=observations, action_space=action_space)
-
-    def on_task_switch(self, task_id: Optional[int]) -> None:
-        # TODO: Figure out if it makes sense to use this at test time (no real need for)
-        # this at train time, except maybe in multi-task setting? Even then, not totally
-        # sure.
-        pass
 
 
 if __name__ == "__main__":

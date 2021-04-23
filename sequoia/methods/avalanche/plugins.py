@@ -1,9 +1,12 @@
-
+""" WIP: @lebrice: Plugins that I was using while trying to get the BaseStrategy and
+plugins from Avalanche to work directly with the Sequoia environments.
+"""
 from typing import List
 
 import numpy as np
 import torch
-from avalanche.training.strategies import BaseStrategy, StrategyPlugin
+from avalanche.training.strategies import BaseStrategy
+from avalanche.training.plugins import StrategyPlugin
 from torch import Tensor
 from torch.utils.data import TensorDataset
 

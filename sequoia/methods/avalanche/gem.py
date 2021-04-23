@@ -1,36 +1,42 @@
-""" CWRStar Method from Avalanche. """
+""" GEM Method from Avalanche. """
 from dataclasses import dataclass
 from typing import ClassVar, Optional, Type
 
 import gym
-from avalanche.training.strategies import CWRStar, BaseStrategy
-from sequoia.methods import register_method
-from sequoia.settings.passive import (ClassIncrementalSetting,
-                                      PassiveEnvironment,
-                                      TaskIncrementalSetting)
 from torch.nn import Module
 from torch.optim.optimizer import Optimizer
 
+from avalanche.training.strategies import GEM, BaseStrategy
+
+from sequoia.methods import register_method
+from sequoia.settings.passive import (
+    ClassIncrementalSetting,
+    PassiveEnvironment,
+    TaskIncrementalSetting,
+)
 from .base import AvalancheMethod
 
 
 @register_method
 @dataclass
-class CWRStarMethod(AvalancheMethod, target_setting=ClassIncrementalSetting):
-    """ CWRStar strategy from Avalanche.
-    See CWRStar plugin for details.
+class GEMMethod(AvalancheMethod, target_setting=ClassIncrementalSetting):
+    """Gradient Episodic Memory (GEM) strategy from Avalanche.
+    See GEM plugin for details.
     This strategy does not use task identities.
     """
-    # Name of the CWR layer. Defaults to None, which means that the last fully connected
-    # layer will be used.
-    cwr_layer_name: Optional[str] = None
 
-    strategy_class: ClassVar[Type[BaseStrategy]] = CWRStar
+    # number of patterns per experience in the memory
+    patterns_per_exp: int = 100
+    # Offset to add to the projection direction in order to favour backward transfer
+    # (gamma in original paper).
+    memory_strength: float = 0.5
+
+    strategy_class: ClassVar[Type[BaseStrategy]] = GEM
 
     def configure(self, setting: ClassIncrementalSetting) -> None:
         super().configure(setting)
 
-    def create_cl_strategy(self, setting: ClassIncrementalSetting) -> CWRStar:
+    def create_cl_strategy(self, setting: ClassIncrementalSetting) -> GEM:
         return super().create_cl_strategy(setting)
 
     def create_model(self, setting: ClassIncrementalSetting) -> Module:
@@ -63,8 +69,8 @@ if __name__ == "__main__":
     )
     # Create the Method, either manually or through the command-line:
     parser = ArgumentParser(__doc__)
-    parser.add_arguments(CWRStarMethod, "method")
+    parser.add_arguments(GEMMethod, "method")
     args = parser.parse_args()
-    method: CWRStarMethod = args.method
+    method: GEMMethod = args.method
 
     results = setting.apply(method)

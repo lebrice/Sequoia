@@ -9,6 +9,7 @@ from avalanche.benchmarks.utils.avalanche_dataset import (
     AvalancheDataset,
     AvalancheDatasetType,
 )
+from torch.utils.data import TensorDataset
 
 from sequoia.common.gym_wrappers.utils import IterableWrapper
 from sequoia.settings.passive import (
@@ -17,7 +18,6 @@ from sequoia.settings.passive import (
     PassiveSetting,
 )
 from sequoia.settings.passive.cl.objects import Observations, Rewards
-from torch.utils.data import TensorDataset
 
 
 class SequoiaExperience(IterableWrapper, Experience):
@@ -72,9 +72,7 @@ class SequoiaExperience(IterableWrapper, Experience):
         ), "Need fully labeled train dataset for now."
         stacked_rewards: Rewards = Rewards.concatenate(all_rewards)
 
-        dataset = TensorDataset(
-            stacked_observations.x, stacked_rewards.y
-        )
+        dataset = TensorDataset(stacked_observations.x, stacked_rewards.y)
         self._tensor_dataset = dataset
         self._dataset = AvalancheDataset(
             dataset=dataset,
@@ -110,7 +108,19 @@ class SequoiaExperience(IterableWrapper, Experience):
 
     @property
     def task_label(self):
-        return self.setting.current_task_id
+        """
+        The task label. This value will never have value "None". However,
+        for scenarios that don't produce task labels a placeholder value like 0
+        is usually set. Beware that this field is meant as a shortcut to obtain
+        a unique task label: it assumes that only patterns labeled with a
+        single task label are present. If this experience contains patterns from
+        multiple tasks, accessing this property will result in an exception.
+        """
+        if not self.setting.task_labels_at_test_time:
+            return 0
+        if self.type == "Test" and self.setting.task_labels_at_test_time:
+            raise RuntimeError("More than one tasks present, can't use this property.")
+        return self.task_id
 
     @property
     def task_labels(self):
@@ -126,6 +136,7 @@ class SequoiaExperience(IterableWrapper, Experience):
         # NOTE: This
         class DummyStream(list):
             name = self.name
+
         # raise NotImplementedError
         return DummyStream()
 
