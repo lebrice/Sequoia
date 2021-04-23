@@ -47,7 +47,17 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
                     # the same file, so this is basically the 'double-import bug
                     # described above.
                     break
-                raise RuntimeError(f"There is already a registered method with name {name}: {method}")
+                
+                method_family = method.get_family()
+                new_method_family = new_method.get_family()
+                assert method_family != new_method_family, (
+                    "Can't have two methods with the same name in the same family!"
+                )
+                # TODO: Fix a conflict by prepending the package name to both?
+                # method.name = Path(method_source_file).parent.name + "." + method.get_name()
+                # new_method.name = Path(new_method_source_file).parent.name + "." + new_method.get_name()
+                # assert False, (method.name, new_method.name)
+                # raise RuntimeError(f"There is already a registered method with name {name}: {method}")
         else:
             all_methods.append(new_method)
     return new_method

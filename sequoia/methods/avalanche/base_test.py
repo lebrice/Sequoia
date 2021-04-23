@@ -28,7 +28,7 @@ class TestAvalancheMethod:
             assert hasattr(method, parameter_name)
             method_value = getattr(method, parameter_name)
             # Ignore mismatches in some parameters, like `device`.
-            if parameter_name in ["device", "eval_mb_size"]:
+            if parameter_name in ["device", "eval_mb_size", "criterion"]:
                 continue
 
             assert method_value == parameter.default, (

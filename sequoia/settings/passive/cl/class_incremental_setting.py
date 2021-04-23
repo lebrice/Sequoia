@@ -380,13 +380,28 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         self.data_dir = data_dir
         super().prepare_data(**kwargs)
 
-    def setup(self, stage: Optional[str] = None, *args, **kwargs):
+    def setup(
+        self,
+        stage: Optional[str] = None,
+        overwrite_datasets: bool = False,
+        *args,
+        **kwargs,
+    ):
         """ Creates the datasets for each task.
         TODO: Figure out a way of setting data_dir elsewhere maybe?
         """
         assert self.config
         # self.config = self.config or Config.from_args(self._argv)
         logger.debug(f"data_dir: {self.data_dir}, setup args: {args} kwargs: {kwargs}")
+
+        if (
+            all([self.train_datasets, self.val_datasets, self.test_datasets])
+            and not overwrite_datasets
+        ):
+            logger.info(
+                "Reusing the existing datasets on the Setting instead of overwriting them."
+            )
+            return
 
         self.train_cl_dataset = self.make_dataset(
             self.data_dir, download=False, train=True

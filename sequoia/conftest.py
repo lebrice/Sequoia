@@ -47,8 +47,9 @@ def trainer_config(tmp_path_factory):
         default_root_dir=tmp_path,
     )
 
-@pytest.fixture()
-def config(tmp_path: Path):
+
+@pytest.fixture(scope="session")
+def config():
     # TODO: Set the results dir somehow with the value of this `tmp_path` fixture.
     return Config(debug=True, data_dir=Path(os.environ.get("SLURM_TMPDIR", "data")), seed=123)
 
