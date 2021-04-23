@@ -35,7 +35,7 @@ class DQNModel(DQN, OffPolicyModel):
         batch_size: int = 32
 
         # Update the model every ``train_freq`` steps. Set to `-1` to disable.
-        train_freq: int = 4
+        train_freq: int = 1
         # train_freq: int = categorical(1, 10, 100, 1_000, 10_000, default=4)
 
         # The soft update coefficient ("Polyak update", between 0 and 1) default
