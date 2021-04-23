@@ -21,6 +21,10 @@ class LwFMethod(AvalancheMethod, target_setting=ClassIncrementalSetting):
     See LwF plugin for details.
     This strategy does not use task identities.
     """
+    # changing the 'name' in this case here, because the default name would be
+    # 'lw_f'.
+    name: ClassVar[str] = "lwf"
+
     # distillation hyperparameter. It can be either a float number or a list containing
     # alpha for each experience.
     alpha: Union[float, Sequence[float]] = 0.1  # TODO: Figure out a good default value.
