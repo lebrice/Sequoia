@@ -37,6 +37,9 @@ setup(
         "metaworld": [
             "metaworld @ git+https://github.com/rlworkgroup/metaworld.git@master#egg=metaworld"
         ],
+        "avalanche": [
+            "avalanche @ git+https://github.com/ContinualAI/avalanche.git#egg=avalanche"
+        ],
     },
     install_requires=packages_pip,
     dependency_links=packages_git,
