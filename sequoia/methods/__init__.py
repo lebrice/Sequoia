@@ -53,11 +53,6 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
                 assert method_family != new_method_family, (
                     "Can't have two methods with the same name in the same family!"
                 )
-                # TODO: Fix a conflict by prepending the package name to both?
-                # method.name = Path(method_source_file).parent.name + "." + method.get_name()
-                # new_method.name = Path(new_method_source_file).parent.name + "." + new_method.get_name()
-                # assert False, (method.name, new_method.name)
-                # raise RuntimeError(f"There is already a registered method with name {name}: {method}")
         else:
             all_methods.append(new_method)
     return new_method
@@ -67,6 +62,25 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
 from .baseline_method import BaselineMethod
 from .random_baseline import RandomBaselineMethod
 from .pnn import PnnMethod
+
+
+try:
+    from .avalanche import *
+except ImportError:
+    pass
+
+
+try:
+    from .stable_baselines3_methods import *
+except ImportError:
+    pass
+
+
+try:
+    from .pl_bolts_methods import *
+except ImportError:
+    pass
+
 
 ## A bit hacky: Dynamically import all the modules/packages defined in this
 # folder. This way, we register the methods as they are declared.
