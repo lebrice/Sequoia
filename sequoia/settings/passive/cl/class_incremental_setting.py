@@ -103,7 +103,7 @@ base_observation_spaces: Dict[str, Space] = {
     "synbols": tensor_space(Image(0, 1, shape=(3, 32, 32))),
 }
 
-reward_spaces: Dict[str, Space] = {
+base_reward_spaces: Dict[str, Space] = {
     "mnist": spaces.Discrete(10),
     "fashionmnist": spaces.Discrete(10),
     "kmnist": spaces.Discrete(10),
@@ -227,6 +227,15 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     # in domain_incremental Setting.
     relabel: bool = False
 
+    # TODO: IDEA: Adding these fields/constructor arguments so that people can pass a
+    # custom ready-made `Scenario` from continuum to use.
+    train_cl_scenario: Optional[_BaseScenario] = field(
+        default=None, cmd=False, to_dict=False
+    )
+    test_cl_scenario: Optional[_BaseScenario] = field(
+        default=None, cmd=False, to_dict=False
+    )
+
     def __post_init__(self):
         """Initializes the fields of the Setting (and LightningDataModule),
         including the transforms, shapes, etc.
@@ -235,13 +244,12 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             # This can happen when parsing a list from the command-line.
             self.increment = self.increment[0]
 
-        base_reward_space = reward_spaces[self.dataset]
+        base_reward_space = self.base_reward_spaces[self.dataset]
         # action space = reward space by default
         base_action_space = base_reward_space
 
         if isinstance(base_action_space, spaces.Discrete):
             # Classification dataset
-
             self.num_classes = base_action_space.n
             # Set the number of tasks depending on the increment, and vice-versa.
             # (as only one of the two should be used).
@@ -301,7 +309,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
            The task labels for each sample. When task labels are not available,
            the task labels space is Sparse, and entries will be `None`.
         """
-        x_space = base_observation_spaces[self.dataset]
+        x_space = self.base_observation_spaces[self.dataset]
         if not self.transforms:
             # NOTE: When we don't pass any transforms, continuum scenarios still
             # at least use 'to_tensor'.
@@ -410,28 +418,26 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             self.data_dir, download=False, train=False
         )
 
-        self.train_cl_loader: _BaseScenario = self.make_train_cl_loader(
-            self.train_cl_dataset
-        )
-        self.test_cl_loader: _BaseScenario = self.make_test_cl_loader(
-            self.test_cl_dataset
-        )
+        if not self.train_cl_scenario:
+            self.train_cl_scenario = self.make_train_cl_scenario(self.train_cl_dataset)
+        if not self.test_cl_scenario:
+            self.test_cl_scenario = self.make_test_cl_scenario(self.test_cl_dataset)
 
-        logger.info(f"Number of train tasks: {self.train_cl_loader.nb_tasks}.")
-        logger.info(f"Number of test tasks: {self.train_cl_loader.nb_tasks}.")
+        logger.info(f"Number of train tasks: {self.train_cl_scenario.nb_tasks}.")
+        logger.info(f"Number of test tasks: {self.train_cl_scenario.nb_tasks}.")
 
         self.train_datasets.clear()
         self.val_datasets.clear()
         self.test_datasets.clear()
 
-        for task_id, train_dataset in enumerate(self.train_cl_loader):
+        for task_id, train_dataset in enumerate(self.train_cl_scenario):
             train_dataset, val_dataset = split_train_val(
                 train_dataset, val_split=self.val_fraction
             )
             self.train_datasets.append(train_dataset)
             self.val_datasets.append(val_dataset)
 
-        for task_id, test_dataset in enumerate(self.test_cl_loader):
+        for task_id, test_dataset in enumerate(self.test_cl_scenario):
             self.test_datasets.append(test_dataset)
 
         super().setup(stage, *args, **kwargs)
@@ -655,7 +661,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
 
         return split_batch
 
-    def make_train_cl_loader(self, train_dataset: _ContinuumDataset) -> _BaseScenario:
+    def make_train_cl_scenario(self, train_dataset: _ContinuumDataset) -> _BaseScenario:
         """ Creates a train ClassIncremental object from continuum. """
         return ClassIncremental(
             train_dataset,
@@ -666,7 +672,7 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
             transformations=self.transforms,
         )
 
-    def make_test_cl_loader(self, test_dataset: _ContinuumDataset) -> _BaseScenario:
+    def make_test_cl_scenario(self, test_dataset: _ContinuumDataset) -> _BaseScenario:
         """ Creates a test ClassIncremental object from continuum. """
         return ClassIncremental(
             test_dataset,
