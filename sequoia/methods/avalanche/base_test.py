@@ -1,17 +1,21 @@
 import inspect
 from inspect import Signature, _empty, getsourcefile
-from typing import ClassVar, Type
+from typing import ClassVar, List, Optional, Type
 
 import pytest
-from torch.nn import Module
-
-from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
-from avalanche.training.strategies import BaseStrategy
-
+import tqdm
 from sequoia.common.config import Config
 from sequoia.conftest import xfail_param
 from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.passive.cl.objects import Observations, Rewards
+from torch.nn import Module
+
+from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
+from avalanche.models.utils import avalanche_forward
+from avalanche.training.strategies import BaseStrategy
+
 from .base import AvalancheMethod
+from .experience import SequoiaExperience
 
 
 class TestAvalancheMethod:
@@ -61,7 +65,7 @@ class TestAvalancheMethod:
         short_task_incremental_setting: TaskIncrementalSetting,
         config: Config,
     ):
-        method = self.Method(model=model_type)
+        method = self.Method(model=model_type, train_mb_size=10)
         results = short_task_incremental_setting.apply(method, config)
         assert 0.05 < results.average_final_performance.objective
 
@@ -87,6 +91,120 @@ class TestAvalancheMethod:
         short_class_incremental_setting: ClassIncrementalSetting,
         config: Config,
     ):
-        method = self.Method(model=model_type)
+        method = self.Method(model=model_type, train_mb_size=10)
         results = short_class_incremental_setting.apply(method, config)
         assert 0.05 < results.average_final_performance.objective
+
+    @pytest.mark.timeout(300)
+    @pytest.mark.parametrize(
+        "model_type",
+        [
+            SimpleCNN,
+            SimpleMLP,
+            xfail_param(
+                MTSimpleCNN,
+                reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
+            ),
+            xfail_param(
+                MTSimpleMLP,
+                reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
+            ),
+        ],
+    )
+    def test_sl_track(
+        self,
+        model_type: Type[Module],
+        sl_track_setting: ClassIncrementalSetting,
+        config: Config,
+    ):
+        method = self.Method(model=model_type, train_mb_size=512)
+        results = sl_track_setting.apply(method, config)
+        results.cl_score
+        # TODO: Set up a more reasonable bound on the expected performance. For now this
+        # is fine as we're just debugging: the test passes as long as there is a results
+        # object that contains a non-zero online performance (meaning that the setting
+        # was monitoring training performance correctly).
+        assert 0 < results.average_online_performance.objective
+        assert 0 < results.average_final_performance.objective
+
+
+def test_warning_if_environment_to_experience_isnt_overwritten(sl_track_setting):
+    """ When
+    """
+    method = AvalancheMethod()
+    assert sl_track_setting.monitor_training_performance
+    with pytest.warns(UserWarning, match="chance accuracy"):
+        method.configure(sl_track_setting)
+
+
+class MyDummyMethod(AvalancheMethod):
+    def environment_to_experience(self, env, setting):
+        all_observations: List[Observations] = []
+        all_rewards: List[Rewards] = []
+
+        for batch in tqdm.tqdm(env, desc="Converting environment into TensorDataset"):
+            observations: Observations
+            rewards: Optional[Rewards]
+            if isinstance(batch, Observations):
+                observations = batch
+                rewards = None
+            else:
+                assert isinstance(batch, tuple) and len(batch) == 2
+                observations, rewards = batch
+
+            if rewards is None:
+                # Need to send actions to the env before we can actually get the
+                # associated Reward. Here there are (at least) three options to choose
+                # from:
+
+                # Option 1: Select action at random:
+                # action = env.action_space.sample()
+                # if observations.batch_size != action.shape[0]:
+                #     action = action[: observations.batch_size]
+                # rewards: Rewards = env.send(action)
+
+                # Option 2: Use the current model, in 'inference' mode:
+                # action = self.get_actions(observations, action_space=env.action_space)
+                # rewards: Rewards = env.send(action)
+
+                # Option 3: Train an online model:
+                # NOTE: You might have to change this for your strategy. For instance,
+                # currently does not take any plugins into consideration.
+                self.cl_strategy.optimizer.zero_grad()
+
+                x = observations.x.to(self.cl_strategy.device)
+                task_labels = observations.task_labels
+                logits = avalanche_forward(self.model, x=x, task_labels=task_labels)
+                y_pred = logits.argmax(-1)
+                action = self.target_setting.Actions(y_pred=y_pred)
+
+                rewards: Rewards = env.send(action)
+
+                y = rewards.y.to(self.cl_strategy.device)
+                # Train the model:
+                loss = self.cl_strategy.criterion(logits, y)
+                loss.backward()
+                self.cl_strategy.optimizer.step()
+
+            all_observations.append(observations)
+            all_rewards.append(rewards)
+
+        # Stack all the observations into a single `Observations` object:
+        stacked_observations: Observations = Observations.concatenate(all_observations)
+        x = stacked_observations.x
+        task_labels = stacked_observations.task_labels
+        stacked_rewards: Rewards = Rewards.concatenate(all_rewards)
+        y = stacked_rewards.y
+        return SequoiaExperience(
+            env=env, setting=setting, x=x, y=y, task_labels=task_labels
+        )
+
+
+def test_no_warning_if_environment_to_experience_is_overwritten(sl_track_setting):
+    """ When
+    """
+    method = MyDummyMethod()
+    assert sl_track_setting.monitor_training_performance
+    with pytest.warns(None) as record:
+        method.configure(sl_track_setting)
+    assert len(record) == 0

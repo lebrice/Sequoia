@@ -4,13 +4,6 @@ from Avalanche.
 from typing import List, Optional
 
 import tqdm
-from avalanche.benchmarks.scenarios import Experience
-from avalanche.benchmarks.utils.avalanche_dataset import (
-    AvalancheDataset,
-    AvalancheDatasetType,
-)
-from torch.utils.data import TensorDataset
-
 from sequoia.common.gym_wrappers.utils import IterableWrapper
 from sequoia.settings.passive import (
     ClassIncrementalSetting,
@@ -18,10 +11,25 @@ from sequoia.settings.passive import (
     PassiveSetting,
 )
 from sequoia.settings.passive.cl.objects import Observations, Rewards
+from torch import Tensor
+from torch.utils.data import TensorDataset
+
+from avalanche.benchmarks.scenarios import Experience
+from avalanche.benchmarks.utils.avalanche_dataset import (
+    AvalancheDataset,
+    AvalancheDatasetType,
+)
 
 
 class SequoiaExperience(IterableWrapper, Experience):
-    def __init__(self, env: PassiveEnvironment, setting: ClassIncrementalSetting):
+    def __init__(
+        self,
+        env: PassiveEnvironment,
+        setting: ClassIncrementalSetting,
+        x: Tensor = None,
+        y: Tensor = None,
+        task_labels: Tensor = None,
+    ):
         super().__init__(env=env)
         self.setting = setting
         self.type: str
@@ -38,46 +46,53 @@ class SequoiaExperience(IterableWrapper, Experience):
             self.transforms = setting.test_transforms
         self.name = f"{self.type}_{self.task_id}"
 
-        all_observations: List[Observations] = []
-        all_rewards: List[Rewards] = []
+        if x is None or y is None or task_labels is None:
+            all_observations: List[Observations] = []
+            all_rewards: List[Rewards] = []
 
-        for batch in tqdm.tqdm(self, desc="Converting environment into TensorDataset"):
-            observations: Observations
-            rewards: Optional[Rewards]
-            if isinstance(batch, Observations):
-                observations = batch
-                rewards = None
-            else:
-                assert isinstance(batch, tuple) and len(batch) == 2
-                observations, rewards = batch
+            for batch in tqdm.tqdm(
+                self, desc="Converting environment into TensorDataset"
+            ):
+                observations: Observations
+                rewards: Optional[Rewards]
+                if isinstance(batch, Observations):
+                    observations = batch
+                    rewards = None
+                else:
+                    assert isinstance(batch, tuple) and len(batch) == 2
+                    observations, rewards = batch
 
-            if rewards is None:
-                # Need to send actions to the env before we can actually get the
-                # associated Reward.
-                # Here we sample a random action (no other choice really..) and so we
-                # are going to get bad results in case the online performance is being
-                # evaluated.
-                action = self.env.action_space.sample()
-                if observations.batch_size != action.shape[0]:
-                    action = action[: observations.batch_size]
+                if rewards is None:
+                    # Need to send actions to the env before we can actually get the
+                    # associated Reward.
+                    # Here we sample a random action (no other choice really..) and so we
+                    # are going to get bad results in case the online performance is being
+                    # evaluated.
+                    action = self.env.action_space.sample()
+                    if observations.batch_size != action.shape[0]:
+                        action = action[: observations.batch_size]
 
-                rewards = self.env.send(action)
-            all_observations.append(observations)
-            all_rewards.append(rewards)
-        # TODO: This will be absolutely unfeasable for larger dataset like ImageNet.
-        stacked_observations: Observations = Observations.concatenate(all_observations)
+                    rewards = self.env.send(action)
+                all_observations.append(observations)
+                all_rewards.append(rewards)
+            # TODO: This will be absolutely unfeasable for larger dataset like ImageNet.
+            stacked_observations: Observations = Observations.concatenate(
+                all_observations
+            )
+            x = stacked_observations.x
+            task_labels = stacked_observations.task_labels
+            assert all(
+                y_i is not None for y in all_rewards for y_i in y
+            ), "Need fully labeled train dataset for now."
+            stacked_rewards: Rewards = Rewards.concatenate(all_rewards)
+            y = stacked_rewards.y
 
-        assert all(
-            y_i is not None for y in all_rewards for y_i in y
-        ), "Need fully labeled train dataset for now."
-        stacked_rewards: Rewards = Rewards.concatenate(all_rewards)
-
-        dataset = TensorDataset(stacked_observations.x, stacked_rewards.y)
+        dataset = TensorDataset(x, y)
         self._tensor_dataset = dataset
         self._dataset = AvalancheDataset(
             dataset=dataset,
-            task_labels=stacked_observations.task_labels.tolist(),
-            targets=stacked_rewards.y.tolist(),
+            task_labels=task_labels.tolist(),
+            targets=y.tolist(),
             dataset_type=AvalancheDatasetType.CLASSIFICATION,
         )
         # self.task_pattern_indices = {}

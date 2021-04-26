@@ -1,17 +1,13 @@
 import inspect
+import warnings
 from dataclasses import dataclass, fields
 from typing import ClassVar, Dict, Generic, List, Optional, Type, TypeVar, Union
 
 import gym
 import torch
 import tqdm
-from avalanche.benchmarks.scenarios import Experience
-from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
-from avalanche.models.utils import avalanche_forward
-from avalanche.training import EvaluationPlugin
-from avalanche.training.plugins import StrategyPlugin
-from avalanche.training.strategies import BaseStrategy
-from avalanche.training.strategies.strategy_wrappers import default_logger
+from gym.utils import colorize
+from torch import Tensor
 from gym import spaces
 from gym.spaces.utils import flatdim
 from sequoia.common.spaces import Image
@@ -24,7 +20,7 @@ from sequoia.settings.passive import (
 from sequoia.settings.passive.cl.class_incremental_setting import (
     ClassIncrementalTestEnvironment,
 )
-from sequoia.settings.passive.cl.objects import Actions, Observations
+from sequoia.settings.passive.cl.objects import Actions, Observations, Rewards
 from simple_parsing.helpers import choice
 from simple_parsing.helpers.hparams import HyperParameters, log_uniform, uniform
 from torch import nn, optim
@@ -32,19 +28,17 @@ from torch.nn import Module
 from torch.optim import SGD
 from torch.optim.optimizer import Optimizer
 
+from avalanche.benchmarks.scenarios import Experience
+from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
+from avalanche.models.utils import avalanche_forward
+from avalanche.training import EvaluationPlugin
+from avalanche.training.plugins import StrategyPlugin
+from avalanche.training.strategies import BaseStrategy
+from avalanche.training.strategies.strategy_wrappers import default_logger
+
 from .experience import SequoiaExperience
 
 StrategyType = TypeVar("StrategyType", bound=BaseStrategy)
-
-
-def environment_to_experience(
-    env: PassiveEnvironment, setting: PassiveSetting
-) -> Experience:
-    """
-    TODO: Somehow "convert"  the PassiveEnvironments (dataloaders) from Sequoia
-    into an Experience from Avalanche.
-    """
-    return SequoiaExperience(env=env, setting=setting)
 
 
 @dataclass
@@ -133,6 +127,36 @@ class AvalancheMethod(
         # Actually initialize the strategy using the fields on `self`.
         self.cl_strategy: StrategyType = self.create_cl_strategy(setting)
 
+        if setting.monitor_training_performance and (
+            type(self).environment_to_experience
+            is AvalancheMethod.environment_to_experience
+        ):
+            warnings.warn(
+                UserWarning(
+                    colorize(
+                        "This Setting would like to monitor the online training "
+                        "performance, which means that the rewards/labels (`y`) are "
+                        "returned after sending an action (prediction) to the training "
+                        "environment."
+                        "\n"
+                        "However, Avalanche does not currently support training on "
+                        "'active' dataloaders or gym environments, and needs access to "
+                        "the 'x' and 'y' at the same time, as is usually the case in "
+                        "Supervised CL."
+                        "\n"
+                        "Therefore, the current solution I've found for this issue is "
+                        "to iterate once over the training environment, sending it "
+                        "(by default random) actions, in order to create an "
+                        "'Experience' object expected by the Avalanche Strategies."
+                        "\n"
+                        "Concretely, this means that, unless you overwrite the "
+                        "`environment_to_experience` method, **your online performance "
+                        "score will be limited to chance accuracy!**",
+                        "yellow",
+                    )
+                )
+            )
+
     def create_cl_strategy(self, setting: ClassIncrementalSetting) -> StrategyType:
         strategy_constructor_params: List[str] = list(
             inspect.signature(self.strategy_class.__init__).parameters.keys()
@@ -179,8 +203,8 @@ class AvalancheMethod(
         )
 
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
-        train_exp = environment_to_experience(train_env, setting=self.setting)
-        valid_exp = environment_to_experience(valid_env, setting=self.setting)
+        train_exp = self.environment_to_experience(train_env, setting=self.setting)
+        valid_exp = self.environment_to_experience(valid_env, setting=self.setting)
         self.cl_strategy.train(
             train_exp, eval_streams=[valid_exp], num_workers=self.num_workers
         )
@@ -226,6 +250,78 @@ class AvalancheMethod(
     def adapt_to_new_hparams(self, new_hparams):
         raise NotImplementedError(new_hparams)
         return super().adapt_to_new_hparams(new_hparams)
+
+    def environment_to_experience(
+        self, env: PassiveEnvironment, setting: PassiveSetting
+    ) -> Experience:
+        """
+        "Converts" the PassiveEnvironments (dataloaders) from Sequoia
+        into an Experience object usable by the Avalanche Strategies. By default, this
+        just iterates through the environment, giving back the actions from the
+        `get_actions` method.
+
+        NOTE: You could instead train an online model here, in order to get better
+        online performance!
+        """
+        all_observations: List[Observations] = []
+        all_rewards: List[Rewards] = []
+
+        for batch in tqdm.tqdm(env, desc="Converting environment into TensorDataset"):
+            observations: Observations
+            rewards: Optional[Rewards]
+            if isinstance(batch, Observations):
+                observations = batch
+                rewards = None
+            else:
+                assert isinstance(batch, tuple) and len(batch) == 2
+                observations, rewards = batch
+
+            if rewards is None:
+                # Need to send actions to the env before we can actually get the
+                # associated Reward. Here there are (at least) three options to choose
+                # from:
+
+                # Option 1: Select action at random:
+                action = env.action_space.sample()
+                if observations.batch_size != action.shape[0]:
+                    action = action[: observations.batch_size]
+                rewards: Rewards = env.send(action)
+
+                # Option 2: Use the current model, in 'inference' mode:
+                # action = self.get_actions(observations, action_space=env.action_space)
+                # rewards: Rewards = env.send(action)
+
+                # Option 3: Train an online model:
+                # # NOTE: You might have to change this for your strategy. For instance,
+                # # currently does not take any plugins into consideration.
+                # self.cl_strategy.optimizer.zero_grad()
+
+                # x = observations.x.to(self.cl_strategy.device)
+                # task_labels = observations.task_labels
+                # logits = avalanche_forward(self.model, x=x, task_labels=task_labels)
+                # y_pred = logits.argmax(-1)
+                # action = self.target_setting.Actions(y_pred=y_pred)
+
+                # rewards: Rewards = env.send(action)
+
+                # y = rewards.y.to(self.cl_strategy.device)
+                # # Train the model:
+                # loss = self.cl_strategy.criterion(logits, y)
+                # loss.backward()
+                # self.cl_strategy.optimizer.step()
+
+            all_observations.append(observations)
+            all_rewards.append(rewards)
+
+        # Stack all the observations into a single `Observations` object:
+        stacked_observations: Observations = Observations.concatenate(all_observations)
+        x = stacked_observations.x
+        task_labels = stacked_observations.task_labels
+        stacked_rewards: Rewards = Rewards.concatenate(all_rewards)
+        y = stacked_rewards.y
+        return SequoiaExperience(
+            env=env, setting=setting, x=x, y=y, task_labels=task_labels
+        )
 
 
 def test_epoch(strategy, test_env: ClassIncrementalTestEnvironment, **kwargs):

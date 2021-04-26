@@ -7,6 +7,7 @@ from avalanche.benchmarks import nc_benchmark
 
 from sequoia.common.config import Config
 from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.client import SettingProxy
 
 
 @pytest.fixture(scope="session")
@@ -83,4 +84,17 @@ def short_class_incremental_setting(config: Config):
     setting.test_datasets = [
         Subset(task_dataset, list(range(100))) for task_dataset in setting.test_datasets
     ]
+    return setting
+
+
+@pytest.fixture(scope="session")
+def sl_track_setting():
+    setting = SettingProxy(
+        ClassIncrementalSetting,
+        "sl_track",
+        # dataset="synbols",
+        # nb_tasks=12,
+        # class_order=class_order,
+        # monitor_training_performance=True,
+    )
     return setting
