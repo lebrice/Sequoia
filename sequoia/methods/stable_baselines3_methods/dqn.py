@@ -2,7 +2,7 @@
 settings in the tree.
 """
 from dataclasses import dataclass
-from typing import ClassVar, Optional, Type
+from typing import Callable, ClassVar, Optional, Type, Union
 
 import gym
 from gym import spaces
@@ -12,9 +12,11 @@ from sequoia.methods import register_method
 from sequoia.settings.active import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
 from simple_parsing import mutable_field
+from simple_parsing.helpers.hparams import log_uniform, uniform
 from stable_baselines3.dqn import DQN
 
 from .off_policy_method import OffPolicyMethod, OffPolicyModel
+
 logger = get_logger(__file__)
 
 
@@ -28,14 +30,14 @@ class DQNModel(DQN, OffPolicyModel):
         The command-line arguments for these are created with simple-parsing.
         """
 
-        # ------------------ 
+        # ------------------
         # overwritten hparams
         # The learning rate, it can be a function of the current progress (from
         # 1 to 0)
         learning_rate: Union[float, Callable] = log_uniform(1e-6, 1e-2, default=1e-4)
         # size of the replay buffer
         buffer_size: int = uniform(100_000, 10_000_000, default=1_000_000)
-        #--------------------
+        # --------------------
 
         # How many steps of the model to collect transitions for before learning
         # starts.
