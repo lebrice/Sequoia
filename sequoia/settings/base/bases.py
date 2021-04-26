@@ -474,6 +474,20 @@ class Method(Generic[SettingType], Parseable, ABC):
             name = remove_suffix(name, "_method")
         return name
 
+    @classmethod
+    def get_family(cls) -> str:
+        """ Gets the name of the 'family' of Methods which contains this method class.
+
+        This is used to differentiate methods with the same name, for instance
+        sb3/DQN versus pl_bolts/DQN, sequoia/EWC vs avalanche/EWC, etc.
+        """
+        family = getattr(cls, "family", None)
+        if family is None:
+            # Use the name of the parent folder as the 'family'.
+            method_source_path = cls.get_path_to_source_file()
+            family = method_source_path.parent.name
+        return family
+
     def __init_subclass__(
         cls, target_setting: Type[SettingType] = None, **kwargs
     ) -> None:

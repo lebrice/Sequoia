@@ -13,7 +13,8 @@ from sequoia.methods.baseline_method import BaselineMethod
 from sequoia.methods.random_baseline import RandomBaselineMethod
 from sequoia.settings import Results, Setting, all_settings
 
-from .experiment import Experiment
+from .experiment import Experiment, get_method_names
+method_names = get_method_names()
 
 
 @pytest.mark.xfail(
@@ -32,6 +33,7 @@ def test_no_collisions_in_setting_names():
 def test_applicable_methods():
     from sequoia.methods import BaselineMethod
     from sequoia.settings import IIDSetting
+
     assert BaselineMethod in IIDSetting.get_applicable_methods()
 
 
@@ -43,6 +45,7 @@ def mock_apply(self: Setting, method: Method, config: Config) -> Results:
     # 3. Evaluate the method on the setting and return the results.
     # return self.evaluate(method)
     return type(method), type(self)
+
 
 @pytest.fixture()
 def set_argv_for_debug(monkeypatch):
@@ -64,25 +67,34 @@ def setting_type(request, monkeypatch, set_argv_for_debug):
     return setting_class
 
 
-def test_experiment_from_args(method_type: Optional[Type[Method]],
-                              setting_type: Optional[Type[Setting]]):
+def test_experiment_from_args(
+    method_type: Optional[Type[Method]], setting_type: Optional[Type[Setting]]
+):
     """ Test that when parsing the 'Experiment' from the command-line, the
     `setting` and `method` fields get set to the classes corresponding to their
     names.
     """
-    method = method_type.get_name()
+    # method = method_type.get_name()
+    method_name = [k for k, v in method_names.items() if v is method_type][0]
     setting = setting_type.get_name()
     if not method_type.is_applicable(setting_type):
-        pytest.skip(msg=f"Skipping test since Method {method_type} isn't applicable on settings of type {setting_type}.")
-    experiment = Experiment.from_args(f"--setting {setting} --method {method}")
+        pytest.skip(
+            msg=f"Skipping test since Method {method_type} isn't applicable on "
+            f"settings of type {setting_type}."
+        )
+    experiment = Experiment.from_args(f"--setting {setting} --method {method_name}")
     assert experiment.method is method_type
     assert experiment.setting is setting_type
-    
 
-def test_launch_experiment_with_constructor(method_type: Optional[Type[Method]],
-                                            setting_type: Optional[Type[Setting]]):
+
+def test_launch_experiment_with_constructor(
+    method_type: Optional[Type[Method]], setting_type: Optional[Type[Setting]]
+):
     if not method_type.is_applicable(setting_type):
-        pytest.skip(msg=f"Skipping test since Method {method_type} isn't applicable on settings of type {setting_type}.")
+        pytest.skip(
+            msg=f"Skipping test since Method {method_type} isn't applicable on "
+            f"settings of type {setting_type}."
+        )
     experiment = Experiment(method=method_type, setting=setting_type)
     all_results = experiment.launch("--debug --fast_dev_run --batch_size 1")
     assert all_results == (method_type, setting_type)
@@ -91,14 +103,15 @@ def test_launch_experiment_with_constructor(method_type: Optional[Type[Method]],
 @slow
 @pytest.mark.timeout(300)
 def test_none_setting(method_type: Optional[Type[Method]], tmp_path: Path, monkeypatch):
-    """ Test that leaving the Setting unset runs on all applicable setting. """ 
+    """ Test that leaving the Setting unset runs on all applicable setting. """
     method = method_type.get_name()
 
     for setting_type in method_type.get_applicable_settings():
         monkeypatch.setattr(setting_type, "apply", mock_apply)
 
-    all_results = Experiment.main(f"--method {method} --debug --fast_dev_run "
-                                  f"--log_dir {tmp_path}")
+    all_results = Experiment.main(
+        f"--method {method} --debug --fast_dev_run " f"--log_dir {tmp_path}"
+    )
 
     for setting_type in method_type.get_applicable_settings():
         monkeypatch.setattr(setting_type, "apply", mock_apply)
@@ -111,9 +124,11 @@ def test_none_setting(method_type: Optional[Type[Method]], tmp_path: Path, monke
 def test_none_method(setting_type: Optional[Type[Setting]]):
     """ Test that leaving the method unset runs all applicable methods on the
     setting.
-    """ 
+    """
     setting = setting_type.get_name()
-    all_results = Experiment.main(f"--setting {setting} --debug --fast_dev_run --batch-size 1")
+    all_results = Experiment.main(
+        f"--setting {setting} --debug --fast_dev_run --batch-size 1"
+    )
     for method_type in setting_type.get_applicable_methods():
         result = all_results[(setting_type, method_type)]
         assert result == (method_type, setting_type)

@@ -11,7 +11,7 @@ from sequoia.conftest import xfail_param, skip_param
 from .class_incremental_setting import (
     ClassIncrementalSetting,
     base_observation_spaces,
-    reward_spaces,
+    base_reward_spaces,
 )
 
 
@@ -46,7 +46,7 @@ def test_observation_spaces_match_dataset(dataset_name: str):
     dataset = dataset_class("data")
 
     observation_space = base_observation_spaces[dataset_name]
-    reward_space = reward_spaces[dataset_name]
+    reward_space = base_reward_spaces[dataset_name]
     for task_dataset in ClassIncremental(dataset, nb_tasks=1):
         first_item = task_dataset[0]
         x, t, y = first_item

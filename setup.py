@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 import os
-
+import versioneer
 with open(os.path.join(os.path.dirname(__file__), "requirements.txt"), "r") as file:
     lines = [ln.strip() for ln in file.readlines()]
 
@@ -16,7 +16,8 @@ packages_git = []
 
 setup(
     name="sequoia",
-    version="0.0.1",
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     description="The Research Tree - A playground for research at the intersection of Continual, Reinforcement, and Self-Supervised Learning.",
     url="https://github.com/lebrice/Sequoia",
     author="Fabrice Normandin",
@@ -36,6 +37,9 @@ setup(
         ],
         "metaworld": [
             "metaworld @ git+https://github.com/rlworkgroup/metaworld.git@master#egg=metaworld"
+        ],
+        "avalanche": [
+            "avalanche @ git+https://github.com/ContinualAI/avalanche.git#egg=avalanche"
         ],
     },
     install_requires=packages_pip,

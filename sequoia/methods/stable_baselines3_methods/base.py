@@ -155,6 +155,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     """ Base class for the methods that use models from the stable_baselines3
     repo.
     """
+    family: ClassVar[str] = "sb3"
 
     # Class variable that represents what kind of Model will be used.
     # (This is just here so we can easily create one Method class per model type

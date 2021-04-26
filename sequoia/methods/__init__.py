@@ -26,6 +26,7 @@ class MyMethod(Method, target_setting=ContinualRLSetting):
 ```
 """
 
+
 def register_method(new_method: Type[Method]) -> Type[Method]:
     name = new_method.get_name()
     # print(f"Registering method with name {name}")
@@ -47,7 +48,12 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
                     # the same file, so this is basically the 'double-import bug
                     # described above.
                     break
-                raise RuntimeError(f"There is already a registered method with name {name}: {method}")
+                
+                method_family = method.get_family()
+                new_method_family = new_method.get_family()
+                assert method_family != new_method_family, (
+                    "Can't have two methods with the same name in the same family!"
+                )
         else:
             all_methods.append(new_method)
     return new_method
@@ -57,6 +63,25 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
 from .baseline_method import BaselineMethod
 from .random_baseline import RandomBaselineMethod
 from .pnn import PnnMethod
+
+
+try:
+    from .avalanche import *
+except ImportError:
+    pass
+
+
+try:
+    from .stable_baselines3_methods import *
+except ImportError:
+    pass
+
+
+try:
+    from .pl_bolts_methods import *
+except ImportError:
+    pass
+
 
 ## A bit hacky: Dynamically import all the modules/packages defined in this
 # folder. This way, we register the methods as they are declared.
