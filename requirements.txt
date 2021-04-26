@@ -10,7 +10,7 @@ torch>=1.7
 torchvision
 scikit-learn
 tqdm
-continuum==1.0.8
+continuum==1.0.19
 # Only required for the current demo:
 wandb
 plotly
