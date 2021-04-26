@@ -26,6 +26,7 @@ class MyMethod(Method, target_setting=ContinualRLSetting):
 ```
 """
 
+
 def register_method(new_method: Type[Method]) -> Type[Method]:
     name = new_method.get_name()
     # print(f"Registering method with name {name}")
