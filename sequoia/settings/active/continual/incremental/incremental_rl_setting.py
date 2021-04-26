@@ -1,15 +1,16 @@
+import json
 import operator
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from io import StringIO
+from pathlib import Path
 from typing import Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
-from simple_parsing import field
-
 from sequoia.common.gym_wrappers import MultiTaskEnvironment, TransformObservation
 from sequoia.utils import constant, dict_union
 from sequoia.utils.logging_utils import get_logger
+from simple_parsing import field
 
 from ..continual_rl_setting import ContinualRLSetting
 
@@ -42,13 +43,36 @@ except ImportError:
 
 metaworld_installed = False
 metaworld_envs = []
+
 try:
     import metaworld
     from metaworld import MetaWorldEnv
     from metaworld.envs.mujoco.mujoco_env import MujocoEnv
 
-    metaworld_envs = list(metaworld.ML10().train_classes.keys())
     metaworld_installed = True
+    # metaworld_dir = getsourcefile(metaworld)
+    # mujoco_dir = Path("~/.mujoco").expanduser()
+    # TODO: Cache the names of the metaworld envs to a file, just so we don't take about
+    # 10 seconds to import metaworld every time?
+
+    envs_cache_file = Path("temp/metaworld_envs.json")
+    envs_cache_file.parent.mkdir(exist_ok=True)
+    all_metaworld_envs: Dict[str, List[str]] = {}
+    if envs_cache_file.exists():
+        all_metaworld_envs = json.load(envs_cache_file.open())
+    else:
+        print(
+            "Loading up the list of available envs from metaworld for the first time, "
+            "this might take a while (usually ~10 seconds)."
+        )
+    if "ML10" not in all_metaworld_envs:
+        ML10_envs = list(metaworld.ML10().train_classes.keys())
+        all_metaworld_envs["ML10"] = ML10_envs
+
+    with open(envs_cache_file, "w") as f:
+        json.dump(all_metaworld_envs, f)
+
+    metaworld_envs = sum([list(envs) for envs in all_metaworld_envs.values()], [])
 except ImportError:
     # Create a 'dummy' class so we can safely use MetaWorldEnv in the type hints below.
     # Additionally, isinstance(some_env, MetaWorldEnv) will always fail when metaworld
