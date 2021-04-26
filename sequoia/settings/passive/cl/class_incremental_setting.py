@@ -62,9 +62,10 @@ from sequoia.settings.assumptions.incremental import (
     IncrementalSetting,
     TaskResults,
     TaskSequenceResults,
+    IncrementalResults,
     TestEnvironment,
 )
-from sequoia.settings.base import Method
+from sequoia.settings.base import Method, Results
 from sequoia.utils import get_logger
 
 from ..passive_environment import Actions, PassiveEnvironment, Rewards
@@ -124,6 +125,8 @@ base_reward_spaces: Dict[str, Space] = {
     "synbols": spaces.Discrete(48),
 }
 
+base_action_spaces = base_reward_spaces.copy()
+
 
 @dataclass
 class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
@@ -135,7 +138,13 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
     The current task can be set at the `current_task_id` attribute.
     """
 
-    Results: ClassVar[Type[Results]] = ClassIncrementalResults
+    Results: ClassVar[Type[IncrementalResults]] = ClassIncrementalResults
+
+    # Class variables that hold the 'base' observation/action/reward spaces for the
+    # available datasets.
+    base_observation_spaces: ClassVar[Dict[str, gym.Space]] = base_observation_spaces
+    base_action_spaces: ClassVar[Dict[str, gym.Space]] = base_action_spaces
+    base_reward_spaces: ClassVar[Dict[str, gym.Space]] = base_reward_spaces
 
     # (NOTE: commenting out PassiveSetting.Observations as it is the same class
     # as Setting.Observations, and we want a consistent method resolution order.
