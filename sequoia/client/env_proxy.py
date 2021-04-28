@@ -2,12 +2,9 @@
 
 For now this simply holds the 'remote' environment in memory.
 """
-import itertools
 from typing import (
     Any,
-    Callable,
     Dict,
-    Generic,
     List,
     Optional,
     Sequence,
@@ -15,7 +12,6 @@ from typing import (
     Type,
     Union,
 )
-from gym.spaces import Box
 import numpy as np
 from sequoia.common.metrics import Metrics
 from sequoia.settings import (
@@ -103,17 +99,6 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
 
     def __iter__(self):
         return self.__environment.__iter__()
-        # self._env_iterator = self.__environment.__iter__()
-        # return self._env_iterator
-        # print(f"Env iterator: {self._env_iterator}")
-        # for episode_step in itertools.count():
-        #     batch = next(env_iterator, None)
-
-        #     if batch is None:
-        #         self._environment.reset()
-        #         break
-
-        #     yield batch
 
     def __next__(self) -> ObservationType:
         return self.__environment.__next__()

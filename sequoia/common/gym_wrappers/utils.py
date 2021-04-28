@@ -39,6 +39,18 @@ def is_classic_control_env(env: Union[str, gym.Env]) -> bool:
     return False
 
 
+def is_proxy_to(
+    env, env_type_or_types: Union[Type[gym.Env], Tuple[Type[gym.Env], ...]]
+) -> bool:
+    """ Returns wether `env` is a proxy to an env of the given type or types.
+    """
+    from sequoia.client.env_proxy import EnvironmentProxy
+
+    return isinstance(env.unwrapped, EnvironmentProxy) and issubclass(
+        env.unwrapped._environment_type, env_type_or_types
+    )
+
+
 def is_atari_env(env: Union[str, gym.Env]) -> bool:
     # TODO: Add more names from the atari environments, or figure out a smarter
     # way to do this.
@@ -113,18 +125,6 @@ class MayCloseEarly(gym.Wrapper, ABC):
     def close(self) -> None:
         self.env.close()
         self._is_closed = True
-
-
-def is_proxy_to(
-    env, env_type_or_types: Union[Type[gym.Env], Tuple[Type[gym.Env], ...]]
-) -> bool:
-    """ Returns wether `env` is a proxy to an env of the given type or types.
-    """
-    from sequoia.client.env_proxy import EnvironmentProxy
-
-    return isinstance(env.unwrapped, EnvironmentProxy) and issubclass(
-        env.unwrapped._environment_type, env_type_or_types
-    )
 
 
 class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
