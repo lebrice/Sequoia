@@ -28,22 +28,10 @@ from .objects import (
 logger = get_logger(__file__)
 
 
-class EnvironmentMeta(ABCMeta, Type["Environment"]):
-    # TODO: Use something like this so that we can do:
-    # isinstance(<EnvironmentProxy[env_type]>, <env_type>) -> True
-    def __instancecheck__(self, instance):
-        if hasattr(instance, "_environment_type"):
-            # If the env is a proxy, then we check if it is a proxy to an env of this
-            # type.
-            return super().__instancecheck__(instance) or issubclass(instance._environment_type, self)
-        return super().__instancecheck__(instance)
-
-
 class Environment(
     gym.Env,
     Generic[ObservationType, ActionType, RewardType],
     ABC,
-    metaclass=EnvironmentMeta,
 ):
     """ABC for a learning 'environment' in Reinforcement or Supervised Learning.
 
