@@ -57,7 +57,6 @@ class RandomBaselineMethod(Method, target_setting=Setting):
                         observations, rewards = batch
 
                     batch_size = observations.x.shape[0]
-
                     y_pred = train_env.action_space.sample()
 
                     # If we're at the last batch, it might have a different size, so w
@@ -69,10 +68,11 @@ class RandomBaselineMethod(Method, target_setting=Setting):
                     if rewards is None:
                         rewards = train_env.send(y_pred)
 
-                    train_pbar.set_postfix(
-                        {"Episode": episodes, "Step": i}
-                    )
+                    train_pbar.set_postfix({"Episode": episodes, "Step": i})
                     # train as you usually would.
+
+                    if train_env.is_closed():
+                        break
 
                 episodes += 1
                 if self.max_train_episodes and episodes >= self.max_train_episodes:

@@ -35,7 +35,7 @@ class EnvironmentMeta(ABCMeta, Type["Environment"]):
         if hasattr(instance, "_environment_type"):
             # If the env is a proxy, then we check if it is a proxy to an env of this
             # type.
-            return issubclass(instance._environment_type, self)
+            return super().__instancecheck__(instance) or issubclass(instance._environment_type, self)
         return super().__instancecheck__(instance)
 
 

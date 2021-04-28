@@ -1,4 +1,4 @@
-from typing import Callable, List, Union
+from typing import Callable, Union
 
 import gym
 from gym import Space, spaces
@@ -13,7 +13,6 @@ from sequoia.utils.logging_utils import get_logger
 from .utils import IterableWrapper
 
 logger = get_logger(__file__)
-
 
 
 class TransformObservation(TransformObservation_, IterableWrapper):
@@ -31,13 +30,12 @@ class TransformObservation(TransformObservation_, IterableWrapper):
             #     f"Don't know how the transform {self.f} will impact the "
             #     f"observation space! (Exception: {e})"
             # ))
-    
+
     def __call__(self, *args, **kwargs):
         return self.f(*args, **kwargs)
 
     def __iter__(self):
-        from sequoia.settings.passive import PassiveEnvironment
-        if isinstance(self.unwrapped, PassiveEnvironment):
+        if self.wrapping_passive_env:
             # TODO: For now, we assume that the passive environment has already
             # split stuff correctly for us to use.
             for obs, rewards in self.env:
@@ -71,6 +69,7 @@ class TransformReward(TransformReward_, IterableWrapper):
                 f"observation space! (Exception: {e})"
             ))
 
+
 class TransformAction(IterableWrapper):
     def __init__(self, env: gym.Env, f: Callable[[Union[gym.Env, Space]], Union[gym.Env, Space]]):
         if isinstance(f, list) and not callable(f):
@@ -83,10 +82,9 @@ class TransformAction(IterableWrapper):
         if isinstance(self.f, Transform):
             self.action_space = self.f(self.env.action_space)
             # logger.debug(f"New action space after transform: {self.observation_space}")
-        
 
     def step(self, action):
         return self.env.step(self.action(action))
-    
+
     def action(self, action):
         return self.f(action)
