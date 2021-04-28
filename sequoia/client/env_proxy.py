@@ -3,11 +3,20 @@
 For now this simply holds the 'remote' environment in memory.
 """
 import itertools
-from typing import Callable, Dict, Generic, List, Optional, Sequence, Tuple, Type, Union
-
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
+from gym.spaces import Box
 import numpy as np
-from torch import Tensor
-
 from sequoia.common.metrics import Metrics
 from sequoia.settings import (
     Actions,
@@ -20,6 +29,9 @@ from sequoia.settings import (
     RewardType,
     Setting,
 )
+from torch import Tensor
+
+MISSING = object()
 
 
 class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
@@ -34,20 +46,32 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
 
         self.observation_space = self.get_attribute("observation_space")
         self.action_space = self.get_attribute("action_space")
-        self.reward_space = self.get_attribute("reward_space")
-        # TODO: Double check this also works for RL
-        self.batch_size: Optional[int] = self.get_attribute("batch_size")
 
-    def get_attribute(self, name: str):
-        # TODO: actually get the value from the 'remote' env.
-        return getattr(self.__environment, name)
+        # NOTE: We don't define the `reward_space` attribute if the underlying env
+        # doesnt have it.
+        missing = object()
+        reward_space = self.get_attribute("reward_space", default=missing)
+        if reward_space is not missing:
+            self.reward_space = reward_space
+
+        # TODO: Double check this also works for RL
+        batch_size = self.get_attribute("batch_size", default=missing)
+        if batch_size is not missing:
+            self.batch_size: Optional[int] = batch_size
+
+    def get_attribute(self, name: str, default: Any = MISSING) -> Any:
+        if default is MISSING:
+            # TODO: actually get the value from the 'remote' env.
+            return getattr(self.__environment, name)
+        else:
+            return getattr(self.__environment, name, default)
 
     def reset(self) -> ObservationType:
         obs = self.__environment.reset()
         return obs
 
     def __len__(self) -> int:
-        return len(self.__environment)
+        return self.__environment.__len__()
 
     def step(
         self, actions: ActionType
@@ -65,17 +89,23 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
         observations_pkl, rewards_pkl, done_pkl, info_pkl = self.__environment.step(
             actions_pkl
         )
-        observations = self._setting_type.Observations(**observations_pkl)
-        rewards = self._setting_type.Rewards(**rewards_pkl)
+        if isinstance(observations_pkl, (Observations, dict)):
+            observations = self._setting_type.Observations(**observations_pkl)
+        else:
+            observations = observations_pkl
+        if isinstance(rewards_pkl, (Rewards, dict)):
+            rewards = self._setting_type.Rewards(**rewards_pkl)
+        else:
+            rewards = rewards_pkl
         done = np.array(done_pkl)
         info = np.array(info_pkl)
         return observations, rewards, done, info
 
     def __iter__(self):
-        self.__environment.reset()
-        return iter(self.__environment)
-        # env_iterator = self._environment.__iter__()
-        # print(f"Env iterator: {env_iterator}")
+        return self.__environment.__iter__()
+        # self._env_iterator = self.__environment.__iter__()
+        # return self._env_iterator
+        # print(f"Env iterator: {self._env_iterator}")
         # for episode_step in itertools.count():
         #     batch = next(env_iterator, None)
 
@@ -85,12 +115,18 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
 
         #     yield batch
 
+    def __next__(self) -> ObservationType:
+        return self.__environment.__next__()
+
     def send(self, actions: ActionType):
         if isinstance(actions, (Actions, Tensor)):
             actions = actions.numpy()
         actions_pkl = actions
         rewards_pkl = self.__environment.send(actions_pkl)
-        rewards = self._setting_type.Rewards(**rewards_pkl)
+        if isinstance(rewards_pkl, (Rewards, dict)):
+            rewards = self._setting_type.Rewards(**rewards_pkl)
+        else:
+            rewards = rewards_pkl
         return rewards
 
     def close(self):
@@ -111,3 +147,8 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
 
     def get_average_online_performance(self) -> Metrics:
         return self.__environment.get_average_online_performance()
+
+    def __getattr__(self, name: str):
+        if name.startswith("_"):
+            raise AttributeError(f"attempted to get missing private attribute '{name}'")
+        return self.get_attribute(name)

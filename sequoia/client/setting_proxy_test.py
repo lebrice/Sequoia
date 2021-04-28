@@ -14,6 +14,7 @@ from sequoia.settings import Setting, all_settings
 from sequoia.settings.active import IncrementalRLSetting, TaskIncrementalRLSetting
 from sequoia.settings.passive import ClassIncrementalSetting, DomainIncrementalSetting
 from sequoia.conftest import slow
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 
 from .setting_proxy import SettingProxy
 
@@ -40,12 +41,42 @@ def test_transforms_get_propagated():
         assert setting.train_dataloader().reset().x.shape == (3, 64, 64)
 
 
+@pytest.mark.timeout(60)
 def test_random_baseline():
     method = RandomBaselineMethod()
     setting = SettingProxy(DomainIncrementalSetting)
     results = setting.apply(method)
     # domain incremental mnist: 2 classes per task -> chance accuracy of 50%.
     assert 0.45 <= results.objective <= 0.55
+
+
+@pytest.mark.timeout(180)
+def test_random_baseline_rl():
+    method = RandomBaselineMethod()
+    setting = SettingProxy(
+        IncrementalRLSetting,
+        dataset="monsterkong",
+        monitor_training_performance=True,
+        observe_state_directly=False,
+        steps_per_task=1_000,
+        test_steps_per_task=1_000,
+        train_task_schedule={
+            0: {"level": 0},
+            1: {"level": 1},
+            2: {"level": 10},
+            3: {"level": 11},
+            4: {"level": 20},
+            5: {"level": 21},
+            6: {"level": 30},
+            7: {"level": 31},
+        },
+        # Interesting problem: Will it always do at least an entire episode here per
+        # env?
+        # batch_size=2,
+        # num_workers=0,
+    )
+    results: IncrementalRLSetting.Results[EpisodeMetrics] = setting.apply(method)
+    assert 20 <= results.average_final_performance.mean_reward_per_episode
 
 
 @pytest.mark.timeout(120)
@@ -106,15 +137,13 @@ def test_rl_track_setting_is_correct():
 
     train_env = setting.train_dataloader()
     assert train_env.observation_space == NamedTupleSpace(
-        x=Image(0, 1, (3, 64, 64), dtype=np.float32),
-        task_labels=spaces.Discrete(8),
+        x=Image(0, 1, (3, 64, 64), dtype=np.float32), task_labels=spaces.Discrete(8),
     )
     assert train_env.reset() in train_env.observation_space
 
     valid_env = setting.val_dataloader()
     assert valid_env.observation_space == NamedTupleSpace(
-        x=Image(0, 1, (3, 64, 64), dtype=np.float32),
-        task_labels=spaces.Discrete(8),
+        x=Image(0, 1, (3, 64, 64), dtype=np.float32), task_labels=spaces.Discrete(8),
     )
 
     # IDEA: Prevent submissions from calling the test_dataloader method or accessing the
@@ -133,8 +162,7 @@ def test_sl_track_setting_is_correct():
     assert setting.nb_tasks == 12
     assert setting.dataset == "synbols"
     assert setting.observation_space == NamedTupleSpace(
-        x=Image(0, 1, (3, 32, 32), dtype=np.float32),
-        task_labels=spaces.Discrete(12),
+        x=Image(0, 1, (3, 32, 32), dtype=np.float32), task_labels=spaces.Discrete(12),
     )
     assert setting.n_classes_per_task == 4
     assert setting.action_space == spaces.Discrete(48)
