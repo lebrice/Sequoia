@@ -215,7 +215,7 @@ class PassiveEnvironment(
         if not self._closed:
             if self.viewer:
                 self.viewer.close()
-            if self.num_workers > 0:
+            if self.num_workers > 0 and self._iterator:
                 self._iterator._shutdown_workers()
             self._closed = True
 
