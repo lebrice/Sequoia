@@ -22,6 +22,7 @@ from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSet
 from .base import AvalancheMethod
 
 
+@pytest.mark.xfail(reason="AR1 isn't super well supported yet.")
 class TestAR1Method(TestAvalancheMethod):
     Method: ClassVar[Type[AvalancheMethod]] = AR1Method
 
