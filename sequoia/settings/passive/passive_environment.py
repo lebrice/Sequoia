@@ -204,7 +204,6 @@ class PassiveEnvironment(
 
         Returns the first batch of observations.
         """
-        del self._iterator
         self._iterator = super().__iter__()
         self._previous_batch = None
         self._current_batch = self.get_next_batch()
@@ -216,17 +215,21 @@ class PassiveEnvironment(
         if not self._closed:
             if self.viewer:
                 self.viewer.close()
+            if self.num_workers > 0 and self._iterator:
+                self._iterator._shutdown_workers()
             self._closed = True
 
     def __del__(self):
-        # TODO: Weird issue, tests don't 'terminate' cleanly for some reason.
         if not self._closed:
             self.close()
 
     def render(self, mode: str = "rgb_array") -> np.ndarray:
         observations = self._current_batch[0]
-        assert isinstance(observations, Observations)
-        image_batch = observations[0]
+        if isinstance(observations, Observations):
+            image_batch = observations.x
+        else:
+            assert isinstance(observations, Tensor)
+            image_batch = observations
         if isinstance(image_batch, Tensor):
             image_batch = image_batch.cpu().numpy()
 

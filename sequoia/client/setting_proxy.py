@@ -214,6 +214,9 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             if num_workers is not None
             else self.get_attribute("num_workers")
         )
+        if self._train_env:
+            self._train_env.close()
+            del self._train_env
 
         self._train_env = EnvironmentProxy(
             env_fn=partial(
@@ -238,6 +241,9 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             else self.get_attribute("num_workers")
         )
 
+        if self._val_env:
+            self._val_env.close()
+            del self._val_env
         self._val_env = EnvironmentProxy(
             env_fn=partial(
                 self.__setting.val_dataloader,
@@ -263,7 +269,9 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             if num_workers is not None
             else self.get_attribute("num_workers")
         )
-
+        if self._test_env:
+            self._test_env.close()
+            del self._test_env
         self._test_env = EnvironmentProxy(
             env_fn=partial(
                 self.__setting.test_dataloader,
