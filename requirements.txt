@@ -5,7 +5,7 @@ nngeometry @ git+https://github.com/oleksost/nngeometry.git#egg=nngeometry
 # Temporary fix for issue#128
 pyyaml!=5.4.*,>=5.1
 simple_parsing>=0.0.12.post4
-matplotlib
+matplotlib==3.2.2
 torch>=1.7
 torchvision>=0.9
 scikit-learn
