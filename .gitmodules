@@ -3,4 +3,4 @@
 	url = https://github.com/lebrice/falr.git
 [submodule "sequoia/methods/cn_dpm"]
 	path = sequoia/methods/cn_dpm
-	url = https://github.com/soochan-lee/CN-DPM.git
+	url = https://github.com/ryanlindeborg/CN-DPM.git
