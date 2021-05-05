@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM pytorch/pytorch:1.8.1-cuda11.1-cudnn8-runtime as sequoia_base
+FROM pytorch/pytorch:1.8.1-cuda11.1-cudnn8-runtime as sequoia_eai_base
 USER root
 EXPOSE 2222
 EXPOSE 6000
@@ -91,10 +91,4 @@ RUN cd /workspace/ && git clone https://github.com/lebrice/Sequoia.git
 WORKDIR /workspace/Sequoia
 RUN pip install -e .[monsterkong,hpo,avalanche]
 
-CMD ["/tk/bin/start.sh"]
-
-
-FROM lebrice/sequoia:base
-ARG BRANCH=master
-RUN git checkout ${BRANCH} && pip install -e .[monsterkong,hpo,avalanche]
 CMD ["/tk/bin/start.sh"]
