@@ -83,7 +83,7 @@ ENV RESULTS_DIR=/mnt/results
 
 # VOLUME /mnt/home
 # WORKDIR /mnt/home
-
+SHELL [ "conda", "run", "-n", "base", "/bin/bash", "-c"]
 ENV PATH /home/toolkit/.local/bin:${PATH}
 # RUN cd /workspace/tools && git clone https://github.com/openai/gym.git && cd gym && pip install -e '.[all]'
 # RUN cd /workspace/tools && git clone https://github.com/openai/baselines.git && cd baselines && pip install -e .
