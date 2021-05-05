@@ -316,6 +316,7 @@ class IncrementalSetting(ContinualSetting):
             # File "/home/fabrice/miniconda3/envs/sequoia/lib/python3.8/site-packages/plotly/matplotlylib/mplexporter/utils.py", line 246, in get_grid_style
             # if axis._gridOnMajor and len(gridlines) > 0:
             # AttributeError: 'XAxis' object has no attribute '_gridOnMajor'
+            # Seems to be fixed by downgrading the matplotlib version to 3.2.2
             wandb.log(results.make_plots())
 
             wandb.run.finish()

@@ -65,10 +65,10 @@ class WandbConfig(Serializable):
 
     # Which user to use
     entity: str = ""
-    
+
     # project name to use in wandb.
-    project: str = ""  
-    
+    project: str = ""
+
     # Name used to easily group runs together.
     # Used to create a parent folder that will contain the `run_name` directory.
     # A unique string shared by all runs in a given group
@@ -119,10 +119,10 @@ class WandbConfig(Serializable):
     anonymous: bool = False
     # Sets the version, mainly used to resume a previous run.
     version: Optional[str] = None
-    
+
     # Save checkpoints in wandb dir to upload on W&B servers.
     log_model: bool = False
-    
+
     @property
     def log_dir(self):
         return self.log_dir_root.joinpath(
@@ -131,9 +131,9 @@ class WandbConfig(Serializable):
             (self.run_name or "default"),
             (f"run_{self.run_number}" if self.run_number is not None else ""),
         )
-        
+
     def wandb_login(self) -> bool:
-        """Calls `wandb.login()`. 
+        """Calls `wandb.login()`.
 
         Returns
         -------
@@ -149,8 +149,33 @@ class WandbConfig(Serializable):
             assert isinstance(key, str)
         return wandb.login(key=key)
 
+    def wandb_init_kwargs(self) -> Dict:
+        """ Return the kwargs to pass to wandb.init() """
+        if self.run_name is None:
+            # TODO: Create a run name using the coefficients of the tasks, etc?
+            # At the moment, if no run name is given, the 'random' name from wandb is used.
+            pass
+        logger.info(f"Using wandb. Experiment name: {self.run_name}")
+
+        if self.wandb_path is None:
+            self.wandb_path = self.log_dir_root / "wandb"
+        self.wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
+        return dict(
+            dir=str(self.wandb_path),
+            project=self.project,
+            entity=self.entity,
+            name=self.run_name,
+            id=self.run_id,
+            group=self.group,
+            notes=self.notes,
+            reinit=True,
+            tags=self.tags,
+            resume="allow",
+            monitor_gym=self.monitor_gym,
+        )
+
     def wandb_init(self, config_dict: Dict = None) -> wandb.wandb_run.Run:
-        """Executes the call to `wandb.init()`. 
+        """Executes the call to `wandb.init()`.
 
         TODO(@lebrice): Not sure if it still makes sense to call `wandb.init`
         ourselves when using Pytorch Lightning, should probably ask @jeromepl
@@ -164,15 +189,6 @@ class WandbConfig(Serializable):
         Returns:
             wandb.wandb_run.Run: Whatever gets returned by `wandb.init()`.
         """
-        if self.run_name is None:
-            # TODO: Create a run name using the coefficients of the tasks, etc?
-            # At the moment, if no run name is given, the 'random' name from wandb is used.
-            pass
-        logger.info(f"Using wandb. Experiment name: {self.run_name}")
-
-        if self.wandb_path is None:
-            self.wandb_path = self.log_dir_root / "wandb"
-        self.wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)
 
         logger.info(f"Wandb run id: {self.run_id}")
         logger.info(
@@ -180,19 +196,12 @@ class WandbConfig(Serializable):
             f"log_dir: {self.log_dir}"
         )
         self.wandb_login()
+
+        init_kwargs = self.wandb_init_kwargs()
+        init_kwargs["config"] = config_dict
+
         run = wandb.init(
-            dir=str(self.wandb_path),
-            project=self.project,
-            entity=self.entity,
-            name=self.run_name,
-            id=self.run_id,
-            group=self.group,
-            config=config_dict,
-            notes=self.notes,
-            reinit=True,
-            tags=self.tags,
-            resume="allow",
-            monitor_gym=self.monitor_gym,
+            **init_kwargs
         )
         logger.info(f"Run: {run}")
         if run:

@@ -6,7 +6,7 @@ from avalanche.training.strategies import Replay, BaseStrategy
 from sequoia.methods import register_method
 from sequoia.settings.passive import (ClassIncrementalSetting,
                                       TaskIncrementalSetting)
-
+from simple_parsing.helpers.hparams import uniform
 from .base import AvalancheMethod
 
 
@@ -18,7 +18,7 @@ class ReplayMethod(AvalancheMethod[Replay], target_setting=ClassIncrementalSetti
     This strategy does not use task identities.
     """
     # Replay buffer size.
-    mem_size: int = 200
+    mem_size: int = uniform(100, 10_000, default=200)
 
     strategy_class: ClassVar[Type[BaseStrategy]] = Replay
 
