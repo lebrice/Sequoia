@@ -44,9 +44,9 @@ RUN chown -R toolkit:root /workspace
 RUN chmod -R 775 /workspace
 # this doesn't do anything
 RUN adduser toolkit sudo
-RUN mkdir -p /mnt/home
-RUN chown -R toolkit:root /mnt/home
-RUN chmod -R 775 /mnt/home
+# RUN mkdir -p /mnt/home
+# RUN chown -R toolkit:root /mnt/home
+# RUN chmod -R 775 /mnt/home
 
 USER toolkit
 
