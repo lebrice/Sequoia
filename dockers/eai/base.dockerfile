@@ -45,9 +45,10 @@ RUN chmod -R 775 /workspace
 # this doesn't do anything
 RUN adduser toolkit sudo
 # RUN mkdir -p /mnt/home
-# RUN chown -R toolkit:root /mnt/home
+RUN chown -hR toolkit:root /opt/conda
 # RUN chmod -R 775 /mnt/home
-
+SHELL [ "conda", "run", "-n", "base", "/bin/bash", "-c"]
+RUN chmod 
 USER toolkit
 
 ## Unused zshell and oh-my-zsh stuff:
@@ -83,7 +84,6 @@ ENV RESULTS_DIR=/mnt/results
 
 # VOLUME /mnt/home
 # WORKDIR /mnt/home
-SHELL [ "conda", "run", "-n", "base", "/bin/bash", "-c"]
 ENV PATH /home/toolkit/.local/bin:${PATH}
 # RUN cd /workspace/tools && git clone https://github.com/openai/gym.git && cd gym && pip install -e '.[all]'
 # RUN cd /workspace/tools && git clone https://github.com/openai/baselines.git && cd baselines && pip install -e .
