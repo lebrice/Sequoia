@@ -24,7 +24,7 @@ export ORG_NAME=$(eai organization get --field name)
 export ACCOUNT_NAME=$(eai account get --field name)
 export ACCOUNT_ID=$ORG_NAME.$ACCOUNT_NAME
 EAI_Registry=registry.console.elementai.com/$ACCOUNT_ID
-DockerHub_Registry=registry.console.elementai.com/$ACCOUNT_ID
+DockerHub_Registry=lebrice
 
 
 echo "Building the 'base' dockerfile for elementai cluster."
