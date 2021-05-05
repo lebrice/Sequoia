@@ -7,16 +7,16 @@ set -o nounset    # Exposes unset variables
 CURRENT_BRANCH="`git branch --show-current`"
 BRANCH=${BRANCH:-$CURRENT_BRANCH}
 echo "Using branch $BRANCH"
-git push
 
 if git diff-index --quiet HEAD --; then
     # No changes
-    echo "all good"
+    echo "all good."
 else
     # Changes
     echo "Can't build dockers when you have uncommited changes!"
     exit 1
 fi
+git push
 
 # Get organization name
 export ORG_NAME=$(eai organization get --field name)
