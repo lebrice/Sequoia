@@ -34,7 +34,8 @@ def get_tree_string(with_methods: bool = False, with_docstring: bool = False):
     def _setting_tree(setting: Type[Setting], prefix: str = "", indentation: int=0) -> str:
         message: List[str] = []
         source_file = get_relative_path_to(setting)
-        message += [f"{setting.__name__} ({source_file})"]
+        message += [f"{setting.__name__}"]
+        # message += [f"{setting.__name__} ({source_file})"]
         # Little 'hack' for the if below: the Setting class is inside sequoia/settings/base.
         parent_dir = source_file.parent if setting is not Setting else source_file.parent.parent
         applicable_methods = setting.get_applicable_methods()
@@ -224,4 +225,6 @@ def add_stuff_to_readme(readme_path=Path("README.md")):
             print()
 
 if __name__ == "__main__":
-    add_stuff_to_readme()
+    # add_stuff_to_readme()
+
+    print(get_tree_string(with_methods=True))
