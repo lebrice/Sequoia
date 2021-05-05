@@ -226,5 +226,4 @@ def add_stuff_to_readme(readme_path=Path("README.md")):
 
 if __name__ == "__main__":
     # add_stuff_to_readme()
-
     print(get_tree_string(with_methods=True))
