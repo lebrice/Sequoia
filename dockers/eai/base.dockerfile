@@ -45,8 +45,7 @@ RUN chmod -R 775 /workspace
 # this doesn't do anything
 RUN adduser toolkit sudo
 # RUN mkdir -p /mnt/home
-RUN chown -hR toolkit:root /opt/conda
-# RUN chmod -R 775 /mnt/home
+RUN chmod -R 775 /opt/conda
 SHELL [ "conda", "run", "-n", "base", "/bin/bash", "-c"]
 RUN chmod 
 USER toolkit
