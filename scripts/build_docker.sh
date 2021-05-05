@@ -32,8 +32,7 @@ docker build . --file dockers/eai/base.dockerfile \
     --tag $DockerHub_Registry/sequoia:eai_base --tag $EAI_Registry/sequoia:eai_base
 
 
-
-echo "Building the container for branch ."
+echo "Building the container for branch $BRANCH"
 docker build . --file dockers/eai/branch.dockerfile \
     --no-cache \
     --build-arg BRANCH=$BRANCH \
