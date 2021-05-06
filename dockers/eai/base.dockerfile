@@ -44,10 +44,11 @@ RUN chown -R toolkit:root /workspace
 RUN chmod -R 775 /workspace
 # this doesn't do anything
 RUN adduser toolkit sudo
+RUN chown -R toolkit:root /mnt/
 # RUN mkdir -p /mnt/home
-# RUN chmod -R 775 /opt/conda
+# RUN chmod -R 775 /mnt/home
 SHELL [ "conda", "run", "-n", "base", "/bin/bash", "-c"]
-# USER toolkit
+USER toolkit
 
 ## Unused zshell and oh-my-zsh stuff:
 # RUN sh -c "$(wget -O- https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
