@@ -90,8 +90,6 @@ ENV PATH /home/toolkit/.local/bin:${PATH}
 # RUN cd /workspace/tools && git clone https://github.com/openai/gym.git && cd gym && pip install -e '.[all]'
 # RUN cd /workspace/tools && git clone https://github.com/openai/baselines.git && cd baselines && pip install -e .
 RUN cd /workspace/ && git clone https://github.com/lebrice/Sequoia.git
-WORKDIR /workspace/Sequoia
-
-RUN pip install -e .[monsterkong,hpo,avalanche]
+RUN pip install -e /workspace/Sequoia[monsterkong,hpo,avalanche]
 
 CMD ["/tk/bin/start.sh"]
