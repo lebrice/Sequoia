@@ -75,6 +75,7 @@ RUN mkdir /workspace/tools
 
 # For Wandb
 COPY .netrc /home/toolkit/.netrc
+COPY .netrc /root/.netrc
 
 VOLUME /mnt/data
 VOLUME /mnt/results
