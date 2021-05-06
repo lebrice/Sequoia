@@ -1,5 +1,5 @@
 FROM lebrice/sequoia:eai_base
-USER toolkit
+USER root
 SHELL [ "conda", "run", "-n", "base", "/bin/bash", "-c"]
 ARG BRANCH=master
 RUN git fetch -p

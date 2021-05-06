@@ -41,7 +41,7 @@ RUN conda install matplotlib numpy scipy hdf5 h5py cython
 # Removing this `torchtext` package, seems to be causing an import issue in pytorch!
 RUN pip uninstall -y torchtext
 RUN chown -R toolkit:root /workspace
-RUN chmod -R 775 /workspace
+RUN chmod -R 777 /workspace
 # this doesn't do anything
 RUN adduser toolkit sudo
 RUN chown -R toolkit:root /mnt/
@@ -91,6 +91,7 @@ ENV PATH /home/toolkit/.local/bin:${PATH}
 # RUN cd /workspace/tools && git clone https://github.com/openai/baselines.git && cd baselines && pip install -e .
 RUN cd /workspace/ && git clone https://github.com/lebrice/Sequoia.git
 WORKDIR /workspace/Sequoia
+
 RUN pip install -e .[monsterkong,hpo,avalanche]
 
 CMD ["/tk/bin/start.sh"]
