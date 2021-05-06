@@ -76,14 +76,13 @@ def test_that_transforms_can_be_set_through_command_line():
 
     setting = Setting(train_transforms=[])
     assert setting.train_transforms == []
-    
-    
+
     setting = Setting.from_args("--train_transforms channels_first")
     assert setting.train_transforms == [
         Transforms.channels_first
     ]
     assert isinstance(setting.train_transforms, Compose)
-    
+
     setting = Setting.from_args("--train_transforms channels_first")
     assert setting.train_transforms == [
         Transforms.channels_first

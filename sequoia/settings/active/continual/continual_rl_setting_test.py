@@ -1,42 +1,44 @@
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import List, Tuple
 
-import gym
 import numpy as np
 import pytest
 from gym import spaces
 
-from sequoia.common.config import Config
-from sequoia.common.spaces import Sparse
-from sequoia.common.transforms import ChannelsFirstIfNeeded, ToTensor, Transforms
-from sequoia.conftest import xfail_param, param_requires_atari_py
+from sequoia.settings.assumptions.incremental_test import DummyMethod
+from sequoia.conftest import DummyEnvironment
+
+from sequoia.conftest import param_requires_atari_py
 from sequoia.utils.utils import take
-from sequoia.common.gym_wrappers.convert_tensors import has_tensor_support
 
 from .continual_rl_setting import ContinualRLSetting
 
 
 def test_task_schedule_is_used():
-    # TODO: Figure out a way to test that the tasks are switching over time.
+    """
+    Test that the tasks are switching over time.
+    """
     setting = ContinualRLSetting(
-        dataset="CartPole-v0", max_steps=100, steps_per_task=10, nb_tasks=10
+        dataset="CartPole-v0", max_steps=100, steps_per_task=50, nb_tasks=2
     )
     env = setting.train_dataloader(batch_size=None)
 
     starting_length = env.length
     assert starting_length == 0.5
 
-    observations = env.reset()
+    _ = env.reset()
     lengths: List[float] = []
-    for i in range(100):
+    for i in range(setting.steps_per_phase):
         obs, reward, done, info = env.step(env.action_space.sample())
-        if done:
+        if done and i != setting.steps_per_phase - 1:
+            # NOTE: Don't reset on the last step
             env.reset()
+        # Get the length of the pole from the environment.
         length = env.length
         lengths.append(length)
     assert not all(length == starting_length for length in lengths)
 
-
+@pytest.mark.timeout(60)
 @pytest.mark.parametrize("batch_size", [None, 1, 3])
 @pytest.mark.parametrize(
     "dataset, expected_obs_shape",
@@ -57,7 +59,8 @@ def test_check_iterate_and_step(
     DataLoader.
     """
     setting = ContinualRLSetting(dataset=dataset)
-
+    from sequoia.common.transforms import Transforms
+    assert setting.train_transforms == [Transforms.to_tensor, Transforms.three_channels]
     expected_obs_batch_shape = (batch_size, *expected_obs_shape)
     if batch_size is None:
         expected_obs_batch_shape = expected_obs_shape
@@ -90,8 +93,6 @@ def test_check_iterate_and_step(
         assert temp_env.observation_space[0] == spaces.Box(
             0.0, 1.0, expected_obs_shape, dtype=np.float32
         )
-        assert type(temp_env.observation_space)
-        # assert temp_env.observation_space[0] == spaces.Box(0., 1., expected_obs_batch_shape, dtype=np.float32)
 
     def check_obs(obs):
         assert isinstance(obs, ContinualRLSetting.Observations), obs[0].shape
@@ -105,7 +106,7 @@ def test_check_iterate_and_step(
 
     for dataloader_method in dataloader_methods:
         print(f"Testing dataloader method {dataloader_method.__name__}")
-        ## FIXME: Remove this if we allow batched env at test time.
+        # FIXME: Remove this if we allow batched env at test time.
         if dataloader_method.__name__ == "test_dataloader":
             # Temporarily change the expected shape.
             expected_obs_batch_shape = expected_obs_shape
@@ -128,10 +129,10 @@ def test_check_iterate_and_step(
 
         for iter_obs in take(env, 3):
             check_obs(iter_obs)
-            reward = env.send(env.action_space.sample())
+            _ = env.send(env.action_space.sample())
 
 
-@pytest.mark.xfail(reason=f"TODO: DQN model only accepts string environment names...")
+@pytest.mark.xfail(reason="TODO: DQN model only accepts string environment names...")
 def test_dqn_on_env(tmp_path: Path):
     """ TODO: Would be nice if we could have the models work directly on the
     gym envs..
@@ -189,10 +190,6 @@ def test_passing_task_schedule_sets_other_attributes_correctly():
     assert setting.test_steps_per_task == 100
 
 
-from sequoia.settings.assumptions.incremental_test import DummyMethod
-from sequoia.conftest import DummyEnvironment
-
-
 def test_fit_and_on_task_switch_calls():
     setting = ContinualRLSetting(
         dataset=DummyEnvironment,
@@ -205,7 +202,7 @@ def test_fit_and_on_task_switch_calls():
         val_transforms=[],
     )
     method = DummyMethod()
-    results = setting.apply(method)
+    _ = setting.apply(method)
     # == 30 task switches in total.
     assert method.n_task_switches == 0
     assert method.n_fit_calls == 1  # TODO: Add something like this.

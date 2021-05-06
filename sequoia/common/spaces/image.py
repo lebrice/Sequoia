@@ -3,16 +3,15 @@
 from typing import Optional, Tuple, Union
 
 import numpy as np
-import torch
-from gym import Space, spaces
+from gym import spaces
+from gym.vector.utils import batch_space
 
-from sequoia.utils.generic_functions.to_from_tensor import to_tensor
-from torch import Tensor
+from .tensor_box import TensorBox
 
 
 class Image(spaces.Box):
     """ Subclass of `gym.spaces.Box` for images.
-    
+
     Comes with a few useful attributes, like `h`, `w`, `c`, `channels_first`,
     `channels_last`, etc.
     """
@@ -93,6 +92,10 @@ class Image(spaces.Box):
         return f"Image({self.low.min()}, {self.high.max()}, {self.shape}, {self.dtype})"
 
 
+class ImageTensorSpace(Image, TensorBox):
+    pass
+
+
 # @to_tensor.register
 # def _(space: Image,
 #       sample: Union[np.ndarray, Tensor],
@@ -100,8 +103,6 @@ class Image(spaces.Box):
 #     """ Converts a sample from the given space into a Tensor. """
 #     return torch.as_tensor(sample, device=device)
 
-
-from gym.vector.utils import batch_space
 
 @batch_space.register
 def _batch_image_space(space: Image, n: int = 1) -> Union[Image, spaces.Box]:

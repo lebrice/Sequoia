@@ -136,16 +136,6 @@ class BaselineModel(
             logger.debug("Hparams:")
             logger.debug(self.hp.dumps(indent="\t"))
 
-        # # Upgrade the type of hparams for the output head, based on the setting.
-        # output_head_type = self.output_head_type(setting)
-        # if not isinstance(self.hp.output_head, output_head_type.HParams):
-        #     self.hp.output_head = self.hp.output_head.upgrade(target_type=output_head_type.HParams)
-        
-        # self.output_head: OutputHead = self.create_output_head(task_id=None)
-
-        # Dictionary of auxiliary tasks.
-        self.tasks: Dict[str, AuxiliaryTask] = self.create_auxiliary_tasks()
-
         for task_name, task in self.tasks.items():
             logger.debug("Auxiliary tasks:")
             assert isinstance(

@@ -200,7 +200,7 @@ class IncrementalSetting(ContinualSetting):
         # TODO: Fix this up, need to set the '_objective_scaling_factor' to a different
         # value depending on the 'dataset' / environment.
         results._objective_scaling_factor = self._get_objective_scaling_factor()
-        
+
         if self.wandb:
             # Init wandb, and then log the setting's options.
             self.wandb_run = self.setup_wandb(method)
@@ -416,16 +416,26 @@ class IncrementalSetting(ContinualSetting):
                 # BUG: Need to pass an action space that actually reflects the batch
                 # size, even for the last batch!
 
+                # BUG: This doesn't work if the env isn't batched.
                 action_space = test_env.action_space
-                # Check for a potential mismatch between the batch size in the obs and
-                # the batch size in the action space.
-                if getattr(test_env.action_space, "shape", None):
-                    assert obs.x.shape, "x should also have a shape (i.e. not an int)"
-                    obs_batch_size = obs.x.shape[0]
-                    action_space_batch_size = test_env.action_space.shape[0]
-                    if obs_batch_size != action_space_batch_size:
-                        single_action_space = test_env.single_action_space
-                        action_space = batch_space(single_action_space, obs_batch_size)
+                batch_size = getattr(test_env, "num_envs", getattr(test_env, "batch_size", 0))
+                env_is_batched = batch_size is not None and batch_size >= 1
+                if env_is_batched:
+                    # NOTE: Need to pass an action space that actually reflects the batch
+                    # size, even for the last batch!
+                    obs_batch_size = obs.x.shape[0] if obs.x.shape else None
+                    action_space_batch_size = (
+                        test_env.action_space.shape[0]
+                        if test_env.action_space.shape
+                        else None
+                    )
+                    if (
+                        obs_batch_size is not None
+                        and obs_batch_size != action_space_batch_size
+                    ):
+                        action_space = batch_space(
+                            test_env.single_action_space, obs_batch_size
+                        )
 
                 action = method.get_actions(obs, action_space)
 
@@ -434,7 +444,7 @@ class IncrementalSetting(ContinualSetting):
                 if isinstance(action, Actions):
                     action = action.y_pred
                 if isinstance(action, Tensor):
-                    action = action.cpu().numpy()
+                    action = action.detach().cpu().numpy()
 
                 if test_env.is_closed():
                     break

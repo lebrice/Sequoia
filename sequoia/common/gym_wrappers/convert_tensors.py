@@ -14,7 +14,6 @@ logger = get_logger(__file__)
 S = TypeVar("S", bound=Space)
 
 
-
 class ConvertToFromTensors(gym.Wrapper):
     """ Wrapper that converts Tensors into samples/ndarrays and vice versa.
 
@@ -30,13 +29,20 @@ class ConvertToFromTensors(gym.Wrapper):
 
     If `device` is given, created Tensors are moved to the provided device.
     """
+
     def __init__(self, env: gym.Env, device: Union[torch.device, str] = None):
         super().__init__(env=env)
         self.device = device
-        self.observation_space: Space = add_tensor_support(self.env.observation_space, device=device)
-        self.action_space: Space = add_tensor_support(self.env.action_space, device=device)
+        self.observation_space: Space = add_tensor_support(
+            self.env.observation_space, device=device
+        )
+        self.action_space: Space = add_tensor_support(
+            self.env.action_space, device=device
+        )
         if hasattr(self.env, "reward_space"):
-            self.reward_space: Space = add_tensor_support(self.env.reward_space, device=device)
+            self.reward_space: Space = add_tensor_support(
+                self.env.reward_space, device=device
+            )
 
     def reset(self, *args, **kwargs):
         obs = self.env.reset(*args, **kwargs)
@@ -60,14 +66,18 @@ class ConvertToFromTensors(gym.Wrapper):
         # info = np.ndarray(info)
         return type(result)([observation, reward, done, info])
 
+
 def supports_tensors(space: S) -> bool:
     return getattr(space, "_supports_tensors", False)
+
 
 def has_tensor_support(space: S) -> bool:
     return supports_tensors(space)
 
+
 def _mark_supports_tensors(space: S) -> None:
     setattr(space, "_supports_tensors", True)
+
 
 @singledispatch
 def add_tensor_support(space: S, device: torch.device = None) -> S:
@@ -104,29 +114,59 @@ def add_tensor_support(space: S, device: torch.device = None) -> S:
     assert has_tensor_support(space)
     return space
 
+
 from sequoia.common.spaces.named_tuple import NamedTupleSpace, NamedTuple
+from sequoia.common.spaces.image import Image, ImageTensorSpace
+
+
+@add_tensor_support.register
+def _add_tensor_support(space: Image, device: torch.device = None) -> Image:
+    tensor_box = TensorBox(
+        space.low, space.high, shape=space.shape, dtype=space.dtype, device=device
+    )
+    return ImageTensorSpace.from_box(tensor_box)
+
 
 @add_tensor_support.register
 def _add_tensor_support(space: spaces.Dict, device: torch.device = None) -> spaces.Dict:
-    space = type(space)(**{
-        key: add_tensor_support(value, device=device)
-        for key, value in space.spaces.items()
-    })
+    space = type(space)(
+        **{
+            key: add_tensor_support(value, device=device)
+            for key, value in space.spaces.items()
+        }
+    )
     _mark_supports_tensors(space)
     return space
+
 
 @add_tensor_support.register(NamedTupleSpace)
 def _add_tensor_support(space: Dict, device: torch.device = None) -> Dict:
-    space = type(space)(**{
-        key: add_tensor_support(value, device=device) for key, value in space.items()
-    })
+    space = type(space)(
+        **{
+            key: add_tensor_support(value, device=device)
+            for key, value in space.items()
+        }
+    )
     _mark_supports_tensors(space)
     return space
 
+
 @add_tensor_support.register(spaces.Tuple)
 def _add_tensor_support(space: Dict, device: torch.device = None) -> Dict:
-    space = type(space)([
-        add_tensor_support(value, device=device) for value in space.spaces
-    ])
+    space = type(space)(
+        [add_tensor_support(value, device=device) for value in space.spaces]
+    )
+    _mark_supports_tensors(space)
+    return space
+
+
+from sequoia.common.spaces.tensor_box import TensorBox
+
+
+@add_tensor_support.register(spaces.Box)
+def _add_tensor_support(space: spaces.Box, device: torch.device = None) -> spaces.Box:
+    space = TensorBox(
+        space.low, space.high, shape=space.shape, dtype=space.dtype, device=device
+    )
     _mark_supports_tensors(space)
     return space

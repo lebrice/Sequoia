@@ -21,7 +21,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 
 from sequoia.common.loss import Loss
-from sequoia.common.hparams import uniform
+from sequoia.common.hparams import uniform, categorical
 from sequoia.methods.aux_tasks.auxiliary_task import AuxiliaryTask
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.methods.models.output_heads import ClassificationHead, RegressionHead
@@ -64,10 +64,10 @@ class EWCTask(AuxiliaryTask):
         # that hyper-parameter here.
         coefficient: float = uniform(0.0, 100.0, default=1.0)
         # Batchsize to be used when computing FIM (unused atm)
-        batch_size_fim: int = 64
+        batch_size_fim: int = 32
         # Number of observations to use for FIM calculation
-        sample_size_fim: int = 400
-        # Fisher information representation type  (diagonal or block diagobnal).
+        sample_size_fim: int = categorical(2, 4, 8, 16, 32, 64, 128, 256, 512, default=8)
+        # Fisher information representation type  (diagonal or block diagonal).
         fim_representation: Type[PMatAbstract] = choice(
             {"diagonal": PMatDiag, "block_diagonal": PMatKFAC}, default=PMatDiag,
         )

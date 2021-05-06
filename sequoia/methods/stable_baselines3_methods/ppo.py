@@ -10,17 +10,21 @@ from gym import spaces
 from simple_parsing import mutable_field
 from stable_baselines3.ppo import PPO
 
-from sequoia.common.hparams import categorical, log_uniform, uniform
+from sequoia.common.hparams import log_uniform
 from sequoia.methods import register_method
-from sequoia.methods.stable_baselines3_methods.base import (
-    SB3BaseHParams, StableBaselines3Method)
 from sequoia.settings.active import ContinualRLSetting
+from sequoia.utils.logging_utils import get_logger
+from .on_policy_method import OnPolicyMethod, OnPolicyModel
 
-class PPOModel(PPO):
+logger = get_logger(__file__)
+
+
+class PPOModel(PPO, OnPolicyModel):
     """ Proximal Policy Optimization algorithm (PPO) (clip version) - from SB3.
 
     Paper: https://arxiv.org/abs/1707.06347
-    Code: The SB3 implementation borrows code from OpenAI Spinning Up (https://github.com/openai/spinningup/)
+    Code: The SB3 implementation borrows code from OpenAI Spinning Up
+    (https://github.com/openai/spinningup/)
     https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail and
     and Stable Baselines (PPO2 from https://github.com/hill-a/stable-baselines)
 
@@ -28,7 +32,7 @@ class PPOModel(PPO):
     """
 
     @dataclass
-    class HParams(SB3BaseHParams):
+    class HParams(OnPolicyModel.HParams):
         """ Hyper-parameters of the PPO Model. """
 
         # # The policy model to use (MlpPolicy, CnnPolicy, ...)
@@ -44,8 +48,7 @@ class PPOModel(PPO):
         # The number of steps to run for each environment per update (i.e. batch size
         # is n_steps * n_env where n_env is number of environment copies running in
         # parallel)
-        # TODO: Limit this, as is done in A2C, based on the value of setting.max steps.
-        n_steps: int = categorical(32, 128, 256, 1024, 2048, 4096, 8192, default=2048)
+        n_steps: int = log_uniform(32, 8192, default=2048, discrete=True)
 
         # Minibatch size
         batch_size: int = 64
@@ -120,16 +123,16 @@ class PPOModel(PPO):
         # Device (cpu, cuda, ...) on which the code should be run. Setting it to auto,
         # the code will be run on the GPU if possible.
         device: Union[torch.device, str] = "auto"
-        
+
         # Whether or not to build the network at the creation of the instance
         # _init_setup_model: bool = True
 
 
-
 @register_method
 @dataclass
-class PPOMethod(StableBaselines3Method):
+class PPOMethod(OnPolicyMethod):
     """ Method that uses the PPO model from stable-baselines3. """
+
     Model: ClassVar[Type[PPOModel]] = PPOModel
     # Hyper-parameters of the PPO Model.
     hparams: PPOModel.HParams = mutable_field(PPOModel.HParams)
@@ -138,17 +141,17 @@ class PPOMethod(StableBaselines3Method):
         super().configure(setting=setting)
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> PPOModel:
+        logger.info("Creating model with hparams: \n" + self.hparams.dumps_json(indent="\t"))
         return self.Model(env=train_env, **self.hparams.to_dict())
 
     def fit(self, train_env: gym.Env, valid_env: gym.Env):
         super().fit(train_env=train_env, valid_env=valid_env)
 
-    def get_actions(self,
-                    observations: ContinualRLSetting.Observations,
-                    action_space: spaces.Space) -> ContinualRLSetting.Actions:
+    def get_actions(
+        self, observations: ContinualRLSetting.Observations, action_space: spaces.Space
+    ) -> ContinualRLSetting.Actions:
         return super().get_actions(
-            observations=observations,
-            action_space=action_space,
+            observations=observations, action_space=action_space,
         )
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
@@ -164,16 +167,7 @@ class PPOMethod(StableBaselines3Method):
     def get_search_space(
         self, setting: ContinualRLSetting
     ) -> Mapping[str, Union[str, Dict]]:
-        search_space = super().get_search_space(setting)
-        if isinstance(setting.action_space, spaces.Discrete):
-            # From stable_baselines3/common/base_class.py", line 170:
-            # > Generalized State-Dependent Exploration (gSDE) can only be used with
-            #   continuous actions
-            # Therefore we remove related entries in the search space, so they keep
-            # their default values.
-            search_space.pop("use_sde", None)
-            search_space.pop("sde_sample_freq", None)
-        return search_space
+        return super().get_search_space(setting)
 
 
 if __name__ == "__main__":

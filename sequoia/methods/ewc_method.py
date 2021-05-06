@@ -6,18 +6,16 @@ Likewise, defines the `EwcModel`, which is a very simple subclass of the
 For a more detailed view of exactly how the EwcTask calculates its loss, see
 the `sequoia.methods.aux_tasks.ewc.EwcTask`.
 """
-import sys
-from dataclasses import dataclass
-from typing import Dict, Optional
 import warnings
+from dataclasses import dataclass
+from typing import Optional
+
 from gym.utils import colorize
 from simple_parsing import ArgumentParser, mutable_field
 
-sys.path.extend([".", ".."])
 from sequoia.common.config import Config
 from sequoia.common.config.trainer_config import TrainerConfig
 from sequoia.methods import register_method
-from sequoia.methods.aux_tasks import AuxiliaryTask
 from sequoia.methods.aux_tasks.ewc import EWCTask
 from sequoia.methods.baseline_method import BaselineMethod, BaselineModel
 from sequoia.settings import Setting, TaskIncrementalRLSetting
@@ -37,13 +35,7 @@ class EwcModel(BaselineModel):
     def __init__(self, setting: Setting, hparams: "EwcModel.HParams", config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
         self.hp: EwcModel.HParams
-
-    def create_auxiliary_tasks(self) -> Dict[str, AuxiliaryTask]:
-        tasks = super().create_auxiliary_tasks()
-        # NOTE: We don't add it here, since we already do this above in __init__.
-        # We could also add the aux tasks this way as well:
-        tasks["ewc"] = EWCTask(options=self.hp.ewc)
-        return tasks
+        self.add_auxiliary_task(EWCTask(options=self.hp.ewc))
 
     def get_loss(self, forward_pass, rewards=None, loss_name=""):
         return super().get_loss(forward_pass, rewards=rewards, loss_name=loss_name)

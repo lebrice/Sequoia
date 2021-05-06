@@ -47,8 +47,9 @@ def trainer_config(tmp_path_factory):
         default_root_dir=tmp_path,
     )
 
-@pytest.fixture()
-def config(tmp_path: Path):
+
+@pytest.fixture(scope="session")
+def config():
     # TODO: Set the results dir somehow with the value of this `tmp_path` fixture.
     return Config(debug=True, data_dir=Path(os.environ.get("SLURM_TMPDIR", "data")), seed=123)
 
@@ -290,4 +291,42 @@ def param_requires_atari_py(*args):
         not atari_py_installed,
         *args,
         reason="atari_py is required for this parameter.",
+    )
+
+
+try:
+    from mtenv import MTEnv
+    mtenv_installed = True
+except ImportError:
+    mtenv_installed = False
+
+mtenv_required = pytest.mark.skipif(
+    not mtenv_installed, reason="mtenv is required for this test."
+)
+
+
+def param_requires_mtenv(*args):
+    return skipif_param(
+        not mtenv_installed,
+        *args,
+        reason="mtenv is required for this parameter.",
+    )
+
+
+try:
+    from metaworld import MetaWorldEnv
+    metaworld_installed = True
+except ImportError:
+    metaworld_installed = False
+
+metaworld_required = pytest.mark.skipif(
+    not metaworld_installed, reason="metaworld is required for this test."
+)
+
+
+def param_requires_metaworld(*args):
+    return skipif_param(
+        not metaworld_installed,
+        *args,
+        reason="metaworld is required for this parameter.",
     )

@@ -179,25 +179,25 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]]):
         )
 
     def _online_performance_score(self) -> float:
-        # Function that takes the 'objective' of the Metrics from the average
-        # online performance, and returns a normalized float score between 0 and 1.
-        # TODO: Use the 'average of the averages' instead of the "true", sample-aware
-        # average.
+        """Function that takes the 'objective' of the Metrics from the average online
+        performance, and returns a normalized float score between 0 and 1.
+        """
         objectives: List[float] = [
             task_online_metric.objective
             for task_online_metric in self.online_performance_metrics
         ]
         return self._objective_scaling_factor * np.mean(objectives)
-        # return type(self).objective_scaling_factor * self.average_online_performance.objective
+        # return self._objective_scaling_factor * self.average_online_performance.objective
 
     def _final_performance_score(self) -> float:
-        # TODO: function that takes the 'objective' of the Metrics from the average
-        # final performance, and returns a normalized float score between 0 and 1.
+        """ Function that takes the 'objective' of the Metrics from the average
+        final performance, and returns a normalized float score between 0 and 1.
+        """
         objectives: List[float] = [
             task_metric.objective for task_metric in self.final_performance_metrics
         ]
         return self._objective_scaling_factor * np.mean(objectives)
-        # return type(self).objective_scaling_factor * self.average_final_performance.objective
+        # return self._objective_scaling_factor * self.average_final_performance.objective
 
     @property
     def objective(self) -> float:

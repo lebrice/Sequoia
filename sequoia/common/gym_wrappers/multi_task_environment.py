@@ -65,10 +65,19 @@ def _add_task_labels_to_tuple(observation: Tuple, task_labels: T) -> Tuple:
 
 
 @add_task_labels.register(spaces.Dict)
+def _add_task_labels_to_dict_space(
+    observation: spaces.Dict, task_labels: T
+) -> spaces.Dict:
+    assert "task_labels" not in observation.spaces
+    spaces = observation.spaces.copy()
+    spaces["task_labels"] = task_labels
+    return type(observation)(**spaces)
+
+
 @add_task_labels.register(dict)
 def _add_task_labels_to_dict(
-    observation: Union[Dict[str, V], spaces.Dict], task_labels: T
-) -> Union[Dict[str, Union[V, T]], spaces.Dict]:
+    observation: Dict[str, V], task_labels: T
+) -> Dict[str, Union[V, T]]:
     new: Dict[str, Union[V, T]] = {key: value for key, value in observation.items()}
     assert "task_labels" not in new
     new["task_labels"] = task_labels

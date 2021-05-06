@@ -17,9 +17,12 @@ from sequoia.settings.base import Results
 from sequoia.utils import mean
 from sequoia.utils.plotting import autolabel, plt
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
+from typing import Generic, TypeVar
+
+MetricType = TypeVar("MetricType", bound=EpisodeMetrics)
 
 
-class RLResults(IncrementalResults[EpisodeMetrics]):
+class RLResults(IncrementalResults, Generic[MetricType]):
     """ Results for a whole train loop (transfer matrix), in an RL Setting.
     """
     # Higher mean reward / episode => better
@@ -48,26 +51,3 @@ class RLResults(IncrementalResults[EpisodeMetrics]):
         axes.set_ylim(0, 1.0)
         autolabel(axes, rects)
         return figure
-
-    @property
-    def cl_score(self) -> float:
-        """ CL Score, as a weigted sum of three objectives:
-        - The average final performance over all tasks
-        - The average 'online' performance over all tasks
-        - Runtime
-
-        TODO: @optimass Determine the weights for each factor.
-
-        Returns
-        -------
-        float
-            [description]
-        """
-        # TODO: Determine the function to use to get a runtime score between 0 and 1.
-        # TODO: Add a property on the Results, which is based on the environment used.
-        score = (
-            +0.25 * self._online_performance_score()
-            + 0.50 * self._final_performance_score()
-            + 0.25 * self._runtime_score()
-        )
-        return score

@@ -40,6 +40,23 @@ logger = get_logger(__file__)
 source_dir = Path(os.path.dirname(__file__))
 
 
+def get_method_names() -> Dict[str, Type[Method]]:
+    names_to_method_type: Dict[str, Type[Method]] = {}
+    for method_type in all_methods:
+        name = method_type.get_name()
+        if name not in names_to_method_type:
+            names_to_method_type[name] = method_type
+        else:
+            # Take out the existing entry and replace its key.
+            existing_entry = names_to_method_type.pop(name)
+            new_name = f"{existing_entry.get_family()}.{name}"
+            names_to_method_type[new_name] = existing_entry
+            # Put `new_method` in at the right key.
+            new_name = f"{method_type.get_family()}.{name}"
+            names_to_method_type[new_name] = method_type
+    return names_to_method_type
+
+
 @dataclass
 class Experiment(Parseable, Serializable):
     """ Applies a Method to an experimental Setting to obtain Results.
@@ -65,9 +82,7 @@ class Experiment(Parseable, Serializable):
 
     # Which experimental method to use. When left unset, will evaluate all
     # compatible methods on the provided setting.
-    method: Optional[Union[str, Method, Type[Method]]] = choice(
-        set(method.get_name() for method in all_methods), default=None,
-    )
+    method: Optional[Union[str, Method, Type[Method]]] = choice(get_method_names(), default=None)
 
     # All the other configuration options, which are independant of the choice
     # of Setting or of Method, go in this next dataclass here! For example,

@@ -9,34 +9,47 @@ from PIL import Image
 from sequoia.utils.logging_utils import get_logger
 from torch import Tensor
 from torch.nn.functional import interpolate
+from torchvision.transforms import InterpolationMode
 from torchvision.transforms import Resize as Resize_
 from torchvision.transforms import ToTensor as ToTensor_
 from torchvision.transforms import functional as F
 
-from .channels import (channels_first, channels_last, has_channels_first,
-                       has_channels_last)
+from .channels import (
+    channels_first,
+    channels_last,
+    has_channels_first,
+    has_channels_last,
+)
 from .transform import Img, Transform
 from sequoia.common.spaces import NamedTupleSpace, NamedTuple
 from sequoia.common.spaces.image import Image as ImageSpace
-from sequoia.common.gym_wrappers.convert_tensors import has_tensor_support, add_tensor_support
+from sequoia.common.gym_wrappers.convert_tensors import (
+    has_tensor_support,
+    add_tensor_support,
+)
 from collections.abc import Mapping
 from sequoia.settings.base import Observations
 from .utils import is_image
 
 logger = get_logger(__file__)
 
+
 @singledispatch
 def resize(x: Img, size: Tuple[int, ...], **kwargs) -> Img:
     """ Resizes a PIL.Image, a Tensor, ndarray, or a Box space. """
     raise NotImplementedError(f"Transform doesn't support input {x} of type {type(x)}")
 
+
 @resize.register
 def _(x: Image.Image, size: Tuple[int, ...], **kwargs) -> Image.Image:
     return F.resize(x, size, **kwargs)
 
+
 @resize.register(np.ndarray)
 @resize.register(Tensor)
-def _resize_array_or_tensor(x: np.ndarray, size: Tuple[int, ...], **kwargs) -> np.ndarray:
+def _resize_array_or_tensor(
+    x: np.ndarray, size: Tuple[int, ...], **kwargs
+) -> np.ndarray:
     """ TODO: This resizes numpy arrays by converting them to tensors and then
     using the `interpolate` function. There is for sure a more efficient way to
     do this.
@@ -51,9 +64,11 @@ def _resize_array_or_tensor(x: np.ndarray, size: Tuple[int, ...], **kwargs) -> n
     if has_channels_last(original):
         # Need to make it channels first (for interpolate to work).
         x = channels_first(x)
-                
-    assert has_channels_first(x), f"Image needs to have channels first (shape is {x.shape})"
-            
+
+    assert has_channels_first(
+        x
+    ), f"Image needs to have channels first (shape is {x.shape})"
+
     x = interpolate(x, size, mode="area")
     if isinstance(original, np.ndarray):
         x = x.numpy()
@@ -63,28 +78,39 @@ def _resize_array_or_tensor(x: np.ndarray, size: Tuple[int, ...], **kwargs) -> n
         x = channels_last(x)
     return x
 
+
 @resize.register
-def _resize_namedtuple_space(x: NamedTupleSpace, size: Tuple[int, ...], **kwargs) -> NamedTupleSpace:
+def _resize_namedtuple_space(
+    x: NamedTupleSpace, size: Tuple[int, ...], **kwargs
+) -> NamedTupleSpace:
     """ When presented with a NamedTupleSpace input, this transform will be
     applied to all 'Image' spaces.
     """
-    return type(x)(**{
-        key: resize(v, size, **kwargs) if isinstance(v, ImageSpace) else v
-        for key, v in x._spaces.items()
-    })
+    return type(x)(
+        **{
+            key: resize(v, size, **kwargs) if isinstance(v, ImageSpace) else v
+            for key, v in x._spaces.items()
+        }
+    )
+
 
 @resize.register(Mapping)
 def _resize_namedtuple(x: Dict, size: Tuple[int, ...], **kwargs) -> Dict:
     """ When presented with a NamedTupleSpace input, this transform will be
     applied to all 'Image' spaces.
     """
-    return type(x)(**{
-        key: resize(value, size, **kwargs) if is_image(value) else value
-        for key, value in x.items()
-    })
+    return type(x)(
+        **{
+            key: resize(value, size, **kwargs) if is_image(value) else value
+            for key, value in x.items()
+        }
+    )
+
 
 @resize.register(tuple)
-def _resize_image_shape(x: Tuple[int, ...], size: Tuple[int, ...], **kwargs) -> Tuple[int, ...]:
+def _resize_image_shape(
+    x: Tuple[int, ...], size: Tuple[int, ...], **kwargs
+) -> Tuple[int, ...]:
     """ Give the resized image shape, given the input shape. """
     new_shape: List[int] = list(size)
     if len(size) == 2:
@@ -121,11 +147,13 @@ def _resize_space(x: spaces.Box, size: Tuple[int, ...], **kwargs) -> spaces.Box:
         return add_tensor_support(new_space)
     return new_space
 
+
 class Resize(Resize_, Transform[Img, Img]):
-    def __init__(self, size: Tuple[int, ...], interpolation=Image.BILINEAR):
+    def __init__(self, size: Tuple[int, ...], interpolation=InterpolationMode.BILINEAR):
         super().__init__(size, interpolation)
         # self.size = size
         # self.interpolation = interpolation
+
     def __call__(self, img):
         # TODO: (@lebrice) Weirdly enough, it seems that even though we
         # implement forward below, and __call__ is supposed to just use

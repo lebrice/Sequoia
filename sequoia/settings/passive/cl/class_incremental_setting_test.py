@@ -1,26 +1,27 @@
-from pathlib import Path
+from sequoia.common.config import Config
+from sequoia.settings.assumptions.incremental_test import OtherDummyMethod
+import math
 
 import pytest
-from continuum import InstanceIncremental, ClassIncremental
+from continuum import ClassIncremental
 from gym.spaces import Discrete, Space
-from sequoia.common.gym_wrappers.convert_tensors import has_tensor_support
 from sequoia.common.spaces import Sparse
-from sequoia.methods import RandomBaselineMethod
-from sequoia.conftest import xfail_param
+from sequoia.conftest import xfail_param, skip_param
 
 from .class_incremental_setting import (
     ClassIncrementalSetting,
     base_observation_spaces,
-    reward_spaces,
+    base_reward_spaces,
 )
 
-# TODO: Add a fixture that specifies a data folder common to all tests.
 
+# TODO: Add a fixture that specifies a data folder common to all tests.
 @pytest.mark.parametrize(
     "dataset_name",
     [
         "mnist",
-        "synbols",
+        # "synbols",
+        skip_param("synbols", reason="Causes tests to hang for some reason?"),
         "cifar10",
         "cifar100",
         "fashionmnist",
@@ -45,7 +46,7 @@ def test_observation_spaces_match_dataset(dataset_name: str):
     dataset = dataset_class("data")
 
     observation_space = base_observation_spaces[dataset_name]
-    reward_space = reward_spaces[dataset_name]
+    reward_space = base_reward_spaces[dataset_name]
     for task_dataset in ClassIncremental(dataset, nb_tasks=1):
         first_item = task_dataset[0]
         x, t, y = first_item
@@ -58,20 +59,17 @@ def test_observation_spaces_match_dataset(dataset_name: str):
 def test_task_label_space(dataset_name: str):
     # dataset = ClassIncrementalSetting.available_datasets[dataset_name]
     nb_tasks = 2
-    setting = ClassIncrementalSetting(
-        dataset=dataset_name,
-        nb_tasks=nb_tasks,
-    )
+    setting = ClassIncrementalSetting(dataset=dataset_name, nb_tasks=nb_tasks,)
     task_label_space: Space = setting.observation_space.task_labels
     # TODO: Should the task label space be Sparse[Discrete]? or Discrete?
     assert task_label_space == Discrete(nb_tasks)
     assert setting.action_space == Discrete(setting.num_classes)
-    
+
     nb_tasks = 5
     setting.nb_tasks = nb_tasks
     assert setting.observation_space.task_labels == Discrete(nb_tasks)
     assert setting.action_space == Discrete(setting.num_classes)
-    
+
 
 @pytest.mark.parametrize("dataset_name", ["mnist"])
 def test_setting_obs_space_changes_when_transforms_change(dataset_name: str):
@@ -96,6 +94,7 @@ def test_setting_obs_space_changes_when_transforms_change(dataset_name: str):
     # TODO: Should the 'transforms' apply to ALL the environments, and the
     # train/valid/test transforms apply only to those envs?
     from sequoia.common.transforms import Transforms
+
     setting.transforms = [
         Transforms.to_tensor,
         Transforms.three_channels,
@@ -105,7 +104,6 @@ def test_setting_obs_space_changes_when_transforms_change(dataset_name: str):
     # When there are no transforms in setting.train_tansforms, the observation
     # space of the Setting and of the train dataloader are the same:
     train_env = setting.train_dataloader(batch_size=None, num_workers=None)
-    from gym.vector.utils import batch_space
     assert train_env.observation_space == setting.observation_space
 
     reset_obs = train_env.reset()
@@ -118,20 +116,20 @@ def test_setting_obs_space_changes_when_transforms_change(dataset_name: str):
     # When we add a transform to `setting.train_transforms` the observation
     # space of the Setting and of the train dataloader are different:
     setting.train_transforms = [Transforms.resize_64x64]
-    
+
     train_env = setting.train_dataloader(batch_size=None)
     assert train_env.observation_space.x.shape == (3, 64, 64)
     assert train_env.reset() in train_env.observation_space
 
     # The Setting's property didn't change:
     assert setting.observation_space.x.shape == (3, 32, 32)
-    ##
-    ##  ---------- Same tests for the val_environment --------------
-    ##
+    #
+    #  ---------- Same tests for the val_environment --------------
+    #
     val_env = setting.val_dataloader(batch_size=None)
     assert val_env.observation_space == setting.observation_space
     assert val_env.reset() in val_env.observation_space
-    
+
     # When we add a transform to `setting.val_transforms` the observation
     # space of the Setting and of the val dataloader are different:
     setting.val_transforms = [Transforms.resize_64x64]
@@ -139,9 +137,9 @@ def test_setting_obs_space_changes_when_transforms_change(dataset_name: str):
     assert val_env.observation_space != setting.observation_space
     assert val_env.observation_space.x.shape == (3, 64, 64)
     assert val_env.reset() in val_env.observation_space
-    ##
-    ##  ---------- Same tests for the test_environment --------------
-    ##
+    #
+    #  ---------- Same tests for the test_environment --------------
+    #
 
     with setting.test_dataloader(batch_size=None) as test_env:
         if setting.task_labels_at_test_time:
@@ -149,7 +147,7 @@ def test_setting_obs_space_changes_when_transforms_change(dataset_name: str):
         else:
             assert isinstance(test_env.observation_space["task_labels"], Sparse)
         assert test_env.reset() in test_env.observation_space
-    
+
     setting.test_transforms = [Transforms.resize_64x64]
     with setting.test_dataloader(batch_size=None) as test_env:
         # When we add a transform to `setting.test_transforms` the observation
@@ -165,6 +163,7 @@ def test_setting_obs_space_changes_when_transforms_change(dataset_name: str):
 def test_render():
     setting = ClassIncrementalSetting(dataset="mnist")
     import matplotlib.pyplot as plt
+
     plt.ion()
     for task_id in range(setting.nb_tasks):
         setting.current_task_id = task_id
@@ -180,3 +179,37 @@ def test_render():
 
 def test_class_incremental_random_baseline():
     pass
+
+
+def test_action_space_always_matches_obs_batch_size(config: Config):
+    """ Make sure that the batch size in the observations always matches the action
+    space provided to the `get_actions` method.
+
+    ALSO:
+    - Make sure that we get asked for actions for all the observations in the test set,
+      even when there is a shorter last batch.
+    - The total number of observations match the dataset size.
+    """
+    nb_tasks = 5
+    batch_size = 128
+    from sequoia.settings import TaskIncrementalSetting
+
+    # HUH why are we doing this here?
+    setting = TaskIncrementalSetting(
+        dataset="mnist",
+        nb_tasks=nb_tasks,
+        batch_size=batch_size,
+        num_workers=4,
+        monitor_training_performance=True,
+    )
+
+    # 10_000 examples in the test dataset of mnist.
+    total_samples = len(setting.test_dataloader().dataset)
+
+    method = OtherDummyMethod()
+    _ = setting.apply(method, config=config)
+
+    # Multiply by nb_tasks because the test loop is ran after each training task.
+    assert sum(method.batch_sizes) == total_samples * nb_tasks
+    assert len(method.batch_sizes) == math.ceil(total_samples / batch_size) * nb_tasks
+    assert set(method.batch_sizes) == {batch_size, total_samples % batch_size}
