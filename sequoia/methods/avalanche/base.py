@@ -155,7 +155,7 @@ class AvalancheMethod(
                 loss_metrics(minibatch=False, epoch=True, experience=True, stream=True),
             ]
             self.evaluator = EvaluationPlugin(
-                metrics, loggers=[InteractiveLogger(), wandb_logger],
+                *metrics, loggers=[InteractiveLogger(), wandb_logger]
             )
         else:
             self.evaluator = default_logger
