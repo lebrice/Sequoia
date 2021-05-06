@@ -213,7 +213,7 @@ class AvalancheMethod(
         ), "assume a classification problem for now."
         num_classes = setting.action_space.n
         if isinstance(self.model, nn.Module):
-            pass
+            return self.model
         elif self.model is SimpleMLP:
             return self.model(
                 input_size=input_dims,
