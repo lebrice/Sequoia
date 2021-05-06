@@ -5,9 +5,12 @@ from typing import ClassVar, Optional, Type, Union, Sequence
 import gym
 from avalanche.training.strategies import LwF, BaseStrategy
 from sequoia.methods import register_method
-from sequoia.settings.passive import (ClassIncrementalSetting,
-                                      PassiveEnvironment,
-                                      TaskIncrementalSetting)
+from sequoia.settings.passive import (
+    ClassIncrementalSetting,
+    PassiveEnvironment,
+    TaskIncrementalSetting,
+)
+from simple_parsing.helpers.hparams import uniform, categorical
 from torch.nn import Module
 from torch.optim.optimizer import Optimizer
 
@@ -16,50 +19,28 @@ from .base import AvalancheMethod
 
 @register_method
 @dataclass
-class LwFMethod(AvalancheMethod, target_setting=ClassIncrementalSetting):
+class LwFMethod(AvalancheMethod[LwF], target_setting=ClassIncrementalSetting):
     """ Learning without Forgetting strategy from Avalanche.
     See LwF plugin for details.
     This strategy does not use task identities.
+
+    See the parent class `AvalancheMethod` for the other hyper-parameters and methods.
     """
+
     # changing the 'name' in this case here, because the default name would be
     # 'lw_f'.
     name: ClassVar[str] = "lwf"
-
     # distillation hyperparameter. It can be either a float number or a list containing
     # alpha for each experience.
-    alpha: Union[float, Sequence[float]] = 0.1  # TODO: Figure out a good default value.
-
+    alpha: Union[float, Sequence[float]] = uniform(
+        1e-2, 1, default=1
+    )  # TODO: Check if the range makes sense.
     # softmax temperature for distillation
-    temperature: float = 0.5  # TODO: Figure out a good default value.
+    temperature: float = uniform(
+        1, 10, default=2
+    )  # TODO: Check if the range makes sense.
 
-    strategy_class: ClassVar[Type[BaseStrategy]] = LwF
-
-    def configure(self, setting: ClassIncrementalSetting) -> None:
-        super().configure(setting)
-
-    def create_cl_strategy(self, setting: ClassIncrementalSetting) -> LwF:
-        return super().create_cl_strategy(setting)
-
-    def create_model(self, setting: ClassIncrementalSetting) -> Module:
-        return super().create_model(setting)
-
-    def make_optimizer(self, **kwargs) -> Optimizer:
-        """ Creates the Optimizer object from the options. """
-        return super().make_optimizer(**kwargs)
-
-    def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
-        return super().fit(train_env=train_env, valid_env=valid_env)
-
-    def get_actions(
-        self, observations: TaskIncrementalSetting.Observations, action_space: gym.Space
-    ) -> TaskIncrementalSetting.Actions:
-        return super().get_actions(observations=observations, action_space=action_space)
-
-    def on_task_switch(self, task_id: Optional[int]) -> None:
-        # TODO: Figure out if it makes sense to use this at test time (no real need for)
-        # this at train time, except maybe in multi-task setting? Even then, not totally
-        # sure.
-        pass
+    strategy_class: ClassVar[Type[LwF]] = LwF
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ class GatherDataset(StrategyPlugin):
     """ IDEA: A Plugin that accumulates the tensors from the env to create a "proper"
     Dataset to be used by the plugins.
     """
+
     def __init__(self):
         self.train_xs: List[Tensor] = []
         self.train_ys: List[Tensor] = []
@@ -42,7 +43,7 @@ class GatherDataset(StrategyPlugin):
         self.train_ys.clear()
         self.train_ts.clear()
         return super().after_training_epoch(strategy, **kwargs)
-    
+
     def after_eval_forward(self, strategy, **kwargs):
         x, y, t = strategy.mb_x, strategy.mb_task_id, strategy.mb_y
         self.eval_xs.append(x)

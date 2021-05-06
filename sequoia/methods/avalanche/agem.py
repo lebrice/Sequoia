@@ -1,8 +1,14 @@
-""" AGEM Method from Avalanche. """
+""" AGEM Method from Avalanche.
+
+See the Avalanche repo for more info: https://github.com/ContinualAI/avalanche
+"""
 from dataclasses import dataclass
 from typing import ClassVar, Type
 
+from simple_parsing import ArgumentParser
+from simple_parsing.helpers.hparams import uniform
 from avalanche.training.strategies import AGEM, BaseStrategy
+
 from sequoia.methods import register_method
 from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
 
@@ -20,16 +26,14 @@ class AGEMMethod(AvalancheMethod[AGEM], target_setting=ClassIncrementalSetting):
     """
 
     # number of patterns per experience in the memory
-    patterns_per_exp: int = 100
+    patterns_per_exp: int = uniform(10, 1000, default=100)
     # number of patterns in memory sample when computing reference gradient.
-    sample_size: int = 64
+    sample_size: int = uniform(16, 256, default=64)
 
     strategy_class: ClassVar[Type[BaseStrategy]] = AGEM
 
 
 if __name__ == "__main__":
-    from simple_parsing import ArgumentParser
-
     setting = TaskIncrementalSetting(
         dataset="mnist", nb_tasks=5, monitor_training_performance=True
     )

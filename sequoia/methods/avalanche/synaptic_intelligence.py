@@ -1,22 +1,22 @@
 """ SynapticIntelligence Method from Avalanche. """
 from dataclasses import dataclass
-from typing import ClassVar, Optional, Type
+from typing import ClassVar, Type
 
-import gym
-from avalanche.training.strategies import SynapticIntelligence, BaseStrategy
 from sequoia.methods import register_method
-from sequoia.settings.passive import (ClassIncrementalSetting,
-                                      PassiveEnvironment,
-                                      TaskIncrementalSetting)
-from torch.nn import Module
-from torch.optim.optimizer import Optimizer
+from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
+from simple_parsing import ArgumentParser
+from simple_parsing.helpers.hparams import uniform
+
+from avalanche.training.strategies import BaseStrategy, SynapticIntelligence
 
 from .base import AvalancheMethod
 
 
 @register_method
 @dataclass
-class SynapticIntelligenceMethod(AvalancheMethod, target_setting=ClassIncrementalSetting):
+class SynapticIntelligenceMethod(
+    AvalancheMethod[SynapticIntelligence], target_setting=ClassIncrementalSetting
+):
     """ The Synaptic Intelligence strategy from Avalanche.
 
     This is the Synaptic Intelligence PyTorch implementation of the
@@ -30,42 +30,17 @@ class SynapticIntelligenceMethod(AvalancheMethod, target_setting=ClassIncrementa
 
     The Synaptic Intelligence regularization can also be used in a different
     strategy by applying the :class:`SynapticIntelligencePlugin` plugin.
+
+    See the parent class `AvalancheMethod` for the other hyper-parameters and methods.
     """
-    # Synaptic Intelligence lambda term. (TODO: Find the right default value for this)
-    si_lambda: float = 0.5
+
+    # Synaptic Intelligence lambda term.
+    si_lambda: float = uniform(1e-2, 1.0, default=0.5)  # TODO: Check the range.
 
     strategy_class: ClassVar[Type[BaseStrategy]] = SynapticIntelligence
 
-    def configure(self, setting: ClassIncrementalSetting) -> None:
-        super().configure(setting)
-
-    def create_cl_strategy(self, setting: ClassIncrementalSetting) -> SynapticIntelligence:
-        return super().create_cl_strategy(setting)
-
-    def create_model(self, setting: ClassIncrementalSetting) -> Module:
-        return super().create_model(setting)
-
-    def make_optimizer(self, **kwargs) -> Optimizer:
-        """ Creates the Optimizer object from the options. """
-        return super().make_optimizer(**kwargs)
-
-    def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
-        return super().fit(train_env=train_env, valid_env=valid_env)
-
-    def get_actions(
-        self, observations: TaskIncrementalSetting.Observations, action_space: gym.Space
-    ) -> TaskIncrementalSetting.Actions:
-        return super().get_actions(observations=observations, action_space=action_space)
-
-    def on_task_switch(self, task_id: Optional[int]) -> None:
-        # TODO: Figure out if it makes sense to use this at test time (no real need for)
-        # this at train time, except maybe in multi-task setting? Even then, not totally
-        # sure.
-        pass
-
 
 if __name__ == "__main__":
-    from simple_parsing import ArgumentParser
 
     setting = TaskIncrementalSetting(
         dataset="mnist", nb_tasks=5, monitor_training_performance=True

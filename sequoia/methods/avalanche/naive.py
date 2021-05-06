@@ -14,6 +14,8 @@ class NaiveMethod(AvalancheMethod[Naive]):
 
     Naive is easy to set up and its results are commonly used to show the worst
     performing baseline.
+
+    See the parent class `AvalancheMethod` for the other hyper-parameters and methods.
     """
 
     strategy_class: ClassVar[Type[BaseStrategy]] = Naive

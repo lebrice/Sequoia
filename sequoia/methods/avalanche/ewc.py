@@ -2,24 +2,19 @@
 from dataclasses import dataclass
 from typing import ClassVar, Optional, Type
 
+from simple_parsing import ArgumentParser
+from simple_parsing.helpers.hparams import categorical, uniform
+from avalanche.training.strategies import EWC, BaseStrategy
+
 from sequoia.methods import register_method
 from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
-
-from avalanche.evaluation.metrics import (
-    accuracy_metrics,
-    forgetting_metrics,
-    loss_metrics,
-)
-from avalanche.logging import InteractiveLogger
-from avalanche.training import EvaluationPlugin
-from avalanche.training.strategies import EWC, BaseStrategy
 
 from .base import AvalancheMethod
 
 
 @register_method
 @dataclass
-class EWCMethod(AvalancheMethod, target_setting=ClassIncrementalSetting):
+class EWCMethod(AvalancheMethod[EWC], target_setting=ClassIncrementalSetting):
     """
     Elastic Weight Consolidation (EWC) strategy from Avalanche.
     See EWC plugin for details.
@@ -32,30 +27,25 @@ class EWCMethod(AvalancheMethod, target_setting=ClassIncrementalSetting):
 
     # Hyperparameter to weigh the penalty inside the total loss. The larger the lambda,
     # the larger the regularization.
-    ewc_lambda: float = 0.1  # todo: set the right value to use here.
+    ewc_lambda: float = uniform(
+        1e-3, 1.0, default=0.1
+    )  # todo: set the right value to use here.
     # `separate` to keep a separate penalty for each previous experience. `onlinesum`
     # to keep a single penalty summed over all previous tasks. `onlineweightedsum` to
     # keep a single penalty summed with a decay factor over all previous tasks.
-    mode: str = "separate"
+    mode: str = categorical(
+        "separate", "onlinesum", "onlineweightedsum", default="separate"
+    )
     # Used only if mode is `onlineweightedsum`. It specify the decay term of the
     # importance matrix.
     decay_factor: Optional[float] = None
     # if True, keep in memory both parameter values and importances for all previous
     # task, for all modes. If False, keep only last parameter values and importances. If
     # mode is `separate`, the value of `keep_importance_data` is set to be True.
-    keep_importance_data: bool = False
-
-    # Taking this from the ewc_mnist tutorial from avalanche repo.
-    evaluator: EvaluationPlugin = EvaluationPlugin(
-        accuracy_metrics(minibatch=True, epoch=True, experience=True, stream=True),
-        loss_metrics(minibatch=True, epoch=True, experience=True, stream=True),
-        forgetting_metrics(experience=True),
-        loggers=[InteractiveLogger()],
-    )
+    keep_importance_data: bool = categorical(True, False, default=False)
 
 
 if __name__ == "__main__":
-    from simple_parsing import ArgumentParser
 
     setting = TaskIncrementalSetting(
         dataset="mnist", nb_tasks=5, monitor_training_performance=True

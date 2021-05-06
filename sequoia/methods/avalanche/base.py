@@ -1,3 +1,7 @@
+""" Adapter for the `BaseStrategy` from Avalanche, wrapping it up into a Sequoia Method.
+
+See the Avalanche repo for more info: https://github.com/ContinualAI/avalanche
+"""
 import inspect
 import warnings
 from dataclasses import dataclass, fields
@@ -9,20 +13,9 @@ import tqdm
 from gym import spaces
 from gym.spaces.utils import flatdim
 from gym.utils import colorize
-from sequoia.common.spaces import Image
-from sequoia.methods import Method
-from sequoia.settings.passive import (
-    ClassIncrementalSetting,
-    PassiveEnvironment,
-    PassiveSetting,
-)
-from sequoia.settings.passive.cl.class_incremental_setting import (
-    ClassIncrementalTestEnvironment,
-)
-from sequoia.settings.passive.cl.objects import Actions, Observations, Rewards
 from simple_parsing.helpers import choice
 from simple_parsing.helpers.hparams import HyperParameters, log_uniform, uniform
-from torch import Tensor, nn, optim
+from torch import nn, optim
 from torch.nn import Module
 from torch.optim import SGD
 from torch.optim.optimizer import Optimizer
@@ -34,19 +27,34 @@ from avalanche.evaluation.metrics import (
     loss_metrics,
 )
 from avalanche.logging import InteractiveLogger
+from avalanche.logging.wandb_logger import WandBLogger as _WandBLogger
 from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
 from avalanche.models.utils import avalanche_forward
-from avalanche.training import EvaluationPlugin
 from avalanche.training.plugins import EvaluationPlugin, StrategyPlugin
 from avalanche.training.strategies import BaseStrategy
 from avalanche.training.strategies.strategy_wrappers import default_logger
 
+from sequoia.common.spaces import Image
+from sequoia.methods import Method
+from sequoia.settings.passive import (
+    ClassIncrementalSetting,
+    PassiveEnvironment,
+    PassiveSetting,
+)
+from sequoia.settings.passive.cl.class_incremental_setting import (
+    ClassIncrementalTestEnvironment,
+)
+from sequoia.settings.passive.cl.objects import Actions, Observations, Rewards
+from sequoia.utils import get_logger
+
 from .experience import SequoiaExperience
+
+logger = get_logger(__file__)
 
 StrategyType = TypeVar("StrategyType", bound=BaseStrategy)
 
+
 # "Patch" for the WandbLogger of Avalanche
-from avalanche.logging.wandb_logger import WandBLogger as _WandBLogger
 
 
 class WandBLogger(_WandBLogger):
@@ -140,6 +148,8 @@ class AvalancheMethod(
         # Count the number of calls to `configure`. (useful when running sweeps, as we
         # reuse the Method instance.)
         self._n_configures: int = 0
+        self.setting: ClassIncrementalSetting
+        self.cl_strategy: StrategyType
 
     def configure(self, setting: ClassIncrementalSetting) -> None:
         self.setting = setting
@@ -212,6 +222,18 @@ class AvalancheMethod(
         return self.strategy_class(**cl_strategy_kwargs)
 
     def create_model(self, setting: ClassIncrementalSetting) -> Module:
+        """Create the Model for the setting.
+
+        Parameters
+        ----------
+        setting : ClassIncrementalSetting
+            The Setting on which this Method will be applied.
+
+        Returns
+        -------
+        Module
+            The Model to be used, which will be passed to the Strategy constructor.
+        """
         image_space: Image = setting.observation_space.x
         input_dims = flatdim(image_space)
         assert isinstance(
@@ -221,7 +243,7 @@ class AvalancheMethod(
 
         if isinstance(self.model, nn.Module):
             if self._n_configures > 0:
-                logger.info(f"Resetting the model, since this isn't the first run.")
+                logger.info("Resetting the model, since this isn't the first run.")
                 self.model = type(self.model)
                 self._n_configures += 1
             else:
