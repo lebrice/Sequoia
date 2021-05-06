@@ -135,6 +135,12 @@ class AvalancheMethod(
     # Number of workers of the dataloader. Defaults to 4.
     num_workers: int = 4
 
+    def __post_init__(self):
+        super().__post_init__()
+        # Count the number of calls to `configure`. (useful when running sweeps, as we
+        # reuse the Method instance.)
+        self._n_configures: int = 0
+
     def configure(self, setting: ClassIncrementalSetting) -> None:
         self.setting = setting
         self.model = self.create_model(setting).to(self.device)
@@ -212,21 +218,29 @@ class AvalancheMethod(
             setting.action_space, spaces.Discrete
         ), "assume a classification problem for now."
         num_classes = setting.action_space.n
+
         if isinstance(self.model, nn.Module):
-            return self.model
-        elif self.model is SimpleMLP:
+            if self._n_configures > 0:
+                logger.info(f"Resetting the model, since this isn't the first run.")
+                self.model = type(self.model)
+                self._n_configures += 1
+            else:
+                logger.info(f"Using model {self.model}.")
+                return self.model
+
+        if self.model is SimpleMLP:
             return self.model(
                 input_size=input_dims,
                 hidden_size=self.hidden_size,
                 num_classes=num_classes,
             )
-        elif self.model is MTSimpleMLP:
+        if self.model is MTSimpleMLP:
             return self.model(input_size=input_dims, hidden_size=self.hidden_size)
-        elif self.model is SimpleCNN:
+        if self.model is SimpleCNN:
             return self.model(num_classes=num_classes)
-        else:
-            # These other models (MTSimpleCNN) don't seem to take any kwargs.
-            return self.model()
+        # self.model is most probably a type of nn.Module, so we instantiate it.
+        # These other models (MTSimpleCNN) don't seem to take any kwargs.
+        return self.model()
 
     def make_optimizer(self) -> Optimizer:
         """ Creates the Optimizer. """
