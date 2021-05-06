@@ -79,6 +79,7 @@ VOLUME /mnt/results
 
 ENV DATA_DIR=/mnt/data
 ENV RESULTS_DIR=/mnt/results
+ENV WANDB_DIR=/mnt/results
 
 # VOLUME /mnt/home
 # WORKDIR /mnt/home
