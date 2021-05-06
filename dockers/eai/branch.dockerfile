@@ -1,4 +1,6 @@
 FROM lebrice/sequoia:eai_base
+USER toolkit
+SHELL [ "conda", "run", "-n", "base", "/bin/bash", "-c"]
 ARG BRANCH=master
 RUN git fetch -p
 RUN git checkout ${BRANCH} && pip install -e .[monsterkong,hpo,avalanche]
