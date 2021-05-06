@@ -46,7 +46,7 @@ RUN chmod -R 775 /workspace
 RUN adduser toolkit sudo
 RUN chown -R toolkit:root /mnt/
 # RUN mkdir -p /mnt/home
-# RUN chmod 775 /opt/conda
+RUN chmod 777 /opt/conda
 SHELL [ "conda", "run", "-n", "base", "/bin/bash", "-c"]
 
 ## Unused zshell and oh-my-zsh stuff:
