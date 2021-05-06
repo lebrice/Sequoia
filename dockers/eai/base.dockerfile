@@ -47,6 +47,8 @@ RUN adduser toolkit sudo
 RUN chown -R toolkit:root /mnt/
 # RUN mkdir -p /mnt/home
 RUN chmod 777 /opt/conda
+RUN chmod 777 /mnt
+RUN chmod -R 777 /workspace
 SHELL [ "conda", "run", "-n", "base", "/bin/bash", "-c"]
 
 ## Unused zshell and oh-my-zsh stuff:
@@ -76,7 +78,7 @@ COPY .netrc /home/toolkit/.netrc
 
 VOLUME /mnt/data
 VOLUME /mnt/results
-USER toolkit
+# USER toolkit
 
 ENV DATA_DIR=/mnt/data
 ENV RESULTS_DIR=/mnt/results
