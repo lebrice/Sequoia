@@ -20,6 +20,7 @@ class GDumbMethod(AvalancheMethod[GDumb], target_setting=ClassIncrementalSetting
 
     See the parent class `AvalancheMethod` for the other hyper-parameters and methods.
     """
+    name: ClassVar[str] = "gdumb"
 
     # replay buffer size.
     mem_size: int = uniform(100, 1_000, default=200)
