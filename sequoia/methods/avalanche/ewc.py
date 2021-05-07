@@ -30,12 +30,9 @@ class EWCMethod(AvalancheMethod[EWC], target_setting=ClassIncrementalSetting):
     ewc_lambda: float = uniform(
         1e-3, 1.0, default=0.1
     )  # todo: set the right value to use here.
-    # `separate` to keep a separate penalty for each previous experience. `onlinesum`
-    # to keep a single penalty summed over all previous tasks. `onlineweightedsum` to
+    # `separate` to keep a separate penalty for each previous experience. `online` to
     # keep a single penalty summed with a decay factor over all previous tasks.
-    mode: str = categorical(
-        "separate", "onlinesum", "onlineweightedsum", default="separate"
-    )
+    mode: str = categorical("separate", "online", default="separate")
     # Used only if mode is `onlineweightedsum`. It specify the decay term of the
     # importance matrix.
     decay_factor: Optional[float] = None
