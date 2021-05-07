@@ -1,5 +1,6 @@
 from setuptools import setup, find_packages
 import os
+from pathlib import Path
 import versioneer
 with open(os.path.join(os.path.dirname(__file__), "requirements.txt"), "r") as file:
     lines = [ln.strip() for ln in file.readlines()]
@@ -12,6 +13,7 @@ for ln in lines:
     if ln:  # if requirement is not empty
         packages_pip.append(ln)
 
+SOURCE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 packages_git = []
 
 setup(
@@ -41,6 +43,9 @@ setup(
         "avalanche": [
             "avalanche @ git+https://github.com/ContinualAI/avalanche.git#egg=avalanche"
         ],
+        # TODO: (@lebrice) need to figure out a way to install cn-dpm correctly through pip, in
+        # editable mode.
+        # "cn_dpm": f"cn_dpm @ file://{SOURCE_DIR}/sequoia/methods/cn_dpm",
     },
     install_requires=packages_pip,
     dependency_links=packages_git,
