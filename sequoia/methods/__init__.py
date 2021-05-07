@@ -70,6 +70,11 @@ try:
 except ImportError:
     pass
 
+try:
+    from .cn_dpm import *
+except ImportError:
+    pass
+
 
 try:
     from .stable_baselines3_methods import *
