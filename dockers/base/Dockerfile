@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM pytorch/pytorch:1.8.1-cuda11.1-cudnn8-runtime as sequoia_eai_base
+FROM pytorch/pytorch:1.8.1-cuda11.1-cudnn8-runtime
 USER root
 EXPOSE 2222
 EXPOSE 6000
@@ -73,10 +73,11 @@ RUN mkdir /workspace/tools
 # ENV LD_LIBRARY_PATH /home/toolkit/.mujoco/mjpro150/bin:${LD_LIBRARY_PATH}
 # RUN cd /workspace/tools && git clone https://github.com/openai/mujoco-py.git && pip install -e mujoco-py
 
-# For Wandb
-COPY .netrc /home/toolkit/.netrc
-COPY .netrc /root/.netrc
-COPY .netrc /tmp/.netrc
+# For Wandb (TODO: Doesn't appear to work, using env variable with WANDB_API_KEY
+# instead.)
+# COPY .netrc /home/toolkit/.netrc
+# COPY .netrc /root/.netrc
+# COPY .netrc /tmp/.netrc
 
 VOLUME /mnt/data
 VOLUME /mnt/results

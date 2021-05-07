@@ -1,4 +1,5 @@
-FROM lebrice/sequoia:eai_base
+# syntax=docker/dockerfile:1
+FROM lebrice/sequoia:base
 USER root
 SHELL [ "conda", "run", "-n", "base", "/bin/bash", "-c"]
 ARG BRANCH=master
