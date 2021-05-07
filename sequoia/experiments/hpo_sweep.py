@@ -111,7 +111,7 @@ class HPOSweep(Experiment):
             argv = shlex.split(argv)
         _ = argv.copy()
 
-        experiment: Experiment
+        experiment: HPOSweep
         experiment, argv = cls.from_known_args(argv)
 
         setting: Optional[Type[Setting]] = experiment.setting
