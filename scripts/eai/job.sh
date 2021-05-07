@@ -2,7 +2,7 @@
 set -o errexit    # Used to exit upon error, avoiding cascading errors
 set -o errtrace    # Show error trace
 set -o pipefail   # Unveils hidden failures
-set -o nounset    # Exposes unset variables
+# set -o nounset    # Exposes unset variables
 
 # Get organization name
 ORG_NAME=$(eai organization get --field name)
@@ -16,12 +16,17 @@ CURRENT_BRANCH="`git branch --show-current`"
 BRANCH=${BRANCH:-$CURRENT_BRANCH}
 echo "Building container for branch $BRANCH"
 
-source dockers/branch/build.sh
-docker tag sequoia:$BRANCH $EAI_Registry/sequoia:$BRANCH
-docker push $EAI_Registry/sequoia:$BRANCH
+if [ "$NO_BUILD" ]; then
+    echo "skipping build."
+else
+    echo "building"
+    source dockers/branch/build.sh
+    docker tag sequoia:$BRANCH $EAI_Registry/sequoia:$BRANCH
+    docker push $EAI_Registry/sequoia:$BRANCH
+fi
 
 eai job submit \
-    --non-preemptable \
+    --restarteable \
     --data $ACCOUNT_ID.home:/mnt/home \
     --data $ACCOUNT_ID.data:/mnt/data \
     --data $ACCOUNT_ID.results:/mnt/results \

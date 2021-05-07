@@ -25,6 +25,6 @@ docker build . --file dockers/branch/Dockerfile \
     --tag sequoia:$BRANCH
 
 DockerHub_Registry=`docker info | sed '/Username:/!d;s/.* //'`
-echo f"Using docker registry for user $DockerHub_Registry"
+echo "Using docker registry for user $DockerHub_Registry"
 docker tag sequoia:$BRANCH $DockerHub_Registry/sequoia:$BRANCH
 docker push $DockerHub_Registry/sequoia:$BRANCH

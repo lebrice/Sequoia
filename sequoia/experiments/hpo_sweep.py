@@ -127,8 +127,6 @@ class HPOSweep(Experiment):
 
 def main():
     HPOSweep.main()
-    # Need to exit with code `0` for this run to be considered a success on EAI toolkit.
-    exit(0)
 
 
 if __name__ == "__main__":
