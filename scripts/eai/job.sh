@@ -26,7 +26,7 @@ else
 fi
 
 eai job submit \
-    --restarteable \
+    --restartable \
     --data $ACCOUNT_ID.home:/mnt/home \
     --data $ACCOUNT_ID.data:/mnt/data \
     --data $ACCOUNT_ID.results:/mnt/results \
