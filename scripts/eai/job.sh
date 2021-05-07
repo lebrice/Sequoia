@@ -17,6 +17,8 @@ BRANCH=${BRANCH:-$CURRENT_BRANCH}
 echo "Building container for branch $BRANCH"
 
 source dockers/branch/build.sh
+docker tag sequoia:$BRANCH $EAI_Registry/sequoia:$BRANCH
+docker push $EAI_Registry/sequoia:$BRANCH
 
 eai job submit \
     --non-preemptable \
