@@ -115,11 +115,11 @@ class AvalancheMethod(
     criterion: Union[Module, Type[Module]] = choice(
         available_criterions, default=nn.CrossEntropyLoss
     )
-    # The train minibatch size. Defaults to 1.
+    # The train minibatch size.
     train_mb_size: int = uniform(1, 2048, default=64)
-    # The number of training epochs. Defaults to 1.
+    # The number of training epochs.
     train_epochs: int = uniform(1, 100, default=5)
-    # The eval minibatch size. Defaults to 1.
+    # The eval minibatch size.
     eval_mb_size: int = 1
     #  The device to use. Defaults to None (cpu).
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
