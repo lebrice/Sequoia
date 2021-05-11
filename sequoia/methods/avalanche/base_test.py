@@ -18,21 +18,37 @@ from .base import AvalancheMethod
 from .experience import SequoiaExperience
 
 
-class TestAvalancheMethod:
+class _TestAvalancheMethod:
     Method: ClassVar[Type[AvalancheMethod]] = AvalancheMethod
+
+    # Names of (hyper-)parameters which are allowed to have a different default value in
+    # Sequoia compared to their implementations in Avalanche.
+    ignored_parameter_differences: ClassVar[List[str]] = [
+        "device",
+        "eval_mb_size",
+        "criterion",
+        "train_mb_size",
+        "train_epochs",
+        "evaluator",
+    ]
 
     def test_hparams_have_same_defaults_as_in_avalanche(self):
         strategy_type: Type[BaseStrategy] = self.Method.strategy_class
         method = self.Method()
         strategy_constructor: Signature = inspect.signature(strategy_type.__init__)
         strategy_init_params = strategy_constructor.parameters
+
+        # TODO: Use the plugin constructor as the reference, rather than the Strategy
+        # constructor.
+        # plugin_constructor
+
         for parameter_name, parameter in strategy_init_params.items():
             if parameter.default is _empty:
                 continue
             assert hasattr(method, parameter_name)
             method_value = getattr(method, parameter_name)
             # Ignore mismatches in some parameters, like `device`.
-            if parameter_name in ["device", "eval_mb_size", "criterion"]:
+            if parameter_name in self.ignored_parameter_differences:
                 continue
 
             assert method_value == parameter.default, (
