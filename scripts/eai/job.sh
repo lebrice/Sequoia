@@ -22,6 +22,8 @@ if [ "$NO_BUILD" ]; then
     echo "skipping build."
 else
     echo "building"
+    # TODO: There is something wrong here: How can they possibly build their job, if
+    # they don't have the eai dockerfile?
     source dockers/eai/build.sh
 fi
 
@@ -35,5 +37,5 @@ eai job submit \
     --data $ACCOUNT_ID.results:/mnt/results \
     --env WANDB_API_KEY="$WANDB_API_KEY" \
     --image $EAI_Registry/sequoia_eai:$BRANCH \
-    --gpu 1 --cpu 8 --mem 12 --gpu-mem 12 \
+    --gpu 1 --cpu 8 --mem 12 --gpu-model-filter 12gb \
     -- "$@"
