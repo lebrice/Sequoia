@@ -3,9 +3,11 @@
 See `avalanche.training.strategies.Naive` for more info.
 """
 from typing import ClassVar, Type
+
 from avalanche.training.strategies import BaseStrategy, Naive
 
 from sequoia.settings.passive import TaskIncrementalSetting
+
 from .base import AvalancheMethod
 
 

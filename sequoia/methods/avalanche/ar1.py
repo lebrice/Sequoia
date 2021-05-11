@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from typing import ClassVar, Type
 
 from avalanche.training.strategies import AR1, BaseStrategy
-from sequoia.methods import register_method
-from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
 from simple_parsing.helpers.hparams import uniform, log_uniform
 
+from sequoia.methods import register_method
+from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
 from .base import AvalancheMethod
 
 

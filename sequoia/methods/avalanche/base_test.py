@@ -4,15 +4,15 @@ from typing import ClassVar, List, Optional, Type
 
 import pytest
 import tqdm
+from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
+from avalanche.models.utils import avalanche_forward
+from avalanche.training.strategies import BaseStrategy
+from torch.nn import Module
+
 from sequoia.common.config import Config
 from sequoia.conftest import xfail_param
 from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
 from sequoia.settings.passive.cl.objects import Observations, Rewards
-from torch.nn import Module
-
-from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
-from avalanche.models.utils import avalanche_forward
-from avalanche.training.strategies import BaseStrategy
 
 from .base import AvalancheMethod
 from .experience import SequoiaExperience
