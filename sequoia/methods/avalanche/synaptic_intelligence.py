@@ -1,13 +1,17 @@
-""" SynapticIntelligence Method from Avalanche. """
+""" Method based on SynapticIntelligence from [Avalanche](https://github.com/ContinualAI/avalanche).
+
+See `avalanche.training.plugins.synaptic_intelligence.SynapticIntelligencePlugin` or
+`avalanche.training.strategies.strategy_wrappers.SynapticIntelligence` for more info.
+"""
 from dataclasses import dataclass
 from typing import ClassVar, Type
 
-from sequoia.methods import register_method
-from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
+from avalanche.training.strategies import BaseStrategy, SynapticIntelligence
 from simple_parsing import ArgumentParser
 from simple_parsing.helpers.hparams import uniform
 
-from avalanche.training.strategies import BaseStrategy, SynapticIntelligence
+from sequoia.methods import register_method
+from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
 
 from .base import AvalancheMethod
 

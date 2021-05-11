@@ -1,4 +1,8 @@
-""" Replay Method from Avalanche. """
+""" Method based on Replay from [Avalanche](https://github.com/ContinualAI/avalanche).
+
+See `avalanche.training.plugins.replay.ReplayPlugin` or
+`avalanche.training.strategies.strategy_wrappers.Replay` for more info.
+"""
 from dataclasses import dataclass
 from typing import ClassVar, Type
 

@@ -1,4 +1,8 @@
-""" EWC Method from Avalanche. """
+""" Method based on EWC from [Avalanche](https://github.com/ContinualAI/avalanche).
+
+See `avalanche.training.plugins.ewc.EWCPlugin` or
+`avalanche.training.strategies.strategy_wrappers.EWC` for more info.
+"""
 from dataclasses import dataclass
 from typing import ClassVar, Optional, Type
 

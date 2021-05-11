@@ -1,4 +1,7 @@
-""" AR1 Method from Avalanche. """
+""" Method based on AR1 from [Avalanche](https://github.com/ContinualAI/avalanche).
+
+See `avalanche.training.strategies.ar1.AR1` for more info.
+"""
 from dataclasses import dataclass
 from typing import ClassVar, Type
 

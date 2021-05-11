@@ -1,6 +1,7 @@
-""" AGEM Method from Avalanche.
+""" Method based on AGEM from [Avalanche](https://github.com/ContinualAI/avalanche).
 
-See the Avalanche repo for more info: https://github.com/ContinualAI/avalanche
+See `avalanche.training.plugins.agem.AGEMPlugin` or
+`avalanche.training.strategies.strategy_wrappers.AGEM` for more info.
 """
 from dataclasses import dataclass
 from typing import ClassVar, Type

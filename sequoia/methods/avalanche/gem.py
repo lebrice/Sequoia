@@ -1,4 +1,8 @@
-""" GEM Method from Avalanche. """
+""" Method based on GEM from [Avalanche](https://github.com/ContinualAI/avalanche).
+
+See `avalanche.training.plugins.gem.GEMPlugin` or
+`avalanche.training.strategies.strategy_wrappers.GEM` for more info.
+"""
 from dataclasses import dataclass
 from typing import ClassVar, Type
 

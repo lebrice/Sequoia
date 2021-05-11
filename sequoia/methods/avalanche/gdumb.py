@@ -1,4 +1,11 @@
-""" EWC Method from Avalanche. """
+""" Method based on GDumb from [Avalanche](https://github.com/ContinualAI/avalanche).
+
+See `avalanche.training.plugins.gdumb.GDumbPlugin` or
+`avalanche.training.strategies.strategy_wrappers.GDumb` for more info.
+
+BUG: There appears to be a bug in the GDumb plugin, caused by a mismatch in the tensor
+shapes when concatenating them into a TensorDataset, when batch size > 1.
+"""
 from dataclasses import dataclass
 from typing import ClassVar, Type
 

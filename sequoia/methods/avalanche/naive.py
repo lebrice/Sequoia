@@ -1,11 +1,16 @@
-from .base import AvalancheMethod
-from avalanche.training.strategies import Naive, BaseStrategy
+""" 'Naive' method from [Avalanche](https://github.com/ContinualAI/avalanche).
+
+See `avalanche.training.strategies.Naive` for more info.
+"""
 from typing import ClassVar, Type
+from avalanche.training.strategies import BaseStrategy, Naive
+
 from sequoia.settings.passive import TaskIncrementalSetting
+from .base import AvalancheMethod
 
 
 class NaiveMethod(AvalancheMethod[Naive]):
-    """ 'Naive' Strategy from Avalanche.
+    """ 'Naive' Strategy from [Avalanche](https://github.com/ContinualAI/avalanche).
 
     The simplest (and least effective) Continual Learning strategy. Naive just
     incrementally fine tunes a single model without employing any method

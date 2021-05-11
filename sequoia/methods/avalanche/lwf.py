@@ -1,18 +1,16 @@
-""" LwF Method from Avalanche. """
-from dataclasses import dataclass
-from typing import ClassVar, Optional, Type, Union, Sequence
+""" Method based on LwF from [Avalanche](https://github.com/ContinualAI/avalanche).
 
-import gym
-from avalanche.training.strategies import LwF, BaseStrategy
+See `avalanche.training.plugins.lwf.LwFPlugin` or
+`avalanche.training.strategies.strategy_wrappers.LwF` for more info.
+"""
+from dataclasses import dataclass
+from typing import ClassVar, Sequence, Type, Union
+
+from simple_parsing.helpers.hparams import uniform
+from avalanche.training.strategies import LwF
+
 from sequoia.methods import register_method
-from sequoia.settings.passive import (
-    ClassIncrementalSetting,
-    PassiveEnvironment,
-    TaskIncrementalSetting,
-)
-from simple_parsing.helpers.hparams import uniform, categorical
-from torch.nn import Module
-from torch.optim.optimizer import Optimizer
+from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
 
 from .base import AvalancheMethod
 
