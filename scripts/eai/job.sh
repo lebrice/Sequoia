@@ -14,6 +14,8 @@ EAI_Registry=registry.console.elementai.com/$ACCOUNT_ID
 
 CURRENT_BRANCH="`git branch --show-current`"
 BRANCH=${BRANCH:-$CURRENT_BRANCH}
+export WANDB_API_KEY=${WANDB_API_KEY?"Need to pass the wandb api key or have it set in the environment variables."}
+
 echo "Building eai-specific container for branch $BRANCH"
 
 if [ "$NO_BUILD" ]; then
