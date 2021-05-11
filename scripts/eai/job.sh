@@ -14,7 +14,7 @@ EAI_Registry=registry.console.elementai.com/$ACCOUNT_ID
 
 CURRENT_BRANCH="`git branch --show-current`"
 BRANCH=${BRANCH:-$CURRENT_BRANCH}
-echo "Building container for branch $BRANCH"
+echo "Building eai-specific container for branch $BRANCH"
 
 if [ "$NO_BUILD" ]; then
     echo "skipping build."
