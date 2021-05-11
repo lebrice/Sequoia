@@ -23,8 +23,7 @@ RUN apt update && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
     echo ssh >> /etc/securetty && \
     rm -f /etc/legal /etc/motd
-COPY --chown=13011:13011 --from=registry.console.elementai.com/shared.image/sshd:base /tk /tk
-RUN chmod 0600 /tk/etc/ssh/ssh_host_rsa_key
+
 # RUN conda install -c conda-forge opencv
 RUN conda install matplotlib numpy scipy hdf5 h5py cython
 # RUN pip install \ 
@@ -94,5 +93,4 @@ ENV PATH /home/toolkit/.local/bin:${PATH}
 # RUN cd /workspace/tools && git clone https://github.com/openai/baselines.git && cd baselines && pip install -e .
 RUN cd /workspace/ && git clone https://github.com/lebrice/Sequoia.git
 RUN pip install -e /workspace/Sequoia[monsterkong,hpo,avalanche]
-
-CMD ["/tk/bin/start.sh"]
+ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "base", "/bin/bash", "-c"]
