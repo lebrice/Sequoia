@@ -141,7 +141,7 @@ class WandbConfig(Serializable):
             If the key is configured.
         """
         key = None
-        if self.wandb_api_key is not None:
+        if self.wandb_api_key is not None and self.project:
             if Path(self.wandb_api_key).is_file():
                 key = Path(self.wandb_api_key).read_text()
             else:
