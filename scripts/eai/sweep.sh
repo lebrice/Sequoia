@@ -13,7 +13,7 @@ export WANDB_API_KEY=${WANDB_API_KEY?"Need to pass the wandb api key or have it 
 MAX_RUNS=20
 PROJECT="csl_study"
 
-SETTINGS=("class_incremental" "task_incremental" "multi_task", "iid")
+SETTINGS=("class_incremental" "task_incremental" "multi_task" "iid")
 METHODS=(
     "baseline" "gdumb" "random_baseline" "pnn" "agem"
     "ar1" "cwr_star" "gem" "gdumb" "lwf" "replay" "synaptic_intelligence"
