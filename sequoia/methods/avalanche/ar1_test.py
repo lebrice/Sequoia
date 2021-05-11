@@ -7,8 +7,6 @@ from typing import ClassVar, Type
 import pytest
 from torch.nn import Module
 
-from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
-
 from sequoia.common.config import Config
 from sequoia.conftest import xfail_param
 from sequoia.settings.passive import TaskIncrementalSetting
@@ -16,6 +14,7 @@ from sequoia.settings.passive import TaskIncrementalSetting
 from .ar1 import AR1Method
 from .base import AvalancheMethod
 from .base_test import _TestAvalancheMethod
+from .patched_models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
 
 
 @pytest.mark.xfail(reason="AR1 isn't super well supported yet.")

@@ -28,7 +28,6 @@ from avalanche.evaluation.metrics import (
 )
 from avalanche.logging import InteractiveLogger
 from avalanche.logging.wandb_logger import WandBLogger as _WandBLogger
-from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
 from avalanche.models.utils import avalanche_forward
 from avalanche.training.plugins import EvaluationPlugin, StrategyPlugin
 from avalanche.training.strategies import BaseStrategy
@@ -48,7 +47,7 @@ from sequoia.settings.passive.cl.objects import Actions, Observations, Rewards
 from sequoia.utils import get_logger
 
 from .experience import SequoiaExperience
-
+from .patched_models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
 logger = get_logger(__file__)
 
 StrategyType = TypeVar("StrategyType", bound=BaseStrategy)

@@ -11,7 +11,7 @@ from typing import ClassVar, Type, Optional, Any, Dict, List, Tuple
 from collections import defaultdict
 import torch
 import tqdm
-from avalanche.benchmarks.utils import AvalancheDataset, AvalancheConcatDataset
+from avalanche.benchmarks.utils import AvalancheConcatDataset
 from avalanche.training.strategies import GDumb, BaseStrategy
 from avalanche.training.plugins.gdumb import GDumbPlugin as _GDumbPlugin
 from simple_parsing import ArgumentParser

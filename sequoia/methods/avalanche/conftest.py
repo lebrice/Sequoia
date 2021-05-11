@@ -88,7 +88,7 @@ def short_class_incremental_setting(config: Config):
 
 
 @pytest.fixture(scope="session")
-def sl_track_setting():
+def sl_track_setting(config: Config):
     setting = SettingProxy(
         ClassIncrementalSetting,
         "sl_track",
@@ -97,4 +97,6 @@ def sl_track_setting():
         # class_order=class_order,
         # monitor_training_performance=True,
     )
+    setting.config = config
+    setting.data_dir = config.data_dir
     return setting
