@@ -17,7 +17,8 @@ fi
 echo "Building the 'base' dockerfile"
 docker build . --file dockers/base/Dockerfile --tag sequoia:base
 
-DockerHub_Registry=`docker info | sed '/Username:/!d;s/.* //'`
+REGISTRY=${REGISTRY:-`docker info | sed '/Username:/!d;s/.* //'`}
+echo "Using registry $REGISTRY"
 
-docker tag sequoia:base $DockerHub_Registry/sequoia:base
-docker push $DockerHub_Registry/sequoia:base
+docker tag sequoia:base $REGISTRY/sequoia:base
+docker push $REGISTRY/sequoia:base

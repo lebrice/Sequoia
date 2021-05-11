@@ -20,17 +20,18 @@ if [ "$NO_BUILD" ]; then
     echo "skipping build."
 else
     echo "building"
-    source dockers/branch/build.sh
-    docker tag sequoia:$BRANCH $EAI_Registry/sequoia:$BRANCH
-    docker push $EAI_Registry/sequoia:$BRANCH
+    source dockers/eai/build.sh
 fi
+
+# The image we're using is going to be called sequoai_eai:$BRANCH, and will have been
+# pushed to the user's eai registry.
 
 eai job submit \
     --restartable \
     --data $ACCOUNT_ID.home:/mnt/home \
     --data $ACCOUNT_ID.data:/mnt/data \
     --data $ACCOUNT_ID.results:/mnt/results \
-    --env WANDB_API_KEY=$WANDB_API_KEY \
-    --image $EAI_Registry/sequoia:$BRANCH \
+    --env WANDB_API_KEY="$WANDB_API_KEY" \
+    --image $EAI_Registry/sequoia_eai:$BRANCH \
     --gpu 1 --cpu 8 --mem 12 \
     -- "$@"

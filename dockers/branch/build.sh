@@ -4,9 +4,13 @@ set -o errtrace    # Show error trace
 set -o pipefail   # Unveils hidden failures
 set -o nounset    # Exposes unset variables
 
-CURRENT_BRANCH="`git branch --show-current`"
-BRANCH=${BRANCH:-$CURRENT_BRANCH}
+export CURRENT_BRANCH="`git branch --show-current`"
+export BRANCH=${BRANCH:-$CURRENT_BRANCH}
 echo "Using branch $BRANCH"
+
+export REGISTRY=${REGISTRY:-`docker info | sed '/Username:/!d;s/.* //'`}
+echo "Using registry $REGISTRY"
+
 
 if git diff-index --quiet HEAD --; then
     # No changes
@@ -24,7 +28,5 @@ docker build . --file dockers/branch/Dockerfile \
     --build-arg BRANCH=$BRANCH \
     --tag sequoia:$BRANCH
 
-DockerHub_Registry=`docker info | sed '/Username:/!d;s/.* //'`
-echo "Using docker registry for user $DockerHub_Registry"
-docker tag sequoia:$BRANCH $DockerHub_Registry/sequoia:$BRANCH
-docker push $DockerHub_Registry/sequoia:$BRANCH
+docker tag sequoia:$BRANCH $REGISTRY/sequoia:$BRANCH
+docker push $REGISTRY/sequoia:$BRANCH
