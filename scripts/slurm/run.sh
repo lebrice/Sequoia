@@ -9,6 +9,6 @@ module load anaconda/3
 conda activate sequoia
 
 cd ~/Sequoia
-pip install -e .[hpo,monsterkong]
+pip install -e .[hpo,monsterkong,avalanche]
 
 sequoia --data_dir $SLURM_TMPDIR "$@"
