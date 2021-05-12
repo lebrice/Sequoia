@@ -6,8 +6,8 @@ from typing import ClassVar, Type
 
 from .base import AvalancheMethod
 from .replay import ReplayMethod
-from .base_test import TestAvalancheMethod
+from .base_test import _TestAvalancheMethod
 
 
-class TestReplayMethod(TestAvalancheMethod):
+class TestReplayMethod(_TestAvalancheMethod):
     Method: ClassVar[Type[AvalancheMethod]] = ReplayMethod

@@ -4,35 +4,52 @@ from typing import ClassVar, List, Optional, Type
 
 import pytest
 import tqdm
+# from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
+from avalanche.models.utils import avalanche_forward
+from avalanche.training.strategies import BaseStrategy
+from torch.nn import Module
+
 from sequoia.common.config import Config
 from sequoia.conftest import xfail_param
 from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
 from sequoia.settings.passive.cl.objects import Observations, Rewards
-from torch.nn import Module
-
-from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
-from avalanche.models.utils import avalanche_forward
-from avalanche.training.strategies import BaseStrategy
 
 from .base import AvalancheMethod
 from .experience import SequoiaExperience
+from .patched_models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
 
 
-class TestAvalancheMethod:
+class _TestAvalancheMethod:
     Method: ClassVar[Type[AvalancheMethod]] = AvalancheMethod
+
+    # Names of (hyper-)parameters which are allowed to have a different default value in
+    # Sequoia compared to their implementations in Avalanche.
+    ignored_parameter_differences: ClassVar[List[str]] = [
+        "device",
+        "eval_mb_size",
+        "criterion",
+        "train_mb_size",
+        "train_epochs",
+        "evaluator",
+    ]
 
     def test_hparams_have_same_defaults_as_in_avalanche(self):
         strategy_type: Type[BaseStrategy] = self.Method.strategy_class
         method = self.Method()
         strategy_constructor: Signature = inspect.signature(strategy_type.__init__)
         strategy_init_params = strategy_constructor.parameters
+
+        # TODO: Use the plugin constructor as the reference, rather than the Strategy
+        # constructor.
+        # plugin_constructor
+
         for parameter_name, parameter in strategy_init_params.items():
             if parameter.default is _empty:
                 continue
             assert hasattr(method, parameter_name)
             method_value = getattr(method, parameter_name)
             # Ignore mismatches in some parameters, like `device`.
-            if parameter_name in ["device", "eval_mb_size", "criterion"]:
+            if parameter_name in self.ignored_parameter_differences:
                 continue
 
             assert method_value == parameter.default, (
@@ -49,14 +66,16 @@ class TestAvalancheMethod:
         [
             SimpleCNN,
             SimpleMLP,
-            xfail_param(
-                MTSimpleCNN,
-                reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
-            ),
-            xfail_param(
-                MTSimpleMLP,
-                reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
-            ),
+            MTSimpleCNN,
+            # xfail_param(
+            #     MTSimpleCNN,
+            #     reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
+            # ),
+            MTSimpleMLP,
+            # xfail_param(
+            #     MTSimpleMLP,
+            #     reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
+            # ),
         ],
     )
     def test_short_task_incremental_setting(
@@ -65,7 +84,7 @@ class TestAvalancheMethod:
         short_task_incremental_setting: TaskIncrementalSetting,
         config: Config,
     ):
-        method = self.Method(model=model_type, train_mb_size=10)
+        method = self.Method(model=model_type, train_mb_size=10, train_epochs=3)
         results = short_task_incremental_setting.apply(method, config)
         assert 0.05 < results.average_final_performance.objective
 
@@ -75,14 +94,16 @@ class TestAvalancheMethod:
         [
             SimpleCNN,
             SimpleMLP,
-            xfail_param(
-                MTSimpleCNN,
-                reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
-            ),
-            xfail_param(
-                MTSimpleMLP,
-                reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
-            ),
+            MTSimpleCNN,
+            MTSimpleMLP,
+            # xfail_param(
+            #     MTSimpleCNN,
+            #     reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
+            # ),
+            # xfail_param(
+            #     MTSimpleMLP,
+            #     reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
+            # ),
         ],
     )
     def test_short_class_incremental_setting(
@@ -91,7 +112,7 @@ class TestAvalancheMethod:
         short_class_incremental_setting: ClassIncrementalSetting,
         config: Config,
     ):
-        method = self.Method(model=model_type, train_mb_size=10)
+        method = self.Method(model=model_type, train_mb_size=10, train_epochs=3)
         results = short_class_incremental_setting.apply(method, config)
         assert 0.05 < results.average_final_performance.objective
 
@@ -101,14 +122,16 @@ class TestAvalancheMethod:
         [
             SimpleCNN,
             SimpleMLP,
-            xfail_param(
-                MTSimpleCNN,
-                reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
-            ),
-            xfail_param(
-                MTSimpleMLP,
-                reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
-            ),
+            MTSimpleCNN,
+            MTSimpleMLP,
+            # xfail_param(
+            #     MTSimpleCNN,
+            #     reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
+            # ),
+            # xfail_param(
+            #     MTSimpleMLP,
+            #     reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
+            # ),
         ],
     )
     def test_sl_track(

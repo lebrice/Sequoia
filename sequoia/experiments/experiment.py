@@ -515,4 +515,5 @@ def main():
         f"- {method.get_name()}: {method} ({method.get_path_to_source_file()})" for method in all_methods
     ))
 
-    return Experiment.main()
+    Experiment.main()
+    exit(0)

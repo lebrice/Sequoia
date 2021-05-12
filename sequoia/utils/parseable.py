@@ -221,7 +221,7 @@ class Parseable:
         hparams = target_type.from_args(argv=self._argv, strict=False)
         for missing_field in missing_fields:
             current_hparams[missing_field] = getattr(hparams, missing_field)
-        return target_type(**current_hparams)  
+        return target_type(**current_hparams)
 
 
     # @classmethod

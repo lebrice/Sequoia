@@ -9,4 +9,4 @@ An alternative to this could also be to allow Methods to target multiple
 settings, but this could get weird pretty quick.
 """
 from .incremental import IncrementalSetting
-from .task_incremental import TaskIncrementalSetting
+# from .task_incremental import TaskIncrementalSetting

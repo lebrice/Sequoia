@@ -1,3 +1,7 @@
+""" Adapter for the `BaseStrategy` from Avalanche, wrapping it up into a Sequoia Method.
+
+See the Avalanche repo for more info: https://github.com/ContinualAI/avalanche
+"""
 import inspect
 import warnings
 from dataclasses import dataclass, fields
@@ -6,10 +10,29 @@ from typing import ClassVar, Dict, Generic, List, Optional, Type, TypeVar, Union
 import gym
 import torch
 import tqdm
-from gym.utils import colorize
-from torch import Tensor
 from gym import spaces
 from gym.spaces.utils import flatdim
+from gym.utils import colorize
+from simple_parsing.helpers import choice
+from simple_parsing.helpers.hparams import HyperParameters, log_uniform, uniform
+from torch import nn, optim
+from torch.nn import Module
+from torch.optim import SGD
+from torch.optim.optimizer import Optimizer
+
+from avalanche.benchmarks.scenarios import Experience
+from avalanche.evaluation.metrics import (
+    accuracy_metrics,
+    forgetting_metrics,
+    loss_metrics,
+)
+from avalanche.logging import InteractiveLogger
+from avalanche.logging.wandb_logger import WandBLogger as _WandBLogger
+from avalanche.models.utils import avalanche_forward
+from avalanche.training.plugins import EvaluationPlugin, StrategyPlugin
+from avalanche.training.strategies import BaseStrategy
+from avalanche.training.strategies.strategy_wrappers import default_logger
+
 from sequoia.common.spaces import Image
 from sequoia.methods import Method
 from sequoia.settings.passive import (
@@ -21,24 +44,28 @@ from sequoia.settings.passive.cl.class_incremental_setting import (
     ClassIncrementalTestEnvironment,
 )
 from sequoia.settings.passive.cl.objects import Actions, Observations, Rewards
-from simple_parsing.helpers import choice
-from simple_parsing.helpers.hparams import HyperParameters, log_uniform, uniform
-from torch import nn, optim
-from torch.nn import Module
-from torch.optim import SGD
-from torch.optim.optimizer import Optimizer
-
-from avalanche.benchmarks.scenarios import Experience
-from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
-from avalanche.models.utils import avalanche_forward
-from avalanche.training import EvaluationPlugin
-from avalanche.training.plugins import StrategyPlugin
-from avalanche.training.strategies import BaseStrategy
-from avalanche.training.strategies.strategy_wrappers import default_logger
+from sequoia.utils import get_logger
 
 from .experience import SequoiaExperience
+from .patched_models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
+logger = get_logger(__file__)
 
 StrategyType = TypeVar("StrategyType", bound=BaseStrategy)
+
+
+# "Patch" for the WandbLogger of Avalanche
+
+
+class WandBLogger(_WandBLogger):
+    def before_run(self):
+        if self.wandb is None:
+            self.import_wandb()
+        if self.init_kwargs:
+            if not self.wandb.run:
+                self.wandb.init(**self.init_kwargs)
+        else:
+            if not self.wandb.run:
+                self.wandb.init()
 
 
 @dataclass
@@ -87,18 +114,18 @@ class AvalancheMethod(
     criterion: Union[Module, Type[Module]] = choice(
         available_criterions, default=nn.CrossEntropyLoss
     )
-    # The train minibatch size. Defaults to 1.
-    train_mb_size: int = 1
-    # The number of training epochs. Defaults to 1.
-    train_epochs: int = 1
-    # The eval minibatch size. Defaults to 1.
+    # The train minibatch size.
+    train_mb_size: int = uniform(1, 2048, default=64)
+    # The number of training epochs.
+    train_epochs: int = uniform(1, 100, default=5)
+    # The eval minibatch size.
     eval_mb_size: int = 1
     #  The device to use. Defaults to None (cpu).
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Plugins to be added. Defaults to None.
     plugins: Optional[List[StrategyPlugin]] = None
     # (optional) instance of EvaluationPlugin for logging and metric computations.
-    evaluator: EvaluationPlugin = default_logger
+    evaluator: Optional[EvaluationPlugin] = None
     # The frequency of the calls to `eval` inside the training loop.
     # if -1: no evaluation during training.
     # if  0: calls `eval` after the final epoch of each training
@@ -115,6 +142,14 @@ class AvalancheMethod(
     # Number of workers of the dataloader. Defaults to 4.
     num_workers: int = 4
 
+    def __post_init__(self):
+        super().__post_init__()
+        # Count the number of calls to `configure`. (useful when running sweeps, as we
+        # reuse the Method instance.)
+        self._n_configures: int = 0
+        self.setting: ClassIncrementalSetting
+        self.cl_strategy: StrategyType
+
     def configure(self, setting: ClassIncrementalSetting) -> None:
         self.setting = setting
         self.model = self.create_model(setting).to(self.device)
@@ -122,6 +157,23 @@ class AvalancheMethod(
         # Select the loss function to use.
         if not isinstance(self.criterion, nn.Module):
             self.criterion = self.criterion()
+
+        if setting.wandb:
+            wandb_logger = WandBLogger(
+                project_name=setting.wandb.project,
+                run_name=setting.wandb.run_name,
+                params=setting.wandb.wandb_init_kwargs(),
+            )
+            metrics = [
+                accuracy_metrics(epoch=True, experience=True, stream=True),
+                forgetting_metrics(experience=True, stream=True),
+                loss_metrics(minibatch=False, epoch=True, experience=True, stream=True),
+            ]
+            self.evaluator = EvaluationPlugin(
+                *metrics, loggers=[InteractiveLogger(), wandb_logger]
+            )
+        else:
+            self.evaluator = default_logger
 
         self.optimizer = self.make_optimizer()
         # Actually initialize the strategy using the fields on `self`.
@@ -169,27 +221,47 @@ class AvalancheMethod(
         return self.strategy_class(**cl_strategy_kwargs)
 
     def create_model(self, setting: ClassIncrementalSetting) -> Module:
+        """Create the Model for the setting.
+
+        Parameters
+        ----------
+        setting : ClassIncrementalSetting
+            The Setting on which this Method will be applied.
+
+        Returns
+        -------
+        Module
+            The Model to be used, which will be passed to the Strategy constructor.
+        """
         image_space: Image = setting.observation_space.x
         input_dims = flatdim(image_space)
         assert isinstance(
             setting.action_space, spaces.Discrete
         ), "assume a classification problem for now."
         num_classes = setting.action_space.n
+
         if isinstance(self.model, nn.Module):
-            pass
-        elif self.model is SimpleMLP:
+            if self._n_configures > 0:
+                logger.info("Resetting the model, since this isn't the first run.")
+                self.model = type(self.model)
+                self._n_configures += 1
+            else:
+                logger.info(f"Using model {self.model}.")
+                return self.model
+
+        if self.model is SimpleMLP:
             return self.model(
                 input_size=input_dims,
                 hidden_size=self.hidden_size,
                 num_classes=num_classes,
             )
-        elif self.model is MTSimpleMLP:
+        if self.model is MTSimpleMLP:
             return self.model(input_size=input_dims, hidden_size=self.hidden_size)
-        elif self.model is SimpleCNN:
+        if self.model is SimpleCNN:
             return self.model(num_classes=num_classes)
-        else:
-            # These other models (MTSimpleCNN) don't seem to take any kwargs.
-            return self.model()
+        # self.model is most probably a type of nn.Module, so we instantiate it.
+        # These other models (MTSimpleCNN) don't seem to take any kwargs.
+        return self.model()
 
     def make_optimizer(self) -> Optimizer:
         """ Creates the Optimizer. """
@@ -247,9 +319,11 @@ class AvalancheMethod(
     def get_search_space(self, setting: ClassIncrementalSetting):
         return self.get_orion_space()
 
-    def adapt_to_new_hparams(self, new_hparams):
-        raise NotImplementedError(new_hparams)
-        return super().adapt_to_new_hparams(new_hparams)
+    def adapt_to_new_hparams(self, new_hparams: Dict):
+        for k, v in new_hparams.items():
+            if isinstance(v, dict):
+                raise NotImplementedError(f"todo: set hparam {k} to value {v}")
+            setattr(self, k, v)
 
     def environment_to_experience(
         self, env: PassiveEnvironment, setting: PassiveSetting
@@ -343,7 +417,9 @@ def test_epoch(strategy, test_env: ClassIncrementalTestEnvironment, **kwargs):
     # strategy.after_eval_exp(**kwargs)
 
 
-def test_epoch_gym_env(strategy, test_env: ClassIncrementalTestEnvironment, **kwargs):
+def test_epoch_gym_env(
+    strategy: BaseStrategy, test_env: ClassIncrementalTestEnvironment, **kwargs
+):
     strategy.mb_it = 0
     episode = 0
     strategy.experience = test_env
