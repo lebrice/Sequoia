@@ -37,9 +37,9 @@ class EWCMethod(AvalancheMethod[EWC], target_setting=ClassIncrementalSetting):
     # `separate` to keep a separate penalty for each previous experience. `online` to
     # keep a single penalty summed with a decay factor over all previous tasks.
     mode: str = categorical("separate", "online", default="separate")
-    # Used only if mode is `onlineweightedsum`. It specify the decay term of the
+    # Used only if `mode` is 'online'. It specify the decay term of the
     # importance matrix.
-    decay_factor: Optional[float] = None
+    decay_factor: Optional[float] = uniform(0.0, 1.0, default=0.9)
     # if True, keep in memory both parameter values and importances for all previous
     # task, for all modes. If False, keep only last parameter values and importances. If
     # mode is `separate`, the value of `keep_importance_data` is set to be True.
