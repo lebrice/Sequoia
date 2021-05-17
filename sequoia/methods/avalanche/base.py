@@ -295,11 +295,15 @@ class AvalancheMethod(
             y_pred = logits.argmax(-1)
             return self.target_setting.Actions(y_pred=y_pred)
 
+    def set_testing(self):
+        self.model.current_task_id = None
+        return super().set_testing()
+
     def on_task_switch(self, task_id: Optional[int]) -> None:
         if self.training:
             # No need to tell the cl_strategy, because we call `.train` which calls
             # `before_training_exp` with the current exp (the current task).
-            pass
+            self.model.current_task_id = task_id
         else:
             # TODO: In Sequoia, the test 'epoch' goes through the sequence of tasks, not
             # necessarily in the same order as during training, while in Avalanche the

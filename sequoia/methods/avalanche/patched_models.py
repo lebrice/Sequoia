@@ -13,10 +13,12 @@ from avalanche.models import MTSimpleMLP as _MTSimpleMLP
 from avalanche.models import MultiHeadClassifier as _MultiHeadClassifier
 from avalanche.models import SimpleCNN, SimpleMLP
 from avalanche.models.dynamic_modules import MultiTaskModule
+from sequoia.utils import get_logger
+
+logger = get_logger(__file__)
 
 
 class PatchedMultiTaskModule(MultiTaskModule):
-
     @property
     @abstractmethod
     def known_task_ids(self) -> List[Any]:
@@ -33,7 +35,7 @@ class PatchedMultiTaskModule(MultiTaskModule):
         # NOTE: This assumes that the observations are batched.
         # These are used below to indicate the shape of the different tensors.
         B = x.shape[0]
-        T = n_known_tasks = len(self.known_task_ids)
+        T = len(self.known_task_ids)
         # N = self.action_space.n
         # Tasks encountered previously and for which we have an output head.
         # TODO: This assumes that the keys of the ModuleDict are integers.
@@ -71,13 +73,13 @@ class PatchedMultiTaskModule(MultiTaskModule):
             raise NotImplementedError(
                 "TODO: Output heads didn't give outputs of the same shape!"
             )
-            logits_from_each_head = task_outputs
-            probs_from_each_head = [
-                torch.softmax(head_logits, dim=-1) for head_logits in logits_from_each_head
-            ]
+            # logits_from_each_head = task_outputs
+            # probs_from_each_head = [
+            #     torch.softmax(head_logits, dim=-1) for head_logits in logits_from_each_head
+            # ]
             # IDEA: Add zeros to the outputs of a different shape.
         else:
-            logits_from_each_head =  torch.stack(task_outputs, dim=1)
+            logits_from_each_head = torch.stack(task_outputs, dim=1)
             # Normalize the logits from each output head with softmax.
             # Example with batch size of 1, output heads = 2, and classes = 4:
             # logits from each head:  [[[123, 456, 123, 123], [1, 1, 2, 1]]]
@@ -142,7 +144,10 @@ class MultiHeadClassifier(_MultiHeadClassifier):
     def forward(self, x: Tensor, task_labels: Optional[Tensor]) -> Tensor:
         if task_labels is None:
             # TODO: Use a task-inference module when `task_labels` is None.
-            task_labels = torch.as_tensor([-1 for _ in x], dtype=int)
+            # task_labels = torch.as_tensor([-1 for _ in x], dtype=int)
+            raise NotImplementedError(
+                f"Shouldn't get None task labels in the MultiHeadClassifier!"
+            )
         return super().forward(x, task_labels)
 
     def forward_single_task(self, x: Tensor, task_label: Optional[Tensor]):
@@ -164,6 +169,7 @@ class MultiHeadClassifier(_MultiHeadClassifier):
             # )
         return super().forward_single_task(x, task_label)
 
+
 class MTSimpleCNN(_MTSimpleCNN, PatchedMultiTaskModule):
     def __init__(self):
         super().__init__()
@@ -171,9 +177,30 @@ class MTSimpleCNN(_MTSimpleCNN, PatchedMultiTaskModule):
 
     def forward(self, x: Tensor, task_labels: Optional[Tensor] = None) -> Tensor:
         if task_labels is None:
-            # TODO: Use a task-inference module when `task_labels` is None.
-            # task_labels = torch.as_tensor([-1 for _ in x], dtype=int)
-            return self.task_inference_forward_pass(x=x)
+            # NOTE: When training, we could rely on a property like `current_task_id`
+            # being set within the `on_task_switch` callback.
+            # The reason for this is that in some of the strategies, `GEM` strategy (and
+            # others), when training they sometimes don't pass a task index! In the case
+            # of GEM though, it doesnt pass the task id when calculating the
+            # reference gradient, so I'm not sure we want to be using this in this case.
+            if self.training:
+                # TODO: Pretend that they have the id of the last task? Or use the task
+                # inference mechanism? It isn't so clear what this should do!
+                assert self.current_task_id is not None
+                logger.warning(
+                    f"Pretending that this batch comes from task "
+                    f"{self.current_task_id}, because it doesn't have task labels, and "
+                    f"we're training!"
+                )
+                task_labels = torch.as_tensor(
+                    [self.current_task_id for _ in x], dtype=int
+                )
+                return super().forward(x=x, task_labels=task_labels)
+            else:
+                # Use the task-inference mechanism during test-time, if there aren't
+                # task labels.
+                return self.task_inference_forward_pass(x=x)
+
         return super().forward(x=x, task_labels=task_labels)
 
     @property
@@ -191,9 +218,29 @@ class MTSimpleMLP(_MTSimpleMLP, PatchedMultiTaskModule):
 
     def forward(self, x: Tensor, task_labels: Optional[Tensor] = None) -> Tensor:
         if task_labels is None:
-            # TODO: Use a task-inference module when `task_labels` is None.
-            # task_labels = torch.as_tensor([-1 for _ in x], dtype=int)
-            return self.task_inference_forward_pass(x=x)
+            # NOTE: When training, we could rely on a property like `current_task_id`
+            # being set within the `on_task_switch` callback.
+            # The reason for this is that in some of the strategies, `GEM` strategy (and
+            # others), when training they sometimes don't pass a task index! In the case
+            # of GEM though, it doesnt pass the task id when calculating the
+            # reference gradient, so I'm not sure we want to be using this in this case.
+            if self.training:
+                # TODO: Pretend that they have the id of the last task? Or use the task
+                # inference mechanism? It isn't so clear what this should do!
+                assert self.current_task_id is not None
+                logger.warning(
+                    f"Pretending that this batch comes from task "
+                    f"{self.current_task_id}, because it doesn't have task labels, and "
+                    f"we're training!"
+                )
+                task_labels = torch.as_tensor(
+                    [self.current_task_id for _ in x], dtype=int
+                )
+                return super().forward(x=x, task_labels=task_labels)
+            else:
+                # Use the task-inference mechanism during test-time, if there aren't
+                # task labels.
+                return self.task_inference_forward_pass(x=x)
 
         return super().forward(x=x, task_labels=task_labels)
 
