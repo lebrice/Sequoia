@@ -158,7 +158,7 @@ class AvalancheMethod(
         if not isinstance(self.criterion, nn.Module):
             self.criterion = self.criterion()
 
-        if setting.wandb:
+        if setting.wandb and setting.wandb.project:
             wandb_logger = WandBLogger(
                 project_name=setting.wandb.project,
                 run_name=setting.wandb.run_name,
