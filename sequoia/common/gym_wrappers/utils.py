@@ -169,6 +169,20 @@ def is_atari_env(env: Union[str, gym.Env]) -> bool:
     return False
 
 
+def is_monsterkong_env(env: Union[str, gym.Env, Callable[[], gym.Env]]) -> bool:
+    if isinstance(env, str):
+        return env.lower().startswith(("metamonsterkong", "monsterkong"))
+    try:
+        from meta_monsterkong.make_env import MetaMonsterKongEnv
+        if inspect.isclass(env):
+            return issubclass(env, MetaMonsterKongEnv)
+        if isinstance(env, gym.Env):
+            return isinstance(env, MetaMonsterKongEnv)
+        return False
+    except ImportError:
+        return False
+
+
 logger = get_logger(__file__)
 
 EnvType = TypeVar("EnvType", bound=gym.Env)
