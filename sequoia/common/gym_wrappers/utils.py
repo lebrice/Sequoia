@@ -3,6 +3,7 @@ from abc import ABC
 from collections.abc import Sized
 from functools import partial, singledispatch
 from typing import (
+    Callable,
     Dict,
     Generic,
     Iterator,
@@ -18,6 +19,7 @@ import gym
 import numpy as np
 from gym import spaces
 from gym.envs import registry
+
 from gym.envs.classic_control import (
     AcrobotEnv,
     CartPoleEnv,
@@ -25,7 +27,7 @@ from gym.envs.classic_control import (
     MountainCarEnv,
     PendulumEnv,
 )
-from gym.envs.registration import EnvSpec
+from gym.envs.registration import load, EnvSpec
 from gym.vector.utils import batch_space
 from torch.utils.data import DataLoader, IterableDataset
 
@@ -167,6 +169,26 @@ def is_atari_env(env: Union[str, gym.Env]) -> bool:
     except gym.error.DependencyNotInstalled:
         return False
     return False
+
+
+
+
+def get_env_class(env: Union[str, gym.Env, Type[gym.Env], Callable[[], gym.Env]]) -> Type[gym.Env]:
+    if isinstance(env, partial):
+        if env.func is gym.make and isinstance(env.args[0], str):
+            return get_env_class(env.args[0])
+        return get_env_class(env.func)
+    if isinstance(env, str):
+        return load(env)
+    if isinstance(env, gym.Wrapper):
+        return type(env.unwrapped)
+    if isinstance(env, gym.Env):
+        return type(env)
+    if inspect.isclass(env) and issubclass(env, gym.Env):
+        return env
+    raise NotImplementedError(
+        f"Don't know how to get the class of env being used by {env}!"
+    )
 
 
 def is_monsterkong_env(env: Union[str, gym.Env, Callable[[], gym.Env]]) -> bool:

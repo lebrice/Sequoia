@@ -85,7 +85,8 @@ def test_check_iterate_and_step(
 ):
     # TODO: Fix the default transforms, shouldn't necessarily have `to_tensor` in there.
     setting = IncrementalRLSetting(
-        dataset=dataset, nb_tasks=5,
+        dataset=dataset,
+        nb_tasks=5,
         train_transforms=[Transforms.to_tensor],
         val_transforms=[Transforms.to_tensor],
         test_transforms=[Transforms.to_tensor],
@@ -380,6 +381,7 @@ def test_action_space_always_matches_obs_batch_size_in_RL(config: Config):
 @pytest.mark.xfail(reason="don't know how to get the max path length through mtenv!")
 def test_mtenv_meta_world_support():
     from mtenv import MTEnv, make
+
     env: MTEnv = make("MT-MetaWorld-MT10-v0")
     env.set_task_state(0)
     env.seed(123)
@@ -565,3 +567,101 @@ def test_dm_control_support():
         time_step = env.step(action)
         print(time_step.reward, time_step.discount, time_step.observation)
 
+
+from functools import partial
+import gym
+
+import enum
+# TODO: Use the task schedule as a way to specify how long each task lasts in a
+# given env? For instance:
+
+from typing import NamedTuple
+
+class PeriodTypeEnum(enum.Enum):
+    STEPS = enum.auto()
+    EPISODES = enum.auto()
+
+
+class Period(NamedTuple):
+    value: int
+    type: PeriodTypeEnum = PeriodTypeEnum.STEPS
+
+steps = lambda v: Period(value=v, type=PeriodTypeEnum.STEPS)
+episodes = lambda v: Period(value=v, type=PeriodTypeEnum.EPISODES)
+
+train_task_schedule = {
+    steps(10): "CartPole-v0",
+    episodes(1000): "Breakout-v0",
+}
+
+
+class TestPassingEnvsForEachTask:
+    """ Tests that have to do with the feature of passing the list of environments to
+    use for each task.
+    """
+    
+    
+
+    # @pytest.mark.xfail(
+    #     reason="TODO: Check all env spaces to make sure they match, ideally without "
+    #     "having to instiate them."
+    # )
+    def test_raises_error_when_envs_have_different_obs_spaces(self):
+        task_envs = ["CartPole-v0", "Pendulum-v0"]
+        with pytest.raises(
+            RuntimeError, match="doesn't have the same observation space"
+        ):
+            setting = IncrementalRLSetting(train_envs=task_envs)
+            setting.train_dataloader()
+
+    def test_passing_envs_for_each_task(self):
+        from functools import partial
+        import gym
+        from gym.envs.classic_control import CartPoleEnv
+        import random
+
+        nb_tasks = 3
+        gravities = [random.random() * 10 for _ in range(nb_tasks)]
+        def make_random_cartpole_env(task_id):
+            def _env_fn() -> CartPoleEnv:
+                env = gym.make("CartPole-v0")
+                env.gravity = gravities[task_id]
+                return env
+            return _env_fn
+
+        # task_envs = ["CartPole-v0", "CartPole-v1"]
+        task_envs = [make_random_cartpole_env(i) for i in range(nb_tasks)]
+
+        setting = IncrementalRLSetting(train_envs=task_envs)
+        assert setting.nb_tasks == nb_tasks
+
+        assert not setting.train_task_schedule
+        assert not setting.valid_task_schedule
+        assert not setting.test_task_schedule
+        # assert len(setting.train_task_schedule.keys()) == 2
+        # assert len(setting.val_envs) == 2
+        # assert len(setting.test_envs) == 2
+
+        setting.current_task_id = 0
+        from gym.envs.classic_control import CartPoleEnv, PendulumEnv
+
+        train_env = setting.train_dataloader()
+        assert isinstance(train_env.unwrapped, CartPoleEnv)
+
+        # Not sure, do we want to add a 'observation_spaces`, `action_spaces` and
+        # `reward_spaces` properties?
+        assert setting.observation_space == train_env.observation_space
+
+    def test_command_line(self):
+        # TODO: If someone passes the same env ids from the command-line, then shouldn't
+        # we somehow vary the tasks by changing the level or something?
+
+        setting = IncrementalRLSetting.from_args(
+            argv="--train_envs CartPole-v0 Pendulum-v0"
+        )
+        assert setting.train_envs == ["CartPole-v0", "Pendulum-v0"]
+
+        setting = IncrementalRLSetting.from_args(argv="")
+        assert setting == IncrementalRLSetting()
+        # TODO: Not using this:
+        # assert setting.train_envs == [setting.dataset] * setting.nb_tasks

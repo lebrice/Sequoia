@@ -1,87 +1,41 @@
+import inspect
 import json
 import operator
 from contextlib import redirect_stdout
 from dataclasses import dataclass
+from functools import partial
 from io import StringIO
 from pathlib import Path
 from typing import Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
+from gym import spaces
+from simple_parsing import field, list_field
+
 from sequoia.common.gym_wrappers import MultiTaskEnvironment, TransformObservation
+from sequoia.common.gym_wrappers.utils import is_monsterkong_env
+from sequoia.common.spaces import Sparse
+from sequoia.common.transforms import Transforms
 from sequoia.utils import constant, dict_union
 from sequoia.utils.logging_utils import get_logger
-from simple_parsing import field
 
 from ..continual_rl_setting import ContinualRLSetting
+from .env_imports import (
+    ATARI_PY_INSTALLED,
+    MetaMonsterKongEnv,  # metaworld,
+    MetaWorldEnv,
+    MTEnv,
+    MujocoEnv,
+    metaworld_envs,
+    metaworld_installed,
+    monsterkong_installed,
+    mtenv_envs,
+    mtenv_installed,
+)
 
 logger = get_logger(__file__)
 
-try:
-    with redirect_stdout(StringIO()):
-        from meta_monsterkong.make_env import MetaMonsterKongEnv
-except ImportError:
-    monsterkong_installed = False
-else:
-    monsterkong_installed = True
-
-
-mtenv_installed = False
-mtenv_envs = []
-try:
-    from mtenv import MTEnv
-    from mtenv.envs.registration import mtenv_registry
-
-    mtenv_envs = [env_spec.id for env_spec in mtenv_registry.all()]
-    mtenv_installed = True
-except ImportError:
-    # Create a 'dummy' class so we can safely use MTEnv in the type hints below.
-    # Additionally, isinstance(some_env, MTEnv) will always fail when mtenv isn't
-    # installed, which is good.
-    class MTEnv(gym.Env):
-        pass
-
-
-metaworld_installed = False
-metaworld_envs = []
-
-try:
-    import metaworld
-    from metaworld import MetaWorldEnv
-    from metaworld.envs.mujoco.mujoco_env import MujocoEnv
-
-    metaworld_installed = True
-    # metaworld_dir = getsourcefile(metaworld)
-    # mujoco_dir = Path("~/.mujoco").expanduser()
-    # TODO: Cache the names of the metaworld envs to a file, just so we don't take about
-    # 10 seconds to import metaworld every time?
-
-    envs_cache_file = Path("temp/metaworld_envs.json")
-    envs_cache_file.parent.mkdir(exist_ok=True)
-    all_metaworld_envs: Dict[str, List[str]] = {}
-    if envs_cache_file.exists():
-        all_metaworld_envs = json.load(envs_cache_file.open())
-    else:
-        print(
-            "Loading up the list of available envs from metaworld for the first time, "
-            "this might take a while (usually ~10 seconds)."
-        )
-    if "ML10" not in all_metaworld_envs:
-        ML10_envs = list(metaworld.ML10().train_classes.keys())
-        all_metaworld_envs["ML10"] = ML10_envs
-
-    with open(envs_cache_file, "w") as f:
-        json.dump(all_metaworld_envs, f)
-
-    metaworld_envs = sum([list(envs) for envs in all_metaworld_envs.values()], [])
-except ImportError:
-    # Create a 'dummy' class so we can safely use MetaWorldEnv in the type hints below.
-    # Additionally, isinstance(some_env, MetaWorldEnv) will always fail when metaworld
-    # isn't installed, which is good.
-    class MetaWorldEnv(gym.Env):
-        pass
-
-    class MujocoEnv(gym.Env):
-        pass
+_MIXED_ENV = object()
 
 
 @dataclass
@@ -113,13 +67,64 @@ class IncrementalRLSetting(ContinualRLSetting):
     )
     dataset: str = "CartPole-v0"
 
+    train_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
+    val_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
+    test_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
+
     def __post_init__(self, *args, **kwargs):
         if not self.nb_tasks:
-            # TODO: In case of the metaworld envs, we could device the 'default' nb of
-            # tasks to use based on the number of available tasks
+            # TODO: In case of the metaworld envs, we could determine the 'default' nb
+            # of tasks to use based on the number of available tasks
             pass
 
+        # TODO: Remove the `observe_state_directly` arg of `self._make_env`, and change
+        # the dataset dynamically here instead.
+        # if monsterkong_installed and self.observe_state_directly:
+        #     if isinstance(self.dataset, str) and self.dataset.startswith("MetaMonsterKong"):
+        #         self.dataset = gym.make(self.dataset, observe_state=True)
+        #     elif inspect.isclass(self.dataset) and issubclass(self.dataset, MetaMonsterKongEnv):
+        #         self.dataset = partial(base_env, observe_state=True)
+
+        if self.train_envs:
+            self.nb_tasks = len(self.train_envs)
+            # TODO: Not sure what to do with the `self.dataset` field, because
+            # ContinualRLSetting expects to have a single env, while we have more than
+            # one, the __post_init__ tries to create the rest of the fields based on
+            # `self.dataset`
+            self.dataset = self.train_envs[0]
+
+            if not self.val_envs:
+                # TODO: Use a wrapper that sets a different random seed
+                self.val_envs = self.train_envs.copy()
+            if not self.test_envs:
+                # TODO: Use a wrapper that sets a different random seed
+                self.test_envs = self.train_envs.copy()
+
+            if (
+                self.train_task_schedule
+                or self.valid_task_schedule
+                or self.test_task_schedule
+            ):
+                raise RuntimeError(
+                    "You can either pass `train/valid/test_envs`, or a task schedule, "
+                    "but not both!"
+                )
+        else:
+            if self.val_envs or self.test_envs:
+                raise RuntimeError(
+                    "Can't pass `val_envs` or `test_envs` without passing `train_envs`."
+                )
+
         super().__post_init__(*args, **kwargs)
+
+        if self.train_envs:
+            self.train_task_schedule.clear()
+            self.valid_task_schedule.clear()
+            self.test_task_schedule.clear()
+
+            # TODO: Check that all the envs have the same observation spaces!
+            # (If possible, find a way to check this without having to instantiate all
+            # the envs.)
 
         if self.dataset == "MetaMonsterKong-v0":
             # TODO: Limit the episode length in monsterkong?
@@ -136,6 +141,7 @@ class IncrementalRLSetting(ContinualRLSetting):
         This temporary environment only lives during the __post_init__() call.
         """
         super()._setup_fields_using_temp_env(temp_env)
+
         # TODO: If the dataset has a `max_path_length` attribute, then it's probably
         # a Mujoco / metaworld / etc env, and so we set a limit on the episode length to
         # avoid getting an error.
@@ -173,9 +179,14 @@ class IncrementalRLSetting(ContinualRLSetting):
 
             # Check if the id belongs to mtenv
             if mtenv_installed and env_id in mtenv_envs:
-                from mtenv import make
+                from mtenv import make as mtenv_make
 
-                base_env = make(env_id)
+                # This is super weird. Don't undestand at all
+                # why they are doing this. Makes no sense to me whatsoever.
+                base_env = mtenv_make(
+                    env_id
+                ) 
+
                 # Add a wrapper that will remove the task information, because we use
                 # the same MultiTaskEnv wrapper for all the environments.
                 wrappers.insert(0, MTEnvAdapterWrapper)
@@ -183,6 +194,8 @@ class IncrementalRLSetting(ContinualRLSetting):
             if metaworld_installed and env_id in metaworld_envs:
                 # TODO: Should we use a particular benchmark here?
                 # For now, we find the first benchmark that has an env with this name.
+                import metaworld
+
                 for benchmark_class in [metaworld.ML10]:
                     benchmark = benchmark_class()
                     if env_id in benchmark.train_classes.keys():
@@ -200,6 +213,13 @@ class IncrementalRLSetting(ContinualRLSetting):
                         f"Can't find a metaworld benchmark that uses env {env_id}"
                     )
 
+        # TODO: Remove this and the `observe_state_directly` argument to this function.        
+        if monsterkong_installed and observe_state_directly:
+            if isinstance(base_env, str) and base_env.startswith("MetaMonsterKong"):
+                base_env = gym.make(base_env, observe_state=True)
+            elif inspect.isclass(base_env) and issubclass(base_env, MetaMonsterKongEnv):
+                base_env = partial(base_env, observe_state=True)
+
         return ContinualRLSetting._make_env(
             base_env=base_env,
             wrappers=wrappers,
@@ -207,9 +227,16 @@ class IncrementalRLSetting(ContinualRLSetting):
         )
 
     def create_task_schedule(
-        self, temp_env: MultiTaskEnvironment, change_steps: List[int]
+        self, temp_env: gym.Env, change_steps: List[int]
     ) -> Dict[int, Dict]:
         task_schedule: Dict[int, Dict] = {}
+
+        if self.train_envs:
+            # If custom envs were passed to be used for each task, then we don't create
+            # a "task schedule", because the only reason we're using a task schedule is
+            # when we want to change something about the 'base' env in order to get
+            # multiple tasks.
+            return task_schedule
 
         if monsterkong_installed:
             if isinstance(temp_env.unwrapped, MetaMonsterKongEnv):
@@ -226,6 +253,8 @@ class IncrementalRLSetting(ContinualRLSetting):
             # TODO: Which benchmark to choose?
             base_env = temp_env.unwrapped
             found = False
+            import metaworld
+
             # Find the benchmark that contains this type of env.
             for benchmark_class in [metaworld.ML10]:
                 benchmark = benchmark_class()
@@ -258,14 +287,202 @@ class IncrementalRLSetting(ContinualRLSetting):
         )
 
     def create_train_wrappers(self):
+        if self.train_envs:
+            # TODO: Maybe do something different here, since we don't actually want to
+            # add a CL wrapper at all in this case?
+            assert not self.train_task_schedule
         return super().create_train_wrappers()
+
+    def setup(self, stage: str = None) -> None:
+        # Called before the start of each task during training, validation and
+        # testing.
+        super().setup(stage=stage)
+        # What's done in ContinualRLSetting:
+        # if stage in {"fit", None}:
+        #     self.train_wrappers = self.create_train_wrappers()
+        #     self.valid_wrappers = self.create_valid_wrappers()
+        # elif stage in {"test", None}:
+        #     self.test_wrappers = self.create_test_wrappers()
+        if self.train_envs:
+            logger.debug(
+                f"Using custom environments from `self.[train/val/test]_envs` for task "
+                f"{self.current_task_id}."
+            )
+            # IDEA: Just switch out the value of this property, and let the
+            # `train/val/test_dataloader` methods work as usual!
+            self.dataset = self.train_envs[self.current_task_id]
+            self.val_dataset = self.val_envs[self.current_task_id]
+            self.test_dataset = self.test_envs[self.current_task_id]
+
+            # TODO: Check that the observation/action spaces are all the same for all
+            # the train/valid/test envs
+            self._check_all_envs_have_same_spaces(
+                envs_or_env_functions=self.train_envs, wrappers=self.train_wrappers,
+            )
+            # TODO: Inconsistent naming between `val_envs` and `valid_wrappers` etc.
+            self._check_all_envs_have_same_spaces(
+                envs_or_env_functions=self.val_envs, wrappers=self.valid_wrappers,
+            )
+            self._check_all_envs_have_same_spaces(
+                envs_or_env_functions=self.test_envs, wrappers=self.test_wrappers,
+            )
+        else:
+            # TODO: Should we populate the `self.train_envs`, `self.val_envs` and
+            # `self.test_envs` fields here as well, just to be consistent?
+            # base_env = self.dataset
+            # def task_env(task_index: int) -> Callable[[], MultiTaskEnvironment]:
+            #     return self._make_env(
+            #         base_env=base_env,
+            #         wrappers=[],
+            #         observe_state_directly=self.observe_state_directly,
+            #     )
+            # self.train_envs = [partial(gym.make, self.dataset) for i in range(self.nb_tasks)]
+            # self.val_envs = [partial(gym.make, self.dataset) for i in range(self.nb_tasks)]
+            # self.test_envs = [partial(gym.make, self.dataset) for i in range(self.nb_tasks)]
+            # assert False, self.train_task_schedule
+            pass
+
+    def _check_all_envs_have_same_spaces(
+        self,
+        envs_or_env_functions: List[Union[str, gym.Env, Callable[[], gym.Env]]],
+        wrappers: List[Callable[[gym.Env], gym.Wrapper]],
+    ) -> None:
+        """ Checks that all the environments in the list have the same
+        observation/action spaces.
+        """
+        first_env = self._make_env(
+            base_env=envs_or_env_functions[0], wrappers=wrappers,
+        )
+        first_env.close()
+        for task_id, task_env_id_or_function in zip(
+            range(1, len(envs_or_env_functions)), envs_or_env_functions[1:]
+        ):
+            task_env = self._make_env(
+                base_env=task_env_id_or_function, wrappers=wrappers
+            )
+            task_env.close()
+            if task_env.observation_space != first_env.observation_space:
+                raise RuntimeError(
+                    f"Env at task {task_id} doesn't have the same observation "
+                    f"space ({task_env.observation_space}) as the environment of "
+                    f"the first task: {first_env.observation_space}."
+                )
+            if task_env.action_space != first_env.action_space:
+                raise RuntimeError(
+                    f"Env at task {task_id} doesn't have the same action "
+                    f"space ({task_env.action_space}) as the environment of "
+                    f"the first task: {first_env.action_space}"
+                )
+
+    def _make_wrappers(
+        self,
+        base_env: Union[str, gym.Env, Callable[[], gym.Env]],
+        task_schedule: Dict[int, Dict],
+        # sharp_task_boundaries: bool,
+        task_labels_available: bool,
+        transforms: List[Transforms],
+        starting_step: int,
+        max_steps: int,
+        new_random_task_on_reset: bool,
+    ) -> List[Callable[[gym.Env], gym.Env]]:
+        if self.train_envs:
+            if task_schedule:
+                logger.warning(
+                    RuntimeWarning(
+                        f"Ignoring task schedule {task_schedule}, since custom envs were "
+                        f"passed for each task!"
+                    )
+                )
+            task_schedule = None
+
+        wrappers = super()._make_wrappers(
+            base_env=base_env,
+            task_schedule=task_schedule,
+            task_labels_available=task_labels_available,
+            transforms=transforms,
+            starting_step=starting_step,
+            max_steps=max_steps,
+            new_random_task_on_reset=new_random_task_on_reset,
+        )
+
+        if self.train_envs:
+            # If the user passed a specific env to use for each task, then there won't
+            # be a MultiTaskEnv wrapper in `wrappers`, since the task schedule is
+            # None/empty.
+            # Instead, we will add a Wrapper that always gives the task ID of the
+            # current task.
+
+            # TODO: There are some 'unused' args above: `starting_step`, `max_steps`,
+            # `new_random_task_on_reset` which are still passed to the super() call, but
+            # just unused.
+            if new_random_task_on_reset:
+                raise NotImplementedError(
+                    "TODO: Add a MultiTaskEnv wrapper of some sort that alternates "
+                    " between the source envs."
+                )
+
+            assert not task_schedule
+            task_label = self.current_task_id
+            task_label_space = spaces.Discrete(self.nb_tasks)
+            if not task_labels_available:
+                task_label = None
+                task_label_space = Sparse(task_label_space, sparsity=1.0)
+
+            wrappers.append(
+                partial(
+                    AddTaskIDWrapper,
+                    task_label=task_label,
+                    task_label_space=task_label_space,
+                )
+            )
+
+        if is_monsterkong_env(base_env):
+            if not self.observe_state_directly:
+                # If we are supposed to view 'pixels' (True by default)
+                # TODO: Do we need the AtariPreprocessing wrapper on MonsterKong?
+                # wrappers.append(partial(AtariPreprocessing, frame_skip=1))
+                pass
+
+        return wrappers
 
 
 class MTEnvAdapterWrapper(TransformObservation):
-    # TODO: For now, we remove the task id portion of the space
+    # TODO: For now, we remove the task id portion of the space and of the observation
+    # dicts.
     def __init__(self, env: MTEnv, f: Callable = operator.itemgetter("env_obs")):
         super().__init__(env=env, f=f)
         # self.observation_space = self.env.observation_space["env_obs"]
 
     # def observation(self, observation):
     #     return observation["env_obs"]
+
+
+from typing import Any
+
+from sequoia.common.gym_wrappers.multi_task_environment import add_task_labels
+from sequoia.common.gym_wrappers.utils import IterableWrapper
+
+
+class AddTaskIDWrapper(IterableWrapper):
+    """ Wrapper that adds always the same given task id to the observations.
+
+    Used when the list of envs for each task is passed, so that each env also has the
+    task id as part of their observation space and in their observations.
+    """
+
+    def __init__(
+        self, env: gym.Env, task_label: Optional[int], task_label_space: gym.Space
+    ):
+        super().__init__(env=env)
+        self.task_label = task_label
+        self.task_label_space = task_label_space
+        self.observation_space = add_task_labels(
+            self.env.observation_space, task_labels=task_label_space
+        )
+
+    def observation(self, observation: Union[IncrementalRLSetting.Observations, Any]):
+        return add_task_labels(observation, self.task_label)
+
+    def step(self, action):
+        obs, reward, done, info = super().step(action)
+        return self.observation(obs), reward, done, info

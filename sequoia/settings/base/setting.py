@@ -178,18 +178,18 @@ class Setting(
         if is_list_of_list(self.test_transforms):
             self.test_transforms = self.test_transforms[0]
 
-        if all(
-            t is None
-            for t in [
-                self.transforms,
-                self.train_transforms,
-                self.val_transforms,
-                self.test_transforms,
-            ]
-        ):
-            # Use these two transforms by default if no transforms are passed at all.
-            # TODO: Remove this after the competition perhaps.
-            self.transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
+        # if all(
+        #     t is None
+        #     for t in [
+        #         self.transforms,
+        #         self.train_transforms,
+        #         self.val_transforms,
+        #         self.test_transforms,
+        #     ]
+        # ):
+        #     # Use these two transforms by default if no transforms are passed at all.
+        #     # TODO: Remove this after the competition perhaps.
+        #     self.transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
 
         # If the constructor is called with just the `transforms` argument, like this:
         # <SomeSetting>(dataset="bob", transforms=foo_transform)

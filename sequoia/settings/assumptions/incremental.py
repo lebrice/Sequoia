@@ -106,7 +106,7 @@ class IncrementalSetting(ContinualSetting):
 
     # Options related to Weights & Biases (wandb). Turned Off by default. Passing any of
     # its arguments will enable wandb.
-    wandb: Optional[WandbConfig] = None
+    wandb: Optional[WandbConfig] = field(default=None, compare=False)
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)

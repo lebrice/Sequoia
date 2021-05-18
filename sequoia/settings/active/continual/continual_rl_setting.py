@@ -6,33 +6,42 @@ from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import (Callable, ClassVar, Dict, List, Optional, Sequence, Type,
-                    Union)
+from typing import Callable, ClassVar, Dict, List, Optional, Sequence, Type, Union
 
 import gym
 from gym import spaces
 from gym.utils import colorize
 from gym.wrappers import TimeLimit
 from sequoia.common import Config
-from sequoia.common.gym_wrappers import (AddDoneToObservation,
-                                         MultiTaskEnvironment,
-                                         SmoothTransitions,
-                                         TransformObservation)
+from sequoia.common.gym_wrappers import (
+    AddDoneToObservation,
+    MultiTaskEnvironment,
+    SmoothTransitions,
+    TransformObservation,
+)
 from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
 from sequoia.common.gym_wrappers.pixel_observation import (
-    ImageObservations, PixelObservationWrapper)
-from sequoia.common.gym_wrappers.utils import (IterableWrapper, is_atari_env,
-                                               is_classic_control_env)
+    ImageObservations,
+    PixelObservationWrapper,
+)
+from sequoia.common.gym_wrappers.utils import (
+    IterableWrapper,
+    is_atari_env,
+    is_classic_control_env,
+    is_monsterkong_env,
+)
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 from sequoia.common.spaces import Sparse
 from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.transforms import Transforms
 from sequoia.settings.active import ActiveSetting
-from sequoia.settings.assumptions.incremental import (IncrementalSetting,
-                                                      TaskResults,
-                                                      TaskSequenceResults,
-                                                      TestEnvironment)
+from sequoia.settings.assumptions.incremental import (
+    IncrementalSetting,
+    TaskResults,
+    TaskSequenceResults,
+    TestEnvironment,
+)
 from sequoia.settings.base import Method
 from sequoia.utils import get_logger
 from simple_parsing import choice, field, list_field
@@ -135,6 +144,11 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # available_datasets dict), a gym.Env, or a callable that returns a single environment.
     dataset: str = "CartPole-v0"
 
+    # Environment/dataset to use for validation. Defaults to the same as `dataset`.
+    val_dataset: Optional[str] = None
+    # Environment/dataset to use for testing. Defaults to the same as `dataset`.
+    test_dataset: Optional[str] = None
+
     # The number of tasks. By default 1 for this setting.
     nb_tasks: int = field(1, alias=["n_tasks", "num_tasks"])
 
@@ -190,6 +204,8 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     valid_task_schedule: Dict[int, Dict[str, float]] = dict_field(cmd=False)
     test_task_schedule: Dict[int, Dict[str, float]] = dict_field(cmd=False)
 
+    # TODO: Naming is a bit inconsistent, using `valid` here, whereas we use `val`
+    # elsewhere.
     train_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
     valid_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
     test_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
@@ -239,6 +255,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 f"`dataset` must be either a string, a gym.Env, or a callable. "
                 f"(got {self.dataset})"
             )
+
+        self.val_dataset = self.val_dataset or self.dataset
+        self.test_dataset = self.test_dataset or self.dataset
 
         # Set the number of tasks depending on the increment, and vice-versa.
         # (as only one of the two should be used).
@@ -412,7 +431,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # the task schedules.
         with self._make_env(
             self.dataset, self._temp_wrappers(), self.observe_state_directly
-        ) as temp_env:  
+        ) as temp_env:
             self._setup_fields_using_temp_env(temp_env)
         del temp_env
 
@@ -430,9 +449,12 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # would be to add another argument to the MultiTaskEnv wrapper, to
         # pass down a dtype to be set on its observation_space's `dtype`
         # attribute, which would be ugly.
-        assert isinstance(temp_env.observation_space, NamedTupleSpace)
 
-        temp_env.observation_space.dtype = self.Observations
+        if isinstance(temp_env.observation_space, NamedTupleSpace):
+            temp_env.observation_space.dtype = self.Observations
+        else:
+            assert False, (temp_env, self._temp_wrappers())
+
         # Populate the task schedules created above.
         if not self.train_task_schedule:
             train_change_steps = [i * self.steps_per_task for i in range(self.nb_tasks)]
@@ -471,9 +493,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
         # FIXME: Temporarily, we will actually set the task label space, since there
         # appears to be an error when using monsterkong space.
-        observation_space = NamedTupleSpace(
-            spaces=space_dict, dtype=self.Observations
-        )
+        observation_space = NamedTupleSpace(spaces=space_dict, dtype=self.Observations)
         self.observation_space = observation_space
         # Set the spaces using the temp env.
         # self.observation_space = temp_env.observation_space
@@ -482,13 +502,11 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         self.reward_space = getattr(
             temp_env,
             "reward_space",
-            spaces.Box(
-                low=self.reward_range[0], high=self.reward_range[1], shape=()
-            ),
+            spaces.Box(low=self.reward_range[0], high=self.reward_range[1], shape=()),
         )
-    
+
     def create_task_schedule(
-        self, temp_env: MultiTaskEnvironment, change_steps: List[int]
+        self, temp_env: gym.Env, change_steps: List[int]
     ) -> Dict[int, Dict]:
         """ Create the task schedule, which maps from a step to the changes that
         will occur in the environment when that step is reached.
@@ -508,6 +526,13 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         addition to setting attributes.)
         """
         task_schedule: Dict[int, Dict] = {}
+        if not isinstance(temp_env, MultiTaskEnvironment):
+            logger.warning(
+                RuntimeWarning(
+                    f"Don't know how to create a task schedule for env {temp_env}"
+                )
+            )
+            return task_schedule
         # Start with the default task (step 0) and then add a new task at
         # intervals of `self.steps_per_task`
         for task_step in change_steps:
@@ -650,8 +675,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         )
 
         if self.monitor_training_performance:
-            from sequoia.settings.passive.cl.measure_performance_wrapper import \
-                MeasureRLPerformanceWrapper
+            from sequoia.settings.passive.cl.measure_performance_wrapper import (
+                MeasureRLPerformanceWrapper,
+            )
 
             env_dataloader = MeasureRLPerformanceWrapper(
                 env_dataloader, wandb_prefix=f"Train/Task {self.current_task_id}"
@@ -691,7 +717,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
         env_factory = partial(
             self._make_env,
-            base_env=self.dataset,
+            base_env=self.val_dataset,
             wrappers=self.valid_wrappers,
             observe_state_directly=self.observe_state_directly,
         )
@@ -763,7 +789,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         num_workers = num_workers if num_workers is not None else self.num_workers
         env_factory = partial(
             self._make_env,
-            base_env=self.dataset,
+            base_env=self.test_dataset,
             wrappers=self.test_wrappers,
             observe_state_directly=self.observe_state_directly,
         )
@@ -836,6 +862,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 f"base_env should either be a string, a callable, or a gym "
                 f"env. (got {base_env})."
             )
+        wrappers = wrappers or []
         for wrapper in wrappers:
             env = wrapper(env)
         return env
@@ -924,6 +951,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         starting_step = self.current_task_id * self.steps_per_task
         max_steps = starting_step + self.steps_per_task - 1
         return self._make_wrappers(
+            base_env=self.dataset,
             task_schedule=self.train_task_schedule,
             # TODO: Removing this, but we have to check that it doesn't change when/how
             # the task boundaries are given to the Method.
@@ -955,6 +983,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         starting_step = self.current_task_id * self.steps_per_task
         max_steps = starting_step + self.steps_per_task - 1
         return self._make_wrappers(
+            base_env=self.val_dataset,
             task_schedule=self.valid_task_schedule,
             # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
             task_labels_available=self.task_labels_at_train_time,
@@ -976,6 +1005,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             [description]
         """
         return self._make_wrappers(
+            base_env=self.test_dataset,
             task_schedule=self.test_task_schedule,
             # sharp_task_boundaries=self.known_task_boundaries_at_test_time,
             task_labels_available=self.task_labels_at_test_time,
@@ -993,13 +1023,14 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
     def _make_wrappers(
         self,
+        base_env: Union[str, gym.Env, Callable[[], gym.Env]],
         task_schedule: Dict[int, Dict],
         # sharp_task_boundaries: bool,
         task_labels_available: bool,
-        transforms: List[Transforms],
-        starting_step: int,
-        max_steps: int,
-        new_random_task_on_reset: bool,
+        transforms: List[Transforms] = None,
+        starting_step: int = None,
+        max_steps: int = None,
+        new_random_task_on_reset: bool = False,
     ) -> List[Callable[[gym.Env], gym.Env]]:
         """ helper function for creating the train/valid/test wrappers.
 
@@ -1015,72 +1046,89 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 partial(TimeLimit, max_episode_steps=self.max_episode_steps)
             )
 
-        if is_classic_control_env(self.dataset) and not self.observe_state_directly:
+        if is_classic_control_env(base_env):
             # If we are in a classic control env, and we dont want the state to
             # be fully-observable (i.e. we want pixel observations rather than
             # getting the pole angle, velocity, etc.), then add the
             # PixelObservation wrapper to the list of wrappers.
-            wrappers.append(PixelObservationWrapper)
-            wrappers.append(ImageObservations)
+            if not self.observe_state_directly:
+                wrappers.append(PixelObservationWrapper)
 
-        if (
-            isinstance(self.dataset, str)
-            and self.dataset.lower().startswith(("metamonsterkong", "monsterkong"))
-            and not self.observe_state_directly
-        ):
-            # TODO: Do we need the AtariPreprocessing wrapper on MonsterKong?
-            # wrappers.append(partial(AtariPreprocessing, frame_skip=1))
-            wrappers.append(ImageObservations)
-            pass
+        elif is_atari_env(base_env):
+            if self.observe_state_directly:
+                if not isinstance(base_env, str) or "ram" not in base_env:
+                    raise NotImplementedError(
+                        f"TODO: Swap out the base env so that it uses the 'ram' "
+                        f"version of the env id, since `observe_state_directly` is "
+                        f" True. (base_env: {base_env})"
+                    )
+            else:
+                # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
+                # TODO: Figure out the differences (if there are any) between the
+                # AtariWrapper from SB3 and the AtariPreprocessing wrapper from gym.
+                wrappers.append(AtariWrapper)
+                # wrappers.append(AtariPreprocessing)
 
-        elif is_atari_env(self.dataset):
-            # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
-            # TODO: Figure out the differences (if there are any) between the
-            # AtariWrapper from SB3 and the AtariPreprocessing wrapper from gym.
-            wrappers.append(AtariWrapper)
-            # wrappers.append(AtariPreprocessing)
-            wrappers.append(ImageObservations)
+            # # TODO: Not sure if we should add the transforms to the env here!
+            # # BUG: In the case where `train_envs` is passed (to the IncrementalRL
+            # # setting), and contains functools.partial for some env, then we have a
+            # # problem because we can't tell if we need to add some wrapper like
+            # # PixelObservations!
+            # assert False, (
+            #     f"Can't tell if we should be adding a PixelObservationsWrapper if "
+            #     f"the env isn't somethign we know how to handle!: {self.dataset}"
+            # )
 
-        # Apply image transforms if the env will have image-like obs space
-        if not self.observe_state_directly:
-            # wrappers.append(ImageObservations)
+        if transforms:
+            # Apply image transforms if the env will have image-like obs space
+            # Wrapper to 'wrap' the observation space into an Image space (subclass of
+            # Box with useful fields like `c`, `h`, `w`, etc.)
+            wrappers.append(ImageObservations)
             # Wrapper to apply the image transforms to the env.
             wrappers.append(partial(TransformObservation, f=transforms))
 
-        # Add a wrapper which will add non-stationarity to the environment.
-        # The "task" transitions will either be sharp or smooth.
-        # In either case, the task ids for each sample are added to the
-        # observations, and the dicts containing the task information (e.g. the
-        # current values of the env attributes from the task schedule) get added
-        # to the 'info' dicts.
-        if self.smooth_task_boundaries:
-            # Add a wrapper that creates smooth tasks.
-            cl_wrapper = SmoothTransitions
-        else:
-            assert self.nb_tasks >= 1
-            # Add a wrapper that creates sharp tasks.
-            cl_wrapper = MultiTaskEnvironment
+        # TODO: BUG: Currently still need to add a CL wrapper (so that we can then
+        # create the task schedule) even when `task_schedule` here is empty! (This is
+        # because this is called in `__post_init__()`, where `train_task_schedule is
+        # still empty.`)
+        if task_schedule is not None:
+            # Add a wrapper which will add non-stationarity to the environment.
+            # The "task" transitions will either be sharp or smooth.
+            # In either case, the task ids for each sample are added to the
+            # observations, and the dicts containing the task information (e.g. the
+            # current values of the env attributes from the task schedule) get added
+            # to the 'info' dicts.
+            if self.smooth_task_boundaries:
+                # Add a wrapper that creates smooth tasks.
+                cl_wrapper = SmoothTransitions
+            else:
+                assert self.nb_tasks >= 1
+                # Add a wrapper that creates sharp tasks.
+                cl_wrapper = MultiTaskEnvironment
 
-        wrappers.append(
-            partial(
-                cl_wrapper,
-                noise_std=self.task_noise_std,
-                task_schedule=task_schedule,
-                add_task_id_to_obs=True,
-                add_task_dict_to_info=True,
-                starting_step=starting_step,
-                new_random_task_on_reset=new_random_task_on_reset,
-                max_steps=max_steps,
+            assert starting_step is not None
+            assert max_steps is not None
+
+            wrappers.append(
+                partial(
+                    cl_wrapper,
+                    noise_std=self.task_noise_std,
+                    task_schedule=task_schedule,
+                    add_task_id_to_obs=True,
+                    add_task_dict_to_info=True,
+                    starting_step=starting_step,
+                    new_random_task_on_reset=new_random_task_on_reset,
+                    max_steps=max_steps,
+                )
             )
-        )
-        # If the task labels aren't available, we then add another wrapper that
-        # hides that information (setting both of them to None) and also marks
-        # those spaces as `Sparse`.
-        if not task_labels_available:
-            # NOTE: This sets the task labels to None, rather than removing
-            # them entirely.
-            # wrappers.append(RemoveTaskLabelsWrapper)
-            wrappers.append(HideTaskLabelsWrapper)
+            # If the task labels aren't available, we then add another wrapper that
+            # hides that information (setting both of them to None) and also marks
+            # those spaces as `Sparse`.
+            if not task_labels_available:
+                # NOTE: This sets the task labels to None, rather than removing
+                # them entirely.
+                # wrappers.append(RemoveTaskLabelsWrapper)
+                wrappers.append(HideTaskLabelsWrapper)
 
         return wrappers
 
@@ -1094,6 +1142,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         defined at the time when this is called.
         """
         return self._make_wrappers(
+            base_env=self.dataset,
             task_schedule=self.train_task_schedule,
             # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
             task_labels_available=self.task_labels_at_train_time,
