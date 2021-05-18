@@ -1,18 +1,35 @@
+import inspect
 from abc import ABC
 from collections.abc import Sized
-from functools import singledispatch
-from typing import (Dict, Generic, Iterator, List, NamedTuple, Tuple, Type,
-                    TypeVar, Union)
+from functools import partial, singledispatch
+from typing import (
+    Dict,
+    Generic,
+    Iterator,
+    List,
+    NamedTuple,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import gym
 import numpy as np
 from gym import spaces
-from gym.envs.classic_control import (AcrobotEnv, CartPoleEnv,
-                                      Continuous_MountainCarEnv,
-                                      MountainCarEnv, PendulumEnv)
+from gym.envs import registry
+from gym.envs.classic_control import (
+    AcrobotEnv,
+    CartPoleEnv,
+    Continuous_MountainCarEnv,
+    MountainCarEnv,
+    PendulumEnv,
+)
+from gym.envs.registration import EnvSpec
 from gym.vector.utils import batch_space
-from sequoia.utils.logging_utils import get_logger
 from torch.utils.data import DataLoader, IterableDataset
+
+from sequoia.utils.logging_utils import get_logger
 
 classic_control_envs = (
     AcrobotEnv,
@@ -31,11 +48,54 @@ classic_control_env_prefixes: Tuple[str, ...] = (
 )
 
 
-def is_classic_control_env(env: Union[str, gym.Env]) -> bool:
-    if isinstance(env, str) and env.startswith(classic_control_env_prefixes):
-        return True
-    if isinstance(env, gym.Env) and isinstance(env.unwrapped, classic_control_envs):
-        return True
+def is_classic_control_env(env: Union[str, gym.Env, Type[gym.Env]]) -> bool:
+    """Returns `True` if the given env id, env class, or env instance is a
+    classic-control env.
+
+    Parameters
+    ----------
+    env : Union[str, gym.Env]
+        Env id, or env class, or env instance.
+
+    Returns
+    -------
+    bool
+        Wether the given env is a classic-control env from Gym.
+
+    Examples:
+
+    >>> import gym
+    >>> is_classic_control_env("CartPole-v0")
+    True
+    >>> is_classic_control_env("Breakout-v1")
+    False
+    >>> is_classic_control_env("bob")
+    False
+    >>> from gym.envs.classic_control import CartPoleEnv
+    >>> is_classic_control_env(CartPoleEnv)
+    True
+    """
+    if isinstance(env, partial):
+        if env.func is gym.make and isinstance(env.args[0], str):
+            logger.warning(
+                RuntimeWarning(
+                    "Don't pass partial(gym.make, 'some_env'), just use the env string instead."
+                )
+            )
+            env = env.args[0]
+    if isinstance(env, str):
+        try:
+            spec = registry.spec(env)
+            return "gym.envs.classic_control" in spec.entry_point
+        except gym.error.Error as e:
+            # malformed env id, for instance.
+            logger.debug(f"can't tell if env id {env} is a classic-control env! ({e})")
+            return False
+
+    if inspect.isclass(env):
+        return issubclass(env, classic_control_envs)
+    if isinstance(env, gym.Env):
+        return isinstance(env.unwrapped, classic_control_envs)
     return False
 
 
@@ -52,13 +112,57 @@ def is_proxy_to(
 
 
 def is_atari_env(env: Union[str, gym.Env]) -> bool:
+    """Returns `True` if the given env id, env class, or env instance is a
+    Atari environment.
+
+    Parameters
+    ----------
+    env : Union[str, gym.Env]
+        Env id, or env class, or env instance.
+
+    Returns
+    -------
+    bool
+        Wether the given env is an Atari env from Gym.
+
+    Examples:
+
+    >>> import gym
+    >>> is_atari_env("CartPole-v0")
+    False
+    >>> is_atari_env("Breakout-v0")
+    True
+    >>> is_atari_env("bob")
+    False
+    >>> from gym.envs.atari import AtariEnv  # requires atari_py to be installed
+    >>> is_atari_env(AtariEnv)
+    True
+    """
     # TODO: Add more names from the atari environments, or figure out a smarter
     # way to do this.
-    if isinstance(env, str) and env.startswith("Breakout"):
-        return True
+    if isinstance(env, partial):
+        if env.func is gym.make and isinstance(env.args[0], str):
+            logger.warning(
+                RuntimeWarning(
+                    "Don't pass partial(gym.make, 'some_env'), just use the env string instead."
+                )
+            )
+            env = env.args[0]
+    # assert False, [env_spec for env_spec in registry.all()]
+    if isinstance(env, str):  # and env.startswith("Breakout"):
+        try:
+            spec = registry.spec(env)
+            return "gym.envs.atari" in spec.entry_point
+        except gym.error.Error as e:
+            # malformed env id, for instance.
+            logger.debug(f"can't tell if env id {env} is an atari env! ({e})")
+            return False
+
     try:
         from gym.envs.atari import AtariEnv
 
+        if inspect.isclass(env) and issubclass(env, AtariEnv):
+            return True
         return isinstance(env, gym.Env) and isinstance(env.unwrapped, AtariEnv)
     except gym.error.DependencyNotInstalled:
         return False
@@ -84,14 +188,14 @@ def has_wrapper(
     env: gym.Wrapper,
     wrapper_type_or_types: Union[Type[gym.Wrapper], Tuple[Type[gym.Wrapper], ...]],
 ) -> bool:
-    """Returns wether the given `env` has a wrapper of type `wrapper_type`. 
+    """Returns wether the given `env` has a wrapper of type `wrapper_type`.
 
     Args:
         env (gym.Wrapper): a gym.Wrapper or a gym environment.
         wrapper_type (Type[gym.Wrapper]): A type of Wrapper to check for.
 
     Returns:
-        bool: Wether there is a wrapper of that type wrapping `env`. 
+        bool: Wether there is a wrapper of that type wrapping `env`.
     """
     # avoid cycles, although that would be very weird to encounter.
     while hasattr(env, "env") and env.env is not env:
@@ -129,7 +233,7 @@ class MayCloseEarly(gym.Wrapper, ABC):
 
 class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     """ ABC that allows iterating over the wrapped env, if it is iterable.
-    
+
     This allows us to wrap dataloader-based Environments and still use the gym
     wrapper conventions.
     """
@@ -211,8 +315,7 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         # EnvDataset iterator.
 
         from sequoia.settings.active.active_dataloader import ActiveDataLoader
-        from sequoia.settings.passive.passive_environment import \
-            PassiveEnvironment
+        from sequoia.settings.passive.passive_environment import PassiveEnvironment
 
         if has_wrapper(self.env, EnvDataset) or is_proxy_to(
             self.env, (EnvDataset, ActiveDataLoader)
@@ -243,8 +346,7 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         """ Returns wether this wrapper is applied over a 'passive' env, in which case
         iterating over the env will yield (up to) 2 items, rather than just 1.
         """
-        from sequoia.settings.passive.passive_environment import \
-            PassiveEnvironment
+        from sequoia.settings.passive.passive_environment import PassiveEnvironment
 
         return isinstance(self.unwrapped, PassiveEnvironment) or is_proxy_to(
             self, PassiveEnvironment
@@ -253,14 +355,14 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     def __setattr__(self, attr, value):
         """ Redirect the __setattr__ of attributes 'owned' by the EnvDataset to
         the EnvDataset.
-        
+
         We need to do this because we change the value of `self` and call
         EnvDataset.__iter__(self), which might get and set attributes to/from
         `self`, which is what you'd expect normally. However when `self` is a
         wrapper over the env, rather than the env itself, then when attributes
         are set on `self` inside __iter__ or __next__ or send, etc, they are
         actually set on the wrapper, rather than on the env.
-        
+
         We solve this by detecting when an attribute with a name ending with "_"
         and part of a given list of attributes is set.
         """
@@ -350,3 +452,8 @@ def reshape_dict(space: spaces.Dict, new_shape: Tuple[int, ...]) -> spaces.Dict:
         }
     )
 
+
+if __name__ == "__main__":
+    import doctest
+
+    doctest.testmod()
