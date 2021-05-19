@@ -30,9 +30,9 @@ for METHOD in "${METHODS[@]}"; do
     for SETTING in "${SETTINGS[@]}"; do
         for DATASET in "${DATASETS[@]}"; do
             # Share the trials from different datasets, hopefully reusing something?
-            DABASE_PATH="/mnt/home/${SETTING}_${METHOD}.pkl"
+            DATABASE_PATH="/mnt/home/${SETTING}_${METHOD}.pkl"
             scripts/eai/job.sh sequoia_sweep \
-                --max_runs $MAX_RUNS --database_path $DABASE_PATH \
+                --max_runs $MAX_RUNS --database_path $DATABASE_PATH \
                 --setting $SETTING --dataset $DATASET --project $PROJECT \
                 --method $METHOD \
                 "$@"
