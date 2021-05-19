@@ -20,17 +20,17 @@ from sequoia.utils import constant, dict_union
 from sequoia.utils.logging_utils import get_logger
 
 from ..continual_rl_setting import ContinualRLSetting
-from .env_imports import (
+from sequoia.settings.active.envs import (
     ATARI_PY_INSTALLED,
     MetaMonsterKongEnv,  # metaworld,
     MetaWorldEnv,
     MTEnv,
     MujocoEnv,
     metaworld_envs,
-    metaworld_installed,
-    monsterkong_installed,
+    METAWORLD_INSTALLED,
+    MONSTERKONG_INSTALLED,
     mtenv_envs,
-    mtenv_installed,
+    MTENV_INSTALLED,
 )
 
 logger = get_logger(__file__)
@@ -63,7 +63,13 @@ class IncrementalRLSetting(ContinualRLSetting):
 
     # Class variable that holds the dict of available environments.
     available_datasets: ClassVar[Dict[str, str]] = dict_union(
-        ContinualRLSetting.available_datasets, {"monsterkong": "MetaMonsterKong-v0"},
+        ContinualRLSetting.available_datasets,
+        {
+            "monsterkong": "MetaMonsterKong-v0"
+        },
+        ({
+            
+        })
     )
     dataset: str = "CartPole-v0"
 
@@ -118,9 +124,11 @@ class IncrementalRLSetting(ContinualRLSetting):
         super().__post_init__(*args, **kwargs)
 
         if self.train_envs:
-            self.train_task_schedule.clear()
-            self.valid_task_schedule.clear()
-            self.test_task_schedule.clear()
+            # TODO: Use 'no-op' task schedules for now.
+            # self.train_task_schedule.clear()
+            # self.valid_task_schedule.clear()
+            # self.test_task_schedule.clear()
+            pass
 
             # TODO: Check that all the envs have the same observation spaces!
             # (If possible, find a way to check this without having to instantiate all
@@ -178,7 +186,7 @@ class IncrementalRLSetting(ContinualRLSetting):
             env_id = base_env
 
             # Check if the id belongs to mtenv
-            if mtenv_installed and env_id in mtenv_envs:
+            if MTENV_INSTALLED and env_id in mtenv_envs:
                 from mtenv import make as mtenv_make
 
                 # This is super weird. Don't undestand at all
@@ -191,7 +199,7 @@ class IncrementalRLSetting(ContinualRLSetting):
                 # the same MultiTaskEnv wrapper for all the environments.
                 wrappers.insert(0, MTEnvAdapterWrapper)
 
-            if metaworld_installed and env_id in metaworld_envs:
+            if METAWORLD_INSTALLED and env_id in metaworld_envs:
                 # TODO: Should we use a particular benchmark here?
                 # For now, we find the first benchmark that has an env with this name.
                 import metaworld
@@ -214,7 +222,7 @@ class IncrementalRLSetting(ContinualRLSetting):
                     )
 
         # TODO: Remove this and the `observe_state_directly` argument to this function.        
-        if monsterkong_installed and observe_state_directly:
+        if MONSTERKONG_INSTALLED and observe_state_directly:
             if isinstance(base_env, str) and base_env.startswith("MetaMonsterKong"):
                 base_env = gym.make(base_env, observe_state=True)
             elif inspect.isclass(base_env) and issubclass(base_env, MetaMonsterKongEnv):
@@ -236,9 +244,12 @@ class IncrementalRLSetting(ContinualRLSetting):
             # a "task schedule", because the only reason we're using a task schedule is
             # when we want to change something about the 'base' env in order to get
             # multiple tasks.
+            # Create a task schedule dict, just to fit in?
+            for i, task_step in enumerate(change_steps):
+                task_schedule[task_step] = {}
             return task_schedule
 
-        if monsterkong_installed:
+        if MONSTERKONG_INSTALLED:
             if isinstance(temp_env.unwrapped, MetaMonsterKongEnv):
                 for i, task_step in enumerate(change_steps):
                     task_schedule[task_step] = {"level": i}
@@ -290,7 +301,7 @@ class IncrementalRLSetting(ContinualRLSetting):
         if self.train_envs:
             # TODO: Maybe do something different here, since we don't actually want to
             # add a CL wrapper at all in this case?
-            assert not self.train_task_schedule
+            assert not any(self.train_task_schedule.values())
         return super().create_train_wrappers()
 
     def setup(self, stage: str = None) -> None:

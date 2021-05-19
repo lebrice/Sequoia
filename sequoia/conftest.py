@@ -7,8 +7,17 @@ import sys
 from argparse import ArgumentParser
 from dataclasses import replace
 from pathlib import Path
-from typing import (Any, Dict, Iterable, List, Optional, Tuple, Type, Union,
-                    get_type_hints)
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+    get_type_hints,
+)
 
 import gym
 import pytest
@@ -16,7 +25,6 @@ from simple_parsing import Serializable
 
 from sequoia.common.config import Config, TrainerConfig
 from sequoia.settings import Method, Setting
-
 
 
 logger = logging.getLogger(__file__)
@@ -29,8 +37,10 @@ xfail = pytest.mark.xfail
 def xfail_param(*args, reason: str):
     return pytest.param(*args, marks=pytest.mark.xfail(reason=reason))
 
+
 def skip_param(*args, reason: str):
     return pytest.param(*args, marks=pytest.mark.skip(reason=reason))
+
 
 def skipif_param(condition, *args, reason: str):
     return pytest.param(*args, marks=pytest.mark.skipif(condition, reason=reason))
@@ -52,11 +62,7 @@ def trainer_config(tmp_path_factory):
 def config():
     # TODO: Set the results dir somehow with the value of this `tmp_path` fixture.
     data_dir = Path(os.environ.get("SLURM_TMPDIR", os.environ.get("DATA_DIR", "data")))
-    return Config(
-        debug=True,
-        data_dir=data_dir,
-        seed=123,
-    )
+    return Config(debug=True, data_dir=data_dir, seed=123,)
 
 
 def id_fn(params: Any) -> str:
@@ -71,9 +77,10 @@ def id_fn(params: Any) -> str:
     # if not params:
     #     return "default"
     if isinstance(params, dict):
-        return json.dumps(params, sort_keys=True, separators=(',', ':'))
+        return json.dumps(params, sort_keys=True, separators=(",", ":"))
 
     return str(params)
+
 
 def get_all_dataset_names(method_class: Type[Method] = None) -> List[str]:
     # When not given a method class, use the Method class (gives ALL the
@@ -81,15 +88,16 @@ def get_all_dataset_names(method_class: Type[Method] = None) -> List[str]:
     method_class = method_class or Method
 
     dataset_names: Iterable[List[str]] = map(
-        lambda s: list(s.available_datasets),
-        method_class.get_applicable_settings()
+        lambda s: list(s.available_datasets), method_class.get_applicable_settings()
     )
     return list(set(sum(dataset_names, [])))
 
 
-def get_dataset_params(method_type: Type[Method],
-                       supported_datasets: List[str],
-                       skip_unsuported: bool = True) -> List[str]:
+def get_dataset_params(
+    method_type: Type[Method],
+    supported_datasets: List[str],
+    skip_unsuported: bool = True,
+) -> List[str]:
     all_datasets = get_all_dataset_names(method_type)
     dataset_params = []
     for dataset in all_datasets:
@@ -107,11 +115,14 @@ test_datasets_option_name: str = "datasets"
 
 def pytest_addoption(parser):
     parser.addoption("--slow", action="store_true", default=False)
-    parser.addoption(f"--{test_datasets_option_name}", action="store", nargs="*", default=[])
+    parser.addoption(
+        f"--{test_datasets_option_name}", action="store", nargs="*", default=[]
+    )
+
 
 slow = pytest.mark.skipif(
     "--slow" not in sys.argv,
-    reason="This test is slow so we only run it when necessary."
+    reason="This test is slow so we only run it when necessary.",
 )
 
 
@@ -119,10 +130,9 @@ def slow_param(*args):
     return pytest.param(*args, marks=slow)
 
 
-def find_class_under_test(module,
-                            function,
-                            name: str = "method",
-                            global_var_name: str = None) -> Optional[Type]:
+def find_class_under_test(
+    module, function, name: str = "method", global_var_name: str = None
+) -> Optional[Type]:
     cls: Optional[Type] = None
     module_name: str = module.__name__
     function_name: str = function.__name__
@@ -131,13 +141,17 @@ def find_class_under_test(module,
     for k in [name, f"{name}_class", f"{name}_type"]:
         cls = type_hints.get(k)
         if cls:
-            logger.debug(f"function {function_name} has annotation of type "
-                            f"{cls} for argument {k}.")
+            logger.debug(
+                f"function {function_name} has annotation of type "
+                f"{cls} for argument {k}."
+            )
             break
     if cls is None:
         # Try to get the class to test from a global variable on the module.
         cls = getattr(module, global_var_name, None)
-        logger.debug(f"Test module {module_name} has a '{global_var_name}' gloval variable of type {cls}")
+        logger.debug(
+            f"Test module {module_name} has a '{global_var_name}' gloval variable of type {cls}"
+        )
     return cls
 
 
@@ -148,7 +162,7 @@ def parametrize_test_datasets(metafunc):
     default_test_datasets = ["mnist", "cifar10"]
     func_param_name = "test_dataset"
     global_var_names = ["test_datasets", "supported_datasets"]
-    
+
     if func_param_name not in metafunc.fixturenames:
         return
 
@@ -157,38 +171,37 @@ def parametrize_test_datasets(metafunc):
 
     module_name: str = module.__name__
     function_name: str = function.__name__
-    
+
     # Get the test datasets from the command-line option.
     datasets_from_command_line = metafunc.config.getoption(test_datasets_option_name)
 
     if "ALL" in datasets_from_command_line:
         method_class: Optional[Type[Method]] = find_class_under_test(
-            module,
-            function,
-            name="method",
+            module, function, name="method",
         )
         test_datasets = get_all_dataset_names(method_class)
     elif "NONE" in datasets_from_command_line:
-        test_datasets = [
-            skip_param("?", reason="Set to skip, with command line arg.")
-        ]
+        test_datasets = [skip_param("?", reason="Set to skip, with command line arg.")]
     elif datasets_from_command_line:
-        assert (isinstance(datasets_from_command_line, list) and
-                all(isinstance(v, str) for v in datasets_from_command_line))
+        assert isinstance(datasets_from_command_line, list) and all(
+            isinstance(v, str) for v in datasets_from_command_line
+        )
         # If any datasets were set, use them.
         test_datasets = datasets_from_command_line
     else:
         # The default datasets to try are the ones specified at the global
         # variable with name {module_test_datasets_name} in the module.
-        for global_var_name in global_var_names:   
+        for global_var_name in global_var_names:
             test_datasets = getattr(module, global_var_name, None)
             if test_datasets is not None:
                 break
         else:
-            logger.warning(RuntimeWarning(
-                f"Test module {module_name} didn't specify a test_datasets "
-                f"global variable, defaulting to {default_test_datasets}"
-            ))
+            logger.warning(
+                RuntimeWarning(
+                    f"Test module {module_name} didn't specify a test_datasets "
+                    f"global variable, defaulting to {default_test_datasets}"
+                )
+            )
             test_datasets = default_test_datasets
 
     logger.info(
@@ -215,6 +228,7 @@ class DummyEnvironment(gym.Env):
     1:  Increment the counter.
     2:  Decrement the counter.
     """
+
     def __init__(self, start: int = 0, target: int = 5, max_value: int = None):
         self.i = start
         self.start = start
@@ -241,7 +255,7 @@ class DummyEnvironment(gym.Env):
         elif action == 2:
             self.i -= 1
         self.i %= self.max_value
-        done = (self.i == self.target)
+        done = self.i == self.target
         reward = abs(self.i - self.target)
         # print(self.i, reward, done, action)
         return self.i, reward, done, {}
@@ -257,81 +271,72 @@ class DummyEnvironment(gym.Env):
         seeds.append(self.action_space.seed(seed))
         return seeds
 
-from contextlib import redirect_stdout
-from io import StringIO
-try:
-    with redirect_stdout(StringIO()):
-        from meta_monsterkong.make_env import MetaMonsterKongEnv
-except ImportError:
-    monsterkong_installed = False
-else:
-    monsterkong_installed = True
+
+from sequoia.settings.active.envs import (
+    METAWORLD_INSTALLED,
+    MONSTERKONG_INSTALLED,
+    MTENV_INSTALLED,
+    ATARI_PY_INSTALLED,
+    MUJOCO_INSTALLED,
+)
 
 monsterkong_required = pytest.mark.skipif(
-    not monsterkong_installed, reason="monsterkong is required for this test."
+    not MONSTERKONG_INSTALLED, reason="monsterkong is required for this test."
 )
+
 
 def param_requires_monsterkong(*args):
     return skipif_param(
-        not monsterkong_installed,
+        not MONSTERKONG_INSTALLED,
         *args,
         reason="monsterkong is required for this parameter.",
     )
 
-try:
-    with redirect_stdout(StringIO()):
-        from gym.envs.atari import AtariEnv
-except gym.error.DependencyNotInstalled:
-    atari_py_installed = False
-else:
-    atari_py_installed = True
-
 
 atari_py_required = pytest.mark.skipif(
-    not atari_py_installed, reason="atari_py is required for this test."
+    not ATARI_PY_INSTALLED, reason="atari_py is required for this test."
 )
+
 
 def param_requires_atari_py(*args):
     return skipif_param(
-        not atari_py_installed,
+        not ATARI_PY_INSTALLED,
         *args,
         reason="atari_py is required for this parameter.",
     )
 
 
-try:
-    from mtenv import MTEnv
-    mtenv_installed = True
-except ImportError:
-    mtenv_installed = False
-
 mtenv_required = pytest.mark.skipif(
-    not mtenv_installed, reason="mtenv is required for this test."
+    not MTENV_INSTALLED, reason="mtenv is required for this test."
 )
 
 
 def param_requires_mtenv(*args):
     return skipif_param(
-        not mtenv_installed,
-        *args,
-        reason="mtenv is required for this parameter.",
+        not MTENV_INSTALLED, *args, reason="mtenv is required for this parameter.",
     )
 
 
-try:
-    from metaworld import MetaWorldEnv
-    metaworld_installed = True
-except ImportError:
-    metaworld_installed = False
-
 metaworld_required = pytest.mark.skipif(
-    not metaworld_installed, reason="metaworld is required for this test."
+    not METAWORLD_INSTALLED, reason="metaworld is required for this test."
 )
 
 
 def param_requires_metaworld(*args):
     return skipif_param(
-        not metaworld_installed,
+        not METAWORLD_INSTALLED,
         *args,
         reason="metaworld is required for this parameter.",
     )
+
+
+mujoco_required = pytest.mark.skipif(
+    not MUJOCO_INSTALLED, reason="mujoco-py is required for this test."
+)
+
+
+def param_requires_mujoco(*args):
+    return skipif_param(
+        not MUJOCO_INSTALLED, *args, reason="mujoco-py is required for this parameter.",
+    )
+

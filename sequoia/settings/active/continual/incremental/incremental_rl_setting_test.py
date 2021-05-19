@@ -14,7 +14,7 @@ from sequoia.conftest import (
     metaworld_required,
     monsterkong_required,
     mtenv_required,
-    param_requires_atari_py,
+    param_requires_atari_py, param_requires_mujoco
 )
 from sequoia.settings.active import TaskIncrementalRLSetting
 from sequoia.settings.assumptions.incremental_test import DummyMethod, OtherDummyMethod
@@ -78,6 +78,9 @@ def test_max_number_of_steps_per_task_is_respected():
         ),  # Since the Atari Preprocessing is added by default.
         # TODO: Add support for the duckietown env!
         # ("duckietown", (120, 160, 3)),
+        param_requires_mujoco_py(
+            "half_cheetah", (17,)
+        )
     ],
 )
 def test_check_iterate_and_step(
@@ -572,10 +575,12 @@ from functools import partial
 import gym
 
 import enum
+
 # TODO: Use the task schedule as a way to specify how long each task lasts in a
 # given env? For instance:
 
 from typing import NamedTuple
+
 
 class PeriodTypeEnum(enum.Enum):
     STEPS = enum.auto()
@@ -586,6 +591,7 @@ class Period(NamedTuple):
     value: int
     type: PeriodTypeEnum = PeriodTypeEnum.STEPS
 
+
 steps = lambda v: Period(value=v, type=PeriodTypeEnum.STEPS)
 episodes = lambda v: Period(value=v, type=PeriodTypeEnum.EPISODES)
 
@@ -594,13 +600,20 @@ train_task_schedule = {
     episodes(1000): "Breakout-v0",
 }
 
+from sequoia.methods.random_baseline import RandomBaselineMethod
+from functools import partial
+import gym
+from gym.envs.classic_control import CartPoleEnv, PendulumEnv
+import random
+
+from sequoia.methods.random_baseline import RandomBaselineMethod
+from sequoia.common.gym_wrappers import RenderEnvWrapper
+
 
 class TestPassingEnvsForEachTask:
     """ Tests that have to do with the feature of passing the list of environments to
     use for each task.
     """
-    
-    
 
     # @pytest.mark.xfail(
     #     reason="TODO: Check all env spaces to make sure they match, ideally without "
@@ -615,18 +628,15 @@ class TestPassingEnvsForEachTask:
             setting.train_dataloader()
 
     def test_passing_envs_for_each_task(self):
-        from functools import partial
-        import gym
-        from gym.envs.classic_control import CartPoleEnv
-        import random
-
         nb_tasks = 3
         gravities = [random.random() * 10 for _ in range(nb_tasks)]
+
         def make_random_cartpole_env(task_id):
             def _env_fn() -> CartPoleEnv:
                 env = gym.make("CartPole-v0")
                 env.gravity = gravities[task_id]
                 return env
+
             return _env_fn
 
         # task_envs = ["CartPole-v0", "CartPole-v1"]
@@ -635,15 +645,18 @@ class TestPassingEnvsForEachTask:
         setting = IncrementalRLSetting(train_envs=task_envs)
         assert setting.nb_tasks == nb_tasks
 
-        assert not setting.train_task_schedule
-        assert not setting.valid_task_schedule
-        assert not setting.test_task_schedule
+        # TODO: Using 'no-op' task schedules, rather than empty ones.
+        # This fixes a bug with the creation of the test environment.
+        assert not any(setting.train_task_schedule.values())
+        assert not any(setting.valid_task_schedule.values())
+        assert not any(setting.test_task_schedule.values())
+        # assert not setting.train_task_schedule
+        # assert not setting.valid_task_schedule
+        # assert not setting.test_task_schedule
+
         # assert len(setting.train_task_schedule.keys()) == 2
-        # assert len(setting.val_envs) == 2
-        # assert len(setting.test_envs) == 2
 
         setting.current_task_id = 0
-        from gym.envs.classic_control import CartPoleEnv, PendulumEnv
 
         train_env = setting.train_dataloader()
         assert isinstance(train_env.unwrapped, CartPoleEnv)
@@ -665,3 +678,89 @@ class TestPassingEnvsForEachTask:
         assert setting == IncrementalRLSetting()
         # TODO: Not using this:
         # assert setting.train_envs == [setting.dataset] * setting.nb_tasks
+
+    def test_raises_error_when_envs_have_different_obs_spaces(self):
+        task_envs = ["CartPole-v0", "Pendulum-v0"]
+        with pytest.raises(
+            RuntimeError, match="doesn't have the same observation space"
+        ):
+            setting = IncrementalRLSetting(train_envs=task_envs)
+            setting.train_dataloader()
+
+    def test_random_baseline(self):
+        nb_tasks = 3
+        gravities = [random.random() * 10 for _ in range(nb_tasks)]
+
+        def make_random_cartpole_env(task_id):
+            def _env_fn() -> CartPoleEnv:
+                env = gym.make("CartPole-v0")
+                env.gravity = gravities[task_id]
+                return env
+
+            return _env_fn
+
+        # task_envs = ["CartPole-v0", "CartPole-v1"]
+        task_envs = [make_random_cartpole_env(i) for i in range(nb_tasks)]
+        setting = IncrementalRLSetting(
+            train_envs=task_envs, steps_per_task=10, test_steps=50
+        )
+        assert setting.nb_tasks == nb_tasks
+        method = RandomBaselineMethod()
+
+        results = setting.apply(method)
+
+
+@pytest.mark.no_xvfb
+def test_incremental_mujoco_like_LPG_FTW():
+    """ Trying to get the same-ish setup as the "LPG_FTW" experiments
+
+    See https://github.com/Lifelong-ML/LPG-FTW/tree/master/experiments
+    """
+    import random
+
+    nb_tasks = 5
+    from contextlib import suppress
+
+    with suppress(SystemExit):
+        from gym_extensions.continuous.mujoco.modified_half_cheetah import (
+            HalfCheetahGravityEnv,
+        )
+    
+    
+    
+    task_gravity_factors = [random.random() * +0.5 for _ in range(nb_tasks)]
+    
+    task_envs = [
+        RenderEnvWrapper(
+            HalfCheetahGravityEnv(
+                max_episode_steps=1000,
+                reward_threshold=3800.0,
+                kwargs=dict(gravity=task_gravity_factor * -9.81),
+            )
+        )
+        for task_id, task_gravity_factor in enumerate(task_gravity_factors)
+    ]
+    
+    
+    
+    setting = IncrementalRLSetting(
+        train_envs=task_envs,
+        steps_per_task=10_000,
+        train_wrappers=RenderEnvWrapper,
+        test_steps=10_000,
+    )
+    assert setting.nb_tasks == nb_tasks
+
+    # NOTE: Same as above: we use a `no-op` task schedule, rather than an empty one.
+    assert not any(setting.train_task_schedule.values())
+    assert not any(setting.valid_task_schedule.values())
+    assert not any(setting.test_task_schedule.values())
+    # assert not setting.train_task_schedule
+    # assert not setting.valid_task_schedule
+    # assert not setting.test_task_schedule
+
+    method = RandomBaselineMethod()
+
+    # TODO: Using `render=True` causes a silent crash for some reason!
+    results = setting.apply(method)
+    assert False, results
