@@ -138,3 +138,27 @@ class ModifiedSizeEnvTests:
     #         elif step >= 300:
     #             assert env.get_size(body_part) == 0.9
     #     env.close()
+
+
+def test_modify_size():
+    """ TODO: Use actual strings or files to check that things make sense.
+    <body name="torso" pos="0 0 1.25">
+      <camera name="track" mode="trackcom" pos="0 -3 1" xyaxes="1 0 0 0 0 1" />
+      <joint armature="0" axis="1 0 0" damping="0" limited="false" name="rootx" pos="0 0 0" stiffness="0" type="slide" />
+      <joint armature="0" axis="0 0 1" damping="0" limited="false" name="rootz" pos="0 0 0" ref="1.25" stiffness="0" type="slide" />
+      <joint armature="0" axis="0 1 0" damping="0" limited="false" name="rooty" pos="0 0 1.25" stiffness="0" type="hinge" />
+      <geom friction="0.9" fromto="0 0 2.9 0 0 2.1" name="torso_geom" size="0.1" type="capsule" />
+      <body name="thigh" pos="0 0 2.1">
+        <joint axis="0 -1 0" name="thigh_joint" pos="0 0 1.05" range="-150 0" type="hinge" />
+        <geom friction="0.9" fromto="0 0 1.05 0 0 0.6" name="thigh_geom" size="0.05" type="capsule" />
+        <body name="leg" pos="0 0 0.35">
+          <joint axis="0 -1 0" name="leg_joint" pos="0 0 0.6" range="-150 0" type="hinge" />
+          <geom friction="0.9" fromto="0 0 0.6 0 0 0.1" name="leg_geom" size="0.04" type="capsule" />
+          <body name="foot" pos="0.13/2 0 0.1">
+            <joint axis="0 -1 0" name="foot_joint" pos="0 0 0.1" range="-45 45" type="hinge" />
+            <geom friction="2.0" fromto="-0.13 0 0.1 0.26 0 0.1" name="foot_geom" size="0.06" type="capsule" />
+          </body>
+        </body>
+      </body>
+    </body>
+    """
