@@ -41,7 +41,7 @@ class HalfCheetahGravityEnv(ModifiedGravityEnv, HalfCheetahEnv):
 
 
 class HalfCheetahWithSensorEnv(HalfCheetahEnv):
-    """
+    """ NOTE: unused for now.
     Adds empty sensor readouts, this is to be used when transfering to WallEnvs where we
     get sensor readouts with distances to the wall
     """

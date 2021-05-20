@@ -8,4 +8,3 @@ from typing import ClassVar, Type, List
 
 class TestHalfCheetah(ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests):
     Environment: ClassVar[Type[ContinualHalfCheetahEnv]] = ContinualHalfCheetahEnv
-    body_names: ClassVar[List[str]] = ["torso", "fthigh", "fshin", "ffoot"]

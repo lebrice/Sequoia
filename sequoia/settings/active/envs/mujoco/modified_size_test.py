@@ -16,15 +16,13 @@ import numpy as np
 
 class ModifiedSizeEnvTests:
     Environment: ClassVar[Type[EnvType]]
-    # names of the parts of the model which can be changed.
-    body_names: ClassVar[List[str]]
 
     def test_change_size_per_task(self):
-        body_part = self.body_names[0]
+        body_part = self.Environment.BODY_NAMES[0]
 
         nb_tasks = 3
-        max_episode_steps = 100
-        n_episodes = 3
+        max_episode_steps = 1000
+        n_episodes = 10
 
         scale_factors: List[float] = [
             (0.5 + 2 * (task_id / nb_tasks)) for task_id in range(nb_tasks)
