@@ -52,8 +52,13 @@ class ModifiedSizeEnv(MujocoEnv):
         # find the body_part we want
 
         tree = ET.parse(full_path)
+        if any(scale_factor == 0 for scale_factor in size_scales):
+            raise RuntimeError(f"Can't use a scale_factor of 0!")
+        
+        scaling_factor_dict = dict(zip(body_parts, size_scales))
+
         # NOTE: For now this still modifies `tree` in-place.
-        tree = change_size_in_xml(input_tree=tree, **dict(zip(body_parts, size_scales)))
+        tree = change_size_in_xml(input_tree=tree, **scaling_factor_dict)
         # create new xml
         _, file_path = tempfile.mkstemp(suffix=".xml", text=True)
         tree.write(file_path)
@@ -63,6 +68,11 @@ class ModifiedSizeEnv(MujocoEnv):
 
         # load the modified xml
         super().__init__(model_path=file_path, frame_skip=frame_skip, **kwargs)
+        if body_parts:
+            print(f"Generated XML path: {file_path}")
+            print(f"Modifying size of body parts: {scaling_factor_dict}")
+            print(f"Resulting sizes: ", {k: v for k, v in self.get_size_dict().items() if k in body_parts})
+
         # assert False, self.model.geom_size
 
     #     self.default_sizes_dict: Dict[str, np.ndarray] = {
@@ -94,14 +104,15 @@ class ModifiedSizeEnv(MujocoEnv):
     #     # self.model._compute_subtree()
     #     # self.model.forward()
 
-    def get_size(self, body_part: str) -> float:
+    def get_size(self, body_part: str) -> np.ndarray:
         # Will raise an IndexError if the body part isnt found.
         idx = self.model.body_names.index(body_part)
-        return self.model.geom_size[idx]
+        size = self.model.geom_size[idx]
+        return size
 
     def get_size_dict(self) -> Dict[str, np.ndarray]:
         return {
-            body_name: self.model.geom_size[i]
+            body_name: self.model.geom_size[i].copy()
             for i, body_name in enumerate(self.model.body_names)
         }
 
@@ -159,7 +170,7 @@ class ModifiedSizeEnv(MujocoEnv):
 import copy
 
 def pos_to_str(pos: Tuple[float, ...]) -> str:
-    return " ".join("0" if v == 0 else str(round(v, 4)) for v in pos)
+    return " ".join("0" if v == 0 else str(round(v, 5)) for v in pos)
 
 def str_to_pos(pos_str: str) -> Tuple[float, ...]:
     return tuple([float(v) for v in pos_str.split()])
@@ -187,6 +198,7 @@ def change_size_in_xml(
         # torso = tree.find(".//body[@name='%s']" % body_part)
         axis_scaling_coefs: np.ndarray
         if isinstance(size_scale, float):
+            assert size_scale != 0, f"HUH?!"
             axis_scaling_coefs = np.asfarray([size_scale, size_scale, size_scale])
         else:
             assert len(size_scale) == 3
@@ -195,13 +207,15 @@ def change_size_in_xml(
                 if not isinstance(size_scale, np.ndarray)
                 else size_scale
             )
-
         parent_body = tree.find(f".//body[@name='{body_part}']")
         # grab the target geometry
-        target_geom = parent_body.find(f".//geom[@name='{body_part}']")   
+        # target_geom = parent_body.find(f".//geom[@name='{body_part}']")
         child_bodies = parent_body.findall("./body")
+        # assert False, [(child_body.tag, child_body.attrib.get("name")) for child_body in child_bodies]
         # All child geometries that have a 'pos' attribute.
-        child_geoms = parent_body.findall("./geom[@pos]")
+        child_geoms: List[ET.ElementTree] = parent_body.findall("./geom")
+        # assert False, [(child_geom.tag, child_geom.attrib.get("name")) for child_geom in child_geoms]
+
 
         for child_geom in child_geoms:
             if "fromto" in child_geom.attrib:
@@ -217,6 +231,7 @@ def change_size_in_xml(
                 new_end_point_str = pos_to_str(new_end_point)
 
                 new_from_to = new_start_point_str + " " + new_end_point_str
+                print(f"Changing the 'fromto' of {child_geom.tag} element {child_geom.attrib} to {new_from_to}")
                 child_geom.attrib["fromto"] = new_from_to
 
                 for child_body in child_bodies:
@@ -226,11 +241,13 @@ def change_size_in_xml(
                         # is made bigger, but oh well!
                         # assert False, (child_body.attrib.get("name"), pos, start_point, pos == start_point)
                         if pos == start_point:
+                            print(f"Changing the 'pos' of {child_body.tag} element {child_body.attrib} to {new_start_point_str}")
                             child_body.attrib["pos"] = new_start_point_str
                         elif pos == end_point:
+                            print(f"Changing the 'pos' of {child_body.tag} element {child_body.attrib} to {new_end_point_str}")
                             child_body.attrib["pos"] = new_end_point_str
 
-            elif "size" in child_geom.attrib:
+            if "size" in child_geom.attrib:
                 # Scale the 'size' attribute?
                 sizes = [float(x) for x in child_geom.attrib["size"].split()]
                 # rescale
@@ -245,11 +262,14 @@ def change_size_in_xml(
                     v * axis_scaling_coef
                     for v, axis_scaling_coef in zip(sizes, axis_scaling_coefs)
                 ]
-                child_geom.attrib["size"] = " ".join(str(v) for v in new_sizes)
-            
-            elif "pos" in child_geom.attrib and child_geom.attrib["name"] != body_part:
+                new_sizes_str = " ".join(str(v) for v in new_sizes)
+                print(f"Changing the 'size' of {child_geom.tag} element {child_geom.attrib} to {new_sizes}")
+                child_geom.attrib["size"] = new_sizes_str
+
+            if "pos" in child_geom.attrib and child_geom.attrib["name"] != body_part:
                 pos = str_to_pos(child_geom.attrib["pos"])
                 new_pos = scale_pos(pos, axis_scaling_coefs)
+                print(f"Changing the 'pos' of {child_geom.tag} element {child_geom.attrib} to {new_pos}")
                 child_geom.attrib["pos"] = pos_to_str(new_pos)
                 # scale the 'pos' of the child geom.
 

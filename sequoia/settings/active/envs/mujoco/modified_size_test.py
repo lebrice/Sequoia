@@ -11,6 +11,7 @@ import random
 from sequoia.common.gym_wrappers import RenderEnvWrapper
 from gym.wrappers import TimeLimit
 from sequoia.methods import RandomBaselineMethod
+import numpy as np
 
 
 class ModifiedSizeEnvTests:
@@ -20,24 +21,25 @@ class ModifiedSizeEnvTests:
 
     def test_change_size_per_task(self):
         body_part = self.body_names[0]
+
         nb_tasks = 3
         max_episode_steps = 100
         n_episodes = 3
 
         scale_factors: List[float] = [
-            (3 * random.random() + 0.1) for _ in range(nb_tasks)
+            (0.5 + 2 * (task_id / nb_tasks)) for task_id in range(nb_tasks)
         ]
         default_sizes: Dict[str, float] = self.Environment().get_size_dict()
 
         task_envs: List[EnvType] = [
-            #     RenderEnvWrapper(
-            TimeLimit(
-                self.Environment(
-                    body_parts=[body_part],
-                    size_scales=[scale_factor],
-                ),
-                max_episode_steps=max_episode_steps,
-            )
+            # RenderEnvWrapper(
+                TimeLimit(
+                    self.Environment(
+                        body_parts=[body_part],
+                        size_scales=[scale_factor],
+                    ),
+                    max_episode_steps=max_episode_steps,
+                )
             # )
             for task_id, scale_factor in enumerate(scale_factors)
         ]
@@ -45,8 +47,15 @@ class ModifiedSizeEnvTests:
         for task_id, task_env in enumerate(task_envs):
             for episode in range(n_episodes):
                 size = task_env.get_size(body_part)
-                print(f"Size: {size}")
-                assert all(size == default_sizes[body_part] * scale_factors[task_id])
+
+                default_size = default_sizes[body_part]
+                task_scale_factor = scale_factors[task_id]
+                
+                expected_size = default_size * task_scale_factor 
+                print(f"default size: {default_size}, Size: {size}, task_scale_factor: {task_scale_factor}")
+                
+                assert np.allclose(size, expected_size)
+
                 state = task_env.reset()
                 done = False
                 steps = 0
@@ -55,6 +64,7 @@ class ModifiedSizeEnvTests:
                         task_env.action_space.sample()
                     )
                     steps += 1
+                    task_env.render("human")
             task_env.close()
 
         # # TODO: This doesn't quite belong here, moreso in IncrementalRLSettingTest.
