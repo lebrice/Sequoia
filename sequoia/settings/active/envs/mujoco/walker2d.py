@@ -14,6 +14,16 @@ class Walker2dEnv(_Walker2dEnv):
     xml name as a kwarg in openai gym
     """
 
+    BODY_NAMES: ClassVar[List[str]] = [
+        "torso",
+        "thigh",
+        "leg",
+        "foot",
+        "thigh_left",
+        "leg_left",
+        "foot_left",
+    ]
+
     def __init__(self, model_path: str = "walker2d.xml", frame_skip: int = 4):
         MujocoEnv.__init__(self, model_path=model_path, frame_skip=frame_skip)
 

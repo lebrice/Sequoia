@@ -1,7 +1,13 @@
+""" CL environments based on the mujoco envs.
+
+NOTE: This is based on https://github.com/Breakend/gym-extensions
+"""
 from .modified_gravity import ModifiedGravityEnv
 from .modified_size import ModifiedSizeEnv
-from .half_cheetah import HalfCheetahEnv, ContinualHalfCheetahEnv
-from .hopper import HopperEnv#, ContinualHopperEnv
+from .half_cheetah import HalfCheetahEnv, ContinualHalfCheetahEnv, HalfCheetahGravityEnv
+from .hopper import HopperEnv, ContinualHopperEnv, HopperGravityEnv
+from .walker2d import Walker2dEnv, ContinualWalker2dEnv, Walker2dGravityEnv
+
 import gym
 from gym.envs import register
 # id (str): The official environment ID
@@ -20,6 +26,7 @@ from typing import Type
 def get_entry_point(Env: Type[gym.Env]) -> str:
     return f"{Env.__module__}:{Env.__name__}"
 
+
 gym.envs.register(
     id="ContinualHalfCheetah-v0",
     entry_point=get_entry_point(ContinualHalfCheetahEnv),
@@ -27,4 +34,24 @@ gym.envs.register(
     reward_threshold=3800.0,
     # TODO: Not using this, but we could if we wanted to register one env per task.
     # kwargs=dict(body_parts=['torso','fthigh','fshin','ffoot'], size_scales=size_factors)
+)
+
+
+gym.envs.register(
+    id="ContinualHopper-v0",
+    entry_point=get_entry_point(ContinualHopperEnv),
+    max_episode_steps=1000,
+    reward_threshold=3800.0,
+    # TODO: Not using this, but we could if we wanted to register one env per task.
+    # kwargs=dict(body_parts=['torso','thigh','leg','foot'], size_scales=size_factors)
+)
+
+
+gym.envs.register(
+    id="ContinualWalker2d-v0",
+    entry_point=get_entry_point(ContinualWalker2dEnv),
+    max_episode_steps=1000,
+    reward_threshold=3800.0,
+    # TODO: Not using this, but we could if we wanted to register one env per task.
+    # kwargs=dict(body_parts=['torso','thigh','leg','foot'], size_scales=size_factors)
 )

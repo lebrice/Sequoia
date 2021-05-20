@@ -1,22 +1,27 @@
 """ TODO: Tests for the 'modified size' mujoco envs. """
 
-from .modified_size import ModifiedSizeEnv
+import random
+from typing import ClassVar, Dict, Generic, List, Type, TypeVar
+
+import numpy as np
+import pytest
 from gym.envs.mujoco import MujocoEnv
-from typing import ClassVar, Type, Generic, TypeVar, Dict, List
+from gym.wrappers import TimeLimit
+from sequoia.common.gym_wrappers import RenderEnvWrapper
+from sequoia.methods import RandomBaselineMethod
+from sequoia.settings.active.continual.incremental import IncrementalRLSetting
+
+from .modified_size import ModifiedSizeEnv
 
 EnvType = TypeVar("EnvType", bound=ModifiedSizeEnv)
 
-from sequoia.settings.active.continual.incremental import IncrementalRLSetting
-import random
-from sequoia.common.gym_wrappers import RenderEnvWrapper
-from gym.wrappers import TimeLimit
-from sequoia.methods import RandomBaselineMethod
-import numpy as np
-
+# NOTE: Marking a base class with xfail also affects all subclasses!
+# @pytest.mark.xfail(reason="WIP")
 
 class ModifiedSizeEnvTests:
     Environment: ClassVar[Type[EnvType]]
-
+    
+    @pytest.mark.xfail(reason="This feature isn't implemented yet.")
     def test_change_size_per_task(self):
         body_part = self.Environment.BODY_NAMES[0]
 
@@ -31,13 +36,10 @@ class ModifiedSizeEnvTests:
 
         task_envs: List[EnvType] = [
             # RenderEnvWrapper(
-                TimeLimit(
-                    self.Environment(
-                        body_parts=[body_part],
-                        size_scales=[scale_factor],
-                    ),
-                    max_episode_steps=max_episode_steps,
-                )
+            TimeLimit(
+                self.Environment(body_parts=[body_part], size_scales=[scale_factor],),
+                max_episode_steps=max_episode_steps,
+            )
             # )
             for task_id, scale_factor in enumerate(scale_factors)
         ]
@@ -48,10 +50,12 @@ class ModifiedSizeEnvTests:
 
                 default_size = default_sizes[body_part]
                 task_scale_factor = scale_factors[task_id]
-                
-                expected_size = default_size * task_scale_factor 
-                print(f"default size: {default_size}, Size: {size}, task_scale_factor: {task_scale_factor}")
-                
+
+                expected_size = default_size * task_scale_factor
+                print(
+                    f"default size: {default_size}, Size: {size}, task_scale_factor: {task_scale_factor}"
+                )
+
                 assert np.allclose(size, expected_size)
 
                 state = task_env.reset()
@@ -139,7 +143,7 @@ class ModifiedSizeEnvTests:
     #             assert env.get_size(body_part) == 0.9
     #     env.close()
 
-
+@pytest.mark.xfail(reason="WIP")
 def test_modify_size():
     """ TODO: Use actual strings or files to check that things make sense.
     <body name="torso" pos="0 0 1.25">
