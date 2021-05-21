@@ -360,18 +360,18 @@ class ClassIncrementalSetting(PassiveSetting, IncrementalSetting):
         """Apply the given method on this setting to producing some results."""
         # TODO: It still isn't super clear what should be in charge of creating
         # the config, and how to create it, when it isn't passed explicitly.
-        self.config: Config
         if config is not None:
             self.config = config
             logger.debug(f"Using Config {self.config}")
         elif isinstance(getattr(method, "config", None), Config):
             # If the Method has a `config` attribute that is a Config, use that.
-            self.config = method.config
+            self.config = getattr(method, "config")
             logger.debug(f"Using Config from the Method: {self.config}")
         else:
             logger.debug("Parsing the Config from the command-line.")
             self.config = Config.from_args(self._argv, strict=False)
             logger.debug(f"Resulting Config: {self.config}")
+        assert self.config is not None
 
         method.configure(setting=self)
 
@@ -843,9 +843,7 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         )
         self._reset = False
         # NOTE: The task schedule is already in terms of the number of batches.
-        self.boundary_steps = [
-            step for step in self.task_schedule.keys()
-        ]
+        self.boundary_steps = [step for step in self.task_schedule.keys()]
 
     def get_results(self) -> ClassIncrementalResults:
         return self.results
