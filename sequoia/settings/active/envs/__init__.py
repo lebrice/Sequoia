@@ -55,7 +55,8 @@ try:
     # mujoco_dir = Path("~/.mujoco").expanduser()
     # TODO: Cache the names of the metaworld envs to a file, just so we don't take about
     # 10 seconds to import metaworld every time?
-
+    # TODO: Make sure this also works on a cluster.
+    # TODO: When updating metaworld, need to remove this file.
     envs_cache_file = Path("temp/metaworld_envs.json")
     envs_cache_file.parent.mkdir(exist_ok=True)
     all_metaworld_envs: Dict[str, List[str]] = {}

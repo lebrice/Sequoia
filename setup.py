@@ -33,10 +33,6 @@ extras_require = {
     "metaworld": [
         "metaworld @ git+https://github.com/rlworkgroup/metaworld.git@master#egg=metaworld"
     ],
-    "crl": [
-        # "gym[mujoco] @ git+https://github.com/Lifelong-ML/LPG-FTW.git#egg=gym&subdirectory=gym",
-        "gym_extensions @ git+https://github.com/lebrice/gym-extensions.git@master#egg=gym_extensions",
-    ]
 }
 # Add-up all the optional requirements, and then remove any duplicates.
 extras_require["all"] = list(

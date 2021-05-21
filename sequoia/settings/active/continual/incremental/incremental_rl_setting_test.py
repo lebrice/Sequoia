@@ -445,7 +445,7 @@ def test_metaworld_support(pass_env_id_instead_of_env_instance: bool):
 
     benchmark = metaworld.ML10()  # Construct the benchmark, sampling tasks
 
-    env_name = "reach-v1"
+    env_name = "reach-v2"
     env_type: Type[MetaWorldEnv] = benchmark.train_classes[env_name]
     env = env_type()
 
@@ -508,7 +508,7 @@ def test_metaworld_auto_task_schedule(pass_env_id_instead_of_env_instance: bool)
 
     benchmark = metaworld.ML10()  # Construct the benchmark, sampling tasks
 
-    env_name = "reach-v1"
+    env_name = "reach-v2"
     env_type: Type[MetaWorldEnv] = benchmark.train_classes[env_name]
     env = env_type()
 

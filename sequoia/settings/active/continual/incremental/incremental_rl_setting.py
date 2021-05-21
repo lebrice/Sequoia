@@ -206,7 +206,6 @@ class IncrementalRLSetting(ContinualRLSetting):
                 # TODO: Should we use a particular benchmark here?
                 # For now, we find the first benchmark that has an env with this name.
                 import metaworld
-
                 for benchmark_class in [metaworld.ML10]:
                     benchmark = benchmark_class()
                     if env_id in benchmark.train_classes.keys():
