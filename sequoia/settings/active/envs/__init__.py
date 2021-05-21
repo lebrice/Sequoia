@@ -90,7 +90,8 @@ MUJOCO_INSTALLED = False
 try:
     from gym.envs.mujoco import MujocoEnv
     from .mujoco import *
-except ImportError:
+    MUJOCO_INSTALLED = True
+except ValueError:
     # Create a 'dummy' class so we can safely use type hints everywhere.
     # Additionally, `isinstance(some_env, <this class>)`` will always fail when the
     # dependency isn't installed, which is good.

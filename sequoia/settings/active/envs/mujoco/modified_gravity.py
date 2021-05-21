@@ -1,21 +1,9 @@
-import numpy as np
-from gym import utils
-from gym.envs.mujoco import mujoco_env
-import os.path as osp
-from typing import Tuple, Union
-from gym_extensions.continuous.mujoco.wall_envs import WallEnvFactory
-from gym_extensions.continuous.mujoco.gravity_envs import GravityEnvFactory
-from gym.envs.mujoco.half_cheetah import HalfCheetahEnv
-from gym.envs.mujoco.hopper import HopperEnv
-from gym.envs.mujoco.hopper import HopperEnv
-import warnings
-from mujoco_py import MjSim
-from typing import ClassVar
-import os
-import gym
-from gym.envs.mujoco import MujocoEnv
-
 import ctypes
+import warnings
+from typing import ClassVar
+
+from gym.envs.mujoco import MujocoEnv
+from mujoco_py import MjSim
 
 
 class ModifiedGravityEnv(MujocoEnv):

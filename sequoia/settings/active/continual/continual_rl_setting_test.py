@@ -1,17 +1,17 @@
+import random
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
+
 import gym
 import numpy as np
 import pytest
 from gym import spaces
 from gym.vector.utils import batch_space
 from sequoia.common.spaces import Image
-
 from sequoia.common.transforms import Transforms
+from sequoia.conftest import DummyEnvironment, mujoco_required, param_requires_atari_py
+from sequoia.methods import RandomBaselineMethod
 from sequoia.settings.assumptions.incremental_test import DummyMethod
-from sequoia.conftest import DummyEnvironment
-
-from sequoia.conftest import param_requires_atari_py
 from sequoia.utils.utils import take
 
 from .continual_rl_setting import ContinualRLSetting
@@ -252,3 +252,26 @@ def test_fit_and_on_task_switch_calls():
     assert method.n_fit_calls == 1  # TODO: Add something like this.
     assert not method.received_task_ids
     assert not method.received_while_training
+
+
+# TODO: Need to 
+
+@mujoco_required
+@pytest.mark.parametrize("dataset", ["ContinualHalfCheetah-v0"])
+def test_continual_mujoco(dataset: str):
+    """ Trying to get the same-ish setup as the "LPG_FTW" experiments
+
+    See https://github.com/Lifelong-ML/LPG-FTW/tree/master/experiments
+    """
+    from sequoia.settings.active.envs.mujoco import HalfCheetahGravityEnv
+
+    setting = ContinualRLSetting(dataset=dataset, max_steps=10_000, test_steps=10_000,)
+
+    method = RandomBaselineMethod()
+
+    # TODO: Using `render=True` causes a silent crash for some reason!
+    results = setting.apply(method)
+    # TODO: Change what the results look like for Continual envs.
+    # (only display the average, rather than a per-task value).
+    assert False, results
+

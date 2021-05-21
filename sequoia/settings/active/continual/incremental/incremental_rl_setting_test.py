@@ -711,7 +711,7 @@ class TestPassingEnvsForEachTask:
         results = setting.apply(method)
 
 
-@pytest.mark.no_xvfb
+@mujoco_required
 def test_incremental_mujoco_like_LPG_FTW():
     """ Trying to get the same-ish setup as the "LPG_FTW" experiments
 
@@ -721,14 +721,8 @@ def test_incremental_mujoco_like_LPG_FTW():
 
     nb_tasks = 5
     from contextlib import suppress
+    from sequoia.settings.active.envs.mujoco import  HalfCheetahGravityEnv
 
-    with suppress(SystemExit):
-        from gym_extensions.continuous.mujoco.modified_half_cheetah import (
-            HalfCheetahGravityEnv,
-        )
-    
-    
-    
     task_gravity_factors = [random.random() * +0.5 for _ in range(nb_tasks)]
     
     task_envs = [
@@ -741,9 +735,7 @@ def test_incremental_mujoco_like_LPG_FTW():
         )
         for task_id, task_gravity_factor in enumerate(task_gravity_factors)
     ]
-    
-    
-    
+
     setting = IncrementalRLSetting(
         train_envs=task_envs,
         steps_per_task=10_000,
