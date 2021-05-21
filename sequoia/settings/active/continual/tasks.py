@@ -5,12 +5,10 @@ from sequoia.common.gym_wrappers.multi_task_environment import make_env_attribut
 from functools import singledispatch
 import warnings
 
+
 @singledispatch
 def make_task_for_env(
-    env: gym.Env,
-    step: int,
-    change_steps: List[int] = None,
-    **kwargs,
+    env: gym.Env, step: int, change_steps: List[int] = None, **kwargs,
 ) -> Union[Dict[str, Any], Any]:
     # warnings.warn(
     #     RuntimeWarning(
@@ -24,10 +22,7 @@ def make_task_for_env(
 
 @make_task_for_env.register(gym.Wrapper)
 def make_task_for_wrapped_env(
-    env: gym.Wrapper,
-    step: int,
-    change_steps: List[int] = None,
-    **kwargs,
+    env: gym.Wrapper, step: int, change_steps: List[int] = None, **kwargs,
 ) -> Union[Dict[str, Any], Any]:
     # warnings.warn(
     #     RuntimeWarning(
@@ -45,12 +40,20 @@ from gym.envs.classic_control import CartPoleEnv, PendulumEnv
 
 _ENV_TASK_ATTRIBUTES: Dict[Union[Type[gym.Env]], Dict[str, float]] = {
     CartPoleEnv: {
-        "gravity"  : 9.8,
-        "masscart"  : 1.0,
-        "masspole"  : 0.1,
-        "length"  : 0.5,
+        "gravity": 9.8,
+        "masscart": 1.0,
+        "masspole": 0.1,
+        "length": 0.5,
         "force_mag": 10.0,
-        "tau" : 0.02,
+        "tau": 0.02,
+    },
+    PendulumEnv: {
+        "max_speed": 8,
+        "max_torque": 2.0,
+        # "dt" = .05
+        "g": 10.0,
+        "m": 1.0,
+        "l": 1.0,
     },
     # TODO: Add more of the classic control envs here.
     # TODO: Need to get the attributes to modify in each environment type and
@@ -79,11 +82,34 @@ def make_task_for_classic_control_env(
         # Use the 'default' task as the first task.
         return task_params.copy()
 
+    # Default back to the 'env attributes' task, which multiplies the default values
+    # with normally distributed scaling coefficient.
     return make_env_attributes_task(
-        env,
-        task_params=task_params,
-        seed=seed,
-        rng=rng,
-        noise_std=noise_std,
+        env, task_params=task_params, seed=seed, rng=rng, noise_std=noise_std,
     )
-    
+
+
+from sequoia.settings.active.envs import MUJOCO_INSTALLED
+
+
+if MUJOCO_INSTALLED:
+    from sequoia.settings.active.envs.mujoco import ModifiedGravityEnv
+
+    _ENV_TASK_ATTRIBUTES[ModifiedGravityEnv] = {"gravity": -9.81}
+
+    @make_task_for_env.register
+    def make_task_for_modified_gravity_env(
+        env: ModifiedGravityEnv,
+        step: int,
+        change_steps: List[int] = None,
+        seed: int = None,
+        rng: np.random.Generator = None,
+        **kwargs,
+    ) -> Union[Dict[str, Any], Any]:
+        rng = rng or np.random.default_rng(seed)
+        coefficient = rng.uniform() + 0.5
+        # TODO: Do we want to start with normal gravity?
+        if step == 0:
+            coefficient = 1
+        gravity = coefficient * -9.81
+        return {"gravity": gravity}

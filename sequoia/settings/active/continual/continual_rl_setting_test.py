@@ -266,7 +266,6 @@ def test_continual_mujoco(dataset: str):
     from sequoia.settings.active.envs.mujoco import HalfCheetahGravityEnv
 
     setting = ContinualRLSetting(dataset=dataset, max_steps=10_000, test_steps=10_000,)
-
     method = RandomBaselineMethod()
 
     # TODO: Using `render=True` causes a silent crash for some reason!
@@ -274,4 +273,3 @@ def test_continual_mujoco(dataset: str):
     # TODO: Change what the results look like for Continual envs.
     # (only display the average, rather than a per-task value).
     assert False, results
-

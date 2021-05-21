@@ -21,7 +21,7 @@ class ModifiedGravityEnv(MujocoEnv):
     def __init__(self, model_path: str, frame_skip: int, gravity: float = -9.81, **kwargs):
         super().__init__(model_path=model_path, frame_skip=frame_skip, **kwargs)
         # self.model.opt.gravity = (mujoco_py.mjtypes.c_double * 3)(*[0., 0., gravity])
-        self.model.opt.gravity[:] = (ctypes.c_double * 3)(*[0.0, 0.0, gravity])
+        self.model.opt.gravity[2] = gravity
         # self.model._compute_subtree()
         # self.model.forward()
         self.sim.forward()
@@ -36,10 +36,13 @@ class ModifiedGravityEnv(MujocoEnv):
     def gravity(self, value: float) -> None:
         # TODO: Seems to be bad practice to modify memory in-place for some reason?
         self.model.opt.gravity[2] = value
+        # self.model.opt.gravity[2] = - abs(value)
 
     def set_gravity(self, value: float) -> None:
         if value >= 0:
             warnings.warn(RuntimeWarning(
                 "Not a good idea to use a positive value! (things will start to float)"
             ))
+            # IDEA: always convert to negative value in the setter?
+            pass
         self.gravity = value

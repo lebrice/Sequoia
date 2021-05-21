@@ -15,7 +15,8 @@ from sequoia.conftest import (
     monsterkong_required,
     mtenv_required,
     param_requires_atari_py,
-    param_requires_mujoco
+    param_requires_mujoco,
+    mujoco_required,
 )
 from sequoia.settings.active import TaskIncrementalRLSetting
 from sequoia.settings.assumptions.incremental_test import DummyMethod, OtherDummyMethod
