@@ -6,7 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Callable, ClassVar, Dict, List, Optional, Sequence, Type, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Sequence, Type, Union
 
 import gym
 from gym import spaces
@@ -64,24 +64,7 @@ logger = get_logger(__file__)
 
 from gym.envs.classic_control import CartPoleEnv, PendulumEnv, MountainCarEnv
 
-task_params: Dict[Union[Type[gym.Env], str], List[str]] = {
-    CartPoleEnv: [
-        "gravity",  #: 9.8,
-        "masscart",  #: 1.0,
-        "masspole",  #: 0.1,
-        "length",  #: 0.5,
-        "force_mag",  #: 10.0,
-        "tau",  #: 0.02,
-    ],
-    # TODO: Add more of the classic control envs here.
-    # TODO: Need to get the attributes to modify in each environment type and
-    # add them here.
-    # AtariEnv: [
-    #     # TODO: Maybe have something like the difficulty as the CL 'task' ?
-    #     # difficulties = temp_env.ale.getAvailableDifficulties()
-    #     # "game_difficulty",
-    # ],
-}
+from .tasks import make_task_for_env
 
 # Type alias for the Environment returned by `train/val/test_dataloader`.
 Environment = ActiveEnvironment[
@@ -136,12 +119,14 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         "pendulum": "Pendulum-v0",
         "breakout": "Breakout-v0",
         # "duckietown": "Duckietown-straight_road-v0"
+        "half_cheetah": "ContinualHalfCheetah-v0",
     }
     # TODO: Add breakout to 'available_datasets' only when atari_py is installed.
 
     # Which environment (a.k.a. "dataset") to learn on.
     # The dataset could be either a string (env id or a key from the
-    # available_datasets dict), a gym.Env, or a callable that returns a single environment.
+    # available_datasets dict), a gym.Env, or a callable that returns a
+    # single environment.
     dataset: str = "CartPole-v0"
 
     # Environment/dataset to use for validation. Defaults to the same as `dataset`.
@@ -149,7 +134,12 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # Environment/dataset to use for testing. Defaults to the same as `dataset`.
     test_dataset: Optional[str] = None
 
-    # The number of tasks. By default 1 for this setting.
+    # The number of "tasks", which in the case of Continual settings means the number of
+    # base tasks that are interpolated in order to create the training, valid and test
+    # nonstationarities.
+    # By default 1 for this setting, meaning that the context is a linear interpolation
+    # between the start context (usually the default task for the environment) and a
+    # randomly sampled task.
     nb_tasks: int = field(1, alias=["n_tasks", "num_tasks"])
 
     # Max number of steps per task. (Also acts as the "length" of the training
@@ -223,6 +213,11 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     val_transforms: Optional[List[Transforms]] = None
     # Transforms to be applied to the testing datasets.
     test_transforms: Optional[List[Transforms]] = None
+
+    # The function to use to sample tasks for the given environment.
+    task_sampling_function: Callable[[gym.Env, int, List[int]], Any] = field(
+        None, cmd=False
+    )
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
@@ -444,16 +439,21 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
 
         This temporary environment only lives during the __post_init__() call.
         """
+        # For now since we always have a CL-type wrapper (either MultiTaskEnv (or
+        # AddTaskIdWrapper in IncrementalRL, the observation space should already be a
+        # NamedTupleSpace.
+        # NOTE: We use 'NamedTupleSpace', rather than dict, because we need Observations
+        # to be objects (in this case, Batch objects, which are basically dataclasses
+        # with tensor fields). This is because we need inheritance to work for the
+        # objects given by the envs, so that methods can accept new subclasses too.
+        assert isinstance(temp_env.observation_space, NamedTupleSpace)
+
         # FIXME: Replacing the observation space dtypes from their original
         # 'generated' NamedTuples to self.Observations. The alternative
         # would be to add another argument to the MultiTaskEnv wrapper, to
         # pass down a dtype to be set on its observation_space's `dtype`
         # attribute, which would be ugly.
-
-        if isinstance(temp_env.observation_space, NamedTupleSpace):
-            temp_env.observation_space.dtype = self.Observations
-        else:
-            assert False, (temp_env, self._temp_wrappers())
+        temp_env.observation_space.dtype = self.Observations
 
         # Populate the task schedules created above.
         if not self.train_task_schedule:
@@ -464,8 +464,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
                 # Add a last 'task' at the end of the 'epoch', so that the
                 # env changes smoothly right until the end.
                 train_change_steps.append(self.max_steps)
+
             self.train_task_schedule = self.create_task_schedule(
-                temp_env, train_change_steps,
+                temp_env=temp_env, change_steps=train_change_steps
             )
 
         assert self.train_task_schedule is not None
@@ -517,34 +518,52 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         Returns a dictionary mapping from integers (the steps) to the changes
         that will occur in the env at that step.
 
-        TODO: IDEA: Instead of just setting env attributes, use the
-        `methodcaller` or `attrsetter` from the `operator` built-in package,
-        that way later when we want to add support for Meta-World, we can just
-        use `partial(methodcaller("set_task"), task="new_task")(env)` or
-        something like that (i.e. generalize from changing an attribute to
-        applying a function on the env, which would allow calling methods in
-        addition to setting attributes.)
+        TODO: For now in ContinualRL we use an interpolation of a dict of attributes
+        to be set on the unwrapped env, but in IncrementalRL it is possible to pass
+        callables to be applied on the environment at a given timestep.
         """
         task_schedule: Dict[int, Dict] = {}
-        if not isinstance(temp_env, MultiTaskEnvironment):
-            logger.warning(
+        # TODO: Make it possible to use something other than steps as keys in the task
+        # schedule, something like a NamedTuple[int, DeltaType], e.g. Episodes(10) or Steps(10)
+        # something like that!
+        # IDEA: Even fancier, we could use a TimeDelta to say "do one hour of task 0"!!
+
+        for step in change_steps:
+            # TODO: Pass wether its for training/validation/testing?
+            task = self.sample_task(env=temp_env, step=step, change_steps=change_steps)
+            task_schedule[step] = task
+            
+        return task_schedule
+
+    def sample_task(
+        self, env: gym.Env, step: int, change_steps: List[int]
+    ) -> Dict[str, Any]:
+        if self.task_sampling_function:
+            return self.task_sampling_function(
+                env,
+                step=step,
+                change_steps=change_steps,
+                seed=self.config.seed if self.config else None,
+            )
+
+        # Check if there is a registered handler for this type of environment.
+        # TODO: Maybe use the type of the env, rather then env.unwrapped, and have the
+        # 'base' callable defer the call to the wrapped env?
+        if make_task_for_env.dispatch(type(env.unwrapped)) is make_task_for_env.dispatch(object):
+            warnings.warn(
                 RuntimeWarning(
-                    f"Don't know how to create a task schedule for env {temp_env}"
+                    f"Don't yet know how to create a task for env {env}, will use the environment as-is."
                 )
             )
-            return task_schedule
-        # Start with the default task (step 0) and then add a new task at
-        # intervals of `self.steps_per_task`
-        for task_step in change_steps:
-            if task_step == 0:
-                # Start with the default task, so that we can recover the 'iid'
-                # case with standard env dynamics when there is only one task
-                # and no non-stationarity.
-                task_schedule[task_step] = temp_env.default_task
-            else:
-                task_schedule[task_step] = temp_env.random_task()
 
-        return task_schedule
+        # Use this singledispatch function to select how to sample a task depending on
+        # the type of environment.
+        return make_task_for_env(
+            env.unwrapped,
+            step=step,
+            change_steps=change_steps,
+            seed=self.config.seed if self.config else None,
+        )
 
     def apply(
         self, method: Method, config: Config = None

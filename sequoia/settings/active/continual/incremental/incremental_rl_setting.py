@@ -31,6 +31,7 @@ from sequoia.settings.active.envs import (
     MONSTERKONG_INSTALLED,
     mtenv_envs,
     MTENV_INSTALLED,
+    MUJOCO_INSTALLED,
 )
 
 logger = get_logger(__file__)
@@ -64,12 +65,16 @@ class IncrementalRLSetting(ContinualRLSetting):
     # Class variable that holds the dict of available environments.
     available_datasets: ClassVar[Dict[str, str]] = dict_union(
         ContinualRLSetting.available_datasets,
-        {
-            "monsterkong": "MetaMonsterKong-v0"
-        },
-        ({
-            
-        })
+        {"monsterkong": "MetaMonsterKong-v0"},
+        (
+            # TODO: Also add the mujoco environments for the changing sizes and masses,
+            # which can't be changed on-the-fly atm.
+            {}
+            if not MUJOCO_INSTALLED
+            else {
+                # "incremental_half_cheetah": IncrementalHalfCheetahEnv
+            }
+        ),
     )
     dataset: str = "CartPole-v0"
 
@@ -191,9 +196,7 @@ class IncrementalRLSetting(ContinualRLSetting):
 
                 # This is super weird. Don't undestand at all
                 # why they are doing this. Makes no sense to me whatsoever.
-                base_env = mtenv_make(
-                    env_id
-                ) 
+                base_env = mtenv_make(env_id)
 
                 # Add a wrapper that will remove the task information, because we use
                 # the same MultiTaskEnv wrapper for all the environments.
@@ -221,7 +224,7 @@ class IncrementalRLSetting(ContinualRLSetting):
                         f"Can't find a metaworld benchmark that uses env {env_id}"
                     )
 
-        # TODO: Remove this and the `observe_state_directly` argument to this function.        
+        # TODO: Remove this and the `observe_state_directly` argument to this function.
         if MONSTERKONG_INSTALLED and observe_state_directly:
             if isinstance(base_env, str) and base_env.startswith("MetaMonsterKong"):
                 base_env = gym.make(base_env, observe_state=True)

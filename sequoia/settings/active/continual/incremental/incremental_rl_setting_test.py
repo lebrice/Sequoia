@@ -14,7 +14,8 @@ from sequoia.conftest import (
     metaworld_required,
     monsterkong_required,
     mtenv_required,
-    param_requires_atari_py, param_requires_mujoco
+    param_requires_atari_py,
+    param_requires_mujoco
 )
 from sequoia.settings.active import TaskIncrementalRLSetting
 from sequoia.settings.assumptions.incremental_test import DummyMethod, OtherDummyMethod
@@ -78,7 +79,7 @@ def test_max_number_of_steps_per_task_is_respected():
         ),  # Since the Atari Preprocessing is added by default.
         # TODO: Add support for the duckietown env!
         # ("duckietown", (120, 160, 3)),
-        param_requires_mujoco_py(
+        param_requires_mujoco(
             "half_cheetah", (17,)
         )
     ],

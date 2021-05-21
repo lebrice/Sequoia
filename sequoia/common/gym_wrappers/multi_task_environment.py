@@ -1,7 +1,17 @@
 import bisect
 from functools import singledispatch
-from typing import (Any, Callable, Dict, List, Optional,
-                    Sequence, Tuple, Type, TypeVar, Union)
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import gym
 import numpy as np
@@ -22,6 +32,42 @@ X = TypeVar("X")
 T = TypeVar("T")
 K = TypeVar("K")
 V = TypeVar("V")
+
+
+def make_env_attributes_task(
+    env: gym.Env,
+    task_params: Union[List[str], Dict[str, Any]],
+    seed: int = None,
+    rng: np.random.Generator = None,
+    noise_std: float = 0.2,
+) -> Dict[str, Any]:
+    task: Dict[str, Any] = {}
+    rng: np.random.Generator = rng or np.random.default_rng(seed)
+
+    if isinstance(task_params, list):
+        task_params = {param: getattr(env.unwrapped, param) for param in task_params}
+
+    for attribute, default_value in task_params.items():
+        new_value = default_value
+
+        if isinstance(default_value, (int, float, np.ndarray)):
+            new_value *= rng.normal(1.0, noise_std)
+            # Clip the value to be in the [0.1*default, 10*default] range.
+            new_value = max(0.1 * default_value, new_value)
+            new_value = min(10 * default_value, new_value)
+            if isinstance(default_value, int):
+                new_value = round(new_value)
+
+        elif isinstance(default_value, bool):
+            new_value = rng.choice([True, False])
+        else:
+            raise NotImplementedError(
+                f"TODO: Don't yet know how to sample a random value for "
+                f"attribute {attribute} with default value {default_value} of type "
+                f" {type(default_value)}."
+            )
+        task[attribute] = new_value
+    return task
 
 
 class ObservationsAndTaskLabels(NamedTuple):
@@ -423,26 +469,7 @@ class MultiTaskEnvironment(gym.Wrapper):
         """
         if self.new_random_task_on_reset:
             return self.np_random.choice(list(self.task_schedule.values()))
-        task: Dict = {}
-        for attribute, default_value in self.default_task.items():
-            new_value = default_value
-            if isinstance(default_value, (int, float, np.ndarray)):
-                new_value *= self.np_random.normal(1.0, self.noise_std)
-                # Clip the value to be in the [0.1*default, 10*default] range.
-                new_value = max(0.1 * default_value, new_value)
-                new_value = min(10 * default_value, new_value)
-                if isinstance(default_value, int):
-                    new_value = round(new_value)
-            elif isinstance(default_value, bool):
-                new_value = self.np_random.choice([True, False])
-            else:
-                raise NotImplementedError(
-                    f"TODO: Don't yet know how to sample a random value for "
-                    f"attribute {attribute} with default value {default_value} of type "
-                    f" {type(default_value)}."
-                )
-            task[attribute] = new_value
-        return task
+        return make_env_attributes_task(self, task_params=self.default_task, rng=self.np_random, noise_std=self.noise_std)
 
     def update_task(self, values: Dict = None, **kwargs):
         """Updates the current task with the params from values or kwargs.

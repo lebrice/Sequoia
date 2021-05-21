@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import ClassVar, List, Optional, Type, Union
-
+import numpy as np
 import torch
 import wandb
 from pytorch_lightning import Callback, Trainer, seed_everything
@@ -57,6 +57,7 @@ class Config(Serializable, Parseable):
     def __post_init__(self):
         self.seed_everything()
         self._display: Optional[Display] = None
+        self.rng = np.random.default_rng(self.seed)
 
     def __del__(self):
         if self._display:
