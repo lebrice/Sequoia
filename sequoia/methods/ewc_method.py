@@ -130,7 +130,6 @@ def demo():
         dataset="cartpole",
         train_task_schedule=task_schedule,
         test_task_schedule=task_schedule,
-        observe_state_directly=True,
         # max_steps=1000,
     )
 

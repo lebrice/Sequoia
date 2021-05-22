@@ -245,7 +245,6 @@ def demo_manual():
             0: {"gravity": 10, "length": 0.5},
             5000: {"gravity": 10, "length": 1.0},
         },
-        observe_state_directly=True,  # state input, rather than pixel input.
         max_steps=10_000,
     )
 

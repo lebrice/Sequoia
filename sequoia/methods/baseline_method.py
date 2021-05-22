@@ -22,6 +22,7 @@ from simple_parsing import mutable_field
 from wandb.wandb_run import Run
 
 from sequoia.common import Config, TrainerConfig
+from sequoia.common.spaces import Image
 from sequoia.settings import ActiveSetting, PassiveSetting
 from sequoia.settings.active.continual import ContinualRLSetting
 from sequoia.settings.assumptions.incremental import IncrementalSetting
@@ -219,8 +220,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         if isinstance(setting, ContinualRLSetting):
             setting.add_done_to_observations = True
-
-            if not setting.observe_state_directly:
+            if isinstance(setting.observation_space.x, Image):
                 if self.hparams.encoder is None:
                     self.hparams.encoder = "simple_convnet"
                 # TODO: Add 'proper' transforms for cartpole, specifically?

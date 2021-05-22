@@ -17,7 +17,6 @@ if __name__ == "__main__":
     # setting = TaskIncrementalRLSetting(
     # setting = RLSetting(
         dataset="CartPole-v1",
-        observe_state_directly=True,
         max_steps=2000,
         train_task_schedule=task_schedule,
     )

@@ -34,8 +34,7 @@ def test_cartpole_state(config: Config, trainer: Trainer):
     method.trainer = trainer
     method.hparams.learning_rate = 0.01
     
-    setting = RLSetting(dataset="cartpole", max_steps=5000,
-                        observe_state_directly=True)
+    setting = RLSetting(dataset="cartpole", max_steps=5000)
     results: RLResults = setting.apply(method)
 
     print(results.to_log_dict())
@@ -54,8 +53,7 @@ def test_incremental_cartpole_state(config: Config, trainer: Trainer):
     method.trainer = trainer
     method.hparams.learning_rate = 0.01
     
-    setting = IncrementalRLSetting(dataset="cartpole", max_steps=5000,
-                        observe_state_directly=True, nb_tasks=2)
+    setting = IncrementalRLSetting(dataset="cartpole", max_steps=5000, nb_tasks=2)
     results: RLResults = setting.apply(method)
 
     print(results.to_log_dict())

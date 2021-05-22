@@ -24,7 +24,6 @@ def test_continuous_mountaincar(Setting: Type[Setting], observe_state: bool):
     method = SACMethod()
     setting = Setting(
         dataset="MountainCarContinuous-v0",
-        observe_state_directly=True,
         nb_tasks=2,
         steps_per_task=1_000,
         test_steps_per_task=1_000,

@@ -29,6 +29,8 @@ from wandb.wandb_run import Run
 from sequoia.common.gym_wrappers.batch_env.batched_vector_env import VectorEnv
 from sequoia.common.gym_wrappers.utils import has_wrapper
 from sequoia.common.hparams import HyperParameters, log_uniform
+from sequoia.common.spaces import Image
+from sequoia.common.transforms.utils import is_image
 from sequoia.settings import Method, Setting
 from sequoia.settings.active.continual import ContinualRLSetting
 from sequoia.settings.active.continual.wrappers import (
@@ -234,10 +236,10 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         setting.test_transforms = transforms
 
         if self.hparams.policy is None:
-            if setting.observe_state_directly:
-                self.hparams.policy = "MlpPolicy"
-            else:
+            if is_image(setting.observation_space.x):
                 self.hparams.policy = "CnnPolicy"
+            else:
+                self.hparams.policy = "MlpPolicy"
 
         logger.debug(f"Will use {self.hparams.policy} as the policy.")
         # TODO: Double check that some settings might not impose a limit on

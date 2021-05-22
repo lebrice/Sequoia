@@ -325,7 +325,6 @@ class EWCExampleMethod(StableBaselines3Method):
 if __name__ == "__main__":
     setting = TaskIncrementalRLSetting(
         dataset="cartpole", 
-        observe_state_directly=True,
         nb_tasks=2,
         train_task_schedule={
             0:      {"gravity": 10, "length": 0.3},

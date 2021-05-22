@@ -28,7 +28,6 @@ from .incremental_rl_setting import IncrementalRLSetting
 def test_number_of_tasks():
     setting = IncrementalRLSetting(
         dataset="CartPole-v0",
-        observe_state_directly=True,
         monitor_training_performance=True,
         steps_per_task=1000,
         max_steps=10_000,
@@ -40,7 +39,6 @@ def test_number_of_tasks():
 def test_max_number_of_steps_per_task_is_respected():
     setting = IncrementalRLSetting(
         dataset="CartPole-v0",
-        observe_state_directly=True,
         monitor_training_performance=True,
         steps_per_task=500,
         max_steps=1000,
@@ -267,7 +265,8 @@ def test_monsterkong(task_labels_at_test_time: bool, state: bool):
     """ checks that the MonsterKong env works fine with monsterkong and state input. """
     setting = IncrementalRLSetting(
         dataset="monsterkong",
-        observe_state_directly=state,
+        force_state_observations=state,
+        force_pixel_observations=(not state),
         nb_tasks=5,
         steps_per_task=100,
         test_steps_per_task=100,
@@ -350,7 +349,6 @@ def test_action_space_always_matches_obs_batch_size_in_RL(config: Config):
     batch_size = 1
     setting = TaskIncrementalRLSetting(
         dataset="cartpole",
-        observe_state_directly=True,
         nb_tasks=nb_tasks,
         batch_size=batch_size,
         steps_per_task=100,
@@ -728,16 +726,13 @@ def test_incremental_mujoco_like_LPG_FTW():
     
     task_envs = [
         RenderEnvWrapper(
-            HalfCheetahGravityEnv(
-                max_episode_steps=1000,
-                reward_threshold=3800.0,
-                kwargs=dict(gravity=task_gravity_factor * -9.81),
-            )
+            HalfCheetahGravityEnv(gravity=task_gravity_factor * -9.81),
         )
         for task_id, task_gravity_factor in enumerate(task_gravity_factors)
     ]
 
     setting = IncrementalRLSetting(
+        dataset="continual_half_cheetah",
         train_envs=task_envs,
         steps_per_task=10_000,
         train_wrappers=RenderEnvWrapper,

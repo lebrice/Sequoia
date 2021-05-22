@@ -1,5 +1,4 @@
 dataset: CartPole-v0
-observe_state_directly: true
 max_episodes: null
 nb_tasks: 2
 test_steps: 1000

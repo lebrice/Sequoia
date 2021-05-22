@@ -112,7 +112,8 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # Create the encoder and the output head.
         # Space of our encoder representations.
         self.representation_space: gym.Space
-        if isinstance(setting, ContinualRLSetting) and setting.observe_state_directly:
+        observing_state = not isinstance(setting.observation_space.x, Image)
+        if isinstance(setting, ContinualRLSetting) and observing_state:
             # ISSUE # 62: Need to add a dense network instead of no encoder, and
             # change the PolicyHead to have only one layer.
             # Only pass the image, not the task labels to the encoder (for now).

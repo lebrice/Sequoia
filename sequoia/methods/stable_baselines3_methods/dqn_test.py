@@ -13,7 +13,6 @@ def test_cartpole_state():
     method = DQNMethod()
     setting = IncrementalRLSetting(
         dataset="cartpole",
-        observe_state_directly=True,
         nb_tasks=2,
         steps_per_task=1_000,
         test_steps_per_task=1_000,

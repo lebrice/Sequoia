@@ -57,7 +57,7 @@ def test_random_baseline_rl():
         IncrementalRLSetting,
         dataset="monsterkong",
         monitor_training_performance=True,
-        observe_state_directly=False,
+        # observe_state_directly=False, ## TODO: Make sure this doesn't change anything.
         steps_per_task=1_000,
         test_steps_per_task=1_000,
         train_task_schedule={

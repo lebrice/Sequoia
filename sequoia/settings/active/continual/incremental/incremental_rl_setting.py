@@ -87,14 +87,14 @@ class IncrementalRLSetting(ContinualRLSetting):
             # TODO: In case of the metaworld envs, we could determine the 'default' nb
             # of tasks to use based on the number of available tasks
             pass
-
-        # TODO: Remove the `observe_state_directly` arg of `self._make_env`, and change
-        # the dataset dynamically here instead.
-        # if monsterkong_installed and self.observe_state_directly:
-        #     if isinstance(self.dataset, str) and self.dataset.startswith("MetaMonsterKong"):
-        #         self.dataset = gym.make(self.dataset, observe_state=True)
-        #     elif inspect.isclass(self.dataset) and issubclass(self.dataset, MetaMonsterKongEnv):
-        #         self.dataset = partial(base_env, observe_state=True)
+        
+        if is_monsterkong_env(self.dataset):
+            if self.force_pixel_observations:
+                # Add this to the kwargs that will be passed to gym.make, to make sure that
+                # we observe pixels, and not state.
+                self.base_env_kwargs["observe_state"] = False
+            elif self.force_state_observations:
+                self.base_env_kwargs["observe_state"] = True
 
         if self.train_envs:
             self.nb_tasks = len(self.train_envs)
@@ -177,7 +177,7 @@ class IncrementalRLSetting(ContinualRLSetting):
     def _make_env(
         base_env: Union[str, gym.Env, Callable[[], gym.Env]],
         wrappers: List[Callable[[gym.Env], gym.Env]] = None,
-        observe_state_directly: bool = False,
+        **base_env_kwargs: Dict
     ) -> gym.Env:
         """ Helper function to create a single (non-vectorized) environment.
 
@@ -196,7 +196,7 @@ class IncrementalRLSetting(ContinualRLSetting):
 
                 # This is super weird. Don't undestand at all
                 # why they are doing this. Makes no sense to me whatsoever.
-                base_env = mtenv_make(env_id)
+                base_env = mtenv_make(env_id, **base_env_kwargs)
 
                 # Add a wrapper that will remove the task information, because we use
                 # the same MultiTaskEnv wrapper for all the environments.
@@ -206,6 +206,7 @@ class IncrementalRLSetting(ContinualRLSetting):
                 # TODO: Should we use a particular benchmark here?
                 # For now, we find the first benchmark that has an env with this name.
                 import metaworld
+
                 for benchmark_class in [metaworld.ML10]:
                     benchmark = benchmark_class()
                     if env_id in benchmark.train_classes.keys():
@@ -223,17 +224,10 @@ class IncrementalRLSetting(ContinualRLSetting):
                         f"Can't find a metaworld benchmark that uses env {env_id}"
                     )
 
-        # TODO: Remove this and the `observe_state_directly` argument to this function.
-        if MONSTERKONG_INSTALLED and observe_state_directly:
-            if isinstance(base_env, str) and base_env.startswith("MetaMonsterKong"):
-                base_env = gym.make(base_env, observe_state=True)
-            elif inspect.isclass(base_env) and issubclass(base_env, MetaMonsterKongEnv):
-                base_env = partial(base_env, observe_state=True)
-
         return ContinualRLSetting._make_env(
             base_env=base_env,
             wrappers=wrappers,
-            observe_state_directly=observe_state_directly,
+            **base_env_kwargs,
         )
 
     def create_task_schedule(
@@ -347,7 +341,6 @@ class IncrementalRLSetting(ContinualRLSetting):
             #     return self._make_env(
             #         base_env=base_env,
             #         wrappers=[],
-            #         observe_state_directly=self.observe_state_directly,
             #     )
             # self.train_envs = [partial(gym.make, self.dataset) for i in range(self.nb_tasks)]
             # self.val_envs = [partial(gym.make, self.dataset) for i in range(self.nb_tasks)]
@@ -364,14 +357,14 @@ class IncrementalRLSetting(ContinualRLSetting):
         observation/action spaces.
         """
         first_env = self._make_env(
-            base_env=envs_or_env_functions[0], wrappers=wrappers,
+            base_env=envs_or_env_functions[0], wrappers=wrappers, **self.base_env_kwargs
         )
         first_env.close()
         for task_id, task_env_id_or_function in zip(
             range(1, len(envs_or_env_functions)), envs_or_env_functions[1:]
         ):
             task_env = self._make_env(
-                base_env=task_env_id_or_function, wrappers=wrappers
+                base_env=task_env_id_or_function, wrappers=wrappers, **self.base_env_kwargs
             )
             task_env.close()
             if task_env.observation_space != first_env.observation_space:
@@ -450,12 +443,10 @@ class IncrementalRLSetting(ContinualRLSetting):
             )
 
         if is_monsterkong_env(base_env):
-            if not self.observe_state_directly:
-                # If we are supposed to view 'pixels' (True by default)
-                # TODO: Do we need the AtariPreprocessing wrapper on MonsterKong?
-                # wrappers.append(partial(AtariPreprocessing, frame_skip=1))
-                pass
-
+            # TODO: Need to register a MetaMonsterKong-State-v0 or something like that!
+            # TODO: Maybe add another field for 'force_state_observations' ?
+            # if self.force_pixel_observations:
+            pass
         return wrappers
 
 

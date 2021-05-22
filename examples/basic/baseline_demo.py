@@ -21,7 +21,6 @@ def baseline_demo_simple():
     # Reinforcement Learning Setting:
     setting = TaskIncrementalRLSetting(
         dataset="cartpole",
-        observe_state_directly=True,
         max_steps=4000,
         nb_tasks=2,
     )

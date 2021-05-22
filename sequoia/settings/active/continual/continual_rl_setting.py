@@ -119,7 +119,13 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         "pendulum": "Pendulum-v0",
         "breakout": "Breakout-v0",
         # "duckietown": "Duckietown-straight_road-v0"
-        "half_cheetah": "ContinualHalfCheetah-v0",
+        # NOTE: We register both the 'true' environment ID, as well as a simpler name:
+        "half_cheetah": "ContinualHalfCheetah-v2",
+        "HalfCheetah-v2": "ContinualHalfCheetah-v2",
+        "hopper": "ContinualHopper-v2",
+        "Hopper-v2": "ContinualHopper-v2",
+        "walker2d": "ContinualWalker2d-v2",
+        "Walker2d-v2": "ContinualWalker2d-v2",
     }
     # TODO: Add breakout to 'available_datasets' only when atari_py is installed.
 
@@ -168,9 +174,39 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
 
-    # Wether to observe the state directly, rather than pixels. This can be
-    # useful to debug environments like CartPole, for instance.
-    observe_state_directly: bool = False
+    # When True, will attempt to extract pixel observations from the environment,
+    # wither by adding a PixelObservation (for classic control envs for instance) or
+    # by passing the right argument to the env constructor when possible.
+    force_pixel_observations: bool = False
+    """ Wether to use the "pixel" version of `self.dataset`. 
+    When `False`, does nothing.
+    When `True`, will do one of the following, depending on the choice of environment:
+    - For classic control envs, it adds a `PixelObservationsWrapper` to the env.
+    - For atari envs:
+        - If `self.dataset` is a regular atari env (e.g. "Breakout-v0"), does nothing.
+        - if `self.dataset` is the 'RAM' version of an atari env, raises an error.
+    - For mujoco envs, this raises a NotImplementedError, as we don't yet know how to
+      make a pixel-version the Mujoco Envs.
+    - For other envs:
+        - If the environment's observation space appears to be image-based, an error
+          will be raised.
+        - If the environment's observation space doesn't seem to be image-based, does
+          nothing.
+    """
+    
+    force_state_observations: bool = False
+    """ Wether to use the "state" version of `self.dataset`. 
+    When `False`, does nothing.
+    When `True`, will do one of the following, depending on the choice of environment:
+    - For classic control envs, it does nothing, as they are already state-based.
+    - TODO: For atari envs, the 'RAM' version of the chosen env will be used.
+    - For mujoco envs, it doesn nothing, as they are already state-based.
+    - For other envs, if this is set to True, then
+        - If the environment's observation space appears to be image-based, an error
+          will be raised.
+        - If the environment's observation space doesn't seem to be image-based, does
+          nothing.
+    """
 
     # Path to a json file from which to read the train task schedule.
     train_task_schedule_path: Optional[Path] = None
@@ -188,6 +224,17 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # The maximum number of steps per episode. When None, there is no limit.
     max_episode_steps: Optional[int] = None
 
+    # Transforms to be applied by default to the observatons of the train/valid/test
+    # environments.
+    transforms: Optional[List[Transforms]] = None
+
+    # Transforms to be applied to the training datasets.
+    train_transforms: Optional[List[Transforms]] = None
+    # Transforms to be applied to the validation datasets.
+    val_transforms: Optional[List[Transforms]] = None
+    # Transforms to be applied to the testing datasets.
+    test_transforms: Optional[List[Transforms]] = None
+
     # NOTE: Added this `cmd=False` option to mark that we don't want to generate
     # any command-line arguments for these fields.
     train_task_schedule: Dict[int, Dict[str, float]] = dict_field(cmd=False)
@@ -200,19 +247,11 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     valid_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
     test_wrappers: List[Callable[[gym.Env], gym.Env]] = list_field(cmd=False)
 
+    # keyword arguments to be passed to the base environment through gym.make(base_env, **kwargs).
+    base_env_kwargs: Dict = dict_field(cmd=False)
+
     batch_size: Optional[int] = field(default=None, cmd=False)
     num_workers: Optional[int] = field(default=None, cmd=False)
-
-    # Transforms to be applied by default to the observatons of the train/valid/test
-    # environments.
-    transforms: Optional[List[Transforms]] = None
-
-    # Transforms to be applied to the training datasets.
-    train_transforms: Optional[List[Transforms]] = None
-    # Transforms to be applied to the validation datasets.
-    val_transforms: Optional[List[Transforms]] = None
-    # Transforms to be applied to the testing datasets.
-    test_transforms: Optional[List[Transforms]] = None
 
     # The function to use to sample tasks for the given environment.
     task_sampling_function: Callable[[gym.Env, int, List[int]], Any] = field(
@@ -223,13 +262,24 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         super().__post_init__(*args, **kwargs)
         self._new_random_task_on_reset: bool = False
 
+        if self.force_pixel_observations and self.force_state_observations:
+            raise RuntimeError(
+                "Can't set both `force_pixel_observations` and "
+                "`force_state_observations`!"
+            )
+    
         # Post processing of the 'dataset' field:
         if self.dataset in self.available_datasets.keys():
             # the environment name was passed, rather than an id
             # (e.g. 'cartpole' -> 'CartPole-v0").
             self.dataset = self.available_datasets[self.dataset]
-
-        elif self.dataset not in self.available_datasets.values():
+        
+        elif self.dataset in self.available_datasets.values():
+            # A known environment class or some callable was passed, this is fine.
+            pass
+    
+        # elif if isinstance(self.dataset, str) and camel_case(self.dataset) in self.available_datasets.keys()
+        else:
             # The passed dataset is assumed to be an environment ID, but it
             # wasn't in the dict of available datasets! We issue a warning, but
             # proceed to let the user use whatever environment they want to.
@@ -425,7 +475,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         # Create a temporary environment so we can extract the spaces and create
         # the task schedules.
         with self._make_env(
-            self.dataset, self._temp_wrappers(), self.observe_state_directly
+            self.dataset, self._temp_wrappers(), **self.base_env_kwargs
         ) as temp_env:
             self._setup_fields_using_temp_env(temp_env)
         del temp_env
@@ -683,7 +733,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             self._make_env,
             base_env=self.dataset,
             wrappers=self.train_wrappers,
-            observe_state_directly=self.observe_state_directly,
+            **self.base_env_kwargs,
         )
         env_dataloader = self._make_env_dataloader(
             env_factory,
@@ -738,7 +788,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             self._make_env,
             base_env=self.val_dataset,
             wrappers=self.valid_wrappers,
-            observe_state_directly=self.observe_state_directly,
+            **self.base_env_kwargs,
         )
         env_dataloader = self._make_env_dataloader(
             env_factory,
@@ -810,7 +860,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             self._make_env,
             base_env=self.test_dataset,
             wrappers=self.test_wrappers,
-            observe_state_directly=self.observe_state_directly,
+            **self.base_env_kwargs,
         )
         # TODO: Pass the max_steps argument to this `_make_env_dataloader` method,
         # rather than to a `step_limit` on the TestEnvironment.
@@ -863,19 +913,16 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     def _make_env(
         base_env: Union[str, gym.Env, Callable[[], gym.Env]],
         wrappers: List[Callable[[gym.Env], gym.Env]] = None,
-        observe_state_directly: bool = False,
+        **base_env_kwargs: Dict,
     ) -> gym.Env:
         """ Helper function to create a single (non-vectorized) environment. """
         env: gym.Env
         if isinstance(base_env, str):
-            if base_env.startswith("MetaMonsterKong") and observe_state_directly:
-                env = gym.make(base_env, observe_state=True)
-            else:
-                env = gym.make(base_env)
+            env = gym.make(base_env, **base_env_kwargs)
         elif isinstance(base_env, gym.Env):
             env = base_env
         elif callable(base_env):
-            env = base_env()
+            env = base_env(**base_env_kwargs)
         else:
             raise RuntimeError(
                 f"base_env should either be a string, a callable, or a gym "
@@ -1070,16 +1117,15 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             # be fully-observable (i.e. we want pixel observations rather than
             # getting the pole angle, velocity, etc.), then add the
             # PixelObservation wrapper to the list of wrappers.
-            if not self.observe_state_directly:
+            if self.force_pixel_observations:
                 wrappers.append(PixelObservationWrapper)
 
         elif is_atari_env(base_env):
-            if self.observe_state_directly:
-                if not isinstance(base_env, str) or "ram" not in base_env:
+            if isinstance(base_env, str) and "ram" in base_env:
+                if self.force_pixel_observations:
                     raise NotImplementedError(
-                        f"TODO: Swap out the base env so that it uses the 'ram' "
-                        f"version of the env id, since `observe_state_directly` is "
-                        f" True. (base_env: {base_env})"
+                        f"Can't force pixel observations when using the ram-version of "
+                        f"an atari env!"
                     )
             else:
                 # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.

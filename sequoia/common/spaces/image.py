@@ -15,11 +15,24 @@ class Image(spaces.Box):
     Comes with a few useful attributes, like `h`, `w`, `c`, `channels_first`,
     `channels_last`, etc.
     """
-    def __init__(self,
-                 low: Union[float, np.ndarray],
-                 high: Union[float, np.ndarray],
-                 shape: Tuple[int, ...] = None,
-                 dtype: np.dtype = np.float32):
+
+    def __init__(
+        self,
+        low: Union[float, np.ndarray],
+        high: Union[float, np.ndarray],
+        shape: Tuple[int, ...] = None,
+        dtype: np.dtype = None,
+    ):
+        if dtype is None:
+            if (
+                isinstance(low, int)
+                and isinstance(high, int)
+                and low == 0
+                and high == 255
+            ):
+                dtype = np.uint8
+            else:
+                dtype = np.float32
         super().__init__(low=low, high=high, shape=shape, dtype=dtype)
         self.channels_first: bool = False
 
@@ -119,7 +132,9 @@ def _batch_image_space(space: Image, n: int = 1) -> Union[Image, spaces.Box]:
             low, high = np.tile(space.low, repeats), np.tile(space.high, repeats)
             return spaces.Box(low=low, high=high, dtype=space.dtype)
 
-            raise RuntimeError(f"can't batch an already batched image space {space}, n={n}")
+            raise RuntimeError(
+                f"can't batch an already batched image space {space}, n={n}"
+            )
     else:
         repeats = [n, 1, 1, 1]
     low, high = np.tile(space.low, repeats), np.tile(space.high, repeats)

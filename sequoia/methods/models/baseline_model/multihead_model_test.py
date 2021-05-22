@@ -151,7 +151,6 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
         nb_tasks=2,
         max_episode_steps=max_episode_steps,
         add_done_to_observations=True,
-        observe_state_directly=True,
     )
     assert setting._new_random_task_on_reset
 
@@ -251,7 +250,6 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
         nb_tasks=2,
         max_episode_steps=max_episode_steps,
         add_done_to_observations=True,
-        observe_state_directly=True,
     )
     assert setting._new_random_task_on_reset
 
@@ -407,7 +405,6 @@ def test_task_inference_rl_easy(config: Config):
 
     setting = IncrementalRLSetting(
         dataset="cartpole",
-        observe_state_directly=True,
         nb_tasks=2,
         steps_per_task=1000,
         test_steps_per_task=1000,
@@ -426,7 +423,6 @@ def test_task_inference_rl_hard(config: Config):
 
     setting = RLSetting(
         dataset="cartpole",
-        observe_state_directly=True,
         nb_tasks=2,
         max_steps=1000,
         test_steps_per_task=1000,

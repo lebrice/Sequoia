@@ -63,14 +63,13 @@ if __name__ == "__main__":
     # CartPole-state for debugging:
     from sequoia.settings.active import RLSetting
 
-    setting = RLSetting(dataset="CartPole-v0", observe_state_directly=True)
+    setting = RLSetting(dataset="CartPole-v0")
 
     # OR: Incremental CartPole-state:
     from sequoia.settings.active import IncrementalRLSetting
 
     setting = IncrementalRLSetting(
         dataset="CartPole-v0",
-        observe_state_directly=True,
         monitor_training_performance=True,
         nb_tasks=1,
         steps_per_task=1_000,

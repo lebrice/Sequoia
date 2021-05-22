@@ -16,6 +16,7 @@ from sequoia.common import Config
 from sequoia.common.hparams import (HyperParameters, categorical, log_uniform,
                                     uniform)
 from sequoia.common.spaces import Image
+from sequoia.common.transforms.utils import is_image
 from sequoia.methods import register_method
 from sequoia.settings import (Actions, ActiveSetting, Method, Observations,
                               PassiveEnvironment, Setting,
@@ -98,12 +99,12 @@ class PnnMethod(Method, target_setting=TaskIncrementalSetting):
             self.loss_function = {
                 "gamma": self.hparams.gamma,
             }
-            if setting.observe_state_directly:
-                # Observing state input (e.g. the 4 floats in cartpole rather than images)
-                self.arch = "mlp"
-            else:
+            if is_image(setting.observation_space.x):
                 # Observing pixel input.
                 self.arch = "conv"
+            else:
+                # Observing state input (e.g. the 4 floats in cartpole rather than images)
+                self.arch = "mlp"
             self.model = PnnA2CAgent(self.arch, self.hparams.hidden_size)
 
         else:
@@ -383,11 +384,8 @@ def main_rl():
     Config.add_argparse_args(parser, dest="config")
     PnnMethod.add_argparse_args(parser, dest="method")
 
-    # Haven't tested with observe_state_directly=False
-    # it run but I don't know if it converge
     setting = TaskIncrementalRLSetting(
         dataset="cartpole",
-        observe_state_directly=True,
         nb_tasks=2,
         train_task_schedule={
             0: {"gravity": 10, "length": 0.3},

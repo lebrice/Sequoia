@@ -156,7 +156,6 @@ package settings {
                 + test_steps: Optional[int] = None
 
                 + smooth_task_boundaries: bool = True
-                + observe_state_directly: bool = False
                 
                 + train_task_schedule: dict
                 + valid_task_schedule: dict
