@@ -174,11 +174,15 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = True
 
+    # NOTE: THIS ARG IS DEPRECATED! Only keeping it here so previous config yaml files
+    # don't cause a crash.
+    observe_state_directly: Optional[bool] = None
+
     # When True, will attempt to extract pixel observations from the environment,
     # wither by adding a PixelObservation (for classic control envs for instance) or
     # by passing the right argument to the env constructor when possible.
     force_pixel_observations: bool = False
-    """ Wether to use the "pixel" version of `self.dataset`. 
+    """ Wether to use the "pixel" version of `self.dataset`.
     When `False`, does nothing.
     When `True`, will do one of the following, depending on the choice of environment:
     - For classic control envs, it adds a `PixelObservationsWrapper` to the env.
@@ -193,9 +197,9 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         - If the environment's observation space doesn't seem to be image-based, does
           nothing.
     """
-    
+
     force_state_observations: bool = False
-    """ Wether to use the "state" version of `self.dataset`. 
+    """ Wether to use the "state" version of `self.dataset`.
     When `False`, does nothing.
     When `True`, will do one of the following, depending on the choice of environment:
     - For classic control envs, it does nothing, as they are already state-based.
@@ -262,22 +266,36 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
         super().__post_init__(*args, **kwargs)
         self._new_random_task_on_reset: bool = False
 
+        if self.observe_state_directly is not None:
+            warnings.warn(DeprecationWarning(
+                "The `observe_state_directly` field is deprecated! Use "
+                "`force_state_observations` or `force_pixel_observations` instead."
+            ))
+            # For now, set the equivalent values for the envs we know how to handle.
+            if is_classic_control_env(self.dataset) and not self.observe_state_directly:
+                self.force_pixel_observations = True
+            elif is_monsterkong_env(self.dataset):
+                if self.observe_state_directly:
+                    self.force_state_observations = True
+                else:
+                    self.force_pixel_observations = True
+
         if self.force_pixel_observations and self.force_state_observations:
             raise RuntimeError(
                 "Can't set both `force_pixel_observations` and "
                 "`force_state_observations`!"
             )
-    
+
         # Post processing of the 'dataset' field:
         if self.dataset in self.available_datasets.keys():
             # the environment name was passed, rather than an id
             # (e.g. 'cartpole' -> 'CartPole-v0").
             self.dataset = self.available_datasets[self.dataset]
-        
+
         elif self.dataset in self.available_datasets.values():
             # A known environment class or some callable was passed, this is fine.
             pass
-    
+
         # elif if isinstance(self.dataset, str) and camel_case(self.dataset) in self.available_datasets.keys()
         else:
             # The passed dataset is assumed to be an environment ID, but it
@@ -582,7 +600,7 @@ class ContinualRLSetting(ActiveSetting, IncrementalSetting):
             # TODO: Pass wether its for training/validation/testing?
             task = self.sample_task(env=temp_env, step=step, change_steps=change_steps)
             task_schedule[step] = task
-            
+
         return task_schedule
 
     def sample_task(
