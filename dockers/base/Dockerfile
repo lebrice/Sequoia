@@ -55,7 +55,6 @@ SHELL [ "conda", "run", "-n", "base", "/bin/bash", "-c"]
 # RUN sed -i 's/robbyrussell/clean/' ~/.zshrc
 # RUN sed -i 's/plugins=(git)/plugins=(git debian history-substring-search)/' ~/.zshrc
 
-RUN mkdir /workspace/tools
 
 # MuJoCo-related stuff:
 # RUN curl -o ~/mujoco200_linux.zip -L -C - https://www.roboti.us/download/mujoco200_linux.zip
@@ -70,6 +69,7 @@ RUN mkdir /workspace/tools
 # COPY mjkey.txt /home/toolkit/.mujoco/
 # ENV LD_LIBRARY_PATH /home/toolkit/.mujoco/mujoco200/bin:${LD_LIBRARY_PATH}
 # ENV LD_LIBRARY_PATH /home/toolkit/.mujoco/mjpro150/bin:${LD_LIBRARY_PATH}
+# RUN mkdir /workspace/tools
 # RUN cd /workspace/tools && git clone https://github.com/openai/mujoco-py.git && pip install -e mujoco-py
 
 # For Wandb (TODO: Doesn't appear to work, using env variable with WANDB_API_KEY
