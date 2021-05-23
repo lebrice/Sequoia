@@ -170,9 +170,13 @@ class AvalancheMethod(
                 loss_metrics(minibatch=False, epoch=True, experience=True, stream=True),
             ]
             self.evaluator = EvaluationPlugin(
-                *metrics, loggers=[InteractiveLogger(), wandb_logger]
+                *metrics, loggers=[
+                    #InteractiveLogger(),  # Causing issues on SLURM cluster for some reason?
+                    wandb_logger,
+                ]
             )
         else:
+            logger.info(f"Using the default logger from Avalanche.")
             self.evaluator = default_logger
 
         self.optimizer = self.make_optimizer()
