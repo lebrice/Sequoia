@@ -106,7 +106,7 @@ except (ValueError, gym.error.DependencyNotInstalled):
         pass
     class HopperEnv(MujocoEnv):
         pass
-    class Wakler2dEnv(MujocoEnv):
+    class Walker2dEnv(MujocoEnv):
         pass
     class ContinualHalfCheetahEnv(HalfCheetahEnv):
         pass
