@@ -22,13 +22,13 @@ from sequoia.common.metrics import ClassificationMetrics, Metrics, RegressionMet
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.plotting import PlotSectionLabel, autolabel
 from sequoia.utils.utils import mean
-from sequoia.settings.assumptions.incremental import IncrementalSetting
+from sequoia.settings.assumptions.incremental import IncrementalAssumption
 
 from .. import Results
 logger = get_logger(__file__)
 
 
-class ClassIncrementalResults(IncrementalSetting.Results):
+class ClassIncrementalResults(IncrementalAssumption.Results):
     """Results for a ClassIncrementalSetting.
     
     The main objective in this setting is the average test accuracy over all

@@ -8,7 +8,7 @@ from gym.spaces import Discrete, Space
 from sequoia.common.spaces import Sparse
 from sequoia.conftest import xfail_param, skip_param
 
-from .class_incremental_setting import (
+from .setting import (
     ClassIncrementalSetting,
     base_observation_spaces,
     base_reward_spaces,
@@ -179,37 +179,3 @@ def test_render():
 
 def test_class_incremental_random_baseline():
     pass
-
-
-def test_action_space_always_matches_obs_batch_size(config: Config):
-    """ Make sure that the batch size in the observations always matches the action
-    space provided to the `get_actions` method.
-
-    ALSO:
-    - Make sure that we get asked for actions for all the observations in the test set,
-      even when there is a shorter last batch.
-    - The total number of observations match the dataset size.
-    """
-    nb_tasks = 5
-    batch_size = 128
-    from sequoia.settings import TaskIncrementalSetting
-
-    # HUH why are we doing this here?
-    setting = TaskIncrementalSetting(
-        dataset="mnist",
-        nb_tasks=nb_tasks,
-        batch_size=batch_size,
-        num_workers=4,
-        monitor_training_performance=True,
-    )
-
-    # 10_000 examples in the test dataset of mnist.
-    total_samples = len(setting.test_dataloader().dataset)
-
-    method = OtherDummyMethod()
-    _ = setting.apply(method, config=config)
-
-    # Multiply by nb_tasks because the test loop is ran after each training task.
-    assert sum(method.batch_sizes) == total_samples * nb_tasks
-    assert len(method.batch_sizes) == math.ceil(total_samples / batch_size) * nb_tasks
-    assert set(method.batch_sizes) == {batch_size, total_samples % batch_size}

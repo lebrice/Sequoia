@@ -175,7 +175,7 @@ class MultiTaskSLSetting(TaskIncrementalSLSetting):
         """
         return super().test_dataloader(batch_size=batch_size, num_workers=num_workers)
 
-    def test_loop(self, method: Method) -> "IncrementalSetting.Results":
+    def test_loop(self, method: Method) -> "IncrementalAssumption.Results":
         """ Runs a multi-task test loop and returns the Results.
         """
         test_env = self.test_dataloader()

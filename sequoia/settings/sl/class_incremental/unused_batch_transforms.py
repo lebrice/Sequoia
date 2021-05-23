@@ -10,7 +10,14 @@ from sequoia.settings import Observations, Rewards
 from simple_parsing import list_field
 from torch import Tensor
 
-from ..passive_environment import PassiveEnvironment
+from sequoia.settings.sl.environment import PassiveEnvironment
+
+
+def relabel(y: Tensor, task_classes: List[int]) -> Tensor:
+    new_y = torch.zeros_like(y)
+    for i, label in enumerate(task_classes):
+        new_y[y == label] = i
+    return new_y
 
 
 class RelabelWrapper(TransformReward):
@@ -52,11 +59,6 @@ class RelabelTransform(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):
         new_y = relabel(y, task_classes=self.task_classes)
         return (x, new_y, *task_labels)
 
-def relabel(y: Tensor, task_classes: List[int]) -> Tensor:
-    new_y = torch.zeros_like(y)
-    for i, label in enumerate(task_classes):
-        new_y[y == label] = i
-    return new_y
 
 @dataclass
 class ReorderTensors(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):

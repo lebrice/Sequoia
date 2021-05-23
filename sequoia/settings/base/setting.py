@@ -67,7 +67,6 @@ class Setting(
     Serializable,
     LightningDataModule,
     Generic[EnvironmentType],
-    metaclass=SettingMeta,
 ):
     """ Base class for all research settings in ML: Root node of the tree.
 
@@ -417,12 +416,6 @@ class Setting(
             }
         )
         return all_results
-
-    @classmethod
-    def get_path_to_source_file(cls: Type) -> Path:
-        from sequoia.utils.utils import get_path_to_source_file
-
-        return get_path_to_source_file(cls)
 
     def _check_environments(self):
         """ Do a quick check to make sure that interacting with the envs/dataloaders

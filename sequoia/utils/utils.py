@@ -455,7 +455,10 @@ def get_all_concrete_subclasses_of(cls: Type[T]) -> Iterable[Type[T]]:
 
 
 def get_path_to_source_file(cls: Type) -> Path:
-    cwd = Path(os.getcwd())
+    """ Attempts to give a relative path to the given source path. If not possible, then
+    gives back an absolute path to the source file instead.
+    """
+    cwd = Path.cwd()
     source_file = getsourcefile(cls)
     assert isinstance(source_file, str), f"can't locate source file for {cls}?"
     source_path = Path(source_file).absolute()
@@ -465,8 +468,7 @@ def get_path_to_source_file(cls: Type) -> Path:
         # If we can't find the relative path, for instance when sequoia is
         # installed in site_packages (not with `pip install -e .``), give back
         # the absolute path instead.
-        pass
-    return source_path
+        return source_path
 
 
 if __name__ == "__main__":

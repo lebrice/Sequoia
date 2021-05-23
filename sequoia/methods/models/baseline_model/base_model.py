@@ -26,7 +26,7 @@ from sequoia.common.loss import Loss
 from sequoia.common.spaces import Image
 from sequoia.common.transforms import SplitBatch
 from sequoia.settings.rl import RLSetting, ContinualRLSetting
-from sequoia.settings.assumptions.incremental import IncrementalSetting
+from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.settings.base import Environment
 from sequoia.settings.base.setting import Actions, Observations, Rewards
 from sequoia.settings.sl import SLSetting
@@ -40,7 +40,7 @@ from ..output_heads.rl.episodic_a2c import EpisodicA2C
 from .base_hparams import BaseHParams
 
 logger = get_logger(__file__)
-SettingType = TypeVar("SettingType", bound=IncrementalSetting)
+SettingType = TypeVar("SettingType", bound=IncrementalAssumption)
 
 
 class BaseModel(LightningModule, Generic[SettingType]):
@@ -157,7 +157,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.output_head: OutputHead = self.create_output_head(task_id=0)
 
     @auto_move_data
-    def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:
+    def forward(self, observations: IncrementalAssumption.Observations) -> ForwardPass:
         """ Forward pass of the Model.
 
         Returns a ForwardPass object (acts like a dict of Tensors.)
@@ -536,7 +536,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         log.debug("\n" + str(model_summary))
         return model_summary
 
-    def _are_batched(self, observations: IncrementalSetting.Observations) -> bool:
+    def _are_batched(self, observations: IncrementalAssumption.Observations) -> bool:
         """ Returns wether these observations are batched. """
         assert isinstance(self.observation_space, spaces.Tuple)
 

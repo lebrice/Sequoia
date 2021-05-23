@@ -11,7 +11,7 @@ from numpy import inf
 from simple_parsing import ArgumentParser
 from wandb.wandb_run import Run
 
-from sequoia import Environment
+from sequoia.settings.base import Environment
 from sequoia.common import Config
 from sequoia.common.hparams import HyperParameters, categorical, log_uniform, uniform
 from sequoia.common.spaces import Image
@@ -27,7 +27,7 @@ from sequoia.settings import (
     TaskIncrementalRLSetting,
     TaskIncrementalSLSetting,
 )
-from sequoia.settings.assumptions import IncrementalSetting
+from sequoia.settings.assumptions import IncrementalAssumption
 # TODO: Clean this up:
 from sequoia.settings.assumptions.task_incremental import TaskIncrementalSetting
 
@@ -37,7 +37,7 @@ from .model_sl import PnnClassifier
 # BUG: Can't apply PNN to the ClassIncrementalSetting at the moment.
 # BUG: Can't apply PNN to any RL Settings at the moment.
 # (it was hard-coded to handle pixel cartpole).
-# TODO: When those bugs get fixed, restore the 'IncrementalSetting' as the target
+# TODO: When those bugs get fixed, restore the 'IncrementalAssumption' as the target
 # setting.
 
 
@@ -47,7 +47,7 @@ class PnnMethod(Method, target_setting=TaskIncrementalSetting):
     PNN Method.
 
     Applicable to both RL and SL Settings, as long as there are clear task boundaries
-    during training (IncrementalSetting).
+    during training (IncrementalAssumption).
     """
 
     @dataclass

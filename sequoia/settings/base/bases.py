@@ -191,31 +191,42 @@ class SettingABC:
         return remove_suffix(name, "_setting")
 
     @classmethod
-    def get_children(cls) -> List[Type["SettingABC"]]:
+    def immediate_children(cls) -> List[Type["SettingABC"]]:
         """ Returns the immediate children of this Setting in the hierarchy.
         In most cases, this will be a list with only one value.
         """
         return cls._children
 
     @classmethod
-    def all_children(cls) -> Iterable[Type["SettingABC"]]:
-        """Iterates over all the children of this Setting, in-order.
+    def children(cls) -> Iterable[Type["SettingABC"]]:
+        """Returns an Iterator over all the children of this Setting, in-order.
         """
         # Yield the immediate children.
         for child in cls._children:
             yield child
             # Yield from the children themselves.
-            yield from child.all_children()
+            yield from child.children()
 
     @classmethod
-    def get_immediate_parents(cls) -> Optional[Type["SettingABC"]]:
+    def get_children(cls) -> List[Type["SettingABC"]]:
+        return list(cls.children())
+
+    @classmethod
+    def immediate_parents(cls) -> List[Type["SettingABC"]]:
         """ Returns the immediate parent(s) Setting(s).
         In most cases, this will be a list with only one value.
         """
         return [parent for parent in cls.__bases__ if issubclass(parent, SettingABC)]
 
     @classmethod
-    def get_parents(cls) -> Iterable[Type["SettingABC"]]:
+    def get_immediate_parents(cls) -> List[Type["SettingABC"]]:
+        """ Returns the immediate parent(s) Setting(s).
+        In most cases, this will be a list with only one value.
+        """
+        return cls.immediate_parents()
+
+    @classmethod
+    def parents(cls) -> Iterable[Type["SettingABC"]]:
         """yields the lineage, from bottom to top.
 
         NOTE: In the case of Settings having multiple parents (such as IIDSetting),
@@ -227,6 +238,44 @@ class SettingABC:
             for parent_class in cls.mro()[1:]
             if issubclass(parent_class, SettingABC)
         ]
+
+    @classmethod
+    def get_parents(cls) -> List[Type["SettingABC"]]:
+        return list(cls.parents())
+
+    @classmethod
+    def get_path_to_source_file(cls: Type) -> Path:
+        from sequoia.utils.utils import get_path_to_source_file
+
+        return get_path_to_source_file(cls)
+
+    @classmethod
+    def get_tree_string(
+        cls,
+        formatting: str = "command_line",
+        with_methods: bool = False,
+        with_assumptions: bool = False,
+        with_docstrings: bool = False,
+    ) -> str:
+        """ Returns a string representation of the tree starting at this node downwards.
+        """
+        from sequoia.utils.readme import get_tree_string, get_tree_string_markdown
+
+        formatting_functions = {
+            "command_line": get_tree_string,
+            "markdown": get_tree_string_markdown,
+        }
+        if formatting not in formatting_functions.keys():
+            raise RuntimeError(
+                f"formatting must be one of {','.join(formatting_functions)}, "
+                f"got {formatting}"
+            )
+        return formatting_functions[formatting](
+            cls,
+            with_methods=with_methods,
+            with_assumptions=with_assumptions,
+            with_docstrings=with_docstrings,
+        )
 
 
 SettingType = TypeVar("SettingType", bound=SettingABC)
@@ -450,7 +499,7 @@ class Method(Generic[SettingType], Parseable, ABC):
 
         return list(filter(cls.is_applicable, all_settings))
         # This would return ALL the setting:
-        # return list([cls.target_setting, *cls.target_setting.all_children()])
+        # return list([cls.target_setting, *cls.target_setting.children()])
 
     @classmethod
     def all_evaluation_settings(cls, **kwargs) -> Iterable[SettingType]:

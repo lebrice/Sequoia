@@ -18,8 +18,8 @@ from sequoia.utils.utils import constant, dict_union
 # task-incremental, this might not be 100% accurate, as the "IID" you get from
 # moving down from domain-incremental (+ only one task) might not be exactly the same as
 # the one you get form TaskIncremental (+ only one task)
-from sequoia.settings.sl.task_incremental import TaskIncrementalSLSetting
-from sequoia.settings.sl.domain_incremental import DomainIncrementalSLSetting
+from sequoia.settings.sl.multi_task import MultiTaskSLSetting
+# from sequoia.settings.sl.domain_incremental import DomainIncrementalSLSetting
 from .results import IIDResults
 
 
@@ -35,7 +35,7 @@ from .results import IIDResults
 
 
 @dataclass
-class TraditionalSLSetting(TaskIncrementalSLSetting, DomainIncrementalSLSetting):
+class TraditionalSLSetting(MultiTaskSLSetting):
     """Your 'usual' supervised learning Setting, where the samples are i.i.d.
     
     This Setting is slightly different than the others, in that it can be recovered in

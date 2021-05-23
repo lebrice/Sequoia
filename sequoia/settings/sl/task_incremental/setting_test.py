@@ -1,5 +1,6 @@
 
 import itertools
+import math
 from dataclasses import dataclass
 from typing import *
 
@@ -14,9 +15,10 @@ from torchvision.transforms import Compose, ToTensor
 
 from continuum.datasets import MNIST
 from simple_parsing import ArgumentParser, mutable_field
+from sequoia.common.config import Config
 from sequoia.utils.logging_utils import get_logger, log_calls
-
-from .task_incremental_setting import TaskIncrementalSLSetting
+from sequoia.settings.assumptions.incremental_test import OtherDummyMethod
+from .setting import TaskIncrementalSLSetting
 
 logger = get_logger(__file__)
 
@@ -90,3 +92,36 @@ def test_class_incremental_mnist_setup_with_nb_tasks():
     assert len(setting.val_datasets) == 2
     assert len(setting.test_datasets) == 2
     check_only_right_classes_present(setting)
+
+
+def test_action_space_always_matches_obs_batch_size(config: Config):
+    """ Make sure that the batch size in the observations always matches the action
+    space provided to the `get_actions` method.
+
+    ALSO:
+    - Make sure that we get asked for actions for all the observations in the test set,
+      even when there is a shorter last batch.
+    - The total number of observations match the dataset size.
+    """
+    nb_tasks = 5
+    batch_size = 128
+
+    # HUH why are we doing this here?
+    setting = TaskIncrementalSLSetting(
+        dataset="mnist",
+        nb_tasks=nb_tasks,
+        batch_size=batch_size,
+        num_workers=4,
+        monitor_training_performance=True,
+    )
+
+    # 10_000 examples in the test dataset of mnist.
+    total_samples = len(setting.test_dataloader().dataset)
+
+    method = OtherDummyMethod()
+    _ = setting.apply(method, config=config)
+
+    # Multiply by nb_tasks because the test loop is ran after each training task.
+    assert sum(method.batch_sizes) == total_samples * nb_tasks
+    assert len(method.batch_sizes) == math.ceil(total_samples / batch_size) * nb_tasks
+    assert set(method.batch_sizes) == {batch_size, total_samples % batch_size}

@@ -98,7 +98,7 @@ try:
     from gym.envs.mujoco import MujocoEnv
     from .mujoco import *
     MUJOCO_INSTALLED = True
-except (ImportError, ValueError, gym.error.DependencyNotInstalled) as exc:
+except (ValueError, gym.error.DependencyNotInstalled) as exc:
     logger.debug(f"Couldn't import mujoco: ({exc})")
     # Create a 'dummy' class so we can safely use type hints everywhere.
     # Additionally, `isinstance(some_env, <this class>)`` will always fail when the

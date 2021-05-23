@@ -25,7 +25,7 @@ from sequoia.settings import (
     Setting,
 )
 from sequoia.settings.assumptions.incremental import (
-    IncrementalSetting,
+    IncrementalAssumption,
     TaskResults,
     TaskSequenceResults,
 )
@@ -283,7 +283,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         return self._test_env
 
     def main_loop(self, method: Method) -> Results:
-        # TODO: Implement the 'remote' equivalent of the main loop of the IncrementalSetting.
+        # TODO: Implement the 'remote' equivalent of the main loop of the IncrementalAssumption.
 
         test_results = self._setting_type.Results()
         test_results._online_training_performance = []
@@ -361,7 +361,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         test_results._runtime = runtime
         return test_results
 
-    def test_loop(self, method: Method) -> "IncrementalSetting.Results":
+    def test_loop(self, method: Method) -> "IncrementalAssumption.Results":
         """ (WIP): Runs an incremental test loop and returns the Results.
 
         The idea is that this loop should be exactly the same, regardless of if

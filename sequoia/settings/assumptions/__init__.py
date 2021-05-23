@@ -8,5 +8,5 @@ apply on both sides of the tree.
 An alternative to this could also be to allow Methods to target multiple
 settings, but this could get weird pretty quick.
 """
-from .incremental import IncrementalSetting
+from .incremental import IncrementalAssumption
 # from .task_incremental import TaskIncrementalSetting

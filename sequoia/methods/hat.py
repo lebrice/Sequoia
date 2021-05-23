@@ -28,7 +28,7 @@ from sequoia.common import Config
 from sequoia.common.hparams import HyperParameters, log_uniform, uniform, categorical
 from sequoia.common.spaces import Image
 from sequoia.settings import Method, Environment, Setting
-from sequoia.settings.sl import TaskIncrementalSetting
+from sequoia.settings.sl import TaskIncrementalSLSetting
 from sequoia.settings.sl.class_incremental.objects import (
     Actions,
     Observations,
@@ -113,7 +113,7 @@ class HatNet(torch.nn.Module):
         self.current_task: Optional[int] = 0
 
     def forward(
-        self, observations: TaskIncrementalSetting.Observations
+        self, observations: TaskIncrementalSLSetting.Observations
     ) -> Tuple[Tensor, Masks]:
         observations.as_list_of_tuples()
         x = observations.x
@@ -222,7 +222,7 @@ def compute_conv_output_size(
 
 
 @register_method
-class HatMethod(Method, target_setting=TaskIncrementalSetting):
+class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
     """Hard Attention to the Task
 
     ```
@@ -256,7 +256,7 @@ class HatMethod(Method, target_setting=TaskIncrementalSetting):
         self.model: HatNet
         self.optimizer: torch.optim.Optimizer
 
-    def configure(self, setting: TaskIncrementalSetting):
+    def configure(self, setting: TaskIncrementalSLSetting):
         """ Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
@@ -433,14 +433,14 @@ if __name__ == "__main__":
     # Add arguments for the Method, the Setting, and the Config.
     # (Config contains options like the log_dir, the data_dir, etc.)
     HatMethod.add_argparse_args(parser, dest="method")
-    parser.add_arguments(TaskIncrementalSetting, dest="setting")
+    parser.add_arguments(TaskIncrementalSLSetting, dest="setting")
     parser.add_arguments(Config, "config")
 
     args = parser.parse_args()
 
     # Create the Method from the args, and extract the Setting, and the Config:
     method: HatMethod = HatMethod.from_argparse_args(args, dest="method")
-    setting: TaskIncrementalSetting = args.setting
+    setting: TaskIncrementalSLSetting = args.setting
     config: Config = args.config
 
     # Apply the method to the setting, optionally passing in a Config,

@@ -10,7 +10,7 @@ from torchvision.datasets import MNIST
 from torch.utils.data import TensorDataset
 
 from sequoia.common.transforms import Compose, Transforms
-from .passive_environment import PassiveEnvironment
+from .environment import PassiveEnvironment
 from sequoia.common.spaces import Image
 import numpy as np
 from torch.utils.data import Subset

@@ -55,7 +55,3 @@ def test_domain_incremental_mnist_setup():
             y = rewards.y
             assert ((0 <= y) & (y < setting.n_classes_per_task)).all()
 
-
-def test_import_iid_setting_from_domain_incremental_package():
-    from . import IIDSetting
-    from sequoia.settings.sl.class_incremental.domain_incremental.iid import IIDResults

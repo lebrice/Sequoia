@@ -131,7 +131,7 @@
 
 - ## [EWC](ewc_method.py) 
 
-	 - Target setting: [IncrementalSetting](sequoia/settings/assumptions/incremental.py)
+	 - Target setting: [IncrementalAssumption](sequoia/settings/assumptions/incremental.py)
 
 	Minimal example of a Method targetting the Class-Incremental CL setting.
 

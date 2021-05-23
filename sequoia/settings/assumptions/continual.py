@@ -3,11 +3,12 @@ from sequoia.utils.utils import flag
 from sequoia.utils import get_logger
 
 from dataclasses import dataclass
-
+from .base import AssumptionBase
 logger = get_logger(__file__)
 
+
 @dataclass
-class ContinualSetting(Setting):
+class ContinualAssumption(AssumptionBase):
     """ Assumptions for Setting where the environments change over time. """
     known_task_boundaries_at_train_time: bool = flag(False)
     # Wether we get informed when reaching the boundary between two tasks during

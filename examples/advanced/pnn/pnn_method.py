@@ -30,7 +30,7 @@ from sequoia.settings import (
     TaskIncrementalRLSetting,
     TaskIncrementalSetting,
 )
-from sequoia.settings.assumptions import IncrementalSetting
+from sequoia.settings.assumptions import IncrementalAssumption
 from simple_parsing import ArgumentParser
 from torchvision import transforms
 

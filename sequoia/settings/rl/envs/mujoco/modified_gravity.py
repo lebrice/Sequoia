@@ -3,7 +3,6 @@ import warnings
 from typing import ClassVar
 
 from gym.envs.mujoco import MujocoEnv
-from mujoco_py import MjSim
 
 
 class ModifiedGravityEnv(MujocoEnv):

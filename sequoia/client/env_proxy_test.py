@@ -16,7 +16,7 @@ from sequoia.settings.rl import IncrementalRLSetting
 from sequoia.settings.rl.continual.gym_dataloader import GymDataLoader
 from sequoia.settings.rl.continual.gym_dataloader_test import \
     TestGymDataLoader as _TestGymDataLoader
-from sequoia.settings.assumptions import IncrementalSetting
+from sequoia.settings.assumptions import IncrementalAssumption
 from sequoia.settings.sl.passive_environment import PassiveEnvironment
 from sequoia.settings.sl.passive_environment_test import \
     TestPassiveEnvironment as _TestPassiveEnvironment
@@ -35,7 +35,7 @@ def wrap_type_with_proxy(env_type: Type[EnvType]) -> EnvType:
     class _EnvProxy(EnvironmentProxy):
         def __init__(self, *args, **kwargs):
             env_fn = partial(env_type, *args, **kwargs)
-            super().__init__(env_fn, setting_type=IncrementalSetting)
+            super().__init__(env_fn, setting_type=IncrementalAssumption)
 
     return _EnvProxy
 

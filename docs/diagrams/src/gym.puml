@@ -39,16 +39,16 @@ package gym {
         Dict *--  Space
     }
 
-    abstract class Env<Obs, Act, Rew>{
+    abstract class gym.Env<Obs, Act, Rew> {
         + observation_space: Space<Obs>
         + action_space: Space<Act> 
         + step(Actions): Tuple[Obs, Rew, bool, dict]
         + reset(): Obs
     }
-    Env .. Space
+    gym.Env .. Space
 
-    abstract class Wrapper extends Env{
-        + env: Env
+    abstract class Wrapper extends gym.Env{
+        + env: gym.Env
     }
 }
 

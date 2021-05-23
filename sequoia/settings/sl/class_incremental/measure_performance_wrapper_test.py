@@ -17,11 +17,10 @@ from torch.utils.data import TensorDataset
 from sequoia.common import Config
 from sequoia.common.gym_wrappers import AddDoneToObservation, EnvDataset
 from sequoia.common.metrics import ClassificationMetrics
-from sequoia.settings.rl.continual import TypedObjectsWrapper
-from sequoia.settings.rl.continual.continual_rl_setting import \
-    ContinualRLSetting
-from sequoia.settings.sl.passive_environment import PassiveEnvironment
-from .class_incremental_setting import ClassIncrementalSetting
+from sequoia.settings.rl.continual.wrappers import TypedObjectsWrapper
+from sequoia.settings.rl.continual.setting import ContinualRLSetting
+from sequoia.settings.sl.environment import PassiveEnvironment
+from .setting import ClassIncrementalSetting
 from .measure_performance_wrapper import MeasureSLPerformanceWrapper
 from .objects import Actions, Observations, Rewards
 
@@ -334,13 +333,13 @@ from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 from sequoia.conftest import DummyEnvironment
 
 from .measure_performance_wrapper import MeasureRLPerformanceWrapper
+from itertools import accumulate
+from sequoia.settings.rl.continual import ContinualRLSetting
 
 
 def test_measure_RL_performance_basics():
     env = DummyEnvironment(start=0, target=5, max_value=10)
     
-    from sequoia.settings.rl.continual.continual_rl_setting import \
-        ContinualRLSetting
 
     # env = TypedObjectsWrapper(env, observations_type=ContinualRLSetting.Observations, actions_type=ContinualRLSetting.Actions, rewards_type=ContinualRLSetting.Rewards)
 
@@ -380,8 +379,6 @@ def test_measure_RL_performance_basics():
 def test_measure_RL_performance_iteration():
     env = DummyEnvironment(start=0, target=5, max_value=10)
     env = EnvDataset(env)
-    from sequoia.settings.rl.continual.continual_rl_setting import \
-        ContinualRLSetting
 
     # env = TypedObjectsWrapper(env, observations_type=ContinualRLSetting.Observations, actions_type=ContinualRLSetting.Actions, rewards_type=ContinualRLSetting.Rewards)
 
@@ -403,7 +400,6 @@ def test_measure_RL_performance_iteration():
 
         all_episode_steps.append(episode_steps)
         all_episode_rewards.append(episode_reward)
-    from itertools import accumulate
 
     expected_metrics = {}
     for episode_steps, cumul_step, episode_reward in zip(all_episode_steps, accumulate(all_episode_steps), all_episode_rewards):

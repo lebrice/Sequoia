@@ -42,7 +42,7 @@ Prerequisites:
 	arguments using `simple_parsing`.
 
 
-	- ## [IncrementalSetting](assumptions/incremental.py)
+	- ## [IncrementalAssumption](assumptions/incremental.py)
 
 		Mixin that defines methods that are common to all 'incremental'
 		settings, where the data is separated into tasks, and where you may not

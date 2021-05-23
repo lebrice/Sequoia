@@ -37,7 +37,7 @@ from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.transforms import Transforms
 from sequoia.settings.rl import RLSetting
 from sequoia.settings.assumptions.incremental import (
-    IncrementalSetting,
+    IncrementalAssumption,
     TaskResults,
     TaskSequenceResults,
     TestEnvironment,
@@ -78,9 +78,9 @@ Environment = ActiveEnvironment[
 env_ids = [env_spec.id for env_spec in gym.envs.registry.all()]
 available_environments = env_ids
 
-# TODO: Fix this, shouldn't inherit from IncrementalSetting.
+# TODO: Fix this, shouldn't inherit from IncrementalAssumption.
 @dataclass
-class ContinualRLSetting(RLSetting, IncrementalSetting):
+class ContinualRLSetting(RLSetting, IncrementalAssumption):
     """ Reinforcement Learning Setting where the environment changes over time.
 
     This is an Active setting which uses gym environments as sources of data.
@@ -94,7 +94,7 @@ class ContinualRLSetting(RLSetting, IncrementalSetting):
     Results: ClassVar[Type[RLResults]] = RLResults
 
     @dataclass(frozen=True)
-    class Observations(IncrementalSetting.Observations):
+    class Observations(IncrementalAssumption.Observations):
         """ Observations in a continual RL Setting. """
 
         # Just as a reminder, these are the fields defined in the base classes:
@@ -689,7 +689,7 @@ class ContinualRLSetting(RLSetting, IncrementalSetting):
                 "Test task schedule:" + json.dumps(self.test_task_schedule, indent="\t")
             )
 
-        # Run the Training loop (which is defined in IncrementalSetting).
+        # Run the Training loop (which is defined in IncrementalAssumption).
         results = self.main_loop(method)
 
         logger.info("Results summary:")
@@ -698,7 +698,7 @@ class ContinualRLSetting(RLSetting, IncrementalSetting):
         method.receive_results(self, results=results)
         return results
 
-        # Run the Test loop (which is defined in IncrementalSetting).
+        # Run the Test loop (which is defined in IncrementalAssumption).
         # results: RlResults = self.test_loop(method)
 
     def setup(self, stage: str = None) -> None:

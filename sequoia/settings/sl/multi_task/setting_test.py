@@ -18,7 +18,7 @@ from gym.spaces import Discrete
 from sequoia.common.spaces import Image, NamedTupleSpace
 from sequoia.settings import Environment, Actions
 from sequoia.methods import Method
-from .multi_task_setting import MultiTaskSLSetting
+from .setting import MultiTaskSLSetting
 
 
 def check_is_multitask_env(env: Environment, has_rewards: bool):
@@ -89,7 +89,7 @@ def test_multitask_setting_test_env():
         check_is_multitask_env(test_env, has_rewards=False)
 
 
-from sequoia.settings.assumptions.incremental import IncrementalSetting, TestEnvironment
+from sequoia.settings.assumptions.incremental import IncrementalAssumption, TestEnvironment
 from sequoia.settings.assumptions.incremental_test import DummyMethod
 from sequoia.conftest import DummyEnvironment
 

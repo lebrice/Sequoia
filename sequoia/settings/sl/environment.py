@@ -165,9 +165,9 @@ class PassiveEnvironment(
         assert action_space
         assert reward_space
 
-        self.single_observation_space: Space = observation_space 
-        self.single_action_space: Space = action_space 
-        self.single_reward_space: Space = reward_space
+        self.single_observation_space: gym.Space = observation_space 
+        self.single_action_space: gym.Space = action_space 
+        self.single_reward_space: gym.Space = reward_space
 
         if self.batch_size:
             observation_space = batch_space(observation_space, self.batch_size)

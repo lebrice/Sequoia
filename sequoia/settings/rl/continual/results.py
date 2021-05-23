@@ -8,7 +8,7 @@ from simple_parsing import list_field
 
 from sequoia.common import ClassificationMetrics, Metrics, RegressionMetrics
 from sequoia.settings.assumptions.incremental import (
-    IncrementalSetting,
+    IncrementalAssumption,
     TaskResults,
     TaskSequenceResults,
     IncrementalResults,

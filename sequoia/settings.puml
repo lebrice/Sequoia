@@ -39,11 +39,11 @@ package settings {
     
     package assumptions as settings.assumptions {
         package continual as settings.assumptions.continual {
-            abstract class ContinualSetting extends Setting {
+            abstract class ContinualAssumption extends Setting {
             }
         }
         package incremental as settings.assumptions.incremental {
-            abstract class IncrementalSetting extends ContinualSetting {
+            abstract class IncrementalAssumption extends ContinualAssumption {
                 + nb_tasks: int
                 + task_labels_at_train_time: bool
                 + task_labels_at_test_time: bool
@@ -70,7 +70,7 @@ package settings {
         ' TODO: Need to rename `TaskIncrementalSetting` below to something like
         ' `TaskIncrementalSL`
         ' package task_incremental as settings.assumptions.task_incremental {
-        '     abstract class TaskIncrementalSetting extends IncrementalSetting {
+        '     abstract class TaskIncrementalSetting extends IncrementalAssumption {
         '     }
         ' }
 
@@ -92,7 +92,7 @@ package settings {
         ' PassiveEnvironment extends DataLoader
         
         package cl as settings.passive.cl {
-            class ClassIncrementalSetting implements SLSetting, IncrementalSetting {
+            class ClassIncrementalSetting implements SLSetting, IncrementalAssumption {
                 {static} + Results: Type[Results] = ClassIncrementalResults
                 + nb_tasks: int
                 + task_labels_at_train_time: bool = True
@@ -143,7 +143,7 @@ package settings {
         }
 
         package continual as settings.active.continual {
-            class ContinualRLSetting implements RLSetting, IncrementalSetting {
+            class ContinualRLSetting implements RLSetting, IncrementalAssumption {
                 {static} + Results: Type[Results] = RLResults
 
                 + dataset: str = "cartpole"
@@ -196,8 +196,8 @@ package settings {
     }
 }
 
-IncrementalSetting -left-> IncrementalResults : produces
-IncrementalSetting -down-> IncrementalObservations : envs yield
+IncrementalAssumption -left-> IncrementalResults : produces
+IncrementalAssumption -down-> IncrementalObservations : envs yield
 ClassIncrementalSetting -left-> ClassIncrementalResults : produces
 TaskIncrementalSetting -left-> TaskIncrementalResults : produces
 IIDSetting -left-> IIDResults : produces

@@ -25,7 +25,7 @@ from sequoia.common import Config, TrainerConfig
 from sequoia.common.spaces import Image
 from sequoia.settings import RLSetting, SLSetting
 from sequoia.settings.rl.continual import ContinualRLSetting
-from sequoia.settings.assumptions.incremental import IncrementalSetting
+from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.settings.base import Method
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import Actions, Observations, Rewards
@@ -210,7 +210,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         setting_name: str = setting.get_name()
         dataset = setting.dataset
 
-        if isinstance(setting, IncrementalSetting):
+        if isinstance(setting, IncrementalAssumption):
             if self.hparams.multihead is None:
                 # Use a multi-head model by default if the task labels are
                 # available at training time and has more than one task.

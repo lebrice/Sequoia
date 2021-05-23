@@ -41,14 +41,14 @@ from sequoia.settings.base import (
 from sequoia.utils import constant, flag, mean
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import add_prefix
-from .continual import ContinualSetting
+from .continual import ContinualAssumption
 from .incremental_results import IncrementalResults, TaskResults, TaskSequenceResults
 
 logger = get_logger(__file__)
 
 
 @dataclass
-class IncrementalSetting(ContinualSetting):
+class IncrementalAssumption(ContinualAssumption):
     """ Mixin that defines methods that are common to all 'incremental'
     settings, where the data is separated into tasks, and where you may not
     always get the task labels.
@@ -321,7 +321,7 @@ class IncrementalSetting(ContinualSetting):
 
             wandb.run.finish()
 
-    def test_loop(self, method: Method) -> "IncrementalSetting.Results":
+    def test_loop(self, method: Method) -> "IncrementalAssumption.Results":
         """ (WIP): Runs an incremental test loop and returns the Results.
 
         The idea is that this loop should be exactly the same, regardless of if
@@ -346,7 +346,7 @@ class IncrementalSetting(ContinualSetting):
         if self.known_task_boundaries_at_test_time and self.nb_tasks > 1:
 
             def _on_task_switch(step: int, *arg) -> None:
-                # TODO: This attribute isn't on IncrementalSetting itself, it's defined
+                # TODO: This attribute isn't on IncrementalAssumption itself, it's defined
                 # on ContinualRLSetting.
                 if step not in test_env.boundary_steps:
                     return
@@ -473,14 +473,14 @@ class IncrementalSetting(ContinualSetting):
     @abstractmethod
     def train_dataloader(
         self, *args, **kwargs
-    ) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
+    ) -> Environment["IncrementalAssumption.Observations", Actions, Rewards]:
         """ Returns the DataLoader/Environment for the current train task. """
         return super().train_dataloader(*args, **kwargs)
 
     @abstractmethod
     def val_dataloader(
         self, *args, **kwargs
-    ) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
+    ) -> Environment["IncrementalAssumption.Observations", Actions, Rewards]:
         """ Returns the DataLoader/Environment used for validation on the
         current task.
         """
@@ -489,7 +489,7 @@ class IncrementalSetting(ContinualSetting):
     @abstractmethod
     def test_dataloader(
         self, *args, **kwargs
-    ) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
+    ) -> Environment["IncrementalAssumption.Observations", Actions, Rewards]:
         """ Returns the Test Environment (for all the tasks). """
         return super().test_dataloader(*args, **kwargs)
 

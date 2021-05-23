@@ -59,7 +59,7 @@ from sequoia.common.spaces import Image, Sparse
 from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.transforms import Transforms
 from sequoia.settings.assumptions.incremental import (
-    IncrementalSetting,
+    IncrementalAssumption,
     TaskResults,
     TaskSequenceResults,
     IncrementalResults,
@@ -130,7 +130,7 @@ base_action_spaces = base_reward_spaces.copy()
 
 
 @dataclass
-class ClassIncrementalSetting(SLSetting, IncrementalSetting):
+class ClassIncrementalSetting(SLSetting, IncrementalAssumption):
     """Supervised Setting where the data is a sequence of 'tasks'.
 
     This class is basically is the supervised version of an Incremental Setting
@@ -151,20 +151,20 @@ class ClassIncrementalSetting(SLSetting, IncrementalSetting):
     # as Setting.Observations, and we want a consistent method resolution order.
     @dataclass(frozen=True)
     class Observations(#SLSetting.Observations,
-                       IncrementalSetting.Observations):
+                       IncrementalAssumption.Observations):
         """ Incremental Observations, in a supervised context. """
 
         pass
 
     # @dataclass(frozen=True)
     # class Actions(SLSetting.Actions,
-    #               IncrementalSetting.Actions):
+    #               IncrementalAssumption.Actions):
     #     """Incremental Actions, in a supervised (passive) context."""
     #     pass
 
     # @dataclass(frozen=True)
     # class Rewards(SLSetting.Rewards,
-    #               IncrementalSetting.Rewards):
+    #               IncrementalAssumption.Rewards):
     #     """Incremental Rewards, in a supervised context."""
     #     pass
 
@@ -376,7 +376,7 @@ class ClassIncrementalSetting(SLSetting, IncrementalSetting):
 
         method.configure(setting=self)
 
-        # Run the main loop (which is defined in IncrementalSetting).
+        # Run the main loop (which is defined in IncrementalAssumption).
         results: ClassIncrementalResults = super().main_loop(method)
         logger.info(results.summary())
         method.receive_results(self, results=results)

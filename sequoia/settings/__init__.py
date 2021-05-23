@@ -26,8 +26,15 @@ from .sl import *
 # ]
 # Or, get All the settings:
 all_settings: List[Type[Setting]] = frozenset([
-    Setting, *Setting.all_children()
+    Setting, *Setting.children()
 ])
-import inspect
-print(inspect.getclasstree(all_settings, unique=True))
+# FIXME: Remove this, just checking the inspect atm.:
+# import inspect
+# import pprint
+
+# print(Setting.get_tree_string())
+# exit()
+
+# print(inspect.getclasstree(all_settings, unique=True))
+# assert False
 # assert False, all_settings

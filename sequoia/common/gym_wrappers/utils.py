@@ -284,8 +284,8 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         # be affected.
         # logger.debug(f"Wrapped env {self.env} isnt a PolicyEnv or an EnvDataset")
         # return type(self.env).__next__(self)
-        from sequoia.settings.rl.active_dataloader import ActiveDataLoader
-        from sequoia.settings.sl.passive_environment import PassiveEnvironment
+        from sequoia.settings.rl.environment import ActiveDataLoader
+        from sequoia.settings.sl.environment import PassiveEnvironment
 
         if has_wrapper(self.env, EnvDataset) or is_proxy_to(
             self.env, (EnvDataset, ActiveDataLoader)
@@ -350,8 +350,8 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         # Option 4: Slight variation on option 3: We cut straight to the
         # EnvDataset iterator.
 
-        from sequoia.settings.rl.active_dataloader import ActiveDataLoader
-        from sequoia.settings.sl.passive_environment import PassiveEnvironment
+        from sequoia.settings.rl.environment import ActiveDataLoader
+        from sequoia.settings.sl.environment import PassiveEnvironment
 
         if has_wrapper(self.env, EnvDataset) or is_proxy_to(
             self.env, (EnvDataset, ActiveDataLoader)
@@ -382,7 +382,7 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         """ Returns wether this wrapper is applied over a 'passive' env, in which case
         iterating over the env will yield (up to) 2 items, rather than just 1.
         """
-        from sequoia.settings.sl.passive_environment import PassiveEnvironment
+        from sequoia.settings.sl.environment import PassiveEnvironment
 
         return isinstance(self.unwrapped, PassiveEnvironment) or is_proxy_to(
             self, PassiveEnvironment
