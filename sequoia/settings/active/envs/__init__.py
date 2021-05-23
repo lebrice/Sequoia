@@ -89,7 +89,7 @@ except ImportError:
         pass
     class SawyerXYZEnv(gym.Env):
         pass
-    
+
 
 MUJOCO_INSTALLED = False
 try:
@@ -106,7 +106,7 @@ except (ValueError, gym.error.DependencyNotInstalled):
         pass
     class HopperEnv(MujocoEnv):
         pass
-    class Wakler2d(MujocoEnv):
+    class Wakler2dEnv(MujocoEnv):
         pass
     class ContinualHalfCheetahEnv(HalfCheetahEnv):
         pass
