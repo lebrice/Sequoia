@@ -82,7 +82,7 @@ package settings {
 
     package passive as settings.passive {
         class PassiveEnvironment implements Environment {}
-        abstract class PassiveSetting extends Setting {
+        abstract class SLSetting extends Setting {
             {abstract} + train_dataloader(): PassiveEnvironment
             {abstract} + val_dataloader(): PassiveEnvironment
             {abstract} + test_dataloader(): PassiveEnvironment
@@ -92,7 +92,7 @@ package settings {
         ' PassiveEnvironment extends DataLoader
         
         package cl as settings.passive.cl {
-            class ClassIncrementalSetting implements PassiveSetting, IncrementalSetting {
+            class ClassIncrementalSetting implements SLSetting, IncrementalSetting {
                 {static} + Results: Type[Results] = ClassIncrementalResults
                 + nb_tasks: int
                 + task_labels_at_train_time: bool = True
@@ -136,14 +136,14 @@ package settings {
     package active as settings.active {
         'note: This is currently called GymDataLoader in the repo.
         class ActiveEnvironment extends Environment {}
-        abstract class ActiveSetting extends Setting {
+        abstract class RLSetting extends Setting {
             {abstract} + train_dataloader(): ActiveEnvironment
             {abstract} + val_dataloader(): ActiveEnvironment
             {abstract} + test_dataloader(): ActiveEnvironment
         }
 
         package continual as settings.active.continual {
-            class ContinualRLSetting implements ActiveSetting, IncrementalSetting {
+            class ContinualRLSetting implements RLSetting, IncrementalSetting {
                 {static} + Results: Type[Results] = RLResults
 
                 + dataset: str = "cartpole"
@@ -202,8 +202,8 @@ ClassIncrementalSetting -left-> ClassIncrementalResults : produces
 TaskIncrementalSetting -left-> TaskIncrementalResults : produces
 IIDSetting -left-> IIDResults : produces
 
-PassiveSetting --> PassiveEnvironment : uses
-ActiveSetting -right-> ActiveEnvironment : uses
+SLSetting --> PassiveEnvironment : uses
+RLSetting -right-> ActiveEnvironment : uses
 ContinualRLSetting -> RLResults : produces
 
 @enduml

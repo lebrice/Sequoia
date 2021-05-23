@@ -430,7 +430,7 @@ class Setting(
         """
         # Check that the env's spaces are batched versions of the settings'.
         from gym.vector.utils import batch_space
-        from sequoia.settings.passive import PassiveEnvironment
+        from sequoia.settings.sl import PassiveEnvironment
 
         batch_size = self.batch_size
         for loader_method in [

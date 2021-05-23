@@ -1,8 +1,8 @@
 import pytest
 from sequoia.client.setting_proxy import SettingProxy
 from sequoia.conftest import slow
-from sequoia.settings.active import IncrementalRLSetting
-from sequoia.settings.passive import ClassIncrementalSetting
+from sequoia.settings.rl import IncrementalRLSetting
+from sequoia.settings.sl import ClassIncrementalSetting
 
 from .dummy_method import DummyMethod
 

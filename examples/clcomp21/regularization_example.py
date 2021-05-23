@@ -11,7 +11,7 @@ from torch import Tensor
 
 from sequoia.common.hparams import uniform
 from sequoia.settings import DomainIncrementalSetting
-from sequoia.settings.passive.cl.objects import Observations, Rewards
+from sequoia.settings.sl.class_incremental.objects import Observations, Rewards
 from sequoia.utils import dict_intersection
 from sequoia.utils.logging_utils import get_logger
 from .multihead_classifier import (ExampleTaskInferenceMethod,
@@ -146,7 +146,7 @@ if __name__ == "__main__":
     # - "Easy": Domain-Incremental MNIST Setting, useful for quick debugging, but
     #           beware that the action space is different than in class-incremental!
     #           (which is the type of Setting used in the SL track!)
-    # from sequoia.settings.passive.cl.domain_incremental import DomainIncrementalSetting
+    # from sequoia.settings.sl.class_incremental.domain_incremental import DomainIncrementalSetting
     # setting = DomainIncrementalSetting(
     #     dataset="mnist", nb_tasks=5, monitor_training_performance=True
     # )

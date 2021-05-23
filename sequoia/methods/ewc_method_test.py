@@ -6,12 +6,12 @@ import numpy as np
 import pytest
 from torch import Tensor
 from sequoia.common import Loss
-from sequoia.settings.active import (
+from sequoia.settings.rl import (
     IncrementalRLSetting,
     RLSetting,
     TaskIncrementalRLSetting,
 )
-from sequoia.settings.passive import (
+from sequoia.settings.sl import (
     ClassIncrementalSetting,
     IIDSetting,
     MultiTaskSetting,

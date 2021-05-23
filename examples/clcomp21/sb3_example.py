@@ -6,7 +6,7 @@ from typing import ClassVar, Dict, Mapping, Type, Union, Optional
 import gym
 from gym import spaces
 from sequoia.methods.stable_baselines3_methods.ppo import PPOMethod, PPOModel
-from sequoia.settings.active import ContinualRLSetting
+from sequoia.settings.rl import ContinualRLSetting
 from simple_parsing import mutable_field
 
 # from stable_baselines3.ppo.policies import ActorCriticCnnPolicy, ActorCriticPolicy
@@ -61,12 +61,12 @@ if __name__ == "__main__":
     # Create the Setting.
 
     # CartPole-state for debugging:
-    from sequoia.settings.active import RLSetting
+    from sequoia.settings.rl import RLSetting
 
     setting = RLSetting(dataset="CartPole-v0")
 
     # OR: Incremental CartPole-state:
-    from sequoia.settings.active import IncrementalRLSetting
+    from sequoia.settings.rl import IncrementalRLSetting
 
     setting = IncrementalRLSetting(
         dataset="CartPole-v0",

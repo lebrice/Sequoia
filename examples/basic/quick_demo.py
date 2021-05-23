@@ -22,7 +22,7 @@ sys.path.extend([".", ".."])
 from sequoia import Method, Setting
 from sequoia.common import Config
 from sequoia.settings import DomainIncrementalSetting, Environment
-from sequoia.settings.passive.cl.objects import (
+from sequoia.settings.sl.class_incremental.objects import (
     Actions,
     Observations,
     PassiveEnvironment,

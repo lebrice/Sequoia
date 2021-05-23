@@ -32,8 +32,8 @@ from sequoia.common.hparams import HyperParameters, log_uniform
 from sequoia.common.spaces import Image
 from sequoia.common.transforms.utils import is_image
 from sequoia.settings import Method, Setting
-from sequoia.settings.active.continual import ContinualRLSetting
-from sequoia.settings.active.continual.wrappers import (
+from sequoia.settings.rl.continual import ContinualRLSetting
+from sequoia.settings.rl.continual.wrappers import (
     NoTypedObjectsWrapper,
     RemoveTaskLabelsWrapper,
 )

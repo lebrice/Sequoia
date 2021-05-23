@@ -20,7 +20,7 @@ from torch import Tensor
 from torch.utils.data import TensorDataset
 
 from sequoia.methods import register_method
-from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSetting
 from sequoia.utils.logging_utils import get_logger
 
 from .base import AvalancheMethod

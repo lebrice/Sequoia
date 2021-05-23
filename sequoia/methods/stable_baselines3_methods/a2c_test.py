@@ -1,7 +1,7 @@
 import pytest
 from sequoia.common.config import Config
 from sequoia.conftest import monsterkong_required
-from sequoia.settings.active import (
+from sequoia.settings.rl import (
     ContinualRLSetting,
     IncrementalRLSetting,
     TaskIncrementalRLSetting,

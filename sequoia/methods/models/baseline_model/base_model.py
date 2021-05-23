@@ -25,11 +25,11 @@ from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.loss import Loss
 from sequoia.common.spaces import Image
 from sequoia.common.transforms import SplitBatch
-from sequoia.settings.active import ActiveSetting, ContinualRLSetting
+from sequoia.settings.rl import RLSetting, ContinualRLSetting
 from sequoia.settings.assumptions.incremental import IncrementalSetting
 from sequoia.settings.base import Environment
 from sequoia.settings.base.setting import Actions, Observations, Rewards
-from sequoia.settings.passive import PassiveSetting
+from sequoia.settings.sl import SLSetting
 from sequoia.utils.logging_utils import get_logger
 
 from ..fcnet import FCNet
@@ -278,13 +278,13 @@ class BaseModel(LightningModule, Generic[SettingType]):
     def output_head_type(self, setting: SettingType) -> Type[OutputHead]:
         """ Return the type of output head we should use in a given setting.
         """
-        if isinstance(setting, ActiveSetting):
+        if isinstance(setting, RLSetting):
             if not isinstance(setting.action_space, spaces.Discrete):
                 raise NotImplementedError("Only support discrete actions for now.")
             assert issubclass(self.hp.rl_output_head_algo, OutputHead)
             return self.hp.rl_output_head_algo
 
-        assert isinstance(setting, PassiveSetting)
+        assert isinstance(setting, SLSetting)
 
         if isinstance(setting.action_space, spaces.Discrete):
             # Discrete actions: i.e. classification problem.

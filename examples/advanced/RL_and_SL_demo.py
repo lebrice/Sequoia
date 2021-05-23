@@ -23,7 +23,7 @@ from sequoia.common.loss import Loss
 from sequoia.methods import BaselineMethod
 from sequoia.methods.aux_tasks import AuxiliaryTask, SimCLRTask
 from sequoia.methods.models import BaselineModel, ForwardPass
-from sequoia.settings import Setting, Environment, ActiveSetting
+from sequoia.settings import Setting, Environment, RLSetting
 from sequoia.utils import camel_case, dict_intersection, get_logger
 
 logger = get_logger(__file__)
@@ -192,7 +192,7 @@ class CustomMethod(BaselineMethod, target_setting=Setting):
 
         # For example, change the value of the coefficient of our
         # regularization loss when in RL vs SL:
-        if isinstance(setting, ActiveSetting):
+        if isinstance(setting, RLSetting):
             self.hparams.simple_reg.coefficient = 0.01
         else:
             self.hparams.simple_reg.coefficient = 1.0

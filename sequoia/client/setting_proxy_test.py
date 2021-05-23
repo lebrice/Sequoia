@@ -11,8 +11,8 @@ from sequoia.common.transforms import Transforms
 from sequoia.methods.baseline_method import BaselineMethod
 from sequoia.methods.random_baseline import RandomBaselineMethod
 from sequoia.settings import Setting, all_settings
-from sequoia.settings.active import IncrementalRLSetting, TaskIncrementalRLSetting
-from sequoia.settings.passive import ClassIncrementalSetting, DomainIncrementalSetting
+from sequoia.settings.rl import IncrementalRLSetting, TaskIncrementalRLSetting
+from sequoia.settings.sl import ClassIncrementalSetting, DomainIncrementalSetting
 from sequoia.conftest import slow
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 

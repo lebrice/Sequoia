@@ -12,7 +12,7 @@ from stable_baselines3.ppo import PPO
 
 from sequoia.common.hparams import log_uniform
 from sequoia.methods import register_method
-from sequoia.settings.active import ContinualRLSetting
+from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
 from .on_policy_method import OnPolicyMethod, OnPolicyModel
 

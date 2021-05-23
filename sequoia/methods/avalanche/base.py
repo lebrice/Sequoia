@@ -35,15 +35,15 @@ from avalanche.training.strategies.strategy_wrappers import default_logger
 
 from sequoia.common.spaces import Image
 from sequoia.methods import Method
-from sequoia.settings.passive import (
+from sequoia.settings.sl import (
     ClassIncrementalSetting,
     PassiveEnvironment,
-    PassiveSetting,
+    SLSetting,
 )
-from sequoia.settings.passive.cl.class_incremental_setting import (
+from sequoia.settings.sl.class_incremental.class_incremental_setting import (
     ClassIncrementalTestEnvironment,
 )
-from sequoia.settings.passive.cl.objects import Actions, Observations, Rewards
+from sequoia.settings.sl.class_incremental.objects import Actions, Observations, Rewards
 from sequoia.utils import get_logger
 
 from .experience import SequoiaExperience
@@ -334,7 +334,7 @@ class AvalancheMethod(
             setattr(self, k, v)
 
     def environment_to_experience(
-        self, env: PassiveEnvironment, setting: PassiveSetting
+        self, env: PassiveEnvironment, setting: SLSetting
     ) -> Experience:
         """
         "Converts" the PassiveEnvironments (dataloaders) from Sequoia

@@ -5,12 +5,12 @@ from typing import List, Optional
 
 import tqdm
 from sequoia.common.gym_wrappers.utils import IterableWrapper
-from sequoia.settings.passive import (
+from sequoia.settings.sl import (
     ClassIncrementalSetting,
     PassiveEnvironment,
-    PassiveSetting,
+    SLSetting,
 )
-from sequoia.settings.passive.cl.objects import Observations, Rewards
+from sequoia.settings.sl.class_incremental.objects import Observations, Rewards
 from torch import Tensor
 from torch.utils.data import TensorDataset
 
@@ -147,7 +147,7 @@ class SequoiaExperience(IterableWrapper, Experience):
         return self.task_id
 
     @property
-    def origin_stream(self) -> PassiveSetting:
+    def origin_stream(self) -> SLSetting:
         # NOTE: This
         class DummyStream(list):
             name = self.name

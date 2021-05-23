@@ -8,7 +8,7 @@ from sequoia.common.config import Config, TrainerConfig
 from sequoia.conftest import skip_param, slow
 from sequoia.settings import (ClassIncrementalSetting, IncrementalRLSetting,
                               RLSetting, Setting)
-from sequoia.settings.active import RLResults
+from sequoia.settings.rl import RLResults
 
 from .baseline_method import BaselineMethod, BaselineModel
 

@@ -20,8 +20,8 @@ from sequoia.common.hparams import HyperParameters, log_uniform
 from sequoia.common.spaces import Image
 from sequoia.methods import Method
 from sequoia.settings import ClassIncrementalSetting
-from sequoia.settings.passive import PassiveEnvironment
-from sequoia.settings.passive.cl.objects import (Actions, Environment,
+from sequoia.settings.sl import PassiveEnvironment
+from sequoia.settings.sl.class_incremental.objects import (Actions, Environment,
                                                  Observations, Rewards)
 
 @dataclass
@@ -308,7 +308,7 @@ if __name__ == "__main__":
     # - "Easy": Domain-Incremental MNIST Setting, useful for quick debugging, but
     #           beware that the action space is different than in class-incremental!
     #           (which is the type of Setting used in the SL track!)
-    # from sequoia.settings.passive.cl.domain_incremental import DomainIncrementalSetting
+    # from sequoia.settings.sl.class_incremental.domain_incremental import DomainIncrementalSetting
     # setting = DomainIncrementalSetting(
     #     dataset="mnist", nb_tasks=5, monitor_training_performance=True
     # )

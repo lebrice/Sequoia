@@ -9,7 +9,7 @@ from gym.spaces import Discrete
 
 from sequoia.common.transforms import Transforms
 from sequoia.conftest import DummyEnvironment, atari_py_required
-from sequoia.settings.active.continual.make_env import make_batched_env
+from sequoia.settings.rl.continual.make_env import make_batched_env
 
 from .env_dataset import EnvDataset
 from .transform_wrappers import TransformObservation

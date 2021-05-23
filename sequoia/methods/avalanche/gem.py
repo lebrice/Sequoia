@@ -11,7 +11,7 @@ from simple_parsing.helpers.hparams import uniform
 from avalanche.training.strategies import GEM, BaseStrategy
 
 from sequoia.methods import register_method
-from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSetting
 
 from .base import AvalancheMethod
 

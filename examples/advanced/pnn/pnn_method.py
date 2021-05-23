@@ -19,11 +19,11 @@ from sequoia.common.transforms.utils import is_image
 from sequoia.settings import (
     Actions,
     ActiveEnvironment,
-    ActiveSetting,
+    RLSetting,
     Method,
     Observations,
     PassiveEnvironment,
-    PassiveSetting,
+    SLSetting,
     Rewards,
     Setting,
     DomainIncrementalSetting,
@@ -97,7 +97,7 @@ class PnnMethod(Method, target_setting=Setting):
 
         self.added_tasks = []
 
-        if isinstance(setting, ActiveSetting):
+        if isinstance(setting, RLSetting):
             # If we're applied to an RL setting:
 
             # Used these as the default hparams in RL:

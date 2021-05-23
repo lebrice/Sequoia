@@ -8,7 +8,7 @@ from typing import ClassVar, Optional, Type
 from avalanche.training.strategies import BaseStrategy, CWRStar
 
 from sequoia.methods import register_method
-from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSetting
 
 from .base import AvalancheMethod
 

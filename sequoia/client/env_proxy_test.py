@@ -12,13 +12,13 @@ from sequoia.common.gym_wrappers.env_dataset_test import \
     TestEnvDataset as _TestEnvDataset
 from sequoia.common.spaces import Image
 from sequoia.common.transforms import Compose, Transforms
-from sequoia.settings.active import IncrementalRLSetting
-from sequoia.settings.active.continual.gym_dataloader import GymDataLoader
-from sequoia.settings.active.continual.gym_dataloader_test import \
+from sequoia.settings.rl import IncrementalRLSetting
+from sequoia.settings.rl.continual.gym_dataloader import GymDataLoader
+from sequoia.settings.rl.continual.gym_dataloader_test import \
     TestGymDataLoader as _TestGymDataLoader
 from sequoia.settings.assumptions import IncrementalSetting
-from sequoia.settings.passive.passive_environment import PassiveEnvironment
-from sequoia.settings.passive.passive_environment_test import \
+from sequoia.settings.sl.passive_environment import PassiveEnvironment
+from sequoia.settings.sl.passive_environment_test import \
     TestPassiveEnvironment as _TestPassiveEnvironment
 from torch import Tensor
 from torch.utils.data import DataLoader

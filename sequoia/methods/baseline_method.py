@@ -23,8 +23,8 @@ from wandb.wandb_run import Run
 
 from sequoia.common import Config, TrainerConfig
 from sequoia.common.spaces import Image
-from sequoia.settings import ActiveSetting, PassiveSetting
-from sequoia.settings.active.continual import ContinualRLSetting
+from sequoia.settings import RLSetting, SLSetting
+from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.settings.assumptions.incremental import IncrementalSetting
 from sequoia.settings.base import Method
 from sequoia.settings.base.environment import Environment
@@ -177,10 +177,10 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         # Set the default batch size to use, depending on the kind of Setting.
         if self.hparams.batch_size is None:
-            if isinstance(setting, ActiveSetting):
+            if isinstance(setting, RLSetting):
                 # Default batch size of 1 in RL
                 self.hparams.batch_size = 1
-            elif isinstance(setting, PassiveSetting):
+            elif isinstance(setting, SLSetting):
                 self.hparams.batch_size = 32
             else:
                 warnings.warn(

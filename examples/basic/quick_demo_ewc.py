@@ -14,7 +14,7 @@ from torch import Tensor
 # This "hack" is required so we can run `python examples/quick_demo_ewc.py`
 sys.path.extend([".", ".."])
 from sequoia.settings import DomainIncrementalSetting
-from sequoia.settings.passive.cl.objects import Observations, Rewards
+from sequoia.settings.sl.class_incremental.objects import Observations, Rewards
 from sequoia.utils import dict_intersection
 from sequoia.utils.logging_utils import get_logger
 

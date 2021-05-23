@@ -25,7 +25,7 @@ from simple_parsing import field, mutable_field
 from sequoia.common.loss import Loss
 # from sequoia.methods.models.baseline_model.base_model import LightningModule
 from sequoia.settings import Setting
-from sequoia.settings.passive.cl.class_incremental_setting import ClassIncrementalSetting
+from sequoia.settings.sl.class_incremental.class_incremental_setting import ClassIncrementalSetting
 from sequoia.utils.logging_utils import get_logger, pbar
 from sequoia.utils.utils import roundrobin, take
 

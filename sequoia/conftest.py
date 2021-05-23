@@ -272,7 +272,7 @@ class DummyEnvironment(gym.Env):
         return seeds
 
 
-from sequoia.settings.active.envs import (
+from sequoia.settings.rl.envs import (
     METAWORLD_INSTALLED,
     MONSTERKONG_INSTALLED,
     MTENV_INSTALLED,

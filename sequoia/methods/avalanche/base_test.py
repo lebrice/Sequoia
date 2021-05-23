@@ -11,8 +11,8 @@ from torch.nn import Module
 
 from sequoia.common.config import Config
 from sequoia.conftest import xfail_param
-from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
-from sequoia.settings.passive.cl.objects import Observations, Rewards
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl.class_incremental.objects import Observations, Rewards
 
 from .base import AvalancheMethod
 from .experience import SequoiaExperience

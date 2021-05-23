@@ -401,7 +401,7 @@ def test_task_inference_rl_easy(config: Config):
     from sequoia.methods.baseline_method import BaselineMethod
 
     method = BaselineMethod(config=config)
-    from sequoia.settings.active import IncrementalRLSetting
+    from sequoia.settings.rl import IncrementalRLSetting
 
     setting = IncrementalRLSetting(
         dataset="cartpole",
@@ -419,7 +419,7 @@ def test_task_inference_rl_hard(config: Config):
     from sequoia.methods.baseline_method import BaselineMethod
 
     method = BaselineMethod(config=config)
-    from sequoia.settings.active import RLSetting
+    from sequoia.settings.rl import RLSetting
 
     setting = RLSetting(
         dataset="cartpole",
@@ -438,7 +438,7 @@ def test_task_inference_multi_task_sl(config: Config):
     from sequoia.methods.baseline_method import BaselineMethod
 
     method = BaselineMethod(config=config, max_epochs=1)
-    from sequoia.settings.passive import MultiTaskSetting
+    from sequoia.settings.sl import MultiTaskSetting
 
     setting = MultiTaskSetting(dataset="mnist", nb_tasks=2,)
     results = setting.apply(method)

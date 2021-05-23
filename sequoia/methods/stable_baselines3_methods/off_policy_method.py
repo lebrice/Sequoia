@@ -12,7 +12,7 @@ from simple_parsing import mutable_field
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
 
 from sequoia.common.hparams import log_uniform, uniform
-from sequoia.settings.active import ContinualRLSetting
+from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
 
 from .base import SB3BaseHParams, StableBaselines3Method

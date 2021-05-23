@@ -6,7 +6,7 @@ from typing import ClassVar, Type
 
 from avalanche.training.strategies import BaseStrategy, Naive
 
-from sequoia.settings.passive import TaskIncrementalSetting
+from sequoia.settings.sl import TaskIncrementalSetting
 
 from .base import AvalancheMethod
 

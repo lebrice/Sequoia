@@ -16,7 +16,7 @@ from sequoia.common.metrics import ClassificationMetrics
 from sequoia.methods import register_method
 from sequoia.settings import ClassIncrementalSetting, Setting
 from sequoia.settings.base import Actions, Environment, Method, Observations
-from sequoia.settings.passive import PassiveSetting
+from sequoia.settings.sl import SLSetting
 from sequoia.utils import get_logger, singledispatchmethod
 
 logger = get_logger(__file__)
@@ -39,7 +39,7 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
         """
-        if isinstance(setting, PassiveSetting):
+        if isinstance(setting, SLSetting):
             # Being applied in SL, we will only do one 'epoch" (a.k.a. "episode").
             self.max_train_episodes = 1
 

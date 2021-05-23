@@ -1,4 +1,4 @@
-from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSetting
 import pytest
 from .experience_replay import ExperienceReplayMethod
 from sequoia.common.config import Config

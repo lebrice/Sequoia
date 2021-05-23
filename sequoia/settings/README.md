@@ -55,7 +55,7 @@ Prerequisites:
 
 
 
-	- ## [PassiveSetting](passive/passive_setting.py)
+	- ## [SLSetting](passive/passive_setting.py)
 
 		Setting where actions have no influence on future observations. 
 
@@ -88,7 +88,7 @@ Prerequisites:
 
 
 
-	- ## [ActiveSetting](active/active_setting.py)
+	- ## [RLSetting](active/active_setting.py)
 
 		LightningDataModule for an 'active' setting.
 

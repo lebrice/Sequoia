@@ -7,7 +7,7 @@ from collections import defaultdict
 import pandas as pd
 
 
-from sequoia.settings import PassiveSetting, ActiveSetting
+from sequoia.settings import SLSetting, RLSetting
 
 
 def demo_all_settings(MethodType: Type[Method], datasets: List[str] = ["mnist", "fashionmnist"], **setting_kwargs):
@@ -28,7 +28,7 @@ def demo_all_settings(MethodType: Type[Method], datasets: List[str] = ["mnist", 
                 print(f"Skipping {setting_type} / {dataset} for now.")
                 continue
 
-            if issubclass(setting_type, ActiveSetting):
+            if issubclass(setting_type, RLSetting):
                 print(f"Skipping {setting_type} (not considering RL settings for this demo).")
                 continue
 

@@ -15,8 +15,8 @@ from sequoia.methods import register_method
 from sequoia.common import Config
 from sequoia.common.spaces import Image
 from sequoia.settings import Method, Environment
-from sequoia.settings.passive import TaskIncrementalSetting
-from sequoia.settings.passive.cl.objects import (Actions, Observations,
+from sequoia.settings.sl import TaskIncrementalSetting
+from sequoia.settings.sl.class_incremental.objects import (Actions, Observations,
                                                  PassiveEnvironment, Rewards)
 
 class Masks(NamedTuple):

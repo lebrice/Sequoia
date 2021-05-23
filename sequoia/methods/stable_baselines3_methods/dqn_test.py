@@ -4,7 +4,7 @@ from gym import spaces
 from sequoia.common.config import Config
 from sequoia.common.spaces import Image, NamedTupleSpace, Sparse
 from sequoia.conftest import monsterkong_required
-from sequoia.settings.active import IncrementalRLSetting
+from sequoia.settings.rl import IncrementalRLSetting
 
 from .dqn import DQNMethod
 

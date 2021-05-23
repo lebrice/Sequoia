@@ -15,12 +15,12 @@ from sequoia.common.gym_wrappers import (
     EnvDataset,
 )
 from sequoia.common.gym_wrappers import PixelObservationWrapper
-from sequoia.settings.active.continual.make_env import make_batched_env
+from sequoia.settings.rl.continual.make_env import make_batched_env
 from sequoia.common.gym_wrappers.batch_env import BatchedVectorEnv
 from sequoia.common.loss import Loss
 from sequoia.conftest import DummyEnvironment
 from sequoia.methods.models.forward_pass import ForwardPass
-from sequoia.settings.active.continual import ContinualRLSetting
+from sequoia.settings.rl.continual import ContinualRLSetting
 from torch import Tensor, nn
 
 from .policy_head import PolicyHead

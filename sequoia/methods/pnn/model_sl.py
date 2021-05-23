@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 from sequoia.settings import Actions, PassiveEnvironment
-from sequoia.settings.passive.cl.objects import Observations, Rewards
+from sequoia.settings.sl.class_incremental.objects import Observations, Rewards
 from torch import Tensor
 
 from .layers import PNNLinearBlock

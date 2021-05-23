@@ -13,21 +13,30 @@ from wandb.wandb_run import Run
 
 from sequoia import Environment
 from sequoia.common import Config
-from sequoia.common.hparams import (HyperParameters, categorical, log_uniform,
-                                    uniform)
+from sequoia.common.hparams import HyperParameters, categorical, log_uniform, uniform
 from sequoia.common.spaces import Image
 from sequoia.common.transforms.utils import is_image
 from sequoia.methods import register_method
-from sequoia.settings import (Actions, ActiveSetting, Method, Observations,
-                              PassiveEnvironment, Setting,
-                              TaskIncrementalRLSetting, TaskIncrementalSetting)
+from sequoia.settings import (
+    Actions,
+    Method,
+    Observations,
+    PassiveEnvironment,
+    RLSetting,
+    Setting,
+    TaskIncrementalRLSetting,
+    TaskIncrementalSLSetting,
+)
 from sequoia.settings.assumptions import IncrementalSetting
+# TODO: Clean this up:
+from sequoia.settings.assumptions.task_incremental import TaskIncrementalSetting
+
 from .model_rl import PnnA2CAgent
 from .model_sl import PnnClassifier
 
-# BUG: Can't apply PNN to the ClassIncrementalSetting at the moment. 
+# BUG: Can't apply PNN to the ClassIncrementalSetting at the moment.
 # BUG: Can't apply PNN to any RL Settings at the moment.
-# (it was hard-coded to handle pixel cartpole). 
+# (it was hard-coded to handle pixel cartpole).
 # TODO: When those bugs get fixed, restore the 'IncrementalSetting' as the target
 # setting.
 
@@ -44,6 +53,7 @@ class PnnMethod(Method, target_setting=TaskIncrementalSetting):
     @dataclass
     class HParams(HyperParameters):
         """ Hyper-parameters of the Pnn method. """
+
         # Learning rate of the optimizer. Defauts to 0.0001 when in SL.
         learning_rate: float = log_uniform(1e-6, 1e-2, default=2e-4)
         num_steps: int = 200  # (only applicable in RL settings.)
@@ -83,7 +93,7 @@ class PnnMethod(Method, target_setting=TaskIncrementalSetting):
 
         self.added_tasks = []
 
-        if isinstance(setting, ActiveSetting):
+        if isinstance(setting, RLSetting):
             # If we're applied to an RL setting:
 
             # Used these as the default hparams in RL:
@@ -429,8 +439,9 @@ def main_sl():
 
     # setting: TaskIncrementalSetting = args.setting
     setting: TaskIncrementalSetting = TaskIncrementalSetting.from_argparse_args(
-    # setting: DomainIncrementalSetting = DomainIncrementalSetting.from_argparse_args(
-        args, dest="setting"
+        # setting: DomainIncrementalSetting = DomainIncrementalSetting.from_argparse_args(
+        args,
+        dest="setting",
     )
     config: Config = Config.from_argparse_args(args, dest="config")
 

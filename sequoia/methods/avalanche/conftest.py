@@ -6,7 +6,7 @@ from torch.utils.data import Subset, TensorDataset
 from avalanche.benchmarks import nc_benchmark
 
 from sequoia.common.config import Config
-from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSetting
 from sequoia.client import SettingProxy
 
 

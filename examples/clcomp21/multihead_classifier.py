@@ -8,8 +8,8 @@ from typing import Optional
 
 import torch
 from gym import Space, spaces
-from sequoia.settings.passive.cl import ClassIncrementalSetting
-from sequoia.settings.passive.cl.objects import Observations
+from sequoia.settings.sl.class_incremental import ClassIncrementalSetting
+from sequoia.settings.sl.class_incremental.objects import Observations
 from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.optim.optimizer import Optimizer
@@ -303,7 +303,7 @@ class ExampleTaskInferenceMethod(ExampleMethod):
 
 
 if __name__ == "__main__":
-    from sequoia.settings.passive.cl import (
+    from sequoia.settings.sl.class_incremental import (
         ClassIncrementalSetting,
         TaskIncrementalSetting,
     )
