@@ -48,7 +48,11 @@ metaworld_envs = []
 try:
     import metaworld
     from metaworld import MetaWorldEnv
-    from metaworld.envs.mujoco.mujoco_env import MujocoEnv
+    # TODO: Use mujoco from metaworld? or from mujoco_py?
+    from metaworld.envs.mujoco.mujoco_env import MujocoEnv as MetaWorldMujocoEnv
+    
+    from metaworld.envs.mujoco.sawyer_xyz.sawyer_xyz_env import SawyerXYZEnv
+    # from metaworld.envs.mujoco.mujoco_env import MujocoEnv
 
     METAWORLD_INSTALLED = True
     # metaworld_dir = getsourcefile(metaworld)
@@ -81,10 +85,11 @@ except ImportError:
     # isn't installed, which is good.
     class MetaWorldEnv(gym.Env):
         pass
-
-    class MujocoEnv(gym.Env):
+    class MetaWorldMujocoEnv(gym.Env):
         pass
-
+    class SawyerXYZEnv(gym.Env):
+        pass
+    
 
 MUJOCO_INSTALLED = False
 try:
@@ -96,4 +101,16 @@ except ValueError:
     # Additionally, `isinstance(some_env, <this class>)`` will always fail when the
     # dependency isn't installed, which is good.
     class MujocoEnv(gym.Env):
+        pass
+    class HalfCheetahEnv(MujocoEnv):
+        pass
+    class HopperEnv(MujocoEnv):
+        pass
+    class Wakler2d(MujocoEnv):
+        pass
+    class ContinualHalfCheetahEnv(HalfCheetahEnv):
+        pass
+    class ContinualHopperEnv(HopperEnv):
+        pass
+    class ContinualWalker2dEnv(Walker2dEnv):
         pass

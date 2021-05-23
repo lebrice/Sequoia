@@ -1,9 +1,14 @@
-from typing import Dict, Union, Type, List, Any
-import gym
-
-from sequoia.common.gym_wrappers.multi_task_environment import make_env_attributes_task
-from functools import singledispatch
 import warnings
+from functools import singledispatch
+from typing import Any, Dict, List, Type, Union
+
+import gym
+from sequoia.common.gym_wrappers.multi_task_environment import \
+    make_env_attributes_task
+from sequoia.settings.active.envs import MUJOCO_INSTALLED
+
+import numpy as np
+from gym.envs.classic_control import CartPoleEnv, PendulumEnv
 
 
 @singledispatch
@@ -20,24 +25,18 @@ def make_task_for_env(
     return {}
 
 
-@make_task_for_env.register(gym.Wrapper)
+@make_task_for_env.register
 def make_task_for_wrapped_env(
     env: gym.Wrapper, step: int, change_steps: List[int] = None, **kwargs,
 ) -> Union[Dict[str, Any], Any]:
-    # warnings.warn(
-    #     RuntimeWarning(
-    #         f"Don't yet know how to create a task for env {env}, will use the environment as-is."
-    #     )
-    # )
-    # #FIXME: Remove this after debugging is done.
-    # raise NotImplementedError(f"Don't currently know how to create tasks for env {env}")
+    # NOTE: Not sure if this is totally a good idea...
+    # If someone registers a handler for some kind of Wrapper, than all envs wrapped
+    # with that wrapper will use that handler, instead of their base environment type.
     return make_task_for_env(env.env, step=step, change_steps=change_steps, **kwargs)
 
 
-import numpy as np
-from gym.envs.classic_control import CartPoleEnv, PendulumEnv
-
-
+# Dictionary mapping from environment type to a dict of environment values which can be
+# modified with multiplicative gaussian noise.
 _ENV_TASK_ATTRIBUTES: Dict[Union[Type[gym.Env]], Dict[str, float]] = {
     CartPoleEnv: {
         "gravity": 9.8,
@@ -89,9 +88,6 @@ def make_task_for_classic_control_env(
     )
 
 
-from sequoia.settings.active.envs import MUJOCO_INSTALLED
-
-
 if MUJOCO_INSTALLED:
     from sequoia.settings.active.envs.mujoco import ModifiedGravityEnv
 
@@ -101,7 +97,7 @@ if MUJOCO_INSTALLED:
     def make_task_for_modified_gravity_env(
         env: ModifiedGravityEnv,
         step: int,
-        change_steps: List[int] = None,
+        change_steps: List[int],
         seed: int = None,
         rng: np.random.Generator = None,
         **kwargs,

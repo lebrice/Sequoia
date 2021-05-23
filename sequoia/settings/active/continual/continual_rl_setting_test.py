@@ -1,6 +1,6 @@
 import random
 from pathlib import Path
-from typing import List, Optional, Tuple, ClassVar, Type
+from typing import ClassVar, List, Optional, Tuple, Type
 
 import gym
 import numpy as np
@@ -8,19 +8,19 @@ import pytest
 from gym import spaces
 from gym.vector.utils import batch_space
 from sequoia.common.spaces import Image
-from sequoia.settings import Setting
 from sequoia.common.transforms import Transforms
 from sequoia.conftest import (
+    ATARI_PY_INSTALLED,
+    MONSTERKONG_INSTALLED,
+    MUJOCO_INSTALLED,
     DummyEnvironment,
     mujoco_required,
     param_requires_atari_py,
-    param_requires_mujoco,
-    ATARI_PY_INSTALLED,
-    MUJOCO_INSTALLED,
-    MONSTERKONG_INSTALLED,
     param_requires_monsterkong,
+    param_requires_mujoco,
 )
 from sequoia.methods import RandomBaselineMethod
+from sequoia.settings import Setting
 from sequoia.settings.assumptions.incremental_test import DummyMethod
 from sequoia.utils.utils import take
 
@@ -74,7 +74,6 @@ expected_cartpole_obs_space = spaces.Box(-high, high, dtype=np.float32)
 
 
 class TestContinualRLSetting:
-
     Setting: ClassVar[Type[Setting]] = ContinualRLSetting
 
     # IDEA: Create a fixture that creates the Setting which can then be tested.
@@ -205,15 +204,25 @@ class TestContinualRLSetting:
             obs = env.reset()
             # BUG: TODO: The observation space that we use should actually check with
             # isinstance and over the fields that fit in the space. Here there is a bug
-            # because the env observations also have a `done` field.
+            # because the env observations also have a `done` field, while the space
+            # doesnt.
             # assert obs in env.observation_space
-            assert obs.x in env.observation_space.x
+            assert obs.x in env.observation_space.x  # this works though.
+
             # BUG: This doesn't currently work: (would need a tuple value rather than an
             # array.
             # assert obs.task_labels in env.observation_space.task_labels
-            assert (
-                tuple(obs.task_labels) if batch_size else obs.task_labels
-            ) in env.observation_space.task_labels
+
+            if batch_size:
+                # FIXME: This differs between ContinualRL and IncrementalRL:
+                if self.Setting is ContinualRLSetting:
+                    assert tuple(obs.task_labels) in env.observation_space.task_labels
+                else:
+                    assert (
+                        np.array(obs.task_labels) in env.observation_space.task_labels
+                    )
+            else:
+                assert obs.task_labels in env.observation_space.task_labels
 
             reset_obs = env.reset()
             check_obs(reset_obs)
@@ -332,14 +341,10 @@ def test_fit_and_on_task_switch_calls():
     _ = setting.apply(method)
     # == 30 task switches in total.
     assert method.n_task_switches == 0
-    assert method.n_fit_calls == 1  # TODO: Add something like this.
+    assert method.n_fit_calls == 1
     assert not method.received_task_ids
     assert not method.received_while_training
 
-
-from typing import Type
-
-from sequoia.conftest import MUJOCO_INSTALLED
 
 if MUJOCO_INSTALLED:
     from sequoia.settings.active.envs.mujoco import (

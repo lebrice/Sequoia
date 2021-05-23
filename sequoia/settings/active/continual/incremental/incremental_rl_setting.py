@@ -1,12 +1,13 @@
 import inspect
 import json
 import operator
+import warnings
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from functools import partial
 from io import StringIO
 from pathlib import Path
-from typing import Callable, ClassVar, Dict, List, Optional, Type, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
 from gym import spaces
@@ -22,7 +23,7 @@ from sequoia.utils.logging_utils import get_logger
 from ..continual_rl_setting import ContinualRLSetting
 from sequoia.settings.active.envs import (
     ATARI_PY_INSTALLED,
-    MetaMonsterKongEnv,  # metaworld,
+    MetaMonsterKongEnv,
     MetaWorldEnv,
     MTEnv,
     MujocoEnv,
@@ -33,6 +34,8 @@ from sequoia.settings.active.envs import (
     MTENV_INSTALLED,
     MUJOCO_INSTALLED,
 )
+
+from .tasks import make_task_for_env
 
 logger = get_logger(__file__)
 
@@ -234,7 +237,6 @@ class IncrementalRLSetting(ContinualRLSetting):
         self, temp_env: gym.Env, change_steps: List[int]
     ) -> Dict[int, Dict]:
         task_schedule: Dict[int, Dict] = {}
-
         if self.train_envs:
             # If custom envs were passed to be used for each task, then we don't create
             # a "task schedule", because the only reason we're using a task schedule is
@@ -245,49 +247,56 @@ class IncrementalRLSetting(ContinualRLSetting):
                 task_schedule[task_step] = {}
             return task_schedule
 
-        if MONSTERKONG_INSTALLED:
-            if isinstance(temp_env.unwrapped, MetaMonsterKongEnv):
-                for i, task_step in enumerate(change_steps):
-                    task_schedule[task_step] = {"level": i}
-                return task_schedule
+        # TODO: Make it possible to use something other than steps as keys in the task
+        # schedule, something like a NamedTuple[int, DeltaType], e.g. Episodes(10) or
+        # Steps(10), something like that!
+        # IDEA: Even fancier, we could use a TimeDelta to say "do one hour of task 0"!!
+        for step in change_steps:
+            # TODO: Add a `stage` argument (an enum or something with 'train', 'valid'
+            # 'test' as values, and pass it to this function. Tasks should be the same
+            # in train/valid for now, given the same task Id.
+            # TODO: When the Results become able to handle a different ordering of tasks
+            # at train vs test time, allow the test task schedule to have different
+            # ordering than train / valid.
+            task = self.sample_task(env=temp_env, step=step, change_steps=change_steps)
+            task_schedule[step] = task
 
-        if isinstance(temp_env.unwrapped, MTEnv):
-            for i, task_step in enumerate(change_steps):
-                task_schedule[task_step] = operator.methodcaller("set_task_state", i)
-            return task_schedule
+        return task_schedule
 
-        if isinstance(temp_env.unwrapped, (MetaWorldEnv, MujocoEnv)):
-            # TODO: Which benchmark to choose?
-            base_env = temp_env.unwrapped
-            found = False
-            import metaworld
+    def sample_task(
+        self, env: gym.Env, step: int, change_steps: List[int]
+    ) -> Dict[str, Any]:
+        """ Samples a task to be applied to the environment when it reaches the given
+        step.
+        """
+        if self.task_sampling_function:
+            return self.task_sampling_function(
+                env,
+                step=step,
+                change_steps=change_steps,
+                seed=self.config.seed if self.config else None,
+            )
 
-            # Find the benchmark that contains this type of env.
-            for benchmark_class in [metaworld.ML10]:
-                benchmark = benchmark_class()
-                for env_name, env_class in benchmark.train_classes.items():
-                    if isinstance(base_env, env_class):
-                        # Found the right benchmark that contains this env class, now
-                        # create the task schedule using
-                        # the tasks.
-                        found = True
-                        break
-                if found:
-                    break
-            if not found:
-                raise NotImplementedError(
-                    f"Can't find a benchmark with env class {type(base_env)}!"
+    
+        # Check if there is a registered handler for this type of environment.
+        # TODO: Maybe use the type of the env, rather then env.unwrapped, and have the
+        # 'base' callable defer the call to the wrapped env?
+        if make_task_for_env.dispatch(type(env.unwrapped)) is make_task_for_env.dispatch(object):
+            warnings.warn(
+                RuntimeWarning(
+                    f"Don't yet know how to create a task for env {env}, will use the environment as-is."
                 )
+            )
 
-            # `benchmark` is here the right benchmark to use to create the tasks.
-            training_tasks = [
-                task for task in benchmark.train_tasks if task.env_name == env_name
-            ]
-            task_schedule = {
-                step: operator.methodcaller("set_task", task)
-                for step, task in zip(change_steps, training_tasks)
-            }
-            return task_schedule
+        # Use this singledispatch function to select how to sample a task depending on
+        # the type of environment.
+        return make_task_for_env(
+            env.unwrapped,
+            step=step,
+            change_steps=change_steps,
+            seed=self.config.seed if self.config else None,
+        )
+    
 
         return super().create_task_schedule(
             temp_env=temp_env, change_steps=change_steps

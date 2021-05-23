@@ -1,4 +1,4 @@
-from typing import ClassVar, List
+from typing import ClassVar, List, Dict
 
 import numpy as np
 from gym.envs.mujoco import MujocoEnv
@@ -73,6 +73,7 @@ class ContinualHalfCheetahEnv(
         gravity=-9.81,
         body_parts=None,  # ("torso", "fthigh", "fshin", "ffoot"),
         size_scales=None,  # (1.0, 1.0, 1.0, 1.0),
+        body_name_to_size_scale: Dict[str, float] = None,
     ):
         super().__init__(
             model_path=model_path,
@@ -80,4 +81,5 @@ class ContinualHalfCheetahEnv(
             gravity=gravity,
             body_parts=body_parts,
             size_scales=size_scales,
+            body_name_to_size_scale=body_name_to_size_scale,
         )
