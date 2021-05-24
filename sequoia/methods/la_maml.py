@@ -8,7 +8,7 @@ from torch import Tensor, nn
 from simple_parsing import ArgumentParser
 sys.path.extend([".", ".."])
 from sequoia.settings import Method, Setting
-from sequoia.settings.passive.cl import ClassIncrementalSetting, DomainIncrementalSetting
+from sequoia.settings.passive.cl import ClassIncrementalSetting, DomainIncrementalSetting, TaskIncrementalSetting
 from sequoia.settings.passive.cl.objects import (
     Actions,
     Environment,
@@ -336,7 +336,7 @@ class BaseNet(torch.nn.Module):
                  observation_space: gym.Space,
                  action_space: gym.Space,
                  reward_space: gym.Space,
-                 hparams: HParams):
+                 hparams):
         super(BaseNet, self).__init__()
 
         image_shape = observation_space[0].shape
@@ -400,7 +400,7 @@ class Net(BaseNet):
                  observation_space: gym.Space,
                  action_space: gym.Space,
                  reward_space: gym.Space,
-                 hparams: HParams):
+                 hparams):
         super(Net, self).__init__(
                  observation_space,
                  action_space,
@@ -609,11 +609,9 @@ class LA_MAML(Method, target_setting=ClassIncrementalSetting):
     class HParams:
         """ Hyper-parameters of the demo model. """
         # Learning rate of the optimizer.
-        learning_rate: float = 0.001
         alpha_init: float=0.001
-        outer_lr_weights: float=0.001
-        weight_outer_lr: float=0.001
-        alpha_lr_outer_lr: float=0.001
+        weight_outer_lr: float=0.1
+        alpha_lr_outer_lr: float=0.1
         cuda: int= 0
 
 
@@ -623,7 +621,6 @@ class LA_MAML(Method, target_setting=ClassIncrementalSetting):
         self.max_epochs: int = 1
         self.early_stop_patience: int = 2
 
-        self.weight_decay : float = 1e-6
         self.buffer_capacity: int = 200
         self.seed : int = None
 
@@ -634,9 +631,6 @@ class LA_MAML(Method, target_setting=ClassIncrementalSetting):
         self.device = torch.device("cuda" if (hparams.cuda and torch.cuda.is_available()) else "cpu")
         #device for buffer should be on cpu!! the rest is cuda
 
-        # We will create those when `configure` will be called, before training.
-        self.model: MyModel
-        self.optimizer: torch.optim.Optimizer
 
     def configure(self, setting: ClassIncrementalSetting):
         """ Called before the method is applied on a setting (before training).
@@ -648,7 +642,7 @@ class LA_MAML(Method, target_setting=ClassIncrementalSetting):
             observation_space=setting.observation_space,
             action_space=setting.action_space,
             reward_space=setting.reward_space,
-            self.hparams
+            hparams=self.hparams
         ).to(self.device)
 
         image_space: spaces.Box = setting.observation_space[0]
@@ -759,9 +753,11 @@ class LA_MAML(Method, target_setting=ClassIncrementalSetting):
         return cls(hparams=hparams)
 
 def demo():
-    method = DemoMethod(hparams=DemoMethod.HParams())
-    setting = DomainIncrementalSetting(dataset="fashionmnist")
+    method = LA_MAML(hparams=LA_MAML.HParams())
+    setting = ClassIncrementalSetting(dataset="fashionmnist")
     results = setting.apply(method)
+    return results
 
 if __name__ == "__main__":
-    demo()
+    results=demo()
+    print(results.summary())
