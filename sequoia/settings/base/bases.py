@@ -229,7 +229,7 @@ class SettingABC:
     def parents(cls) -> Iterable[Type["SettingABC"]]:
         """yields the lineage, from bottom to top.
 
-        NOTE: In the case of Settings having multiple parents (such as IIDSetting),
+        NOTE: In the case of Settings having multiple parents (such as TraditionalSLSetting),
         this is still just a list that reflects the method resolution order for that
         setting.
         """
@@ -481,12 +481,12 @@ class Method(Generic[SettingType], Parseable, ABC):
         ):
             # TODO: If we're trying to check if this method would be compatible
             # with a LightningDataModule, rather than a Setting, then we treat
-            # that LightningModule the same way we would an IIDSetting.
+            # that LightningModule the same way we would an TraditionalSLSetting.
             # i.e., if we're trying to apply a Method on something that isn't in
-            # the tree, then we consider that datamodule as the IIDSetting node.
-            from sequoia.settings import IIDSetting
+            # the tree, then we consider that datamodule as the TraditionalSLSetting node.
+            from sequoia.settings import TraditionalSLSetting
 
-            setting = IIDSetting
+            setting = TraditionalSLSetting
 
         return issubclass(setting, cls.target_setting)
 

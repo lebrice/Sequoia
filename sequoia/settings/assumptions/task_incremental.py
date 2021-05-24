@@ -4,7 +4,7 @@ from sequoia.utils import constant
 from dataclasses import dataclass
 
 @dataclass
-class TaskIncrementalSetting(IncrementalAssumption):
+class TaskIncrementalSLSetting(IncrementalAssumption):
     """ Assumption (mixin) for Settings where the task labels are available at
     both train and test time.
     """

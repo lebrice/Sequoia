@@ -133,9 +133,9 @@ def demo():
         # max_steps=1000,
     )
 
-    # from sequoia.settings import TaskIncrementalSetting, ClassIncrementalSetting
+    # from sequoia.settings import TaskIncrementalSLSetting, ClassIncrementalSetting
     # setting = ClassIncrementalSetting(dataset="mnist", nb_tasks=5)
-    # setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
+    # setting = TaskIncrementalSLSetting(dataset="mnist", nb_tasks=5)
     results = setting.apply(method, config=config)
     print(results.summary())
 

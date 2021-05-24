@@ -29,7 +29,7 @@ from sequoia.common.hparams import HyperParameters, log_uniform, uniform, catego
 from sequoia.common.spaces import Image
 from sequoia.settings import Method, Environment, Setting
 from sequoia.settings.sl import TaskIncrementalSLSetting
-from sequoia.settings.sl.class_incremental.objects import (
+from sequoia.settings.sl.incremental.objects import (
     Actions,
     Observations,
     PassiveEnvironment,

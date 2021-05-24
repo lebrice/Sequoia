@@ -10,7 +10,7 @@ from simple_parsing.helpers.hparams import uniform
 from avalanche.training.strategies import LwF
 
 from sequoia.methods import register_method
-from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
 
 from .base import AvalancheMethod
 
@@ -44,7 +44,7 @@ class LwFMethod(AvalancheMethod[LwF], target_setting=ClassIncrementalSetting):
 if __name__ == "__main__":
     from simple_parsing import ArgumentParser
 
-    setting = TaskIncrementalSetting(
+    setting = TaskIncrementalSLSetting(
         dataset="mnist", nb_tasks=5, monitor_training_performance=True
     )
     # Create the Method, either manually or through the command-line:

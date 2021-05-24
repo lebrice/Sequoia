@@ -67,15 +67,15 @@ package settings {
 
             }
         }
-        ' TODO: Need to rename `TaskIncrementalSetting` below to something like
+        ' TODO: Need to rename `TaskIncrementalSLSetting` below to something like
         ' `TaskIncrementalSL`
         ' package task_incremental as settings.assumptions.task_incremental {
-        '     abstract class TaskIncrementalSetting extends IncrementalAssumption {
+        '     abstract class TaskIncrementalSLSetting extends IncrementalAssumption {
         '     }
         ' }
 
         ' package iid as settings.assumptions.iid {
-        '     abstract class IIDSetting extends TaskIncrementalSetting {
+        '     abstract class TraditionalSLSetting extends TaskIncrementalSLSetting {
         '     }
         ' }
     }
@@ -93,7 +93,7 @@ package settings {
         
         package cl as settings.passive.cl {
             class ClassIncrementalSetting implements SLSetting, IncrementalAssumption {
-                {static} + Results: Type[Results] = ClassIncrementalResults
+                {static} + Results: Type[Results] = IncrementalSLResults
                 + nb_tasks: int
                 + task_labels_at_train_time: bool = True
                 + task_labels_at_test_time: bool = False
@@ -102,7 +102,7 @@ package settings {
                 + relabel: bool = False
             }
 
-            class ClassIncrementalResults implements IncrementalResults {}
+            class IncrementalSLResults implements IncrementalResults {}
             package domain_incremental as settings.passive.cl.domain_incremental {
                 class DomainIncrementalSetting extends ClassIncrementalSetting {
                     + relabel: bool = True
@@ -113,22 +113,22 @@ package settings {
             }
 
             package task_incremental as settings.passive.cl.task_incremental {
-                class TaskIncrementalSetting extends ClassIncrementalSetting {
+                class TaskIncrementalSLSetting extends ClassIncrementalSetting {
                     {field} + task_labels_at_train_time: bool = True (constant)
                     {field} + task_labels_at_test_time: bool = True (constant)
                 }
-                ' class TaskIncrementalResults extends ClassIncrementalResults{}
+                ' class TaskIncrementalResults extends IncrementalSLResults{}
                
                 package multi_task as settings.passive.cl.task_incremental.multi_task {
-                    class MultiTaskSetting extends TaskIncrementalSetting {
+                    class MultiTaskSetting extends TaskIncrementalSLSetting {
                     }
                 }
             }
             package iid as settings.passive.cl.iid {
-                class IIDSetting extends TaskIncrementalSetting, DomainIncrementalSetting {
+                class TraditionalSLSetting extends TaskIncrementalSLSetting, DomainIncrementalSetting {
                     {field} + nb_tasks: int = 1 (constant)
                 }
-                class IIDResults extends ClassIncrementalResults{}
+                class IIDResults extends IncrementalSLResults{}
             }
         }
     }
@@ -198,9 +198,9 @@ package settings {
 
 IncrementalAssumption -left-> IncrementalResults : produces
 IncrementalAssumption -down-> IncrementalObservations : envs yield
-ClassIncrementalSetting -left-> ClassIncrementalResults : produces
-TaskIncrementalSetting -left-> TaskIncrementalResults : produces
-IIDSetting -left-> IIDResults : produces
+ClassIncrementalSetting -left-> IncrementalSLResults : produces
+TaskIncrementalSLSetting -left-> TaskIncrementalResults : produces
+TraditionalSLSetting -left-> IIDResults : produces
 
 SLSetting --> PassiveEnvironment : uses
 RLSetting -right-> ActiveEnvironment : uses

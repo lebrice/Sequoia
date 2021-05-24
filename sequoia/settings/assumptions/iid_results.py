@@ -2,12 +2,12 @@
 from typing import TypeVar, List, Dict, ClassVar
 import matplotlib.pyplot as plt
 from sequoia.common.metrics import Metrics
-
+from sequoia.settings.base.results import Results
 
 MetricType = TypeVar("MetricType", bound=Metrics)
 
 
-class TaskResults(List[MetricType]):
+class TaskResults(List[MetricType], Results):
     """ Results within a given Task.
 
     This is just a List of a given Metrics type, with additional methods.

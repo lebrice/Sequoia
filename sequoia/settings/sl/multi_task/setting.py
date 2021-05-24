@@ -13,8 +13,8 @@ from numpy.random import permutation
 from sequoia.common.gym_wrappers import RenderEnvWrapper, TransformObservation
 from sequoia.settings.assumptions.incremental import TestEnvironment
 from sequoia.settings.base import Method
-from sequoia.settings.sl.class_incremental.setting import ClassIncrementalTestEnvironment
-from sequoia.settings.sl.class_incremental.objects import Observations, Actions, Rewards
+from sequoia.settings.sl.incremental.setting import IncrementalSLTestEnvironment
+from sequoia.settings.sl.incremental.objects import Observations, Actions, Rewards
 from sequoia.settings.sl.environment import PassiveEnvironment
 from sequoia.utils import get_logger
 from sequoia.utils.utils import constant

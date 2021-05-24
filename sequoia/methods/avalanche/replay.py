@@ -10,7 +10,7 @@ from avalanche.training.strategies import Replay, BaseStrategy
 from simple_parsing.helpers.hparams import uniform
 
 from sequoia.methods import register_method
-from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
 
 from .base import AvalancheMethod
 
@@ -34,7 +34,7 @@ class ReplayMethod(AvalancheMethod[Replay], target_setting=ClassIncrementalSetti
 if __name__ == "__main__":
     from simple_parsing import ArgumentParser
 
-    setting = TaskIncrementalSetting(
+    setting = TaskIncrementalSLSetting(
         dataset="mnist", nb_tasks=5, monitor_training_performance=True
     )
     # Create the Method, either manually or through the command-line:

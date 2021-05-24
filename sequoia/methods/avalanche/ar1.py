@@ -9,7 +9,7 @@ from avalanche.training.strategies import AR1, BaseStrategy
 from simple_parsing.helpers.hparams import uniform, log_uniform
 
 from sequoia.methods import register_method
-from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
 from .base import AvalancheMethod
 
 
@@ -64,7 +64,7 @@ class AR1Method(AvalancheMethod[AR1], target_setting=ClassIncrementalSetting):
 if __name__ == "__main__":
     from simple_parsing import ArgumentParser
 
-    setting = TaskIncrementalSetting(
+    setting = TaskIncrementalSLSetting(
         dataset="mnist", nb_tasks=5, monitor_training_performance=True
     )
     # Create the Method, either manually or through the command-line:

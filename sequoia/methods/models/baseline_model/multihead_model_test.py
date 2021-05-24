@@ -438,8 +438,8 @@ def test_task_inference_multi_task_sl(config: Config):
     from sequoia.methods.baseline_method import BaselineMethod
 
     method = BaselineMethod(config=config, max_epochs=1)
-    from sequoia.settings.sl import MultiTaskSetting
+    from sequoia.settings.sl import MultiTaskSLSetting
 
-    setting = MultiTaskSetting(dataset="mnist", nb_tasks=2,)
+    setting = MultiTaskSLSetting(dataset="mnist", nb_tasks=2,)
     results = setting.apply(method)
     assert 0.95 <= results.average_final_performance.objective

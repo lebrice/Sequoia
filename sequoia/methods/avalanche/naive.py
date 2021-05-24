@@ -6,7 +6,7 @@ from typing import ClassVar, Type
 
 from avalanche.training.strategies import BaseStrategy, Naive
 
-from sequoia.settings.sl import TaskIncrementalSetting
+from sequoia.settings.sl import TaskIncrementalSLSetting
 
 from .base import AvalancheMethod
 
@@ -29,7 +29,7 @@ class NaiveMethod(AvalancheMethod[Naive]):
 
 
 if __name__ == "__main__":
-    setting = TaskIncrementalSetting(
+    setting = TaskIncrementalSLSetting(
         dataset="mnist", nb_tasks=5, monitor_training_performance=True
     )
     method = NaiveMethod()

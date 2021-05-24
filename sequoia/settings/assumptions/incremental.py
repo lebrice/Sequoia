@@ -41,7 +41,7 @@ from sequoia.settings.base import (
 from sequoia.utils import constant, flag, mean
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import add_prefix
-from .continual import ContinualAssumption
+from .continual import ContinualAssumption, TestEnvironment
 from .incremental_results import IncrementalResults, TaskResults, TaskSequenceResults
 
 logger = get_logger(__file__)
@@ -104,9 +104,6 @@ class IncrementalAssumption(ContinualAssumption):
     # method of the Environment.
     monitor_training_performance: bool = False
 
-    # Options related to Weights & Biases (wandb). Turned Off by default. Passing any of
-    # its arguments will enable wandb.
-    wandb: Optional[WandbConfig] = field(default=None, compare=False)
 
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
@@ -291,36 +288,6 @@ class IncrementalAssumption(ContinualAssumption):
         assert wandb.run is run
         return run
 
-    def log_results(self, method: Method, results: IncrementalResults) -> None:
-        """
-        TODO: Create the tabs we need to show up in wandb:
-        1. Final
-            - Average "Current/Online" performance (scalar)
-            - Average "Final" performance (scalar)
-            - Runtime
-        2. Test
-            - Task i (evolution over time (x axis is the task id, if possible))
-        """
-        logger.info(results.summary())
-
-        if wandb.run:
-            wandb.summary["method"] = method.get_name()
-            wandb.summary["setting"] = self.get_name()
-            dataset = getattr(self, "dataset", "")
-            if dataset and isinstance(dataset, str):
-                wandb.summary["dataset"] = dataset
-
-            wandb.log(results.to_log_dict())
-
-            # BUG: Sometimes logging a matplotlib figure causes a crash:
-            # File "/home/fabrice/miniconda3/envs/sequoia/lib/python3.8/site-packages/plotly/matplotlylib/mplexporter/utils.py", line 246, in get_grid_style
-            # if axis._gridOnMajor and len(gridlines) > 0:
-            # AttributeError: 'XAxis' object has no attribute '_gridOnMajor'
-            # Seems to be fixed by downgrading the matplotlib version to 3.2.2
-            wandb.log(results.make_plots())
-
-            wandb.run.finish()
-
     def test_loop(self, method: Method) -> "IncrementalAssumption.Results":
         """ (WIP): Runs an incremental test loop and returns the Results.
 
@@ -495,97 +462,3 @@ class IncrementalAssumption(ContinualAssumption):
 
     def _get_objective_scaling_factor(self) -> float:
         return 1.0
-
-class TestEnvironment(gym.wrappers.Monitor, IterableWrapper, ABC):
-    """ Wrapper around a 'test' environment, which limits the number of steps
-    and keeps tracks of the performance.
-    """
-
-    def __init__(
-        self,
-        env: gym.Env,
-        directory: Path,
-        step_limit: int = 1_000,
-        no_rewards: bool = False,
-        config: Config = None,
-        *args,
-        **kwargs,
-    ):
-        super().__init__(env, directory, *args, **kwargs)
-        self.step_limit = step_limit
-        self.no_rewards = no_rewards
-        self._closed = False
-        self._steps = 0
-        self.config = config
-        # if wandb.run:
-        #     wandb.gym.monitor()
-
-    def is_closed(self):
-        return self._closed
-
-    @abstractmethod
-    def get_results(self) -> Results:
-        """ Return how well the Method was applied on this environment.
-
-        In RL, this would be based on the mean rewards, while in supervised
-        learning it could be the average accuracy, for instance.
-
-        Returns
-        -------
-        Results
-            [description]
-        """
-        # TODO: In the case of the ClassIncremental Setting, we'd have to modify
-        # this so we can set the 'Reward' to be stored (and averaged out, etc)
-        # to be the accuracy? a Metrics object? idk.
-        # TODO: Total reward over a number of steps? Over a number of episodes?
-        # Average reward? What's the metric we care about in RL?
-        rewards = self.get_episode_rewards()
-        lengths = self.get_episode_lengths()
-        total_steps = self.get_total_steps()
-        return sum(rewards) / total_steps
-
-    def step(self, action):
-        # TODO: Its A bit uncomfortable that we have to 'unwrap' these here..
-        # logger.debug(f"Step {self._steps}")
-        action_for_stats = action.y_pred if isinstance(action, Actions) else action
-
-        self._before_step(action_for_stats)
-
-        if isinstance(action, Tensor):
-            action = action.cpu().numpy()
-        observation, reward, done, info = self.env.step(action)
-        observation_for_stats = observation.x
-        reward_for_stats = reward.y
-
-        # TODO: Always render when debugging? or only when the corresponding
-        # flag is set in self.config?
-        try:
-            if self.config and self.config.render and self.config.debug:
-                self.render("human")
-        except NotImplementedError:
-            pass
-
-        if isinstance(self.env.unwrapped, VectorEnv):
-            done = all(done)
-        else:
-            done = bool(done)
-
-        done = self._after_step(observation_for_stats, reward_for_stats, done, info)
-
-        if self.get_total_steps() >= self.step_limit:
-            done = True
-            self.close()
-
-        # Remove the rewards if they aren't allowed.
-        if self.no_rewards:
-            reward = None
-
-        return observation, reward, done, info
-
-    def close(self):
-        self._closed = True
-        return super().close()
-
-
-TestEnvironment.__test__ = False

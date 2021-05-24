@@ -8,14 +8,14 @@ from torch import Tensor
 from sequoia.common import Loss
 from sequoia.settings.rl import (
     IncrementalRLSetting,
-    RLSetting,
+    TraditionalRLSetting,
     TaskIncrementalRLSetting,
 )
 from sequoia.settings.sl import (
     ClassIncrementalSetting,
-    IIDSetting,
-    MultiTaskSetting,
-    TaskIncrementalSetting,
+    TraditionalSLSetting,
+    MultiTaskSLSetting,
+    TaskIncrementalSLSetting,
 )
 
 from .ewc_method import EwcMethod, EwcModel
@@ -23,7 +23,7 @@ from .ewc_method import EwcMethod, EwcModel
 
 @pytest.mark.timeout(300)
 def test_task_incremental_mnist(monkeypatch):
-    setting = TaskIncrementalSetting(dataset="mnist", monitor_training_performance=True)
+    setting = TaskIncrementalSLSetting(dataset="mnist", monitor_training_performance=True)
     total_ewc_losses_per_task = np.zeros(setting.nb_tasks)
 
     _training_step = EwcModel.training_step
@@ -76,9 +76,9 @@ def test_task_incremental_mnist(monkeypatch):
     "non_cl_setting_fn",
     [
         partial(ClassIncrementalSetting, nb_tasks=1),
-        MultiTaskSetting,
-        IIDSetting,
-        RLSetting,
+        MultiTaskSLSetting,
+        TraditionalSLSetting,
+        TraditionalRLSetting,
         partial(IncrementalRLSetting, nb_tasks=1),
         partial(TaskIncrementalRLSetting, nb_tasks=1),
     ],

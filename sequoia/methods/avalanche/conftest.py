@@ -6,7 +6,7 @@ from torch.utils.data import Subset, TensorDataset
 from avalanche.benchmarks import nc_benchmark
 
 from sequoia.common.config import Config
-from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
 from sequoia.client import SettingProxy
 
 
@@ -43,7 +43,7 @@ def fast_scenario(use_task_labels=False, shuffle=True):
 
 @pytest.fixture(scope="session")
 def short_task_incremental_setting(config: Config):
-    setting = TaskIncrementalSetting(
+    setting = TaskIncrementalSLSetting(
         dataset="mnist", nb_tasks=5, monitor_training_performance=True,
     )
     setting.config = config

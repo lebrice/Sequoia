@@ -73,8 +73,8 @@ sudo chown root /tmp/.X11-unix/
 | [TaskIncrementalRLSetting](sequoia/settings/active/continual/incremental/task_incremental/task_incremental_rl_setting.py) | Active | **yes** | **yes** | **yes** | ≥1 |
 | [RLSetting](sequoia/settings/active/continual/incremental/task_incremental/stationary/iid_rl_setting.py) | Active | **yes** | **yes** | **yes** | **1** |
 | [ClassIncrementalSetting](sequoia/settings/passive/cl/class_incremental_setting.py) | Passive | **yes** | **yes** | no | ≥1 |
-| [TaskIncrementalSetting](sequoia/settings/passive/cl/task_incremental/task_incremental_setting.py) | Passive | **yes** | **yes** | **yes** | ≥1 |
-| [IIDSetting](sequoia/settings/passive/cl/task_incremental/iid/iid_setting.py) | Passive | **yes** | **yes** | **yes** | **1** |
+| [TaskIncrementalSLSetting](sequoia/settings/passive/cl/task_incremental/task_incremental_setting.py) | Passive | **yes** | **yes** | **yes** | ≥1 |
+| [TraditionalSLSetting](sequoia/settings/passive/cl/task_incremental/iid/iid_setting.py) | Passive | **yes** | **yes** | **yes** | **1** |
 
 #### Notes
 
@@ -97,9 +97,9 @@ sudo chown root /tmp/.X11-unix/
 #### Directly in code:
 
 ```python
-from sequoia.settings import TaskIncrementalSetting
+from sequoia.settings import TaskIncrementalSLSetting
 from sequoia.methods import BaselineMethod
-setting = TaskIncrementalSetting(dataset="mnist")
+setting = TaskIncrementalSLSetting(dataset="mnist")
 method = BaselineMethod(max_epochs=1)
 
 results = setting.apply(method)

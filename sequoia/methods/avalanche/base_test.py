@@ -11,7 +11,7 @@ from torch.nn import Module
 
 from sequoia.common.config import Config
 from sequoia.conftest import xfail_param
-from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
 from sequoia.settings.sl.class_incremental.objects import Observations, Rewards
 
 from .base import AvalancheMethod
@@ -81,10 +81,10 @@ class _TestAvalancheMethod:
     def test_short_task_incremental_setting(
         self,
         model_type: Type[Module],
-        short_task_incremental_setting: TaskIncrementalSetting,
+        short_task_incremental_setting: TaskIncrementalSLSetting,
         config: Config,
     ):
-        method = self.Method(model=model_type, train_mb_size=10, train_epochs=3)
+        method = self.Method(model=model_type, train_mb_size=10, train_epochs=1)
         results = short_task_incremental_setting.apply(method, config)
         assert 0.05 < results.average_final_performance.objective
 
@@ -112,7 +112,7 @@ class _TestAvalancheMethod:
         short_class_incremental_setting: ClassIncrementalSetting,
         config: Config,
     ):
-        method = self.Method(model=model_type, train_mb_size=10, train_epochs=3)
+        method = self.Method(model=model_type, train_mb_size=10, train_epochs=1)
         results = short_class_incremental_setting.apply(method, config)
         assert 0.05 < results.average_final_performance.objective
 
@@ -140,7 +140,7 @@ class _TestAvalancheMethod:
         sl_track_setting: ClassIncrementalSetting,
         config: Config,
     ):
-        method = self.Method(model=model_type, train_mb_size=512)
+        method = self.Method(model=model_type, train_mb_size=512, train_epochs=1)
         results = sl_track_setting.apply(method, config)
         results.cl_score
         # TODO: Set up a more reasonable bound on the expected performance. For now this

@@ -35,19 +35,16 @@ from avalanche.training.strategies.strategy_wrappers import default_logger
 
 from sequoia.common.spaces import Image
 from sequoia.methods import Method
-from sequoia.settings.sl import (
-    ClassIncrementalSetting,
-    PassiveEnvironment,
-    SLSetting,
-)
-from sequoia.settings.sl.class_incremental.class_incremental_setting import (
+from sequoia.settings.sl import ClassIncrementalSetting, PassiveEnvironment, SLSetting
+from sequoia.settings.sl.class_incremental.objects import Actions, Observations, Rewards
+from sequoia.settings.sl.class_incremental.setting import (
     ClassIncrementalTestEnvironment,
 )
-from sequoia.settings.sl.class_incremental.objects import Actions, Observations, Rewards
 from sequoia.utils import get_logger
 
 from .experience import SequoiaExperience
 from .patched_models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
+
 logger = get_logger(__file__)
 
 StrategyType = TypeVar("StrategyType", bound=BaseStrategy)
@@ -170,10 +167,11 @@ class AvalancheMethod(
                 loss_metrics(minibatch=False, epoch=True, experience=True, stream=True),
             ]
             self.evaluator = EvaluationPlugin(
-                *metrics, loggers=[
-                    #InteractiveLogger(),  # Causing issues on SLURM cluster for some reason?
+                *metrics,
+                loggers=[
+                    # InteractiveLogger(),  # Causing issues on SLURM cluster for some reason?
                     wandb_logger,
-                ]
+                ],
             )
         else:
             logger.info(f"Using the default logger from Avalanche.")

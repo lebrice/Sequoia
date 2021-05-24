@@ -40,7 +40,7 @@
 import wandb
 from sequoia.common import Config
 from sequoia.methods.baseline_method import BaselineMethod
-from sequoia.settings import IIDSetting, Results, Setting
+from sequoia.settings import TraditionalSLSetting, Results, Setting
 from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
@@ -53,8 +53,8 @@ if __name__ == "__main__":
     from sequoia.settings import RLSetting
     setting = RLSetting(dataset="monsterkong")
     
-    # from sequoia.settings import TaskIncrementalSetting
-    # setting = TaskIncrementalSetting(dataset="cifar10")
+    # from sequoia.settings import TaskIncrementalSLSetting
+    # setting = TaskIncrementalSLSetting(dataset="cifar10")
     
     ## Create the BaselineMethod:
     # Option 1: Create the method manually:

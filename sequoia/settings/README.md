@@ -74,13 +74,13 @@ Prerequisites:
 			The current task can be set at the `current_task_id` attribute.
 
 
-			- ## [TaskIncrementalSetting](passive/cl/task_incremental/task_incremental_setting.py)
+			- ## [TaskIncrementalSLSetting](passive/cl/task_incremental/task_incremental_setting.py)
 
 				Setting where data arrives in a series of Tasks, and where the task
 				labels are always available (both train and test time).
 
 
-				- ## [IIDSetting](passive/cl/task_incremental/iid/iid_setting.py)
+				- ## [TraditionalSLSetting](passive/cl/task_incremental/iid/iid_setting.py)
 
 					Your 'usual' learning Setting, where the samples are i.i.d.
 

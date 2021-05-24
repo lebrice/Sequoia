@@ -138,8 +138,8 @@ class KnnCallback(Callback):
 
         # Check wether the method has access to the task labels at train/test time.
         task_labels_at_test_time: bool = False        
-        from sequoia.settings import TaskIncrementalSetting
-        if isinstance(setting, TaskIncrementalSetting):
+        from sequoia.settings import TaskIncrementalSLSetting
+        if isinstance(setting, TaskIncrementalSLSetting):
             if setting.task_labels_at_test_time:
                 task_labels_at_test_time = True
         # TODO: Figure out a way to make sure that we get at least one example

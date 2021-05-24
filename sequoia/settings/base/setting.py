@@ -6,7 +6,7 @@ data, the environment, the agent, etc.
 
 
 The Setting class is currently loosely based on the `LightningDataModule` class
-from pytorch-lightning, with the goal of having an `IIDSetting` node somewhere
+from pytorch-lightning, with the goal of having an `TraditionalSLSetting` node somewhere
 in the tree, which would be totally interchangeable with existing datamodules
 from pytorch-lightning.
 
@@ -41,7 +41,7 @@ import numpy as np
 import torch
 from gym import spaces
 from pytorch_lightning import LightningDataModule
-from sequoia.common.config import Config
+from sequoia.common.config import Config, WandbConfig
 from sequoia.common.metrics import Metrics
 from sequoia.common.transforms import Compose, Transforms
 from sequoia.settings.presets import setting_presets
@@ -154,6 +154,10 @@ class Setting(
     # # Number of labeled examples.
     # n_labeled_examples: Optional[int] = None
 
+    # Options related to Weights & Biases (wandb). Turned Off by default. Passing any of
+    # its arguments will enable wandb.
+    wandb: Optional[WandbConfig] = field(default=None, compare=False)
+    
     def __post_init__(
         self,
         observation_space: gym.Space = None,
@@ -190,6 +194,8 @@ class Setting(
         #     # TODO: Remove this after the competition perhaps.
         #     self.transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
 
+        # TODO: Should change this, so that these transform fields are only the
+        # additional transforms compared to `self.transforms` (the 'base' transforms)
         # If the constructor is called with just the `transforms` argument, like this:
         # <SomeSetting>(dataset="bob", transforms=foo_transform)
         # Then we use this value as the default for the train, val and test transforms.

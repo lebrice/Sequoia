@@ -28,7 +28,7 @@ from .. import Results
 logger = get_logger(__file__)
 
 
-class ClassIncrementalResults(IncrementalAssumption.Results):
+class IncrementalSLResults(IncrementalAssumption.Results):
     """Results for a ClassIncrementalSetting.
     
     The main objective in this setting is the average test accuracy over all

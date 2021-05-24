@@ -22,7 +22,8 @@ extras_require = {
     ],
     "hpo": ["orion", "orion.algo.skopt"],
     "avalanche": [
-        "avalanche @ git+https://github.com/ContinualAI/avalanche.git#egg=avalanche"
+        "gdown",  # BUG: Avalanche needs this to download cub200 dataset.
+        "avalanche @ git+https://github.com/ContinualAI/avalanche.git#egg=avalanche",
     ],
     # NOTE: Removing this for now, because it has very strict requirements, and includes
     # a lot of copy-pasted code, and doesn't really add anything compared to metaworld.

@@ -1,4 +1,4 @@
-""" Defines the IIDSetting, as a variant of the TaskIncremental setting with
+""" Defines the TraditionalSLSetting, as a variant of the TaskIncremental setting with
 only one task.
 """
 from dataclasses import dataclass

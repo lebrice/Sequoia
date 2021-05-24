@@ -1,7 +1,7 @@
 """In the current setup, `Results` objects are created by a Setting when a
 method is applied to them. Each setting can define its own type of `Results` to
 customize what the ‘objective’ is in that particular setting.
-For instance, the TaskIncrementalSetting class also defines a
+For instance, the TaskIncrementalSLSetting class also defines a
 TaskIncrementalResults class, where the average accuracy across all tasks is the
 objective.
 
@@ -11,7 +11,7 @@ Pytorch-Lightning).
 In those tests, there is also a `validate_results` function, which is basically
 used to make sure that the results make sense, for the given method and setting.
 
-For instance, when testing a RandomBaselineMethod on an IIDSetting, the accuracy
+For instance, when testing a RandomBaselineMethod on an TraditionalSLSetting, the accuracy
 should be close to chance level. Likewise, in the `baseline_test.py` file, we
 make sure that the BaselineMethod (just a classifier, no CL adjustments) also
 exhibits catastrophic forgetting when applied on a Class or Task Incremental

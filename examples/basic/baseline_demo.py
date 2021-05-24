@@ -3,7 +3,7 @@ RL and SL settings.
 """
 
 from sequoia.methods import BaselineMethod
-from sequoia.settings import TaskIncrementalSetting, TaskIncrementalRLSetting, Setting
+from sequoia.settings import TaskIncrementalSLSetting, TaskIncrementalRLSetting, Setting
 from sequoia.common import Config
 from simple_parsing import ArgumentParser
 
@@ -14,7 +14,7 @@ def baseline_demo_simple():
     
     ## Create *any* Setting from the tree, for example:
     ## Supervised Learning Setting:
-    # setting = TaskIncrementalSetting(
+    # setting = TaskIncrementalSLSetting(
     #     dataset="cifar10",
     #     nb_tasks=2,
     # )
@@ -33,7 +33,7 @@ def baseline_demo_command_line():
     parser = ArgumentParser(__doc__, add_dest_to_option_strings=False)
     
     # Supervised Learning Setting:
-    parser.add_arguments(TaskIncrementalSetting, dest="setting")
+    parser.add_arguments(TaskIncrementalSLSetting, dest="setting")
     # Reinforcement Learning Setting:
     parser.add_arguments(TaskIncrementalRLSetting, dest="setting")
 

@@ -14,10 +14,10 @@ from simple_parsing import list_field
 from sequoia.common import ClassificationMetrics, Loss, Metrics, RegressionMetrics
 from sequoia.settings.base.results import Results
 from sequoia.utils.plotting import PlotSectionLabel, autolabel
-from sequoia.settings.sl.class_incremental.results import ClassIncrementalResults
+from sequoia.settings.sl.incremental.results import IncrementalSLResults
 
 
-class IIDResults(ClassIncrementalResults):
+class IIDResults(IncrementalSLResults):
     """Results of applying a Method on an IID Setting.    
     
     # TODO: Refactor this to be based on `TaskResults`?

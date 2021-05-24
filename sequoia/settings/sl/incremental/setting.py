@@ -71,66 +71,23 @@ from sequoia.utils import get_logger
 # TODO: Fix this: not sure where this 'SLSetting' should be.
 from sequoia.settings.sl.environment import Actions, PassiveEnvironment, Rewards
 from sequoia.settings.sl.setting import SLSetting
-from .results import ClassIncrementalResults
-from .measure_performance_wrapper import MeasureSLPerformanceWrapper
+from .results import IncrementalSLResults
+from sequoia.settings.sl.continual import ContinualSLSetting
+from sequoia.settings.sl.wrappers import MeasureSLPerformanceWrapper
 
 logger = get_logger(__file__)
 
 
-# NOTE: This dict reflects the observation space of the different datasets
-# *BEFORE* any transforms are applied. The resulting property on the Setting is
-# based on this 'base' observation space, passed through the transforms.
-# TODO: Make it possible to automatically add tensor support if the dtype passed to a
-# gym space is a `torch.dtype`.
-tensor_space = add_tensor_support
-
-base_observation_spaces: Dict[str, Space] = {
-    "mnist": tensor_space(Image(0, 1, shape=(1, 28, 28))),
-    "fashionmnist": tensor_space(Image(0, 1, shape=(1, 28, 28))),
-    "kmnist": tensor_space(Image(0, 1, shape=(1, 28, 28))),
-    "emnist": tensor_space(Image(0, 1, shape=(1, 28, 28))),
-    "qmnist": tensor_space(Image(0, 1, shape=(1, 28, 28))),
-    "mnistfellowship": tensor_space(Image(0, 1, shape=(1, 28, 28))),
-    # TODO: Determine the true bounds on the image values in cifar10.
-    # Appears to be  ~= [-2.5, 2.5]
-    "cifar10": tensor_space(Image(-np.inf, np.inf, shape=(3, 32, 32))),
-    "cifar100": tensor_space(Image(-np.inf, np.inf, shape=(3, 32, 32))),
-    "cifarfellowship": tensor_space(Image(-np.inf, np.inf, shape=(3, 32, 32))),
-    "imagenet100": tensor_space(Image(0, 1, shape=(224, 224, 3))),
-    "imagenet1000": tensor_space(Image(0, 1, shape=(224, 224, 3))),
-    "core50": tensor_space(Image(0, 1, shape=(224, 224, 3))),
-    "core50-v2-79": tensor_space(Image(0, 1, shape=(224, 224, 3))),
-    "core50-v2-196": tensor_space(Image(0, 1, shape=(224, 224, 3))),
-    "core50-v2-391": tensor_space(Image(0, 1, shape=(224, 224, 3))),
-    "synbols": tensor_space(Image(0, 1, shape=(3, 32, 32))),
-}
-
-base_reward_spaces: Dict[str, Space] = {
-    "mnist": spaces.Discrete(10),
-    "fashionmnist": spaces.Discrete(10),
-    "kmnist": spaces.Discrete(10),
-    "emnist": spaces.Discrete(10),
-    "qmnist": spaces.Discrete(10),
-    "mnistfellowship": spaces.Discrete(30),
-    "cifar10": spaces.Discrete(10),
-    "cifar100": spaces.Discrete(100),
-    "cifarfellowship": spaces.Discrete(110),
-    "imagenet100": spaces.Discrete(100),
-    "imagenet1000": spaces.Discrete(1000),
-    "permutedmnist": spaces.Discrete(10),
-    "rotatedmnist": spaces.Discrete(10),
-    "core50": spaces.Discrete(50),
-    "core50-v2-79": spaces.Discrete(50),
-    "core50-v2-196": spaces.Discrete(50),
-    "core50-v2-391": spaces.Discrete(50),
-    "synbols": spaces.Discrete(48),
-}
-
-base_action_spaces = base_reward_spaces.copy()
+# # NOTE: This dict reflects the observation space of the different datasets
+# # *BEFORE* any transforms are applied. The resulting property on the Setting is
+# # based on this 'base' observation space, passed through the transforms.
+# # TODO: Make it possible to automatically add tensor support if the dtype passed to a
+# # gym space is a `torch.dtype`.
+# tensor_space = add_tensor_support
 
 
 @dataclass
-class ClassIncrementalSetting(SLSetting, IncrementalAssumption):
+class IncrementalSLSetting(ContinualSLSetting, IncrementalAssumption):
     """Supervised Setting where the data is a sequence of 'tasks'.
 
     This class is basically is the supervised version of an Incremental Setting
@@ -139,22 +96,16 @@ class ClassIncrementalSetting(SLSetting, IncrementalAssumption):
     The current task can be set at the `current_task_id` attribute.
     """
 
-    Results: ClassVar[Type[IncrementalResults]] = ClassIncrementalResults
-
-    # Class variables that hold the 'base' observation/action/reward spaces for the
-    # available datasets.
-    base_observation_spaces: ClassVar[Dict[str, gym.Space]] = base_observation_spaces
-    base_action_spaces: ClassVar[Dict[str, gym.Space]] = base_action_spaces
-    base_reward_spaces: ClassVar[Dict[str, gym.Space]] = base_reward_spaces
+    Results: ClassVar[Type[IncrementalResults]] = IncrementalSLResults
 
     # (NOTE: commenting out SLSetting.Observations as it is the same class
     # as Setting.Observations, and we want a consistent method resolution order.
     @dataclass(frozen=True)
-    class Observations(#SLSetting.Observations,
+    class Observations(ContinualSLSetting.Observations,
                        IncrementalAssumption.Observations):
         """ Incremental Observations, in a supervised context. """
-
-        pass
+        x: Tensor
+        task_labels: Optional[Tensor]
 
     # @dataclass(frozen=True)
     # class Actions(SLSetting.Actions,
@@ -307,57 +258,7 @@ class ClassIncrementalSetting(SLSetting, IncrementalAssumption):
         self.val_env: PassiveEnvironment = None  # type: ignore
         self.test_env: PassiveEnvironment = None  # type: ignore
 
-    @property
-    def observation_space(self) -> NamedTupleSpace:
-        """ The un-batched observation space, based on the choice of dataset and
-        the transforms at `self.transforms` (which apply to the train/valid/test
-        environments).
-
-        The returned spaces is a NamedTupleSpace, with the following properties:
-        - `x`: observation space (e.g. `Image` space)
-        - `task_labels`: Union[Discrete, Sparse[Discrete]]
-           The task labels for each sample. When task labels are not available,
-           the task labels space is Sparse, and entries will be `None`.
-        """
-        x_space = self.base_observation_spaces[self.dataset]
-        if not self.transforms:
-            # NOTE: When we don't pass any transforms, continuum scenarios still
-            # at least use 'to_tensor'.
-            x_space = Transforms.to_tensor(x_space)
-
-        # apply the transforms to the observation space.
-        for transform in self.transforms:
-            x_space = transform(x_space)
-        x_space = add_tensor_support(x_space)
-
-        task_label_space = spaces.Discrete(self.nb_tasks)
-        if not self.task_labels_at_train_time:
-            task_label_space = Sparse(task_label_space, 1.0)
-        task_label_space = add_tensor_support(task_label_space)
-
-        return NamedTupleSpace(
-            x=x_space, task_labels=task_label_space, dtype=self.Observations,
-        )
-
-    @property
-    def action_space(self) -> spaces.Discrete:
-        """ Action space for this setting. """
-        if self.relabel:
-            return spaces.Discrete(self.n_classes_per_task)
-        return spaces.Discrete(self.num_classes)
-
-        # TODO: IDEA: Have the action space only reflect the number of 'current' classes
-        # in order to create a "true" class-incremental learning setting.
-        n_classes_seen_so_far = 0
-        for task_id in range(self.current_task_id):
-            n_classes_seen_so_far += self.num_classes_in_task(task_id)
-        return spaces.Discrete(n_classes_seen_so_far)
-
-    @property
-    def reward_space(self) -> spaces.Discrete:
-        return self.action_space
-
-    def apply(self, method: Method, config: Config = None) -> ClassIncrementalResults:
+    def apply(self, method: Method, config: Config = None) -> IncrementalSLResults:
         """Apply the given method on this setting to producing some results."""
         # TODO: It still isn't super clear what should be in charge of creating
         # the config, and how to create it, when it isn't passed explicitly.
@@ -377,7 +278,7 @@ class ClassIncrementalSetting(SLSetting, IncrementalAssumption):
         method.configure(setting=self)
 
         # Run the main loop (which is defined in IncrementalAssumption).
-        results: ClassIncrementalResults = super().main_loop(method)
+        results: IncrementalSLResults = super().main_loop(method)
         logger.info(results.summary())
         method.receive_results(self, results=results)
         return results
@@ -611,7 +512,7 @@ class ClassIncrementalSetting(SLSetting, IncrementalAssumption):
         test_loop_max_steps = len(dataset) // (env.batch_size or 1)
         # TODO: Fix this: iteration doesn't ever end for some reason.
 
-        test_env = ClassIncrementalTestEnvironment(
+        test_env = IncrementalSLTestEnvironment(
             env,
             directory=test_dir,
             step_limit=test_loop_max_steps,
@@ -814,9 +715,9 @@ def relabel(y: Tensor, task_classes: Dict[int, List[int]]) -> Tensor:
 
 # This is just meant as a cleaner way to import the Observations/Actions/Rewards
 # than particular setting.
-Observations = ClassIncrementalSetting.Observations
-Actions = ClassIncrementalSetting.Actions
-Rewards = ClassIncrementalSetting.Rewards
+Observations = IncrementalSLSetting.Observations
+Actions = IncrementalSLSetting.Actions
+Rewards = IncrementalSLSetting.Rewards
 
 # TODO: I wouldn't want these above to overwrite / interfere with the import of
 # the "base" versions of these objects from sequoia.settings.bases.objects, which are
@@ -824,7 +725,7 @@ Rewards = ClassIncrementalSetting.Rewards
 # `from .passive import *` over there doesn't actually import these here.
 
 
-class ClassIncrementalTestEnvironment(TestEnvironment):
+class IncrementalSLTestEnvironment(TestEnvironment):
     def __init__(
         self, env: gym.Env, *args, task_schedule: Dict[int, Any] = None, **kwargs
     ):
@@ -846,7 +747,7 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         # NOTE: The task schedule is already in terms of the number of batches.
         self.boundary_steps = [step for step in self.task_schedule.keys()]
 
-    def get_results(self) -> ClassIncrementalResults:
+    def get_results(self) -> IncrementalSLResults:
         return self.results
 
     def reset(self):
@@ -913,7 +814,7 @@ class ClassIncrementalTestEnvironment(TestEnvironment):
         return done
         ##
 
-    def _after_reset(self, observation: ClassIncrementalSetting.Observations):
+    def _after_reset(self, observation: IncrementalSLSetting.Observations):
         image_batch = observation.numpy().x
         # Need to create a single image with the right dtype for the Monitor
         # from gym to create gifs / videos with it.

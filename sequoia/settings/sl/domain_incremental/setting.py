@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from sequoia.utils.utils import constant
-from sequoia.settings.sl.class_incremental.setting import ClassIncrementalSetting
+from sequoia.settings.sl.incremental.setting import IncrementalSLSetting
 
 
 @dataclass
-class DomainIncrementalSLSetting(ClassIncrementalSetting):
+class DomainIncrementalSLSetting(IncrementalSLSetting):
     """Supervised CL Setting where the input domain shifts incrementally.
 
     Task labels and task boundaries are given at training time, but not at test-time.

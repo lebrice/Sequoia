@@ -8,7 +8,7 @@ from sequoia.conftest import parametrize, slow
 from sequoia.settings import (
     ClassIncrementalSetting,
     ContinualRLSetting,
-    IIDSetting,
+    TraditionalSLSetting,
     IncrementalRLSetting,
     RLSetting,
     Setting,
@@ -52,7 +52,7 @@ def test_fast_dev_run(setting_type: Type[Setting], test_dataset: str, config: Co
         kwargs.update(nb_tasks=2)
     if issubclass(setting_type, ClassIncrementalSetting):
         kwargs = dict(nb_tasks=5)
-    if issubclass(setting_type, (IIDSetting, RLSetting)):
+    if issubclass(setting_type, (TraditionalSLSetting, RLSetting)):
         kwargs.pop("nb_tasks", None)
     setting: Setting = setting_type(**kwargs)
     # TODO: Do we need to pass anything else here to 'shorten' the run?

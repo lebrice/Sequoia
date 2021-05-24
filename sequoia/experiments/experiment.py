@@ -30,7 +30,7 @@ from sequoia.settings import (
     SettingType,
     all_settings,
 )
-from sequoia.settings.sl.class_incremental import ClassIncrementalResults
+from sequoia.settings.sl.incremental import IncrementalSLResults
 from sequoia.settings.presets import setting_presets
 from sequoia.utils import Parseable, Serializable, get_logger
 from sequoia.utils.logging_utils import get_logger

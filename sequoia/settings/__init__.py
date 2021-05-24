@@ -16,8 +16,8 @@ from .sl import *
 # all_settings: List[Type[Setting]] = [
 #     ClassIncrementalSetting,
 #     DomainIncrementalSetting,
-#     TaskIncrementalSetting,
-#     IIDSetting,
+#     TaskIncrementalSLSetting,
+#     TraditionalSLSetting,
 #     MultiTaskSetting,
 #     ContinualRLSetting,
 #     IncrementalRLSetting,

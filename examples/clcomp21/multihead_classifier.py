@@ -305,7 +305,7 @@ class ExampleTaskInferenceMethod(ExampleMethod):
 if __name__ == "__main__":
     from sequoia.settings.sl.class_incremental import (
         ClassIncrementalSetting,
-        TaskIncrementalSetting,
+        TaskIncrementalSLSetting,
     )
 
     # Create the Method, either manually:
@@ -321,7 +321,7 @@ if __name__ == "__main__":
     # Create the Setting:
 
     # Simpler Settings (useful for debugging):
-    # setting = TaskIncrementalSetting(
+    # setting = TaskIncrementalSLSetting(
     # setting = ClassIncrementalSetting(
     #     dataset="mnist",
     #     nb_tasks=5,

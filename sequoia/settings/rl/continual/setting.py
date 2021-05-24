@@ -52,7 +52,7 @@ from sequoia.settings.rl import ActiveEnvironment
 from .environment import GymDataLoader
 from .make_env import make_batched_env
 from .results import RLResults
-from .wrappers import HideTaskLabelsWrapper, TypedObjectsWrapper
+from sequoia.settings.rl.wrappers import HideTaskLabelsWrapper, TypedObjectsWrapper
 
 logger = get_logger(__file__)
 

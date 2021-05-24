@@ -28,7 +28,7 @@ from sequoia.settings import (
     Setting,
     DomainIncrementalSetting,
     TaskIncrementalRLSetting,
-    TaskIncrementalSetting,
+    TaskIncrementalSLSetting,
 )
 from sequoia.settings.assumptions import IncrementalAssumption
 from simple_parsing import ArgumentParser
@@ -295,7 +295,7 @@ class PnnMethod(Method, target_setting=Setting):
 
     def fit_sl(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
         """ Train on a Supervised Learning (a.k.a. "passive") environment. """
-        observations: TaskIncrementalSetting.Observations = train_env.reset()
+        observations: TaskIncrementalSLSetting.Observations = train_env.reset()
         cuda_observations = observations.to(self.device)
         assert isinstance(self.model, PnnClassifier)
         assert self.hparams
@@ -388,8 +388,8 @@ def main_sl():
     # TODO: PNN is coded for the DomainIncrementalSetting, where the action space
     # is the same for each task.
     # parser.add_arguments(DomainIncrementalSetting, dest="setting")
-    parser.add_arguments(TaskIncrementalSetting, dest="setting")
-    # TaskIncrementalSetting.add_argparse_args(parser, dest="setting")
+    parser.add_arguments(TaskIncrementalSLSetting, dest="setting")
+    # TaskIncrementalSLSetting.add_argparse_args(parser, dest="setting")
     Config.add_argparse_args(parser, dest="config")
 
     # Add arguments for the Method:
@@ -397,8 +397,8 @@ def main_sl():
 
     args = parser.parse_args()
 
-    # setting: TaskIncrementalSetting = args.setting
-    setting: TaskIncrementalSetting = TaskIncrementalSetting.from_argparse_args(
+    # setting: TaskIncrementalSLSetting = args.setting
+    setting: TaskIncrementalSLSetting = TaskIncrementalSLSetting.from_argparse_args(
     # setting: DomainIncrementalSetting = DomainIncrementalSetting.from_argparse_args(
         args, dest="setting"
     )

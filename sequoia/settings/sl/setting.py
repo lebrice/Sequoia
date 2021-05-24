@@ -10,6 +10,7 @@ from sequoia.settings.base.results import ResultsType
 from sequoia.settings import Setting
 from sequoia.common.transforms import Transforms
 from .environment import PassiveEnvironment
+from torch.tensor import Tensor
 
 
 @dataclass
@@ -26,17 +27,19 @@ class SLSetting(Setting[PassiveEnvironment[ObservationType, ActionType, RewardTy
     samples you observe.
     """
 
-    # @dataclass(frozen=True)
-    # class Observations(Setting.Observations):
-    #     pass
+    @dataclass(frozen=True)
+    class Observations(Setting.Observations):
+        x: Tensor
 
-    # @dataclass(frozen=True)
-    # class Actions(Setting.Actions):
-    #     pass
+    @dataclass(frozen=True)
+    class Actions(Setting.Actions):
+        pass
 
-    # @dataclass(frozen=True)
-    # class Rewards(Setting.Rewards):
-    #     pass
+    @dataclass(frozen=True)
+    class Rewards(Setting.Rewards):
+        pass
+
+    Environment: ClassVar[Type[PassiveEnvironment]] = PassiveEnvironment
 
     # TODO: rename/remove this, as it isn't used, and there could be some
     # confusion with the available_datasets in task-incremental and iid.

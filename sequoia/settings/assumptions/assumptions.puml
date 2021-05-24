@@ -1,0 +1,110 @@
+@startuml assumptions
+!include gym.puml
+
+
+package Assumptions {
+    '  TODO: How to describe relationship between gym.Env and these other 
+    ' assumptions about the env?
+    ' abstract class Environment {
+
+    ' }
+    ' gym.Env --|> Environment
+
+    package "assumptions about the environment" as supervision_assumptions {
+        package "effect of future actions on the environment" as active_vs_passive
+        {
+            interface PossiblyActiveEnvironment <<Assumption>> {
+                # Actions MAY influence future observations
+            }
+            abstract class ActiveEnvironment <<Assumption>> extends PossiblyActiveEnvironment {
+                # Actions DO influence future observations
+                --
+                Examples:
+                Playing tennis
+            }
+            abstract class PassiveEnvironment <<Assumption>> extends PossiblyActiveEnvironment {
+                Actions DONT influence future observations
+                --
+                Examples:
+                + Predicting what might happen next when watching a movie.
+            }
+            ' Environment --|> PossiblyActiveEnvironment
+        }
+
+        package "type of feedback (rewards)" as feedback_type_assumption
+        {
+            interface Feedback <<Assumption>> {}
+            abstract class SparseFeedback <<Assumption>> extends Feedback {
+                the environment only gives back the reward associated with the action taken.
+                --
+                Example: When you play a game, you get a reward based on how good your action was.
+            }
+            abstract class DenseFeedback <<Assumption>> extends SparseFeedback {
+                The environment gives the reward for all possible actions at every step.
+                --
+                Example: Image classification: The method is told what the image was and
+                what it was not. The reward (correct vs incorrect prediction) is given
+                for all the potential actions!
+            }
+        }
+    }
+
+    package "assumptions about the context" as context_assumption_family {
+        package "discrete vs continuous" as context_continuous_vs_discrete {
+            abstract class ContinuousContext <<Assumption>>  {
+                The context variable is continuous: c ∈ R
+                Example: Varying friction with the ground in an environment.
+            }
+            abstract class DiscreteContext <<Assumption>>  extends ContinuousContext {
+                The context variable is discrete: c ∈ N
+                Example: A list of possible tasks
+            }
+            abstract class FixedContext <<Assumption>> extends DiscreteContext {
+                The context variable is fixed to a single value
+            }
+        }
+        package "observability" as context_observability {
+            abstract class HiddenContext <<Assumption>>  {
+                Methods don't have access to the context variable.
+            }
+            ' abstract class BoundariesObservable <<Assumption>> extends HiddenContext {
+            '     Task boundaries are given during training
+            ' }
+            abstract class PartiallyObservableContext <<Assumption>>  extends HiddenContext {
+                Methods may have access to the context variable some of the time
+                Example: Have task labels during training, but not during testing.
+            }
+            abstract class FullyObservableContext <<Assumption>>  extends PartiallyObservableContext {
+                Methods always have access to the context variable.
+                i.e., during training and testing.
+            }
+        }
+        package "non-stationarity" as context_nonstationarity_assumption {
+            abstract class Continual <<Assumption>> {
+                The context may change smoothly over time.
+            }
+            abstract class Incremental <<Assumption>> extends Continual {
+                The context can change suddenly (task boundaries)
+            }
+            abstract class MultiTask <<Assumption>> extends Incremental {
+                The context is sampled uniformly
+            }
+        }
+        package "shared vs disjoint spaces between tasks" as action_space_assumption {
+            ' NOTE: We could have this for the observation and reward spaces too!
+            abstract class PossiblySharedActionSpace {
+                It is possible that there is an overlap in the action space between tasks. 
+            }
+            abstract class SharedActionSpaces extends PossiblySharedActionSpace {
+                The action space remains the same in all tasks.
+            }
+            abstract class DisjointActionSpaces extends PossiblySharedActionSpace {
+                Each task has its own (disjoint) action space. 
+            }
+        }
+    }
+}
+
+
+
+@enduml

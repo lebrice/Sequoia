@@ -236,9 +236,9 @@ class CustomMethod(BaselineMethod, target_setting=Setting):
 def demo_manual():
     """ Apply the custom method to a Setting, creating both manually in code. """
     # Create any Setting from the tree:
-    from sequoia.settings import TaskIncrementalRLSetting, TaskIncrementalSetting
+    from sequoia.settings import TaskIncrementalRLSetting, TaskIncrementalSLSetting
 
-    # setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)  # SL
+    # setting = TaskIncrementalSLSetting(dataset="mnist", nb_tasks=5)  # SL
     setting = TaskIncrementalRLSetting(  # RL
         dataset="cartpole",
         train_task_schedule={
@@ -290,9 +290,9 @@ def demo_command_line():
     parser = ArgumentParser(description=__doc__)
 
     ## Add command-line arguments for any Setting in the tree:
-    from sequoia.settings import TaskIncrementalRLSetting, TaskIncrementalSetting
+    from sequoia.settings import TaskIncrementalRLSetting, TaskIncrementalSLSetting
 
-    # parser.add_arguments(TaskIncrementalSetting, dest="setting")
+    # parser.add_arguments(TaskIncrementalSLSetting, dest="setting")
     parser.add_arguments(TaskIncrementalRLSetting, dest="setting")
     parser.add_arguments(Config, dest="config")
 
