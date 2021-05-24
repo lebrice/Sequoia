@@ -44,10 +44,43 @@ except ImportError:
         pass
 
 
+MUJOCO_INSTALLED = False
+try:
+    from gym.envs.mujoco import MujocoEnv
+    from .mujoco import *
+    import mujoco_py
+    mj_path, _ = mujoco_py.utils.discover_mujoco()
+    MUJOCO_INSTALLED = True
+
+except (ImportError, AttributeError, ValueError, gym.error.DependencyNotInstalled) as exc:
+    logger.debug(f"Couldn't import mujoco: ({exc})")
+    # Create a 'dummy' class so we can safely use type hints everywhere.
+    # Additionally, `isinstance(some_env, <this class>)`` will always fail when the
+    # dependency isn't installed, which is good.
+    class MujocoEnv(gym.Env):
+        pass
+    class HalfCheetahEnv(MujocoEnv):
+        pass
+    class HopperEnv(MujocoEnv):
+        pass
+    class Walker2dEnv(MujocoEnv):
+        pass
+    class ContinualHalfCheetahEnv(HalfCheetahEnv):
+        pass
+    class ContinualHopperEnv(HopperEnv):
+        pass
+    class ContinualWalker2dEnv(Walker2dEnv):
+        pass
+
+
 METAWORLD_INSTALLED = False
 metaworld_envs = []
 
 try:
+    if not MUJOCO_INSTALLED:
+        # Skip the stuff below, since metaworld requires mujoco anyway.
+        raise ImportError
+
     import metaworld
     from metaworld import MetaWorldEnv
     # TODO: Use mujoco from metaworld? or from mujoco_py?
@@ -66,13 +99,16 @@ try:
     envs_cache_file = Path("temp/metaworld_envs.json")
     envs_cache_file.parent.mkdir(exist_ok=True)
     all_metaworld_envs: Dict[str, List[str]] = {}
+    
     if envs_cache_file.exists():
-        all_metaworld_envs = json.load(envs_cache_file.open())
+        with open(envs_cache_file, "r") as f:
+            all_metaworld_envs = json.load(f)
     else:
         print(
             "Loading up the list of available envs from metaworld for the first time, "
             "this might take a while (usually ~10 seconds)."
         )
+
     if "ML10" not in all_metaworld_envs:
         ML10_envs = list(metaworld.ML10().train_classes.keys())
         all_metaworld_envs["ML10"] = ML10_envs
@@ -81,7 +117,11 @@ try:
         json.dump(all_metaworld_envs, f)
 
     metaworld_envs = sum([list(envs) for envs in all_metaworld_envs.values()], [])
-except ImportError:
+except (ImportError, AttributeError, gym.error.DependencyNotInstalled):
+    pass
+
+
+if not METAWORLD_INSTALLED:
     # Create a 'dummy' class so we can safely use MetaWorldEnv in the type hints below.
     # Additionally, isinstance(some_env, MetaWorldEnv) will always fail when metaworld
     # isn't installed, which is good.
@@ -90,30 +130,4 @@ except ImportError:
     class MetaWorldMujocoEnv(gym.Env):
         pass
     class SawyerXYZEnv(gym.Env):
-        pass
-
-
-MUJOCO_INSTALLED = False
-try:
-    from gym.envs.mujoco import MujocoEnv
-    from .mujoco import *
-    MUJOCO_INSTALLED = True
-except (ValueError, gym.error.DependencyNotInstalled) as exc:
-    logger.debug(f"Couldn't import mujoco: ({exc})")
-    # Create a 'dummy' class so we can safely use type hints everywhere.
-    # Additionally, `isinstance(some_env, <this class>)`` will always fail when the
-    # dependency isn't installed, which is good.
-    class MujocoEnv(gym.Env):
-        pass
-    class HalfCheetahEnv(MujocoEnv):
-        pass
-    class HopperEnv(MujocoEnv):
-        pass
-    class Walker2dEnv(MujocoEnv):
-        pass
-    class ContinualHalfCheetahEnv(HalfCheetahEnv):
-        pass
-    class ContinualHopperEnv(HopperEnv):
-        pass
-    class ContinualWalker2dEnv(Walker2dEnv):
         pass

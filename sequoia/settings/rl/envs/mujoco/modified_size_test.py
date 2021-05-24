@@ -1,5 +1,6 @@
 """ TODO: Tests for the 'modified size' mujoco envs. """
-
+from sequoia.conftest import mujoco_required
+pytestmark = mujoco_required
 import random
 from typing import ClassVar, Dict, Generic, List, Type, TypeVar
 

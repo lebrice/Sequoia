@@ -5,7 +5,7 @@ from torch import Tensor
 
 from sequoia.utils.logging_utils import log_calls
 
-from .active_dataloader import ActiveEnvironment
+from .environment import ActiveEnvironment
 import numpy as np
 from torchvision.datasets import MNIST
 from sequoia.common.transforms import Transforms, Compose

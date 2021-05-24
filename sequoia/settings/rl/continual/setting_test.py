@@ -24,7 +24,7 @@ from sequoia.settings import Setting
 from sequoia.settings.assumptions.incremental_test import DummyMethod
 from sequoia.utils.utils import take
 
-from .continual_rl_setting import ContinualRLSetting
+from .setting import ContinualRLSetting
 
 
 def test_task_schedule_is_constructed_and_used():

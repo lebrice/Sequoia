@@ -1,4 +1,5 @@
-
+from sequoia.conftest import mujoco_required
+pytestmark = mujoco_required
 from .walker2d import Walker2dEnv, ContinualWalker2dEnv
 from .modified_gravity_test import ModifiedGravityEnvTests
 from .modified_size_test import ModifiedSizeEnvTests

@@ -2,6 +2,9 @@
 
 NOTE: This is based on https://github.com/Breakend/gym-extensions
 """
+from sequoia.conftest import mujoco_required
+pytestmark = mujoco_required
+
 from gym.envs.mujoco import MujocoEnv
 from .modified_gravity import ModifiedGravityEnv
 from .modified_size import ModifiedSizeEnv
@@ -15,6 +18,8 @@ import os
 from pathlib import Path
 
 SOURCE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
+
+
 
 from typing import Type, List, Dict
 

@@ -1,4 +1,7 @@
 """ TODO: Tests for the 'modified gravity' mujoco envs. """
+from sequoia.conftest import mujoco_required
+pytestmark = mujoco_required
+
 from .modified_mass import ModifiedMassEnv
 from gym.envs.mujoco import MujocoEnv
 from typing import ClassVar, Type, Generic, TypeVar, Dict, List

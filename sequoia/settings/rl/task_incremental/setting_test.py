@@ -1,12 +1,14 @@
-from typing import List, Type, ClassVar
+from typing import ClassVar, List, Type
 
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
 from sequoia.conftest import DummyEnvironment
-from sequoia.settings.assumptions.incremental_test import DummyMethod
 from sequoia.settings import Setting
+from sequoia.settings.assumptions.incremental_test import DummyMethod
+from sequoia.settings.rl.incremental.setting_test import (
+    TestIncrementalRLSetting as IncrementalRLSettingTests,
+)
 
-from .task_incremental_rl_setting import TaskIncrementalRLSetting
-from ..incremental_rl_setting_test import TestIncrementalRLSetting as IncrementalRLSettingTests
+from .setting import TaskIncrementalRLSetting
 
 
 class TestTaskIncrementalRLSetting(IncrementalRLSettingTests):

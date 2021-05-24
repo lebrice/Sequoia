@@ -12,7 +12,7 @@ from sequoia.utils import take
 from sequoia.utils.logging_utils import get_logger
 from torch import Tensor
 
-from .gym_dataloader import GymDataLoader
+from .environment import GymDataLoader
 from .make_env import make_batched_env
 
 logger = get_logger(__file__)
@@ -119,8 +119,7 @@ class TestGymDataLoader:
         env = make_batched_env(env_name, batch_size=batch_size)
         dataset = EnvDataset(env, max_steps_per_episode=max_steps_per_episode)
 
-        env: GymDataLoader = self.GymDataLoader(env=dataset,)
-        CartPoleEnv
+        env: GymDataLoader = self.GymDataLoader(env=dataset)
         all_rewards = []
         with env:
             env.reset()

@@ -21,13 +21,13 @@ from sequoia.conftest import (
 )
 from sequoia.settings import Setting
 from sequoia.settings.rl import TaskIncrementalRLSetting
-from sequoia.settings.rl.continual.continual_rl_setting_test import (
+from sequoia.settings.rl.continual.setting_test import (
     TestContinualRLSetting as _ContinualRLSettingTest,
 )
 from sequoia.settings.assumptions.incremental_test import DummyMethod, OtherDummyMethod
 from sequoia.utils.utils import take
 
-from .incremental_rl_setting import IncrementalRLSetting
+from .setting import IncrementalRLSetting
 
 
 class TestIncrementalRLSetting(_ContinualRLSettingTest):
