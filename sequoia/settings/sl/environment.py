@@ -14,6 +14,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data.dataloader import _BaseDataLoaderIter
 import matplotlib.pyplot as plt
+from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 
 from sequoia.common.batch import Batch
 from sequoia.common.gym_wrappers.utils import reshape_space
@@ -135,7 +136,7 @@ class PassiveEnvironment(
         ```
         
         """
-        
+
         super().__init__(dataset=dataset, **kwargs)
         self.split_batch_fn = split_batch_fn
 
@@ -165,15 +166,15 @@ class PassiveEnvironment(
         assert action_space
         assert reward_space
 
-        self.single_observation_space: gym.Space = observation_space 
-        self.single_action_space: gym.Space = action_space 
+        self.single_observation_space: gym.Space = observation_space
+        self.single_action_space: gym.Space = action_space
         self.single_reward_space: gym.Space = reward_space
 
         if self.batch_size:
             observation_space = batch_space(observation_space, self.batch_size)
             action_space = batch_space(action_space, self.batch_size)
             reward_space = batch_space(reward_space, self.batch_size)
-    
+
         self.observation_space: gym.Space = add_tensor_support(observation_space)
         self.action_space: gym.Space = add_tensor_support(action_space)
         self.reward_space: gym.Space = add_tensor_support(reward_space)
@@ -189,13 +190,15 @@ class PassiveEnvironment(
         self._current_batch: Optional[Tuple[ObservationType, RewardType]] = None
         self._next_batch: Optional[Tuple[ObservationType, RewardType]] = None
         self._done: Optional[bool] = None
-        self._closed: bool = False
+        self._is_closed: bool = False
 
         self._action: Optional[ActionType] = None
-
         # from gym.envs.classic_control.rendering import SimpleImageViewer
         self.viewer = None
-        
+
+    def is_closed(self) -> bool:
+        return self._is_closed
+
     def reset(self) -> ObservationType:
         """ Resets the env by deleting and re-creating the dataloader iterator.
         
@@ -204,6 +207,8 @@ class PassiveEnvironment(
 
         Returns the first batch of observations.
         """
+        if self._is_closed:
+            raise gym.error.ClosedEnvironmentError("Can't reset: Env is closed.")
         self._iterator = super().__iter__()
         self._previous_batch = None
         self._current_batch = self.get_next_batch()
@@ -212,15 +217,15 @@ class PassiveEnvironment(
         return self.observation(obs)
 
     def close(self) -> None:
-        if not self._closed:
+        if not self._is_closed:
             if self.viewer:
                 self.viewer.close()
             if self.num_workers > 0 and self._iterator:
                 self._iterator._shutdown_workers()
-            self._closed = True
+            self._is_closed = True
 
     def __del__(self):
-        if not self._closed:
+        if not self._is_closed:
             self.close()
 
     def render(self, mode: str = "rgb_array") -> np.ndarray:
@@ -232,8 +237,6 @@ class PassiveEnvironment(
             image_batch = observations
         if isinstance(image_batch, Tensor):
             image_batch = image_batch.cpu().numpy()
-
-        from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 
         if self.batch_size:
             image_batch = tile_images(image_batch)
@@ -284,6 +287,8 @@ class PassiveEnvironment(
         Tuple[ObservationType, RewardType]
             [description]
         """
+        if self._is_closed:
+            raise gym.error.ClosedEnvironmentError("Can't get the next batch: Env is closed.")
         if self._iterator is None:
             self._iterator = super().__iter__()
         try:
@@ -300,7 +305,7 @@ class PassiveEnvironment(
     def step(
         self, action: ActionType
     ) -> Tuple[ObservationType, RewardType, bool, Dict]:
-        if self._closed:
+        if self._is_closed:
             raise gym.error.ClosedEnvironmentError("Can't step on a closed env.")
         if self._done is None:
             raise gym.error.ResetNeeded("Need to reset the env before calling step.")
@@ -396,6 +401,9 @@ class PassiveEnvironment(
         #     return map(self.split_batch_fn, super().__iter__())
         # else:
         #     return super().__iter__()
+        if self._is_closed:
+            raise gym.error.ClosedEnvironmentError("Can't iterate over closed env.")
+
         for batch in super().__iter__():
 
             if self.split_batch_fn:
@@ -427,10 +435,9 @@ class PassiveEnvironment(
                         raise RuntimeError(
                             "Need to send an action between each observations."
                         )
-                    else:
-                        logger.warning(
-                            "Didn't receive an action, rewards will be delayed!."
-                        )
+                    logger.warning(
+                        "Didn't receive an action, rewards will be delayed!."
+                    )
             else:
                 yield self._observations, self._rewards
 

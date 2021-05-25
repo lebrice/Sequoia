@@ -202,6 +202,44 @@ class TestPassiveEnvironment:
 
         env.close()
 
+    def test_cant_iterate_after_closing_passive_env(self):
+        max_epochs = 3
+        max_samples = 200
+        batch_size = 5
+        max_batches = max_samples // batch_size
+        dataset = MNIST(
+            "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
+        )
+        dataset = Subset(dataset, list(range(max_samples)))
+
+        env = self.PassiveEnvironment(dataset, n_classes=10, batch_size=batch_size, num_workers=4)
+
+        assert env.observation_space.shape == (batch_size, 3, 28, 28)
+        assert env.action_space.shape == (batch_size,)
+        assert env.reward_space.shape == (batch_size,)
+        total_steps = 0
+        for epoch in range(max_epochs):
+            for obs, reward in env:
+                assert obs.shape == (batch_size, 3, 28, 28)
+                assert reward.shape == (batch_size,)
+                total_steps += 1
+        assert total_steps == max_batches * max_epochs
+
+        env.close()
+
+        with pytest.raises(gym.error.ClosedEnvironmentError):
+            for _ in zip(range(3), env):
+                pass
+
+        with pytest.raises(gym.error.ClosedEnvironmentError):
+            env.reset()
+
+        with pytest.raises(gym.error.ClosedEnvironmentError):
+            env.get_next_batch()
+
+        with pytest.raises(gym.error.ClosedEnvironmentError):
+            env.step(env.action_space.sample())
+
     def test_multiple_epochs_dataloader(self):
         """ Test that we can iterate on the dataloader more than once. """
         max_epochs = 3
