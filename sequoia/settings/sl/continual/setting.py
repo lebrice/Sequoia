@@ -43,6 +43,7 @@ from simple_parsing import choice, field, list_field
 from torch import Tensor
 from torch.utils.data import ConcatDataset, Dataset, Subset
 from sequoia.settings.sl.wrappers import MeasureSLPerformanceWrapper
+from sequoia.utils.utils import flag
 from .environment import (
     ContinualSLEnvironment,
     ContinualSLTestEnvironment,
@@ -60,6 +61,7 @@ from .objects import (
 )
 from .results import ContinualSLResults
 from .wrappers import relabel
+from continuum.tasks import concat
 
 logger = get_logger(__file__)
 
@@ -84,17 +86,20 @@ def smooth_task_boundaries_concat(
 
     def option1():
         shuffled_indices = np.arange(total_length)
-        for start_index in range(0, total_length - window_length + 1, window_length // 2):
+        for start_index in range(
+            0, total_length - window_length + 1, window_length // 2
+        ):
             rng.shuffle(shuffled_indices[start_index : start_index + window_length])
         return shuffled_indices
+
     # Maybe do the same but backwards?
-    
-    
 
     # IDEA #2: Sample based on how close to the 'center' of the task we are.
     def option2():
         boundaries = np.array(list(itertools.accumulate(lengths, initial=0)))
-        middles = [(start + end) / 2 for start, end in zip(boundaries[0:], boundaries[1:])]
+        middles = [
+            (start + end) / 2 for start, end in zip(boundaries[0:], boundaries[1:])
+        ]
         samples_left: Dict[int, int] = {i: length for i, length in enumerate(lengths)}
         indices_left: Dict[int, List[int]] = {
             i: list(range(boundaries[i], boundaries[i] + length))
@@ -116,7 +121,7 @@ def smooth_task_boundaries_concat(
                 eligible_dataset_ids = list(k for k, v in samples_left.items() if v > 0)
                 # if len(eligible_dataset_ids) > 2:
                 #     # Prevent sampling from future tasks (past the next task) when at a
-                #     # boundary. 
+                #     # boundary.
                 #     left_dataset_index = min(eligible_dataset_ids)
                 #     right_dataset_index = min(
                 #         v for v in eligible_dataset_ids if v > left_dataset_index
@@ -126,7 +131,9 @@ def smooth_task_boundaries_concat(
             options = np.array(eligible_dataset_ids, dtype=int)
 
             # Calculate the 'distance' to the center of the task's dataset.
-            distances = np.abs([step - middles[dataset_index] for dataset_index in options])
+            distances = np.abs(
+                [step - middles[dataset_index] for dataset_index in options]
+            )
 
             # NOTE: THis exponent is kindof arbitrary, setting it to this value because it
             # sortof works for MNIST so far.
@@ -143,17 +150,40 @@ def smooth_task_boundaries_concat(
 
     def option3():
         shuffled_indices = np.arange(total_length)
-        for start_index in range(0, total_length - window_length + 1, window_length // 2):
+        for start_index in range(
+            0, total_length - window_length + 1, window_length // 2
+        ):
             rng.shuffle(shuffled_indices[start_index : start_index + window_length])
-        for start_index in reversed(range(0, total_length - window_length + 1, window_length // 2)):
+        for start_index in reversed(
+            range(0, total_length - window_length + 1, window_length // 2)
+        ):
             rng.shuffle(shuffled_indices[start_index : start_index + window_length])
         return shuffled_indices
-    
+
     shuffled_indices = option3()
-    
-    joined_dataset = ConcatDataset(datasets)
-    return Subset(joined_dataset, shuffled_indices)
+
+    if all(isinstance(dataset, TaskSet) for dataset in datasets):
+        # Use the 'concat' from continuum, just to preserve the field/methods of a
+        # TaskSet.
+        joined_taskset = concat(datasets)
+        return subset(joined_taskset, shuffled_indices)
+    else:
+        joined_dataset = ConcatDataset(datasets)
+        return Subset(joined_dataset, shuffled_indices)
+
     return shuffled_indices
+
+
+from .wrappers import replace_taskset_attributes
+
+
+def subset(taskset: TaskSet, indices: np.ndarray) -> TaskSet:
+    x, y, t = taskset.get_raw_samples(indices)
+    return replace_taskset_attributes(taskset,
+        x=x[indices],
+        y=y[indices],
+        t=t[indices],
+    )
 
 
 @dataclass
@@ -247,6 +277,9 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     batch_size: int = field(default=32, cmd=False)
     num_workers: int = field(default=4, cmd=False)
 
+    # Wether task boundaries are smooth or not.
+    smooth_task_boundaries: bool = flag(True)
+
     def __post_init__(self):
         super().__post_init__()
         assert not self.has_setup_fit
@@ -266,6 +299,11 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             self.test_increment = self.test_increment[0]
         assert isinstance(self.increment, int)
         assert isinstance(self.test_increment, int)
+
+        if not self.nb_tasks:
+            base_action_space = self.base_action_spaces[self.dataset]
+            if isinstance(base_action_space, spaces.Discrete):
+                self.nb_tasks = base_action_space.n // self.increment
 
         # The 'scenarios' for train and test from continuum. (ClassIncremental for now).
         self.train_cl_loader: Optional[_BaseScenario] = None
@@ -354,9 +392,14 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
+            Observations=self.Observations,
+            Actions=self.Actions,
+            Rewards=self.Rewards, 
             pin_memory=True,
             batch_size=batch_size,
             num_workers=num_workers,
+            shuffle=False,
+            one_epoch_only=(not self.known_task_boundaries_at_train_time),
         )
 
         if self.config.render:
@@ -374,6 +417,9 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 env, first_epoch_only=True, wandb_prefix=f"Train/",
             )
 
+        # FIXME: Quickfix for the 'dtype' of the NamedTupleSpace getting lost in
+        # transformation.
+        env.observation_space.dtype = self.Observations
         self.train_env = env
         return self.train_env
 
@@ -394,16 +440,22 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         dataset = self._make_val_dataset()
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised?
+        # TODO: Change the reward and action spaces to also use objects.
         env = self.Environment(
             dataset,
             hide_task_labels=(not self.task_labels_at_train_time),
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
+            Observations=self.Observations,
+            Actions=self.Actions,
+            Rewards=self.Rewards, 
             pin_memory=True,
             batch_size=batch_size,
             num_workers=num_workers,
+            one_epoch_only=(not self.known_task_boundaries_at_train_time),
         )
+        
         # TODO: If wandb is enabled, then add customized Monitor wrapper (with
         # IterableWrapper as an additional subclass). There would then be a lot of
         # overlap between such a Monitor and the current TestEnvironment.
@@ -425,6 +477,8 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         #         wandb_prefix=f"Train/Task {self.current_task_id}",
         #     )
 
+        # FIXME: Quickfix for the 'dtype' of the NamedTupleSpace getting lost in transformation.
+        env.observation_space.dtype = self.Observations
         self.val_env = env
         return self.val_env
 
@@ -450,11 +504,19 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
+            Observations=self.Observations,
+            Actions=self.Actions,
+            Rewards=self.Rewards, 
             pretend_to_be_active=True,
             shuffle=False,
+            one_epoch_only=True,
         )
-        if self.test_transforms:
-            env = TransformObservation(env, f=self.test_transforms)
+
+        # NOTE: The transforms from `self.transforms` (the 'base' transforms) were
+        # already added when creating the datasets and the CL scenario.
+        test_specific_transforms = self.additional_transforms(self.test_transforms)
+        if test_specific_transforms:
+            env = TransformObservation(env, f=test_specific_transforms)
 
         # FIXME: Instead of trying to create a 'fake' task schedule for the test
         # environment, instead let the test environment see the task ids, (and then hide
@@ -472,6 +534,8 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             config=self.config,
         )
 
+        # FIXME: Quickfix for the 'dtype' of the NamedTupleSpace getting lost in transformation.
+        env.observation_space.dtype = self.Observations
         if self.test_env:
             self.test_env.close()
         self.test_env = test_env
@@ -547,13 +611,28 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     def _make_train_dataset(self) -> Dataset:
         # NOTE: Passing the same seed to `train`/`valid`/`test` is fine, because it's
         # only used for the shuffling used to make the task boundaries smooth.
-        return smooth_task_boundaries_concat(self.train_datasets, seed=self.config.seed)
+        if self.smooth_task_boundaries:
+            return smooth_task_boundaries_concat(
+                self.train_datasets, seed=self.config.seed
+            )
+        else:
+            return concat(self.train_datasets)
 
     def _make_val_dataset(self) -> Dataset:
-        return smooth_task_boundaries_concat(self.val_datasets, seed=self.config.seed)
+        if self.smooth_task_boundaries:
+            return smooth_task_boundaries_concat(
+                self.val_datasets, seed=self.config.seed
+            )
+        else:
+            return concat(self.val_datasets)
 
     def _make_test_dataset(self) -> Dataset:
-        return smooth_task_boundaries_concat(self.test_datasets, seed=self.config.seed)
+        if self.smooth_task_boundaries:
+            return smooth_task_boundaries_concat(
+                self.test_datasets, seed=self.config.seed
+            )
+        else:
+            return concat(self.test_datasets)
 
     def make_dataset(
         self, data_dir: Path, download: bool = True, train: bool = True, **kwargs
@@ -606,7 +685,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         for transform in self.transforms:
             x_space = transform(x_space)
         x_space = add_tensor_support(x_space)
-
+        
         task_label_space = spaces.Discrete(self.nb_tasks)
         if not self.task_labels_at_train_time:
             task_label_space = Sparse(task_label_space, 1.0)

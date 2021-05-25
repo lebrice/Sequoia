@@ -71,7 +71,6 @@ class IncrementalAssumption(ContinualAssumption):
 
         task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
 
-    # TODO: Actually add the 'smooth' task boundary case.
     # Wether we have clear boundaries between tasks, or if the transition is
     # smooth.
     smooth_task_boundaries: bool = constant(False)  # constant for now.

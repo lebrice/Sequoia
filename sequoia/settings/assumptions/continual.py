@@ -10,7 +10,7 @@ import wandb
 import itertools
 # TODO: This isn't ideal, would be nicer to have results that are explicitly made for a
 # non-stationary stream
-from .iid_results import TaskResults as ContinualResults
+from .iid_results import TaskResults
 from sequoia.settings.base import Method
 from sequoia.utils import add_prefix
 from sequoia.common.gym_wrappers.utils import IterableWrapper
@@ -25,6 +25,52 @@ from torch import Tensor
 import tqdm
 from gym.vector.utils import batch_space
 import wandb
+from io import StringIO
+import json
+from typing import Dict
+from sequoia.common.metrics import Metrics, MetricsType
+
+
+# @dataclass
+class ContinualResults(TaskResults[MetricsType]):
+    def __init__(self, *args):
+        super().__init__(*args)
+        self._runtime: Optional[float] = None
+        self._online_training_performance: Dict[int, MetricsType] = {}
+
+    @property
+    def online_performance(self) -> Dict[int, MetricsType]:
+        """ Returns the online training performance.
+        
+        In SL, this is only recorded over the first epoch.
+
+        Returns
+        -------
+        Dict[int, MetricType]
+            a dictionary mapping from step number to the Metrics object produced at that
+            step.
+        """
+        if not self._online_training_performance:
+            return {}
+        return self._online_training_performance
+
+    @property
+    def online_performance_metrics(self) -> MetricsType:
+        return sum(self.online_performance.values(), Metrics())
+
+    def to_log_dict(self, verbose: bool = False) -> Dict:
+        log_dict = {}
+        log_dict["Average Performance"] = super().to_log_dict(verbose=verbose)
+        if self._online_training_performance:
+            log_dict["Online Performance"] = self.online_performance_metrics.to_log_dict(verbose=verbose)
+        return log_dict
+
+    def summary(self):
+        s = StringIO()
+        print(json.dumps(self.to_log_dict(), indent="\t"), file=s)
+        s.seek(0)
+        return s.read()
+
 
 @dataclass
 class ContinualAssumption(AssumptionBase):
@@ -39,9 +85,11 @@ class ContinualAssumption(AssumptionBase):
 
     # Wether task labels are available at train time.
     # NOTE: Forced to True at the moment.
-    task_labels_at_train_time: bool = flag(default=False)
+    task_labels_at_train_time: bool = flag(False)
+
     # Wether task labels are available at test time.
-    task_labels_at_test_time: bool = flag(default=False)
+    task_labels_at_test_time: bool = flag(False)
+
 
     @dataclass(frozen=True)
     class Observations(AssumptionBase.Observations):
@@ -66,8 +114,6 @@ class ContinualAssumption(AssumptionBase):
         # IDEA: We could use a list of IIDResults! (but that might cause some circular
         # import issues)
         results = self.Results()
-        if self.monitor_training_performance:
-            results._online_training_performance = []
 
         method.set_training()
 
@@ -88,9 +134,7 @@ class ContinualAssumption(AssumptionBase):
         valid_env.close()
 
         if self.monitor_training_performance:
-            results._online_training_performance.append(
-                train_env.get_online_performance()
-            )
+            results._online_training_performance = train_env.get_online_performance()
 
         logger.info(f"Finished Training.")
         test_metrics: ContinualResults = self.test_loop(method)

@@ -25,6 +25,7 @@ class TransformObservation(TransformObservation_, IterableWrapper):
         self.observation_space = self(self.env.observation_space)
         if has_tensor_support(self.env.observation_space):
             self.observation_space = add_tensor_support(self.observation_space)
+
         # except Exception as e:
             # logger.warning(UserWarning(
             #     f"Don't know how the transform {self.f} will impact the "

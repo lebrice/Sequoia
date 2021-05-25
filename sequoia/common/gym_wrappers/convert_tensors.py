@@ -145,7 +145,8 @@ def _add_tensor_support(space: Dict, device: torch.device = None) -> Dict:
         **{
             key: add_tensor_support(value, device=device)
             for key, value in space.items()
-        }
+        },
+        dtype=space.dtype,
     )
     _mark_supports_tensors(space)
     return space

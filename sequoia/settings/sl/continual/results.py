@@ -1,8 +1,8 @@
 from sequoia.settings.base import Results
 from sequoia.settings.assumptions.continual import ContinualResults
 from dataclasses import dataclass
+from sequoia.common.metrics import MetricsType
 
 
-@dataclass
-class ContinualSLResults(ContinualResults):
+class ContinualSLResults(ContinualResults[MetricsType]):
     pass

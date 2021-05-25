@@ -71,13 +71,15 @@ from sequoia.utils import get_logger
 # TODO: Fix this: not sure where this 'SLSetting' should be.
 from sequoia.settings.sl.environment import Actions, PassiveEnvironment, Rewards
 from sequoia.settings.sl.setting import SLSetting
-from .results import IncrementalSLResults
 from sequoia.settings.sl.continual import ContinualSLSetting
 from sequoia.settings.sl.wrappers import MeasureSLPerformanceWrapper
+from sequoia.settings.rl.wrappers import HideTaskLabelsWrapper
+
+from .results import IncrementalSLResults
+from .environment import IncrementalSLEnvironment
+from .objects import Observations, ObservationType, Actions, ActionType, Rewards, RewardType
 
 logger = get_logger(__file__)
-
-
 # # NOTE: This dict reflects the observation space of the different datasets
 # # *BEFORE* any transforms are applied. The resulting property on the Setting is
 # # based on this 'base' observation space, passed through the transforms.
@@ -87,7 +89,7 @@ logger = get_logger(__file__)
 
 
 @dataclass
-class IncrementalSLSetting(ContinualSLSetting, IncrementalAssumption):
+class IncrementalSLSetting(IncrementalAssumption, ContinualSLSetting):
     """Supervised Setting where the data is a sequence of 'tasks'.
 
     This class is basically is the supervised version of an Incremental Setting
@@ -98,26 +100,15 @@ class IncrementalSLSetting(ContinualSLSetting, IncrementalAssumption):
 
     Results: ClassVar[Type[IncrementalResults]] = IncrementalSLResults
 
-    # (NOTE: commenting out SLSetting.Observations as it is the same class
-    # as Setting.Observations, and we want a consistent method resolution order.
-    @dataclass(frozen=True)
-    class Observations(ContinualSLSetting.Observations,
-                       IncrementalAssumption.Observations):
-        """ Incremental Observations, in a supervised context. """
-        x: Tensor
-        task_labels: Optional[Tensor]
+    Observations: ClassVar[Type[Observations]] = Observations
+    Actions: ClassVar[Type[Actions]] = Actions
+    Rewards: ClassVar[Type[Rewards]] = Rewards
 
-    # @dataclass(frozen=True)
-    # class Actions(SLSetting.Actions,
-    #               IncrementalAssumption.Actions):
-    #     """Incremental Actions, in a supervised (passive) context."""
-    #     pass
+    Environment: ClassVar[Type[SLSetting.Environment]] = IncrementalSLEnvironment[
+        Observations, Actions, Rewards
+    ]
 
-    # @dataclass(frozen=True)
-    # class Rewards(SLSetting.Rewards,
-    #               IncrementalAssumption.Rewards):
-    #     """Incremental Rewards, in a supervised context."""
-    #     pass
+    Results: ClassVar[Type[IncrementalSLResults]] = IncrementalSLResults
 
     # Class variable holding a dict of the names and types of all available
     # datasets.
@@ -183,10 +174,10 @@ class IncrementalSLSetting(ContinualSLSetting, IncrementalAssumption):
     batch_size: int = field(default=32, cmd=False)
     num_workers: int = field(default=4, cmd=False)
 
-    # Wether or not to relabel the images to be within the [0, n_classes_per_task]
+    # Wether or not to relabel the y's to be within the [0, n_classes_per_task]
     # range. Floating (False by default) in Class-Incremental Setting, but set to True
     # in domain_incremental Setting.
-    relabel: bool = False
+    shared_action_space: bool = False
 
     # TODO: IDEA: Adding these fields/constructor arguments so that people can pass a
     # custom ready-made `Scenario` from continuum to use.
@@ -201,34 +192,8 @@ class IncrementalSLSetting(ContinualSLSetting, IncrementalAssumption):
         """Initializes the fields of the Setting (and LightningDataModule),
         including the transforms, shapes, etc.
         """
-        if isinstance(self.increment, list) and len(self.increment) == 1:
-            # This can happen when parsing a list from the command-line.
-            self.increment = self.increment[0]
-
-        base_reward_space = self.base_reward_spaces[self.dataset]
-        # action space = reward space by default
-        base_action_space = base_reward_space
-
-        if isinstance(base_action_space, spaces.Discrete):
-            # Classification dataset
-            self.num_classes = base_action_space.n
-            # Set the number of tasks depending on the increment, and vice-versa.
-            # (as only one of the two should be used).
-            if self.nb_tasks == 0:
-                self.nb_tasks = self.num_classes // self.increment
-            else:
-                self.increment = self.num_classes // self.nb_tasks
-        else:
-            raise NotImplementedError("TODO: (issue #43)")
-
-        if not self.class_order:
-            self.class_order = list(range(self.num_classes))
-
-        # Test values default to the same as train.
-        self.test_increment = self.test_increment or self.increment
-        self.test_initial_increment = self.test_initial_increment or self.test_increment
-        self.test_class_order = self.test_class_order or self.class_order
-
+        super().__post_init__()
+        
         # TODO: For now we assume a fixed, equal number of classes per task, for
         # sake of simplicity. We could take out this assumption, but it might
         # make things a bit more complicated.
@@ -236,27 +201,6 @@ class IncrementalSLSetting(ContinualSLSetting, IncrementalAssumption):
         assert isinstance(self.test_increment, int)
 
         self.n_classes_per_task: int = self.increment
-        action_space = spaces.Discrete(self.n_classes_per_task)
-        reward_space = spaces.Discrete(self.n_classes_per_task)
-
-        super().__post_init__(
-            # observation_space=observation_space,
-            action_space=action_space,
-            reward_space=reward_space,  # the labels have shape (1,) always.
-        )
-        self.train_datasets: List[_ContinuumDataset] = []
-        self.val_datasets: List[_ContinuumDataset] = []
-        self.test_datasets: List[_ContinuumDataset] = []
-
-        # This will be set by the Experiment, or passed to the `apply` method.
-        # TODO: This could be a bit cleaner.
-        self.config: Config
-        # Default path to which the datasets will be downloaded.
-        self.data_dir: Optional[Path] = None
-
-        self.train_env: PassiveEnvironment = None  # type: ignore
-        self.val_env: PassiveEnvironment = None  # type: ignore
-        self.test_env: PassiveEnvironment = None  # type: ignore
 
     def apply(self, method: Method, config: Config = None) -> IncrementalSLResults:
         """Apply the given method on this setting to producing some results."""
@@ -362,145 +306,82 @@ class IncrementalSLSetting(ContinualSLSetting, IncrementalAssumption):
         #     itertools.accumulate(map(len, self.test_datasets))
         # )[:-1]
 
-    def get_train_dataset(self) -> Dataset:
+    def _make_train_dataset(self) -> Dataset:
         return self.train_datasets[self.current_task_id]
 
-    def get_val_dataset(self) -> Dataset:
+    def _make_val_dataset(self) -> Dataset:
         return self.val_datasets[self.current_task_id]
 
-    def get_test_dataset(self) -> Dataset:
+    def _make_test_dataset(self) -> Dataset:
         return ConcatDataset(self.test_datasets)
 
     def train_dataloader(
         self, batch_size: int = None, num_workers: int = None
-    ) -> PassiveEnvironment:
-        """Returns a DataLoader for the train dataset of the current task. """
-        if not self.has_prepared_data:
-            self.prepare_data()
-        if not self.has_setup_fit:
-            self.setup("fit")
-
-        if self.train_env:
-            self.train_env.close()
-
-        batch_size = batch_size if batch_size is not None else self.batch_size
-        num_workers = num_workers if num_workers is not None else self.num_workers
-
-        dataset = self.get_train_dataset()
-        # TODO: Add some kind of Wrapper around the dataset to make it
-        # semi-supervised.
-        env = PassiveEnvironment(
-            dataset,
-            split_batch_fn=self.split_batch_function(training=True),
-            observation_space=self.observation_space,
-            action_space=self.action_space,
-            reward_space=self.reward_space,
-            pin_memory=True,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            # Since the dataset only contains data from the current task(s), it's fine
-            # to shuffle here. TODO: Double-check this.
-            shuffle=True,
-        )
-
-        if self.config.render:
-            # TODO: Add a callback wrapper that calls 'env.render' at each step?
-            env = RenderEnvWrapper(env)
-
-        if self.train_transforms:
-            # TODO: Check that the transforms aren't already being applied in the
-            # 'dataset' portion.
-            env = TransformObservation(env, f=self.train_transforms)
-
+    ) -> IncrementalSLEnvironment:
+        """ Returns a DataLoader for the train dataset of the current task. """
+        train_env = super().train_dataloader(batch_size=batch_size, num_workers=num_workers)
+        # TODO: Set a different prefix for `MeasureSLPerformanceWrapper`
         if self.monitor_training_performance:
-            env = MeasureSLPerformanceWrapper(
-                env,
-                first_epoch_only=True,
-                wandb_prefix=f"Train/Task {self.current_task_id}",
-            )
-
-        self.train_env = env
+            assert isinstance(train_env, MeasureSLPerformanceWrapper)
+            train_env.wandb_prefix = f"Train/Task {self.current_task_id}"
+        self.train_env = train_env
         return self.train_env
 
     def val_dataloader(
         self, batch_size: int = None, num_workers: int = None
     ) -> PassiveEnvironment:
-        """Returns a DataLoader for the validation dataset of the current task.
-        """
-        if not self.has_prepared_data:
-            self.prepare_data()
-        if not self.has_setup_fit:
-            self.setup("fit")
-
-        dataset = self.get_val_dataset()
-        batch_size = batch_size if batch_size is not None else self.batch_size
-        num_workers = num_workers if num_workers is not None else self.num_workers
-        env = PassiveEnvironment(
-            dataset,
-            split_batch_fn=self.split_batch_function(training=True),
-            observation_space=self.observation_space,
-            action_space=self.action_space,
-            reward_space=self.reward_space,
-            pin_memory=True,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            # Since the dataset only contains data from the current task(s), it's fine
-            # to shuffle here. TODO: Double-check this.
-            shuffle=True,
-        )
-        if self.val_transforms:
-            env = TransformObservation(env, f=self.val_transforms)
-
-        if self.val_env:
-            self.val_env.close()
-            del self.val_env
-        self.val_env = env
+        """ Returns a DataLoader for the validation dataset of the current task. """
+        val_env = super().val_dataloader(batch_size=batch_size, num_workers=num_workers)
         return self.val_env
 
     def test_dataloader(
         self, batch_size: int = None, num_workers: int = None
     ) -> PassiveEnvironment["ClassIncrementalSetting.Observations", Actions, Rewards]:
-        """Returns a DataLoader for the test dataset of the current task.
-        """
+        """ Returns a DataLoader for the test dataset of the current task. """
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_test:
             self.setup("test")
+
+        # Join all the test datasets.
+        dataset = self._make_test_dataset()
+
+        batch_size = batch_size if batch_size is not None else self.batch_size
+        num_workers = num_workers if num_workers is not None else self.num_workers
+
+        env = self.Environment(
+            dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            observation_space=self.observation_space,
+            action_space=self.action_space,
+            reward_space=self.reward_space,
+            Observations=self.Observations,
+            Actions=self.Actions,
+            Rewards=self.Rewards, 
+            pretend_to_be_active=True,
+            shuffle=False,
+        )
+        
+
+        # NOTE: The transforms from `self.transforms` (the 'base' transforms) were
+        # already added when creating the datasets and the CL scenario.
+        test_specific_transforms = self.additional_transforms(self.test_transforms)
+        if test_specific_transforms:
+            env = TransformObservation(env, f=test_specific_transforms)
+        # NOTE: Two ways of removing the task labels: Either using a different
+        # 'split_batch_fn' at train and test time, or by using this wrapper
+        # which is also used in the RL side of the tree:
+        # TODO: Maybe remove/simplify the 'split_batch_function'.
+
+        if not self.task_labels_at_test_time:
+            env = HideTaskLabelsWrapper(env)
 
         # Testing this out, we're gonna have a "test schedule" like this to try
         # to imitate the MultiTaskEnvironment in RL.
         transition_steps = [0] + list(
             itertools.accumulate(map(len, self.test_datasets))
         )[:-1]
-        # Join all the test datasets.
-        dataset = self.get_test_dataset()
-
-        batch_size = batch_size if batch_size is not None else self.batch_size
-        num_workers = num_workers if num_workers is not None else self.num_workers
-
-        env = PassiveEnvironment(
-            dataset,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            split_batch_fn=self.split_batch_function(training=False),
-            observation_space=self.observation_space,
-            action_space=self.action_space,
-            reward_space=self.reward_space,
-            pretend_to_be_active=True,
-            shuffle=False,
-        )
-        if self.test_transforms:
-            env = TransformObservation(env, f=self.test_transforms)
-
-        # NOTE: Two ways of removing the task labels: Either using a different
-        # 'split_batch_fn' at train and test time, or by using this wrapper
-        # which is also used in the RL side of the tree:
-        # TODO: Maybe remove/simplify the 'split_batch_function'.
-        from sequoia.settings.rl.continual.wrappers import HideTaskLabelsWrapper
-
-        if not self.task_labels_at_test_time:
-            env = HideTaskLabelsWrapper(env)
-
         # FIXME: Creating a 'task schedule' for the TestEnvironment, mimicing what's in
         # the RL settings.
         test_task_schedule = dict.fromkeys(
@@ -531,6 +412,7 @@ class IncrementalSLSetting(ContinualSLSetting, IncrementalAssumption):
     ) -> Callable[[Tuple[Tensor, ...]], Tuple[Observations, Rewards]]:
         """ Returns a callable that is used to split a batch into observations and rewards.
         """
+        assert False, "TODO: Remove this."
         task_classes = {
             i: self.task_classes(i, train=training) for i in range(self.nb_tasks)
         }
@@ -554,7 +436,7 @@ class IncrementalSLSetting(ContinualSLSetting, IncrementalAssumption):
             x, y, t = batch
 
             # Relabel y so it is always in [0, n_classes_per_task) for each task.
-            if self.relabel:
+            if self.shared_action_space:
                 y = relabel(y, task_classes)
 
             if (training and not self.task_labels_at_train_time) or (

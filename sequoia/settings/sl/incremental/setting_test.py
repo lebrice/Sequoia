@@ -10,8 +10,6 @@ from sequoia.conftest import xfail_param, skip_param
 
 from .setting import (
     IncrementalSLSetting,
-    base_observation_spaces,
-    base_reward_spaces,
 )
 from .setting import IncrementalSLSetting as ClassIncrementalSetting
 
@@ -51,51 +49,44 @@ class IncrementalSLSettingTest(SettingTests):
             # we're setting the lower bound super low, which makes no sense.
             assert 0.25 * chance_accuracy <= task_accuracy <= 2.1 * chance_accuracy
 
+    # TODO: Add a fixture that specifies a data folder common to all tests.
+    @pytest.mark.parametrize(
+        "dataset_name",
+        [
+            "mnist",
+            # "synbols",
+            skip_param("synbols", reason="Causes tests to hang for some reason?"),
+            "cifar10",
+            "cifar100",
+            "fashionmnist",
+            "kmnist",
+            xfail_param("emnist", reason="Bug in emnist, requires split positional arg?"),
+            xfail_param("qmnist", reason="Bug in qmnist, 229421 not in list"),
+            "mnistfellowship",
+            "cifar10",
+            "cifarfellowship",
+        ],
+    )
+    @pytest.mark.timeout(60)
+    def test_observation_spaces_match_dataset(self, dataset_name: str):
+        """ Test to check that the `observation_spaces` and `reward_spaces` dict
+        really correspond to the entries of the corresponding datasets, before we do
+        anything with them.
+        """
+        # CIFARFellowship, MNISTFellowship, ImageNet100,
+        # ImageNet1000, CIFAR10, CIFAR100, EMNIST, KMNIST, MNIST,
+        # QMNIST, FashionMNIST,
+        dataset_class = self.Setting.available_datasets[dataset_name]
+        dataset = dataset_class("data")
 
-
-
-
-
-
-
-# TODO: Add a fixture that specifies a data folder common to all tests.
-@pytest.mark.parametrize(
-    "dataset_name",
-    [
-        "mnist",
-        # "synbols",
-        skip_param("synbols", reason="Causes tests to hang for some reason?"),
-        "cifar10",
-        "cifar100",
-        "fashionmnist",
-        "kmnist",
-        xfail_param("emnist", reason="Bug in emnist, requires split positional arg?"),
-        xfail_param("qmnist", reason="Bug in qmnist, 229421 not in list"),
-        "mnistfellowship",
-        "cifar10",
-        "cifarfellowship",
-    ],
-)
-@pytest.mark.timeout(60)
-def test_observation_spaces_match_dataset(dataset_name: str):
-    """ Test to check that the `observation_spaces` and `reward_spaces` dict
-    really correspond to the entries of the corresponding datasets, before we do
-    anything with them.
-    """
-    # CIFARFellowship, MNISTFellowship, ImageNet100,
-    # ImageNet1000, CIFAR10, CIFAR100, EMNIST, KMNIST, MNIST,
-    # QMNIST, FashionMNIST,
-    dataset_class = ClassIncrementalSetting.available_datasets[dataset_name]
-    dataset = dataset_class("data")
-
-    observation_space = base_observation_spaces[dataset_name]
-    reward_space = base_reward_spaces[dataset_name]
-    for task_dataset in ClassIncremental(dataset, nb_tasks=1):
-        first_item = task_dataset[0]
-        x, t, y = first_item
-        assert x.shape == observation_space.shape
-        assert x in observation_space, (x.min(), x.max(), observation_space)
-        assert y in reward_space
+        observation_space = self.Setting.base_observation_spaces[dataset_name]
+        reward_space = self.Setting.base_reward_spaces[dataset_name]
+        for task_dataset in ClassIncremental(dataset, nb_tasks=1):
+            first_item = task_dataset[0]
+            x, t, y = first_item
+            assert x.shape == observation_space.shape
+            assert x in observation_space, (x.min(), x.max(), observation_space)
+            assert y in reward_space
 
 
 @pytest.mark.parametrize("dataset_name", ["mnist"])

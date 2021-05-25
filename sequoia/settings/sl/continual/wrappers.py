@@ -45,18 +45,31 @@ def relabel_taskset(task_set: TaskSet, mapping: Dict[int, int]=None) -> TaskSet:
         c: i for i, c in enumerate(task_set.get_classes())
     }
     old_y = task_set._y
-    new_y = relabel(old_y)
+    new_y = relabel(old_y, mapping=mapping)
     assert not task_set.target_trsf
     # TODO: Two options here: Either create a new 'y' array, OR add a target_trsf that
     # does the remapping. Not sure if there's a benefit in doing one vs the other atm.
-    return type(task_set)(
+    # NOTE: Choosing to replace the `y` to make sure that the concatenated datasets keep
+    # the transformed y.
+    return replace_taskset_attributes(task_set, y=new_y)
+
+
+from sequoia.utils.generic_functions.replace import replace
+
+
+@replace.register
+def replace_taskset_attributes(task_set: TaskSet, **kwargs) -> TaskSet:
+    new_kwargs = dict(
         x=task_set._x,
-        y=old_y,
+        y=task_set._y,
         t=task_set._t,
         trsf=task_set.trsf,
-        target_trsf=partial(mapping.get),
+        target_trsf=task_set.target_trsf,
         data_type=task_set.data_type,
+        bounding_boxes=task_set.bounding_boxes,
     )
+    new_kwargs.update(kwargs)
+    return type(task_set)(**new_kwargs)
 
 
 class SharedActionSpaceWrapper(IterableWrapper):

@@ -28,8 +28,7 @@ from sequoia.settings import (
     TaskIncrementalSLSetting,
 )
 from sequoia.settings.assumptions import IncrementalAssumption
-# TODO: Clean this up:
-from sequoia.settings.assumptions.task_incremental import TaskIncrementalSLSetting
+from sequoia.settings.assumptions.task_incremental import TaskIncrementalAssumption
 
 from .model_rl import PnnA2CAgent
 from .model_sl import PnnClassifier
@@ -42,7 +41,7 @@ from .model_sl import PnnClassifier
 
 
 @register_method
-class PnnMethod(Method, target_setting=TaskIncrementalSLSetting):
+class PnnMethod(Method, target_setting=TaskIncrementalAssumption):
     """
     PNN Method.
 

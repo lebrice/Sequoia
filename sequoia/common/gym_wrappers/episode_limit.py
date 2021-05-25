@@ -107,10 +107,6 @@ class EpisodeLimit(EpisodeCounter, MayCloseEarly):
             self.close()
         return self.env.reset()
 
-    @property
-    def is_closed(self) -> bool:
-        return self._is_closed
-
     def step(self, action):
         if self._is_closed:
             if self._episode_counter >= self._max_episodes:
@@ -133,7 +129,4 @@ class EpisodeLimit(EpisodeCounter, MayCloseEarly):
         
         return obs, reward, done, info
 
-    def close(self):
-        self.env.close()
-        self._is_closed = True
     

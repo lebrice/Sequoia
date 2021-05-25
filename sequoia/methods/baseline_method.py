@@ -33,6 +33,7 @@ from sequoia.settings.base.results import Results
 from sequoia.settings.base.setting import Setting, SettingType
 from sequoia.utils import Parseable, Serializable, compute_identity, get_logger
 from sequoia.methods import register_method
+from sequoia.settings.sl.continual import ContinualSLSetting
 
 from .models import BaselineModel, ForwardPass
 
@@ -218,6 +219,11 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                     assert setting.task_labels_at_train_time
                 self.hparams.multihead = setting.nb_tasks > 1
 
+        if not setting.known_task_boundaries_at_train_time:
+            # If we won't have access to the task boundaries, so we can only do one
+            # epoch.
+            self.hparams.max_epochs = 1
+
         if isinstance(setting, ContinualRLSetting):
             setting.add_done_to_observations = True
             if isinstance(setting.observation_space.x, Image):
@@ -355,7 +361,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # We use this here to create loggers!
         callbacks = self.create_callbacks(setting)
         loggers = []
-        if setting.wandb:
+        if setting.wandb and setting.wandb.project:
             wandb_logger = setting.wandb.make_logger()
             loggers.append(wandb_logger)
         trainer = self.trainer_options.make_trainer(

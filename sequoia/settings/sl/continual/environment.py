@@ -1,6 +1,6 @@
 """ WIP: Continual SL environment. (smooth task boundaries, etc)
 """
-from typing import Any, Callable, Dict, List, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Tuple, Type, Union, Sequence, Optional
 
 import gym
 import numpy as np
@@ -165,20 +165,24 @@ class ContinualSLEnvironment(
         observation_space: NamedTupleSpace = None,
         action_space: gym.Space = None,
         reward_space: gym.Space = None,
+        Observations: Type[ObservationType] = Observations,
+        Actions: Type[ActionType] = Actions,
+        Rewards: Type[RewardType] = Rewards,
         split_batch_fn: Callable[
             [Tuple[Any, ...]], Tuple[ObservationType, ActionType]
         ] = None,
         pretend_to_be_active: bool = False,
         strict: bool = False,
+        one_epoch_only: bool = True,
         **kwargs,
     ):
         assert isinstance(dataset, Dataset)
         split_batch_fn = default_split_batch_function(
             hide_task_labels=hide_task_labels,
             Observations=Observations,
-            Rewards=Rewards,
+            Rewards=Rewards,  # TODO: Fix this 'Rewards' being of the 'wrong' type.
         )
-
+        self._one_epoch_only = one_epoch_only
         super().__init__(
             dataset=dataset,
             split_batch_fn=split_batch_fn,
@@ -190,6 +194,19 @@ class ContinualSLEnvironment(
             **kwargs,
         )
         # TODO: Clean up the batching of a Sparse(Discrete) space so its less ugly.
+
+    def step(
+        self, action: ActionType
+    ) -> Tuple[ObservationType, Optional[RewardType], bool, Sequence[Dict]]:
+        obs, reward, done, info = super().step(action)
+        if done and self._one_epoch_only:
+            self.close()
+        return obs, reward, done, info
+
+    def __iter__(self):
+        yield from super().__iter__()
+        if self._one_epoch_only:
+            self.close()
 
     # TODO: Remove / fix this 'split batch function'. The problem is that we need to
     # tell the environment how to take the three items from continuum and convert them

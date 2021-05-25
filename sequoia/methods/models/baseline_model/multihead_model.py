@@ -10,6 +10,7 @@ from dataclasses import replace
 from sequoia.common import Batch, Config, Loss
 from sequoia.settings import Actions, Environment, Observations, Rewards
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
+from sequoia.settings.assumptions.continual import ContinualAssumption
 from sequoia.utils.generic_functions import concatenate, get_slice
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.generic_functions import stack
@@ -40,7 +41,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         # have access to task labels. Need to figure out how to manage this between TaskIncremental and Classifier.
         multihead: Optional[bool] = None
 
-    def __init__(self, setting: IncrementalAssumption, hparams: HParams, config: Config):
+    def __init__(self, setting: ContinualAssumption, hparams: HParams, config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
         self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()
         self.hp: MultiHeadModel.HParams
@@ -54,6 +55,13 @@ class MultiHeadModel(BaseModel[SettingType]):
         self.current_task: Optional[int] = None
 
         self.previous_task_labels: Optional[Sequence[int]] = None
+
+        if setting.task_labels_at_train_time:
+            # NOTE: Not sure if this could cause an issue when setting is a SettingProxy
+            starting_task_id = 0 #setting.current_task_id
+        else:
+            starting_task_id = None
+        self.output_heads[str(starting_task_id)] = self.output_head
 
     def output_head_loss(
         self, forward_pass: ForwardPass, actions: Actions, rewards: Rewards

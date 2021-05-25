@@ -404,9 +404,9 @@ class BaseModel(LightningModule, Generic[SettingType]):
             assert isinstance(batch, (tuple, list)) and len(batch) == 2
             observations, rewards = batch
 
-        assert isinstance(observations, self.Observations)
-        assert rewards is None or isinstance(rewards, self.Rewards)
-
+        assert isinstance(observations, self.Observations), (
+            observations, type(observations), self.Observations,
+        )
         # Move the observations to the right device, and convert numpy arrays to
         # tensors.
         observations = observations.torch(device=self.device)

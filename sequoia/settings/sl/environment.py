@@ -174,11 +174,11 @@ class PassiveEnvironment(
             observation_space = batch_space(observation_space, self.batch_size)
             action_space = batch_space(action_space, self.batch_size)
             reward_space = batch_space(reward_space, self.batch_size)
-
+        
         self.observation_space: gym.Space = add_tensor_support(observation_space)
         self.action_space: gym.Space = add_tensor_support(action_space)
         self.reward_space: gym.Space = add_tensor_support(reward_space)
-
+        
         self.pretend_to_be_active = pretend_to_be_active
         self._strict = strict
         self._reward_queue = deque(maxlen=10)

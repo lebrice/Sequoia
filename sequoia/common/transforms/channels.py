@@ -59,11 +59,13 @@ class NamedDimensions(Transform[Tensor, Tensor]):
     """'Transform' that gives names to the dimensions of input tensors.
     Overwrites existing named dimensions, if any.
     """
+
     def __init__(self, names: Iterable[str]):
         self.names = tuple(names)
-    
+
     def __call__(self, tensor: Tensor) -> Tensor:
         return tensor.refine_names(*self.names)
+
 
 @singledispatch
 def three_channels(x: Any) -> Any:
@@ -77,7 +79,10 @@ def three_channels(x: Any) -> Any:
     [10, 1, 28, 28] -> [10, 3, 28, 28] (keep batch intact, do the same again.)
     
     """
-    raise NotImplementedError(f"This doesn't currently support input {x} of type {type(x)}")
+    raise NotImplementedError(
+        f"This doesn't currently support input {x} of type {type(x)}"
+    )
+
 
 @three_channels.register(Tensor)
 def _(x: Tensor) -> Tensor:
@@ -107,6 +112,7 @@ def _(x: Tensor) -> Tensor:
     #     x.rename(*names)
     return x
 
+
 @three_channels.register(np.ndarray)
 def _(x: np.ndarray) -> np.ndarray:
     if x.ndim == 2:
@@ -129,9 +135,12 @@ def _(x: np.ndarray) -> np.ndarray:
             x = np.tile(x, [1, 1, 1, 3])
     return x
 
+
 @three_channels.register(spaces.Box)
 def _(x: spaces.Box) -> spaces.Box:
-    return type(x)(low=three_channels(x.low), high=three_channels(x.high), dtype=x.dtype)
+    return type(x)(
+        low=three_channels(x.low), high=three_channels(x.high), dtype=x.dtype
+    )
 
 
 @three_channels.register(torch.Size)
@@ -153,15 +162,26 @@ def _(x: Tuple[int, ...]) -> Tuple[int, ...]:
     return x
 
 
-
 @three_channels.register(NamedTupleSpace)
+def _three_channels(x: Any) -> Any:
+    return type(x)(
+        **{
+            key: three_channels(value) if is_image(value) else value
+            for key, value in x.items()
+        },
+        dtype=x.dtype,
+    )
+
+
 @three_channels.register(spaces.Dict)
 @three_channels.register(Mapping)
 def _three_channels(x: Any) -> Any:
-    return type(x)(**{
-        key: three_channels(value) if is_image(value) else value
-        for key, value in x.items()
-    })
+    return type(x)(
+        **{
+            key: three_channels(value) if is_image(value) else value
+            for key, value in x.items()
+        }
+    )
 
 
 @dataclass
@@ -176,10 +196,9 @@ class ThreeChannels(Transform[Tensor, Tensor]):
     [10, 1, 28, 28] -> [10, 3, 28, 28] (keep batch intact, do the same again.)
     
     """
+
     def __call__(self, x: Tensor) -> Tensor:
         return three_channels(x)
-        
-
 
 
 @singledispatch
@@ -192,17 +211,19 @@ def channels_first(x: Any) -> Any:
     """
     raise RuntimeError(f"Transform isn't applicable to input {x} of type {type(x)}.")
 
+
 @channels_first.register(Tensor)
 def _(x: Tensor) -> Tensor:
     if x.ndim == 3:
         if any(x.names):
             return x.align_to("C", "H", "W")
-        return x.permute(2, 0, 1)#.to(memory_format=torch.contiguous_format)
+        return x.permute(2, 0, 1)  # .to(memory_format=torch.contiguous_format)
     if x.ndim == 4:
         if any(x.names):
             return x.align_to("N", "C", "H", "W")
         return x.permute(0, 3, 1, 2).contiguous()
     return x
+
 
 @channels_first.register(tuple)
 def _(x: Tuple[int, ...]) -> Tuple[int, ...]:
@@ -217,7 +238,7 @@ def _(x: Tuple[int, ...]) -> Tuple[int, ...]:
 @channels_first.register(np.ndarray)
 def _(x: spaces.Box) -> spaces.Box:
     if x.ndim == 4:
-        return np.moveaxis(x, 3, 1)  
+        return np.moveaxis(x, 3, 1)
     elif x.ndim == 3:
         return np.moveaxis(x, 2, 0)
     else:
@@ -236,9 +257,7 @@ def _(x: Tuple[int, ...]) -> Tuple[int, ...]:
 @channels_first.register(spaces.Box)
 def _(x: spaces.Box) -> spaces.Box:
     return type(x)(
-        low=channels_first(x.low),
-        high=channels_first(x.high),
-        dtype=x.dtype,
+        low=channels_first(x.low), high=channels_first(x.high), dtype=x.dtype,
     )
 
 
@@ -250,16 +269,17 @@ class ChannelsFirst(Transform[Union[np.ndarray, Tensor], Tensor]):
 
     Also converts non-Tensor inputs to tensors using `to_tensor`.
     """
+
     def __call__(self, x: Tensor) -> Tensor:
         return self.apply(x)
-        
+
     @classmethod
     def apply(cls, x: Tensor) -> Tensor:
         return channels_first(x)
 
         # if not isinstance(x, Tensor):
         #     raise RuntimeError(f"Transform only applies to Tensors. (Not {x} of type {type(x)}).")
-        
+
         # # if has_channels_first(x):
         # #     logger.warning(RuntimeWarning(f"Input already seems to have channels first, but this transform will be applied anyway.."))
 
@@ -272,20 +292,21 @@ class ChannelsFirst(Transform[Union[np.ndarray, Tensor], Tensor]):
         #         return x.align_to("N", "C", "H", "W")
         #     return x.permute(0, 3, 1, 2).contiguous()
         # return x
-    
+
     # @staticmethod
     # def shape_change(input_shape: Union[Tuple[int, ...], torch.Size]) -> Tuple[int, ...]:
     #     ndim = len(input_shape)
     #     if ndim == 3:
     #         return tuple(input_shape[i] for i in (2, 0, 1))
     #     elif ndim == 4:
-    #         return tuple(input_shape[i] for i in (0, 3, 1, 2))         
+    #         return tuple(input_shape[i] for i in (0, 3, 1, 2))
     #     return input_shape
+
 
 @dataclass
 class ChannelsFirstIfNeeded(ChannelsFirst):
     """ Only puts the channels first if the input has channels last. """
-    
+
     @classmethod
     def apply(cls, x: Tensor) -> Tensor:
         if has_channels_last(x):
@@ -297,6 +318,7 @@ class ChannelsFirstIfNeeded(ChannelsFirst):
     #     if has_channels_last(input_shape):
     #         return super().shape_change(input_shape)
     #     return input_shape
+
 
 @singledispatch
 def channels_last(x: Any) -> Any:
@@ -336,11 +358,7 @@ def _(x: np.ndarray) -> np.ndarray:
 
 @channels_last.register(spaces.Box)
 def _(x: spaces.Box) -> spaces.Box:
-    return type(x)(
-        low=channels_last(x.low),
-        high=channels_last(x.high),
-        dtype=x.dtype,
-    )
+    return type(x)(low=channels_last(x.low), high=channels_last(x.high), dtype=x.dtype,)
 
 
 @dataclass
@@ -352,9 +370,11 @@ class ChannelsLast(Transform[Tensor, Tensor]):
     def apply(cls, x: Tensor) -> Tensor:
         return channels_last(x)
 
+
 @dataclass
 class ChannelsLastIfNeeded(ChannelsLast):
     """ Only puts the channels last if the input has channels first. """
+
     @classmethod
     def apply(cls, x: Tensor) -> Tensor:
         return channels_last_if_needed(x)

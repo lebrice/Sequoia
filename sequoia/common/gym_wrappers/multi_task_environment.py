@@ -101,7 +101,9 @@ def _add_task_labels_to_namedtuple(
     observation: NamedTupleSpace, task_labels: gym.Space
 ) -> NamedTupleSpace:
     assert "task_labels" not in observation._spaces, "space already has task labels!"
-    return type(observation)(**observation._spaces, task_labels=task_labels)
+    return type(observation)(
+        **observation._spaces, task_labels=task_labels, dtype=observation.dtype
+    )
 
 
 @add_task_labels.register(spaces.Tuple)
@@ -469,7 +471,12 @@ class MultiTaskEnvironment(gym.Wrapper):
         """
         if self.new_random_task_on_reset:
             return self.np_random.choice(list(self.task_schedule.values()))
-        return make_env_attributes_task(self, task_params=self.default_task, rng=self.np_random, noise_std=self.noise_std)
+        return make_env_attributes_task(
+            self,
+            task_params=self.default_task,
+            rng=self.np_random,
+            noise_std=self.noise_std,
+        )
 
     def update_task(self, values: Dict = None, **kwargs):
         """Updates the current task with the params from values or kwargs.

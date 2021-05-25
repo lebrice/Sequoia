@@ -67,10 +67,8 @@ package settings {
 
             }
         }
-        ' TODO: Need to rename `TaskIncrementalSLSetting` below to something like
-        ' `TaskIncrementalSL`
         ' package task_incremental as settings.assumptions.task_incremental {
-        '     abstract class TaskIncrementalSLSetting extends IncrementalAssumption {
+        '     abstract class TaskIncrementalAssumption extends IncrementalAssumption {
         '     }
         ' }
 

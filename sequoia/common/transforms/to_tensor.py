@@ -140,9 +140,17 @@ def _(image: spaces.Box) -> spaces.Box:
     return image
 
 
+@image_to_tensor.register(NamedTupleSpace)
+def _(space: Dict, device: torch.device = None) -> Dict:
+    from .resize import is_image
+    return type(space)(**{
+        key: image_to_tensor(value) if is_image(value) else value 
+        for key, value in space.items()
+    }, dtype=space.dtype)
+
+
 @image_to_tensor.register(Mapping)
 @image_to_tensor.register(spaces.Dict)
-@image_to_tensor.register(NamedTupleSpace)
 def _space_with_images_to_tensor(space: Dict, device: torch.device = None) -> Dict:
     from .resize import is_image
     return type(space)(**{
