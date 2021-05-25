@@ -36,6 +36,7 @@ def test_is_applicable_to_all_settings():
     assert set(settings) == set(all_settings)
 
 
+
 @pytest.mark.xfail(reason="TODO: This test isn't very reliable.")
 @pytest.mark.timeout(60)
 @parametrize("setting_type", RandomBaselineMethod.get_applicable_settings())

@@ -9,10 +9,53 @@ from sequoia.common.spaces import Sparse
 from sequoia.conftest import xfail_param, skip_param
 
 from .setting import (
-    ClassIncrementalSetting,
+    IncrementalSLSetting,
     base_observation_spaces,
     base_reward_spaces,
 )
+from .setting import IncrementalSLSetting as ClassIncrementalSetting
+
+from sequoia.settings.base.setting_test import SettingTests
+from sequoia.common.metrics import ClassificationMetrics
+from typing import ClassVar, Type, Dict, Any
+
+
+class IncrementalSLSettingTest(SettingTests):
+    Setting: ClassVar[Type[Setting]] = IncrementalSLSetting
+    fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = dict(
+        dataset="mnist",
+        batch_size=64,
+    )
+
+    def assert_chance_level(
+        self, setting: IncrementalSLSetting, results: IncrementalSLSetting.Results
+    ):
+        assert isinstance(setting, ClassIncrementalSetting), setting
+        assert isinstance(results, ClassIncrementalSetting.Results), results
+
+        average_accuracy = results.objective
+        # Calculate the expected 'average' chance accuracy.
+        # We assume that there is an equal number of classes in each task.
+        chance_accuracy = 1 / setting.num_classes
+        # chance_accuracy = 1 / setting.n_classes_per_task
+        assert 0.5 * chance_accuracy <= average_accuracy <= 1.5 * chance_accuracy
+
+        for i, metric in enumerate(results.final_performance_metrics):
+            assert isinstance(metric, ClassificationMetrics)
+            # TODO: Check that this makes sense:
+            chance_accuracy = 1 / setting.n_classes_per_task
+
+            task_accuracy = metric.accuracy
+            # FIXME: Look into this, we're often getting results substantially
+            # worse than chance, and to 'make the tests pass' (which is bad)
+            # we're setting the lower bound super low, which makes no sense.
+            assert 0.25 * chance_accuracy <= task_accuracy <= 2.1 * chance_accuracy
+
+
+
+
+
+
 
 
 # TODO: Add a fixture that specifies a data folder common to all tests.

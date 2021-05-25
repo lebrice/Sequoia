@@ -88,3 +88,61 @@ def test_that_transforms_can_be_set_through_command_line():
         Transforms.channels_first
     ]
     assert isinstance(setting.train_transforms, Compose)
+
+
+from typing import ClassVar, Type, Dict, Any
+from sequoia.common.config import Config
+from sequoia.methods.random_baseline import RandomBaselineMethod
+from sequoia.settings.base.results import Results
+
+
+class SettingTests:
+    """ Tests for a Setting. """
+    Setting: ClassVar[Type[Setting]]
+
+    # TODO: How to parametrize this dynamically based on the value of `Setting`?
+    
+    # The kwargs to be passed to the Setting when we want to create a 'short' setting.
+    fast_dev_run_kwargs: ClassVar[Dict[str, Any]]
+
+    def assert_chance_level(self, setting: Setting, results: Setting.Results):
+        """Called during testing. Use this to assert that the results you get
+        from applying your method on the given setting match your expectations.
+
+        Args:
+            setting
+            results (Results): A given Results object.
+        """
+        assert results is not None
+        assert results.objective > 0
+        print(
+            f"Objective when applied to a setting of type {type(setting)}: {results.objective}"
+        )
+
+    @pytest.mark.timeout(60)
+    def test_random_baseline(self, config: Config):
+        """
+        Test that applies a random baseline to the Setting, and checks that the results
+        are around chance level.
+        """
+        # Create the Setting
+        setting_type = self.Setting
+        # if issubclass(setting_type, ContinualRLSetting):
+        #     kwargs.update(max_steps=100, test_steps_per_task=100)
+        # if issubclass(setting_type, IncrementalRLSetting):
+        #     kwargs.update(nb_tasks=2)
+        # if issubclass(setting_type, ClassIncrementalSetting):
+        #     kwargs = dict(nb_tasks=5)
+        # if issubclass(setting_type, (TraditionalSLSetting, RLSetting)):
+        #     kwargs.pop("nb_tasks", None)
+        # if isinstance(setting, SLSetting):
+        #     method.batch_size = 64
+        # elif isinstance(setting, RLSetting):
+        #     method.batch_size = None
+        #     setting.max_steps = 100
+
+        setting: Setting = setting_type(**self.fast_dev_run_kwargs)
+        method = RandomBaselineMethod()
+
+        results = setting.apply(method, config=config)
+        self.assert_chance_level(setting, results=results)

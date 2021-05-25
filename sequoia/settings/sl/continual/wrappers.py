@@ -20,7 +20,7 @@ def relabel(data: Any, mapping: Dict[int, int] = None) -> Any:
 def relabel_ndarray(y: np.ndarray, mapping: Dict[int, int]=None) -> np.ndarray:
     new_y = y.copy()
     mapping = mapping or {
-        c: i for i, c in enumerate(torch.unique(y))
+        c: i for i, c in enumerate(np.unique(y))
     }
     for old_label, new_label in mapping.items():
         new_y[y == old_label] = new_label
@@ -44,14 +44,17 @@ def relabel_taskset(task_set: TaskSet, mapping: Dict[int, int]=None) -> TaskSet:
     mapping = mapping or {
         c: i for i, c in enumerate(task_set.get_classes())
     }
+    old_y = task_set._y
+    new_y = relabel(old_y)
     assert not task_set.target_trsf
-    # TODO: Should use the `target_trsf` of `TaskSet` instead!
+    # TODO: Two options here: Either create a new 'y' array, OR add a target_trsf that
+    # does the remapping. Not sure if there's a benefit in doing one vs the other atm.
     return type(task_set)(
         x=task_set._x,
-        y=task_set._y,
+        y=old_y,
         t=task_set._t,
         trsf=task_set.trsf,
-        target_trsf=partial(relabel, mapping=mapping),
+        target_trsf=partial(mapping.get),
         data_type=task_set.data_type,
     )
 

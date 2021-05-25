@@ -13,6 +13,7 @@ from sequoia.common.metrics import Metrics
 from .iid_results import MetricType, TaskResults
 from sequoia.settings.base.results import Results
 
+
 class TaskSequenceResults(List[TaskResults[MetricType]], Results):
     """ Results for a sequence of Tasks. """
 

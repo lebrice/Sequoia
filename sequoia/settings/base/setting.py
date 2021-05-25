@@ -158,6 +158,11 @@ class Setting(
     # its arguments will enable wandb.
     wandb: Optional[WandbConfig] = field(default=None, compare=False)
     
+    # Group of configuration options like log_dir, data dir, etc.
+    # TODO: It's a bit confusing to also have a `config` attribute on the
+    # Setting. Might want to change this a bit.
+    config: Optional[Config] = field(default=None, cmd=False)
+
     def __post_init__(
         self,
         observation_space: gym.Space = None,
@@ -238,10 +243,6 @@ class Setting(
         self._observation_space = observation_space
         self._action_space = action_space
         self._reward_space = reward_space
-
-        # TODO: It's a bit confusing to also have a `config` attribute on the
-        # Setting. Might want to change this a bit.
-        self.config: Config = None
 
         self.train_env: Environment = None  # type: ignore
         self.val_env: Environment = None  # type: ignore

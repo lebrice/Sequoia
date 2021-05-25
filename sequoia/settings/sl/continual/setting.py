@@ -1,3 +1,4 @@
+import itertools
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Type, TypeVar, Union
@@ -66,10 +67,13 @@ EnvironmentType = TypeVar("EnvironmentType", bound=ContinualSLEnvironment)
 
 
 def smooth_task_boundaries_concat(
-    datasets: List[Dataset], seed: int = None, window_length: float = 0.05
+    datasets: List[Dataset], seed: int = None, window_length: float = 0.03
 ) -> ConcatDataset:
+    """ TODO: Use a smarter way of mixing from one to the other? """
     lengths = [len(dataset) for dataset in datasets]
     total_length = sum(lengths)
+    n_tasks = len(datasets)
+
     if not isinstance(window_length, int):
         window_length = int(total_length * window_length)
     assert (
@@ -78,10 +82,75 @@ def smooth_task_boundaries_concat(
 
     rng = np.random.default_rng(seed)
 
-    shuffled_indices = np.arange(total_length)
-    for start_index in range(0, total_length - window_length + 1, window_length // 2):
-        rng.shuffle(shuffled_indices[start_index : start_index + window_length])
+    def option1():
+        shuffled_indices = np.arange(total_length)
+        for start_index in range(0, total_length - window_length + 1, window_length // 2):
+            rng.shuffle(shuffled_indices[start_index : start_index + window_length])
+        return shuffled_indices
+    # Maybe do the same but backwards?
+    
+    
 
+    # IDEA #2: Sample based on how close to the 'center' of the task we are.
+    def option2():
+        boundaries = np.array(list(itertools.accumulate(lengths, initial=0)))
+        middles = [(start + end) / 2 for start, end in zip(boundaries[0:], boundaries[1:])]
+        samples_left: Dict[int, int] = {i: length for i, length in enumerate(lengths)}
+        indices_left: Dict[int, List[int]] = {
+            i: list(range(boundaries[i], boundaries[i] + length))
+            for i, length in enumerate(lengths)
+        }
+
+        out_indices: List[int] = []
+        last_dataset_index = n_tasks - 1
+        for step in range(total_length):
+            if step < middles[0] and samples_left[0]:
+                # Prevent sampling things from task 1 at the beginning of task 0, and
+                eligible_dataset_ids = [0]
+            elif step > middles[-1] and samples_left[last_dataset_index]:
+                # Prevent sampling things from task N-1 at the emd of task N
+                eligible_dataset_ids = [last_dataset_index]
+            else:
+                # 'smooth', but at the boundaries there are actually two or three datasets,
+                # from future tasks even!
+                eligible_dataset_ids = list(k for k, v in samples_left.items() if v > 0)
+                # if len(eligible_dataset_ids) > 2:
+                #     # Prevent sampling from future tasks (past the next task) when at a
+                #     # boundary. 
+                #     left_dataset_index = min(eligible_dataset_ids)
+                #     right_dataset_index = min(
+                #         v for v in eligible_dataset_ids if v > left_dataset_index
+                #     )
+                #     eligible_dataset_ids = [left_dataset_index, right_dataset_index]
+
+            options = np.array(eligible_dataset_ids, dtype=int)
+
+            # Calculate the 'distance' to the center of the task's dataset.
+            distances = np.abs([step - middles[dataset_index] for dataset_index in options])
+
+            # NOTE: THis exponent is kindof arbitrary, setting it to this value because it
+            # sortof works for MNIST so far.
+            probs = 1 / (1 + np.abs(distances) ** 2)
+            probs /= sum(probs)
+
+            chosen_dataset = rng.choice(options, p=probs)
+            chosen_index = indices_left[chosen_dataset].pop()
+            samples_left[chosen_dataset] -= 1
+            out_indices.append(chosen_index)
+
+        shuffled_indices = np.array(out_indices)
+        return shuffled_indices
+
+    def option3():
+        shuffled_indices = np.arange(total_length)
+        for start_index in range(0, total_length - window_length + 1, window_length // 2):
+            rng.shuffle(shuffled_indices[start_index : start_index + window_length])
+        for start_index in reversed(range(0, total_length - window_length + 1, window_length // 2)):
+            rng.shuffle(shuffled_indices[start_index : start_index + window_length])
+        return shuffled_indices
+    
+    shuffled_indices = option3()
+    
     joined_dataset = ConcatDataset(datasets)
     return Subset(joined_dataset, shuffled_indices)
     return shuffled_indices
@@ -226,70 +295,41 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         self._has_setup_fit = False
         self._has_setup_test = False
 
-    def prepare_data(self, *args, **kwargs) -> None:
-        # TODO: Pass the transformations to the CL scenario, or to the dataset?
-        logger.info(f"Downloading datasets to directory {self.config.data_dir}")
-        self.train_cl_dataset = self.make_dataset(
-            self.config.data_dir, download=True, train=True
-        )
-        self.test_cl_dataset = self.make_dataset(
-            self.config.data_dir, download=True, train=False
-        )
-        return super().prepare_data(*args, **kwargs)
+    def apply(
+        self, method: Method["ContinualSLSetting"], config: Config = None
+    ) -> ContinualSLResults:
+        """Apply the given method on this setting to producing some results."""
+        # TODO: It still isn't super clear what should be in charge of creating
+        # the config, and how to create it, when it isn't passed explicitly.
+        if config is not None:
+            self.config = config
+            logger.debug(f"Using Config {self.config}")
+        elif isinstance(getattr(method, "config", None), Config):
+            # If the Method has a `config` attribute that is a Config, use that.
+            self.config = getattr(method, "config")
+            logger.debug(f"Using Config from the Method: {self.config}")
+        else:
+            logger.debug("Parsing the Config from the command-line.")
+            self.config = Config.from_args(self._argv, strict=False)
+            logger.debug(f"Resulting Config: {self.config}")
+        assert self.config is not None
 
-    def setup(self, stage: str = None):
-        if not self.has_prepared_data:
-            self.prepare_data()
-        super().setup(stage=stage)
-        if stage in (None, "fit"):
-            self.train_cl_dataset = self.make_dataset(
-                self.config.data_dir, download=False, train=True
-            )
-            self.train_cl_loader = self.train_cl_loader or ClassIncremental(
-                cl_dataset=self.train_cl_dataset,
-                nb_tasks=self.nb_tasks,
-                increment=self.increment,
-                initial_increment=self.initial_increment,
-                transformations=self.train_transforms,
-                class_order=self.class_order,
-            )
-            if not self.train_datasets and not self.val_datasets:
-                for task_id, train_taskset in enumerate(self.train_cl_loader):
-                    train_taskset, valid_taskset = split_train_val(
-                        train_taskset, val_split=0.1
-                    )
-                    self.train_datasets.append(train_taskset)
-                    self.val_datasets.append(valid_taskset)
-            # IDEA: We could do the remapping here instead of adding a wrapper later.
-            if self.shared_action_space and isinstance(
-                self.action_space, spaces.Discrete
-            ):
-                # If we have a shared output space, then they are all mapped to [0, n_per_task]
-                self.train_datasets = list(map(relabel, self.train_datasets))
-                self.val_datasets = list(map(relabel, self.val_datasets))
+        method.configure(setting=self)
 
-        if stage in (None, "test"):
-            self.test_cl_dataset = self.make_dataset(
-                self.config.data_dir, download=False, train=False
-            )
-            self.test_cl_loader = self.test_cl_loader or ClassIncremental(
-                cl_dataset=self.test_cl_dataset,
-                nb_tasks=self.nb_tasks,
-                increment=self.test_increment,
-                initial_increment=self.test_initial_increment,
-                transformations=self.test_transforms,
-                class_order=self.test_class_order,
-            )
-            # TODO: If we decide to 'shuffle' the test tasks, then store the sequence of
-            # task ids in a new property, probably here.
-            # self.test_task_order = list(range(len(self.test_datasets)))
-            self.test_datasets = self.test_datasets or list(self.test_cl_loader)
-            # IDEA: We could do the remapping here instead of adding a wrapper later.
-            if self.shared_action_space and isinstance(
-                self.action_space, spaces.Discrete
-            ):
-                # If we have a shared output space, then they are all mapped to [0, n_per_task]
-                self.test_datasets = list(map(relabel, self.test_datasets))
+        if self.wandb and self.wandb.project:
+            # Init wandb, and then log the setting's options.
+            self.wandb_run = self.setup_wandb(method)
+            method.setup_wandb(self.wandb_run)
+
+        # Run the main loop (defined in ContinualAssumption).
+        # Basically does the following:
+        # 1. Call method.fit(train_env, valid_env)
+        # 2. Test the method on test_env.
+        # Return the results, as reported by the test environment.
+        results: ContinualSLResults = super().main_loop(method)
+        logger.info(results.summary())
+        method.receive_results(self, results=results)
+        return results
 
     def train_dataloader(
         self, batch_size: int = 32, num_workers: Optional[int] = 4
@@ -436,7 +476,74 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             self.test_env.close()
         self.test_env = test_env
         return self.test_env
-    
+
+    def prepare_data(self, data_dir: Path = None) -> None:
+        # TODO: Pass the transformations to the CL scenario, or to the dataset?
+        if data_dir is None:
+            if self.config:
+                data_dir = self.config.data_dir
+            else:
+                data_dir = Path("data")
+
+        logger.info(f"Downloading datasets to directory {data_dir}")
+        self.train_cl_dataset = self.make_dataset(data_dir, download=True, train=True)
+        self.test_cl_dataset = self.make_dataset(data_dir, download=True, train=False)
+        return super().prepare_data()
+
+    def setup(self, stage: str = None):
+        if not self.has_prepared_data:
+            self.prepare_data()
+        super().setup(stage=stage)
+        if stage in (None, "fit"):
+            self.train_cl_dataset = self.make_dataset(
+                self.config.data_dir, download=False, train=True
+            )
+            self.train_cl_loader = self.train_cl_loader or ClassIncremental(
+                cl_dataset=self.train_cl_dataset,
+                nb_tasks=self.nb_tasks,
+                increment=self.increment,
+                initial_increment=self.initial_increment,
+                transformations=self.train_transforms,
+                class_order=self.class_order,
+            )
+            if not self.train_datasets and not self.val_datasets:
+                for task_id, train_taskset in enumerate(self.train_cl_loader):
+                    train_taskset, valid_taskset = split_train_val(
+                        train_taskset, val_split=0.1
+                    )
+                    self.train_datasets.append(train_taskset)
+                    self.val_datasets.append(valid_taskset)
+            # IDEA: We could do the remapping here instead of adding a wrapper later.
+            if self.shared_action_space and isinstance(
+                self.action_space, spaces.Discrete
+            ):
+                # If we have a shared output space, then they are all mapped to [0, n_per_task]
+                self.train_datasets = list(map(relabel, self.train_datasets))
+                self.val_datasets = list(map(relabel, self.val_datasets))
+
+        if stage in (None, "test"):
+            self.test_cl_dataset = self.make_dataset(
+                self.config.data_dir, download=False, train=False
+            )
+            self.test_cl_loader = self.test_cl_loader or ClassIncremental(
+                cl_dataset=self.test_cl_dataset,
+                nb_tasks=self.nb_tasks,
+                increment=self.test_increment,
+                initial_increment=self.test_initial_increment,
+                transformations=self.test_transforms,
+                class_order=self.test_class_order,
+            )
+            # TODO: If we decide to 'shuffle' the test tasks, then store the sequence of
+            # task ids in a new property, probably here.
+            # self.test_task_order = list(range(len(self.test_datasets)))
+            self.test_datasets = self.test_datasets or list(self.test_cl_loader)
+            # IDEA: We could do the remapping here instead of adding a wrapper later.
+            if self.shared_action_space and isinstance(
+                self.action_space, spaces.Discrete
+            ):
+                # If we have a shared output space, then they are all mapped to [0, n_per_task]
+                self.test_datasets = list(map(relabel, self.test_datasets))
+
     def _make_train_dataset(self) -> Dataset:
         # NOTE: Passing the same seed to `train`/`valid`/`test` is fine, because it's
         # only used for the shuffling used to make the task boundaries smooth.
@@ -447,42 +554,6 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
     def _make_test_dataset(self) -> Dataset:
         return smooth_task_boundaries_concat(self.test_datasets, seed=self.config.seed)
-
-    def apply(
-        self, method: Method["ContinualSLSetting"], config: Config = None
-    ) -> ContinualSLResults:
-        """Apply the given method on this setting to producing some results."""
-        # TODO: It still isn't super clear what should be in charge of creating
-        # the config, and how to create it, when it isn't passed explicitly.
-        if config is not None:
-            self.config = config
-            logger.debug(f"Using Config {self.config}")
-        elif isinstance(getattr(method, "config", None), Config):
-            # If the Method has a `config` attribute that is a Config, use that.
-            self.config = getattr(method, "config")
-            logger.debug(f"Using Config from the Method: {self.config}")
-        else:
-            logger.debug("Parsing the Config from the command-line.")
-            self.config = Config.from_args(self._argv, strict=False)
-            logger.debug(f"Resulting Config: {self.config}")
-        assert self.config is not None
-
-        method.configure(setting=self)
-
-        if self.wandb and self.wandb.project:
-            # Init wandb, and then log the setting's options.
-            self.wandb_run = self.setup_wandb(method)
-            method.setup_wandb(self.wandb_run)
-
-        # Run the main loop (defined in ContinualAssumption).
-        # Basically does the following:
-        # 1. Call method.fit(train_env, valid_env)
-        # 2. Test the method on test_env.
-        # Return the results, as reported by the test environment.
-        results: ContinualSLResults = super().main_loop(method)
-        logger.info(results.summary())
-        method.receive_results(self, results=results)
-        return results
 
     def make_dataset(
         self, data_dir: Path, download: bool = True, train: bool = True, **kwargs
@@ -596,7 +667,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         ```
         """
         reference_transforms = self.transforms
-        
+
         if len(stage_transforms) < len(reference_transforms):
             # Assume no overlap, return all the 'stage' transforms.
             return Compose(stage_transforms)
