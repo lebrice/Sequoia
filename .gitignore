@@ -28,3 +28,5 @@ build
 dist
 *.egg-info
 sequoia/results
+
+mjkey.txt
