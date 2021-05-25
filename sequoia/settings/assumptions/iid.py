@@ -1,7 +1,7 @@
 """ IDEA: create the simple train loop for an IID setting (RL or CL).
 """
 
-from .task_incremental import TaskIncrementalSLSetting
+from .task_incremental import TaskIncrementalAssumption
 from sequoia.utils import constant
 from dataclasses import dataclass
 
@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class TraditionalSLSetting(TaskIncrementalSLSetting):
+class TraditionalSLSetting(TaskIncrementalAssumption):
     """ Assumption (mixin) for Settings where the data is stationary (only one
     task).
     """

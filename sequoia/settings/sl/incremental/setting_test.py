@@ -1,30 +1,29 @@
-from sequoia.common.config import Config
-from sequoia.settings.assumptions.incremental_test import OtherDummyMethod
 import math
+from typing import Any, ClassVar, Dict, Type
 
 import pytest
 from continuum import ClassIncremental
+from gym import spaces
 from gym.spaces import Discrete, Space
+from sequoia.common.config import Config
+from sequoia.common.metrics import ClassificationMetrics
 from sequoia.common.spaces import Sparse
-from sequoia.conftest import xfail_param, skip_param
-
-from .setting import (
-    IncrementalSLSetting,
-)
-from .setting import IncrementalSLSetting as ClassIncrementalSetting
-
+from sequoia.conftest import skip_param, xfail_param
+from sequoia.settings.assumptions.incremental_test import OtherDummyMethod
 from sequoia.settings.base import Setting
 from sequoia.settings.base.setting_test import SettingTests
-from sequoia.common.metrics import ClassificationMetrics
-from typing import ClassVar, Type, Dict, Any
-from gym import spaces
+
+from ..discrete.setting_test import (
+    TestDiscreteTaskAgnosticSLSetting as DiscreteTaskAgnosticSLSettingTests,
+)
+from .setting import IncrementalSLSetting
+from .setting import IncrementalSLSetting as ClassIncrementalSetting
 
 
-class TestIncrementalSLSetting(SettingTests):
+class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
     Setting: ClassVar[Type[Setting]] = IncrementalSLSetting
     fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = dict(
-        dataset="mnist",
-        batch_size=64,
+        dataset="mnist", batch_size=64,
     )
 
     def assert_chance_level(
@@ -44,7 +43,7 @@ class TestIncrementalSLSetting(SettingTests):
         # We assume that there is an equal number of classes in each task.
         # chance_accuracy = 1 / setting.n_classes_per_task
         chance_accuracy = 1 / num_classes
-        
+
         assert 0.5 * chance_accuracy <= average_accuracy <= 1.5 * chance_accuracy
 
         for i, metric in enumerate(results.final_performance_metrics):
@@ -71,7 +70,9 @@ class TestIncrementalSLSetting(SettingTests):
             "cifar100",
             "fashionmnist",
             "kmnist",
-            xfail_param("emnist", reason="Bug in emnist, requires split positional arg?"),
+            xfail_param(
+                "emnist", reason="Bug in emnist, requires split positional arg?"
+            ),
             xfail_param("qmnist", reason="Bug in qmnist, 229421 not in list"),
             "mnistfellowship",
             "cifar10",
@@ -115,7 +116,6 @@ def test_task_label_space(dataset_name: str):
     assert setting.observation_space.task_labels == Discrete(nb_tasks)
     assert setting.action_space == Discrete(setting.action_space.n)
 
-
     @pytest.mark.parametrize("dataset_name", ["mnist"])
     def test_setting_obs_space_changes_when_transforms_change(self, dataset_name: str):
         """ TODO: Test that the `observation_space` property on the
@@ -135,7 +135,9 @@ def test_task_label_space(dataset_name: str):
             batch_size=None,
             num_workers=0,
         )
-        assert setting.observation_space.x == Setting.base_observation_spaces[dataset_name]
+        assert (
+            setting.observation_space.x == Setting.base_observation_spaces[dataset_name]
+        )
         # TODO: Should the 'transforms' apply to ALL the environments, and the
         # train/valid/test transforms apply only to those envs?
         from sequoia.common.transforms import Transforms
