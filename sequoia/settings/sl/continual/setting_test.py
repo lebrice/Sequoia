@@ -43,12 +43,14 @@ class TestContinualSLSetting(SettingTests):
 
         for _ in train_env:
             pass
-        assert train_env.is_closed()
-        with pytest.raises(gym.error.ClosedEnvironmentError):
-            for _ in train_env:
-                pass
+        if not setting.known_task_boundaries_at_train_time:
+            assert train_env.is_closed()
+            with pytest.raises(gym.error.ClosedEnvironmentError):
+                for _ in train_env:
+                    pass
 
-    # @pytest.mark.timeout(20)
+    @pytest.mark.no_xvfb
+    @pytest.mark.timeout(20)
     @pytest.mark.skipif(not Path("temp").exists(), reason="Need temp dir for saving the figure this test creates.")
     def test_show_distributions(self, config: Config):
         setting = self.Setting(dataset="mnist", config=config)

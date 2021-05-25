@@ -19,7 +19,7 @@ class TestDiscreteTaskAgnosticSLSetting(IncrementalSLSettingTests):
     fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = dict(
         dataset="mnist", batch_size=64,
     )
-    
+
     # Override how we measure 'chance' accuracy for DomainIncrementalSetting.
     def assert_chance_level(
         self, setting: DomainIncrementalSLSetting, results: DomainIncrementalSLSetting.Results

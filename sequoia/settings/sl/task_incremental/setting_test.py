@@ -87,6 +87,7 @@ def test_class_incremental_mnist_setup_with_nb_tasks():
         nb_tasks=2,
         num_workers=0,
     )
+    assert setting.increment == 5
     setting.prepare_data(data_dir="data")
     setting.setup()
     assert len(setting.train_datasets) == 2

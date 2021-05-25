@@ -53,6 +53,7 @@ from .environment import GymDataLoader
 from .make_env import make_batched_env
 from .results import RLResults
 from sequoia.settings.rl.wrappers import HideTaskLabelsWrapper, TypedObjectsWrapper
+from sequoia.settings.rl.wrappers import MeasureRLPerformanceWrapper
 
 logger = get_logger(__file__)
 
@@ -762,10 +763,6 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
         )
 
         if self.monitor_training_performance:
-            from sequoia.settings.sl.class_incremental.measure_performance_wrapper import (
-                MeasureRLPerformanceWrapper,
-            )
-
             env_dataloader = MeasureRLPerformanceWrapper(
                 env_dataloader, wandb_prefix=f"Train/Task {self.current_task_id}"
             )

@@ -179,10 +179,8 @@ from .wrappers import replace_taskset_attributes
 
 def subset(taskset: TaskSet, indices: np.ndarray) -> TaskSet:
     x, y, t = taskset.get_raw_samples(indices)
-    return replace_taskset_attributes(taskset,
-        x=x[indices],
-        y=y[indices],
-        t=t[indices],
+    return replace_taskset_attributes(
+        taskset, x=x[indices], y=y[indices], t=t[indices],
     )
 
 
@@ -302,7 +300,10 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
         if isinstance(self.action_space, spaces.Discrete):
             base_action_space = self.base_action_spaces[self.dataset]
-            self.class_order = self.class_order or list(range(base_action_space.n))
+            n_classes = base_action_space.n
+            self.class_order = self.class_order or list(range(n_classes))
+            if self.nb_tasks:
+                self.increment = n_classes // self.nb_tasks
 
         if not self.nb_tasks:
             base_action_space = self.base_action_spaces[self.dataset]
@@ -398,7 +399,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             reward_space=self.reward_space,
             Observations=self.Observations,
             Actions=self.Actions,
-            Rewards=self.Rewards, 
+            Rewards=self.Rewards,
             pin_memory=True,
             batch_size=batch_size,
             num_workers=num_workers,
@@ -453,13 +454,13 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             reward_space=self.reward_space,
             Observations=self.Observations,
             Actions=self.Actions,
-            Rewards=self.Rewards, 
+            Rewards=self.Rewards,
             pin_memory=True,
             batch_size=batch_size,
             num_workers=num_workers,
             one_epoch_only=(not self.known_task_boundaries_at_train_time),
         )
-        
+
         # TODO: If wandb is enabled, then add customized Monitor wrapper (with
         # IterableWrapper as an additional subclass). There would then be a lot of
         # overlap between such a Monitor and the current TestEnvironment.
@@ -510,7 +511,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             reward_space=self.reward_space,
             Observations=self.Observations,
             Actions=self.Actions,
-            Rewards=self.Rewards, 
+            Rewards=self.Rewards,
             pretend_to_be_active=True,
             shuffle=False,
             one_epoch_only=True,
@@ -689,7 +690,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         for transform in self.transforms:
             x_space = transform(x_space)
         x_space = add_tensor_support(x_space)
-        
+
         task_label_space = spaces.Discrete(self.nb_tasks)
         if not self.task_labels_at_train_time:
             task_label_space = Sparse(task_label_space, 1.0)
@@ -736,7 +737,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     def additional_transforms(self, stage_transforms: List[Transforms]) -> Compose:
         """ Returns the transforms in `stage_transforms` that are additional transforms
         from those in `self.transforms`.
-        
+
         For example, if:
         ```
         setting.transforms = Compose([Transforms.Resize(32), Transforms.ToTensor])
