@@ -178,10 +178,26 @@ from .wrappers import replace_taskset_attributes
 
 
 def subset(taskset: TaskSet, indices: np.ndarray) -> TaskSet:
+    # x, y, t = taskset.get_raw_samples(indices)
     x, y, t = taskset.get_raw_samples(indices)
+    # TODO: Not sure if/how to handle the `bounding_boxes` attribute here.
+    bounding_boxes = taskset.bounding_boxes
+    if bounding_boxes is not None:
+        bounding_boxes = bounding_boxes[indices]
     return replace_taskset_attributes(
-        taskset, x=x[indices], y=y[indices], t=t[indices],
+        taskset, x=x, y=y, t=t, bounding_boxes=bounding_boxes
     )
+
+
+def random_subset(taskset: TaskSet, n_samples: int, seed: int = None) -> TaskSet:
+    rng = np.random.default_rng(seed)
+    dataset_length = len(taskset)
+    assert dataset_length >= n_samples, (
+        f"Dataset has {dataset_length}, asked for {n_samples} samples."
+    )
+    samples = rng.choice(len(taskset), size=n_samples, replace=False)
+    assert len(samples) == n_samples
+    return subset(taskset, samples)
 
 
 @dataclass
@@ -309,6 +325,8 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             base_action_space = self.base_action_spaces[self.dataset]
             if isinstance(base_action_space, spaces.Discrete):
                 self.nb_tasks = base_action_space.n // self.increment
+
+        assert self.nb_tasks != 0, self.nb_tasks
 
         # The 'scenarios' for train and test from continuum. (ClassIncremental for now).
         self.train_cl_loader: Optional[_BaseScenario] = None
@@ -563,8 +581,12 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         if not self.has_prepared_data:
             self.prepare_data()
         super().setup(stage=stage)
+        
+        if stage not in (None, "fit", "test"):
+            raise RuntimeError(f"`stage` should be 'fit', 'test' or None.")
+
         if stage in (None, "fit"):
-            self.train_cl_dataset = self.make_dataset(
+            self.train_cl_dataset = self.train_cl_dataset or self.make_dataset(
                 self.config.data_dir, download=False, train=True
             )
             self.train_cl_loader = self.train_cl_loader or ClassIncremental(
@@ -582,16 +604,16 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                     )
                     self.train_datasets.append(train_taskset)
                     self.val_datasets.append(valid_taskset)
-            # IDEA: We could do the remapping here instead of adding a wrapper later.
-            if self.shared_action_space and isinstance(
-                self.action_space, spaces.Discrete
-            ):
-                # If we have a shared output space, then they are all mapped to [0, n_per_task]
-                self.train_datasets = list(map(relabel, self.train_datasets))
-                self.val_datasets = list(map(relabel, self.val_datasets))
+                # IDEA: We could do the remapping here instead of adding a wrapper later.
+                if self.shared_action_space and isinstance(
+                    self.action_space, spaces.Discrete
+                ):
+                    # If we have a shared output space, then they are all mapped to [0, n_per_task]
+                    self.train_datasets = list(map(relabel, self.train_datasets))
+                    self.val_datasets = list(map(relabel, self.val_datasets))
 
         if stage in (None, "test"):
-            self.test_cl_dataset = self.make_dataset(
+            self.test_cl_dataset = self.test_cl_dataset or self.make_dataset(
                 self.config.data_dir, download=False, train=False
             )
             self.test_cl_loader = self.test_cl_loader or ClassIncremental(
@@ -602,16 +624,17 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 transformations=self.test_transforms,
                 class_order=self.test_class_order,
             )
-            # TODO: If we decide to 'shuffle' the test tasks, then store the sequence of
-            # task ids in a new property, probably here.
-            # self.test_task_order = list(range(len(self.test_datasets)))
-            self.test_datasets = self.test_datasets or list(self.test_cl_loader)
-            # IDEA: We could do the remapping here instead of adding a wrapper later.
-            if self.shared_action_space and isinstance(
-                self.action_space, spaces.Discrete
-            ):
-                # If we have a shared output space, then they are all mapped to [0, n_per_task]
-                self.test_datasets = list(map(relabel, self.test_datasets))
+            if not self.test_datasets:
+                # TODO: If we decide to 'shuffle' the test tasks, then store the sequence of
+                # task ids in a new property, probably here.
+                # self.test_task_order = list(range(len(self.test_datasets)))
+                self.test_datasets = list(self.test_cl_loader)
+                # IDEA: We could do the remapping here instead of adding a wrapper later.
+                if self.shared_action_space and isinstance(
+                    self.action_space, spaces.Discrete
+                ):
+                    # If we have a shared output space, then they are all mapped to [0, n_per_task]
+                    self.test_datasets = list(map(relabel, self.test_datasets))
 
     def _make_train_dataset(self) -> Dataset:
         # NOTE: Passing the same seed to `train`/`valid`/`test` is fine, because it's

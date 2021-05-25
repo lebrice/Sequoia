@@ -28,7 +28,7 @@ def test_task_incremental_mnist(monkeypatch):
 
     _training_step = EwcModel.training_step
 
-    def fake_training_step(self: EwcModel, batch, batch_idx: int, *args, **kwargs):
+    def wrapped_training_step(self: EwcModel, batch, batch_idx: int, *args, **kwargs):
         step_results = _training_step(self, batch, batch_idx, *args, **kwargs)
         loss_object: Loss = step_results["loss_object"]
         if "ewc" in loss_object.losses:
@@ -39,19 +39,19 @@ def test_task_incremental_mnist(monkeypatch):
             total_ewc_losses_per_task[self.current_task] += ewc_loss
         return step_results
 
-    monkeypatch.setattr(EwcModel, "training_step", fake_training_step)
+    monkeypatch.setattr(EwcModel, "training_step", wrapped_training_step)
 
     _fit = EwcMethod.fit
 
     at_all_points_in_time = []
 
-    def fake_fit(self, train_env, valid_env):
+    def wrapped_fit(self, train_env, valid_env):
         print(f"starting task {self.model.current_task}: {total_ewc_losses_per_task}")
         total_ewc_losses_per_task[:] = 0
         _fit(self, train_env, valid_env)
         at_all_points_in_time.append(total_ewc_losses_per_task.copy())
 
-    monkeypatch.setattr(EwcMethod, "fit", fake_fit)
+    monkeypatch.setattr(EwcMethod, "fit", wrapped_fit)
 
     # _on_epoch_end = EwcModel.on_epoch_end
 

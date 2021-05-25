@@ -22,17 +22,8 @@ from sequoia.settings.sl.task_incremental import TaskIncrementalSLSetting
 
 logger = get_logger(__file__)
 from continuum.tasks import TaskSet, concat
-from sequoia.settings.sl.continual.setting import subset
+from sequoia.settings.sl.continual.setting import subset, random_subset
 from sequoia.settings.sl.continual.wrappers import replace_taskset_attributes
-
-
-def subset(taskset: TaskSet, indices: np.ndarray) -> TaskSet:
-    x, y, t = taskset.get_raw_samples(indices)
-    return replace_taskset_attributes(taskset,
-        x=x[indices],
-        y=y[indices],
-        t=t[indices],
-    )
 
 
 def shuffle(dataset: TaskSet, seed: int = None) -> TaskSet:

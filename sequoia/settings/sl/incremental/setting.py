@@ -74,6 +74,8 @@ from sequoia.settings.sl.setting import SLSetting
 from sequoia.settings.sl.continual import ContinualSLSetting
 from sequoia.settings.sl.wrappers import MeasureSLPerformanceWrapper
 from sequoia.settings.rl.wrappers import HideTaskLabelsWrapper
+from continuum.tasks import concat
+
 
 from ..discrete.setting import DiscreteTaskAgnosticSLSetting
 from .results import IncrementalSLResults
@@ -261,7 +263,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         return self.val_datasets[self.current_task_id]
 
     def _make_test_dataset(self) -> Dataset:
-        return ConcatDataset(self.test_datasets)
+        return concat(self.test_datasets)
 
     def train_dataloader(
         self, batch_size: int = None, num_workers: int = None

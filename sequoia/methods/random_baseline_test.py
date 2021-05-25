@@ -36,14 +36,18 @@ def test_is_applicable_to_all_settings():
     assert set(settings) == set(all_settings)
 
 
-
+@pytest.mark.skip(
+    reason="Replacing this with tests on the Settings that use this random baseline."
+)
 @pytest.mark.xfail(reason="TODO: This test isn't very reliable.")
 @pytest.mark.timeout(60)
 @parametrize("setting_type", RandomBaselineMethod.get_applicable_settings())
 def test_fast_dev_run(setting_type: Type[Setting], test_dataset: str, config: Config):
     dataset = test_dataset
     if dataset not in getattr(setting_type, "available_datasets", []):
-        pytest.skip(msg=f"Skipping dataset {dataset} since it isn't available for this setting.")
+        pytest.skip(
+            msg=f"Skipping dataset {dataset} since it isn't available for this setting."
+        )
 
     # Create the Setting
     kwargs = dict(dataset=dataset)

@@ -629,7 +629,7 @@ class Setting(
                 f"anyway: {consumed_args}"
             )
 
-        drop_extras = False
+        drop_extras = True
         # Actually load the setting from the file.
         setting = cls.load(path=benchmark, drop_extra_fields=drop_extras)
         return setting

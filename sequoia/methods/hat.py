@@ -32,9 +32,9 @@ from sequoia.settings.sl import TaskIncrementalSLSetting
 from sequoia.settings.sl.incremental.objects import (
     Actions,
     Observations,
-    PassiveEnvironment,
     Rewards,
 )
+from sequoia.settings.sl.environment import PassiveEnvironment
 
 
 class Masks(NamedTuple):

@@ -10,7 +10,7 @@ from sequoia.settings.sl import (
     PassiveEnvironment,
     SLSetting,
 )
-from sequoia.settings.sl.class_incremental.objects import Observations, Rewards
+from sequoia.settings.sl.incremental.objects import Observations, Rewards
 from torch import Tensor
 from torch.utils.data import TensorDataset
 

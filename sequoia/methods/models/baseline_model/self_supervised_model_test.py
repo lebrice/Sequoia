@@ -22,7 +22,7 @@ from sequoia.settings.sl import (
     TaskIncrementalSLSetting,
     TraditionalSLSetting,
 )
-from sequoia.settings.sl.class_incremental import (
+from sequoia.settings.sl.incremental import (
     IncrementalSLResults,
     ClassIncrementalSetting,
 )

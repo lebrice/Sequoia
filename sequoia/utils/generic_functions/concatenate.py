@@ -72,3 +72,19 @@ def _concatenate_distributions(first_item: Categorical, *others: Categorical, **
     return Categorical(logits=torch.cat([
         first_item.logits, *(other.logits for other in others)
     ], *kwargs))
+
+
+from continuum import TaskSet
+from continuum.tasks import concat
+
+@concatenate.register
+def _concatenate_tasksets(first_item: TaskSet, *others: TaskSet) -> TaskSet:
+    return concat([first_item, *others])
+
+
+from torch.utils.data import Dataset, ConcatDataset
+
+
+@concatenate.register
+def _concatenate_datasets(first_item: Dataset, *others: Dataset) -> TaskSet:
+    return ConcatDataset([first_item, *others])

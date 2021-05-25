@@ -103,8 +103,8 @@ class IncrementalAssumption(ContinualAssumption):
     # method of the Environment.
     monitor_training_performance: bool = False
 
-    def __post_init__(self, *args, **kwargs):
-        super().__post_init__(*args, **kwargs)
+    def __post_init__(self):
+        super().__post_init__()
 
         self.train_env: Environment = None  # type: ignore
         self.val_env: Environment = None  # type: ignore

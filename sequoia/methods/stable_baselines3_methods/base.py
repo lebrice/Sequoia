@@ -33,10 +33,7 @@ from sequoia.common.spaces import Image
 from sequoia.common.transforms.utils import is_image
 from sequoia.settings import Method, Setting
 from sequoia.settings.rl.continual import ContinualRLSetting
-from sequoia.settings.rl.continual.wrappers import (
-    NoTypedObjectsWrapper,
-    RemoveTaskLabelsWrapper,
-)
+from sequoia.settings.rl.wrappers import NoTypedObjectsWrapper, RemoveTaskLabelsWrapper
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.serialization import register_decoding_fn
 
