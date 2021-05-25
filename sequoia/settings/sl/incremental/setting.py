@@ -75,10 +75,10 @@ from sequoia.settings.sl.continual import ContinualSLSetting
 from sequoia.settings.sl.wrappers import MeasureSLPerformanceWrapper
 from sequoia.settings.rl.wrappers import HideTaskLabelsWrapper
 
+from ..discrete.setting import DiscreteTaskAgnosticSLSetting
 from .results import IncrementalSLResults
 from .environment import IncrementalSLEnvironment
 from .objects import Observations, ObservationType, Actions, ActionType, Rewards, RewardType
-
 logger = get_logger(__file__)
 # # NOTE: This dict reflects the observation space of the different datasets
 # # *BEFORE* any transforms are applied. The resulting property on the Setting is
@@ -89,7 +89,7 @@ logger = get_logger(__file__)
 
 
 @dataclass
-class IncrementalSLSetting(IncrementalAssumption, ContinualSLSetting):
+class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting):
     """Supervised Setting where the data is a sequence of 'tasks'.
 
     This class is basically is the supervised version of an Incremental Setting
@@ -243,60 +243,8 @@ class IncrementalSLSetting(IncrementalAssumption, ContinualSLSetting):
         self.data_dir = data_dir
         super().prepare_data(**kwargs)
 
-    def setup(
-        self,
-        stage: Optional[str] = None,
-        overwrite_datasets: bool = False,
-        *args,
-        **kwargs,
-    ):
-        """ Creates the datasets for each task.
-        TODO: Figure out a way of setting data_dir elsewhere maybe?
-        """
-        assert self.config
-        # self.config = self.config or Config.from_args(self._argv)
-        logger.debug(f"data_dir: {self.data_dir}, setup args: {args} kwargs: {kwargs}")
-
-        if (
-            all([self.train_datasets, self.val_datasets, self.test_datasets])
-            and not overwrite_datasets
-        ):
-            logger.info(
-                "Reusing the existing datasets on the Setting instead of overwriting them."
-            )
-            return
-
-        self.train_cl_dataset = self.make_dataset(
-            self.data_dir, download=False, train=True
-        )
-        self.test_cl_dataset = self.make_dataset(
-            self.data_dir, download=False, train=False
-        )
-
-        if not self.train_cl_scenario:
-            self.train_cl_scenario = self.make_train_cl_scenario(self.train_cl_dataset)
-        if not self.test_cl_scenario:
-            self.test_cl_scenario = self.make_test_cl_scenario(self.test_cl_dataset)
-
-        logger.info(f"Number of train tasks: {self.train_cl_scenario.nb_tasks}.")
-        logger.info(f"Number of test tasks: {self.train_cl_scenario.nb_tasks}.")
-
-        self.train_datasets.clear()
-        self.val_datasets.clear()
-        self.test_datasets.clear()
-
-        for task_id, train_dataset in enumerate(self.train_cl_scenario):
-            train_dataset, val_dataset = split_train_val(
-                train_dataset, val_split=self.val_fraction
-            )
-            self.train_datasets.append(train_dataset)
-            self.val_datasets.append(val_dataset)
-
-        for task_id, test_dataset in enumerate(self.test_cl_scenario):
-            self.test_datasets.append(test_dataset)
-
-        super().setup(stage, *args, **kwargs)
-
+    def setup(self, stage: str=None):
+        super().setup(stage=stage)
         # TODO: Adding this temporarily just for the competition
         self.test_boundary_steps = [0] + list(
             itertools.accumulate(map(len, self.test_datasets))
@@ -362,7 +310,6 @@ class IncrementalSLSetting(IncrementalAssumption, ContinualSLSetting):
             pretend_to_be_active=True,
             shuffle=False,
         )
-        
 
         # NOTE: The transforms from `self.transforms` (the 'base' transforms) were
         # already added when creating the datasets and the CL scenario.
@@ -412,7 +359,7 @@ class IncrementalSLSetting(IncrementalAssumption, ContinualSLSetting):
     ) -> Callable[[Tuple[Tensor, ...]], Tuple[Observations, Rewards]]:
         """ Returns a callable that is used to split a batch into observations and rewards.
         """
-        assert False, "TODO: Remove this."
+        assert False, "TODO: Removing this."
         task_classes = {
             i: self.task_classes(i, train=training) for i in range(self.nb_tasks)
         }
@@ -574,25 +521,25 @@ class IncrementalSLSetting(IncrementalAssumption, ContinualSLSetting):
             env.close()
 
 
-def relabel(y: Tensor, task_classes: Dict[int, List[int]]) -> Tensor:
-    """ Relabel the elements of 'y' to their  index in the list of classes for
-    their task.
+# def relabel(y: Tensor, task_classes: Dict[int, List[int]]) -> Tensor:
+#     """ Relabel the elements of 'y' to their  index in the list of classes for
+#     their task.
 
-    Example:
+#     Example:
 
-    >>> import torch
-    >>> y = torch.as_tensor([2, 3, 2, 3, 2, 2])
-    >>> task_classes = {0: [0, 1], 1: [2, 3]}
-    >>> relabel(y, task_classes)
-    tensor([0, 1, 0, 1, 0, 0])
-    """
-    # TODO: Double-check that this never leaves any zeros where it shouldn't.
-    new_y = torch.zeros_like(y)
-    # assert unique_y <= set(task_classes), (unique_y, task_classes)
-    for task_id, task_true_classes in task_classes.items():
-        for i, label in enumerate(task_true_classes):
-            new_y[y == label] = i
-    return new_y
+#     >>> import torch
+#     >>> y = torch.as_tensor([2, 3, 2, 3, 2, 2])
+#     >>> task_classes = {0: [0, 1], 1: [2, 3]}
+#     >>> relabel(y, task_classes)
+#     tensor([0, 1, 0, 1, 0, 0])
+#     """
+#     # TODO: Double-check that this never leaves any zeros where it shouldn't.
+#     new_y = torch.zeros_like(y)
+#     # assert unique_y <= set(task_classes), (unique_y, task_classes)
+#     for task_id, task_true_classes in task_classes.items():
+#         for i, label in enumerate(task_true_classes):
+#             new_y[y == label] = i
+#     return new_y
 
 
 # This is just meant as a cleaner way to import the Observations/Actions/Rewards

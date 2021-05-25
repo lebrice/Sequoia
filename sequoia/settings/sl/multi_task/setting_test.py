@@ -107,6 +107,6 @@ def test_on_task_switch_is_called_multi_task():
     )
     method = DummyMethod()
     results = setting.apply(method)
-    assert method.n_task_switches == 0
-    assert method.received_task_ids == []
-    assert method.received_while_training == []
+    assert method.n_task_switches == setting.nb_tasks
+    assert method.received_task_ids == list(range(setting.nb_tasks))
+    assert method.received_while_training == [False for _ in range(setting.nb_tasks)]

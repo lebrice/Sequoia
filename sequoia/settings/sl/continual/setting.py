@@ -300,6 +300,10 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         assert isinstance(self.increment, int)
         assert isinstance(self.test_increment, int)
 
+        if isinstance(self.action_space, spaces.Discrete):
+            base_action_space = self.base_action_spaces[self.dataset]
+            self.class_order = self.class_order or list(range(base_action_space.n))
+
         if not self.nb_tasks:
             base_action_space = self.base_action_spaces[self.dataset]
             if isinstance(base_action_space, spaces.Discrete):

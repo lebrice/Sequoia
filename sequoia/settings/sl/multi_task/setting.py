@@ -21,11 +21,26 @@ from sequoia.utils.utils import constant
 from sequoia.settings.sl.task_incremental import TaskIncrementalSLSetting
 
 logger = get_logger(__file__)
+from continuum.tasks import TaskSet, concat
+from sequoia.settings.sl.continual.setting import subset
+from sequoia.settings.sl.continual.wrappers import replace_taskset_attributes
 
 
-def shuffle(dataset: Dataset, rng: np.random.Generator) -> Dataset:
+def subset(taskset: TaskSet, indices: np.ndarray) -> TaskSet:
+    x, y, t = taskset.get_raw_samples(indices)
+    return replace_taskset_attributes(taskset,
+        x=x[indices],
+        y=y[indices],
+        t=t[indices],
+    )
+
+
+def shuffle(dataset: TaskSet, seed: int = None) -> TaskSet:
     length = len(dataset)
+    rng = np.random.default_rng(seed)
     indices = rng.permutation(range(length))
+    if isinstance(dataset, TaskSet):
+        return subset(dataset, indices)
     return Subset(dataset, indices)
 
 
@@ -35,31 +50,6 @@ class MultiTaskSLSetting(TaskIncrementalSLSetting):
     
     Can be used to estimate the upper bound performance of Task-Incremental CL Methods.
     """
-
-    # Number of tasks.
-    nb_tasks: int = 0
-
-    # Either number of classes per task, or a list specifying for
-    # every task the amount of new classes.
-    increment: Union[int, List[int]] = list_field(
-        2, type=int, nargs="*", alias="n_classes_per_task"
-    )
-    # A different task size applied only for the first task.
-    # Desactivated if `increment` is a list.
-    initial_increment: int = 0
-    # An optional custom class order, used for NC.
-    class_order: Optional[List[int]] = constant(None)
-    # Either number of classes per task, or a list specifying for
-    # every task the amount of new classes (defaults to the value of
-    # `increment`).
-    test_increment: Optional[Union[List[int], int]] = constant(None)
-    # A different task size applied only for the first test task.
-    # Desactivated if `test_increment` is a list. Defaults to the
-    # value of `initial_increment`.
-    test_initial_increment: Optional[int] = constant(None)
-    # An optional custom class order for testing, used for NC.
-    # Defaults to the value of `class_order`.
-    test_class_order: Optional[List[int]] = constant(None)
 
     def __post_init__(self):
         super().__post_init__()
@@ -73,7 +63,7 @@ class MultiTaskSLSetting(TaskIncrementalSLSetting):
     def setup(self, stage=None, *args, **kwargs):
         super().setup(stage=stage, *args, **kwargs)
     
-    def get_train_dataset(self) -> Dataset:
+    def _make_train_dataset(self) -> Dataset:
         """ Returns the training dataset, which in this case will be shuffled.
 
         IDEA: We could probably do it the same way in both RL and SL:
@@ -88,14 +78,15 @@ class MultiTaskSLSetting(TaskIncrementalSLSetting):
         -------
         Dataset
         """
-        joined_dataset = ConcatDataset(self.train_datasets)
-        return shuffle(joined_dataset, rng=np.random)
+        joined_dataset = concat(self.train_datasets)
+        return shuffle(joined_dataset, seed=self.config.seed)
 
-    def get_val_dataset(self) -> Dataset:
-        return ConcatDataset(self.val_datasets)
+    def _make_val_dataset(self) -> Dataset:
+        joined_dataset = concat(self.val_datasets)
+        return shuffle(joined_dataset, seed=self.config.seed)
 
-    def get_test_dataset(self) -> Dataset:
-        return ConcatDataset(self.test_datasets)
+    def _make_test_dataset(self) -> Dataset:
+        return concat(self.test_datasets)
 
     def train_dataloader(
         self, batch_size: int = None, num_workers: int = None
@@ -178,53 +169,55 @@ class MultiTaskSLSetting(TaskIncrementalSLSetting):
     def test_loop(self, method: Method) -> "IncrementalAssumption.Results":
         """ Runs a multi-task test loop and returns the Results.
         """
-        test_env = self.test_dataloader()
-        try:
-            # If the Method has `test` defined, use it.
-            method.test(test_env)
-            test_env.close()
-            # Get the metrics from the test environment
-            test_results: Results = test_env.get_results()
-            print(f"Test results: {test_results}")
-            return test_results
+        return super().test_loop(method)
+        # # TODO: 
+        # test_env = self.test_dataloader()
+        # try:
+        #     # If the Method has `test` defined, use it.
+        #     method.test(test_env)
+        #     test_env.close()
+        #     # Get the metrics from the test environment
+        #     test_results: Results = test_env.get_results()
+        #     print(f"Test results: {test_results}")
+        #     return test_results
 
-        except NotImplementedError:
-            logger.info(
-                f"Will query the method for actions at each step, "
-                f"since it doesn't implement a `test` method."
-            )
+        # except NotImplementedError:
+        #     logger.info(
+        #         f"Will query the method for actions at each step, "
+        #         f"since it doesn't implement a `test` method."
+        #     )
 
-        obs = test_env.reset()
+        # obs = test_env.reset()
 
-        # TODO: Do we always have a maximum number of steps? or of episodes?
-        # Will it work the same for Supervised and Reinforcement learning?
-        max_steps: int = getattr(test_env, "step_limit", None)
+        # # TODO: Do we always have a maximum number of steps? or of episodes?
+        # # Will it work the same for Supervised and Reinforcement learning?
+        # max_steps: int = getattr(test_env, "step_limit", None)
 
-        # Reset on the last step is causing trouble, since the env is closed.
-        pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
-        episode = 0
-        for step in pbar:
-            if test_env.is_closed():
-                logger.debug(f"Env is closed")
-                break
-            # logger.debug(f"At step {step}")
-            action = method.get_actions(obs, test_env.action_space)
+        # # Reset on the last step is causing trouble, since the env is closed.
+        # pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
+        # episode = 0
+        # for step in pbar:
+        #     if test_env.is_closed():
+        #         logger.debug(f"Env is closed")
+        #         break
+        #     # logger.debug(f"At step {step}")
+        #     action = method.get_actions(obs, test_env.action_space)
 
-            # logger.debug(f"action: {action}")
-            # TODO: Remove this:
-            if isinstance(action, Actions):
-                action = action.y_pred
-            if isinstance(action, Tensor):
-                action = action.cpu().numpy()
+        #     # logger.debug(f"action: {action}")
+        #     # TODO: Remove this:
+        #     if isinstance(action, Actions):
+        #         action = action.y_pred
+        #     if isinstance(action, Tensor):
+        #         action = action.cpu().numpy()
 
-            obs, reward, done, info = test_env.step(action)
+        #     obs, reward, done, info = test_env.step(action)
 
-            if done and not test_env.is_closed():
-                # logger.debug(f"end of test episode {episode}")
-                obs = test_env.reset()
-                episode += 1
+        #     if done and not test_env.is_closed():
+        #         # logger.debug(f"end of test episode {episode}")
+        #         obs = test_env.reset()
+        #         episode += 1
 
-        test_env.close()
-        test_results = test_env.get_results()
+        # test_env.close()
+        # test_results = test_env.get_results()
 
-        return test_results
+        # return test_results

@@ -13,12 +13,14 @@ from .setting import (
 )
 from .setting import IncrementalSLSetting as ClassIncrementalSetting
 
+from sequoia.settings.base import Setting
 from sequoia.settings.base.setting_test import SettingTests
 from sequoia.common.metrics import ClassificationMetrics
 from typing import ClassVar, Type, Dict, Any
+from gym import spaces
 
 
-class IncrementalSLSettingTest(SettingTests):
+class TestIncrementalSLSetting(SettingTests):
     Setting: ClassVar[Type[Setting]] = IncrementalSLSetting
     fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = dict(
         dataset="mnist",
@@ -30,18 +32,27 @@ class IncrementalSLSettingTest(SettingTests):
     ):
         assert isinstance(setting, ClassIncrementalSetting), setting
         assert isinstance(results, ClassIncrementalSetting.Results), results
+        # TODO: Remove this assertion:
+        assert isinstance(setting.action_space, spaces.Discrete)
+        # TODO: This test so far needs the 'N' to be the number of classes in total,
+        # not the number of classes per task.
+        # num_classes = setting.action_space.n  # <-- Should be using this instead.
+        num_classes = setting.base_action_spaces[setting.dataset].n
 
         average_accuracy = results.objective
         # Calculate the expected 'average' chance accuracy.
         # We assume that there is an equal number of classes in each task.
-        chance_accuracy = 1 / setting.num_classes
         # chance_accuracy = 1 / setting.n_classes_per_task
+        chance_accuracy = 1 / num_classes
+        
         assert 0.5 * chance_accuracy <= average_accuracy <= 1.5 * chance_accuracy
 
         for i, metric in enumerate(results.final_performance_metrics):
             assert isinstance(metric, ClassificationMetrics)
-            # TODO: Check that this makes sense:
+            # TODO: Same as above: Should be using `n_classes_per_task` or something
+            # like it instead.
             chance_accuracy = 1 / setting.n_classes_per_task
+            chance_accuracy = 1 / num_classes
 
             task_accuracy = metric.accuracy
             # FIXME: Look into this, we're often getting results substantially
@@ -97,98 +108,98 @@ def test_task_label_space(dataset_name: str):
     task_label_space: Space = setting.observation_space.task_labels
     # TODO: Should the task label space be Sparse[Discrete]? or Discrete?
     assert task_label_space == Discrete(nb_tasks)
-    assert setting.action_space == Discrete(setting.num_classes)
+    assert setting.action_space == Discrete(setting.action_space.n)
 
     nb_tasks = 5
     setting.nb_tasks = nb_tasks
     assert setting.observation_space.task_labels == Discrete(nb_tasks)
-    assert setting.action_space == Discrete(setting.num_classes)
+    assert setting.action_space == Discrete(setting.action_space.n)
 
 
-@pytest.mark.parametrize("dataset_name", ["mnist"])
-def test_setting_obs_space_changes_when_transforms_change(dataset_name: str):
-    """ TODO: Test that the `observation_space` property on the
-    ClassIncrementalSetting reflects the data produced by the dataloaders, and
-    that changing a transform on a Setting also changes the value of that
-    property on both the Setting itself, as well as on the corresponding
-    dataloaders/environments.
-    """
-    # dataset = ClassIncrementalSetting.available_datasets[dataset_name]
-    setting = ClassIncrementalSetting(
-        dataset=dataset_name,
-        nb_tasks=1,
-        transforms=[],
-        train_transforms=[],
-        val_transforms=[],
-        test_transforms=[],
-        batch_size=None,
-        num_workers=0,
-    )
-    assert setting.observation_space.x == base_observation_spaces[dataset_name]
-    # TODO: Should the 'transforms' apply to ALL the environments, and the
-    # train/valid/test transforms apply only to those envs?
-    from sequoia.common.transforms import Transforms
+    @pytest.mark.parametrize("dataset_name", ["mnist"])
+    def test_setting_obs_space_changes_when_transforms_change(self, dataset_name: str):
+        """ TODO: Test that the `observation_space` property on the
+        ClassIncrementalSetting reflects the data produced by the dataloaders, and
+        that changing a transform on a Setting also changes the value of that
+        property on both the Setting itself, as well as on the corresponding
+        dataloaders/environments.
+        """
+        # dataset = ClassIncrementalSetting.available_datasets[dataset_name]
+        setting = self.Setting(
+            dataset=dataset_name,
+            nb_tasks=1,
+            transforms=[],
+            train_transforms=[],
+            val_transforms=[],
+            test_transforms=[],
+            batch_size=None,
+            num_workers=0,
+        )
+        assert setting.observation_space.x == Setting.base_observation_spaces[dataset_name]
+        # TODO: Should the 'transforms' apply to ALL the environments, and the
+        # train/valid/test transforms apply only to those envs?
+        from sequoia.common.transforms import Transforms
 
-    setting.transforms = [
-        Transforms.to_tensor,
-        Transforms.three_channels,
-        Transforms.channels_first_if_needed,
-        Transforms.resize_32x32,
-    ]
-    # When there are no transforms in setting.train_tansforms, the observation
-    # space of the Setting and of the train dataloader are the same:
-    train_env = setting.train_dataloader(batch_size=None, num_workers=None)
-    assert train_env.observation_space == setting.observation_space
+        setting.transforms = [
+            Transforms.to_tensor,
+            Transforms.three_channels,
+            Transforms.channels_first_if_needed,
+            Transforms.resize_32x32,
+        ]
+        # When there are no transforms in setting.train_tansforms, the observation
+        # space of the Setting and of the train dataloader are the same:
+        train_env = setting.train_dataloader(batch_size=None, num_workers=None)
+        assert train_env.observation_space == setting.observation_space
 
-    reset_obs = train_env.reset()
-    assert reset_obs[0] in train_env.observation_space[0], reset_obs[0].shape
-    assert reset_obs[1] in train_env.observation_space[1]
-    assert reset_obs in train_env.observation_space
-    assert reset_obs in setting.observation_space
-    assert isinstance(reset_obs, ClassIncrementalSetting.Observations)
+        reset_obs = train_env.reset()
+        assert reset_obs[0] in train_env.observation_space[0], reset_obs[0].shape
+        assert reset_obs[1] in train_env.observation_space[1]
+        assert reset_obs in train_env.observation_space
+        assert reset_obs in setting.observation_space
+        assert isinstance(reset_obs, ClassIncrementalSetting.Observations)
 
-    # When we add a transform to `setting.train_transforms` the observation
-    # space of the Setting and of the train dataloader are different:
-    setting.train_transforms = [Transforms.resize_64x64]
+        # When we add a transform to `setting.train_transforms` the observation
+        # space of the Setting and of the train dataloader are different:
+        setting.train_transforms = [Transforms.resize_64x64]
 
-    train_env = setting.train_dataloader(batch_size=None)
-    assert train_env.observation_space.x.shape == (3, 64, 64)
-    assert train_env.reset() in train_env.observation_space
+        train_env = setting.train_dataloader(batch_size=None)
+        assert train_env.observation_space.x.shape == (3, 64, 64)
+        assert train_env.reset() in train_env.observation_space
 
-    # The Setting's property didn't change:
-    assert setting.observation_space.x.shape == (3, 32, 32)
-    #
-    #  ---------- Same tests for the val_environment --------------
-    #
-    val_env = setting.val_dataloader(batch_size=None)
-    assert val_env.observation_space == setting.observation_space
-    assert val_env.reset() in val_env.observation_space
+        # The Setting's property didn't change:
+        assert setting.observation_space.x.shape == (3, 32, 32)
+        #
+        #  ---------- Same tests for the val_environment --------------
+        #
+        val_env = setting.val_dataloader(batch_size=None)
+        assert val_env.observation_space == setting.observation_space
+        assert val_env.reset() in val_env.observation_space
 
-    # When we add a transform to `setting.val_transforms` the observation
-    # space of the Setting and of the val dataloader are different:
-    setting.val_transforms = [Transforms.resize_64x64]
-    val_env = setting.val_dataloader(batch_size=None)
-    assert val_env.observation_space != setting.observation_space
-    assert val_env.observation_space.x.shape == (3, 64, 64)
-    assert val_env.reset() in val_env.observation_space
-    #
-    #  ---------- Same tests for the test_environment --------------
-    #
+        # When we add a transform to `setting.val_transforms` the observation
+        # space of the Setting and of the val dataloader are different:
+        setting.val_transforms = [Transforms.resize_64x64]
+        val_env = setting.val_dataloader(batch_size=None)
+        assert val_env.observation_space != setting.observation_space
+        assert val_env.observation_space.x.shape == (3, 64, 64)
+        assert val_env.reset() in val_env.observation_space
+        #
+        #  ---------- Same tests for the test_environment --------------
+        #
 
-    with setting.test_dataloader(batch_size=None) as test_env:
-        if setting.task_labels_at_test_time:
-            assert test_env.observation_space == setting.observation_space
-        else:
-            assert isinstance(test_env.observation_space["task_labels"], Sparse)
-        assert test_env.reset() in test_env.observation_space
+        with setting.test_dataloader(batch_size=None) as test_env:
+            if setting.task_labels_at_test_time:
+                assert test_env.observation_space == setting.observation_space
+            else:
+                assert isinstance(test_env.observation_space["task_labels"], Sparse)
+            assert test_env.reset() in test_env.observation_space
 
-    setting.test_transforms = [Transforms.resize_64x64]
-    with setting.test_dataloader(batch_size=None) as test_env:
-        # When we add a transform to `setting.test_transforms` the observation
-        # space of the Setting and of the test dataloader are different:
-        assert test_env.observation_space != setting.observation_space
-        assert test_env.observation_space.x.shape == (3, 64, 64)
-        assert test_env.reset() in test_env.observation_space
+        setting.test_transforms = [Transforms.resize_64x64]
+        with setting.test_dataloader(batch_size=None) as test_env:
+            # When we add a transform to `setting.test_transforms` the observation
+            # space of the Setting and of the test dataloader are different:
+            assert test_env.observation_space != setting.observation_space
+            assert test_env.observation_space.x.shape == (3, 64, 64)
+            assert test_env.reset() in test_env.observation_space
 
 
 # TODO: This renders, even when we're using the pytest-xvfb plugin, which might

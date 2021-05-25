@@ -17,4 +17,5 @@ class DomainIncrementalSLSetting(IncrementalSLSetting):
     trained on digits 0 and 1, then digits 2 and 3, then digits 4 and 5, etc.
     At evaluation time, it will be evaluated on all digits
     """
-    shared_action_spaces: bool = constant(True)
+    shared_action_space: bool = constant(True)
+

@@ -2,6 +2,7 @@ from .. import Results
 from .environment import PassiveEnvironment
 from .setting import SLSetting
 from .continual import ContinualSLSetting
+from .discrete import DiscreteTaskAgnosticSLSetting
 from .incremental import IncrementalSLSetting
 ClassIncrementalSetting = IncrementalSLSetting
 # from .class_incremental import ClassIncrementalSetting

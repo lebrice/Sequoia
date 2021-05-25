@@ -41,6 +41,10 @@ def relabel_tensor(y: Tensor, mapping: Dict[int, int]=None) -> Tensor:
 
 @relabel.register
 def relabel_taskset(task_set: TaskSet, mapping: Dict[int, int]=None) -> TaskSet:
+    # if mapping:
+    #     assert False, mapping
+    if len(task_set.get_classes()) > 2:
+        assert False, f"debugging: {task_set.get_classes()}"
     mapping = mapping or {
         c: i for i, c in enumerate(task_set.get_classes())
     }
@@ -51,8 +55,9 @@ def relabel_taskset(task_set: TaskSet, mapping: Dict[int, int]=None) -> TaskSet:
     # does the remapping. Not sure if there's a benefit in doing one vs the other atm.
     # NOTE: Choosing to replace the `y` to make sure that the concatenated datasets keep
     # the transformed y.
-    return replace_taskset_attributes(task_set, y=new_y)
-
+    new_taskset =  replace_taskset_attributes(task_set, y=new_y)
+    return new_taskset
+    
 
 from sequoia.utils.generic_functions.replace import replace
 

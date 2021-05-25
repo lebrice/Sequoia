@@ -103,7 +103,6 @@ class IncrementalAssumption(ContinualAssumption):
     # method of the Environment.
     monitor_training_performance: bool = False
 
-
     def __post_init__(self, *args, **kwargs):
         super().__post_init__(*args, **kwargs)
 

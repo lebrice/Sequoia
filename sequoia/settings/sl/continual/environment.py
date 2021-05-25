@@ -258,7 +258,7 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
         self._steps = 0
         self.results: TaskResults = TaskResults()
         self._reset = False
-        self.action: Optional[ActionType] = None
+        self.action_: Optional[ActionType] = None
 
     def get_results(self) -> ContinualSLResults:
         return self.results
@@ -274,13 +274,13 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
             return None
 
     def _before_step(self, action):
-        self.action = action
+        self.action_ = action
         return super()._before_step(action)
 
     def _after_step(self, observation, reward, done, info):
 
         assert isinstance(reward, Tensor)
-        action = self.action
+        action = self.action_
         assert action is not None
         actions = torch.as_tensor(action)
 
@@ -291,7 +291,6 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
             f"TODO: Remove the assumption here that the env is a classification env "
             f"({self.action_space})"
         )
-
         # TODO: Switch this out for a generic function.
         fake_logits = torch.zeros([batch_size, self.action_space.nvec[0]], dtype=int)
         # FIXME: There must be a smarter way to do this indexing.

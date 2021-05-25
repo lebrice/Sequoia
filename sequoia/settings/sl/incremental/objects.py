@@ -6,33 +6,27 @@ from dataclasses import dataclass
 from typing import Optional, TypeVar
 
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
-from sequoia.settings.sl.continual.environment import (
-    ContinualSLEnvironment as Environment,
-)
-from sequoia.settings.sl.continual.objects import Observations as ContinualSLObservations
-from sequoia.settings.sl.continual.objects import Actions as ContinualSLActions
-from sequoia.settings.sl.continual.objects import Rewards as ContinualSLRewards
-from sequoia.settings.sl.continual.setting import ContinualSLSetting
+from sequoia.settings.sl.discrete.setting import DiscreteTaskAgnosticSLSetting
 from torch import Tensor
 
 # from sequoia.settings.sl.continual.objects import Observations, Actions, Rewards
 # from sequoia.settings.assumptions.context_visibility
 
 @dataclass(frozen=True)
-class IncrementalSLObservations(ContinualSLObservations):
+class IncrementalSLObservations(DiscreteTaskAgnosticSLSetting.Observations):
     """ Incremental Observations, in a supervised context. """
     x: Tensor
     task_labels: Optional[Tensor] = None
 
 
 @dataclass(frozen=True)
-class IncrementalSLActions(ContinualSLActions):
+class IncrementalSLActions(DiscreteTaskAgnosticSLSetting.Actions):
     """Incremental Actions, in a supervised (passive) context."""
     pass
 
 
 @dataclass(frozen=True)
-class IncrementalSLRewards(ContinualSLRewards):
+class IncrementalSLRewards(DiscreteTaskAgnosticSLSetting.Rewards):
     """Incremental Rewards, in a supervised context."""
     pass
 
@@ -50,3 +44,6 @@ Rewards = IncrementalSLRewards
 ObservationType = TypeVar("ObservationType", bound=IncrementalSLObservations)
 ActionType = TypeVar("ActionType", bound=IncrementalSLActions)
 RewardType = TypeVar("RewardType", bound=IncrementalSLRewards)
+
+# from .environment import IncrementalSLEnvironment
+# Environment = IncrementalSLEnvironment
