@@ -9,7 +9,8 @@ from sequoia.settings.rl.envs import MUJOCO_INSTALLED
 
 import numpy as np
 from gym.envs.classic_control import CartPoleEnv, PendulumEnv, MountainCarEnv, Continuous_MountainCarEnv
-from gym.envs.box2d import BipedalWalker, BipedalWalkerHardcore 
+# TODO: Add envs from PyBullet and from Box2d!
+# from gym.envs.box2d import BipedalWalker, BipedalWalkerHardcore
 
 
 @singledispatch
