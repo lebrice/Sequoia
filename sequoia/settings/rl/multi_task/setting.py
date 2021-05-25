@@ -4,20 +4,22 @@ from dataclasses import dataclass
 from typing import List, Callable
 import gym
 from ..task_incremental import TaskIncrementalRLSetting
+from sequoia.utils.utils import constant
+from sequoia.utils.logging_utils import get_logger
+
+logger = get_logger(__file__)
 
 
 @dataclass
 class MultiTaskRLSetting(TaskIncrementalRLSetting):
-    """ Your usual "Classical" Reinforcement Learning setting.
+    """ Reinforcement Learning setting where the environment alternates between a set
+    of tasks sampled uniformly.
 
     Implemented as a TaskIncrementalRLSetting, but where the tasks are randomly sampled
     during training.
     """
-    def __post_init__(self, *args, **kwargs):
-        super().__post_init__(*args, **kwargs)
-        # Set this to True, so that we switch tasks randomly all the time during
-        # training.
-        self._new_random_task_on_reset = True
+    # TODO: Move this into a new Assumption about the context non-stationarity.
+    stationary_context: bool = constant(True)
 
     @property
     def phases(self) -> int:
@@ -45,13 +47,17 @@ class MultiTaskRLSetting(TaskIncrementalRLSetting):
         List[Callable[[gym.Env], gym.Env]]
             [description]
         """
-        if self._new_random_task_on_reset:
-            # TODO: If we're in the 'Multi-Task RL' setting, then should we maybe change
-            # the task schedule, so that we give an equal number of steps per task?
-            new_random_task_on_reset = False
-        else:
-            new_random_task_on_reset = True
+        if self.stationary_context:
+            logger.warning(
+                "The test phase will go through all tasks in sequence, rather than "
+                "shuffling them! (This is to make it easier to compile the performance "
+                "metrics for each task."
+            )
+        new_random_task_on_reset = False
+        # TODO: If we're in the 'Multi-Task RL' setting, then should we maybe change
+        # the task schedule, so that we give an equal number of steps per task?
         return self._make_wrappers(
+            base_env=self.test_dataset,
             task_schedule=self.test_task_schedule,
             # sharp_task_boundaries=self.known_task_boundaries_at_test_time,
             task_labels_available=self.task_labels_at_test_time,

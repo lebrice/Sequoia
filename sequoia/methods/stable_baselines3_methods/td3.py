@@ -77,6 +77,7 @@ class TD3Method(OffPolicyMethod):
 
         todo: use this to customize how your method handles task transitions.
         """
+        super().on_task_switch(task_id=task_id)
 
 
 if __name__ == "__main__":

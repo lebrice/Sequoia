@@ -20,6 +20,7 @@ from sequoia.common.transforms import Transforms
 from sequoia.utils import constant, dict_union
 from sequoia.utils.logging_utils import get_logger
 
+from ..discrete import DiscreteTaskAgnosticRLSetting
 from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.settings.rl.envs import (
     ATARI_PY_INSTALLED,
@@ -39,11 +40,13 @@ from .tasks import make_task_for_env
 
 logger = get_logger(__file__)
 
-_MIXED_ENV = object()
+
+# TODO: When we add a wrapper to 'concat' two environments, then we can move this
+# 'passing custom env for each task' feature up into DiscreteTaskAgnosticRL.
 
 
 @dataclass
-class IncrementalRLSetting(ContinualRLSetting):
+class IncrementalRLSetting(DiscreteTaskAgnosticRLSetting):
     """ Continual RL setting the data is divided into 'tasks' with clear boundaries.
 
     By default, the task labels are given at train time, but not at test time.
@@ -66,31 +69,22 @@ class IncrementalRLSetting(ContinualRLSetting):
     task_labels_at_test_time: bool = False
 
     # Class variable that holds the dict of available environments.
-    available_datasets: ClassVar[Dict[str, str]] = dict_union(
-        ContinualRLSetting.available_datasets,
-        {"monsterkong": "MetaMonsterKong-v0"},
-        (
-            # TODO: Also add the mujoco environments for the changing sizes and masses,
-            # which can't be changed on-the-fly atm.
-            {}
-            if not MUJOCO_INSTALLED
-            else {
-                # "incremental_half_cheetah": IncrementalHalfCheetahEnv
-            }
-        ),
-    )
+    available_datasets: ClassVar[
+        Dict[str, str]
+    ] = DiscreteTaskAgnosticRLSetting.available_datasets
+
     dataset: str = "CartPole-v0"
 
     train_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
     val_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
     test_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
 
-    def __post_init__(self, *args, **kwargs):
+    def __post_init__(self):
         if not self.nb_tasks:
             # TODO: In case of the metaworld envs, we could determine the 'default' nb
             # of tasks to use based on the number of available tasks
             pass
-        
+
         if is_monsterkong_env(self.dataset):
             if self.force_pixel_observations:
                 # Add this to the kwargs that will be passed to gym.make, to make sure that
@@ -99,7 +93,9 @@ class IncrementalRLSetting(ContinualRLSetting):
             elif self.force_state_observations:
                 self.base_env_kwargs["observe_state"] = True
 
+        self._using_custom_envs_foreach_task: bool = False
         if self.train_envs:
+            self._using_custom_envs_foreach_task = True
             self.nb_tasks = len(self.train_envs)
             # TODO: Not sure what to do with the `self.dataset` field, because
             # ContinualRLSetting expects to have a single env, while we have more than
@@ -113,7 +109,6 @@ class IncrementalRLSetting(ContinualRLSetting):
             if not self.test_envs:
                 # TODO: Use a wrapper that sets a different random seed
                 self.test_envs = self.train_envs.copy()
-
             if (
                 self.train_task_schedule
                 or self.valid_task_schedule
@@ -129,9 +124,9 @@ class IncrementalRLSetting(ContinualRLSetting):
                     "Can't pass `val_envs` or `test_envs` without passing `train_envs`."
                 )
 
-        super().__post_init__(*args, **kwargs)
+        super().__post_init__()
 
-        if self.train_envs:
+        if self._using_custom_envs_foreach_task:
             # TODO: Use 'no-op' task schedules for now.
             # self.train_task_schedule.clear()
             # self.valid_task_schedule.clear()
@@ -150,6 +145,55 @@ class IncrementalRLSetting(ContinualRLSetting):
 
         # FIXME: Really annoying little bugs with these three arguments!
         self.nb_tasks = self.max_steps // self.steps_per_task
+
+    def setup(self, stage: str = None) -> None:
+        # Called before the start of each task during training, validation and
+        # testing.
+        super().setup(stage=stage)
+        # What's done in ContinualRLSetting:
+        # if stage in {"fit", None}:
+        #     self.train_wrappers = self.create_train_wrappers()
+        #     self.valid_wrappers = self.create_valid_wrappers()
+        # elif stage in {"test", None}:
+        #     self.test_wrappers = self.create_test_wrappers()
+        if self._using_custom_envs_foreach_task:
+            logger.debug(
+                f"Using custom environments from `self.[train/val/test]_envs` for task "
+                f"{self.current_task_id}."
+            )
+            # NOTE: Here is how this supports passing custom envs for each task: We just
+            # switch out the value of this property, and let the
+            # `train/val/test_dataloader` methods work as usual!
+            self.dataset = self.train_envs[self.current_task_id]
+            self.val_dataset = self.val_envs[self.current_task_id]
+            self.test_dataset = self.test_envs[self.current_task_id]
+
+            # TODO: Check that the observation/action spaces are all the same for all
+            # the train/valid/test envs
+            self._check_all_envs_have_same_spaces(
+                envs_or_env_functions=self.train_envs, wrappers=self.train_wrappers,
+            )
+            # TODO: Inconsistent naming between `val_envs` and `valid_wrappers` etc.
+            self._check_all_envs_have_same_spaces(
+                envs_or_env_functions=self.val_envs, wrappers=self.valid_wrappers,
+            )
+            self._check_all_envs_have_same_spaces(
+                envs_or_env_functions=self.test_envs, wrappers=self.test_wrappers,
+            )
+        else:
+            # TODO: Should we populate the `self.train_envs`, `self.val_envs` and
+            # `self.test_envs` fields here as well, just to be consistent?
+            # base_env = self.dataset
+            # def task_env(task_index: int) -> Callable[[], MultiTaskEnvironment]:
+            #     return self._make_env(
+            #         base_env=base_env,
+            #         wrappers=[],
+            #     )
+            # self.train_envs = [partial(gym.make, self.dataset) for i in range(self.nb_tasks)]
+            # self.val_envs = [partial(gym.make, self.dataset) for i in range(self.nb_tasks)]
+            # self.test_envs = [partial(gym.make, self.dataset) for i in range(self.nb_tasks)]
+            # assert False, self.train_task_schedule
+            pass
 
     def _setup_fields_using_temp_env(self, temp_env: MultiTaskEnvironment):
         """ Setup some of the fields on the Setting using a temporary environment.
@@ -180,7 +224,7 @@ class IncrementalRLSetting(ContinualRLSetting):
     def _make_env(
         base_env: Union[str, gym.Env, Callable[[], gym.Env]],
         wrappers: List[Callable[[gym.Env], gym.Env]] = None,
-        **base_env_kwargs: Dict
+        **base_env_kwargs: Dict,
     ) -> gym.Env:
         """ Helper function to create a single (non-vectorized) environment.
 
@@ -228,16 +272,14 @@ class IncrementalRLSetting(ContinualRLSetting):
                     )
 
         return ContinualRLSetting._make_env(
-            base_env=base_env,
-            wrappers=wrappers,
-            **base_env_kwargs,
+            base_env=base_env, wrappers=wrappers, **base_env_kwargs,
         )
 
     def create_task_schedule(
         self, temp_env: gym.Env, change_steps: List[int]
     ) -> Dict[int, Dict]:
         task_schedule: Dict[int, Dict] = {}
-        if self.train_envs:
+        if self._using_custom_envs_foreach_task:
             # If custom envs were passed to be used for each task, then we don't create
             # a "task schedule", because the only reason we're using a task schedule is
             # when we want to change something about the 'base' env in order to get
@@ -277,11 +319,12 @@ class IncrementalRLSetting(ContinualRLSetting):
                 seed=self.config.seed if self.config else None,
             )
 
-    
         # Check if there is a registered handler for this type of environment.
         # TODO: Maybe use the type of the env, rather then env.unwrapped, and have the
         # 'base' callable defer the call to the wrapped env?
-        if make_task_for_env.dispatch(type(env.unwrapped)) is make_task_for_env.dispatch(object):
+        if make_task_for_env.dispatch(
+            type(env.unwrapped)
+        ) is make_task_for_env.dispatch(object):
             warnings.warn(
                 RuntimeWarning(
                     f"Don't yet know how to create a task for env {env}, will use the environment as-is."
@@ -296,66 +339,17 @@ class IncrementalRLSetting(ContinualRLSetting):
             change_steps=change_steps,
             seed=self.config.seed if self.config else None,
         )
-    
 
         return super().create_task_schedule(
             temp_env=temp_env, change_steps=change_steps
         )
 
     def create_train_wrappers(self):
-        if self.train_envs:
+        if self._using_custom_envs_foreach_task:
             # TODO: Maybe do something different here, since we don't actually want to
             # add a CL wrapper at all in this case?
             assert not any(self.train_task_schedule.values())
         return super().create_train_wrappers()
-
-    def setup(self, stage: str = None) -> None:
-        # Called before the start of each task during training, validation and
-        # testing.
-        super().setup(stage=stage)
-        # What's done in ContinualRLSetting:
-        # if stage in {"fit", None}:
-        #     self.train_wrappers = self.create_train_wrappers()
-        #     self.valid_wrappers = self.create_valid_wrappers()
-        # elif stage in {"test", None}:
-        #     self.test_wrappers = self.create_test_wrappers()
-        if self.train_envs:
-            logger.debug(
-                f"Using custom environments from `self.[train/val/test]_envs` for task "
-                f"{self.current_task_id}."
-            )
-            # IDEA: Just switch out the value of this property, and let the
-            # `train/val/test_dataloader` methods work as usual!
-            self.dataset = self.train_envs[self.current_task_id]
-            self.val_dataset = self.val_envs[self.current_task_id]
-            self.test_dataset = self.test_envs[self.current_task_id]
-
-            # TODO: Check that the observation/action spaces are all the same for all
-            # the train/valid/test envs
-            self._check_all_envs_have_same_spaces(
-                envs_or_env_functions=self.train_envs, wrappers=self.train_wrappers,
-            )
-            # TODO: Inconsistent naming between `val_envs` and `valid_wrappers` etc.
-            self._check_all_envs_have_same_spaces(
-                envs_or_env_functions=self.val_envs, wrappers=self.valid_wrappers,
-            )
-            self._check_all_envs_have_same_spaces(
-                envs_or_env_functions=self.test_envs, wrappers=self.test_wrappers,
-            )
-        else:
-            # TODO: Should we populate the `self.train_envs`, `self.val_envs` and
-            # `self.test_envs` fields here as well, just to be consistent?
-            # base_env = self.dataset
-            # def task_env(task_index: int) -> Callable[[], MultiTaskEnvironment]:
-            #     return self._make_env(
-            #         base_env=base_env,
-            #         wrappers=[],
-            #     )
-            # self.train_envs = [partial(gym.make, self.dataset) for i in range(self.nb_tasks)]
-            # self.val_envs = [partial(gym.make, self.dataset) for i in range(self.nb_tasks)]
-            # self.test_envs = [partial(gym.make, self.dataset) for i in range(self.nb_tasks)]
-            # assert False, self.train_task_schedule
-            pass
 
     def _check_all_envs_have_same_spaces(
         self,
@@ -373,7 +367,9 @@ class IncrementalRLSetting(ContinualRLSetting):
             range(1, len(envs_or_env_functions)), envs_or_env_functions[1:]
         ):
             task_env = self._make_env(
-                base_env=task_env_id_or_function, wrappers=wrappers, **self.base_env_kwargs
+                base_env=task_env_id_or_function,
+                wrappers=wrappers,
+                **self.base_env_kwargs,
             )
             task_env.close()
             if task_env.observation_space != first_env.observation_space:
@@ -400,7 +396,7 @@ class IncrementalRLSetting(ContinualRLSetting):
         max_steps: int,
         new_random_task_on_reset: bool,
     ) -> List[Callable[[gym.Env], gym.Env]]:
-        if self.train_envs:
+        if self._using_custom_envs_foreach_task:
             if task_schedule:
                 logger.warning(
                     RuntimeWarning(
@@ -420,7 +416,7 @@ class IncrementalRLSetting(ContinualRLSetting):
             new_random_task_on_reset=new_random_task_on_reset,
         )
 
-        if self.train_envs:
+        if self._using_custom_envs_foreach_task:
             # If the user passed a specific env to use for each task, then there won't
             # be a MultiTaskEnv wrapper in `wrappers`, since the task schedule is
             # None/empty.

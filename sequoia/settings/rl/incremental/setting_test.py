@@ -541,6 +541,13 @@ class TestPassingEnvsForEachTask:
         setting.current_task_id = 0
 
         train_env = setting.train_dataloader()
+        assert train_env.gravity == gravities[0]
+        
+        setting.current_task_id = 1
+
+        train_env = setting.train_dataloader()
+        assert train_env.gravity == gravities[1]
+
         assert isinstance(train_env.unwrapped, CartPoleEnv)
 
         # Not sure, do we want to add a 'observation_spaces`, `action_spaces` and

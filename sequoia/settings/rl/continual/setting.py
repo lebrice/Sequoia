@@ -262,10 +262,12 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
     task_sampling_function: Callable[[gym.Env, int, List[int]], Any] = field(
         None, cmd=False
     )
+    # Wether the tasks are sampled uniformly. (This is set to True in MultiTaskRLSetting
+    # and below)
+    stationary_context: bool = False
 
-    def __post_init__(self, *args, **kwargs):
-        super().__post_init__(*args, **kwargs)
-        self._new_random_task_on_reset: bool = False
+    def __post_init__(self):
+        super().__post_init__()
 
         if self.observe_state_directly is not None:
             warnings.warn(DeprecationWarning(
@@ -668,7 +670,7 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
 
         # BUG This won't work if the task schedule uses callables as the values (as
         # they aren't json-serializable.)
-        if self._new_random_task_on_reset:
+        if self.stationary_context:
             logger.info(
                 "Train tasks: "
                 + json.dumps(list(self.train_task_schedule.values()), indent="\t")
@@ -1041,7 +1043,7 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
             transforms=self.train_transforms,
             starting_step=starting_step,
             max_steps=max_steps,
-            new_random_task_on_reset=self._new_random_task_on_reset,
+            new_random_task_on_reset=self.stationary_context,
         )
 
     def create_valid_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
@@ -1071,7 +1073,7 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
             transforms=self.val_transforms,
             starting_step=starting_step,
             max_steps=max_steps,
-            new_random_task_on_reset=self._new_random_task_on_reset,
+            new_random_task_on_reset=self.stationary_context,
         )
 
     def create_test_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
@@ -1093,7 +1095,7 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
             transforms=self.test_transforms,
             starting_step=0,
             max_steps=self.max_steps,
-            new_random_task_on_reset=self._new_random_task_on_reset,
+            new_random_task_on_reset=self.stationary_context,
         )
 
     def load_task_schedule(self, file_path: Path) -> Dict[int, Dict]:
@@ -1230,7 +1232,7 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
             # These two shouldn't matter really:
             starting_step=0,
             max_steps=self.max_steps,
-            new_random_task_on_reset=self._new_random_task_on_reset,
+            new_random_task_on_reset=self.stationary_context,
         )
 
     def _get_objective_scaling_factor(self) -> float:

@@ -1,40 +1,11 @@
-import pytest
-from sequoia.common.config import Config
-from sequoia.conftest import monsterkong_required
-from sequoia.settings.rl import (
-    ContinualRLSetting,
-    IncrementalRLSetting,
-    TaskIncrementalRLSetting,
-)
+from typing import ClassVar, Type
 
-from .a2c import A2CMethod
+from .a2c import A2CMethod, A2CModel
+from .base import StableBaselines3Method, BaseAlgorithm
+from .base_test import DiscreteActionSpaceMethodTests
 
 
-def test_cartpole_state():
-    method = A2CMethod()
-    setting = IncrementalRLSetting(
-        dataset="cartpole",
-        nb_tasks=2,
-        steps_per_task=1_000,
-        test_steps_per_task=1_000,
-    )
-    results: IncrementalRLSetting.Results = setting.apply(
-        method, config=Config(debug=True)
-    )
-    print(results.summary())
-
-
-@pytest.mark.timeout(120)
-@monsterkong_required
-def test_monsterkong():
-    method = A2CMethod()
-    setting = IncrementalRLSetting(
-        dataset="monsterkong",
-        nb_tasks=2,
-        steps_per_task=1_000,
-        test_steps_per_task=1_000,
-    )
-    results: IncrementalRLSetting.Results = setting.apply(
-        method, config=Config(debug=True)
-    )
-    print(results.summary())
+class TestA2C(DiscreteActionSpaceMethodTests):
+    Method: ClassVar[Type[StableBaselines3Method]] = A2CMethod
+    Model: ClassVar[Type[BaseAlgorithm]] = A2CModel
+    

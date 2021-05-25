@@ -155,6 +155,16 @@ class OnPolicyMethod(StableBaselines3Method, ABC):
 
         todo: use this to customize how your method handles task transitions.
         """
+        super().on_task_switch(task_id=task_id)
+
+    def clear_buffers(self):
+        """ Clears out the experience buffer of the Policy. """
+        # I think that's the right way to do it.. not sure.
+        if self.model:
+            # TODO: These are really interesting methods!
+            # self.model.save_replay_buffer
+            # self.model.load_replay_buffer
+            self.model.rollout_buffer.reset()
 
     def get_search_space(
         self, setting: ContinualRLSetting

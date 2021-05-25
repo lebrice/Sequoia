@@ -163,6 +163,7 @@ class PPOMethod(OnPolicyMethod):
 
         todo: use this to customize how your method handles task transitions.
         """
+        super().on_task_switch(task_id=task_id)
 
     def get_search_space(
         self, setting: ContinualRLSetting

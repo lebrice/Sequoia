@@ -85,6 +85,10 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
     # Approximate limit on the size of the replay buffer, in megabytes.
     max_buffer_size_megabytes: float = 2_048.0
 
+    def __post_init__(self):
+        super().__post_init__()
+        self.model: OffPolicyAlgorithm
+    
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting)
         # The default value for the buffer size in the DQN model is WAY too
@@ -226,3 +230,13 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
 
         todo: use this to customize how your method handles task transitions.
         """
+        super().on_task_switch(task_id=task_id)
+
+    def clear_buffers(self):
+        """ Clears out the experience buffer of the Policy. """
+        # I think that's the right way to do it.. not sure.
+        if self.model:
+            # TODO: These are really interesting methods!
+            # self.model.save_replay_buffer
+            # self.model.load_replay_buffer
+            self.model.replay_buffer.reset()
