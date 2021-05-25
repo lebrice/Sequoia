@@ -1,4 +1,3 @@
-import ctypes
 import warnings
 from typing import ClassVar
 
@@ -24,7 +23,7 @@ class ModifiedGravityEnv(MujocoEnv):
         # self.model._compute_subtree()
         # self.model.forward()
         self.sim.forward()
-        self.sim: MjSim
+        # self.sim: MjSim
         print(f"Setting initial gravity to {self.gravity}")
     
     @property

@@ -152,7 +152,7 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
         max_episode_steps=max_episode_steps,
         add_done_to_observations=True,
     )
-    assert setting._new_random_task_on_reset
+    assert setting.stationary_context
 
     # setting = RLSetting.load_benchmark("monsterkong")
     config = Config(debug=True, verbose=True, seed=123)
@@ -251,7 +251,7 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
         max_episode_steps=max_episode_steps,
         add_done_to_observations=True,
     )
-    assert setting._new_random_task_on_reset
+    assert setting.stationary_context
 
     # setting = RLSetting.load_benchmark("monsterkong")
     config = Config(debug=True, verbose=True, seed=123)

@@ -150,14 +150,16 @@ class BaseTests:
         setting: ContinualRLSetting = setting_type(
             dataset=self.debug_dataset,
             # nb_tasks=2,
-            max_steps=5_000,
+            max_steps=1_000,
+            test_steps=1_000,
             # steps_per_task=2_000,
             # test_steps_per_task=1_000,
             config=config,
         )
-        assert setting.nb_tasks
+        assert setting.max_steps == 1_000
+        assert setting.steps_per_phase == setting.max_steps // setting.phases
         results: Results = setting.apply(method)
-        assert 0 <= results.objective
+        assert results.objective is not None
         print(results.summary())
 
 

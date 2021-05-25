@@ -68,7 +68,7 @@ class Config(Serializable, Parseable):
             return self._display
         if not self.render:
             # If `--render` isn't set, then try to create a virtual display.
-            # This has the same effect as running the script with xvfb-run 
+            # This has the same effect as running the script with xvfb-run
             try:
                 virtual_display = Display(visible=False, size=(1366, 768))
                 virtual_display.start()

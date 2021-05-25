@@ -98,6 +98,8 @@ class SequoiaExperience(IterableWrapper, Experience):
             # The task labels are None, even at training time, which indicates this
             # is probably a `ContinualSLSetting`
             task_labels = None
+        elif isinstance(task_labels, Tensor):
+            task_labels = task_labels.cpu().numpy().tolist()
 
         dataset = TensorDataset(x, y)
         self._tensor_dataset = dataset

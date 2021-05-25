@@ -18,6 +18,7 @@ from sequoia.common.gym_wrappers import (
     MultiTaskEnvironment,
     SmoothTransitions,
     TransformObservation,
+    RenderEnvWrapper,
 )
 from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
@@ -768,6 +769,9 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
             env_dataloader = MeasureRLPerformanceWrapper(
                 env_dataloader, wandb_prefix=f"Train/Task {self.current_task_id}"
             )
+
+        if self.config.render and batch_size is None:
+            env_dataloader = RenderEnvWrapper(env_dataloader)
 
         self.train_env = env_dataloader
         # BUG: There is a mismatch between the train env's observation space and the

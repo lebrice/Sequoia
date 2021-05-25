@@ -2,26 +2,27 @@
 
 NOTE: This is based on https://github.com/Breakend/gym-extensions
 """
-from sequoia.conftest import mujoco_required
-pytestmark = mujoco_required
+# from sequoia.conftest import mujoco_required
+# pytestmark = mujoco_required
 
-from gym.envs.mujoco import MujocoEnv
-from .modified_gravity import ModifiedGravityEnv
-from .modified_size import ModifiedSizeEnv
-from .half_cheetah import HalfCheetahEnv, ContinualHalfCheetahEnv, HalfCheetahGravityEnv
-from .hopper import HopperEnv, ContinualHopperEnv, HopperGravityEnv
-from .walker2d import Walker2dEnv, ContinualWalker2dEnv, Walker2dGravityEnv
+import os
+from pathlib import Path
 
 import gym
 from gym.envs import register
-import os
-from pathlib import Path
+from gym.envs.mujoco import MujocoEnv
+
+from .half_cheetah import ContinualHalfCheetahEnv, HalfCheetahEnv, HalfCheetahGravityEnv
+from .hopper import ContinualHopperEnv, HopperEnv, HopperGravityEnv
+from .modified_gravity import ModifiedGravityEnv
+from .modified_size import ModifiedSizeEnv
+from .walker2d import ContinualWalker2dEnv, Walker2dEnv, Walker2dGravityEnv
 
 SOURCE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 
 
+from typing import Dict, List, Type
 
-from typing import Type, List, Dict
 
 def get_entry_point(Env: Type[gym.Env]) -> str:
     return f"{Env.__module__}:{Env.__name__}"
@@ -65,4 +66,3 @@ gym.envs.register(
     max_episode_steps=1000,
     reward_threshold=4800.0,
 )
- 

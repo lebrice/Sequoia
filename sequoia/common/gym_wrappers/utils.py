@@ -3,12 +3,14 @@ from abc import ABC
 from collections.abc import Sized
 from functools import partial, singledispatch
 from typing import (
+    Any,
     Callable,
     Dict,
     Generic,
     Iterator,
     List,
     NamedTuple,
+    Optional,
     Tuple,
     Type,
     TypeVar,
@@ -423,6 +425,10 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
 
 class RenderEnvWrapper(IterableWrapper):
     """ Simple Wrapper that renders the env at each step. """
+
+    def __init__(self, env: gym.Env, display: Any = None):
+        super().__init__(env)
+        # TODO: Maybe use the given display?
 
     def step(self, action):
         self.env.render("human")

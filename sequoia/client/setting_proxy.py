@@ -109,12 +109,12 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         return self.get_attribute("reward_space")
 
     @property
-    def val_env(self) -> EnvironmentProxy:
-        return self._val_env
-
-    @property
     def train_env(self) -> EnvironmentProxy:
         return self._train_env
+
+    @property
+    def val_env(self) -> EnvironmentProxy:
+        return self._val_env
 
     @property
     def test_env(self) -> EnvironmentProxy:
@@ -127,6 +127,12 @@ class SettingProxy(SettingABC, Generic[SettingType]):
     @config.setter
     def config(self, value: Config) -> None:
         self.set_attribute("config", value)
+
+    def prepare_data(self, *args, **kwargs):
+        self.__setting.prepare_data(*args, **kwargs)
+
+    def setup(self, stage: str = None):
+        self.__setting.setup(stage=stage)
 
     def get_name(self):
         # TODO

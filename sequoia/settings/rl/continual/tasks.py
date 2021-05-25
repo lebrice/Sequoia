@@ -8,7 +8,8 @@ from sequoia.common.gym_wrappers.multi_task_environment import \
 from sequoia.settings.rl.envs import MUJOCO_INSTALLED
 
 import numpy as np
-from gym.envs.classic_control import CartPoleEnv, PendulumEnv
+from gym.envs.classic_control import CartPoleEnv, PendulumEnv, MountainCarEnv, Continuous_MountainCarEnv
+from gym.envs.box2d import BipedalWalker, BipedalWalkerHardcore 
 
 
 @singledispatch
@@ -54,6 +55,15 @@ _ENV_TASK_ATTRIBUTES: Dict[Union[Type[gym.Env]], Dict[str, float]] = {
         "m": 1.0,
         "l": 1.0,
     },
+    MountainCarEnv: {
+        "gravity": 0.0025,
+        "goal_position": 0.45, # was 0.5 in gym, 0.45 in Arnaud de Broissia's version
+        "goal_velocity": 0,
+    },
+    Continuous_MountainCarEnv: {
+        "goal_position": 0.45, # was 0.5 in gym, 0.45 in Arnaud de Broissia's version
+        "goal_velocity": 0,
+    }
     # TODO: Add more of the classic control envs here.
     # TODO: Need to get the attributes to modify in each environment type and
     # add them here.

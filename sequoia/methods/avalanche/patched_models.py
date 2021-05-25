@@ -126,6 +126,9 @@ class PatchedMultiTaskModule(MultiTaskModule):
         return selected_outputs
 
 
+from avalanche.benchmarks.utils import AvalancheDataset
+
+
 class MultiHeadClassifier(_MultiHeadClassifier):
     def __init__(self, in_features: int, initial_out_features: int = 2):
         """ Multi-head classifier with separate classifiers for each task.
@@ -141,6 +144,14 @@ class MultiHeadClassifier(_MultiHeadClassifier):
             in_features=in_features, initial_out_features=initial_out_features
         )
 
+    def adaptation(self, dataset: AvalancheDataset):
+        """ If `dataset` contains new tasks, a new head is initialized.
+
+        :param dataset: data from the current experience.
+        :return:
+        """
+        super().adaptation(dataset)
+
     def forward(self, x: Tensor, task_labels: Optional[Tensor]) -> Tensor:
         if task_labels is None:
             # TODO: Use a task-inference module when `task_labels` is None.
@@ -148,6 +159,8 @@ class MultiHeadClassifier(_MultiHeadClassifier):
             raise NotImplementedError(
                 f"Shouldn't get None task labels in the MultiHeadClassifier!"
             )
+        else:
+            assert isinstance(task_labels, Tensor)
         return super().forward(x, task_labels)
 
     def forward_single_task(self, x: Tensor, task_label: Optional[Tensor]):
@@ -158,6 +171,13 @@ class MultiHeadClassifier(_MultiHeadClassifier):
         :param task_label:
         :return:
         """
+        if task_label is not None:
+            if not isinstance(task_label, int):
+                task_label = task_label.item()
+            # TODO: If/when we make the context variable truly continuous, then this
+            # won't work.
+        assert task_label is None or isinstance(task_label, int), task_label
+
         if str(task_label) not in self.classifiers:
             # TODO: Let's use the most 'recent' output head instead?
             known_task_labels = list(self.classifiers.keys())

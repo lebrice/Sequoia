@@ -1,6 +1,5 @@
-from sequoia.settings.sl.continual import ContinualSLSetting
 from dataclasses import dataclass
-from sequoia.utils.utils import constant, flag
+from sequoia.settings.sl.continual import ContinualSLSetting
 from sequoia.settings.assumptions.context_discreteness import DiscreteContextAssumption
 
 

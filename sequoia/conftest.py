@@ -127,6 +127,7 @@ slow = pytest.mark.skipif(
 
 
 def slow_param(*args):
+    """ Mark a parameter as 'slow', so it's only run when using the "--slow" flag. """
     return pytest.param(*args, marks=slow)
 
 
