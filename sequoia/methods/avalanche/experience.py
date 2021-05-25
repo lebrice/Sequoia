@@ -6,7 +6,7 @@ from typing import List, Optional
 import tqdm
 from sequoia.common.gym_wrappers.utils import IterableWrapper
 from sequoia.settings.sl import (
-    ClassIncrementalSetting,
+    IncrementalSLSetting,
     PassiveEnvironment,
     SLSetting,
 )
@@ -25,7 +25,7 @@ class SequoiaExperience(IterableWrapper, Experience):
     def __init__(
         self,
         env: PassiveEnvironment,
-        setting: ClassIncrementalSetting,
+        setting: IncrementalSLSetting,
         x: Tensor = None,
         y: Tensor = None,
         task_labels: Tensor = None,
@@ -33,7 +33,13 @@ class SequoiaExperience(IterableWrapper, Experience):
         super().__init__(env=env)
         self.setting = setting
         self.type: str
-        self.task_id = setting.current_task_id
+        if isinstance(setting, IncrementalSLSetting):
+            self.task_id = setting.current_task_id
+        else:
+            # No known task, or we don't have access to the task ID, so just consider
+            # this to come from the first task.
+            self.task_id = 0
+
         if env is setting.train_env:
             self.type = "Train"
             self.transforms = setting.train_transforms
@@ -73,6 +79,7 @@ class SequoiaExperience(IterableWrapper, Experience):
                         action = action[: observations.batch_size]
 
                     rewards = self.env.send(action)
+
                 all_observations.append(observations)
                 all_rewards.append(rewards)
             # TODO: This will be absolutely unfeasable for larger dataset like ImageNet.
@@ -87,11 +94,16 @@ class SequoiaExperience(IterableWrapper, Experience):
             stacked_rewards: Rewards = Rewards.concatenate(all_rewards)
             y = stacked_rewards.y
 
+        if all(t is None for t in task_labels):
+            # The task labels are None, even at training time, which indicates this
+            # is probably a `ContinualSLSetting`
+            task_labels = None
+
         dataset = TensorDataset(x, y)
         self._tensor_dataset = dataset
         self._dataset = AvalancheDataset(
             dataset=dataset,
-            task_labels=task_labels.tolist(),
+            task_labels=task_labels,
             targets=y.tolist(),
             dataset_type=AvalancheDatasetType.CLASSIFICATION,
         )

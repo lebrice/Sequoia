@@ -36,13 +36,13 @@ from avalanche.training.strategies.strategy_wrappers import default_logger
 from sequoia.common.spaces import Image
 from sequoia.methods import Method
 from sequoia.settings.sl import ClassIncrementalSetting, PassiveEnvironment, SLSetting
-from sequoia.settings.sl.incremental.objects import Actions, Observations, Rewards
-from sequoia.settings.sl.incremental.setting import IncrementalSLTestEnvironment
+from sequoia.settings.sl.continual import Actions, Observations, Rewards
+from sequoia.settings.sl.continual import ContinualSLTestEnvironment
+from sequoia.settings.sl import ContinualSLSetting
 from sequoia.utils import get_logger
 
 from .experience import SequoiaExperience
 from .patched_models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
-
 logger = get_logger(__file__)
 
 StrategyType = TypeVar("StrategyType", bound=BaseStrategy)
@@ -68,7 +68,7 @@ class AvalancheMethod(
     Method,
     HyperParameters,
     Generic[StrategyType],
-    target_setting=ClassIncrementalSetting,
+    target_setting=ContinualSLSetting,
 ):
     """ Base class for all the Methods adapted from Avalanche. """
 
@@ -402,7 +402,7 @@ class AvalancheMethod(
         )
 
 
-def test_epoch(strategy, test_env: IncrementalSLTestEnvironment, **kwargs):
+def test_epoch(strategy, test_env: ContinualSLTestEnvironment, **kwargs):
     strategy.is_training = False
     strategy.model.eval()
     strategy.model.to(strategy.device)
@@ -422,7 +422,7 @@ def test_epoch(strategy, test_env: IncrementalSLTestEnvironment, **kwargs):
 
 
 def test_epoch_gym_env(
-    strategy: BaseStrategy, test_env: IncrementalSLTestEnvironment, **kwargs
+    strategy: BaseStrategy, test_env: ContinualSLTestEnvironment, **kwargs
 ):
     strategy.mb_it = 0
     episode = 0
