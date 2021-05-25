@@ -17,6 +17,8 @@ from .base import StableBaselines3Method, BaseAlgorithm
 from .base_test import ContinuousActionSpaceMethodTests
 
 
+@slow
+@pytest.mark.timeout(120)
 class TestSAC(ContinuousActionSpaceMethodTests):
     Method: ClassVar[Type[StableBaselines3Method]] = SACMethod
     Model: ClassVar[Type[BaseAlgorithm]] = SACModel
