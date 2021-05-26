@@ -31,6 +31,9 @@ extras_require = {
     # "mtenv": [
     #     "mtenv @ git+https://github.com/facebookresearch/mtenv.git@main#egg='mtenv[metaworld]'"
     # ],
+    "mujoco": [
+        "mujoco_py",
+    ],
     "metaworld": [
         "metaworld @ git+https://github.com/rlworkgroup/metaworld.git@master#egg=metaworld"
     ],
