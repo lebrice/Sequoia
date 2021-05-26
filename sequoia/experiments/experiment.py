@@ -22,7 +22,7 @@ from simple_parsing import (
     subparsers,
 )
 
-from sequoia.common.config import Config
+from sequoia.common.config import Config, WandbConfig
 from sequoia.methods import Method, all_methods
 from sequoia.settings import (
     Results,
@@ -88,6 +88,8 @@ class Experiment(Parseable, Serializable):
     # of Setting or of Method, go in this next dataclass here! For example,
     # things like the log directory, wether Cuda is used, etc.
     config: Config = mutable_field(Config)
+
+    wandb: Optional[WandbConfig] = None
 
     def __post_init__(self):
         if not (self.setting or self.method):
@@ -169,9 +171,11 @@ class Experiment(Parseable, Serializable):
 
             assert isclass(self.setting) and issubclass(self.setting, Setting)
             # Actually load the setting from the file.
+            # TODO: Why isn't this using `load_benchmark`?
             self.setting = self.setting.load(
                 path=self.benchmark, drop_extra_fields=drop_extras
             )
+            self.setting.wandb = self.wandb
 
             if self.method is None:
                 raise NotImplementedError(
@@ -336,6 +340,7 @@ class Experiment(Parseable, Serializable):
             )
             assert isinstance(setting, Setting)
             assert isinstance(method, Method)
+            setting.wandb = experiment.wandb
 
             results = experiment.launch(argv, strict_args=strict_args)
             print("\n\n EXPERIMENT IS DONE \n\n")

@@ -108,7 +108,9 @@ class ContinualAssumption(AssumptionBase):
 
     # Options related to Weights & Biases (wandb). Turned Off by default. Passing any of
     # its arguments will enable wandb.
-    wandb: Optional[WandbConfig] = field(default=None, compare=False)
+    # NOTE: Adding `cmd=False` here, so we only create the args in `Experiment`.
+    # TODO: Fix this up.
+    wandb: Optional[WandbConfig] = field(default=None, compare=False, cmd=False)
 
     def main_loop(self, method: Method) -> ContinualResults:
         """ Runs a continual learning training loop, wether in RL or CL. """

@@ -1,0 +1,32 @@
+dataset: MountainCarContinuous-v0
+monitor_training_performance: true
+nb_tasks: 8
+max_steps: 160_000
+steps_per_task: 20_000
+test_steps_per_task: 10_000
+test_steps: 80_000
+train_task_schedule:
+  0:
+    goal_position: 0.45
+    goal_velocity: 0
+  20000:
+    goal_position: 0.4565062937130897
+    goal_velocity: 0
+  40000:
+    goal_position: 0.526503904898121
+    goal_velocity: 0
+  60000:
+    goal_position: 0.37901356007820275
+    goal_velocity: 0
+  80000:
+    goal_position: 0.5132810016616194
+    goal_velocity: 0
+  100000:
+    goal_position: 0.5023364056388072
+    goal_velocity: 0
+  120000:
+    goal_position: 0.47315246637784114
+    goal_velocity: 0
+  140000:
+    goal_position: 0.45239346485932264
+    goal_velocity: 0

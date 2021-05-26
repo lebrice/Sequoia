@@ -156,8 +156,10 @@ class Setting(
 
     # Options related to Weights & Biases (wandb). Turned Off by default. Passing any of
     # its arguments will enable wandb.
-    wandb: Optional[WandbConfig] = field(default=None, compare=False)
-    
+    # NOTE: Adding `cmd=False` here, so we only create the args in `Experiment`.
+    # TODO: Fix this up.
+    wandb: Optional[WandbConfig] = field(default=None, compare=False, cmd=False)
+
     # Group of configuration options like log_dir, data dir, etc.
     # TODO: It's a bit confusing to also have a `config` attribute on the
     # Setting. Might want to change this a bit.
@@ -629,7 +631,7 @@ class Setting(
                 f"anyway: {consumed_args}"
             )
 
-        drop_extras = True
+        drop_extras = False
         # Actually load the setting from the file.
         setting = cls.load(path=benchmark, drop_extra_fields=drop_extras)
         return setting

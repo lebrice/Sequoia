@@ -267,7 +267,7 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
     # Wether the tasks are sampled uniformly. (This is set to True in MultiTaskRLSetting
     # and below)
     stationary_context: bool = False
-    
+
     # WIP: When True, a Monitor-like wrapper will be applied to the training environment
     # and monitor the 'online' performance during training. Note that in SL, this will
     # also cause the Rewards (y) to be withheld until actions are passed to the `send`
@@ -606,7 +606,6 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
         # schedule, something like a NamedTuple[int, DeltaType], e.g. Episodes(10) or Steps(10)
         # something like that!
         # IDEA: Even fancier, we could use a TimeDelta to say "do one hour of task 0"!!
-
         for step in change_steps:
             # TODO: Pass wether its for training/validation/testing?
             task = self.sample_task(env=temp_env, step=step, change_steps=change_steps)

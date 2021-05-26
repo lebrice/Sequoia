@@ -1,0 +1,24 @@
+dataset: half_cheetah
+monitor_training_performance: true
+nb_tasks: 8
+max_steps: 1_600_000
+steps_per_task: 200_000
+test_steps_per_task: 10_000
+test_steps: 80_000
+train_task_schedule:
+  0:
+    gravity: -9.81
+  200000:
+    gravity: -7.3087968946619615
+  400000:
+    gravity: -5.615716866871361
+  600000:
+    gravity: -12.45890973547683
+  800000:
+    gravity: -7.6875976238634465
+  1000000:
+    gravity: -5.807262467656652
+  1200000:
+    gravity: -8.448144726367474
+  1400000:
+    gravity: -7.750512896029625

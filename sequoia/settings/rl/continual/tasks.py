@@ -77,6 +77,9 @@ _ENV_TASK_ATTRIBUTES: Dict[Union[Type[gym.Env]], Dict[str, float]] = {
 
 
 @make_task_for_env.register(CartPoleEnv)
+@make_task_for_env.register(PendulumEnv)
+@make_task_for_env.register(MountainCarEnv)
+@make_task_for_env.register(Continuous_MountainCarEnv)
 def make_task_for_classic_control_env(
     env: gym.Env,
     step: int,
