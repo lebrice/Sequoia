@@ -1,34 +1,31 @@
-from typing import ClassVar, Type, Optional
-from sequoia.settings.base import Setting
-from sequoia.utils.utils import flag
-from sequoia.utils import get_logger
-import time
-from dataclasses import dataclass
-from .base import AssumptionBase
-logger = get_logger(__file__)
-import wandb
 import itertools
-# TODO: This isn't ideal, would be nicer to have results that are explicitly made for a
-# non-stationary stream
-from .iid_results import TaskResults
-from sequoia.settings.base import Method
-from sequoia.utils import add_prefix
-from sequoia.common.gym_wrappers.utils import IterableWrapper
-from abc import ABC
-import gym
-from pathlib import Path
-from sequoia.common.config import Config
-from abc import abstractmethod
-from sequoia.settings.base.results import Results
-from sequoia.settings.base import Actions
-from torch import Tensor
-import tqdm
-from gym.vector.utils import batch_space
-import wandb
-from io import StringIO
 import json
-from typing import Dict
+import time
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from io import StringIO
+from pathlib import Path
+from typing import ClassVar, Dict, Optional, Type
+
+import gym
+import tqdm
+import wandb
+from gym.vector.utils import batch_space
+from simple_parsing import field
+from torch import Tensor
+
+from sequoia.common.config import Config, WandbConfig
+from sequoia.common.gym_wrappers.utils import IterableWrapper
 from sequoia.common.metrics import Metrics, MetricsType
+from sequoia.settings.base import Actions, Method, Setting
+from sequoia.settings.base.results import Results
+from sequoia.utils import add_prefix, get_logger
+from sequoia.utils.utils import flag
+from wandb.wandb_run import Run
+from .base import AssumptionBase
+from .iid_results import TaskResults
+
+logger = get_logger(__file__)
 
 
 # @dataclass
@@ -62,7 +59,9 @@ class ContinualResults(TaskResults[MetricsType]):
         log_dict = {}
         log_dict["Average Performance"] = super().to_log_dict(verbose=verbose)
         if self._online_training_performance:
-            log_dict["Online Performance"] = self.online_performance_metrics.to_log_dict(verbose=verbose)
+            log_dict[
+                "Online Performance"
+            ] = self.online_performance_metrics.to_log_dict(verbose=verbose)
         return log_dict
 
     def summary(self):
@@ -75,6 +74,7 @@ class ContinualResults(TaskResults[MetricsType]):
 @dataclass
 class ContinualAssumption(AssumptionBase):
     """ Assumptions for Setting where the environments change over time. """
+
     known_task_boundaries_at_train_time: bool = flag(False)
     # Wether we get informed when reaching the boundary between two tasks during
     # training. Only used when `smooth_task_boundaries` is False.
@@ -90,7 +90,6 @@ class ContinualAssumption(AssumptionBase):
     # Wether task labels are available at test time.
     task_labels_at_test_time: bool = flag(False)
 
-
     @dataclass(frozen=True)
     class Observations(AssumptionBase.Observations):
         task_labels: Optional[Tensor] = None
@@ -101,7 +100,15 @@ class ContinualAssumption(AssumptionBase):
 
     Results: ClassVar[Type[ContinualResults]] = ContinualResults
 
+    # WIP: When True, a Monitor-like wrapper will be applied to the training environment
+    # and monitor the 'online' performance during training. Note that in SL, this will
+    # also cause the Rewards (y) to be withheld until actions are passed to the `send`
+    # method of the Environment.
     monitor_training_performance: bool = flag(False)
+
+    # Options related to Weights & Biases (wandb). Turned Off by default. Passing any of
+    # its arguments will enable wandb.
+    wandb: Optional[WandbConfig] = field(default=None, compare=False)
 
     def main_loop(self, method: Method) -> ContinualResults:
         """ Runs a continual learning training loop, wether in RL or CL. """
@@ -115,13 +122,16 @@ class ContinualAssumption(AssumptionBase):
         # import issues)
         results = self.Results()
 
+        if self.wandb and self.wandb.project:
+            # Init wandb, and then log the setting's options.
+            self.wandb_run = self.setup_wandb(method)
+            method.setup_wandb(self.wandb_run)
+
         method.set_training()
 
         self._start_time = time.process_time()
 
-        logger.info(
-            f"Starting training"
-        )
+        logger.info(f"Starting training")
         # Creating the dataloaders ourselves (rather than passing 'self' as
         # the datamodule):
         train_env = self.train_dataloader()
@@ -197,7 +207,9 @@ class ContinualAssumption(AssumptionBase):
 
                 # BUG: This doesn't work if the env isn't batched.
                 action_space = test_env.action_space
-                batch_size = getattr(test_env, "num_envs", getattr(test_env, "batch_size", 0))
+                batch_size = getattr(
+                    test_env, "num_envs", getattr(test_env, "batch_size", 0)
+                )
                 env_is_batched = batch_size is not None and batch_size >= 1
                 if env_is_batched:
                     # NOTE: Need to pass an action space that actually reflects the batch
@@ -254,6 +266,43 @@ class ContinualAssumption(AssumptionBase):
         #     # TODO: move this wrapper to common/wrappers.
         #     test_env = RemoveTaskLabelsWrapper(test_env)
 
+    def setup_wandb(self, method: Method) -> Run:
+        """Call wandb.init, log the experiment configuration to the config dict.
+
+        This assumes that `self.wandb` is not None. This happens when one of the wandb
+        arguments is passed.
+
+        Parameters
+        ----------
+        method : Method
+            Method to be applied.
+        """
+        assert isinstance(self.wandb, WandbConfig)
+        method_name: str = method.get_name()
+        setting_name: str = self.get_name()
+
+        if not self.wandb.run_name:
+            # Set the default name for this run.
+            run_name = f"{method_name}-{setting_name}"
+            dataset = getattr(self, "dataset", None)
+            if isinstance(dataset, str):
+                run_name += f"-{dataset}"
+            if getattr(self, "nb_tasks", 0) > 1:
+                run_name += f"_{self.nb_tasks}t"
+            self.wandb.run_name = run_name
+
+        run: Run = self.wandb.wandb_init()
+        run.config["setting"] = setting_name
+        run.config["method"] = method_name
+        for k, value in self.to_dict().items():
+            if not k.startswith("_"):
+                run.config[f"setting/{k}"] = value
+
+        run.summary["setting"] = self.get_name()
+        run.summary["method"] = method.get_name()
+        assert wandb.run is run
+        return run
+
     def log_results(self, method: Method, results: Results, prefix: str = "") -> None:
         """
         TODO: Create the tabs we need to show up in wandb:
@@ -283,7 +332,7 @@ class ContinualAssumption(AssumptionBase):
             # if axis._gridOnMajor and len(gridlines) > 0:
             # AttributeError: 'XAxis' object has no attribute '_gridOnMajor'
             # Seems to be fixed by downgrading the matplotlib version to 3.2.2
-            
+
             plots_dict = results.make_plots()
             if prefix:
                 plots_dict = add_prefix(plots_dict, prefix=prefix, sep="/")
@@ -291,9 +340,7 @@ class ContinualAssumption(AssumptionBase):
             # TODO: Finish the run here? Not sure this is right.
             # wandb.run.finish()
 
-    
-    
-    
+
 from gym.vector import VectorEnv
 from sequoia.common.gym_wrappers.utils import EnvType
 

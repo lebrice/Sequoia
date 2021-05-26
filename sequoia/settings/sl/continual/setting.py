@@ -377,11 +377,6 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
         method.configure(setting=self)
 
-        if self.wandb and self.wandb.project:
-            # Init wandb, and then log the setting's options.
-            self.wandb_run = self.setup_wandb(method)
-            method.setup_wandb(self.wandb_run)
-
         # Run the main loop (defined in ContinualAssumption).
         # Basically does the following:
         # 1. Call method.fit(train_env, valid_env)

@@ -20,6 +20,7 @@ from sequoia.common.gym_wrappers import (
     TransformObservation,
     RenderEnvWrapper,
 )
+from sequoia.utils.utils import flag
 from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
 from sequoia.common.gym_wrappers.pixel_observation import (
@@ -266,6 +267,12 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
     # Wether the tasks are sampled uniformly. (This is set to True in MultiTaskRLSetting
     # and below)
     stationary_context: bool = False
+    
+    # WIP: When True, a Monitor-like wrapper will be applied to the training environment
+    # and monitor the 'online' performance during training. Note that in SL, this will
+    # also cause the Rewards (y) to be withheld until actions are passed to the `send`
+    # method of the Environment.
+    monitor_training_performance: bool = flag(True)
 
     def __post_init__(self):
         super().__post_init__()
@@ -766,8 +773,12 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
         )
 
         if self.monitor_training_performance:
+            # NOTE: It doesn't always make sense to log stuff with the current task ID!
+            wandb_prefix = "Train"
+            if self.known_task_boundaries_at_train_time:
+                wandb_prefix += f"/Task {self.current_task_id}"
             env_dataloader = MeasureRLPerformanceWrapper(
-                env_dataloader, wandb_prefix=f"Train/Task {self.current_task_id}"
+                env_dataloader, wandb_prefix=wandb_prefix
             )
 
         if self.config.render and batch_size is None:
@@ -818,6 +829,17 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
             max_steps=self.steps_per_phase,
             max_episodes=self.episodes_per_task,
         )
+
+        if self.monitor_training_performance:
+            # NOTE: We also add it here, just so it logs metrics to wandb.
+            # NOTE: It doesn't always make sense to log stuff with the current task ID!
+            wandb_prefix = "Valid"
+            if self.known_task_boundaries_at_train_time:
+                wandb_prefix += f"/Task {self.current_task_id}"
+            env_dataloader = MeasureRLPerformanceWrapper(
+                env_dataloader, wandb_prefix=wandb_prefix
+            )
+
         self.val_env = env_dataloader
         return self.val_env
 

@@ -1,6 +1,8 @@
 from ..continual.setting_test import TestContinualRLSetting as ContinualRLSettingTests
 from .setting import DiscreteTaskAgnosticRLSetting
-from typing import 
+from typing import ClassVar, Type 
+from sequoia.settings import Setting
+
 
 class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
     Setting: ClassVar[Type[Setting]] = DiscreteTaskAgnosticRLSetting

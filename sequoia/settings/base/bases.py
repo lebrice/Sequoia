@@ -40,6 +40,7 @@ from sequoia.utils.utils import (
     get_path_to_source_file,
     remove_suffix,
 )
+import wandb
 
 logger = get_logger(__file__)
 
@@ -344,6 +345,64 @@ class Method(Generic[SettingType], Parseable, ABC):
             The `Results` object constructed by `setting`, as a result of applying
             this Method to it.
         """
+        
+        run_name = ""
+        # Set the default name for this run.
+        # run_name = f"{method_name}-{setting_name}"
+        # dataset = getattr(self, "dataset", None)
+        # if isinstance(dataset, str):
+        #     run_name += f"-{dataset}"
+        # if getattr(self, "nb_tasks", 0) > 1:
+        #     run_name += f"_{self.nb_tasks}t"
+
+        setting_name = setting.get_name()
+        method_name = self.get_name()
+        base_results_dir: Path = setting.config.log_dir / setting_name / method_name
+        
+        dataset_name = getattr(setting, "dataset", None)
+        if isinstance(dataset_name, str):
+            base_results_dir /= dataset_name
+        
+        if wandb.run and wandb.run.id:
+            # if setting.wandb and setting.wandb.project:
+            run_id = wandb.run.id
+            assert isinstance(run_id, str)
+            results_dir = base_results_dir / run_id
+            results_dir.mkdir(exist_ok=False, parents=True)
+        else:
+            for suffix in [f"run_{i}"  for i in range(100)]:
+                results_dir = base_results_dir / suffix
+                try:
+                    results_dir.mkdir(exist_ok=False, parents=True)
+                except FileExistsError:
+                    pass
+                else:
+                    break
+            else:
+                raise RuntimeError(
+                    f"Unable to create a unique results dir under {base_results_dir} "
+                    f"(run_id is {run_id})"
+                )
+
+        logger.info(f"Saving results in directory {results_dir}")
+        results_json_path = results_dir / "results.json"
+        with open(results_json_path, "w") as f:
+            json.dump(results.to_log_dict(), f)
+
+        setting_path = results_dir / "setting.yaml"
+        try:
+            setting.save(setting_path)
+        except Exception as e:
+            print(f"Unable to save the Setting: {e}")
+
+        method_path = results_dir / "method.yaml"
+        try:
+            self.save(method_path)
+        except Exception as e:
+            print(f"Unable to save the Method: {e}")
+
+        if wandb.run:
+            wandb.save(str(results_dir / "*"))
 
     def setup_wandb(self, run: Run) -> None:
         """ Called by the Setting when using Weights & Biases, after `wandb.init`.

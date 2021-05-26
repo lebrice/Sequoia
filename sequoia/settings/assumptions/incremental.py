@@ -97,12 +97,6 @@ class IncrementalAssumption(ContinualAssumption):
     # Attributes (not parsed through the command-line):
     _current_task_id: int = field(default=0, init=False)
 
-    # WIP: When True, a Monitor-like wrapper will be applied to the training environment
-    # and monitor the 'online' performance during training. Note that in SL, this will
-    # also cause the Rewards (y) to be withheld until actions are passed to the `send`
-    # method of the Environment.
-    monitor_training_performance: bool = False
-
     def __post_init__(self):
         super().__post_init__()
 
@@ -192,14 +186,14 @@ class IncrementalAssumption(ContinualAssumption):
         if self.monitor_training_performance:
             results._online_training_performance = []
 
-        # TODO: Fix this up, need to set the '_objective_scaling_factor' to a different
-        # value depending on the 'dataset' / environment.
-        results._objective_scaling_factor = self._get_objective_scaling_factor()
-
         if self.wandb and self.wandb.project:
             # Init wandb, and then log the setting's options.
             self.wandb_run = self.setup_wandb(method)
             method.setup_wandb(self.wandb_run)
+
+        # TODO: Fix this up, need to set the '_objective_scaling_factor' to a different
+        # value depending on the 'dataset' / environment.
+        results._objective_scaling_factor = self._get_objective_scaling_factor()
 
         method.set_training()
 
@@ -248,43 +242,6 @@ class IncrementalAssumption(ContinualAssumption):
         logger.info(f"Finished main loop in {runtime} seconds.")
         self.log_results(method, results)
         return results
-
-    def setup_wandb(self, method: Method) -> Run:
-        """Call wandb.init, log the experiment configuration to the config dict.
-
-        This assumes that `self.wandb` is not None. This happens when one of the wandb
-        arguments is passed.
-
-        Parameters
-        ----------
-        method : Method
-            Method to be applied.
-        """
-        assert isinstance(self.wandb, WandbConfig)
-        method_name: str = method.get_name()
-        setting_name: str = self.get_name()
-
-        if not self.wandb.run_name:
-            # Set the default name for this run.
-            run_name = f"{method_name}-{setting_name}"
-            dataset = getattr(self, "dataset", None)
-            if isinstance(dataset, str):
-                run_name += f"-{dataset}"
-            if self.nb_tasks > 1:
-                run_name += f"_{self.nb_tasks}t"
-            self.wandb.run_name = run_name
-
-        run: Run = self.wandb.wandb_init()
-        run.config["setting"] = setting_name
-        run.config["method"] = method_name
-        for k, value in self.to_dict().items():
-            if not k.startswith("_"):
-                run.config[f"setting/{k}"] = value
-
-        run.summary["setting"] = self.get_name()
-        run.summary["method"] = method.get_name()
-        assert wandb.run is run
-        return run
 
     def test_loop(self, method: Method) -> "IncrementalAssumption.Results":
         """ (WIP): Runs an incremental test loop and returns the Results.

@@ -12,6 +12,7 @@ from sequoia.common.metrics import Metrics
 
 from .iid_results import MetricType, TaskResults
 from sequoia.settings.base.results import Results
+from pathlib import Path
 
 
 class TaskSequenceResults(List[TaskResults[MetricType]], Results):
@@ -58,7 +59,7 @@ class TaskSequenceResults(List[TaskResults[MetricType]], Results):
         return result
 
 
-class IncrementalResults(List[TaskSequenceResults[MetricType]]):
+class IncrementalResults(List[TaskSequenceResults[MetricType]], Results):
     """ Results for a whole train loop (transfer matrix).
 
     This class is basically just a 2d list of TaskResults objects, with some convenience

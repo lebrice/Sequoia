@@ -476,7 +476,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         """ Receives the results of an experiment, where `self` was applied to Setting
         `setting`, which produced results `results`.
         """
-        # TODO: Reset the run name so a new one is used for each experiment.
+        super().receive_results(setting, results=results)
 
     def create_callbacks(self, setting: SettingType) -> List[Callback]:
         """Create the PytorchLightning Callbacks for this Setting.

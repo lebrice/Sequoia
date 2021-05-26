@@ -226,6 +226,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         # Run the main loop (which is defined in IncrementalAssumption).
         results: IncrementalSLResults = super().main_loop(method)
         logger.info(results.summary())
+
         method.receive_results(self, results=results)
         return results
 
