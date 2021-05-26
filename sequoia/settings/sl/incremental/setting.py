@@ -22,7 +22,7 @@ import itertools
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union
-
+import wandb
 import gym
 import numpy as np
 import torch
@@ -195,7 +195,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         including the transforms, shapes, etc.
         """
         super().__post_init__()
-        
+
         # TODO: For now we assume a fixed, equal number of classes per task, for
         # sake of simplicity. We could take out this assumption, but it might
         # make things a bit more complicated.
@@ -309,7 +309,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
             reward_space=self.reward_space,
             Observations=self.Observations,
             Actions=self.Actions,
-            Rewards=self.Rewards, 
+            Rewards=self.Rewards,
             pretend_to_be_active=True,
             shuffle=False,
         )
@@ -319,13 +319,13 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         test_specific_transforms = self.additional_transforms(self.test_transforms)
         if test_specific_transforms:
             env = TransformObservation(env, f=test_specific_transforms)
-        # NOTE: Two ways of removing the task labels: Either using a different
-        # 'split_batch_fn' at train and test time, or by using this wrapper
-        # which is also used in the RL side of the tree:
-        # TODO: Maybe remove/simplify the 'split_batch_function'.
 
         if not self.task_labels_at_test_time:
             env = HideTaskLabelsWrapper(env)
+
+        # TODO: Remove this once that stuff with the 'fake' task schedule is fixed below,
+        # base it on the equivalent in ContinualSLSetting instead (which should actually
+        # be moved into DiscreteTaskAgnosticSL, now that I think about it!)
 
         # Testing this out, we're gonna have a "test schedule" like this to try
         # to imitate the MultiTaskEnvironment in RL.
@@ -339,7 +339,11 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
             range(len(transition_steps)),
         )
         # TODO: Configure the 'monitoring' dir properly.
-        test_dir = "results"
+        if wandb.run:
+            test_dir = wandb.run.dir
+        else:
+            test_dir = "results"
+
         test_loop_max_steps = len(dataset) // (env.batch_size or 1)
         # TODO: Fix this: iteration doesn't ever end for some reason.
 
@@ -350,6 +354,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
             task_schedule=test_task_schedule,
             force=True,
             config=self.config,
+            video_callable=bool(wandb.run or self.config.render),
         )
 
         if self.test_env:

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Sequence, Type, Union
-
+import wandb
 import gym
 from gym import spaces
 from gym.utils import colorize
@@ -914,7 +914,10 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
         test_loop_max_steps = self.test_steps // (batch_size or 1)
         # TODO: Find where to configure this 'test directory' for the outputs of
         # the Monitor.
-        test_dir = "results"
+        if wandb.run:
+            test_dir = wandb.run.dir
+        else:
+            test_dir = "results"
         # TODO: Debug wandb Monitor integration.
         self.test_env = ContinualRLTestEnvironment(
             env_dataloader,
@@ -923,7 +926,7 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
             step_limit=test_loop_max_steps,
             config=self.config,
             force=True,
-            video_callable=None if self.config.render else False,
+            video_callable=True,
         )
         return self.test_env
 

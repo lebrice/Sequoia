@@ -62,7 +62,7 @@ from .objects import (
 from .results import ContinualSLResults
 from .wrappers import relabel
 from continuum.tasks import concat
-
+import wandb
 logger = get_logger(__file__)
 
 EnvironmentType = TypeVar("EnvironmentType", bound=ContinualSLEnvironment)
@@ -542,7 +542,11 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         # task IDs of the observations.
 
         # TODO: Configure the 'monitoring' dir properly.
-        test_dir = "results"
+        if wandb.run:
+            test_dir = wandb.run.dir
+        else:
+            test_dir = "results"
+
         test_loop_max_steps = len(dataset) // (env.batch_size or 1)
         test_env = ContinualSLTestEnvironment(
             env,
@@ -550,6 +554,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             step_limit=test_loop_max_steps,
             force=True,
             config=self.config,
+            video_callable=True if wandb.run or self.config.render else False,
         )
 
         # FIXME: Quickfix for the 'dtype' of the NamedTupleSpace getting lost in transformation.
