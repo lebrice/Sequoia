@@ -367,8 +367,9 @@ class Method(Generic[SettingType], Parseable, ABC):
             # if setting.wandb and setting.wandb.project:
             run_id = wandb.run.id
             assert isinstance(run_id, str)
-            results_dir = base_results_dir / run_id
-            results_dir.mkdir(exist_ok=False, parents=True)
+            # results_dir = base_results_dir / run_id
+            # TODO: Fix this:
+            results_dir = wandb.run.dir
         else:
             for suffix in [f"run_{i}"  for i in range(100)]:
                 results_dir = base_results_dir / suffix
@@ -402,7 +403,11 @@ class Method(Generic[SettingType], Parseable, ABC):
             print(f"Unable to save the Method: {e}")
 
         if wandb.run:
-            wandb.save(str(results_dir / "*"))
+            wandb.save(str(results_json_path))
+            if setting_path.exists():
+                wandb.save(str(setting_path))
+            if method_path.exists():
+                wandb.save(str(method_path))
 
     def setup_wandb(self, run: Run) -> None:
         """ Called by the Setting when using Weights & Biases, after `wandb.init`.
