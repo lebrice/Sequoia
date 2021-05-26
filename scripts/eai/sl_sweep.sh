@@ -43,7 +43,7 @@ for METHOD in "${METHODS[@]}"; do
             scripts/eai/job.sh sequoia_sweep \
                 --max_runs $MAX_RUNS --database_path $DABASE_PATH \
                 --setting $SETTING --dataset $DATASET --project $PROJECT \
-                --method $METHOD \
+                --method $METHOD --monitor_training_performance True \
                 "$@"
         done
     done
