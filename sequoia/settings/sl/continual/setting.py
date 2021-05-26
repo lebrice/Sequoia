@@ -554,7 +554,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             step_limit=test_loop_max_steps,
             force=True,
             config=self.config,
-            video_callable=True if wandb.run or self.config.render else False,
+            video_callable=None if (wandb.run or self.config.render) else False,
         )
 
         # FIXME: Quickfix for the 'dtype' of the NamedTupleSpace getting lost in transformation.

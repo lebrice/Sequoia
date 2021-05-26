@@ -354,7 +354,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
             task_schedule=test_task_schedule,
             force=True,
             config=self.config,
-            video_callable=bool(wandb.run or self.config.render),
+            video_callable=None if (wandb.run or self.config.render) else False,
         )
 
         if self.test_env:

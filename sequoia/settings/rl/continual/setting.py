@@ -391,7 +391,18 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
                 # the end of the "task". When there are clear task boundaries (i.e.
                 # when in 'Class'/Task-Incremental RL), the last entry is the start
                 # of the last task.
-                nb_tasks -= 1
+                if self.max_steps == max(self.train_task_schedule) + self.steps_per_task:
+                    # BUG: We're missing the 'end' task in a ContinualRLSetting!
+                    # QUickfix: Copy over the last task, so it is also the final state.
+                    # i.e., no changes between last boundary and the end.
+                    self.train_task_schedule[self.max_steps] = self.train_task_schedule[max(self.train_task_schedule)]
+                elif (self.nb_tasks * self.steps_per_task) - self.steps_per_task == max(self.train_task_schedule):
+                    # The task schedule keys go up to the last task boundary.
+                    self.max_steps = self.nb_tasks * self.steps_per_task #+ self.steps_per_task
+                else: 
+                    assert False, (self.max_steps, self.steps_per_task, self.nb_tasks)
+                    nb_tasks -= 1
+
             if self.nb_tasks not in {0, 1}:
                 if self.nb_tasks != nb_tasks:
                     raise RuntimeError(
@@ -399,8 +410,10 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
                         f"number of tasks deduced from the task schedule ({nb_tasks})"
                     )
             self.nb_tasks = nb_tasks
-
-            self.max_steps = max(self.train_task_schedule.keys())
+            # TODO: Sort out this mess:
+            if self.max_steps != self.nb_tasks * self.steps_per_task:
+                self.max_steps = max(self.train_task_schedule.keys())
+            
             if not self.smooth_task_boundaries:
                 # See above note about the last entry.
                 self.max_steps += self.steps_per_task
@@ -432,7 +445,7 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
                 "'nb_tasks', or 'steps_per_task'."
             )
 
-        assert self.nb_tasks == self.max_steps // self.steps_per_task
+        assert self.nb_tasks == self.max_steps // self.steps_per_task, (self.nb_tasks, self.max_steps, self.steps_per_task)
 
         if self.test_task_schedule:
             if 0 not in self.test_task_schedule:
@@ -926,7 +939,7 @@ class ContinualRLSetting(RLSetting, IncrementalAssumption):
             step_limit=test_loop_max_steps,
             config=self.config,
             force=True,
-            video_callable=True,
+            video_callable=None if wandb.run or self.config.render else False,
         )
         return self.test_env
 
