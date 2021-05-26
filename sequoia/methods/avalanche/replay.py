@@ -17,7 +17,7 @@ from .base import AvalancheMethod
 
 @register_method
 @dataclass
-class ReplayMethod(AvalancheMethod[Replay], target_setting=ClassIncrementalSetting):
+class ReplayMethod(AvalancheMethod[Replay]):
     """ Replay strategy from Avalanche.
     See Replay plugin for details.
     This strategy does not use task identities.

@@ -18,7 +18,7 @@ from .base import AvalancheMethod
 
 @register_method
 @dataclass
-class AGEMMethod(AvalancheMethod[AGEM], target_setting=ClassIncrementalSetting):
+class AGEMMethod(AvalancheMethod[AGEM]):
     """Average Gradient Episodic Memory (AGEM) strategy from Avalanche.
     See AGEM plugin for details.
     This strategy does not use task identities.

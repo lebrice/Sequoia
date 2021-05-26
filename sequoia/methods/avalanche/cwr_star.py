@@ -15,7 +15,7 @@ from .base import AvalancheMethod
 
 @register_method
 @dataclass
-class CWRStarMethod(AvalancheMethod[CWRStar], target_setting=ClassIncrementalSetting):
+class CWRStarMethod(AvalancheMethod[CWRStar]):
     """ CWRStar strategy from Avalanche.
     See CWRStar plugin for details.
     This strategy does not use task identities.

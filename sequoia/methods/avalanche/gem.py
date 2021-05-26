@@ -18,7 +18,7 @@ from .base import AvalancheMethod
 
 @register_method
 @dataclass
-class GEMMethod(AvalancheMethod[GEM], target_setting=ClassIncrementalSetting):
+class GEMMethod(AvalancheMethod[GEM]):
     """Gradient Episodic Memory (GEM) strategy from Avalanche.
     See GEM plugin for details.
     This strategy does not use task identities.

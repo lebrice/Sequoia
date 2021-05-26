@@ -18,7 +18,7 @@ from .base import AvalancheMethod
 
 @register_method
 @dataclass
-class EWCMethod(AvalancheMethod[EWC], target_setting=ClassIncrementalSetting):
+class EWCMethod(AvalancheMethod[EWC]):
     """
     Elastic Weight Consolidation (EWC) strategy from Avalanche.
     See EWC plugin for details.

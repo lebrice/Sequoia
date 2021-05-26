@@ -15,7 +15,7 @@ from .base import AvalancheMethod
 
 @register_method
 @dataclass
-class AR1Method(AvalancheMethod[AR1], target_setting=ClassIncrementalSetting):
+class AR1Method(AvalancheMethod[AR1]):
     """ AR1 strategy from Avalanche.
     See AR1 plugin for details.
     This strategy does not use task identities.

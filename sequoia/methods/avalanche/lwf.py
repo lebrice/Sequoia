@@ -17,7 +17,7 @@ from .base import AvalancheMethod
 
 @register_method
 @dataclass
-class LwFMethod(AvalancheMethod[LwF], target_setting=ClassIncrementalSetting):
+class LwFMethod(AvalancheMethod[LwF]):
     """ Learning without Forgetting strategy from Avalanche.
     See LwF plugin for details.
     This strategy does not use task identities.

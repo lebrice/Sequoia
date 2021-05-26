@@ -19,7 +19,7 @@ from .base import AvalancheMethod
 @register_method
 @dataclass
 class SynapticIntelligenceMethod(
-    AvalancheMethod[SynapticIntelligence], target_setting=ClassIncrementalSetting
+    AvalancheMethod[SynapticIntelligence]
 ):
     """ The Synaptic Intelligence strategy from Avalanche.
 

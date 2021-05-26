@@ -120,7 +120,7 @@ class GDumbPlugin(_GDumbPlugin):
 
 @register_method
 @dataclass
-class GDumbMethod(AvalancheMethod[GDumb], target_setting=ClassIncrementalSetting):
+class GDumbMethod(AvalancheMethod[GDumb]):
     """GDumb strategy from Avalanche.
     See GDumbPlugin for more details.
     This strategy does not use task identities.
