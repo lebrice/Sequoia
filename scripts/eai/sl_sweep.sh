@@ -23,15 +23,26 @@ SETTINGS=(
 )
 METHODS=(
     # "random_baseline"
-    "gdumb" "agem" "ar1" "cwr_star" "gem" "lwf" "replay" "synaptic_intelligence"
+    "naive"
+    "gdumb"
+    "agem"
+    "ar1"
+    "cwr_star"
+    "gem"
+    "lwf"
+    "replay"
+    "synaptic_intelligence"
     "avalanche.ewc"
     "baseline"
     "methods.ewc"
-    "experience_replay" "hat" "pnn"
+    "experience_replay"
+    "hat"
+    "pnn"
 )
 DATASETS=(
     "synbols --nb_tasks 12"
     "cifar10"
+    "cifar100 --nb_tasks 10"
     "mnist"
 )
 

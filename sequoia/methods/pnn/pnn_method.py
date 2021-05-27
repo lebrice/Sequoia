@@ -29,19 +29,23 @@ from sequoia.settings import (
 )
 from sequoia.settings.assumptions import IncrementalAssumption
 from sequoia.settings.assumptions.task_incremental import TaskIncrementalAssumption
+from sequoia.utils import get_logger
 
 from .model_rl import PnnA2CAgent
 from .model_sl import PnnClassifier
+
+logger = get_logger(__file__)
 
 # BUG: Can't apply PNN to the ClassIncrementalSetting at the moment.
 # BUG: Can't apply PNN to any RL Settings at the moment.
 # (it was hard-coded to handle pixel cartpole).
 # TODO: When those bugs get fixed, restore the 'IncrementalAssumption' as the target
 # setting.
+# TODO: Debugging PNN on Incremental rather than TaskIncremental
 
 
 @register_method
-class PnnMethod(Method, target_setting=TaskIncrementalAssumption):
+class PnnMethod(Method, target_setting=IncrementalAssumption):
     """
     PNN Method.
 
@@ -91,7 +95,11 @@ class PnnMethod(Method, target_setting=TaskIncrementalAssumption):
         self.num_inputs = np.prod(input_space.shape)
 
         self.added_tasks = []
-
+        if not (setting.task_labels_at_train_time and setting.task_labels_at_test_time): 
+            logger.warning(RuntimeWarning(
+                "TODO: PNN doesn't have 'propper' task inference, and task labels "
+                "arent always available! This will use an output head at random."
+            ))
         if isinstance(setting, RLSetting):
             # If we're applied to an RL setting:
 

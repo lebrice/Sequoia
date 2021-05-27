@@ -164,7 +164,9 @@ class PnnMethod(Method, target_setting=Setting):
         # the index of the new task. If not, task_id will be None.
         # For example, you could do something like this:
         # self.model.current_task = task_id
-        self.model.freeze_columns([task_id])
+        # This freezes all columns except the one for the next task.. but there might
+        # not yet be a column for the new task!
+        self.model.freeze_columns(skip=[task_id])
         if task_id not in self.added_tasks:
             if isinstance(self.model, PnnA2CAgent):
                 self.model.new_task(
