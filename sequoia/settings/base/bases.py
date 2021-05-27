@@ -384,7 +384,7 @@ class Method(Generic[SettingType], Parseable, ABC):
                     f"Unable to create a unique results dir under {base_results_dir} "
                     f"(run_id is {run_id})"
                 )
-
+        results_dir = Path(results_dir)
         logger.info(f"Saving results in directory {results_dir}")
         results_json_path = results_dir / "results.json"
         with open(results_json_path, "w") as f:
