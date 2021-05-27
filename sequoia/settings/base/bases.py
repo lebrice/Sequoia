@@ -387,8 +387,11 @@ class Method(Generic[SettingType], Parseable, ABC):
         results_dir = Path(results_dir)
         logger.info(f"Saving results in directory {results_dir}")
         results_json_path = results_dir / "results.json"
-        with open(results_json_path, "w") as f:
-            json.dump(results.to_log_dict(), f)
+        try:
+            with open(results_json_path, "w") as f:
+                json.dump(results.to_log_dict(), f)
+        except Exception as e:
+            print(f"Unable to save the results: {e}")
 
         setting_path = results_dir / "setting.yaml"
         try:
