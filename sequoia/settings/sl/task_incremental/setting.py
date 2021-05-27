@@ -10,12 +10,13 @@ from typing import ClassVar, Type, TypeVar
 from sequoia.settings.base import Results
 from sequoia.utils.utils import constant
 
+from sequoia.settings.assumptions.task_incremental import TaskIncrementalAssumption
 from sequoia.settings.sl.incremental import IncrementalSLSetting
 from sequoia.settings.sl.incremental import IncrementalSLResults as TaskIncrementalSLResults
 
 
 @dataclass
-class TaskIncrementalSLSetting(IncrementalSLSetting):
+class TaskIncrementalSLSetting(TaskIncrementalAssumption, IncrementalSLSetting):
     """ Setting where data arrives in a series of Tasks, and where the task
     labels are always available (both train and test time).
     """

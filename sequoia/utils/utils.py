@@ -322,6 +322,8 @@ def camel_case(name):
 def constant(v: T, **kwargs) -> T:
     metadata = kwargs.setdefault("metadata", {})
     metadata["constant"] = v
+    metadata["decoding_fn"] = lambda _: v
+    metadata["to_dict"] = lambda _: v
     return field(default=v, init=False, **kwargs)
 
 

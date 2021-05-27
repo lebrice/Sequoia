@@ -304,6 +304,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
             dataset,
             batch_size=batch_size,
             num_workers=num_workers,
+            hide_task_labels=(not self.task_labels_at_test_time),
             observation_space=self.observation_space,
             action_space=self.action_space,
             reward_space=self.reward_space,
@@ -320,6 +321,8 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         if test_specific_transforms:
             env = TransformObservation(env, f=test_specific_transforms)
 
+        # TODO: Remove this, I don't think it's usef anymore, since `hide_task_labels`
+        # is an argument to self.Environment now.
         if not self.task_labels_at_test_time:
             env = HideTaskLabelsWrapper(env)
 

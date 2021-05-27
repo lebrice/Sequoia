@@ -1,4 +1,3 @@
-
 import itertools
 import math
 from dataclasses import dataclass
@@ -19,23 +18,45 @@ from sequoia.common.config import Config
 from sequoia.utils.logging_utils import get_logger, log_calls
 from sequoia.settings.assumptions.incremental_test import OtherDummyMethod
 from .setting import TaskIncrementalSLSetting
+from ..incremental.setting_test import (
+    TestIncrementalSLSetting as IncrementalSLSettingTests,
+)
 
 logger = get_logger(__file__)
+from sequoia.settings import Setting
+
+
+class TestTaskIncrementalSLSetting(IncrementalSLSettingTests):
+    Setting: ClassVar[Type[Setting]] = TaskIncrementalSLSetting
+    fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = dict(
+        dataset="mnist", batch_size=64,
+    )
 
 
 def check_only_right_classes_present(setting: TaskIncrementalSLSetting):
-    """ Checks that only the classes within each task are present. """
+    """ Checks that only the classes within each task are present.
+
+    TODO: This should be refactored to be based more on the reward space.
+    """
+    assert setting.task_labels_at_test_time and setting.task_labels_at_test_time
+
     for i in range(setting.nb_tasks):
         setting.current_task_id = i
         batch_size = 5
         train_loader = setting.train_dataloader(batch_size=batch_size)
-        
+
         # get the classes in the current task:
         task_classes = setting.task_classes(i, train=True)
 
-        for j, (observations, rewards) in enumerate(itertools.islice(train_loader, 100)):
+        for j, (observations, rewards) in enumerate(
+            itertools.islice(train_loader, 100)
+        ):
             x = observations.x
             t = observations.task_labels
+
+            if setting.task_labels_at_train_time:
+                assert t is not None
+
             y = rewards.y
             print(i, j, y, t)
             y_in_task_classes = [y_i in task_classes for y_i in y.tolist()]
@@ -43,14 +64,69 @@ def check_only_right_classes_present(setting: TaskIncrementalSLSetting):
             assert x.shape == (batch_size, 3, 28, 28)
             x = x.permute(0, 2, 3, 1)[0]
             assert x.shape == (28, 28, 3)
-            
+
             reward = train_loader.send([4 for _ in range(batch_size)])
-            if setting.monitor_training_performance:
-                assert reward is None
-            else:
+            if rewards is not None:
+                # IF we send somethign to the env, then it should give back the same
+                # labels as for the last batch.
                 assert (reward.y == rewards.y).all()
 
         train_loader.close()
+
+        valid_loader = setting.val_dataloader(batch_size=batch_size)
+        for j, (observations, rewards) in enumerate(
+            itertools.islice(valid_loader, 100)
+        ):
+            x = observations.x
+            t = observations.task_labels
+
+            if setting.monitor_training_performance:
+                assert rewards is None
+
+            if setting.task_labels_at_train_time:
+                assert t is not None
+
+            y = rewards.y
+            print(i, j, y, t)
+            y_in_task_classes = [y_i in task_classes for y_i in y.tolist()]
+            assert all(y_in_task_classes)
+            assert x.shape == (batch_size, 3, 28, 28)
+            x = x.permute(0, 2, 3, 1)[0]
+            assert x.shape == (28, 28, 3)
+
+            reward = valid_loader.send(valid_loader.action_space.sample())
+            if rewards is not None:
+                # IF we send somethign to the env, then it should give back the same
+                # labels as for the last batch.
+                assert (reward.y == rewards.y).all()
+
+        valid_loader.close()
+
+        # FIXME: get the classes in the current task, at test-time.
+        task_classes = list(range(setting.reward_space.n))
+
+        test_loader = setting.test_dataloader(batch_size=batch_size)
+        assert not test_loader.unwrapped._hide_task_labels
+        for j, (observations, rewards) in enumerate(itertools.islice(test_loader, 100)):
+            x = observations.x
+            t = observations.task_labels
+            if setting.task_labels_at_test_time:
+                assert t is not None
+
+            if rewards is None:
+                rewards = test_loader.send(test_loader.action_space.sample())
+                assert rewards is not None
+                assert rewards.y is not None
+
+            y = rewards.y
+            print(i, j, y, t)
+            y_in_task_classes = [y_i in task_classes for y_i in y.tolist()]
+            assert all(y_in_task_classes)
+            assert x.shape == (batch_size, 3, 28, 28)
+            x = x.permute(0, 2, 3, 1)[0]
+            assert x.shape == (28, 28, 3)
+
+        test_loader.close()
 
 
 def test_task_incremental_mnist_setup():
@@ -60,21 +136,29 @@ def test_task_incremental_mnist_setup():
         # BUG: When num_workers > 0, some of the tests hang, but only when running *all* the tests!
         # num_workers=0,
     )
+    assert setting.task_labels_at_test_time and setting.task_labels_at_train_time
     setting.prepare_data(data_dir="data")
     setting.setup()
     check_only_right_classes_present(setting)
 
 
-@pytest.mark.xfail(reason=(
-    "TODO: Continuum actually re-labels the images to 0-10, regardless of the "
-    "class order. The actual images are ok though."
-))
-def test_class_incremental_mnist_setup_reversed_class_order():
+@pytest.mark.xfail(
+    reason=(
+        "TODO: Continuum actually re-labels the images to 0-10, regardless of the "
+        "class order. The actual images are ok though."
+    )
+)
+def test_task_incremental_mnist_setup_reversed_class_order():
     setting = TaskIncrementalSLSetting(
         dataset="mnist",
         nb_tasks=5,
         class_order=list(reversed(range(10))),
         # num_workers=0,
+    )
+    assert setting.task_labels_at_train_time and setting.task_labels_at_test_time
+    assert (
+        setting.known_task_boundaries_at_train_time
+        and setting.known_task_boundaries_at_test_time
     )
     setting.prepare_data(data_dir="data")
     setting.setup()
@@ -82,11 +166,7 @@ def test_class_incremental_mnist_setup_reversed_class_order():
 
 
 def test_class_incremental_mnist_setup_with_nb_tasks():
-    setting = TaskIncrementalSLSetting(
-        dataset="mnist",
-        nb_tasks=2,
-        num_workers=0,
-    )
+    setting = TaskIncrementalSLSetting(dataset="mnist", nb_tasks=2, num_workers=0,)
     assert setting.increment == 5
     setting.prepare_data(data_dir="data")
     setting.setup()

@@ -43,6 +43,16 @@ def test_settings_override_with_constant_take_init():
     assert bob2.foo == 4
 
 
+def test_loading_benchmark_doesnt_overwrite_constant():
+    setting1 = Setting1.loads_json('{"foo":1, "bar":2}')
+    assert setting1.foo == 1
+    assert setting1.bar == 2
+
+    setting2 = Setting2.loads_json('{"foo":1, "bar":2}')
+    assert setting2.foo == 1
+    assert setting2.bar == 1
+
+
 def test_init_still_works():
     setting = Setting(val_fraction=0.01)
     assert setting.val_fraction == 0.01

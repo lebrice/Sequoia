@@ -177,6 +177,7 @@ class ContinualSLEnvironment(
         **kwargs,
     ):
         assert isinstance(dataset, Dataset)
+        self._hide_task_labels = hide_task_labels
         split_batch_fn = default_split_batch_function(
             hide_task_labels=hide_task_labels,
             Observations=Observations,
