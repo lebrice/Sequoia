@@ -239,7 +239,7 @@ class Experiment(Parseable, Serializable):
             
         """
         assert setting is not None and method is not None
-
+        assert isinstance(setting, Setting), f"TODO: Fix this, need to pass a wandb config to the Setting from the experiment!"
         if not (isinstance(setting, Setting) and isinstance(method, Method)):
             setting, method = parse_setting_and_method_instances(
                 setting=setting, method=method, argv=argv, strict_args=strict_args
@@ -283,13 +283,17 @@ class Experiment(Parseable, Serializable):
         assert self.setting is not None
         assert self.method is not None
         assert self.config is not None
-        return self.run_experiment(
-            setting=self.setting,
-            method=self.method,
-            config=self.config,
-            argv=argv,
-            strict_args=strict_args,
-        )
+
+        if not (isinstance(self.setting, Setting) and isinstance(self.method, Method)):
+            setting, method = parse_setting_and_method_instances(
+                setting=self.setting, method=self.method, argv=argv, strict_args=strict_args
+            )
+
+        setting.wandb = self.wandb
+        setting.config = self.config
+
+        return setting.apply(method, config=self.config)
+
 
     @classmethod
     def main(

@@ -148,32 +148,33 @@ class AvalancheMethod(
     def configure(self, setting: ClassIncrementalSetting) -> None:
         self.setting = setting
         self.model = self.create_model(setting).to(self.device)
-
+        
         # Select the loss function to use.
         if not isinstance(self.criterion, nn.Module):
             self.criterion = self.criterion()
 
+        metrics = [
+            accuracy_metrics(epoch=True, experience=True, stream=True),
+            forgetting_metrics(experience=True, stream=True),
+            loss_metrics(minibatch=False, epoch=True, experience=True, stream=True),
+        ]
+        loggers = [
+            # BUG: evaluation.py:94, _update_metrics: 
+            # before_training() takes 2 positional arguments but 3 were given
+            # default_logger,
+        ]
         if setting.wandb and setting.wandb.project:
             wandb_logger = WandBLogger(
                 project_name=setting.wandb.project,
                 run_name=setting.wandb.run_name,
                 params=setting.wandb.wandb_init_kwargs(),
             )
-            metrics = [
-                accuracy_metrics(epoch=True, experience=True, stream=True),
-                forgetting_metrics(experience=True, stream=True),
-                loss_metrics(minibatch=False, epoch=True, experience=True, stream=True),
-            ]
-            self.evaluator = EvaluationPlugin(
-                *metrics,
-                loggers=[
-                    # InteractiveLogger(),  # Causing issues on SLURM cluster for some reason?
-                    wandb_logger,
-                ],
-            )
-        else:
-            logger.info(f"Using the default logger from Avalanche.")
-            self.evaluator = default_logger
+            loggers.append(wandb_logger)
+
+        self.evaluator = EvaluationPlugin(
+            *metrics,
+            loggers=loggers,
+        )
 
         self.optimizer = self.make_optimizer()
         # Actually initialize the strategy using the fields on `self`.
