@@ -95,7 +95,8 @@ class PnnClassifier(nn.Module):
         )
         self.n_tasks += 1
         # TODO: Fix this to use the actual number of classes per task.
-        self.n_classes_per_task.append(2)
+        n_outputs = sizes[-1]
+        self.n_classes_per_task.append(n_outputs)
         task_id = len(self.columns)
         modules = []
         # TODO: Would it also be possible to use convolutional layers here?

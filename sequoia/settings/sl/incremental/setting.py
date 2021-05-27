@@ -203,6 +203,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         assert isinstance(self.test_increment, int)
 
         self.n_classes_per_task: int = self.increment
+        self.test_increment = self.increment
 
     def apply(self, method: Method, config: Config = None) -> IncrementalSLResults:
         """Apply the given method on this setting to producing some results."""
