@@ -5,7 +5,7 @@ set -o pipefail # Unveils hidden failures
 set -o nounset  # Exposes unset variables
 export WANDB_API_KEY=${WANDB_API_KEY?"Need to pass the wandb api key or have it set in the environment variables."}
 
-# source dockers/eai/build.sh
+source dockers/eai/build.sh
 
 export NO_BUILD=1
 
