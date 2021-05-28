@@ -68,7 +68,7 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
         # Defaults to None in RL, and 32 when in SL.
         batch_size: Optional[int] = None
         # Maximum number of training epochs per task. (only used in SL Settings)
-        max_epochs_per_task: int = uniform(1, 20, default=10)
+        max_epochs_per_task: int = uniform(1, 100, default=10)
 
     def __init__(self, hparams: HParams = None):
         # We will create those when `configure` will be called, before training.

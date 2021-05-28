@@ -22,7 +22,14 @@ SETTINGS=(
     "traditional_rl"
 )
 METHODS=(
-    "ppo" "a2c" "dqn" "ddpg" "sac" "td3" "baseline" "methods.ewc"
+    "ppo"
+    "a2c"
+    "dqn"
+    "ddpg"
+    "sac"
+    "td3"
+    "baseline"
+    "methods.ewc"
 )
 BENCHMARKS=(
     "cartpole"
