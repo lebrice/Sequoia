@@ -162,6 +162,7 @@ class AvalancheMethod(
             # BUG: evaluation.py:94, _update_metrics: 
             # before_training() takes 2 positional arguments but 3 were given
             # default_logger,
+            InteractiveLogger(),
         ]
         if setting.wandb and setting.wandb.project:
             wandb_logger = WandBLogger(
