@@ -174,6 +174,7 @@ class ContinualSLEnvironment(
         pretend_to_be_active: bool = False,
         strict: bool = False,
         one_epoch_only: bool = True,
+        drop_last: bool = False,
         **kwargs,
     ):
         assert isinstance(dataset, Dataset)
@@ -192,6 +193,7 @@ class ContinualSLEnvironment(
             reward_space=reward_space,
             pretend_to_be_active=pretend_to_be_active,
             strict=strict,
+            drop_last=drop_last,
             **kwargs,
         )
         # TODO: Clean up the batching of a Sparse(Discrete) space so its less ugly.

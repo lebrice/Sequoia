@@ -70,6 +70,9 @@ class SLSetting(Setting[PassiveEnvironment[ObservationType, ActionType, RewardTy
     test_transforms: List[Transforms] = list_field(
         Transforms.to_tensor, Transforms.three_channels
     )
+    # Wether to drop the last batch (during training). Useful if you use batchnorm, to
+    # avoid having an error when the batch_size is 1.
+    drop_last: bool = False
 
 
 SettingType = TypeVar("SettingType", bound=SLSetting)

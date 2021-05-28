@@ -3,13 +3,15 @@
 import math
 import warnings
 from dataclasses import dataclass
-from typing import Callable, ClassVar, Optional, Type, Union
+from typing import Callable, ClassVar, Optional, Type, Union, Any
 from abc import ABC
 import gym
 from gym import spaces
 from gym.spaces.utils import flatten_space
 from simple_parsing import mutable_field
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
+from stable_baselines3.common.off_policy_algorithm import TrainFreq, TrainFrequencyUnit
+from simple_parsing.helpers.serialization import register_decoding_fn
 
 from sequoia.common.hparams import log_uniform, uniform
 from sequoia.settings.rl import ContinualRLSetting
@@ -18,6 +20,14 @@ from sequoia.utils.logging_utils import get_logger
 from .base import SB3BaseHParams, StableBaselines3Method
 
 logger = get_logger(__file__)
+
+
+def decode_trainfreq(v: Any):
+    if isinstance(v, list) and len(v) == 2:
+        return TrainFreq(v[0], v[1])
+    return v
+
+register_decoding_fn(TrainFreq, decode_trainfreq)
 
 
 class OffPolicyModel(OffPolicyAlgorithm, ABC):

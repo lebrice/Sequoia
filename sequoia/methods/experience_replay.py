@@ -4,7 +4,7 @@ Should be applicable to any Setting.
 """
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Type, Any
+from typing import Optional, Tuple, Dict, Type, Any, List
 from argparse import ArgumentParser, Namespace
 
 import gym
@@ -50,7 +50,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
         self.buffer: Optional[Buffer] = None
         self.optim: torch.optim.Optimizer
         self.task: int = 0
-        self.rng = np.random.RandomState(seed)
+        self.rng = np.random.default_rng(seed)
         self.seed = seed
         if seed:
             torch.manual_seed(seed)
@@ -64,10 +64,12 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
     def configure(self, setting: ClassIncrementalSetting):
         # create the model
         self.net = models.resnet18(pretrained=False)
-        self.net.fc = nn.Linear(512, setting.num_classes)
+        self.net.fc = nn.Linear(512, setting.action_space.n)
         if torch.cuda.is_available():
             self.net = self.net.to(device=self.device)
-
+        # Set drop_last to True, to avoid getting a batch of size 1, which makes
+        # batchnorm raise an error.
+        setting.drop_last = True
         image_space: spaces.Box = setting.observation_space[0]
         # Create the buffer.
         if self.buffer_capacity:
@@ -89,6 +91,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
         # Simple example training loop, not using the validation loader.
         best_val_loss = np.inf
         best_epoch = 0
+
         for epoch in range(self.epochs_per_task):
             train_pbar = tqdm.tqdm(train_env, desc=f"Training Epoch {epoch}")
             postfix = {}
@@ -100,7 +103,18 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
 
                 obs = obs.to(device=self.device)
                 x = obs.x
+
+                # FIXME: Batch norm will cause a crash if we pass x with batch_size==1!
+                fake_batch = False
+                if x.shape[0] == 1:
+                    # Pretend like this has batch_size of 2 rather than just 1.
+                    x = x.tile([2, *(1 for _ in x.shape[1:])])
+                    x[1] += 1  # Just so the two samples aren't identical, otherwise
+                    # maybe the batch norm std would be nan or something.
+                    fake_batch = True
                 logits = self.net(x)
+                if fake_batch:
+                    logits = logits[:1]  # Drop the 'fake' second item.
 
                 if rew is None:
                     # If our online training performance is being measured, we might

@@ -67,6 +67,7 @@ class PassiveEnvironment(
         n_classes: int = None,
         pretend_to_be_active: bool = False,
         strict: bool = False,
+        drop_last: bool = False,
         **kwargs,
     ):
         """Creates the DataLoader/Environment for the given dataset.
@@ -136,8 +137,7 @@ class PassiveEnvironment(
         ```
         
         """
-
-        super().__init__(dataset=dataset, **kwargs)
+        super().__init__(dataset=dataset, drop_last=drop_last, **kwargs)
         self.split_batch_fn = split_batch_fn
 
         # TODO: When the spaces aren't passed explicitly, assumes a classification dataset.
