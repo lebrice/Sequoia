@@ -17,13 +17,12 @@ SETTINGS=(
     "continual_sl"
     "discrete_task_agnostic_sl"
     "incremental_sl"
-    # "task_incremental_sl"
-    # "multi_task_sl"
-    # "traditional_sl"
+    "task_incremental_sl"
+    "multi_task_sl"
+    "traditional_sl"
 )
 METHODS=(
     # "random_baseline"
-    "naive"
     "gdumb"
     "agem"
     "ar1"
