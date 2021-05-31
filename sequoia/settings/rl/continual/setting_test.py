@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from gym import spaces
 from gym.vector.utils import batch_space
+from sequoia.common.config import Config
 from sequoia.common.spaces import Image
 from sequoia.common.transforms import Transforms
 from sequoia.conftest import (
@@ -266,6 +267,77 @@ class TestContinualRLSetting:
             for iter_obs in take(env, 3):
                 check_obs(iter_obs)
                 _ = env.send(env.action_space.sample())
+
+    @pytest.mark.no_xvfb
+    @pytest.mark.timeout(20)
+    @pytest.mark.skipif(
+        (not Path("temp").exists()),
+        reason="Need temp dir for saving the figure this test creates.",
+    )
+    @mujoco_required
+    def test_show_distributions(self, config: Config):
+        setting = self.Setting(
+            dataset="half_cheetah",
+            max_steps=1_000,
+            max_episode_steps=100,
+            config=config,
+        )
+        import matplotlib.pyplot as plt
+        from functools import partial
+
+        fig, axes = plt.subplots(2, 3)
+        name_to_env_fn = {
+            "train": setting.train_dataloader,
+            "valid": setting.val_dataloader,
+            "test": setting.test_dataloader,
+        }
+        for i, (name, env_fn) in enumerate(name_to_env_fn.items()):
+            env = env_fn(batch_size=None, num_workers=None)
+
+            gravities: List[float] = []
+            task_labels: List[Optional[int]] = []
+            total_steps = 0
+            while not env.is_closed():
+                obs = env.reset()
+                done = False
+                steps_in_episode = 0
+
+                while not done:
+                    t = obs.task_labels
+                    obs, reward, done, info = env.step(env.action_space.sample())
+                    total_steps += 1
+                    steps_in_episode += 1
+                    y = reward.y
+
+                    gravities.append(env.gravity)
+                    print(total_steps, env.gravity)
+                    if total_steps > 100:
+                        assert env.gravity != -9.81
+
+                    task_labels.append(t)
+
+            x = np.arange(len(gravities))
+            axes[0, i].plot(x, gravities, label="gravities")
+            axes[0, i].legend()
+            axes[0, i].set_title(f"{name} gravities")
+            axes[0, i].set_xlabel("Step index")
+            axes[0, i].set_ylabel("Value")
+
+            # for task_id in task_ids:
+            #     y = [t_counter.get(task_id) for t_counter in t_counters]
+            #     axes[1, i].plot(x, y, label=f"task_id={task_id}")
+            # axes[1, i].legend()
+            # axes[1, i].set_title(f"{name} task_id")
+            # axes[1, i].set_xlabel("Batch index")
+            # axes[1, i].set_ylabel("Count in batch")
+
+        plt.legend()
+
+        Path("temp").mkdir(exist_ok=True)
+        fig.set_size_inches((6, 4), forward=False)
+        plt.savefig(f"temp/{self.Setting.__name__}.png")
+        # plt.waitforbuttonpress(10)
+        # plt.show()
 
 
 @pytest.mark.xfail(reason="TODO: DQN model only accepts string environment names...")

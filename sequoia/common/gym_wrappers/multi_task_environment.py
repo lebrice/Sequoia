@@ -209,14 +209,24 @@ class MultiTaskEnvironment(gym.Wrapper):
             unwrapped_type = type(env.unwrapped)
             if unwrapped_type in task_param_names:
                 task_params = task_param_names[unwrapped_type]
+            elif task_schedule:
+                if any(isinstance(v, dict) for v in task_schedule.values()):
+                    first_task_dict = task_schedule[min(task_schedule)]
+                    task_params = first_task_dict.keys()
+                    for task_dict in task_schedule.values():
+                        assert (
+                            task_params == task_dict.keys()
+                        ), "All tasks need to have the same keys for now."
+                    task_params = list(task_params)
             else:
-                pass
-                # logger.warning(UserWarning(
-                #     f"You didn't pass any 'task params', and the task "
-                #     f"parameters aren't known for this type of environment "
-                #     f"({unwrapped_type}), so we can't make it multi-task with "
-                #     f"this wrapper."
-                # ))
+                logger.warning(
+                    UserWarning(
+                        f"You didn't pass any 'task params', and the task "
+                        f"parameters aren't known for this type of environment "
+                        f"({unwrapped_type}), so we can't make it multi-task with "
+                        f"this wrapper."
+                    )
+                )
 
         self._max_steps: Optional[int] = max_steps
         self._starting_step: int = starting_step
