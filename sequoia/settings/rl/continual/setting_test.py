@@ -28,6 +28,38 @@ from sequoia.utils.utils import take
 from .setting import ContinualRLSetting
 
 
+def test_new_continual_rl_setup():
+    """ TODO: Test the scenario where we create a ContinualRLSetting and pass it
+    CarPole-v1
+    
+    TODO: Rework the `dataset` arg and the `available_datasets` dict, because for
+    example if we're given 'CartPole-v1', but `available_datasets` has
+    {"cartpole": "CartPole-v0"}, then we could have just used our "CL wrapper" on top of
+    CartPole-v1, and it would work exactly the same way as if it were applied to
+    CartPole-v0.
+    
+    - One related idea would be to perhaps register a "Continual<blablabla>" variant of
+      each supported env in gym, and then pass in the kwargs such as the task schedule,
+      etc to the `gym.make(self.dataset, **kwargs)` call of `gym.make`...
+      There would be the issue of each Setting potentially trying to register different
+      entrypoints/kwargs for the same env id..
+    
+    -   Another (perhaps simpler) idea would be to have that `available_datasets` dict be
+        a mapping from env name to the callable (wrapper included) that would create the
+        right env for that type.
+    
+        Something like: "CartPole-v0" -> partial(SmoothTransitions, gym.make("CartPole-v0"))
+
+    OR (maybe better):
+    one dict mapping from env name to env class: {"cartpole": CartPoleEnv}
+    Another dict mapping from env class to the wrapper to use for that env?:
+    {CartPoleEnv: lambda env_id: partial(SmoothTransitions, gym.make(env_id))}
+
+    But then isn't this just boiling down to the same thing as before?
+    """
+    raise NotImplementedError("TODO")
+
+
 def test_task_schedule_is_constructed_and_used():
     """
     Test that the tasks are switching over time.
@@ -82,20 +114,6 @@ class TestContinualRLSetting:
     @pytest.fixture(
         params=[("CartPole-v0", False), ("CartPole-v0", True),]
         + (
-            [
-                # Since the AtariWrapper gets added by default
-                # param_requires_atari_py("Breakout-v0", True, Image(0, 255, (84, 84, 1)),),
-                ("Breakout-v0", False),
-            ]
-            if ATARI_PY_INSTALLED
-            else []
-        )
-        + (
-            [("MetaMonsterKong-v0", False), ("MetaMonsterKong-v0", True),]
-            if MONSTERKONG_INSTALLED
-            else []
-        )
-        + (
             [("HalfCheetah-v2", False), ("Hopper-v2", False), ("Walker2d-v2", False),]
             if MUJOCO_INSTALLED
             else []
@@ -117,19 +135,17 @@ class TestContinualRLSetting:
     @pytest.mark.parametrize(
         "dataset, force_pixel_observations, expected_x_space",
         [
-            ("CartPole-v0", False, expected_cartpole_obs_space),
-            ("CartPole-v0", True, Image(0, 255, (400, 600, 3))),
+            ("cartpole", False, expected_cartpole_obs_space),
+            ("cartpole", True, Image(0, 255, (400, 600, 3))),
+            param_requires_mujoco(
+                "half_cheetah", False, spaces.Box(-np.inf, np.inf, (17,))
+            ),
             # param_requires_atari_py("Breakout-v0", (3, 210, 160)),
             # Since the AtariWrapper gets added by default
-            param_requires_atari_py("Breakout-v0", True, Image(0, 255, (84, 84, 1)),),
-            # TODO: Add support for duckytown envs!!
-            # ("duckietown", (120, 160, 3)),
-            param_requires_mujoco(
-                "HalfCheetah-v2", False, spaces.Box(-np.inf, np.inf, (17,))
-            ),
-            param_requires_monsterkong(
-                "MetaMonsterKong-v0", True, Image(0, 255, (64, 64, 3))
-            ),
+            # param_requires_atari_py("Breakout-v0", True, Image(0, 255, (84, 84, 1)),),
+            # param_requires_monsterkong(
+            #     "MetaMonsterKong-v0", True, Image(0, 255, (64, 64, 3))
+            # ),
         ],
     )
     @pytest.mark.parametrize("batch_size", [None, 1, 3])
@@ -468,3 +484,10 @@ def test_continual_mujoco(dataset: str):
     results: RLResults[EpisodeMetrics] = setting.apply(method)
     assert results.average_final_performance.mean_episode_length == 1000
     assert False, results.average_final_performance
+
+
+@pytest.mark.parametrize("dataset", ["MetaMonsterKong-v0", "BingBangBing-v2"])
+def test_passing_env_not_in_available_datasets_raises_error(dataset: str):
+    with pytest.raises(RuntimeError):
+        _ = ContinualRLSetting(dataset=dataset)
+    

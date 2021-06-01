@@ -94,6 +94,15 @@ class ContinualAssumption(AssumptionBase):
     class Observations(AssumptionBase.Observations):
         task_labels: Optional[Tensor] = None
 
+    @dataclass(frozen=True)
+    class Actions(AssumptionBase.Actions):
+        pass
+    
+    @dataclass(frozen=True)
+    class Rewards(AssumptionBase.Rewards):
+        pass
+
+
     # TODO: Move everything necessary to get ContinualRLSetting to work out of
     # Incremental and into this here. Makes no sense that ContinualRLSetting inherits
     # from Incremental, rather than this!

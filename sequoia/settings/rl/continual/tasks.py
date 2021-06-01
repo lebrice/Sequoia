@@ -3,12 +3,18 @@ from functools import singledispatch
 from typing import Any, Dict, List, Type, Union
 
 import gym
-from sequoia.common.gym_wrappers.multi_task_environment import \
-    make_env_attributes_task
+from sequoia.common.gym_wrappers.multi_task_environment import make_env_attributes_task
 from sequoia.settings.rl.envs import MUJOCO_INSTALLED
 
 import numpy as np
-from gym.envs.classic_control import CartPoleEnv, PendulumEnv, MountainCarEnv, Continuous_MountainCarEnv
+from gym.envs.classic_control import (
+    CartPoleEnv,
+    PendulumEnv,
+    MountainCarEnv,
+    Continuous_MountainCarEnv,
+    AcrobotEnv,
+)
+
 # TODO: Add envs from PyBullet and from Box2d!
 # from gym.envs.box2d import BipedalWalker, BipedalWalkerHardcore
 
@@ -58,13 +64,23 @@ _ENV_TASK_ATTRIBUTES: Dict[Union[Type[gym.Env]], Dict[str, float]] = {
     },
     MountainCarEnv: {
         "gravity": 0.0025,
-        "goal_position": 0.45, # was 0.5 in gym, 0.45 in Arnaud de Broissia's version
+        "goal_position": 0.45,  # was 0.5 in gym, 0.45 in Arnaud de Broissia's version
         "goal_velocity": 0,
     },
     Continuous_MountainCarEnv: {
-        "goal_position": 0.45, # was 0.5 in gym, 0.45 in Arnaud de Broissia's version
+        "goal_position": 0.45,  # was 0.5 in gym, 0.45 in Arnaud de Broissia's version
         "goal_velocity": 0,
-    }
+    },
+    # TODO: Test AcrobotEnv
+    AcrobotEnv: {  
+        "LINK_LENGTH_1": 1.0,  # [m]
+        "LINK_LENGTH_2": 1.0,  # [m]
+        "LINK_MASS_1": 1.0,  #: [kg] mass of link 1
+        "LINK_MASS_2": 1.0,  #: [kg] mass of link 2
+        "LINK_COM_POS_1": 0.5,  #: [m] position of the center of mass of link 1
+        "LINK_COM_POS_2": 0.5,  #: [m] position of the center of mass of link 2
+        "LINK_MOI": 1.0,  #: moments of inertia for both links
+    },
     # TODO: Add more of the classic control envs here.
     # TODO: Need to get the attributes to modify in each environment type and
     # add them here.

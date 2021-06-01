@@ -8,6 +8,9 @@ from sequoia.utils import get_logger
 
 logger = get_logger(__file__)
 
+from .classic_control import *
+
+
 ATARI_PY_INSTALLED = False
 try:
     from gym.envs.atari import AtariEnv

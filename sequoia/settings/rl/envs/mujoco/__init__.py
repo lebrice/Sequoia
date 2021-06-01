@@ -25,6 +25,7 @@ from typing import Dict, List, Type
 
 
 def get_entry_point(Env: Type[gym.Env]) -> str:
+    # TODO: Make sure this also works when Sequoia is installed in non-editable mode.
     return f"{Env.__module__}:{Env.__name__}"
 
 
