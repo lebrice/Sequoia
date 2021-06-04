@@ -90,7 +90,10 @@ def is_classic_control_env(env: Union[str, gym.Env, Type[gym.Env]]) -> bool:
     if isinstance(env, str):
         try:
             spec = registry.spec(env)
-            return "gym.envs.classic_control" in spec.entry_point
+            if isinstance(spec.entry_point, str):
+                return "gym.envs.classic_control" in spec.entry_point
+            if inspect.isclass(spec.entry_point):
+                env = spec.entry_point
         except gym.error.Error as e:
             # malformed env id, for instance.
             logger.debug(f"can't tell if env id {env} is a classic-control env! ({e})")
@@ -156,7 +159,10 @@ def is_atari_env(env: Union[str, gym.Env]) -> bool:
     if isinstance(env, str):  # and env.startswith("Breakout"):
         try:
             spec = registry.spec(env)
-            return "gym.envs.atari" in spec.entry_point
+            if isinstance(spec.entry_point, str):
+                return "gym.envs.atari" in spec.entry_point
+            if inspect.isclass(spec.entry_point):
+                env = spec.entry_point
         except gym.error.Error as e:
             # malformed env id, for instance.
             logger.debug(f"can't tell if env id {env} is an atari env! ({e})")
@@ -243,10 +249,6 @@ def has_wrapper(
     return isinstance(env, wrapper_type_or_types)
 
 
-from .env_dataset import EnvDataset
-from .policy_env import PolicyEnv
-
-
 class MayCloseEarly(gym.Wrapper, ABC):
     """ ABC for Wrappers that may close an environment early depending on some
     conditions.
@@ -269,13 +271,17 @@ class MayCloseEarly(gym.Wrapper, ABC):
         self._is_closed = True
 
 
+from .env_dataset import EnvDataset
+from .policy_env import PolicyEnv
+
+
 class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
-    """ ABC that allows iterating over the wrapped env, if it is iterable.
+    """ ABC for a gym Wrapper that supports iterating over the environment.
 
     This allows us to wrap dataloader-based Environments and still use the gym
-    wrapper conventions.
+    wrapper conventions, as well as iterate over a gym environment as in the
+    Active-dataloader case.
     """
-
     def __init__(self, env: gym.Env):
         super().__init__(env)
 
@@ -288,12 +294,15 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         # return type(self.env).__next__(self)
         from sequoia.settings.rl.environment import ActiveDataLoader
         from sequoia.settings.sl.environment import PassiveEnvironment
-
         if has_wrapper(self.env, EnvDataset) or is_proxy_to(
             self.env, (EnvDataset, ActiveDataLoader)
         ):
-            logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__.")
-            return EnvDataset.__next__(self)
+            obs, reward, done, info = self.step(self.action_)
+            return obs
+            # raise RuntimeError(f"WIP: Dropping this '__next__' API in RL.")
+            # logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__.")
+            # return EnvDataset.__next__(self)
+            # return EnvDataset.__next__(self)
         return self.env.__next__()
         # return self.observation(obs)
 
@@ -311,10 +320,16 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         return self.env.__len__()
 
     def send(self, action):
-        action = self.action(action)
-        reward = self.env.send(action)
-        reward = self.reward(reward)
-        return reward
+        # TODO: Make `send` use `self.step`, that way wrappers can apply the same way to
+        # RL and SL environments.
+        # if hasattr(self.unwrapped, "send"):
+        
+        # action = self.action(action)
+        # reward = self.env.send(action)
+        # reward = self.reward(reward)
+        self.action_ = action
+        self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
+        return self.reward_
 
         # (Option 1 below)
         # return self.env.send(action)
@@ -433,66 +448,6 @@ class RenderEnvWrapper(IterableWrapper):
     def step(self, action):
         self.env.render("human")
         return self.env.step(action)
-
-
-@singledispatch
-def reshape_space(space: gym.Space, new_shape: Tuple[int, ...]) -> gym.Space:
-    """ Returns a new space based on 'space', but with a new shape.
-    The space might change type, for instance Discrete(2) with new shape (3,)
-    will become Tuple(Discrete(2), Discrete(2), Discrete(2)).
-    """
-    if isinstance(space, spaces.Space):
-        # Space is of some other type. Hope that the shapes are the same.
-        if new_shape == space.shape:
-            return space
-    raise NotImplementedError(
-        f"Don't know how to reshape space {space} to have new shape {new_shape}"
-    )
-
-
-@reshape_space.register
-def reshape_box(space: spaces.Box, new_shape: Tuple[int, ...]) -> spaces.Box:
-    assert isinstance(new_shape, (tuple, list))
-    # TODO: For now just assume that all the bounds are the same value.
-    low = space.low.reshape(new_shape)
-    high = space.high.reshape(new_shape)
-    return type(space)(low=low, high=high, dtype=space.dtype)
-
-
-@reshape_space.register
-def reshape_discrete(
-    space: spaces.Discrete, new_shape: Tuple[int, ...]
-) -> spaces.Discrete:
-    # Can't change the shape of a Discrete space, return a new one anyway.
-    assert space.shape == (), "Discrete spaces should have empty shape."
-    assert new_shape in [
-        (),
-        None,
-    ], f"Can't change the shape of a Discrete space to {new_shape}."
-    return spaces.Discrete(n=space.n)
-
-
-@reshape_space.register
-def reshape_tuple(space: spaces.Tuple, new_shape: Tuple[int, ...]) -> spaces.Tuple:
-    assert isinstance(new_shape, (tuple, list))
-    assert len(new_shape) == len(space), "Need len(new_shape) == len(space.spaces)"
-    return spaces.Tuple(
-        [
-            reshape_space(space_i, shape_i)
-            for (space_i, shape_i) in zip(space.spaces, new_shape)
-        ]
-    )
-
-
-@reshape_space.register
-def reshape_dict(space: spaces.Dict, new_shape: Tuple[int, ...]) -> spaces.Dict:
-    assert isinstance(new_shape, dict) or len(new_shape) == len(space)
-    return spaces.Dict(
-        {
-            k: reshape_space(v, new_shape[k if isinstance(new_shape, dict) else i])
-            for i, (k, v) in enumerate(space.spaces.items())
-        }
-    )
 
 
 if __name__ == "__main__":

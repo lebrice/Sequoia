@@ -225,6 +225,8 @@ class TestEnvDataset:
         print(f"Before send")
         reward = env.send(action)
 
+        # TODO: Perhaps going to drop this API, because if really complicates the
+        # wrappers.
         print("Before __next__")
         next_obs = next(env)
 
