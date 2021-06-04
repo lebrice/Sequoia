@@ -5,13 +5,24 @@ from typing import List, Dict, Union, List, Type
 import json
 import gym
 from pathlib import Path
+import copy
 from sequoia.utils import get_logger
+from gym.envs.registration import registry
 
 logger = get_logger(__file__)
+
+# TODO Modify a copy of the gym registry: 
+# sequoia_gym_registry = copy.deepcopy(registry)
+sequoia_gym_registry = registry
+
+from .classic_control import PixelObservationWrapper, add_pixel_variants
+
+add_pixel_variants(sequoia_gym_registry)
 
 
 ATARI_PY_INSTALLED = False
 try:
+    # from .atari import *
     from gym.envs.atari import AtariEnv
     ATARI_PY_INSTALLED = True
 except gym.error.DependencyNotInstalled:

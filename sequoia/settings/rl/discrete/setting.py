@@ -1,11 +1,16 @@
 from dataclasses import dataclass
-from ..continual.setting import ContinualRLSetting, ContinualRLTestEnvironment
-from sequoia.settings.assumptions.context_discreteness import DiscreteContextAssumption
-from sequoia.utils.utils import dict_union
-from sequoia.settings.rl.envs import MUJOCO_INSTALLED
-from typing import ClassVar, Dict, List, Callable, Optional
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Union
+
 import gym
+from sequoia.settings.assumptions.context_discreteness import DiscreteContextAssumption
+from sequoia.settings.rl.envs import MUJOCO_INSTALLED
+from sequoia.utils.utils import dict_union
 from simple_parsing import field
+
+from ..continual.setting import ContinualRLSetting, ContinualRLTestEnvironment
+
+# TODO: Once we have a wrapper that can seamlessly switch from one env to the next, then
+# move the "discrete" task envs from `IncrementalRlSetting` to this setting.
 
 
 @dataclass
@@ -15,8 +20,9 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
     """
 
     # Class variable that holds the dict of available environments.
-    available_datasets: ClassVar[Dict[str, str]] = dict_union(
+    available_datasets: ClassVar[Dict[str, Union[str, Any]]] = dict_union(
         ContinualRLSetting.available_datasets,
+        {"MetaMonsterKong-v0": "MetaMonsterKong-v0"},
         {"monsterkong": "MetaMonsterKong-v0"},
         (
             # TODO: Also add the mujoco environments for the changing sizes and masses,
@@ -28,7 +34,7 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
             }
         ),
     )
-    
+
     # The number of "tasks", which in the case of Continual settings means the number of
     # base tasks that are interpolated in order to create the training, valid and test
     # nonstationarities.
@@ -48,9 +54,9 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
 
     def __post_init__(self):
         super().__post_init__()
-        
+
         assert not self.smooth_task_boundaries
-         # TODO: Clean this up, not super clear what options take precedence on
+        # TODO: Clean this up, not super clear what options take precedence on
         # which other options.
         if self.train_task_schedule:
             if self.steps_per_task is not None:
@@ -253,14 +259,13 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
             max_steps=max_steps,
             new_random_task_on_reset=self.stationary_context,
         )
-    
-    
 
 
 import math
+
 from sequoia.common.gym_wrappers import IterableWrapper
-from sequoia.settings.assumptions.incremental import TaskSequenceResults
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
+from sequoia.settings.assumptions.incremental import TaskSequenceResults
 
 
 class TestEnvironment(ContinualRLTestEnvironment, IterableWrapper):
@@ -320,6 +325,4 @@ class TestEnvironment(ContinualRLTestEnvironment, IterableWrapper):
     def _after_reset(self, observation):
         # Is this going to work fine when the observations are batched though?
         return super()._after_reset(observation)
-
-
 

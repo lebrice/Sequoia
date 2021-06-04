@@ -10,6 +10,9 @@ from typing import List, Type
 from setuptools import find_packages
 
 from sequoia.settings.base import Method
+from sequoia.utils.logging_utils import get_logger
+logger = get_logger(__file__)
+
 
 AbstractMethod = Method
 
@@ -102,7 +105,7 @@ for module in all_modules:
         # print(f"Importing module sequoia.methods.{module}")
         import_module(f"sequoia.methods.{module}")
     except ImportError as e:
-        warnings.warn(RuntimeWarning(f"Couldn't import Method from module methods/{module}: {e}"))
+        logger.warning(RuntimeWarning(f"Couldn't import Method from module methods/{module}: {e}"))
 
 # TODO: (#17): Add Pl Bolts Models as Methods on IID Setting.
 # from .pl_bolts_methods.cpcv2 import CPCV2Method
