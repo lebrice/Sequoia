@@ -36,7 +36,7 @@ from sequoia.settings.rl.envs import (
     MUJOCO_INSTALLED,
 )
 
-from .tasks import make_task_for_env
+from .tasks import make_incremental_task, is_supported
 
 logger = get_logger(__file__)
 

@@ -1,16 +1,25 @@
-from dataclasses import dataclass
+import itertools
+import math
+from dataclasses import dataclass, fields, InitVar
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Union
-
+import numpy as np
 import gym
-from sequoia.settings.assumptions.context_discreteness import DiscreteContextAssumption
+from sequoia.common.gym_wrappers import IterableWrapper
+from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics
+from sequoia.settings.assumptions.context_discreteness import \
+    DiscreteContextAssumption
+from sequoia.settings.assumptions.incremental import (TaskResults,
+                                                      TaskSequenceResults)
 from sequoia.settings.rl.envs import MUJOCO_INSTALLED
 from sequoia.utils.utils import dict_union
 from simple_parsing import field
+from sequoia.utils.logging_utils import get_logger
 
 from ..continual.setting import ContinualRLSetting, ContinualRLTestEnvironment
+from .tasks import DiscreteTask, is_supported, make_discrete_task, TaskSchedule
 
-# TODO: Once we have a wrapper that can seamlessly switch from one env to the next, then
-# move the "discrete" task envs from `IncrementalRlSetting` to this setting.
+logger = get_logger(__file__)
 
 
 @dataclass
@@ -18,7 +27,9 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
     """ Continual Reinforcement Learning Setting where there are clear task boundaries,
     but where the task information isn't available.
     """
-
+    # The function used to create the tasks for the chosen env.
+    _task_sampling_function: ClassVar[Callable[..., DiscreteTask]] = make_discrete_task
+    
     # Class variable that holds the dict of available environments.
     available_datasets: ClassVar[Dict[str, Union[str, Any]]] = dict_union(
         ContinualRLSetting.available_datasets,
@@ -35,35 +46,136 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
         ),
     )
 
-    # The number of "tasks", which in the case of Continual settings means the number of
-    # base tasks that are interpolated in order to create the training, valid and test
-    # nonstationarities.
-    # By default 1 for this setting, meaning that the context is a linear interpolation
-    # between the start context (usually the default task for the environment) and a
-    # randomly sampled task.
-    nb_tasks: int = field(1, alias=["n_tasks", "num_tasks"])
+    # The number of "tasks" that will be created for the training, valid and test
+    # environments. When left unset, will use a default value that makes sense
+    # (something like 5).
+    nb_tasks: int = field(None, alias=["n_tasks", "num_tasks"])
 
-    # Number of steps per task. When left unset and when `max_steps` is set,
-    # takes the value of `max_steps` divided by `nb_tasks`.
-    steps_per_task: Optional[int] = None
-    # (WIP): Number of episodes per task.
-    episodes_per_task: Optional[int] = None
-    # Number of steps per task in the test loop. When left unset and when `test_steps`
-    # is set, takes the value of `test_steps` divided by `nb_tasks`.
-    test_steps_per_task: Optional[int] = None
+    # train_max_steps_per_task: int = 20_000
+    # # Maximum number of episodes in total.
+    # # TODO: Add tests for this 'max episodes' and 'episodes_per_task'.
+    # train_max_episodes_per_task: Optional[int] = None
+    # # Total number of steps in the test loop. (Also acts as the "length" of the testing
+    # # environment.)
+    # test_max_steps_per_task: int = 10_000
+    # test_max_episodes_per_task: Optional[int] = None
+
+    # Max number of steps per training task. When left unset and when `train_max_steps`
+    # is set, takes the value of `train_max_steps` divided by `nb_tasks`.
+    train_max_steps_per_task: Optional[int] = None
+    # (WIP): Maximum number of episodes per training task. When left unset and when
+    # `train_max_episodes` is set, takes the value of `train_max_episodes` divided by
+    # `nb_tasks`.
+    train_max_episodes_per_task: Optional[int] = None
+    # Maximum number of steps per task in the test loop. When left unset and when
+    # `test_max_steps` is set, takes the value of `test_max_steps` divided by `nb_tasks`.
+    test_max_steps_per_task: Optional[int] = None
+    # (WIP): Maximum number of episodes per test task. When left unset and when
+    # `test_max_episodes` is set, takes the value of `test_max_episodes` divided by
+    # `nb_tasks`.
+    test_max_episodes_per_task: Optional[int] = None
 
     def __post_init__(self):
-        super().__post_init__()
+        # TODO: Rework all the messy fields from before by just considering these as eg.
+        # the maximum number of steps per task, rather than the fixed number of steps
+        # per task.
+        if not self.nb_tasks and not self.train_max_steps_per_task and not self.train_task_schedule:
+            raise RuntimeError(
+                "At least one of 'nb_tasks', 'train_max_steps_per_task' or "
+                "'train_task_schedule' needs to be set!"
+            )
 
-        assert not self.smooth_task_boundaries
-        # TODO: Clean this up, not super clear what options take precedence on
-        # which other options.
         if self.train_task_schedule:
-            if self.steps_per_task is not None:
+            nb_tasks = len(self.train_task_schedule)
+            if self.nb_tasks and self.nb_tasks != nb_tasks:
+                if self.nb_tasks == nb_tasks - 1:
+                    logger.warning(RuntimeWarning(
+                        f"Dropping the last entry in the passed custom task schedule"
+                    ))
+                    self.train_task_schedule.pop()
+                else:            
+                    logger.warning(RuntimeWarning(
+                        f"Ignoring the passed number of tasks ({self.nb_tasks}) since a "
+                        f"task schedule was given that has {nb_tasks} tasks in it."
+                    ))
+            self.nb_tasks = len(self.train_task_schedule)
+
+        # if self.train_task_schedule:
+        #     self.nb_tasks = len(self.train_task_schedule)
+        #     assert not self.train_max_steps == max(self.train_task_schedule)
+        # if self.train_max_steps
+
+        # NOTE: Calling super().__post_init__() will create the task schedules (using
+        # `create_[train/val/test]_task_schedule()`) so we the fields used in those need
+        # to be set here before calling `super().__post_init__()`.
+        # self._make_consistent_fields()
+        # if not all([self.nb_tasks, self.train_max_steps, self.train_steps_per_task]):
+        #     raise RuntimeError(
+        #         "You need to provide at least two of 'max_steps', "
+        #         "'nb_tasks', or 'steps_per_task'."
+        #     )
+
+        # assert self.nb_tasks == self.train_max_steps // self.train_steps_per_task, (
+        #     self.nb_tasks,
+        #     self.train_max_steps,
+        #     self.train_steps_per_task,
+        # )
+
+        super().__post_init__()
+        assert not self.smooth_task_boundaries
+
+    def create_train_task_schedule(self) -> TaskSchedule[DiscreteTask]:
+        change_steps: List[int]
+        if self.train_max_steps_per_task:
+            assert self.train_max_steps == self.nb_tasks * self.train_max_steps_per_task
+            change_steps = list(range(0, self.train_max_steps, self.train_max_steps_per_task)) 
+        else:
+            change_steps = np.linspace(0, self.train_max_steps, self.nb_tasks, endpoint=False, dtype=int).tolist()
+
+        # IDEA: Could convert max_episodes into max_steps if max_steps_per_episode is
+        # set.
+        return self.create_task_schedule(
+            temp_env=self._temp_train_env,
+            change_steps=change_steps
+            # # TODO: Add properties for the train/valid/test seeds?
+            # seed=self.train_seed,
+        )
+
+    def create_val_task_schedule(self) -> TaskSchedule:
+        # Always the same as train task schedule for now.
+        return self.train_task_schedule.copy()
+        # return self.create_task_schedule(
+        #     temp_env=self._temp_val_env, change_steps=change_steps
+        # )
+
+    def create_test_task_schedule(self) -> TaskSchedule:
+        n_boundaries = len(self.train_task_schedule)
+        # Re-scale the steps in the task schedule based on self.test_max_steps
+        # NOTE: Using the same task schedule as in training and validation for now.
+        test_boundaries = np.linspace(0, self.test_max_steps, n_boundaries)
+        return {
+            step: task for step, task in
+            zip(test_boundaries, self.train_task_schedule.values())
+        }
+        
+        change_steps = [0, self.test_max_steps]
+        return self.create_task_schedule(
+            temp_env=self._temp_test_env,
+            change_steps=change_steps,
+            # seed=self.train_seed,
+        )
+
+    
+    
+    def _make_consistent_fields(self):
+        # TODO: Clean this up, its not clear enough which options take precedence on
+        # other options.
+        if self.train_task_schedule:
+            if self.train_steps_per_task is not None:
                 # If steps per task was passed, then we overwrite the keys of the tasks
                 # schedule.
                 self.train_task_schedule = {
-                    i * self.steps_per_task: self.train_task_schedule[step]
+                    i * self.train_steps_per_task: self.train_task_schedule[step]
                     for i, step in enumerate(sorted(self.train_task_schedule.keys()))
                 }
             else:
@@ -88,8 +200,9 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
                         )
 
             nb_tasks = len(self.train_task_schedule)
-
-            if self.nb_tasks not in {0, 1}:
+            default_number_of_tasks: int = [f.default for f in fields(self) if f.name == "nb_tasks"][0]
+            assert False, (nb_tasks, default_number_of_tasks, self.nb_tasks)
+            if self.nb_tasks != default_number_of_tasks:
                 if self.nb_tasks != nb_tasks:
                     raise RuntimeError(
                         f"Passed number of tasks {self.nb_tasks} doesn't match the "
@@ -136,6 +249,7 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
             self.steps_per_task,
         )
 
+        
         if self.test_task_schedule:
             if 0 not in self.test_task_schedule:
                 raise RuntimeError("Task schedules needs to include an initial task.")
@@ -189,83 +303,69 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
 
         assert self.test_steps // self.test_steps_per_task == self.nb_tasks
 
-        assert not self.smooth_task_boundaries
-        # Create a temporary environment so we can extract the spaces and create
-        # the task schedules.
-        # with self._make_env(
-        #     self.dataset, self._temp_wrappers(), **self.base_env_kwargs
-        # ) as temp_env:
-        #     self._setup_fields_using_temp_env(temp_env)
-        # del temp_env
+    # def create_train_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
+    #     """Get the list of wrappers to add to each training environment.
 
-    def create_train_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
-        """Get the list of wrappers to add to each training environment.
+    #     The result of this method must be pickleable when using
+    #     multiprocessing.
 
-        The result of this method must be pickleable when using
-        multiprocessing.
+    #     Returns
+    #     -------
+    #     List[Callable[[gym.Env], gym.Env]]
+    #         [description]
+    #     """
+    #     # We add a restriction to prevent users from getting data from
+    #     # previous or future tasks.
+    #     # TODO: Instead, just pass a subset of the task schedule to the CL wrapper?
+    #     # TODO: This assumes that tasks all have the same length.
+    #     # starting_step = self.current_task_id * self.steps_per_task
+    #     # TODO: Ambiguous wether this `max_steps` is the maximum step that can be
+    #     # reached or the maximum number of steps that can be performed.
+    #     # max_steps = starting_step + self.steps_per_task - 1
+    #     return self._make_wrappers(
+    #         base_env=self.dataset,
+    #         task_schedule=self.train_task_schedule,
+    #         # TODO: Removing this, but we have to check that it doesn't change when/how
+    #         # the task boundaries are given to the Method.
+    #         # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
+    #         task_labels_available=self.task_labels_at_train_time,
+    #         transforms=self.train_transforms,
+    #         starting_step=starting_step,
+    #         max_steps=max_steps,
+    #         new_random_task_on_reset=self.stationary_context,
+    #     )
 
-        Returns
-        -------
-        List[Callable[[gym.Env], gym.Env]]
-            [description]
-        """
-        # We add a restriction to prevent users from getting data from
-        # previous or future tasks.
-        # TODO: Instead, just pass a subset of the task schedule to the CL wrapper?
-        # TODO: This assumes that tasks all have the same length.
-        starting_step = self.current_task_id * self.steps_per_task
-        # TODO: Ambiguous wether this `max_steps` is the maximum step that can be
-        # reached or the maximum number of steps that can be performed.
-        max_steps = starting_step + self.steps_per_task - 1
-        return self._make_wrappers(
-            base_env=self.dataset,
-            task_schedule=self.train_task_schedule,
-            # TODO: Removing this, but we have to check that it doesn't change when/how
-            # the task boundaries are given to the Method.
-            # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
-            task_labels_available=self.task_labels_at_train_time,
-            transforms=self.train_transforms,
-            starting_step=starting_step,
-            max_steps=max_steps,
-            new_random_task_on_reset=self.stationary_context,
-        )
+    # def create_valid_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
+    #     """Get the list of wrappers to add to each validation environment.
 
-    def create_valid_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
-        """Get the list of wrappers to add to each validation environment.
+    #     The result of this method must be pickleable when using
+    #     multiprocessing.
 
-        The result of this method must be pickleable when using
-        multiprocessing.
+    #     Returns
+    #     -------
+    #     List[Callable[[gym.Env], gym.Env]]
+    #         [description]
 
-        Returns
-        -------
-        List[Callable[[gym.Env], gym.Env]]
-            [description]
-
-        TODO: Decide how this 'validation' environment should behave in
-        comparison with the train and test environments.
-        """
-        # We add a restriction to prevent users from getting data from
-        # previous or future tasks.
-        # TODO: Should the validation environment only be for the current task?
-        starting_step = self.current_task_id * self.steps_per_task
-        max_steps = starting_step + self.steps_per_task - 1
-        return self._make_wrappers(
-            base_env=self.val_dataset,
-            task_schedule=self.valid_task_schedule,
-            # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
-            task_labels_available=self.task_labels_at_train_time,
-            transforms=self.val_transforms,
-            starting_step=starting_step,
-            max_steps=max_steps,
-            new_random_task_on_reset=self.stationary_context,
-        )
+    #     TODO: Decide how this 'validation' environment should behave in
+    #     comparison with the train and test environments.
+    #     """
+    #     # We add a restriction to prevent users from getting data from
+    #     # previous or future tasks.
+    #     # TODO: Should the validation environment only be for the current task?
+    #     starting_step = self.current_task_id * self.steps_per_task
+    #     max_steps = starting_step + self.steps_per_task - 1
+    #     return self._make_wrappers(
+    #         base_env=self.val_dataset,
+    #         task_schedule=self.valid_task_schedule,
+    #         # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
+    #         task_labels_available=self.task_labels_at_train_time,
+    #         transforms=self.val_transforms,
+    #         starting_step=starting_step,
+    #         max_steps=max_steps,
+    #         new_random_task_on_reset=self.stationary_context,
+    #     )
 
 
-import math
-
-from sequoia.common.gym_wrappers import IterableWrapper
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics
-from sequoia.settings.assumptions.incremental import TaskSequenceResults
 
 
 class TestEnvironment(ContinualRLTestEnvironment, IterableWrapper):

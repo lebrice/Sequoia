@@ -1,8 +1,9 @@
+""" Current most general Setting in the Reinforcement Learning side of the tree.
+"""
 import itertools
 import json
 import math
 import warnings
-import numpy as np
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
@@ -10,8 +11,10 @@ from pathlib import Path
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Sequence, Type, Union
 
 import gym
+import numpy as np
 import wandb
 from gym import spaces
+from gym.envs.classic_control import CartPoleEnv, MountainCarEnv, PendulumEnv
 from gym.envs.registration import EnvRegistry, EnvSpec, load, registry, spec
 from gym.utils import colorize
 from gym.wrappers import TimeLimit
@@ -48,13 +51,13 @@ from sequoia.settings.assumptions.continual import (
     TestEnvironment,
 )
 from sequoia.settings.base import Method
-from sequoia.settings.rl.wrappers.state_vs_pixels import observe_state, observe_pixels
 from sequoia.settings.rl import ActiveEnvironment, RLSetting
 from sequoia.settings.rl.wrappers import (
     HideTaskLabelsWrapper,
     MeasureRLPerformanceWrapper,
     TypedObjectsWrapper,
 )
+from sequoia.settings.rl.wrappers.state_vs_pixels import observe_pixels, observe_state
 from sequoia.utils import get_logger
 from sequoia.utils.utils import camel_case, flag
 from simple_parsing import choice, field, list_field
@@ -72,19 +75,10 @@ from .objects import (
     RewardType,
 )
 from .results import ContinualRLResults
+from .tasks import ContinuousTask, TaskSchedule, is_supported, make_continuous_task
 
 logger = get_logger(__file__)
 
-# TODO: Implement a get_metrics (ish) in the Environment, not on the Setting!
-# TODO: The validation environment will also call the on_task_switch when it
-# reaches a task boundary, and there isn't currently a way to distinguish if
-# that method is being called because of the training or because of the
-# validation environment.
-
-from gym.envs.classic_control import CartPoleEnv, MountainCarEnv, PendulumEnv
-from gym.envs.registration import EnvRegistry, EnvSpec, load, registry
-
-from .tasks import make_task_for_env, is_supported
 
 # Type alias for the Environment returned by `train/val/test_dataloader`.
 Environment = ActiveEnvironment[
@@ -93,8 +87,6 @@ Environment = ActiveEnvironment[
     "ContinualRLSetting.Rewards",
 ]
 
-# TODO: Create a fancier class for the TaskSchedule, as described in the test file.
-TaskSchedule = Dict[int, Union[Dict, Callable[[gym.Env], None], Any]]
 
 # NOTE: Takes about 0.2 seconds to check for all compatible envs (with loading), and
 # only happens once.
@@ -123,8 +115,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
     # The type of results returned by an RL experiment.
     Results: ClassVar[Type[ContinualRLResults]] = ContinualRLResults
-
+    # Dict of all available options for the 'dataset' field below.
     available_datasets: ClassVar[Dict[str, Union[str, Any]]] = available_datasets
+    # The function used to create the tasks for the chosen env.
+    _task_sampling_function: ClassVar[
+        Callable[..., ContinuousTask]
+    ] = make_continuous_task
 
     # Which environment (a.k.a. "dataset") to learn on.
     # The dataset could be either a string (env id or a key from the
@@ -192,6 +188,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         - If the environment's observation space doesn't seem to be image-based, does
           nothing.
     """
+
+    # NOTE: Removing this from the continual setting.
+    # By default 1 for this setting, meaning that the context is a linear interpolation
+    # between the start context (usually the default task for the environment) and a
+    # randomly sampled task.
+    # nb_tasks: int = field(5, alias=["n_tasks", "num_tasks"])
 
     # Wether to convert the observations / actions / rewards of the envs (and their
     # spaces) such that they return Tensors rather than numpy arrays.
@@ -276,7 +278,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             self.dataset not in self.available_datasets
             and self.dataset not in self.available_datasets.values()
             and not self.train_task_schedule
-            # and make_task_for_env.dispatch(self.dataset) is make_task_for_env.dispatch(object)
         ):
             raise gym.error.UnregisteredEnv(
                 f"The chosen dataset/environment ({self.dataset}) isn't in the dict of "
@@ -383,10 +384,10 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # NOTE: Using the same task schedule as in training and validation for now.
         test_boundaries = np.linspace(0, self.test_max_steps, n_boundaries)
         return {
-            step: task for step, task in
-            zip(test_boundaries, self.train_task_schedule.values())
+            step: task
+            for step, task in zip(test_boundaries, self.train_task_schedule.values())
         }
-        
+
         change_steps = [0, self.test_max_steps]
         return self.create_task_schedule(
             temp_env=self._temp_test_env,
@@ -417,7 +418,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # IDEA: Even fancier, we could use a TimeDelta to say "do one hour of task 0"!!
         for step in change_steps:
             # TODO: Pass wether its for training/validation/testing?
-            task = make_task_for_env(
+            task = type(self)._task_sampling_function(
                 temp_env,
                 step=step,
                 change_steps=change_steps,

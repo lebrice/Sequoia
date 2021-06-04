@@ -1,11 +1,21 @@
+""" Handlers for creating tasks in different environments.
+
+TODO: Add more envs:
+- [ ] PyBullet!
+- [ ] Box2d!
+- [ ] ProcGen!
+- [ ] dm_control!
+
+from gym.envs.box2d import BipedalWalker, BipedalWalkerHardcore
+"""
 import warnings
 from functools import singledispatch
-from typing import Any, Dict, List, Type, Union, Callable
+from typing import Any, Dict, List, Type, Union, Callable, TypeVar
 
 import inspect
 import gym
 from sequoia.common.gym_wrappers.multi_task_environment import make_env_attributes_task
-from sequoia.settings.rl.envs import MUJOCO_INSTALLED
+from sequoia.settings.rl.envs import MUJOCO_INSTALLED, EnvVariantSpec
 from gym.envs.registration import load, EnvRegistry, EnvSpec, registry, spec
 import numpy as np
 from gym.envs.classic_control import (
@@ -16,8 +26,17 @@ from gym.envs.classic_control import (
     AcrobotEnv,
 )
 
-# TODO: Add envs from PyBullet and from Box2d!
-# from gym.envs.box2d import BipedalWalker, BipedalWalkerHardcore
+# Idea: Create a true 'Task' class?
+Task = Any
+ContinuousTask = Dict[str, float]
+TaskType = TypeVar("TaskType", bound=ContinuousTask)
+# TODO: Create a fancier class for the TaskSchedule, as described in the test file.
+# IDEA: Have the Task Schedule be a 'list' of Task objects, each of which has a
+# 'duration' parameter, which are accumulated to create the 'keys' of the task schedule!
+# TaskSchedule = Dict[int, TaskType]
+
+class TaskSchedule(Dict[int, TaskType]):
+    pass
 
 
 class EnvironmentNotSupportedError(gym.error.UnregisteredEnv):
@@ -25,21 +44,19 @@ class EnvironmentNotSupportedError(gym.error.UnregisteredEnv):
     """
 
 
-# Idea: Create a true 'Task' class?
-Task = Union[Dict[str, Any], Any]
 
 
 @singledispatch
-def make_task_for_env(
+def make_continuous_task(
     env: gym.Env, step: int, change_steps: List[int], seed: int = None, **kwargs,
-) -> Task:
+) -> ContinuousTask:
     """ Generic function used by Sequoia's RL settings to create a "task" that will be
     applied to an environment like `env`.
     
     To add support for a new type of environment, simply register a handler function:
 
     ```
-    @make_task_for_env.register(SomeGymEnvClass)
+    @make_continuous_task.register(SomeGymEnvClass)
     def make_task_for_my_env(env: SomeGymEnvClass, step: int, change_steps: List[int], **kwargs,):
         return {"my_attribute": random.random()}
     ```
@@ -49,37 +66,61 @@ def make_task_for_env(
     of environment rather than an actual environment instance. If your function can't
     handle this (raises an exception somehow), then a temporary environment will be
     created, and a warning will be raised.
+
+    TODO: remove / rename this 'change_steps' to 'max_steps' instead.
     """
     raise NotImplementedError(f"Don't currently know how to create tasks for env {env}")
 
+# from functools import _SingleDispatchCallable
 
-def is_supported(env_id: str, env_registry: EnvRegistry = registry) -> bool:
+def is_supported(
+    env_id: str,
+    env_registry: EnvRegistry = registry,
+    _make_task_function: Callable[..., ContinuousTask] = make_continuous_task,
+) -> bool:
+    """ Returns wether Sequoia is able to create (continuous) tasks for the given
+    environment.
+    """
     env_spec = env_registry.spec(env_id)
+
+    if isinstance(env_spec, EnvVariantSpec):
+        return True
+
+    def _has_handler(some_env_type: Type[gym.Env]) -> bool:
+        """ Returns wether the "make task" function has a registered handler for the
+        given envs.
+        """
+        return _make_task_function.dispatch(
+            some_env_type
+        ) is not _make_task_function.dispatch(object)
+
     if callable(env_spec.entry_point):
-        # assert False, (env_id, spec.entry_point, make_task_for_env.registry)
+        # assert False, (env_id, spec.entry_point, make_continuous_task.registry)
         # TODO: This won't work for IncrementalRLSetting if we call the `make_continuous_task_for_env` within the
-        # `make_task_for_env` of the incremental/tasks.py
-        return make_task_for_env.dispatch(
-            env_spec.entry_point
-        ) is not make_task_for_env.dispatch(object)
+        # `make_continuous_task` of the incremental/tasks.py
+        if inspect.isfunction(env_spec.entry_point):
+            raise NotImplementedError(env_spec)
+
+        return _has_handler(env_spec.entry_point)
+
     assert isinstance(env_spec.entry_point, str)
     class_name = env_spec.entry_point.rsplit(":")[-1]
-    if class_name in [c.__name__ for c in make_task_for_env.registry]:
+    if class_name in [c.__name__ for c in _make_task_function.registry]:
         return True
+    
     entry_point = load(env_spec.entry_point)
     if inspect.isfunction(entry_point):
         return False
-    return make_task_for_env.dispatch(
-        load(env_spec.entry_point)
-    ) is not make_task_for_env.dispatch(object)
+
+    return _has_handler(entry_point)
 
 
-@make_task_for_env.register(type)
-def make_task_for_env_type(env_type: Type[gym.Env], **kwargs) -> Task:
+@make_continuous_task.register(type)
+def make_continuous_task_type(env_type: Type[gym.Env], **kwargs) -> ContinuousTask:
     try:
         # Try to create a task without actually instantiating the env, by passing the
         # type of env as the 'env' argument, rather than an env instance.
-        env_handler_function = make_task_for_env.dispatch(env_type)
+        env_handler_function = make_continuous_task.dispatch(env_type)
         return env_handler_function(env_type, **kwargs)
     except Exception as exc:
         raise RuntimeError(
@@ -87,8 +128,8 @@ def make_task_for_env_type(env_type: Type[gym.Env], **kwargs) -> Task:
         ) from exc
 
 
-@make_task_for_env.register(str)
-def make_task_for_env_by_id(env: str, **kwargs,) -> Union[Dict[str, Any], Any]:
+@make_continuous_task.register(str)
+def make_continuous_task_by_id(env: str, **kwargs,) -> Union[Dict[str, Any], Any]:
     # Load the entry-point class, and use it to determine what handler to use.
     # TODO: Actually instantiate the env here? or just dispatch based on the env class?
     if env not in registry.env_specs:
@@ -100,7 +141,7 @@ def make_task_for_env_by_id(env: str, **kwargs,) -> Union[Dict[str, Any], Any]:
     # import inspect
 
     try:
-        task: Task = make_task_for_env_type(env_entry_point, **kwargs)
+        task: ContinuousTask = make_continuous_task_type(env_entry_point, **kwargs)
         return task
 
     except RuntimeError as exc:
@@ -114,17 +155,17 @@ def make_task_for_env_by_id(env: str, **kwargs,) -> Union[Dict[str, Any], Any]:
         # IDEA: Could avoid re-creating the env between calls to this function, for
         # instance by saving a single temp env in a global variable and overwriting
         # it if `env` is of a different type.
-        return make_task_for_env(temp_env, **kwargs)
+        return make_continuous_task(temp_env, **kwargs)
 
 
-@make_task_for_env.register
+@make_continuous_task.register
 def make_task_for_wrapped_env(
     env: gym.Wrapper, step: int, change_steps: List[int] = None, **kwargs,
 ) -> Union[Dict[str, Any], Any]:
     # NOTE: Not sure if this is totally a good idea...
     # If someone registers a handler for some kind of Wrapper, than all envs wrapped
     # with that wrapper will use that handler, instead of their base environment type.
-    return make_task_for_env(env.env, step=step, change_steps=change_steps, **kwargs)
+    return make_continuous_task(env.env, step=step, change_steps=change_steps, **kwargs)
 
 
 # Dictionary mapping from environment type to a dict of environment values which can be
@@ -139,7 +180,7 @@ _ENV_TASK_ATTRIBUTES: Dict[Union[Type[gym.Env]], Dict[str, float]] = {
         "tau": 0.02,
     },
     PendulumEnv: {
-        "max_speed": 8,
+        "max_speed": 8.0,
         "max_torque": 2.0,
         # "dt" = .05
         "g": 10.0,
@@ -149,11 +190,13 @@ _ENV_TASK_ATTRIBUTES: Dict[Union[Type[gym.Env]], Dict[str, float]] = {
     MountainCarEnv: {
         "gravity": 0.0025,
         "goal_position": 0.45,  # was 0.5 in gym, 0.45 in Arnaud de Broissia's version
-        "goal_velocity": 0,
+        # BUG: Since we use multiplicative noise, this won't change over time.
+        # "goal_velocity": 0,
     },
     Continuous_MountainCarEnv: {
         "goal_position": 0.45,  # was 0.5 in gym, 0.45 in Arnaud de Broissia's version
-        "goal_velocity": 0,
+        # BUG: Since we use multiplicative noise, this won't change over time.
+        # "goal_velocity": 0,
     },
     # TODO: Test AcrobotEnv
     AcrobotEnv: {
@@ -176,10 +219,11 @@ _ENV_TASK_ATTRIBUTES: Dict[Union[Type[gym.Env]], Dict[str, float]] = {
 }
 
 
-@make_task_for_env.register(CartPoleEnv)
-@make_task_for_env.register(PendulumEnv)
-@make_task_for_env.register(MountainCarEnv)
-@make_task_for_env.register(Continuous_MountainCarEnv)
+@make_continuous_task.register(CartPoleEnv)
+@make_continuous_task.register(PendulumEnv)
+@make_continuous_task.register(MountainCarEnv)
+@make_continuous_task.register(Continuous_MountainCarEnv)
+@make_continuous_task.register(AcrobotEnv)
 def make_task_for_classic_control_env(
     env: gym.Env,
     step: int,
@@ -196,7 +240,9 @@ def make_task_for_classic_control_env(
         return task_params.copy()
 
     # Default back to the 'env attributes' task, which multiplies the default values
-    # with normally distributed scaling coefficient.
+    # with normally distributed scaling coefficients.
+    # TODO: Need to refactor the whole MultiTaskEnv/SmoothTransition wrappers / tasks
+    # etc.
     return make_env_attributes_task(
         env, task_params=task_params, seed=seed, rng=rng, noise_std=noise_std,
     )
@@ -210,7 +256,7 @@ if MUJOCO_INSTALLED:
 
     default_mujoco_gravity = -9.81
 
-    @make_task_for_env.register
+    @make_continuous_task.register
     def make_task_for_modified_gravity_env(
         env: ModifiedGravityEnv,
         step: int,

@@ -29,8 +29,7 @@ from sequoia.settings.assumptions.incremental_test import DummyMethod as _DummyM
 from sequoia.utils.utils import take
 from sequoia.settings import Environment
 
-from .setting import ContinualRLSetting
-
+from .setting import ContinualRLSetting, make_continuous_task, TaskSchedule
 
 class DummyMethod(RandomBaselineMethod):
     """ Random baseline method used for debugging the settings.
@@ -105,24 +104,6 @@ class CheckAttributesWrapper(IterableWrapper):
 
 
 @pytest.mark.parametrize(
-    "env",
-    [
-        "CartPole-v0",
-        "CartPole-v1",
-        "Pendulum-v0",
-        param_requires_mujoco("HalfCheetah-v2"),
-        param_requires_mujoco("Walker2d-v2"),
-        param_requires_mujoco("Hopper-v2"),
-    ],
-)
-def test_passing_supported_dataset(env: Any):
-    setting = ContinualRLSetting(dataset=env)
-    assert setting.train_task_schedule
-    assert all(setting.train_task_schedule.values()), "Should have non-empty tasks."
-    # assert isinstance(setting._temp_train_env, expected_type)
-
-
-@pytest.mark.parametrize(
     "dataset",
     [
         "Acrobot-v0",
@@ -136,53 +117,6 @@ def test_passing_supported_dataset(env: Any):
 def test_passing_unsupported_dataset_raises_error(dataset: Any):
     with pytest.raises((gym.error.Error, NotImplementedError)):
         _ = ContinualRLSetting(dataset=dataset)
-
-
-@pytest.mark.parametrize(
-    "dataset, attributes",
-    [
-        ("CartPole-v0", ["gravity", "length"]),
-        ("CartPole-v1", ["gravity", "length"]),
-        ("Pendulum-v0", ["g", "l"]),
-        param_requires_mujoco("HalfCheetah-v2", ["gravity"]),
-        param_requires_mujoco("Hopper-v2", ["gravity"]),
-        param_requires_mujoco("Walker2d-v2", ["gravity"]),
-        param_requires_mujoco("HalfCheetah-v3", ["gravity"]),
-    ],
-)
-def test_modified_attribute_envs(dataset: str, attributes: str):
-    """ Check that the values of the given attributes do change at each step during
-    training.
-    """
-    setting = ContinualRLSetting(
-        dataset=dataset, train_max_steps=1000, test_max_steps=1000,
-    )
-    assert setting.train_max_steps == 1000
-    assert setting.test_max_steps == 1000
-
-    from gym.wrappers import TimeLimit
-
-    method = DummyMethod(
-        train_wrappers=[partial(CheckAttributesWrapper, attributes=attributes)]
-    )
-
-    # method.configure(setting)
-    # method.fit(setting.train_dataloader(), setting.val_dataloader())
-    results = setting.apply(method)
-    assert results.objective
-
-    for attribute in attributes:
-        train_values: Dict[int, float] = {
-            step: values[attribute] for step, values in method.train_env.values.items()
-        }
-        train_steps = setting.train_max_steps
-
-        # Should have one (unique) value for the attribute at each step during training
-        # NOTE: There's an offset by 1 here because of when the env is closed.
-        # NOTE: This test won't really work with integer values, but that doesn't matter
-        # right now because we don't/won't support changing the values of integer
-        # parameters in this "continuous" task setting.
-        assert len(set(train_values.values())) == train_steps - 1
 
 
 import math
@@ -202,45 +136,51 @@ high = np.array(
 )
 expected_cartpole_obs_space = spaces.Box(-high, high, dtype=np.float32)
 
+def make_dataset_fixture(setting_type) -> pytest.fixture:
+    """ Create a parametrized fixture that will go through all the available datasets
+    for a given setting. """
+    def dataset(self, request):
+        dataset = request.param
+        return dataset
+    return pytest.fixture(
+        params=list(setting_type.available_datasets.keys()),
+        scope="module",
+    )(dataset)
+
 
 class TestContinualRLSetting:
     Setting: ClassVar[Type[Setting]] = ContinualRLSetting
 
-    @pytest.fixture(
-        params=["CartPole-v0", "CartPole-v1", "Pendulum-v0",]
-        + (["HalfCheetah-v2", "Hopper-v2", "Walker2d-v2"] if MUJOCO_INSTALLED else []),
-        scope="session",
-    )
-    def dataset(self, request):
-        dataset = request.param
-        return dataset
+    dataset: pytest.fixture = make_dataset_fixture(ContinualRLSetting)
+    # @pytest.fixture(
+    #     params=list(ContinualRLSetting.available_datasets.keys()),
+    #     scope="session",
+    # )
+    # def dataset(self, request):
+    #     dataset = request.param
+    #     return dataset
 
-    def test_passing_supported_dataset(self, dataset: Any):
-        setting = self.Setting(dataset=dataset)
+    @pytest.fixture()
+    def setting_kwargs(self, dataset: str):
+        """ Fixture used to pass keyword arguments when creating a Setting. """
+        return {"dataset": dataset}
+
+    def test_passing_supported_dataset(self, setting_kwargs: Dict):
+        setting = self.Setting(**setting_kwargs)
         assert setting.train_task_schedule
         assert all(setting.train_task_schedule.values()), "Should have non-empty tasks."
         # assert isinstance(setting._temp_train_env, expected_type)
 
-    @pytest.mark.parametrize(
-        "dataset",
-        [
-            "CartPole-v0",
-            "CartPole-v1",
-            "Pendulum-v0",
-            param_requires_mujoco("HalfCheetah-v2"),
-            param_requires_mujoco("Walker2d-v2"),
-            param_requires_mujoco("Hopper-v2"),
-        ],
-    )
-    def test_task_creation_seeding(self, dataset: str, config: Config):
+    def test_task_creation_seeding(self, setting_kwargs: Dict[str, Any], config: Config):
+        """ Make sure that the tasks are 'reproducible' given a seed. """ 
         assert config.seed is not None
-        setting_1 = self.Setting(dataset=dataset, config=config)
+        setting_1 = self.Setting(**setting_kwargs, config=config)
         assert setting_1.train_task_schedule
         assert all(
             setting_1.train_task_schedule.values()
         ), "Should have non-empty tasks."
 
-        setting_2 = self.Setting(dataset=dataset, config=config)
+        setting_2 = self.Setting(**setting_kwargs, config=config)
         assert setting_2.train_task_schedule
         assert all(
             setting_2.train_task_schedule.values()
@@ -250,18 +190,86 @@ class TestContinualRLSetting:
         assert setting_1.val_task_schedule == setting_2.val_task_schedule
         assert setting_1.test_task_schedule == setting_2.test_task_schedule
 
+
         # Create another setting, with a different seed:
         setting_3 = self.Setting(
-            dataset=dataset, config=replace(config, seed=config.seed + 123)
+            **setting_kwargs, config=replace(config, seed=config.seed + 123)
         )
         assert setting_3.train_task_schedule
         assert all(
             setting_3.train_task_schedule.values()
         ), "Should have non-empty tasks."
 
-        assert setting_3.train_task_schedule != setting_1.train_task_schedule
-        assert setting_3.val_task_schedule != setting_1.val_task_schedule
-        assert setting_3.test_task_schedule != setting_1.test_task_schedule
+        # NOTE: This isn't ideal: in the case where a "nb_tasks" kwarg was passed
+        # to the setting constructor (i.e., when this is test is being run while testing
+        # a child setting), and when that value is equal to 1, then the task schedules
+        # will be identical, since by default we currently don't change the environment
+        # for the first task.
+        def without_first_task(task_schedule: TaskSchedule) -> TaskSchedule:
+            task_schedule = task_schedule.copy()
+            task_schedule.pop(0)
+            return task_schedule
+
+        for setting_1_schedule, setting_3_schedule in zip(
+            map(without_first_task, [setting_1.train_task_schedule, setting_1.val_task_schedule, setting_1.test_task_schedule]),
+            map(without_first_task, [setting_3.train_task_schedule, setting_3.val_task_schedule, setting_3.test_task_schedule]),
+        ):
+            if setting_1_schedule:
+                assert setting_1_schedule != setting_3_schedule
+            else:
+                assert not setting_3_schedule
+
+    def test_env_attributes_change(self, setting_kwargs: Dict[str, Any], config: Config):
+        """ Check that the values of the given attributes do change at each step during
+        training.
+        """
+        setting_kwargs.update(train_max_steps=1000, test_max_steps=1000)
+        setting = self.Setting(**setting_kwargs)
+        assert setting.train_task_schedule
+        assert all(setting.train_task_schedule.values())
+
+        # task_for_dataset = make_task_for_env(dataset, step=0, change_steps=[0, 1000])
+        # attributes = task_for_dataset.keys()
+        attributes = set().union(*[task.keys() for task in setting.train_task_schedule.values()])
+
+        assert setting.train_max_steps == 1000
+        assert setting.test_max_steps == 1000
+
+        method = DummyMethod(
+            train_wrappers=[partial(CheckAttributesWrapper, attributes=attributes)]
+        )
+
+        # method.configure(setting)
+        # method.fit(setting.train_dataloader(), setting.val_dataloader())
+        results = setting.apply(method, config=config)
+        
+        assert results
+        # TODO: Need to limit the episodes per step in MonsterKong.
+        # In MonsterKong, we might have 0 reward, since this might not even
+        # constitute a full episode.
+        # assert results.objective
+
+        for attribute in attributes:
+            train_values: Dict[int, float] = {
+                step: values[attribute] for step, values in method.train_env.values.items()
+            }
+            train_steps = setting.train_max_steps
+
+            # Should have one (unique) value for the attribute at each step during training
+            if setting.smooth_task_boundaries:
+                # This is the truth condition for the ContinualRLSetting.
+                # NOTE: There's an offset by 1 here because of when the env is closed.
+                # NOTE: This test won't really work with integer values, but that doesn't matter
+                # right now because we don't/won't support changing the values of integer
+                # parameters in this "continuous" task setting.
+                assert len(set(train_values.values())) == train_steps - 1, f"{attribute} didn't change enough?"
+            else:
+                from ..discrete.setting import DiscreteTaskAgnosticRLSetting
+                setting: DiscreteTaskAgnosticRLSetting
+                train_tasks = setting.nb_tasks
+                unique_attribute_values = set(train_values.values())
+                assert len(unique_attribute_values) == train_tasks
+
 
     # TODO: This could be the tests for all the descendants of the RL Settings!
     @pytest.mark.parametrize(
@@ -369,9 +377,12 @@ class TestContinualRLSetting:
 
             if batch_size:
                 # FIXME: This differs between ContinualRL and IncrementalRL:
-                if self.Setting is ContinualRLSetting:
+                if not setting.known_task_boundaries_at_train_time:
+                    assert obs.task_labels[0] in setting.task_label_space
                     assert tuple(obs.task_labels) in env.observation_space.task_labels
                 else:
+                    assert obs.task_labels[0] in setting.task_label_space
+                    assert obs.task_labels in env.observation_space.task_labels
                     assert (
                         np.array(obs.task_labels) in env.observation_space.task_labels
                     )
@@ -494,20 +505,20 @@ class TestContinualRLSetting:
         # plt.show()
 
 
-@pytest.mark.xfail(reason="TODO: DQN model only accepts string environment names...")
-def test_dqn_on_env(tmp_path: Path):
-    """ TODO: Would be nice if we could have the models work directly on the
-    gym envs..
-    """
-    from pl_bolts.models.rl import DQN
-    from pytorch_lightning import Trainer
+# @pytest.mark.xfail(reason="TODO: pl_bolts DQN only accepts string environment names..")
+# def test_dqn_on_env(tmp_path: Path):
+#     """ TODO: Would be nice if we could have the models work directly on the
+#     gym envs..
+#     """
+#     from pl_bolts.models.rl import DQN
+#     from pytorch_lightning import Trainer
 
-    setting = ContinualRLSetting()
-    env = setting.train_dataloader(batch_size=None)
-    model = DQN(env)
-    trainer = Trainer(fast_dev_run=True, default_root_dir=tmp_path)
-    success = trainer.fit(model)
-    assert success == 1
+#     setting = ContinualRLSetting()
+#     env = setting.train_dataloader(batch_size=None)
+#     model = DQN(env)
+#     trainer = Trainer(fast_dev_run=True, default_root_dir=tmp_path)
+#     success = trainer.fit(model)
+#     assert success == 1
 
 
 def test_passing_task_schedule_sets_other_attributes_correctly():

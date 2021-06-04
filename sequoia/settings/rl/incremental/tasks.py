@@ -1,15 +1,14 @@
 """ TODO: Add the tasks for IncrementalRLSetting, on top of the existing tasks from
 ContinualRL
 """
-from functools import singledispatch
 import operator
 import warnings
-from typing import Any, Dict, List, Optional, Union, Callable
+from functools import singledispatch
+from typing import Any, Callable, Dict, List, Optional, Union
+
 import gym
+from gym.envs.registration import registry, EnvRegistry, EnvSpec
 import numpy as np
-from sequoia.settings.rl.continual.tasks import (
-    make_task_for_env as make_continuous_task_for_env,
-)
 from sequoia.settings.rl.envs import (
     METAWORLD_INSTALLED,
     MONSTERKONG_INSTALLED,
@@ -18,109 +17,59 @@ from sequoia.settings.rl.envs import (
     MetaMonsterKongEnv,
     MetaWorldEnv,
     MetaWorldMujocoEnv,
-    SawyerXYZEnv,
     MTEnv,
+    SawyerXYZEnv,
 )
 
+from ..discrete.tasks import ContinuousTask, DiscreteTask
+from ..discrete.tasks import is_supported as _is_supported
+from ..discrete.tasks import make_discrete_task
 
-DiscreteTask = Union[Dict[str, Any], Callable[[gym.Env], Any]]
+IncrementalTask = DiscreteTask
 
 
 @singledispatch
-def make_task_for_env(
+def make_incremental_task(
     env: gym.Env, step: int, change_steps: List[int], seed: int = None, **kwargs,
-) -> DiscreteTask:
-    """ Generic function used by Sequoia's IncrementalRL setting (and its descendants)
-    to create a "task" that will be applied to an environment like `env`.
+) -> IncrementalTask:
+    """ Generic function used by Sequoia's `IncrementalRLSetting` (and its
+    descendants) to create a "task" that will be applied to an environment like `env`.
 
     To add support for a new type of environment, simply register a handler function:
-
     ```
-    @make_task_for_env.register(SomeGymEnvClass)
-    def make_task_for_my_env(env: SomeGymEnvClass, step: int, **kwargs,):
+    @make_incremental_task.register(SomeGymEnvClass)
+    def make_incremental_task_for_my_env(env: SomeGymEnvClass, step: int, change_steps: List[int], **kwargs,):
         return {"my_attribute": random.random()}
     ```
     """
-    return make_continuous_task_for_env(
+    return make_discrete_task(
         env, step=step, change_steps=change_steps, seed=seed, **kwargs
     )
-    # raise NotImplementedError(f"Don't currently know how to create a discrete task for env {env}")
+
+# IDEA: Could probably do something like this automatically using a function decorator.
+# Update the registry for this `make_incremental_task` function so it builds on top of the
+# existing 'make_discrete_task' in the ContinualRLSetting, since we can create a schedule
+# of discrete tasks from a continuous one, but not the other way around.
+for env_class, env_task_creation_func in make_incremental_task.registry.items():
+    make_incremental_task.register(env_class, env_task_creation_func)
 
 
-# # Update the registry for this `make_task_for_env` function so it also includes the 
-# for key, value in make_continuous_task_for_env.registry.items():
-#     make_task_for_env.register(key, value)
-
-
-if MONSTERKONG_INSTALLED:
-
-    @make_task_for_env.register
-    def make_task_for_monsterkong_env(
-        env: MetaMonsterKongEnv,
-        step: int,
-        change_steps: List[int] = None,
-        seed: int = None,
-        **kwargs,
-    ) -> Union[Dict[str, Any], Any]:
-        """ Samples a task for the MonsterKong environment.
-
-        TODO: When given a seed, sample the task randomly (but deterministicly) using
-        the seed.
-        """
-        assert (
-            change_steps is not None
-        ), "Need task boundaries to construct the task schedule."
-
-        if step not in change_steps:
-            raise RuntimeError(
-                f"Monsterkong's has discrete tasks, {step} should be in {change_steps}!"
-            )
-        task_index = change_steps.index(step)
-
-        # TODO: double-check with @mattriemer on this:
-        n_supported_levels = 30
-        # IDEA: Could also have a list of supported levels
-        levels = list(range(n_supported_levels))
-        nb_tasks = len(change_steps)
-
-        rng: Optional[np.random.Generator] = None
-        if seed is not None:
-            # perform a deterministic shuffling of the 'task ids'
-            rng = np.random.default_rng(seed)
-            rng.shuffle(levels)
-
-        level: int
-        if task_index >= n_supported_levels:
-            warnings.warn(
-                RuntimeWarning(
-                    f"The given task id ({task_index}) is greater than the number of "
-                    f"levels currently available in MonsterKong "
-                    f"({n_supported_levels})!\n"
-                    f"Multiple tasks may therefore use the same level!"
-                )
-            )
-            # Option 1: Loop back around, using the same task as the first task?
-            # (Probably not a good idea, since then we might get to train on the first
-            # tasks right before testing begins! (which isnt great as a CL evaluation)
-            # task_index %= n_supported_levels
-
-            # Option 2 (better): Sample levels at random after all other levels have been
-            # exhausted.
-            # NOTE: Other calls to this should not get the same value!
-            rng = rng or np.random.default_rng(seed)
-            random_extra_levels = rng.integers(
-                0, n_supported_levels, size=nb_tasks - n_supported_levels
-            )
-            level = int(random_extra_levels[task_index - n_supported_levels])
-        else:
-            level = levels[task_index]
-
-        return {"level": level}
+def is_supported(
+    env_id: str,
+    env_registry: EnvRegistry = registry,
+    _make_discrete_task: Callable[..., DiscreteTask] = make_incremental_task,
+) -> bool:
+    """ Returns wether Sequoia is able to create (incremental) tasks for the given
+    environment.
+    """
+    return _is_supported(
+        env_id=env_id, env_registry=env_registry, _make_task_function=make_incremental_task,
+    )
 
 
 if MTENV_INSTALLED:
 
-    @make_task_for_env.register
+    @make_incremental_task.register
     def make_task_for_mtenv_env(
         env: MTEnv, step: int, change_steps: List[int], seed: int = None, **kwargs,
     ) -> Callable[[MTEnv], None]:
@@ -155,9 +104,9 @@ if MTENV_INSTALLED:
 
 if METAWORLD_INSTALLED:
 
-    @make_task_for_env.register(SawyerXYZEnv)
-    @make_task_for_env.register(MetaWorldMujocoEnv)
-    @make_task_for_env.register(MetaWorldEnv)
+    @make_incremental_task.register(SawyerXYZEnv)
+    @make_incremental_task.register(MetaWorldMujocoEnv)
+    @make_incremental_task.register(MetaWorldEnv)
     def make_task_for_metaworld_env(
         env: MetaWorldEnv,
         step: int,
