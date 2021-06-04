@@ -86,7 +86,7 @@ package Assumptions {
             abstract class Incremental <<Assumption>> extends Continual {
                 The context can change suddenly (task boundaries)
             }
-            abstract class MultiTask <<Assumption>> extends Incremental {
+            abstract class Stationary <<Assumption>> extends Incremental {
                 The context is sampled uniformly
             }
         }

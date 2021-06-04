@@ -21,9 +21,10 @@ class ModifiedMassEnv(MujocoEnv):
         frame_skip: int,
         body_parts: Union[str, List[str]] = None,
         mass_scales: Union[float, List[float]] = None,
+        **kwargs,
     ):
         super().__init__(
-            model_path=model_path, frame_skip=frame_skip,
+            model_path=model_path, frame_skip=frame_skip, **kwargs,
         )
         body_parts = body_parts or []
         mass_scales = mass_scales if mass_scales is not None else []

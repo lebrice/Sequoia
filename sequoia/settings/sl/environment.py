@@ -17,7 +17,6 @@ import matplotlib.pyplot as plt
 from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 
 from sequoia.common.batch import Batch
-from sequoia.common.gym_wrappers.utils import reshape_space
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.transforms import Compose, Transforms
 from sequoia.common.spaces import Image

@@ -7,11 +7,8 @@ import numpy as np
 from simple_parsing import list_field
 
 from sequoia.common import ClassificationMetrics, Metrics, RegressionMetrics
-from sequoia.settings.assumptions.incremental import (
-    IncrementalAssumption,
-    TaskResults,
-    TaskSequenceResults,
-    IncrementalResults,
+from sequoia.settings.assumptions.continual import (
+    ContinualResults
 )
 from sequoia.settings.base import Results
 from sequoia.utils import mean
@@ -19,10 +16,11 @@ from sequoia.utils.plotting import autolabel, plt
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 from typing import Generic, TypeVar
 
+
 MetricType = TypeVar("MetricType", bound=EpisodeMetrics)
 
 
-class RLResults(IncrementalResults, Generic[MetricType]):
+class ContinualRLResults(ContinualResults, Generic[MetricType]):
     """ Results for a whole train loop (transfer matrix), in an RL Setting.
     """
     # Higher mean reward / episode => better

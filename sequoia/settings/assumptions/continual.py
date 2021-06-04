@@ -2,7 +2,7 @@ import itertools
 import json
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
 from typing import ClassVar, Dict, Optional, Type
@@ -28,17 +28,15 @@ from .iid_results import TaskResults
 logger = get_logger(__file__)
 
 
-# @dataclass
+@dataclass
 class ContinualResults(TaskResults[MetricsType]):
-    def __init__(self, *args):
-        super().__init__(*args)
-        self._runtime: Optional[float] = None
-        self._online_training_performance: Dict[int, MetricsType] = {}
+    _runtime: Optional[float] = None
+    _online_training_performance: Dict[int, MetricsType] = field(default_factory=dict)
 
     @property
     def online_performance(self) -> Dict[int, MetricsType]:
         """ Returns the online training performance.
-        
+
         In SL, this is only recorded over the first epoch.
 
         Returns
@@ -123,46 +121,33 @@ class ContinualAssumption(AssumptionBase):
 
     def main_loop(self, method: Method) -> ContinualResults:
         """ Runs a continual learning training loop, wether in RL or CL. """
-        # TODO: Add ways of restoring state to continue a given run?
-        # For each training task, for each test task, a list of the Metrics obtained
-        # during testing on that task.
-        # NOTE: We could also just store a single metric for each test task, but then
-        # we'd lose the ability to create a plots to show the performance within a test
-        # task.
-        # IDEA: We could use a list of IIDResults! (but that might cause some circular
-        # import issues)
-        results = self.Results()
-
+        # TODO: Add ways of restoring state to continue a given run.
         if self.wandb and self.wandb.project:
             # Init wandb, and then log the setting's options.
             self.wandb_run = self.setup_wandb(method)
             method.setup_wandb(self.wandb_run)
 
-        method.set_training()
-
-        self._start_time = time.process_time()
-
-        logger.info(f"Starting training")
-        # Creating the dataloaders ourselves (rather than passing 'self' as
-        # the datamodule):
         train_env = self.train_dataloader()
         valid_env = self.val_dataloader()
 
+        logger.info(f"Starting training")
+        method.set_training()
+        self._start_time = time.process_time()
+        
         method.fit(
             train_env=train_env, valid_env=valid_env,
         )
         train_env.close()
         valid_env.close()
 
+
+        logger.info(f"Finished Training.")
+        results: ContinualResults = self.test_loop(method)
+
         if self.monitor_training_performance:
             results._online_training_performance = train_env.get_online_performance()
 
-        logger.info(f"Finished Training.")
-        test_metrics: ContinualResults = self.test_loop(method)
-
-        # Add a row to the transfer matrix.
-        results.append(test_metrics)
-        logger.info(f"Resulting objective of Test Loop: {test_metrics.objective}")
+        logger.info(f"Resulting objective of Test Loop: {results.objective}")
 
         self._end_time = time.process_time()
         runtime = self._end_time - self._start_time

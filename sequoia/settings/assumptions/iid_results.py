@@ -1,5 +1,6 @@
 """ Results for an IID experiment. """
-from typing import TypeVar, List, Dict, ClassVar
+from dataclasses import dataclass, field
+from typing import TypeVar, List, Dict, ClassVar, Generic
 import matplotlib.pyplot as plt
 from sequoia.common.metrics import Metrics
 from sequoia.settings.base.results import Results
@@ -7,7 +8,8 @@ from sequoia.settings.base.results import Results
 MetricType = TypeVar("MetricType", bound=Metrics)
 
 
-class TaskResults(List[MetricType], Results):
+@dataclass
+class TaskResults(Results, Generic[MetricType]):
     """ Results within a given Task.
 
     This is just a List of a given Metrics type, with additional methods.
@@ -16,10 +18,12 @@ class TaskResults(List[MetricType], Results):
     # SL) have higher => better
     lower_is_better: ClassVar[bool] = False
 
+    metrics: List[MetricType] = field(default_factory=list)
+
     @property
     def average_metrics(self) -> MetricType:
         """ Returns the average 'Metrics' object for this task. """
-        return sum(self, Metrics())
+        return sum(self.metrics, Metrics())
 
     @property
     def objective(self) -> float:

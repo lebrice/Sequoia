@@ -1,14 +1,13 @@
+from abc import ABC
 from contextlib import redirect_stdout
 from io import StringIO
-from typing import List, Dict, Union
+from typing import List, Dict, Union, List, Type
 import json
 import gym
 from pathlib import Path
 from sequoia.utils import get_logger
 
 logger = get_logger(__file__)
-
-from .classic_control import *
 
 
 ATARI_PY_INSTALLED = False
@@ -23,8 +22,7 @@ except gym.error.DependencyNotInstalled:
 MONSTERKONG_INSTALLED = False
 try:
     # Redirecting stdout because this import prints stuff.
-    with redirect_stdout(StringIO()):
-        from meta_monsterkong.make_env import MetaMonsterKongEnv
+    from .monsterkong import MetaMonsterKongEnv
     MONSTERKONG_INSTALLED = True
 except ImportError:
     class MetaMonsterKongEnv(gym.Env):
@@ -77,7 +75,7 @@ except (ImportError, AttributeError, ValueError, gym.error.DependencyNotInstalle
 
 
 METAWORLD_INSTALLED = False
-metaworld_envs = []
+metaworld_envs: List[Type[gym.Env]] = []
 
 try:
     if not MUJOCO_INSTALLED:
@@ -128,9 +126,9 @@ if not METAWORLD_INSTALLED:
     # Create a 'dummy' class so we can safely use MetaWorldEnv in the type hints below.
     # Additionally, isinstance(some_env, MetaWorldEnv) will always fail when metaworld
     # isn't installed, which is good.
-    class MetaWorldEnv(gym.Env):
+    class MetaWorldEnv(gym.Env, ABC):
         pass
-    class MetaWorldMujocoEnv(gym.Env):
+    class MetaWorldMujocoEnv(gym.Env, ABC):
         pass
-    class SawyerXYZEnv(gym.Env):
+    class SawyerXYZEnv(gym.Env, ABC):
         pass

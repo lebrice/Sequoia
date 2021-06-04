@@ -1,12 +1,15 @@
 """ TODO: Add the tasks for IncrementalRLSetting, on top of the existing tasks from
 ContinualRL
 """
+from functools import singledispatch
 import operator
 import warnings
 from typing import Any, Dict, List, Optional, Union, Callable
-
+import gym
 import numpy as np
-from sequoia.settings.rl.continual.tasks import make_task_for_env
+from sequoia.settings.rl.continual.tasks import (
+    make_task_for_env as make_continuous_task_for_env,
+)
 from sequoia.settings.rl.envs import (
     METAWORLD_INSTALLED,
     MONSTERKONG_INSTALLED,
@@ -18,6 +21,36 @@ from sequoia.settings.rl.envs import (
     SawyerXYZEnv,
     MTEnv,
 )
+
+
+DiscreteTask = Union[Dict[str, Any], Callable[[gym.Env], Any]]
+
+
+@singledispatch
+def make_task_for_env(
+    env: gym.Env, step: int, change_steps: List[int], seed: int = None, **kwargs,
+) -> DiscreteTask:
+    """ Generic function used by Sequoia's IncrementalRL setting (and its descendants)
+    to create a "task" that will be applied to an environment like `env`.
+
+    To add support for a new type of environment, simply register a handler function:
+
+    ```
+    @make_task_for_env.register(SomeGymEnvClass)
+    def make_task_for_my_env(env: SomeGymEnvClass, step: int, **kwargs,):
+        return {"my_attribute": random.random()}
+    ```
+    """
+    return make_continuous_task_for_env(
+        env, step=step, change_steps=change_steps, seed=seed, **kwargs
+    )
+    # raise NotImplementedError(f"Don't currently know how to create a discrete task for env {env}")
+
+
+# # Update the registry for this `make_task_for_env` function so it also includes the 
+# for key, value in make_continuous_task_for_env.registry.items():
+#     make_task_for_env.register(key, value)
+
 
 if MONSTERKONG_INSTALLED:
 
@@ -89,11 +122,7 @@ if MTENV_INSTALLED:
 
     @make_task_for_env.register
     def make_task_for_mtenv_env(
-        env: MTEnv,
-        step: int,
-        change_steps: List[int],
-        seed: int = None,
-        **kwargs,
+        env: MTEnv, step: int, change_steps: List[int], seed: int = None, **kwargs,
     ) -> Callable[[MTEnv], None]:
         """ Samples a task for an env from MTEnv.
 
@@ -161,9 +190,7 @@ if METAWORLD_INSTALLED:
 
         # TODO: Not sure how exactly we're supposed to use the train_classes vs
         # train_tasks, should it be a MultiTaskEnv within a given env class?
-        warnings.warn(RuntimeWarning(
-            "This is supposedly not the right way to do it!"
-        ))
+        warnings.warn(RuntimeWarning("This is supposedly not the right way to do it!"))
         env_name = ""
         # Find the benchmark that contains this type of env.
         for benchmark_class in [metaworld.ML10]:

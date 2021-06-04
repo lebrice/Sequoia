@@ -146,6 +146,21 @@ class IncrementalRLSetting(DiscreteTaskAgnosticRLSetting):
         # FIXME: Really annoying little bugs with these three arguments!
         self.nb_tasks = self.max_steps // self.steps_per_task
 
+    @property
+    def task_label_space(self) -> gym.Space:
+        # TODO: Explore an alternative design for the task sampling, based more around
+        # gym spaces rather than the generic function approach that's currently used?
+        # IDEA: Might be cleaner to put this in the assumption class
+        task_label_space = spaces.Discrete(self.nb_tasks)
+        if not self.task_labels_at_train_time or not self.task_labels_at_test_time:
+            sparsity = 1
+            if (self.task_labels_at_train_time ^ self.task_labels_at_test_time):
+                # We have task labels "50%" of the time, ish:
+                sparsity = 0.5
+            task_label_space = Sparse(task_label_space, sparsity=sparsity)
+        return task_label_space
+    
+    
     def setup(self, stage: str = None) -> None:
         # Called before the start of each task during training, validation and
         # testing.

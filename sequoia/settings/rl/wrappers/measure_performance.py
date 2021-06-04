@@ -97,6 +97,7 @@ class MeasureRLPerformanceWrapper(
         return observation, rewards_, done, info
 
     def send(self, action: Actions) -> Rewards:
+        self.action_ = action
         rewards_ = self.env.send(action)
         self._steps += 1
         reward = rewards_.y if isinstance(rewards_, Rewards) else rewards_

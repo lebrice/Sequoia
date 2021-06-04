@@ -7,6 +7,8 @@ skinparam linetype ortho
 !include assumptions/assumptions.puml
 hide empty members
 
+remove Assumptions
+
 ' ' Use this to turn on / off the display of assumptions
 ' remove Assumptions
 ' ' Use this to turn on / off groups of assumptions
