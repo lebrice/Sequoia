@@ -1,3 +1,4 @@
+import pytest
 from ..continual.setting_test import TestContinualRLSetting as ContinualRLSettingTests
 from .setting import DiscreteTaskAgnosticRLSetting
 from typing import ClassVar, Type 

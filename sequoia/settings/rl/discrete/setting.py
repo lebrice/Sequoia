@@ -183,29 +183,14 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
 
         assert self.test_steps // self.test_steps_per_task == self.nb_tasks
 
-        if self.smooth_task_boundaries:
-            # If we're operating in the 'Online/smooth task transitions' "regime",
-            # then there is only one "task", and we don't have task labels.
-            # TODO: HOWEVER, the task schedule could/should be able to have more
-            # than one non-stationarity! This indicates a need for a distinction
-            # between 'tasks' and 'non-stationarities' (changes in the env).
-            self.known_task_boundaries_at_train_time = False
-            self.known_task_boundaries_at_test_time = False
-            self.task_labels_at_train_time = False
-            self.task_labels_at_test_time = False
-            # self.steps_per_task = self.train_max_steps
-
-        # Task schedules for training / validation and testing.
-
+        assert not self.smooth_task_boundaries
         # Create a temporary environment so we can extract the spaces and create
         # the task schedules.
-        with self._make_env(
-            self.dataset, self._temp_wrappers(), **self.base_env_kwargs
-        ) as temp_env:
-            self._setup_fields_using_temp_env(temp_env)
-        del temp_env
-
-    
+        # with self._make_env(
+        #     self.dataset, self._temp_wrappers(), **self.base_env_kwargs
+        # ) as temp_env:
+        #     self._setup_fields_using_temp_env(temp_env)
+        # del temp_env
 
     def create_train_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to each training environment.
@@ -220,8 +205,11 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
         """
         # We add a restriction to prevent users from getting data from
         # previous or future tasks.
+        # TODO: Instead, just pass a subset of the task schedule to the CL wrapper?
         # TODO: This assumes that tasks all have the same length.
         starting_step = self.current_task_id * self.steps_per_task
+        # TODO: Ambiguous wether this `max_steps` is the maximum step that can be
+        # reached or the maximum number of steps that can be performed.
         max_steps = starting_step + self.steps_per_task - 1
         return self._make_wrappers(
             base_env=self.dataset,
