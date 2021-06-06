@@ -1,16 +1,17 @@
 import random
-from pathlib import Path
 from dataclasses import replace
-from typing import ClassVar, List, Optional, Tuple, Type, Callable, Any, Dict
 from functools import partial
+from pathlib import Path
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Type
+
 import gym
 import numpy as np
 import pytest
 from gym import spaces
 from gym.vector.utils import batch_space
 from sequoia.common.config import Config
-from sequoia.common.spaces import Image
 from sequoia.common.gym_wrappers import IterableWrapper, TransformObservation
+from sequoia.common.spaces import Image
 from sequoia.common.transforms import Transforms
 from sequoia.conftest import (
     ATARI_PY_INSTALLED,
@@ -23,13 +24,13 @@ from sequoia.conftest import (
     param_requires_mujoco,
     xfail_param,
 )
-from sequoia.methods import RandomBaselineMethod
-from sequoia.settings import Setting
+from sequoia.methods import Method, RandomBaselineMethod
+from sequoia.settings import Environment, Setting
 from sequoia.settings.assumptions.incremental_test import DummyMethod as _DummyMethod
 from sequoia.utils.utils import take
-from sequoia.settings import Environment
 
-from .setting import ContinualRLSetting, make_continuous_task, TaskSchedule
+from .setting import ContinualRLSetting, TaskSchedule, make_continuous_task
+
 
 class DummyMethod(RandomBaselineMethod):
     """ Random baseline method used for debugging the settings.
@@ -120,8 +121,8 @@ def test_passing_unsupported_dataset_raises_error(dataset: Any):
 
 
 import math
-from gym.envs.classic_control.cartpole import CartPoleEnv
 
+from gym.envs.classic_control.cartpole import CartPoleEnv
 
 theta_threshold_radians = 12 * 2 * math.pi / 360
 x_threshold = 2.4
@@ -136,15 +137,17 @@ high = np.array(
 )
 expected_cartpole_obs_space = spaces.Box(-high, high, dtype=np.float32)
 
+
 def make_dataset_fixture(setting_type) -> pytest.fixture:
     """ Create a parametrized fixture that will go through all the available datasets
     for a given setting. """
+
     def dataset(self, request):
         dataset = request.param
         return dataset
+
     return pytest.fixture(
-        params=list(setting_type.available_datasets.keys()),
-        scope="module",
+        params=list(set(setting_type.available_datasets.values())), scope="module",
     )(dataset)
 
 
@@ -171,8 +174,10 @@ class TestContinualRLSetting:
         assert all(setting.train_task_schedule.values()), "Should have non-empty tasks."
         # assert isinstance(setting._temp_train_env, expected_type)
 
-    def test_task_creation_seeding(self, setting_kwargs: Dict[str, Any], config: Config):
-        """ Make sure that the tasks are 'reproducible' given a seed. """ 
+    def test_task_creation_seeding(
+        self, setting_kwargs: Dict[str, Any], config: Config
+    ):
+        """ Make sure that the tasks are 'reproducible' given a seed. """
         assert config.seed is not None
         setting_1 = self.Setting(**setting_kwargs, config=config)
         assert setting_1.train_task_schedule
@@ -189,7 +194,6 @@ class TestContinualRLSetting:
         assert setting_1.train_task_schedule == setting_2.train_task_schedule
         assert setting_1.val_task_schedule == setting_2.val_task_schedule
         assert setting_1.test_task_schedule == setting_2.test_task_schedule
-
 
         # Create another setting, with a different seed:
         setting_3 = self.Setting(
@@ -211,15 +215,31 @@ class TestContinualRLSetting:
             return task_schedule
 
         for setting_1_schedule, setting_3_schedule in zip(
-            map(without_first_task, [setting_1.train_task_schedule, setting_1.val_task_schedule, setting_1.test_task_schedule]),
-            map(without_first_task, [setting_3.train_task_schedule, setting_3.val_task_schedule, setting_3.test_task_schedule]),
+            map(
+                without_first_task,
+                [
+                    setting_1.train_task_schedule,
+                    setting_1.val_task_schedule,
+                    setting_1.test_task_schedule,
+                ],
+            ),
+            map(
+                without_first_task,
+                [
+                    setting_3.train_task_schedule,
+                    setting_3.val_task_schedule,
+                    setting_3.test_task_schedule,
+                ],
+            ),
         ):
             if setting_1_schedule:
                 assert setting_1_schedule != setting_3_schedule
             else:
                 assert not setting_3_schedule
 
-    def test_env_attributes_change(self, setting_kwargs: Dict[str, Any], config: Config):
+    def test_env_attributes_change(
+        self, setting_kwargs: Dict[str, Any], config: Config
+    ):
         """ Check that the values of the given attributes do change at each step during
         training.
         """
@@ -230,7 +250,9 @@ class TestContinualRLSetting:
 
         # task_for_dataset = make_task_for_env(dataset, step=0, change_steps=[0, 1000])
         # attributes = task_for_dataset.keys()
-        attributes = set().union(*[task.keys() for task in setting.train_task_schedule.values()])
+        attributes = set().union(
+            *[task.keys() for task in setting.train_task_schedule.values()]
+        )
 
         assert setting.train_max_steps == 1000
         assert setting.test_max_steps == 1000
@@ -242,8 +264,9 @@ class TestContinualRLSetting:
         # method.configure(setting)
         # method.fit(setting.train_dataloader(), setting.val_dataloader())
         results = setting.apply(method, config=config)
-        
+
         assert results
+        self.validate_results(setting, method, results)
         # TODO: Need to limit the episodes per step in MonsterKong.
         # In MonsterKong, we might have 0 reward, since this might not even
         # constitute a full episode.
@@ -251,7 +274,8 @@ class TestContinualRLSetting:
 
         for attribute in attributes:
             train_values: Dict[int, float] = {
-                step: values[attribute] for step, values in method.train_env.values.items()
+                step: values[attribute]
+                for step, values in method.train_env.values.items()
             }
             train_steps = setting.train_max_steps
 
@@ -262,61 +286,71 @@ class TestContinualRLSetting:
                 # NOTE: This test won't really work with integer values, but that doesn't matter
                 # right now because we don't/won't support changing the values of integer
                 # parameters in this "continuous" task setting.
-                assert len(set(train_values.values())) == train_steps - 1, f"{attribute} didn't change enough?"
+                assert (
+                    len(set(train_values.values())) == train_steps - 1
+                ), f"{attribute} didn't change enough?"
             else:
                 from ..discrete.setting import DiscreteTaskAgnosticRLSetting
+
                 setting: DiscreteTaskAgnosticRLSetting
                 train_tasks = setting.nb_tasks
                 unique_attribute_values = set(train_values.values())
                 assert len(unique_attribute_values) == train_tasks
 
+    def validate_results(
+        self,
+        setting: ContinualRLSetting,
+        method: Method,
+        results: ContinualRLSetting.Results,
+    ) -> None:
+        assert results
+        assert results.objective
+        # For now we treat the stream as a single task.
+        # assert len(results.task_results) == 1
+        # assert sum(results.task_result.metrics) == results.average_metric
+        # assert sum(results.task_results) == results.average_metrics
+        # self.validate_results(setting, method, results)
 
     # TODO: This could be the tests for all the descendants of the RL Settings!
-    @pytest.mark.parametrize(
-        "dataset, force_pixel_observations, expected_x_space",
-        [
-            ("CartPole-v0", False, expected_cartpole_obs_space),
-            ("CartPole-v0", True, Image(0, 255, (400, 600, 3))),
-            param_requires_mujoco(
-                "HalfCheetah-v3", False, spaces.Box(-np.inf, np.inf, (17,))
-            ),
-            # param_requires_atari_py("Breakout-v0", (3, 210, 160)),
-            # Since the AtariWrapper gets added by default
-            # param_requires_atari_py("Breakout-v0", True, Image(0, 255, (84, 84, 1)),),
-            # param_requires_monsterkong(
-            #     "MetaMonsterKong-v0", True, Image(0, 255, (64, 64, 3))
-            # ),
-        ],
-    )
+    # @pytest.mark.parametrize(
+    #     "dataset, force_pixel_observations, expected_x_space",
+    #     [
+    #         ("CartPole-v0", False, expected_cartpole_obs_space),
+    #         ("CartPole-v0", True, Image(0, 255, (400, 600, 3))),
+    #         param_requires_mujoco(
+    #             "HalfCheetah-v3", False, spaces.Box(-np.inf, np.inf, (17,))
+    #         ),
+    #         # param_requires_atari_py("Breakout-v0", (3, 210, 160)),
+    #         # Since the AtariWrapper gets added by default
+    #         # param_requires_atari_py("Breakout-v0", True, Image(0, 255, (84, 84, 1)),),
+    #         # param_requires_monsterkong(
+    #         #     "MetaMonsterKong-v0", True, Image(0, 255, (64, 64, 3))
+    #         # ),
+    #     ],
+    # )
     @pytest.mark.parametrize(
         "batch_size",
         [
             None,
             1,
             xfail_param(
-                3,
-                reason="is_closed and env_dataset cause issues in a batched env.",
+                3, reason="is_closed and env_dataset cause issues in a batched env.",
             ),
         ],
     )
     @pytest.mark.timeout(60)
     def test_check_iterate_and_step(
-        self,
-        dataset: str,
-        force_pixel_observations: bool,
-        expected_x_space: gym.Space,
-        batch_size: Optional[int],
+        self, setting_kwargs: Dict[str, Any], batch_size: Optional[int],
     ):
         """ Test that the observations are of the right type and shape, regardless
         of wether we iterate on the env by calling 'step' or by using it as a
         DataLoader.
         """
-        setting = self.Setting(
-            dataset=dataset, force_pixel_observations=force_pixel_observations,
-        )
-
-        with gym.make(dataset) as temp_env:
+        with gym.make(setting_kwargs["dataset"]) as temp_env:
+            expected_x_space = temp_env.observation_space
             expected_action_space = temp_env.action_space
+
+        setting = self.Setting(**setting_kwargs,)
 
         if batch_size is not None:
             expected_batched_x_space = batch_space(expected_x_space, batch_size)
@@ -447,8 +481,9 @@ class TestContinualRLSetting:
             max_episode_steps=100,
             config=config,
         )
-        import matplotlib.pyplot as plt
         from functools import partial
+
+        import matplotlib.pyplot as plt
 
         fig, axes = plt.subplots(2, 3)
         name_to_env_fn = {
@@ -588,8 +623,8 @@ def test_fit_and_on_task_switch_calls():
 
 if MUJOCO_INSTALLED:
     from sequoia.settings.rl.envs.mujoco import (
-        ContinualHalfCheetahV3Env,
         ContinualHalfCheetahV2Env,
+        ContinualHalfCheetahV3Env,
         ContinualHopperEnv,
         ContinualWalker2dEnv,
     )

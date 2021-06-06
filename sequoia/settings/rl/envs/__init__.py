@@ -16,9 +16,8 @@ logger = get_logger(__file__)
 sequoia_registry = registry
 
 from .variant_spec import EnvVariantSpec
-from .classic_control import PixelObservationWrapper, add_pixel_variants
-
-add_pixel_variants(sequoia_registry)
+from .classic_control import PixelObservationWrapper, register_classic_control_variants
+register_classic_control_variants(sequoia_registry)
 
 
 ATARI_PY_INSTALLED = False
@@ -34,8 +33,10 @@ except gym.error.DependencyNotInstalled:
 MONSTERKONG_INSTALLED = False
 try:
     # Redirecting stdout because this import prints stuff.
-    from .monsterkong import MetaMonsterKongEnv
+    from .monsterkong import MetaMonsterKongEnv, register_monsterkong_variants
+    register_monsterkong_variants(sequoia_registry)
     MONSTERKONG_INSTALLED = True
+
 except ImportError:
     class MetaMonsterKongEnv(gym.Env):
         pass

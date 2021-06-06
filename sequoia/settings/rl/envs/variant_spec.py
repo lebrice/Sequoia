@@ -39,6 +39,9 @@ class EnvVariantSpec(EnvSpec, Generic[EnvType]):
         original: EnvSpec,
         *,
         new_id: str,
+        new_reward_threshold: Optional[float] = None,
+        new_nondeterministic: Optional[bool] = None,
+        new_max_episode_steps: Optional[int] = None,
         new_kwargs: Dict[str, Any] = None,
         new_entry_point: Union[str, Callable[..., gym.Env]] = None,
         wrappers: Optional[List[Callable[[gym.Env], gym.Env]]] = None,
@@ -53,6 +56,22 @@ class EnvVariantSpec(EnvSpec, Generic[EnvType]):
         new_spec_entry_point: Union[
             str, Callable[..., EnvType]
         ] = new_entry_point or original.entry_point
+
+        new_reward_threshold = (
+            new_reward_threshold
+            if new_reward_threshold is not None
+            else original.reward_threshold
+        )
+        new_nondeterministic = (
+            new_nondeterministic
+            if new_nondeterministic is not None
+            else original.nondeterministic
+        )
+        new_max_episode_steps = (
+            new_max_episode_steps
+            if new_max_episode_steps is not None
+            else original.max_episode_steps
+        )
 
         # Add wrappers if desired.
         if wrappers:
@@ -75,8 +94,8 @@ class EnvVariantSpec(EnvSpec, Generic[EnvType]):
             new_id,
             base_spec=original,
             entry_point=new_spec_entry_point,
-            reward_threshold=original.reward_threshold,
-            nondeterministic=original.nondeterministic,
-            max_episode_steps=original.max_episode_steps,
+            reward_threshold=new_reward_threshold,
+            nondeterministic=new_nondeterministic,
+            max_episode_steps=new_max_episode_steps,
             kwargs=new_spec_kwargs,
         )

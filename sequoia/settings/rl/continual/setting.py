@@ -57,7 +57,6 @@ from sequoia.settings.rl.wrappers import (
     MeasureRLPerformanceWrapper,
     TypedObjectsWrapper,
 )
-from sequoia.settings.rl.wrappers.state_vs_pixels import observe_pixels, observe_state
 from sequoia.utils import get_logger
 from sequoia.utils.utils import camel_case, flag
 from simple_parsing import choice, field, list_field
@@ -76,6 +75,7 @@ from .objects import (
 )
 from .results import ContinualRLResults
 from .tasks import ContinuousTask, TaskSchedule, is_supported, make_continuous_task
+from .test_environment import ContinualRLTestEnvironment
 
 logger = get_logger(__file__)
 
@@ -94,6 +94,9 @@ supported_envs: Dict[str, EnvSpec] = {
     spec.id: spec for env_id, spec in registry.env_specs.items() if is_supported(env_id)
 }
 available_datasets: Dict[str, str] = {env_id: env_id for env_id in supported_envs}
+# available_datasets.update(
+#     {camel_case(env_id.split("-v")[0]): env_id for env_id in supported_envs}
+# )
 
 
 @dataclass
@@ -115,6 +118,10 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
     # The type of results returned by an RL experiment.
     Results: ClassVar[Type[ContinualRLResults]] = ContinualRLResults
+    # The type wrapper used to wrap the test environment, and which produces the 
+    # results.
+    TestEnvironment: ClassVar[Type[TestEnvironment]] = ContinualRLTestEnvironment
+
     # Dict of all available options for the 'dataset' field below.
     available_datasets: ClassVar[Dict[str, Union[str, Any]]] = available_datasets
     # The function used to create the tasks for the chosen env.
@@ -158,36 +165,37 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     # don't cause a crash.
     observe_state_directly: Optional[bool] = None
 
-    force_pixel_observations: bool = False
-    """ Wether to use the "pixel" version of `self.dataset`.
-    When `False`, does nothing.
-    When `True`, will do one of the following, depending on the choice of environment:
-    - For classic control envs, it adds a `PixelObservationsWrapper` to the env.
-    - For atari envs:
-        - If `self.dataset` is a regular atari env (e.g. "Breakout-v0"), does nothing.
-        - if `self.dataset` is the 'RAM' version of an atari env, raises an error.
-    - For mujoco envs, this raises a NotImplementedError, as we don't yet know how to
-      make a pixel-version the Mujoco Envs.
-    - For other envs:
-        - If the environment's observation space appears to be image-based, an error
-          will be raised.
-        - If the environment's observation space doesn't seem to be image-based, does
-          nothing.
-    """
+    # NOTE: Removing those, in favor of just using the registered Pixel<...>-v? variant.
+    # force_pixel_observations: bool = False
+    # """ Wether to use the "pixel" version of `self.dataset`.
+    # When `False`, does nothing.
+    # When `True`, will do one of the following, depending on the choice of environment:
+    # - For classic control envs, it adds a `PixelObservationsWrapper` to the env.
+    # - For atari envs:
+    #     - If `self.dataset` is a regular atari env (e.g. "Breakout-v0"), does nothing.
+    #     - if `self.dataset` is the 'RAM' version of an atari env, raises an error.
+    # - For mujoco envs, this raises a NotImplementedError, as we don't yet know how to
+    #   make a pixel-version the Mujoco Envs.
+    # - For other envs:
+    #     - If the environment's observation space appears to be image-based, an error
+    #       will be raised.
+    #     - If the environment's observation space doesn't seem to be image-based, does
+    #       nothing.
+    # """
 
-    force_state_observations: bool = False
-    """ Wether to use the "state" version of `self.dataset`.
-    When `False`, does nothing.
-    When `True`, will do one of the following, depending on the choice of environment:
-    - For classic control envs, it does nothing, as they are already state-based.
-    - TODO: For atari envs, the 'RAM' version of the chosen env will be used.
-    - For mujoco envs, it doesn nothing, as they are already state-based.
-    - For other envs, if this is set to True, then
-        - If the environment's observation space appears to be image-based, an error
-          will be raised.
-        - If the environment's observation space doesn't seem to be image-based, does
-          nothing.
-    """
+    # force_state_observations: bool = False
+    # """ Wether to use the "state" version of `self.dataset`.
+    # When `False`, does nothing.
+    # When `True`, will do one of the following, depending on the choice of environment:
+    # - For classic control envs, it does nothing, as they are already state-based.
+    # - TODO: For atari envs, the 'RAM' version of the chosen env will be used.
+    # - For mujoco envs, it doesn nothing, as they are already state-based.
+    # - For other envs, if this is set to True, then
+    #     - If the environment's observation space appears to be image-based, an error
+    #       will be raised.
+    #     - If the environment's observation space doesn't seem to be image-based, does
+    #       nothing.
+    # """
 
     # NOTE: Removing this from the continual setting.
     # By default 1 for this setting, meaning that the context is a linear interpolation
@@ -262,9 +270,13 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     def __post_init__(self):
         super().__post_init__()
 
-        if self.dataset not in self.available_datasets:
-            for env_id in self.available_datasets:
-                if env_id.split("-v")[0].lower() == self.dataset:
+        if self.dataset not in self.available_datasets.values():
+            for key, env_id in self.available_datasets.items():
+                if self.dataset == key:
+                    self.dataset = env_id
+                    break
+                env_name = env_id.split("-v")[0]
+                if self.dataset in [env_name.lower(), camel_case(env_name)]:
                     warnings.warn(
                         DeprecationWarning(
                             f"Need to pass the exact env id ('{env_id}'), rather than the "
@@ -319,16 +331,28 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # Temporary environments which are created and used only for creating the task
         # schedules and the 'base' observation spaces, and then closed right after.
         self._temp_train_env: Optional[gym.Env] = self._make_env(self.train_dataset)
-        if self.force_pixel_observations:
-            self._temp_train_env = observe_pixels(self._temp_train_env)
-        elif self.force_state_observations:
-            self._temp_train_env = observe_state(self._temp_train_env)
+        # if self.force_pixel_observations:
+        #     self._temp_train_env = observe_pixels(self._temp_train_env)
+        # elif self.force_state_observations:
+        #     self._temp_train_env = observe_state(self._temp_train_env)
 
         self._temp_val_env: Optional[gym.Env] = None
         self._temp_test_env: Optional[gym.Env] = None
         # Create the task schedules, using the 'task sampling' function from `tasks.py`.
+        
         if not self.train_task_schedule:
             self.train_task_schedule = self.create_train_task_schedule()
+        else:
+            if max(self.train_task_schedule) == len(self.train_task_schedule) - 1:
+                # If the keys correspond to the task ids rather than the transition steps:
+                nb_tasks = len(self.train_task_schedule)
+                steps_per_task = self.train_max_steps // nb_tasks
+                self.train_task_schedule = type(self.train_task_schedule)(**{
+                    i * steps_per_task: self.train_task_schedule[step]
+                    for i, step in enumerate(sorted(self.train_task_schedule.keys()))
+                })
+            # self.train_max_steps = max(self.train_task_schedule)
+        
 
         if not self.val_task_schedule:
             # Avoid creating an additional env, just reuse the train_temp_env.
@@ -338,6 +362,15 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 else self._make_env(self.val_dataset)
             )
             self.val_task_schedule = self.create_val_task_schedule()
+        elif max(self.val_task_schedule) == len(self.val_task_schedule) - 1:
+            # If the keys correspond to the task ids rather than the transition steps
+            nb_tasks = len(self.val_task_schedule)
+            steps_per_task = self.train_max_steps // nb_tasks
+            self.val_task_schedule = type(self.val_task_schedule)(**{
+                i * steps_per_task: self.val_task_schedule[step]
+                for i, step in enumerate(sorted(self.val_task_schedule.keys()))
+            })
+
         if not self.test_task_schedule:
             self._temp_test_env = (
                 self._temp_train_env
@@ -345,6 +378,16 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 else self._make_env(self.val_dataset)
             )
             self.test_task_schedule = self.create_test_task_schedule()
+        else:
+            if max(self.test_task_schedule) == len(self.test_task_schedule) - 1:
+                # If the keys correspond to the task ids rather than the transition steps
+                nb_tasks = len(self.test_task_schedule)
+                steps_per_task = self.test_max_steps // nb_tasks
+                self.test_task_schedule = type(self.test_task_schedule)(**{
+                    i * steps_per_task: self.test_task_schedule[step]
+                    for i, step in enumerate(sorted(self.test_task_schedule.keys()))
+                })
+            # self.test_max_steps = max(self.test_task_schedule)
 
         # self._observation_space = self._temp_train_env.observation_space
         # self._action_space = self._temp_train_env.action_space
@@ -804,7 +847,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # batched environments.
         batch_size = batch_size or self.batch_size
         if batch_size is not None:
-            logger.warn(
+            logger.warning(
                 UserWarning(
                     colorize(
                         f"WIP: Only support batch size of `None` (i.e., a single env) "
@@ -840,7 +883,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         else:
             test_dir = "results"
         # TODO: Debug wandb Monitor integration.
-        self.test_env = ContinualRLTestEnvironment(
+        self.test_env = self.TestEnvironment(
             env_dataloader,
             task_schedule=self.test_task_schedule,
             directory=test_dir,
@@ -1068,13 +1111,13 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 partial(TimeLimit, max_episode_steps=self.max_episode_steps)
             )
 
-        if is_classic_control_env(base_env):
+        # if is_classic_control_env(base_env):
             # If we are in a classic control env, and we dont want the state to
             # be fully-observable (i.e. we want pixel observations rather than
             # getting the pole angle, velocity, etc.), then add the
             # PixelObservation wrapper to the list of wrappers.
-            if self.force_pixel_observations:
-                wrappers.append(PixelObservationWrapper)
+            # if self.force_pixel_observations:
+            #     wrappers.append(PixelObservationWrapper)
 
         elif is_atari_env(base_env):
             if isinstance(base_env, str) and "ram" in base_env:
@@ -1224,61 +1267,6 @@ def _load_task_schedule(file_path: Path) -> Dict[int, Dict]:
         task_schedule = json.load(f)
         return {int(k): task_schedule[k] for k in sorted(task_schedule.keys())}
 
-
-class ContinualRLTestEnvironment(TestEnvironment):
-    def __init__(self, *args, task_schedule: Dict, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.task_schedule = task_schedule
-        self.boundary_steps = [
-            step // (self.batch_size or 1) for step in self.task_schedule.keys()
-        ]
-
-    def __len__(self):
-        return math.ceil(self.step_limit / (getattr(self.env, "batch_size", 1) or 1))
-
-    def get_results(self) -> ContinualResults[EpisodeMetrics]:
-        # TODO: Place the metrics in the right 'bin' at the end of each episode during
-        # testing depending on the task at that time, rather than what's happening here,
-        # where we're getting all the rewards and episode lengths at the end and then
-        # sort it out into the bins based on the task schedule. ALSO: this would make it
-        # easier to support monitoring batched RL environments, since these `Monitor`
-        # methods (get_episode_rewards, get_episode_lengths, etc) assume the environment
-        # isn't batched.
-        rewards = self.get_episode_rewards()
-        lengths = self.get_episode_lengths()
-
-        task_schedule: Dict[int, Dict] = self.task_schedule
-        task_steps = sorted(task_schedule.keys())
-        assert 0 in task_steps
-        import bisect
-
-        nb_tasks = len(task_steps)
-        assert nb_tasks >= 1
-
-        test_results = ContinualResults()
-        # TODO: Fix this, since the task id might not be related to the steps!
-        for step, episode_reward, episode_length in zip(
-            itertools.accumulate(lengths), rewards, lengths
-        ):
-            # Given the step, find the task id.
-            episode_metric = EpisodeMetrics(
-                n_samples=1,
-                mean_episode_reward=episode_reward,
-                mean_episode_length=episode_length,
-            )
-            test_results.metrics.append(episode_metric)
-        return test_results
-
-    def render(self, mode="human", **kwargs):
-        # TODO: This might not be setup right. Need to check.
-        image_batch = super().render(mode=mode, **kwargs)
-        if mode == "rgb_array" and self.batch_size:
-            return tile_images(image_batch)
-        return image_batch
-
-    def _after_reset(self, observation):
-        # Is this going to work fine when the observations are batched though?
-        return super()._after_reset(observation)
 
 
 if __name__ == "__main__":

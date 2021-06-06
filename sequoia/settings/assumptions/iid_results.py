@@ -65,6 +65,9 @@ class TaskResults(Results, Generic[MetricType]):
         """
         return self.average_metrics.to_log_dict(verbose=verbose)
 
+    def summary(self) -> str:
+        return str(self.to_log_dict())
+
     def make_plots(self) -> Dict[str, plt.Figure]:
         """Produce a set of plots using the Metrics stored in this object.
 

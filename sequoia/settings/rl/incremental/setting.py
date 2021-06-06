@@ -58,20 +58,20 @@ class IncrementalRLSetting(DiscreteTaskAgnosticRLSetting):
     the tasks and calls the `on_task_switch` when needed.
     """
 
-    # The number of tasks. By default 0, which means that it will be set
-    # depending on other fields in __post_init__, or eventually be just 1.
-    nb_tasks: int = field(0, alias=["n_tasks", "num_tasks"])
+    # # The number of tasks. By default 0, which means that it will be set
+    # # depending on other fields in __post_init__, or eventually be just 1.
+    # nb_tasks: int = field(0, alias=["n_tasks", "num_tasks"])
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = constant(False)
     # Wether to give access to the task labels at train time.
-    task_labels_at_train_time: bool = True
+    task_labels_at_train_time: bool = constant(True)
     # Wether to give access to the task labels at test time.
     task_labels_at_test_time: bool = False
 
     # Class variable that holds the dict of available environments.
     available_datasets: ClassVar[
         Dict[str, str]
-    ] = DiscreteTaskAgnosticRLSetting.available_datasets
+    ] = DiscreteTaskAgnosticRLSetting.available_datasets.copy()
 
     dataset: str = "CartPole-v0"
 

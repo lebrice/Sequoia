@@ -1,65 +1,25 @@
 """ Results of an Incremental setting. """
 import json
 import warnings
+from dataclasses import dataclass
 from io import StringIO
-from typing import ClassVar, Dict, List, Optional, Union
-import numpy as np
+from pathlib import Path
+from typing import ClassVar, Dict, Generic, List, Optional, Union
 
 import matplotlib.pyplot as plt
+import numpy as np
 import wandb
 from gym.utils import colorize
 from sequoia.common.metrics import Metrics
+from sequoia.settings.base.results import Results
+from simple_parsing.helpers import list_field
 
 from .iid_results import MetricType, TaskResults
-from sequoia.settings.base.results import Results
-from pathlib import Path
+from .discrete_results import TaskSequenceResults
 
 
-class TaskSequenceResults(List[TaskResults[MetricType]], Results):
-    """ Results for a sequence of Tasks. """
-
-    # For now, all the 'concrete' objectives (mean reward / episode in RL, accuracy in
-    # SL) have higher => better
-    lower_is_better: ClassVar[bool] = False
-
-    @property
-    def num_tasks(self) -> int:
-        """Returns the number of tasks.
-
-        Returns
-        -------
-        int
-            Number of tasks.
-        """
-        return len(self)
-
-    @property
-    def average_metrics(self) -> MetricType:
-        return sum(self.average_metrics_per_task, Metrics())
-
-    @property
-    def average_metrics_per_task(self) -> List[MetricType]:
-        return [task_result.average_metrics for task_result in self]
-
-    @property
-    def objective(self) -> float:
-        return self.average_metrics.objective
-
-    def to_log_dict(self, verbose: bool = False) -> Dict:
-        result = {}
-        for task_id, task_results in enumerate(self):
-            result[f"Task {task_id}"] = task_results.to_log_dict(verbose=verbose)
-        result["Average"] = self.average_metrics.to_log_dict(verbose=verbose)
-        return result
-
-    def make_plots(self) -> Dict[str, plt.Figure]:
-        result = {}
-        for task_id, task_results in enumerate(self):
-            result[f"Task {task_id}"] = task_results.make_plots()
-        return result
-
-
-class IncrementalResults(List[TaskSequenceResults[MetricType]], Results):
+@dataclass
+class IncrementalResults(Results, Generic[MetricType]):
     """ Results for a whole train loop (transfer matrix).
 
     This class is basically just a 2d list of TaskResults objects, with some convenience
@@ -69,11 +29,12 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]], Results):
     task, hence why we get a nb_tasks x nb_tasks matrix of results.
     """
 
+    metrics: List[TaskSequenceResults[MetricType]] = list_field()
+
     min_runtime_hours: ClassVar[float] = 0.0
     max_runtime_hours: ClassVar[float]
 
-    def __init__(self, *args):
-        super().__init__(*args)
+    def __post_init__(self):
         self._runtime: Optional[float] = None
         self._online_training_performance: Optional[List[Dict[int, Metrics]]] = None
         # Factor used to scale the 'objective' to a 'score' between 0 and 1.
@@ -142,7 +103,7 @@ class IncrementalResults(List[TaskSequenceResults[MetricType]], Results):
         """
         # TODO: Determine the function to use to get a runtime score between 0 and 1.
         score = (
-            + 0.30 * self._online_performance_score()
+            +0.30 * self._online_performance_score()
             + 0.40 * self._final_performance_score()
             + 0.30 * self._runtime_score()
         )

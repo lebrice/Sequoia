@@ -8,7 +8,7 @@ from sequoia.common.gym_wrappers.pixel_observation import PixelObservationWrappe
 from .variant_spec import EnvVariantSpec
 
 
-def add_pixel_variants(env_registry: EnvRegistry = registry) -> None:
+def register_classic_control_variants(env_registry: EnvRegistry = registry) -> None:
     """ Adds pixel variants for the classic-control envs to the given registry in-place.
     """
     classic_control_env_specs: Dict[str, EnvSpec] = {

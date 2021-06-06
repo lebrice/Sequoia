@@ -6,23 +6,24 @@ move the "incremental" tasks from `incremental/tasks.py` to this level.
 
 import warnings
 from functools import singledispatch
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union, Type
 
 import gym
 import numpy as np
-from gym.envs.registration import EnvRegistry, EnvSpec, registry
-from sequoia.settings.rl.envs import MONSTERKONG_INSTALLED, MetaMonsterKongEnv
+from gym.envs.registration import EnvRegistry, EnvSpec, registry, load
+from sequoia.settings.rl.envs import MONSTERKONG_INSTALLED, MetaMonsterKongEnv, sequoia_registry
 
-from ..continual.tasks import ContinuousTask
+from ..continual.tasks import ContinuousTask, task_sampling_function
 from ..continual.tasks import is_supported as _is_supported
 from ..continual.tasks import make_continuous_task, TaskSchedule
 
 DiscreteTask = Union[ContinuousTask, Callable[[gym.Env], Any]]
 
 
+@task_sampling_function(env_registry=sequoia_registry, based_on=make_continuous_task)
 @singledispatch
 def make_discrete_task(
-    env: gym.Env, step: int, change_steps: List[int], seed: int = None, **kwargs,
+    env: gym.Env, *, step: int, change_steps: List[int], seed: int = None, **kwargs,
 ) -> DiscreteTask:
     """ Generic function used by Sequoia's `DiscreteTaskAgnosticRLSetting` (and its
     descendants) to create a "task" that will be applied to an environment like `env`.
@@ -41,14 +42,6 @@ def make_discrete_task(
     # )
 
 
-# IDEA: Could probably do something like this automatically using a function decorator.
-# Update the registry for this `make_discrete_task` function so it builds on top of the
-# existing 'make_discrete_task' in the ContinualRLSetting, since we can create a schedule
-# of discrete tasks from a continuous one, but not the other way around.
-for env_class, env_task_creation_func in make_continuous_task.registry.items():
-    make_discrete_task.register(env_class, env_task_creation_func)
-
-
 def is_supported(
     env_id: str,
     env_registry: EnvRegistry = registry,
@@ -57,9 +50,10 @@ def is_supported(
     """ Returns wether Sequoia is able to create (discrete) tasks for the given
     environment.
     """
-    return _is_supported(
-        env_id=env_id, env_registry=env_registry, _make_task_function=_make_task_function,
-    )
+    return make_discrete_task.is_supported(env_id, env_registry=env_registry)
+    # return _is_supported(
+    #     env_id=env_id, env_registry=env_registry, _make_task_function=_make_task_function,
+    # )
 
 
 if MONSTERKONG_INSTALLED:

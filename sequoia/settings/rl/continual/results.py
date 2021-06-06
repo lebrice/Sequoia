@@ -21,7 +21,7 @@ MetricType = TypeVar("MetricType", bound=EpisodeMetrics)
 
 
 class ContinualRLResults(ContinualResults, Generic[MetricType]):
-    """ Results for a whole train loop (transfer matrix), in an RL Setting.
+    """ Results for a ContinualRLSetting.
     """
     # Higher mean reward / episode => better
     lower_is_better: ClassVar[bool] = False
