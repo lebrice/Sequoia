@@ -70,13 +70,17 @@ def _is_supported(
     if isinstance(env_id, str):
         env_spec = env_registry.spec(env_id)
 
-    if isinstance(env_id, EnvSpec):
+    elif isinstance(env_id, EnvSpec):
         env_spec = env_id
         env_id = env_spec.id
 
-    if inspect.isclass(env_id) and issubclass(env_id, gym.Env):
+    elif inspect.isclass(env_id) and issubclass(env_id, gym.Env):
         env_type = env_id
         return _has_handler(env_type)
+    elif inspect.isfunction(env_id):
+        return False
+    else:
+        raise NotImplementedError(env_id)
 
     if isinstance(env_spec, EnvVariantSpec):
         # TODO: Test this out.

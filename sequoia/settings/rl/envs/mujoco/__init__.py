@@ -50,6 +50,7 @@ __all__ = [
     "ContinualHalfCheetahV3Env",
     "ContinualHopperEnv",
     "ContinualWalker2dEnv",
+    "ContinualWalker2dV2Env",
     "ContinualWalker2dV3Env",
     "ModifiedGravityEnv",
     "ModifiedSizeEnv",
@@ -70,7 +71,7 @@ def get_entry_point(Env: Type[gym.Env]) -> str:
 # NOTE: Using the same version tag as the
 
 CURRENTLY_SUPPORTED_MUJOCO_ENVS: Dict[str, Type[MujocoEnv]] = {
-    "HalfCheetah-v2": ContinualHalfCheetahEnv,
+    "HalfCheetah-v2": ContinualHalfCheetahV2Env,
     "HalfCheetah-v3": ContinualHalfCheetahV3Env,
     "Hopper-v2": ContinualHopperEnv,
     "Walker2d-v2": ContinualWalker2dV2Env,
@@ -88,36 +89,43 @@ CURRENTLY_SUPPORTED_MUJOCO_ENVS: Dict[str, Type[MujocoEnv]] = {
 def register_mujoco_variants(env_registry: EnvRegistry = registry) -> None:
     """ Adds pixel variants for the classic-control envs to the given registry in-place.
     """
+    # Dict from the env id to the original spec
     original_mujoco_env_specs: Dict[str, EnvSpec] = {
-        spec.id: spec
-        for env_id, spec in env_registry.env_specs.items()
-        if isinstance(spec.entry_point, str)
-        and spec.entry_point.startswith("gym.envs.mujoco")
+        original_env_id: env_registry.spec(original_env_id)
+        for original_env_id in CURRENTLY_SUPPORTED_MUJOCO_ENVS
     }
+    # Dict from the
     # TODO: Add broader support for mujoco envs
-    new_entry_points: Dict[
-        str, Union[str, Callable[..., gym.Env]]
-    ] = CURRENTLY_SUPPORTED_MUJOCO_ENVS
-    supported_mujoco_env_specs = {
-        env_id: spec
-        for env_id, spec in original_mujoco_env_specs.items()
-        if env_id in new_entry_points
-    }
-    for env_id, env_spec in supported_mujoco_env_specs.items():
-        # TODO: Use the same ID, or a different one?
-        # new_id = "Continual" + env_id
-        new_id = env_id
+    new_entry_points = CURRENTLY_SUPPORTED_MUJOCO_ENVS
 
-        if new_id not in env_registry.env_specs or new_id == env_id:
-            new_spec = EnvVariantSpec.of(
-                original=env_spec,
-                new_id=new_id,
-                new_entry_point=new_entry_points[env_id],
-            )
-            env_registry.env_specs[new_id] = new_spec
-            logger.debug(
-                f"Registering MuJoCO Environment variant of {env_id} at id {new_id}."
-            )
+    # NOTE: Currently we do two things: Register a new spec with a different name, like
+    # `ContinualWalker2d-v2`, as well as 'overwrite' the entry-point of the original
+    # spec ("Walker2d-v2") to point to our custom subclass (ContinualWalker2dV2Env)
+    prefixes = ["Continual", ""]
+    # NOTE: It could actually make more sense to only register our variants, and
+    # then have the Setting map one to the other intelligently, but it causes a bit more
+    # trouble
+    # prefixes = ["Continual"]
+    for prefix in prefixes:
+        for env_id, original_env_spec in original_mujoco_env_specs.items():
+            # TODO: Use the same ID, or a different one?
+            new_id = prefix + env_id
+
+            if (
+                new_id not in env_registry.env_specs or new_id == env_id
+            ) and not isinstance(original_env_spec, EnvVariantSpec):
+                new_spec = EnvVariantSpec.of(
+                    original=original_env_spec,
+                    new_id=new_id,
+                    new_entry_point=new_entry_points[env_id],
+                )
+                env_registry.env_specs[new_id] = new_spec
+                if new_id != env_id:
+                    logger.debug(
+                        f"Registering MuJoCO Environment variant of {env_id} at id {new_id}."
+                    )
+                else:
+                    logger.debug(f"Overwriting the existing EnvSpec at id {env_id}")
 
 
 # Replace the entry-point for these mujoco envs.

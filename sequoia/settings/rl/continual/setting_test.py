@@ -551,24 +551,33 @@ def test_fit_and_on_task_switch_calls():
 
 if MUJOCO_INSTALLED:
     from sequoia.settings.rl.envs.mujoco import (
+        ContinualHalfCheetahEnv,
         ContinualHalfCheetahV2Env,
         ContinualHalfCheetahV3Env,
         ContinualHopperEnv,
         ContinualWalker2dEnv,
+        ContinualWalker2dV2Env,
+        ContinualWalker2dV3Env,
     )
 
     @mujoco_required
     @pytest.mark.parametrize(
         "dataset, expected_env_type",
         [
-            ("ContinualHalfCheetah-v2", ContinualHalfCheetahV2Env),
+            ("half_cheetah", ContinualHalfCheetahEnv),
+            ("halfcheetah", ContinualHalfCheetahEnv),
             ("HalfCheetah-v2", ContinualHalfCheetahV2Env),
-            ("halfcheetah", ContinualHalfCheetahV2Env),
+            ("HalfCheetah-v3", ContinualHalfCheetahV3Env),
+            ("ContinualHalfCheetah-v2", ContinualHalfCheetahV2Env),
+            ("ContinualHalfCheetah-v3", ContinualHalfCheetahV3Env),
             ("ContinualHopper-v2", ContinualHopperEnv),
             ("hopper", ContinualHopperEnv),
             ("Hopper-v2", ContinualHopperEnv),
-            ("walker2d", ContinualWalker2dEnv),
-            ("Walker2d-v2", ContinualWalker2dEnv),
+            ("walker2d", ContinualWalker2dV3Env),
+            ("Walker2d-v2", ContinualWalker2dV2Env),
+            ("Walker2d-v3", ContinualWalker2dV3Env),
+            ("ContinualWalker2d-v2", ContinualWalker2dV2Env),
+            ("ContinualWalker2d-v3", ContinualWalker2dV3Env),
         ],
     )
     def test_mujoco_env_name_maps_to_continual_variant(

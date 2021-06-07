@@ -270,25 +270,16 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     def __post_init__(self):
         super().__post_init__()
 
-        if self.dataset not in self.available_datasets.values():
-            for key, env_id in self.available_datasets.items():
-                if self.dataset == key:
-                    self.dataset = env_id
-                    break
-                env_name = env_id.split("-v")[0]
-                if self.dataset in [env_name.lower(), camel_case(env_name)]:
-                    warnings.warn(
-                        DeprecationWarning(
-                            f"Need to pass the exact env id ('{env_id}'), rather than the "
-                            f"simple name ('{self.dataset}') since it might be ambiguous."
-                        )
-                    )
-                    self.dataset = env_id
-                    break
+        if (
+            self.dataset not in self.available_datasets
+            and self.dataset not in self.available_datasets.values()
+        ):
+            self.dataset = find_matching_dataset(self.available_datasets, self.dataset)
 
         if (
             self.dataset not in self.available_datasets
             and self.dataset not in self.available_datasets.values()
+            and not is_supported(self.dataset)
             and not self.train_task_schedule
         ):
             raise gym.error.UnregisteredEnv(
@@ -1188,3 +1179,60 @@ def _load_task_schedule(file_path: Path) -> Dict[int, Dict]:
 
 if __name__ == "__main__":
     ContinualRLSetting.main()
+
+
+def find_matching_dataset(
+    available_datasets: Dict[str, Union[str, Any]], dataset: str
+) -> Union[str, Any]:
+    """ Compares `dataset` with the keys in the `available_datasets` dict and return the
+    value of the matching key if found, else raises a warning and returns the dataset
+    unchanged. 
+    """
+    if dataset in available_datasets:
+        return available_datasets[dataset]
+
+    def names_match(name_a: str, name_b: str) -> bool:
+        a_variants = (name_a, name_a.lower(), camel_case(name_a))
+        b_variants = (name_b, name_b.lower(), camel_case(name_b))
+        # TODO: Not sure about this 'endswith' stuff, e.g. with MountainCarContinuous vs MountainCar?
+        return (
+            name_a in b_variants or name_b in a_variants
+        )  # or name_a.endswith(b_variants) or name_b.endswith(a_variants)
+
+    if isinstance(dataset, str):
+        chosen_env_name, _, chosen_version = dataset.partition("-v")
+        for key, env_id in available_datasets.items():
+            if dataset == key:
+                assert False, "this should be reached, since we do that check above"
+
+            env_name, _, env_version = key.partition("-v")
+            if chosen_version:
+                # chosen: half_cheetah
+                # key: HalfCheetah-v2
+                # HalfCheetah-v2
+                # halfcheetah-v2
+                # half_cheetah_v2
+                if chosen_version != env_version:
+                    continue
+                if names_match(chosen_env_name, env_name):
+                    return env_id
+            elif names_match(chosen_env_name, env_name):
+                # Look for matching entries with that name, and select the highest
+                # available version.
+                datasets_with_that_name = {
+                    other_key: other_env_id
+                    for other_key, other_env_id in available_datasets.items()
+                    if names_match(chosen_env_name, other_key.partition("-v")[0])
+                }
+                if len(datasets_with_that_name) == 1:
+                    return env_id
+                versions = {
+                    other_key: int(other_key.partition("-v")[-1])
+                    for other_key in datasets_with_that_name
+                }
+                return max(datasets_with_that_name, key=versions.get)
+
+    warnings.warn(
+        RuntimeWarning(f"Can't find matching entry for chosen dataset {dataset}")
+    )
+    return dataset
