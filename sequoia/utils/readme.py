@@ -57,7 +57,7 @@ def get_tree_string(
 
     applicable_methods = setting.get_applicable_methods()
 
-    n_children = len(setting.get_children())
+    n_children = len(setting.get_immediate_children())
     bar = "│" if n_children else " "
 
     if with_docstrings:
@@ -78,7 +78,7 @@ def get_tree_string(
     # print(f"Children: {setting.get_children()}")
     # print(f"Children[0]'s children: {setting.get_children()[0].children}")
 
-    for i, child_setting in enumerate(setting.get_children()):
+    for i, child_setting in enumerate(setting.get_immediate_children()):
         # Recurse!
         child_message = get_tree_string(child_setting)
 
@@ -163,7 +163,7 @@ def get_tree_string_markdown(
     # print(f"Children: {setting.get_children()}")
     # print(f"Children[0]'s children: {setting.get_children()[0].children}")
 
-    for child_setting in setting.get_children():
+    for child_setting in setting.get_immediate_children():
         child_message = get_tree_string_markdown(
             child_setting, with_methods=with_methods, with_docstring=with_docstring
         )
