@@ -431,13 +431,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             for step, task in zip(test_boundaries, self.train_task_schedule.values())
         }
 
-        change_steps = [0, self.test_max_steps]
-        return self.create_task_schedule(
-            temp_env=self._temp_test_env,
-            change_steps=change_steps,
-            # seed=self.train_seed,
-        )
-
     def create_task_schedule(
         self, temp_env: gym.Env, change_steps: List[int], seed: int = None,
     ) -> Dict[int, Dict]:
@@ -1111,6 +1104,8 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 partial(TimeLimit, max_episode_steps=self.max_episode_steps)
             )
 
+        wrappers.append(partial(ActionLimit, max_steps=max_steps))
+
         # if is_classic_control_env(base_env):
             # If we are in a classic control env, and we dont want the state to
             # be fully-observable (i.e. we want pixel observations rather than
@@ -1119,19 +1114,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             # if self.force_pixel_observations:
             #     wrappers.append(PixelObservationWrapper)
 
-        elif is_atari_env(base_env):
-            if isinstance(base_env, str) and "ram" in base_env:
-                if self.force_pixel_observations:
-                    raise NotImplementedError(
-                        f"Can't force pixel observations when using the ram-version of "
-                        f"an atari env!"
-                    )
-            else:
-                # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
-                # TODO: Figure out the differences (if there are any) between the
-                # AtariWrapper from SB3 and the AtariPreprocessing wrapper from gym.
-                wrappers.append(AtariWrapper)
-                # wrappers.append(AtariPreprocessing)
+        if is_atari_env(base_env):
+            # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
+            # TODO: Figure out the differences (if there are any) between the
+            # AtariWrapper from SB3 and the AtariPreprocessing wrapper from gym.
+            wrappers.append(AtariWrapper)
+            # wrappers.append(AtariPreprocessing)
 
             # # TODO: Not sure if we should add the transforms to the env here!
             # # BUG: In the case where `train_envs` is passed (to the IncrementalRL

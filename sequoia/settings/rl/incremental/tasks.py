@@ -23,14 +23,15 @@ from sequoia.settings.rl.envs import (
 
 from ..discrete.tasks import ContinuousTask, DiscreteTask
 from ..discrete.tasks import is_supported as _is_supported
-from ..discrete.tasks import make_discrete_task
+from ..discrete.tasks import make_discrete_task, sequoia_registry, task_sampling_function
 
 IncrementalTask = DiscreteTask
 
 
+@task_sampling_function(env_registry=sequoia_registry, based_on=make_discrete_task)
 @singledispatch
 def make_incremental_task(
-    env: gym.Env, step: int, change_steps: List[int], seed: int = None, **kwargs,
+    env: gym.Env, *, step: int, change_steps: List[int], seed: int = None, **kwargs,
 ) -> IncrementalTask:
     """ Generic function used by Sequoia's `IncrementalRLSetting` (and its
     descendants) to create a "task" that will be applied to an environment like `env`.
@@ -42,29 +43,20 @@ def make_incremental_task(
         return {"my_attribute": random.random()}
     ```
     """
-    return make_discrete_task(
-        env, step=step, change_steps=change_steps, seed=seed, **kwargs
+    raise NotImplementedError(
+        f"Don't know how to create an (incremental) task for env {env}"
     )
-
-# IDEA: Could probably do something like this automatically using a function decorator.
-# Update the registry for this `make_incremental_task` function so it builds on top of the
-# existing 'make_discrete_task' in the ContinualRLSetting, since we can create a schedule
-# of discrete tasks from a continuous one, but not the other way around.
-for env_class, env_task_creation_func in make_incremental_task.registry.items():
-    make_incremental_task.register(env_class, env_task_creation_func)
 
 
 def is_supported(
     env_id: str,
-    env_registry: EnvRegistry = registry,
+    env_registry: EnvRegistry = sequoia_registry,
     _make_discrete_task: Callable[..., DiscreteTask] = make_incremental_task,
 ) -> bool:
     """ Returns wether Sequoia is able to create (incremental) tasks for the given
     environment.
     """
-    return _is_supported(
-        env_id=env_id, env_registry=env_registry, _make_task_function=make_incremental_task,
-    )
+    return make_incremental_task.is_supported(env_id=env_id, env_registry=env_registry)
 
 
 if MTENV_INSTALLED:

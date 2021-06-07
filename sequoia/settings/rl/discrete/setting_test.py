@@ -21,15 +21,7 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
     Setting: ClassVar[Type[Setting]] = DiscreteTaskAgnosticRLSetting
     dataset: pytest.fixture = make_dataset_fixture(DiscreteTaskAgnosticRLSetting)
 
-    # @pytest.fixture(
-    #     params=list(DiscreteTaskAgnosticRLSetting.available_datasets.keys()),
-    #     scope="session",
-    # )
-    # def dataset(self, request):
-    #     dataset = request.param
-    #     return dataset
-
-    @pytest.fixture(params=[1, 3, 5])
+    @pytest.fixture(params=[1, 2, 3])
     def nb_tasks(self, request):
         n = request.param
         return n

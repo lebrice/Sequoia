@@ -127,7 +127,7 @@ class EnvDataset(
                     f"Env has already reached step limit ({self.max_steps}) and is closed."
                 )
             else:
-                raise gym.error.ClosedEnvironmentError("Can't call step on closed env.")
+                raise gym.error.ClosedEnvironmentError(f"Can't call step on closed env. ({self.n_steps_})")
         # Here we add calls to the (potentially overwritten) 'observation',
         # 'action' and 'reward' methods.
         action = self.action(action)

@@ -11,32 +11,42 @@ from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
 from gym import spaces
-from simple_parsing import field, list_field
-
+from sequoia.common.gym_wrappers.action_limit import ActionLimit
 from sequoia.common.gym_wrappers import MultiTaskEnvironment, TransformObservation
 from sequoia.common.gym_wrappers.utils import is_monsterkong_env
 from sequoia.common.spaces import Sparse
 from sequoia.common.transforms import Transforms
-from sequoia.utils import constant, dict_union
-from sequoia.utils.logging_utils import get_logger
-
-from ..discrete import DiscreteTaskAgnosticRLSetting
+from sequoia.settings.assumptions.incremental import IncrementalAssumption
+from sequoia.settings.base import Results
 from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.settings.rl.envs import (
     ATARI_PY_INSTALLED,
+    METAWORLD_INSTALLED,
+    MONSTERKONG_INSTALLED,
+    MTENV_INSTALLED,
+    MUJOCO_INSTALLED,
     MetaMonsterKongEnv,
     MetaWorldEnv,
     MTEnv,
     MujocoEnv,
     metaworld_envs,
-    METAWORLD_INSTALLED,
-    MONSTERKONG_INSTALLED,
     mtenv_envs,
-    MTENV_INSTALLED,
-    MUJOCO_INSTALLED,
 )
+from sequoia.utils import constant, dict_union
+from sequoia.utils.logging_utils import get_logger
+from simple_parsing import field, list_field
+from simple_parsing.helpers import choice
 
-from .tasks import make_incremental_task, is_supported
+from ..discrete.setting import DiscreteTaskAgnosticRLSetting
+from ..discrete.setting import supported_envs as _parent_supported_envs
+from .results import IncrementalRLResults
+from .tasks import (
+    EnvSpec,
+    IncrementalTask,
+    is_supported,
+    make_incremental_task,
+    sequoia_registry,
+)
 
 logger = get_logger(__file__)
 
@@ -44,9 +54,19 @@ logger = get_logger(__file__)
 # TODO: When we add a wrapper to 'concat' two environments, then we can move this
 # 'passing custom env for each task' feature up into DiscreteTaskAgnosticRL.
 
+supported_envs: Dict[str, EnvSpec] = dict_union(
+    _parent_supported_envs,
+    {
+        spec.id: spec
+        for env_id, spec in sequoia_registry.env_specs.items()
+        if spec.id not in _parent_supported_envs and is_supported(env_id)
+    },
+)
+available_datasets: Dict[str, str] = {env_id: env_id for env_id in supported_envs}
+
 
 @dataclass
-class IncrementalRLSetting(DiscreteTaskAgnosticRLSetting):
+class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting):
     """ Continual RL setting the data is divided into 'tasks' with clear boundaries.
 
     By default, the task labels are given at train time, but not at test time.
@@ -57,6 +77,12 @@ class IncrementalRLSetting(DiscreteTaskAgnosticRLSetting):
     implement a custom `fit` procedure in the CLTrainer class, that loops over
     the tasks and calls the `on_task_switch` when needed.
     """
+
+    # The function used to create the tasks for the chosen env.
+    _task_sampling_function: ClassVar[
+        Callable[..., IncrementalTask]
+    ] = make_incremental_task
+    Results: ClassVar[Type[Results]] = IncrementalRLResults
 
     # # The number of tasks. By default 0, which means that it will be set
     # # depending on other fields in __post_init__, or eventually be just 1.
@@ -69,11 +95,9 @@ class IncrementalRLSetting(DiscreteTaskAgnosticRLSetting):
     task_labels_at_test_time: bool = False
 
     # Class variable that holds the dict of available environments.
-    available_datasets: ClassVar[
-        Dict[str, str]
-    ] = DiscreteTaskAgnosticRLSetting.available_datasets.copy()
+    available_datasets: ClassVar[Dict[str, str]] = available_datasets
 
-    dataset: str = "CartPole-v0"
+    dataset: str = choice(available_datasets, default="CartPole-v0")
 
     train_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
     val_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
@@ -85,13 +109,13 @@ class IncrementalRLSetting(DiscreteTaskAgnosticRLSetting):
             # of tasks to use based on the number of available tasks
             pass
 
-        if is_monsterkong_env(self.dataset):
-            if self.force_pixel_observations:
-                # Add this to the kwargs that will be passed to gym.make, to make sure that
-                # we observe pixels, and not state.
-                self.base_env_kwargs["observe_state"] = False
-            elif self.force_state_observations:
-                self.base_env_kwargs["observe_state"] = True
+        # if is_monsterkong_env(self.dataset):
+        #     if self.force_pixel_observations:
+        #         # Add this to the kwargs that will be passed to gym.make, to make sure that
+        #         # we observe pixels, and not state.
+        #         self.base_env_kwargs["observe_state"] = False
+        #     elif self.force_state_observations:
+        #         self.base_env_kwargs["observe_state"] = True
 
         self._using_custom_envs_foreach_task: bool = False
         if self.train_envs:
@@ -137,14 +161,24 @@ class IncrementalRLSetting(DiscreteTaskAgnosticRLSetting):
             # (If possible, find a way to check this without having to instantiate all
             # the envs.)
 
-        if self.dataset == "MetaMonsterKong-v0":
-            # TODO: Limit the episode length in monsterkong?
-            # TODO: Actually end episodes when reaching a task boundary, to force the
-            # level to change?
-            self.max_episode_steps = self.max_episode_steps or 500
+        # TODO: If the dataset has a `max_path_length` attribute, then it's probably
+        # a Mujoco / metaworld / etc env, and so we set a limit on the episode length to
+        # avoid getting an error.
+        max_path_length: Optional[int] = getattr(
+            self._temp_train_env, "max_path_length", None
+        )
+        if self.max_episode_steps is None and max_path_length is not None:
+            assert max_path_length > 0
+            self.max_episode_steps = max_path_length
+
+        # if self.dataset == "MetaMonsterKong-v0":
+        #     # TODO: Limit the episode length in monsterkong?
+        #     # TODO: Actually end episodes when reaching a task boundary, to force the
+        #     # level to change?
+        #     self.max_episode_steps = self.max_episode_steps or 500
 
         # FIXME: Really annoying little bugs with these three arguments!
-        self.nb_tasks = self.max_steps // self.steps_per_task
+        # self.nb_tasks = self.max_steps // self.steps_per_task
 
     @property
     def task_label_space(self) -> gym.Space:
@@ -154,13 +188,12 @@ class IncrementalRLSetting(DiscreteTaskAgnosticRLSetting):
         task_label_space = spaces.Discrete(self.nb_tasks)
         if not self.task_labels_at_train_time or not self.task_labels_at_test_time:
             sparsity = 1
-            if (self.task_labels_at_train_time ^ self.task_labels_at_test_time):
+            if self.task_labels_at_train_time ^ self.task_labels_at_test_time:
                 # We have task labels "50%" of the time, ish:
                 sparsity = 0.5
             task_label_space = Sparse(task_label_space, sparsity=sparsity)
         return task_label_space
-    
-    
+
     def setup(self, stage: str = None) -> None:
         # Called before the start of each task during training, validation and
         # testing.
@@ -210,21 +243,23 @@ class IncrementalRLSetting(DiscreteTaskAgnosticRLSetting):
             # assert False, self.train_task_schedule
             pass
 
-    def _setup_fields_using_temp_env(self, temp_env: MultiTaskEnvironment):
-        """ Setup some of the fields on the Setting using a temporary environment.
+    # def _setup_fields_using_temp_env(self, temp_env: MultiTaskEnvironment):
+    #     """ Setup some of the fields on the Setting using a temporary environment.
 
-        This temporary environment only lives during the __post_init__() call.
-        """
-        super()._setup_fields_using_temp_env(temp_env)
+    #     This temporary environment only lives during the __post_init__() call.
+    #     """
+    #     super()._setup_fields_using_temp_env(temp_env)
 
-        # TODO: If the dataset has a `max_path_length` attribute, then it's probably
-        # a Mujoco / metaworld / etc env, and so we set a limit on the episode length to
-        # avoid getting an error.
-        max_path_length: Optional[int] = getattr(temp_env, "max_path_length", None)
-        if self.max_episode_steps is None and max_path_length is not None:
-            assert max_path_length > 0
-            self.max_episode_steps = temp_env.max_path_length
-
+    def test_loop(self, method):
+        # TODO: If we're using custom envs for each task, then the test loop needs to be
+        # re-organized:
+        if self._using_custom_envs_foreach_task:
+            raise NotImplementedError(
+                f"TODO: Need to add a wrapper that can switch between envs, or "
+                f"re-write the test loop."
+            )
+        return super().test_loop(method)
+    
     @property
     def phases(self) -> int:
         """The number of training 'phases', i.e. how many times `method.fit` will be
@@ -315,57 +350,109 @@ class IncrementalRLSetting(DiscreteTaskAgnosticRLSetting):
             # TODO: When the Results become able to handle a different ordering of tasks
             # at train vs test time, allow the test task schedule to have different
             # ordering than train / valid.
-            task = self.sample_task(env=temp_env, step=step, change_steps=change_steps)
-            task_schedule[step] = task
-
-        return task_schedule
-
-    def sample_task(
-        self, env: gym.Env, step: int, change_steps: List[int]
-    ) -> Dict[str, Any]:
-        """ Samples a task to be applied to the environment when it reaches the given
-        step.
-        """
-        if self.task_sampling_function:
-            return self.task_sampling_function(
-                env,
+            task = type(self)._task_sampling_function(
+                temp_env,
                 step=step,
                 change_steps=change_steps,
                 seed=self.config.seed if self.config else None,
             )
+            task_schedule[step] = task
 
-        # Check if there is a registered handler for this type of environment.
-        # TODO: Maybe use the type of the env, rather then env.unwrapped, and have the
-        # 'base' callable defer the call to the wrapped env?
-        if make_task_for_env.dispatch(
-            type(env.unwrapped)
-        ) is make_task_for_env.dispatch(object):
-            warnings.warn(
-                RuntimeWarning(
-                    f"Don't yet know how to create a task for env {env}, will use the environment as-is."
-                )
-            )
-
-        # Use this singledispatch function to select how to sample a task depending on
-        # the type of environment.
-        return make_task_for_env(
-            env.unwrapped,
-            step=step,
-            change_steps=change_steps,
-            seed=self.config.seed if self.config else None,
-        )
-
-        return super().create_task_schedule(
-            temp_env=temp_env, change_steps=change_steps
-        )
+        return task_schedule
 
     def create_train_wrappers(self):
         if self._using_custom_envs_foreach_task:
             # TODO: Maybe do something different here, since we don't actually want to
             # add a CL wrapper at all in this case?
             assert not any(self.train_task_schedule.values())
-        return super().create_train_wrappers()
+            base_env = self.train_envs[self.current_task_id]
+        else:
+            base_env = self.train_dataset
+        # assert False, super().create_train_wrappers()
+        if self.stationary_context:
+            task_schedule_slice = self.train_task_schedule
+        else:
+            current_task = list(self.train_task_schedule.values())[self.current_task_id]
+            task_length = self.train_max_steps // self.nb_tasks
+            task_schedule_slice = {
+                0: current_task,
+                task_length: current_task,
+            }
+        return self._make_wrappers(
+            base_env=base_env,
+            task_schedule=task_schedule_slice,
+            # TODO: Removing this, but we have to check that it doesn't change when/how
+            # the task boundaries are given to the Method.
+            # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
+            task_labels_available=self.task_labels_at_train_time,
+            transforms=self.train_transforms,
+            starting_step=0,
+            max_steps=max(task_schedule_slice.keys()),
+            new_random_task_on_reset=self.stationary_context,
+        )
 
+    def create_valid_wrappers(self):
+        if self._using_custom_envs_foreach_task:
+            # TODO: Maybe do something different here, since we don't actually want to
+            # add a CL wrapper at all in this case?
+            assert not any(self.val_task_schedule.values())
+            base_env = self.val_envs[self.current_task_id]
+        else:
+            base_env = self.val_dataset
+        # assert False, super().create_train_wrappers()
+        if self.stationary_context:
+            task_schedule_slice = self.val_task_schedule
+        else:
+            current_task = list(self.val_task_schedule.values())[self.current_task_id]
+            task_length = self.train_max_steps // self.nb_tasks
+            task_schedule_slice = {
+                0: current_task,
+                task_length: current_task,
+            }
+        return self._make_wrappers(
+            base_env=base_env,
+            task_schedule=task_schedule_slice,
+            # TODO: Removing this, but we have to check that it doesn't change when/how
+            # the task boundaries are given to the Method.
+            # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
+            task_labels_available=self.task_labels_at_train_time,
+            transforms=self.val_transforms,
+            starting_step=0,
+            max_steps=max(task_schedule_slice.keys()),
+            new_random_task_on_reset=self.stationary_context,
+        )
+    
+    def create_test_wrappers(self):
+        if self._using_custom_envs_foreach_task:
+            # TODO: Maybe do something different here, since we don't actually want to
+            # add a CL wrapper at all in this case?
+            assert not any(self.test_task_schedule.values())
+            base_env = self.test_envs[self.current_task_id]
+        else:
+            base_env = self.test_dataset
+        # assert False, super().create_train_wrappers()
+        task_schedule_slice = self.test_task_schedule
+        # if self.stationary_context:
+        # else:
+        #     current_task = list(self.test_task_schedule.values())[self.current_task_id]
+        #     task_length = self.test_max_steps // self.nb_tasks
+        #     task_schedule_slice = {
+        #         0: current_task,
+        #         task_length: current_task,
+        #     }
+        return self._make_wrappers(
+            base_env=base_env,
+            task_schedule=task_schedule_slice,
+            # TODO: Removing this, but we have to check that it doesn't change when/how
+            # the task boundaries are given to the Method.
+            # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
+            task_labels_available=self.task_labels_at_train_time,
+            transforms=self.val_transforms,
+            starting_step=0,
+            max_steps=self.test_max_steps,
+            new_random_task_on_reset=self.stationary_context,
+        )
+    
     def _check_all_envs_have_same_spaces(
         self,
         envs_or_env_functions: List[Union[str, gym.Env, Callable[[], gym.Env]]],
@@ -421,6 +508,7 @@ class IncrementalRLSetting(DiscreteTaskAgnosticRLSetting):
                 )
             task_schedule = None
 
+
         wrappers = super()._make_wrappers(
             base_env=base_env,
             task_schedule=task_schedule,
@@ -467,6 +555,7 @@ class IncrementalRLSetting(DiscreteTaskAgnosticRLSetting):
             # TODO: Maybe add another field for 'force_state_observations' ?
             # if self.force_pixel_observations:
             pass
+        
         return wrappers
 
 

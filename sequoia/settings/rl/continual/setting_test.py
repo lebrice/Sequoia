@@ -48,8 +48,10 @@ class DummyMethod(RandomBaselineMethod):
         # setting's environments work correctly.
         self.train_wrappers = train_wrappers or []
         self.valid_wrappers = valid_wrappers or []
-        self.train_env: Environment
-        self.valid_env: Environment
+        self.train_env: Optional[Environment] = None
+        self.valid_env: Optional[Environment] = None
+        self.all_train_values = []
+        self.all_valid_values = []
 
     def fit(
         self, train_env: Environment, valid_env: Environment,
@@ -74,6 +76,7 @@ class DummyMethod(RandomBaselineMethod):
             done = False
             while not done and not train_env.is_closed():
                 actions = train_env.action_space.sample()
+                # print(train_env.current_task)
                 obs, rew, done, info = train_env.step(actions)
 
             episodes += 1
@@ -84,6 +87,11 @@ class DummyMethod(RandomBaselineMethod):
                 while not done and not valid_env.is_closed():
                     actions = valid_env.action_space.sample()
                     obs, rew, done, info = valid_env.step(actions)
+        
+        if hasattr(self.train_env, "values"):
+            self.all_train_values.append(self.train_env.values)
+        if hasattr(self.valid_env, "values"):
+            self.all_valid_values.append(self.valid_env.values)
 
 
 class CheckAttributesWrapper(IterableWrapper):
@@ -243,7 +251,8 @@ class TestContinualRLSetting:
         """ Check that the values of the given attributes do change at each step during
         training.
         """
-        setting_kwargs.update(train_max_steps=1000, test_max_steps=1000)
+        setting_kwargs.setdefault("train_max_steps", 1000)
+        setting_kwargs.setdefault("test_max_steps", 1000)
         setting = self.Setting(**setting_kwargs)
         assert setting.train_task_schedule
         assert all(setting.train_task_schedule.values())
@@ -253,9 +262,6 @@ class TestContinualRLSetting:
         attributes = set().union(
             *[task.keys() for task in setting.train_task_schedule.values()]
         )
-
-        assert setting.train_max_steps == 1000
-        assert setting.test_max_steps == 1000
 
         method = DummyMethod(
             train_wrappers=[partial(CheckAttributesWrapper, attributes=attributes)]
@@ -273,10 +279,11 @@ class TestContinualRLSetting:
         # assert results.objective
 
         for attribute in attributes:
-            train_values: Dict[int, float] = {
-                step: values[attribute]
-                for step, values in method.train_env.values.items()
-            }
+            train_values: List[float] = [
+                values[attribute]
+                for values_dict in method.all_train_values
+                for step, values in values_dict.items()
+            ]
             train_steps = setting.train_max_steps
 
             # Should have one (unique) value for the attribute at each step during training
@@ -287,15 +294,15 @@ class TestContinualRLSetting:
                 # right now because we don't/won't support changing the values of integer
                 # parameters in this "continuous" task setting.
                 assert (
-                    len(set(train_values.values())) == train_steps - 1
+                    len(set(train_values)) == train_steps - 1
                 ), f"{attribute} didn't change enough?"
             else:
                 from ..discrete.setting import DiscreteTaskAgnosticRLSetting
 
                 setting: DiscreteTaskAgnosticRLSetting
                 train_tasks = setting.nb_tasks
-                unique_attribute_values = set(train_values.values())
-                assert len(unique_attribute_values) == train_tasks
+                unique_attribute_values = set(train_values)
+                assert len(unique_attribute_values) == train_tasks, (attribute, unique_attribute_values)
 
     def validate_results(
         self,

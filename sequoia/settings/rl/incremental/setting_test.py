@@ -7,6 +7,7 @@ import gym
 import numpy as np
 import pytest
 from gym import spaces
+from sequoia.methods import Method
 from sequoia.common.config import Config
 from sequoia.common.spaces import Image, Sparse
 from sequoia.common.transforms import Transforms
@@ -28,11 +29,42 @@ from sequoia.settings.assumptions.incremental_test import DummyMethod, OtherDumm
 from sequoia.utils.utils import take
 
 from .setting import IncrementalRLSetting
+from ..discrete.setting_test import make_dataset_fixture
 
 
 class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
 
     Setting: ClassVar[Type[Setting]] = IncrementalRLSetting
+    dataset: pytest.fixture = make_dataset_fixture(IncrementalRLSetting)
+
+    @pytest.fixture(params=[1, 2, 3])
+    def nb_tasks(self, request):
+        n = request.param
+        return n
+
+    @pytest.fixture()
+    def setting_kwargs(self, dataset: str, nb_tasks: int):
+        """ Fixture used to pass keyword arguments when creating a Setting. """
+        kwargs = {"dataset": dataset, "nb_tasks": nb_tasks, "max_episode_steps": 100}
+        if dataset.lower().startswith(("walker2d", "hopper", "halfcheetah", "continual")):
+            # kwargs["train_max_steps"] = 5_000
+            # kwargs["max_episode_steps"] = 100
+            pass
+        return kwargs
+    
+    
+    def validate_results(
+        self,
+        setting: IncrementalRLSetting,
+        method: Method,
+        results: IncrementalRLSetting.Results,
+    ) -> None:
+        assert results
+        assert results.objective
+        assert len(results.task_sequence_results) == setting.nb_tasks
+        for task_sequence_result in results.task_sequence_results:
+            super().validate_results(setting, method, task_sequence_result)
+        assert results.average_final_performance == sum(results.task_sequence_results[-1].average_metrics_per_task)
 
     def test_on_task_switch_is_called(self):
         setting = self.Setting(
@@ -542,7 +574,7 @@ class TestPassingEnvsForEachTask:
 
         train_env = setting.train_dataloader()
         assert train_env.gravity == gravities[0]
-        
+
         setting.current_task_id = 1
 
         train_env = setting.train_dataloader()

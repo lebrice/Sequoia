@@ -92,7 +92,7 @@ class IncrementalAssumption(ContinualAssumption):
 
     # The number of tasks. By default 0, which means that it will be set
     # depending on other fields in __post_init__, or eventually be just 1.
-    nb_tasks: int = field(0, alias=["n_tasks", "num_tasks"])
+    nb_tasks: int = field(5, alias=["n_tasks", "num_tasks"])
 
     # Attributes (not parsed through the command-line):
     _current_task_id: int = field(default=0, init=False)
@@ -227,7 +227,7 @@ class IncrementalAssumption(ContinualAssumption):
             test_metrics: TaskSequenceResults = self.test_loop(method)
 
             # Add a row to the transfer matrix.
-            results.append(test_metrics)
+            results.task_sequence_results.append(test_metrics)
             logger.info(f"Resulting objective of Test Loop: {test_metrics.objective}")
 
             if wandb.run:

@@ -306,7 +306,7 @@ class MultiTaskEnvironment(gym.Wrapper):
 
         if self.steps in self.task_schedule and not self.new_random_task_on_reset:
             self.current_task = self.task_schedule[self.steps]
-            logger.debug(f"New task: {self.current_task}")
+            logger.debug(f"New task at step {self.steps}: {self.current_task}")
             # Adding this on_task_switch, since it could maybe be easier than
             # having to add a callback wrapper to use.
             task_id = sorted(self.task_schedule.keys()).index(self.steps)

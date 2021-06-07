@@ -29,10 +29,10 @@ class IncrementalResults(Results, Generic[MetricType]):
     task, hence why we get a nb_tasks x nb_tasks matrix of results.
     """
 
-    metrics: List[TaskSequenceResults[MetricType]] = list_field()
+    task_sequence_results: List[TaskSequenceResults[MetricType]] = list_field()
 
     min_runtime_hours: ClassVar[float] = 0.0
-    max_runtime_hours: ClassVar[float]
+    max_runtime_hours: ClassVar[float] = 12.0
 
     def __post_init__(self):
         self._runtime: Optional[float] = None
@@ -50,7 +50,10 @@ class IncrementalResults(Results, Generic[MetricType]):
 
     @property
     def transfer_matrix(self) -> List[List[TaskResults]]:
-        return self
+        return [
+            task_sequence_result.task_results for task_sequence_result in 
+            self.task_sequence_results
+        ]
 
     @property
     def metrics_matrix(self) -> List[List[MetricType]]:
@@ -169,7 +172,7 @@ class IncrementalResults(Results, Generic[MetricType]):
 
     @property
     def num_tasks(self) -> int:
-        return len(self)
+        return len(self.task_sequence_results)
 
     @property
     def online_performance(self) -> List[Dict[int, MetricType]]:
@@ -217,7 +220,7 @@ class IncrementalResults(Results, Generic[MetricType]):
         log_dict = {}
         # TODO: This assumes that the metrics were stored in the right index for their
         # corresponding task.
-        for task_id, task_sequence_result in enumerate(self):
+        for task_id, task_sequence_result in enumerate(self.task_sequence_results):
             log_dict[f"Task {task_id}"] = task_sequence_result.to_log_dict(
                 verbose=verbose
             )
@@ -249,7 +252,7 @@ class IncrementalResults(Results, Generic[MetricType]):
     def make_plots(self) -> Dict[str, Union[plt.Figure, Dict]]:
         plots = {
             f"Task {task_id}": task_sequence_result.make_plots()
-            for task_id, task_sequence_result in enumerate(self)
+            for task_id, task_sequence_result in enumerate(self.task_sequence_results)
         }
         axis_labels = [f"Task {task_id}" for task_id in range(self.num_tasks)]
         if wandb.run:

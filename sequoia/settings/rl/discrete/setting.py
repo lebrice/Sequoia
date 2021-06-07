@@ -45,10 +45,13 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
     """ Continual Reinforcement Learning Setting where there are clear task boundaries,
     but where the task information isn't available.
     """
-    # The type wrapper used to wrap the test environment, and which produces the 
+
+    # The type wrapper used to wrap the test environment, and which produces the
     # results.
-    TestEnvironment: ClassVar[Type[TestEnvironment]] = DiscreteTaskAgnosticRLTestEnvironment
-    
+    TestEnvironment: ClassVar[
+        Type[TestEnvironment]
+    ] = DiscreteTaskAgnosticRLTestEnvironment
+
     # The function used to create the tasks for the chosen env.
     _task_sampling_function: ClassVar[Callable[..., DiscreteTask]] = make_discrete_task
 
@@ -67,7 +70,7 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
     # environments. When left unset, will use a default value that makes sense
     # (something like 5).
     nb_tasks: int = field(5, alias=["n_tasks", "num_tasks"])
-    
+
     # train_max_steps_per_task: int = 20_000
     # # Maximum number of episodes in total.
     # # TODO: Add tests for this 'max episodes' and 'episodes_per_task'.
@@ -122,6 +125,7 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
         assert not self.smooth_task_boundaries
 
         super().__post_init__()
+
         train_task_lengths: List[int] = [
             task_b_step - task_a_step
             for task_a_step, task_b_step in pairwise(
@@ -151,7 +155,7 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
             else:
                 raise RuntimeError(
                     f"For now, the train task schedule needs to have a value at key "
-                    f"`train_max_steps` ({self.train_max_steps}). "
+                    f"`train_max_steps` ({self.train_max_steps})."
                 )
         if self.test_max_steps != max(self.test_task_schedule):
             if self.test_max_steps == defaults["test_max_steps"]:
