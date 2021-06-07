@@ -21,8 +21,8 @@ from sequoia.conftest import (
 )
 from sequoia.settings import Setting
 from sequoia.settings.rl import TaskIncrementalRLSetting
-from sequoia.settings.rl.continual.setting_test import (
-    TestContinualRLSetting as _ContinualRLSettingTest,
+from ..discrete.setting_test import (
+    TestDiscreteTaskAgnosticRLSetting as DiscreteTaskAgnosticRLSettingTests,
 )
 from sequoia.settings.assumptions.incremental_test import DummyMethod, OtherDummyMethod
 from sequoia.utils.utils import take
@@ -30,7 +30,7 @@ from sequoia.utils.utils import take
 from .setting import IncrementalRLSetting
 
 
-class TestIncrementalRLSetting(_ContinualRLSettingTest):
+class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
 
     Setting: ClassVar[Type[Setting]] = IncrementalRLSetting
 

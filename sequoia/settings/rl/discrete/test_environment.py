@@ -41,7 +41,7 @@ class DiscreteTaskAgnosticRLTestEnvironment(ContinualRLTestEnvironment):
         import bisect
         nb_tasks = len(task_steps)
         assert nb_tasks >= 1
-        
+
         test_results = TaskSequenceResults([TaskResults() for _ in range(nb_tasks)])
         # TODO: Fix this, since the task id might not be related to the steps!
         for step, episode_reward, episode_length in zip(

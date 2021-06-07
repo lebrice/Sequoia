@@ -25,7 +25,7 @@ from ..continual.setting import (
 )
 from .tasks import DiscreteTask, TaskSchedule, is_supported, make_discrete_task
 from .tasks import registry, EnvSpec
-from .test_environment import DiscreteTaskAgnosticRLTestEnvironment
+from .test_environment import DiscreteTaskAgnosticRLTestEnvironment, TestEnvironment
 
 logger = get_logger(__file__)
 

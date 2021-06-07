@@ -39,16 +39,30 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
         """ Fixture used to pass keyword arguments when creating a Setting. """
         return {"dataset": dataset, "nb_tasks": nb_tasks}
 
-    def validate_results(self, setting: DiscreteTaskAgnosticRLSetting, method: Method, results: DiscreteTaskAgnosticRLSetting.Results) -> None:
+    def validate_results(
+        self,
+        setting: DiscreteTaskAgnosticRLSetting,
+        method: Method,
+        results: DiscreteTaskAgnosticRLSetting.Results,
+    ) -> None:
         assert results
         assert results.objective
         assert len(results.task_results) == setting.nb_tasks
-        assert [sum(task_result.metrics) == task_result.average_metrics for task_result in results.task_results]
-        assert sum(results.task_results.average_metrics) == results.average_metrics
+        assert [
+            sum(task_result.metrics) == task_result.average_metrics
+            for task_result in results.task_results
+        ]
+        assert (
+            sum(task_result.average_metrics for task_result in results.task_results)
+            == results.average_metrics
+        )
 
     @pytest.mark.parametrize("give_nb_tasks", [True, False])
     @pytest.mark.parametrize("give_train_max_steps", [True, False])
-    @pytest.mark.parametrize("give_train_task_schedule, ids_instead_of_steps", [(True, False), (True, True), (False, False)])
+    @pytest.mark.parametrize(
+        "give_train_task_schedule, ids_instead_of_steps",
+        [(True, False), (True, True), (False, False)],
+    )
     @pytest.mark.parametrize(
         "nb_tasks, train_max_steps, train_task_schedule",
         [
@@ -98,7 +112,10 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
         if not give_train_task_schedule:
             kwargs.pop("train_task_schedule")
         elif ids_instead_of_steps:
-            kwargs["train_task_schedule"] = {i: task for i, (step, task) in enumerate(train_task_schedule.items())}
+            kwargs["train_task_schedule"] = {
+                i: task
+                for i, (step, task) in enumerate(train_task_schedule.items())
+            }
 
         setting = self.Setting(**kwargs)
         assert (

@@ -145,7 +145,7 @@ def task_sampling_function(env_registry: EnvRegistry = registry, based_on: Calla
             if isinstance(env_id, EnvSpec):
                 env_spec = env_id
                 if isinstance(env_spec, EnvVariantSpec):
-                    return True
+                    return is_supported(env_spec.base_spec)
 
                 if callable(env_spec.entry_point):
                     # assert False, (env_id, spec.entry_point, make_continuous_task.registry)
@@ -203,6 +203,7 @@ def make_continuous_task(
 
 # from functools import _SingleDispatchCallable
 
+
 def is_supported(
     env_id: str,
     env_registry: EnvRegistry = registry,
@@ -211,10 +212,12 @@ def is_supported(
     """ Returns wether Sequoia is able to create (continuous) tasks for the given
     environment.
     """
+    return make_continuous_task.is_supported(env_id, env_registry)
+    
     env_spec = env_registry.spec(env_id)
 
     if isinstance(env_spec, EnvVariantSpec):
-        return True
+        return is_supported(env_spec.base_spec)
 
     def _has_handler(some_env_type: Type[gym.Env]) -> bool:
         """ Returns wether the "make task" function has a registered handler for the
