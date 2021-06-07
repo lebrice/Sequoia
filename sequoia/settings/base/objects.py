@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional, TypeVar, Any
+from typing import Optional, TypeVar, Any, Generic
 
 from simple_parsing.helpers.flatten import FlattenedAccess
 from torch import Tensor, LongTensor
@@ -46,9 +46,11 @@ class Actions(Batch):
     def predictions(self) -> Tensor:
         return self.y_pred
 
+T = TypeVar("T")
+
 
 @dataclass(frozen=True)
-class Rewards(Batch):
+class Rewards(Batch, Generic[T]):
     """ A batch of "rewards" coming from an Environment.
 
     For example, in a supervised setting, this would be the true labels, while
@@ -57,14 +59,15 @@ class Rewards(Batch):
     TODO: Maybe add the task labels as a part of the 'Reward', to help with the
     training of task-inference methods later on when we add those.
     """
-    y: Tensor
+    # TODO: Rename this to 'reward', and add a 'y' field in the 'DenseRewards' class.
+    y: T
 
     @property
-    def labels(self) -> Tensor:
+    def labels(self) -> T:
         return self.y
-    
+
     @property
-    def reward(self) -> Tensor:
+    def reward(self) -> T:
         return self.y
 
 ObservationType = TypeVar("ObservationType", bound=Observations)

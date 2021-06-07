@@ -51,8 +51,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
             # kwargs["max_episode_steps"] = 100
             pass
         return kwargs
-    
-    
+
     def validate_results(
         self,
         setting: IncrementalRLSetting,
@@ -68,11 +67,11 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
 
     def test_on_task_switch_is_called(self):
         setting = self.Setting(
-            dataset=DummyEnvironment,
+            dataset="CartPole-v0",
             nb_tasks=5,
-            steps_per_task=100,
-            max_steps=500,
-            test_steps_per_task=100,
+            # steps_per_task=100,
+            train_max_steps=500,
+            test_max_steps=500,
             train_transforms=[],
             test_transforms=[],
             val_transforms=[],
@@ -129,9 +128,9 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         setting = self.Setting(
             dataset="CartPole-v0",
             monitor_training_performance=True,
-            steps_per_task=1000,
-            max_steps=10_000,
-            test_steps=1000,
+            nb_tasks=10,
+            train_max_steps=10_000,
+            test_max_steps=1000,
         )
         assert setting.nb_tasks == 10
 
@@ -139,9 +138,10 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         setting = self.Setting(
             dataset="CartPole-v0",
             monitor_training_performance=True,
-            steps_per_task=500,
-            max_steps=1000,
-            test_steps=1000,
+            # steps_per_task=500,
+            nb_tasks=2,
+            train_max_steps=1000,
+            test_max_steps=1000,
         )
         for task_id in range(setting.phases):
             setting.current_task_id = task_id
@@ -153,7 +153,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
 
                 done = False
                 while not done:
-                    if total_steps == setting.steps_per_task:
+                    if total_steps == setting.current_train_task_length:
                         assert train_env.is_closed()
                         with pytest.raises(gym.error.ClosedEnvironmentError):
                             obs, reward, done, info = train_env.step(
@@ -178,12 +178,14 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         """ Checks that the MonsterKong env works fine with pixel and state input.
         """
         setting = self.Setting(
-            dataset="monsterkong",
-            force_state_observations=state,
-            force_pixel_observations=(not state),
+            dataset="StateMetaMonsterKong-v0" if state else "PixelMetaMonsterKong-v0",
+            # force_state_observations=state,
+            # force_pixel_observations=(not state),
             nb_tasks=5,
-            steps_per_task=100,
-            test_steps_per_task=100,
+            train_max_steps=500,
+            test_max_steps=500,
+            # steps_per_task=100,
+            # test_steps_per_task=100,
             train_transforms=[],
             test_transforms=[],
             val_transforms=[],
@@ -264,12 +266,11 @@ def test_action_space_always_matches_obs_batch_size_in_RL(config: Config):
         dataset="cartpole",
         nb_tasks=nb_tasks,
         batch_size=batch_size,
-        steps_per_task=100,
-        test_steps_per_task=100,
+        train_max_steps=200,
+        test_max_steps=200,
         num_workers=4,  # Intentionally wrong
         # monitor_training_performance=True, # This is still a TODO in RL.
     )
-    # 500 "examples" in the test dataloader, since 5 * 100 steps per task..
     total_samples = len(setting.test_dataloader())
 
     method = OtherDummyMethod()

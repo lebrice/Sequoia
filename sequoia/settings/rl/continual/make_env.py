@@ -38,7 +38,7 @@ def make_batched_env(base_env: Union[str, Callable],
     - Allows passing an env factory to start with, rather than only taking ids.
     - Allows passing wrappers to be added to the env on
         each worker, as well as wrappers to add on top of the returned (batched) env.
-    - Allows passing tuples of (Type[Wrapper, ])
+    - Allows passing tuples of (Type[Wrapper, kwargs])
 
     Parameters
     ----------

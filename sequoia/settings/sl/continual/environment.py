@@ -1,7 +1,7 @@
 """ WIP: Continual SL environment. (smooth task boundaries, etc)
 """
 from typing import Any, Callable, Dict, List, Tuple, Type, Union, Sequence, Optional
-
+from functools import partial
 import gym
 import numpy as np
 from continuum.datasets import (
@@ -104,6 +104,40 @@ base_reward_spaces: Dict[str, Space] = {
 }
 
 
+def split_batch(
+    batch: Tuple[Tensor, ...],
+    hide_task_labels: bool,
+    Observations=Observations,
+    Rewards=Rewards,
+) -> Tuple[Observations, Rewards]:
+    """Splits the batch into a tuple of Observations and Rewards.
+
+    Parameters
+    ----------
+    batch : Tuple[Tensor, ...]
+        A batch of data coming from the dataset.
+
+    Returns
+    -------
+    Tuple[Observations, Rewards]
+        A tuple of Observations and Rewards.
+    """
+    # In this context (class_incremental), we will always have 3 items per
+    # batch, because we use the ClassIncremental scenario from Continuum.
+    assert len(batch) == 3
+    x, y, t = batch
+
+    if hide_task_labels:
+        # Remove the task labels if we're not currently allowed to have
+        # them.
+        # TODO: Using None might cause some issues. Maybe set -1 instead?
+        t = None
+
+    observations = Observations(x=x, task_labels=t)
+    rewards = Rewards(y=y)
+    return observations, rewards
+
+
 # IDEA: Have this env be the 'wrapper' / base env type for the continual SL envs, and
 # register them in gym!
 def default_split_batch_function(
@@ -113,36 +147,12 @@ def default_split_batch_function(
 ) -> Callable[[Tuple[Tensor, ...]], Tuple[ObservationType, RewardType]]:
     """ Returns a callable that is used to split a batch into observations and rewards.
     """
-
-    def split_batch(batch: Tuple[Tensor, ...]) -> Tuple[Observations, Rewards]:
-        """Splits the batch into a tuple of Observations and Rewards.
-
-        Parameters
-        ----------
-        batch : Tuple[Tensor, ...]
-            A batch of data coming from the dataset.
-
-        Returns
-        -------
-        Tuple[Observations, Rewards]
-            A tuple of Observations and Rewards.
-        """
-        # In this context (class_incremental), we will always have 3 items per
-        # batch, because we use the ClassIncremental scenario from Continuum.
-        assert len(batch) == 3
-        x, y, t = batch
-
-        if hide_task_labels:
-            # Remove the task labels if we're not currently allowed to have
-            # them.
-            # TODO: Using None might cause some issues. Maybe set -1 instead?
-            t = None
-
-        observations = Observations(x=x, task_labels=t)
-        rewards = Rewards(y=y)
-        return observations, rewards
-
-    return split_batch
+    return partial(
+        split_batch,
+        hide_task_labels=hide_task_labels,
+        Observations=Observations,
+        Rewards=Rewards,
+    )
 
 
 class ContinualSLEnvironment(
@@ -303,7 +313,7 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
         metric = ClassificationMetrics(y=reward, y_pred=actions)
         reward = metric.accuracy
 
-        self.results.append(metric)
+        self.results.metrics.append(metric)
         self._steps += 1
 
         # Debugging issue with Monitor class:

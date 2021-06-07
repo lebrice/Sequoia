@@ -13,7 +13,7 @@ class TraditionalRLSetting(MultiTaskRLSetting):
 
     Implemented as a MultiTaskRLSetting, but with a single task.
     """
-    # IDEA: Only use the 'env' / dataset from the first task. 
+    # IDEA: Only use the 'env' / dataset from the first task.
     nb_tasks: int = 1
 
     def __post_init__(self):

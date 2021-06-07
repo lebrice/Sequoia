@@ -7,18 +7,21 @@ from sequoia.settings.assumptions.incremental_test import DummyMethod
 from sequoia.settings.rl.incremental.setting_test import (
     TestIncrementalRLSetting as IncrementalRLSettingTests,
 )
+import pytest
 
 from .setting import TaskIncrementalRLSetting
+from ..incremental.setting_test import make_dataset_fixture
 
 
 class TestTaskIncrementalRLSetting(IncrementalRLSettingTests):
     Setting: ClassVar[Type[Setting]] = TaskIncrementalRLSetting
+    dataset: pytest.fixture = make_dataset_fixture(TaskIncrementalRLSetting)
 
 
 def test_task_schedule_is_used():
     """ Test that the tasks are switching over time. """
     setting = TaskIncrementalRLSetting(
-        dataset="CartPole-v0", max_steps=100, steps_per_task=50, nb_tasks=2,
+        dataset="CartPole-v0", train_max_steps=100, nb_tasks=2,
     )
 
     default_length = 0.5

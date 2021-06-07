@@ -5,18 +5,36 @@ import torch
 from torch import multiprocessing as mp
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 
-from sequoia.settings.base.environment import (ActionType, Environment,
-                                       ObservationType, RewardType)
+from sequoia.settings.base.environment import (
+    ActionType,
+    Environment,
+    ObservationType,
+    RewardType,
+)
 from sequoia.utils.logging_utils import get_logger, log_calls
 
 logger = get_logger(__file__)
 
+from numpy.typing import ArrayLike
+from typing_extensions import Final
+from sequoia.settings.base import Rewards
 
-class ActiveDataLoader(DataLoader, Environment[ObservationType, ActionType, RewardType]):
-    """Extends DataLoader to support sending back actions to the 'dataset'.
+
+# TODO: Instead of using a 'y' field for both the supervised learning labels/target and
+# for the reward in RL, instead use a 'reward' field in RL, and a 'y' field in SL, where
+# in SL the reward could actually be wether the chosen action was correct or not, and
+# 'y' could contain the correct prediction for each action.
+from dataclasses import dataclass
+
+from .objects import ObservationType, ActionType, RewardType
+
+
+class RLEnvironment(DataLoader, Environment[ObservationType, ActionType, RewardType]):
+    """ Environment in an RL Setting. 
     
-    TODO: Not really used at the moment besides as a base class for the
-    GymDataLoader. 
+    Extends DataLoader to support sending back actions to the 'dataset'.
+    
+    TODO: Not really used at the moment besides as the base class for the GymDataLoader. 
     
     This could be useful for modeling RL or Active Learning, for instance, where
     the predictions (actions) have an impact on the data generation process.
@@ -33,17 +51,14 @@ class ActiveDataLoader(DataLoader, Environment[ObservationType, ActionType, Rewa
     TODO: maybe change this class into something like a `FakeActiveEnvironment`.
 
     """
-    def __init__(self, dataset: Union[Dataset, IterableDataset],
-                    #    x_transform: Callable = None,
-                    #    y_transform: Callable = None,
-                       **dataloader_kwargs):
+    actions_influence_future_observations: Final[bool] = True
+
+
+    def __init__(self, dataset: Union[Dataset, IterableDataset], **dataloader_kwargs):
         super().__init__(dataset, **dataloader_kwargs)
         self.observation: ObservationType = None
         self.action: ActionType = None
         self.reward: RewardType = None
-
-        # self.x_transform = x_transform
-        # self.y_transform = y_transform
 
     # def __next__(self) -> ObservationType:
     #     return self.observation
@@ -63,7 +78,11 @@ class ActiveDataLoader(DataLoader, Environment[ObservationType, ActionType, Rewa
         # if hasattr(self.dataset, "step"):
         #     self.observation, self.reward, self.done, self.info = self.dataset.step(self.action)
         else:
-            assert False, "TODO: ActiveDataloader dataset should always have a `send` attribute for now."
+            assert (
+                False
+            ), "TODO: ActiveDataloader dataset should always have a `send` attribute for now."
         return self.reward
 
+
+ActiveDataLoader = RLEnvironment
 ActiveEnvironment = ActiveDataLoader

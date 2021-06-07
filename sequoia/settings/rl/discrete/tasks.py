@@ -5,7 +5,7 @@ move the "incremental" tasks from `incremental/tasks.py` to this level.
 """
 
 import warnings
-from functools import singledispatch
+from functools import singledispatch, partial
 from typing import Any, Callable, Dict, List, Optional, Union, Type
 
 import gym
@@ -14,7 +14,7 @@ from gym.envs.registration import EnvRegistry, EnvSpec, registry, load
 from sequoia.settings.rl.envs import MONSTERKONG_INSTALLED, MetaMonsterKongEnv, sequoia_registry
 
 from ..continual.tasks import ContinuousTask, task_sampling_function
-from ..continual.tasks import is_supported as _is_supported
+from ..continual.tasks import _is_supported
 from ..continual.tasks import make_continuous_task, TaskSchedule
 
 DiscreteTask = Union[ContinuousTask, Callable[[gym.Env], Any]]
@@ -42,18 +42,8 @@ def make_discrete_task(
     # )
 
 
-def is_supported(
-    env_id: str,
-    env_registry: EnvRegistry = registry,
-    _make_task_function: Callable[..., DiscreteTask] = make_discrete_task,
-) -> bool:
-    """ Returns wether Sequoia is able to create (discrete) tasks for the given
-    environment.
-    """
-    return make_discrete_task.is_supported(env_id, env_registry=env_registry)
-    # return _is_supported(
-    #     env_id=env_id, env_registry=env_registry, _make_task_function=_make_task_function,
-    # )
+is_supported = partial(_is_supported, _make_task_function=make_discrete_task)
+
 
 
 if MONSTERKONG_INSTALLED:

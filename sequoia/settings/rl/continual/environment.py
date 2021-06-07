@@ -79,10 +79,10 @@ RewardType = TypeVar("RewardType")
 class GymDataLoader(
     ActiveEnvironment[ObservationType, ActionType, RewardType], gym.Wrapper, Iterable
 ):
-    """[WIP] ActiveDataLoader for batched Gym envs.
-    
+    """Environment for RL settings.
+
     Exposes **both** the `gym.Env` as well as the "Active" DataLoader APIs.
-    
+
     This is useful because it makes it easy to adapt a method originally made for SL so
     that it can also work in a reinforcement learning context, where the rewards (e.g.
     image labels, or correct/incorrect prediction, etc.) are only given *after* the
@@ -246,8 +246,8 @@ class GymDataLoader(
         # Could increment the number of epochs here also, if we wanted to keep
         # count.
 
-    def random_actions(self):
-        return self.env.random_actions()
+    # def random_actions(self):
+    #     return self.env.random_actions()
 
     def step(self, action: Union[ActionType, Any]) -> StepResult:
         # logger.debug(f"Calling step on self.env")

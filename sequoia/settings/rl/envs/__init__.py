@@ -7,7 +7,7 @@ import gym
 from pathlib import Path
 import copy
 from sequoia.utils import get_logger
-from gym.envs.registration import registry
+from gym.envs.registration import registry, EnvSpec
 
 logger = get_logger(__file__)
 
@@ -62,6 +62,9 @@ MUJOCO_INSTALLED = False
 try:
     from gym.envs.mujoco import MujocoEnv
     from .mujoco import *
+    from .mujoco import register_mujoco_variants
+    register_mujoco_variants(env_registry=sequoia_registry)
+
     import mujoco_py
     mj_path, _ = mujoco_py.utils.discover_mujoco()
     MUJOCO_INSTALLED = True

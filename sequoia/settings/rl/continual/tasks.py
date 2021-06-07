@@ -35,6 +35,7 @@ TaskType = TypeVar("TaskType", bound=ContinuousTask)
 # 'duration' parameter, which are accumulated to create the 'keys' of the task schedule!
 # TaskSchedule = Dict[int, TaskType]
 
+
 class TaskSchedule(Dict[int, TaskType]):
     pass
 
@@ -44,8 +45,111 @@ class EnvironmentNotSupportedError(gym.error.UnregisteredEnv):
     """
 
 
+def _is_supported(
+    env_id: str,
+    _make_task_function: Callable[..., ContinuousTask],
+    env_registry: EnvRegistry = registry,
+) -> bool:
+    """ Returns wether Sequoia is able to create (continuous) tasks for the given
+    environment.
 
-def task_sampling_function(env_registry: EnvRegistry = registry, based_on: Callable[[gym.Env], TaskType] = None) -> Callable[[gym.Env], TaskType]:
+    WIP: It is better not to use this directly, and instead use the equivalent
+    `is_supported` function which is created dynamically below.
+    """
+
+    def _has_handler(some_env_type: Type[gym.Env]) -> bool:
+        """ Returns wether the "make task" function has a registered handler for the
+        given envs.
+        """
+        return some_env_type in _make_task_function.registry or _make_task_function.dispatch(
+            some_env_type
+        ) is not _make_task_function.dispatch(
+            object
+        )
+
+    if isinstance(env_id, str):
+        env_spec = env_registry.spec(env_id)
+
+    if isinstance(env_id, EnvSpec):
+        env_spec = env_id
+        env_id = env_spec.id
+
+    if inspect.isclass(env_id) and issubclass(env_id, gym.Env):
+        env_type = env_id
+        return _has_handler(env_type)
+
+    if isinstance(env_spec, EnvVariantSpec):
+        # TODO: Test this out.
+        if inspect.isclass(env_spec.entry_point):
+            return _has_handler(env_spec.entry_point)
+        return is_supported(env_spec.base_spec)
+
+        if is_supported(env_spec.base_spec):
+            return True
+
+    if callable(env_spec.entry_point):
+        if inspect.isfunction(env_spec.entry_point):
+            raise NotImplementedError(env_spec)
+
+        if _has_handler(env_spec.entry_point):
+            return True
+
+        return _has_handler(env_spec.entry_point)
+
+    assert isinstance(env_spec.entry_point, str)
+    # TODO: Change this so we only mark *our* versions as supported (for mujoco envs)
+
+    class_name = env_spec.entry_point.rsplit(":")[-1]
+    if class_name in [c.__name__ for c in _make_task_function.registry]:
+        return True
+
+    entry_point = load(env_spec.entry_point)
+    if inspect.isfunction(entry_point):
+        return False
+
+    return _has_handler(entry_point)
+
+    # # return _has_handler(env_id)
+
+    # # return make_continuous_task.is_supported(env_id, env_registry)
+
+    # env_spec = env_registry.spec(env_id)
+
+    # if isinstance(env_spec, EnvVariantSpec):
+    #     return is_supported(env_spec.base_spec)
+
+    # def _has_handler(some_env_type: Type[gym.Env]) -> bool:
+    #     """ Returns wether the "make task" function has a registered handler for the
+    #     given envs.
+    #     """
+    #     return _make_task_function.dispatch(
+    #         some_env_type
+    #     ) is not _make_task_function.dispatch(object)
+
+    # if callable(env_spec.entry_point):
+    #     # assert False, (env_id, spec.entry_point, make_continuous_task.registry)
+    #     # TODO: This won't work for IncrementalRLSetting if we call the `make_continuous_task_for_env` within the
+    #     # `make_continuous_task` of the incremental/tasks.py
+    #     if inspect.isfunction(env_spec.entry_point):
+    #         raise NotImplementedError(env_spec)
+
+    #     return _has_handler(env_spec.entry_point)
+
+    # assert isinstance(env_spec.entry_point, str)
+    # class_name = env_spec.entry_point.rsplit(":")[-1]
+    # if class_name in [c.__name__ for c in _make_task_function.registry]:
+    #     return True
+
+    # entry_point = load(env_spec.entry_point)
+    # if inspect.isfunction(entry_point):
+    #     return False
+
+    # return _has_handler(entry_point)
+
+
+def task_sampling_function(
+    env_registry: EnvRegistry = registry, based_on: Callable[[gym.Env], TaskType] = None
+) -> Callable[[gym.Env], TaskType]:
     """ Decorator for a "make_task" function (e.g. `make_continuous_task`,
     `make_discrete_task`, etc.) that does the following:
     
@@ -60,13 +164,17 @@ def task_sampling_function(env_registry: EnvRegistry = registry, based_on: Calla
     something that has the same methods as the underlying singledispatch callable.
     """
 
-    def _wrapper(make_task_fn: Callable[[gym.Env], TaskType]) -> Callable[[gym.Env], TaskType]:
-        
+    def _wrapper(
+        make_task_fn: Callable[[gym.Env], TaskType]
+    ) -> Callable[[gym.Env], TaskType]:
+
         if not hasattr(make_task_fn, "registry"):
             make_task_fn = singledispatch(make_task_fn)
 
         @make_task_fn.register(type)
-        def make_discrete_task_from_type(env_type: Type[gym.Env], **kwargs) -> ContinuousTask:
+        def make_discrete_task_from_type(
+            env_type: Type[gym.Env], **kwargs
+        ) -> ContinuousTask:
             try:
                 # Try to create a task without actually instantiating the env, by passing the
                 # type of env as the 'env' argument, rather than an env instance.
@@ -76,7 +184,6 @@ def task_sampling_function(env_registry: EnvRegistry = registry, based_on: Calla
                 raise RuntimeError(
                     f"Unable to create a task based only on the env type {env_type}: {exc}\n"
                 ) from exc
-
 
         @make_task_fn.register(str)
         def make_discrete_task_by_id(env: str, **kwargs,) -> Union[Dict[str, Any], Any]:
@@ -91,7 +198,9 @@ def task_sampling_function(env_registry: EnvRegistry = registry, based_on: Calla
             # import inspect
 
             try:
-                task: ContinuousTask = make_discrete_task_from_type(env_entry_point, **kwargs)
+                task: ContinuousTask = make_discrete_task_from_type(
+                    env_entry_point, **kwargs
+                )
                 return task
 
             except RuntimeError as exc:
@@ -124,58 +233,13 @@ def task_sampling_function(env_registry: EnvRegistry = registry, based_on: Calla
                 if registered_type not in [object, str, type, gym.Wrapper]:
                     make_task_fn.register(registered_type, registered_handler)
 
-        def is_supported(
-            env_id: str,
-            env_registry: EnvRegistry = registry,
-        ) -> bool:
-            """ Returns wether Sequoia is able to create (continuous) tasks for the given
-            environment.
-            """
-            def _has_handler(some_env_type: Type[gym.Env]) -> bool:
-                """ Returns wether the "make task" function has a registered handler for the
-                given envs.
-                """
-                return make_task_fn.dispatch(
-                    some_env_type
-                ) is not make_task_fn.dispatch(object)
-            
-            if isinstance(env_id, str):
-                env_id = env_registry.spec(env_id)
-
-            if isinstance(env_id, EnvSpec):
-                env_spec = env_id
-                if isinstance(env_spec, EnvVariantSpec):
-                    return is_supported(env_spec.base_spec)
-
-                if callable(env_spec.entry_point):
-                    # assert False, (env_id, spec.entry_point, make_continuous_task.registry)
-                    # TODO: This won't work for IncrementalRLSetting if we call the `make_continuous_task_for_env` within the
-                    # `make_continuous_task` of the incremental/tasks.py
-                    if inspect.isfunction(env_spec.entry_point):
-                        raise NotImplementedError(env_spec)
-
-                    return _has_handler(env_spec.entry_point)
-
-                assert isinstance(env_spec.entry_point, str)
-                class_name = env_spec.entry_point.rsplit(":")[-1]
-                if class_name in [c.__name__ for c in make_task_fn.registry]:
-                    return True
-            
-                entry_point = load(env_spec.entry_point)
-                if inspect.isfunction(entry_point):
-                    return False
-
-                return _has_handler(entry_point)
-
-            return _has_handler(env_id)
-
-        make_task_fn.is_supported = is_supported
+        make_task_fn.is_supported = partial(_is_supported, _make_task_fn=make_task_fn)
 
         return make_task_fn
+
     return _wrapper
 
 
-@task_sampling_function(env_registry=sequoia_registry)
 @singledispatch
 def make_continuous_task(
     env: gym.Env, step: int, change_steps: List[int], seed: int = None, **kwargs,
@@ -201,51 +265,13 @@ def make_continuous_task(
     """
     raise NotImplementedError(f"Don't currently know how to create tasks for env {env}")
 
+
+make_continuous_task = task_sampling_function(env_registry=sequoia_registry)(
+    make_continuous_task
+)
+is_supported = partial(_is_supported, _make_task_function=make_continuous_task)
+
 # from functools import _SingleDispatchCallable
-
-
-def is_supported(
-    env_id: str,
-    env_registry: EnvRegistry = registry,
-    _make_task_function: Callable[..., ContinuousTask] = make_continuous_task,
-) -> bool:
-    """ Returns wether Sequoia is able to create (continuous) tasks for the given
-    environment.
-    """
-    return make_continuous_task.is_supported(env_id, env_registry)
-    
-    env_spec = env_registry.spec(env_id)
-
-    if isinstance(env_spec, EnvVariantSpec):
-        return is_supported(env_spec.base_spec)
-
-    def _has_handler(some_env_type: Type[gym.Env]) -> bool:
-        """ Returns wether the "make task" function has a registered handler for the
-        given envs.
-        """
-        return _make_task_function.dispatch(
-            some_env_type
-        ) is not _make_task_function.dispatch(object)
-
-    if callable(env_spec.entry_point):
-        # assert False, (env_id, spec.entry_point, make_continuous_task.registry)
-        # TODO: This won't work for IncrementalRLSetting if we call the `make_continuous_task_for_env` within the
-        # `make_continuous_task` of the incremental/tasks.py
-        if inspect.isfunction(env_spec.entry_point):
-            raise NotImplementedError(env_spec)
-
-        return _has_handler(env_spec.entry_point)
-
-    assert isinstance(env_spec.entry_point, str)
-    class_name = env_spec.entry_point.rsplit(":")[-1]
-    if class_name in [c.__name__ for c in _make_task_function.registry]:
-        return True
-    
-    entry_point = load(env_spec.entry_point)
-    if inspect.isfunction(entry_point):
-        return False
-
-    return _has_handler(entry_point)
 
 
 @make_continuous_task.register(type)
@@ -385,11 +411,22 @@ def make_task_for_classic_control_env(
 # the different mujoco env classes anyway.
 
 if MUJOCO_INSTALLED:
-    from sequoia.settings.rl.envs.mujoco import ModifiedGravityEnv, HalfCheetahEnv
+    from sequoia.settings.rl.envs.mujoco import (
+        ModifiedGravityEnv,
+        ContinualHopperEnv,
+        ContinualWalker2dV2Env,
+        ContinualWalker2dV3Env,
+        ContinualHalfCheetahV2Env,
+        ContinualHalfCheetahV3Env,
+    )
 
     default_mujoco_gravity = -9.81
 
-    @make_continuous_task.register
+    @make_continuous_task.register(ContinualHopperEnv)
+    @make_continuous_task.register(ContinualWalker2dV2Env)
+    @make_continuous_task.register(ContinualWalker2dV3Env)
+    @make_continuous_task.register(ContinualHalfCheetahV2Env)
+    @make_continuous_task.register(ContinualHalfCheetahV3Env)
     def make_task_for_modified_gravity_env(
         env: ModifiedGravityEnv,
         step: int,
@@ -409,5 +446,4 @@ if MUJOCO_INSTALLED:
         # TODO: Do we want to start with normal gravity?
         gravity = coefficient * default_mujoco_gravity
         return {"gravity": gravity}
-
 

@@ -68,137 +68,6 @@ logger = get_logger(__file__)
 EnvironmentType = TypeVar("EnvironmentType", bound=ContinualSLEnvironment)
 
 
-def smooth_task_boundaries_concat(
-    datasets: List[Dataset], seed: int = None, window_length: float = 0.03
-) -> ConcatDataset:
-    """ TODO: Use a smarter way of mixing from one to the other? """
-    lengths = [len(dataset) for dataset in datasets]
-    total_length = sum(lengths)
-    n_tasks = len(datasets)
-
-    if not isinstance(window_length, int):
-        window_length = int(total_length * window_length)
-    assert (
-        window_length > 1
-    ), f"Window length should be positive or a fraction of the dataset length. ({window_length})"
-
-    rng = np.random.default_rng(seed)
-
-    def option1():
-        shuffled_indices = np.arange(total_length)
-        for start_index in range(
-            0, total_length - window_length + 1, window_length // 2
-        ):
-            rng.shuffle(shuffled_indices[start_index : start_index + window_length])
-        return shuffled_indices
-
-    # Maybe do the same but backwards?
-
-    # IDEA #2: Sample based on how close to the 'center' of the task we are.
-    def option2():
-        boundaries = np.array(list(itertools.accumulate(lengths, initial=0)))
-        middles = [
-            (start + end) / 2 for start, end in zip(boundaries[0:], boundaries[1:])
-        ]
-        samples_left: Dict[int, int] = {i: length for i, length in enumerate(lengths)}
-        indices_left: Dict[int, List[int]] = {
-            i: list(range(boundaries[i], boundaries[i] + length))
-            for i, length in enumerate(lengths)
-        }
-
-        out_indices: List[int] = []
-        last_dataset_index = n_tasks - 1
-        for step in range(total_length):
-            if step < middles[0] and samples_left[0]:
-                # Prevent sampling things from task 1 at the beginning of task 0, and
-                eligible_dataset_ids = [0]
-            elif step > middles[-1] and samples_left[last_dataset_index]:
-                # Prevent sampling things from task N-1 at the emd of task N
-                eligible_dataset_ids = [last_dataset_index]
-            else:
-                # 'smooth', but at the boundaries there are actually two or three datasets,
-                # from future tasks even!
-                eligible_dataset_ids = list(k for k, v in samples_left.items() if v > 0)
-                # if len(eligible_dataset_ids) > 2:
-                #     # Prevent sampling from future tasks (past the next task) when at a
-                #     # boundary.
-                #     left_dataset_index = min(eligible_dataset_ids)
-                #     right_dataset_index = min(
-                #         v for v in eligible_dataset_ids if v > left_dataset_index
-                #     )
-                #     eligible_dataset_ids = [left_dataset_index, right_dataset_index]
-
-            options = np.array(eligible_dataset_ids, dtype=int)
-
-            # Calculate the 'distance' to the center of the task's dataset.
-            distances = np.abs(
-                [step - middles[dataset_index] for dataset_index in options]
-            )
-
-            # NOTE: THis exponent is kindof arbitrary, setting it to this value because it
-            # sortof works for MNIST so far.
-            probs = 1 / (1 + np.abs(distances) ** 2)
-            probs /= sum(probs)
-
-            chosen_dataset = rng.choice(options, p=probs)
-            chosen_index = indices_left[chosen_dataset].pop()
-            samples_left[chosen_dataset] -= 1
-            out_indices.append(chosen_index)
-
-        shuffled_indices = np.array(out_indices)
-        return shuffled_indices
-
-    def option3():
-        shuffled_indices = np.arange(total_length)
-        for start_index in range(
-            0, total_length - window_length + 1, window_length // 2
-        ):
-            rng.shuffle(shuffled_indices[start_index : start_index + window_length])
-        for start_index in reversed(
-            range(0, total_length - window_length + 1, window_length // 2)
-        ):
-            rng.shuffle(shuffled_indices[start_index : start_index + window_length])
-        return shuffled_indices
-
-    shuffled_indices = option3()
-
-    if all(isinstance(dataset, TaskSet) for dataset in datasets):
-        # Use the 'concat' from continuum, just to preserve the field/methods of a
-        # TaskSet.
-        joined_taskset = concat(datasets)
-        return subset(joined_taskset, shuffled_indices)
-    else:
-        joined_dataset = ConcatDataset(datasets)
-        return Subset(joined_dataset, shuffled_indices)
-
-    return shuffled_indices
-
-
-from .wrappers import replace_taskset_attributes
-
-
-def subset(taskset: TaskSet, indices: np.ndarray) -> TaskSet:
-    # x, y, t = taskset.get_raw_samples(indices)
-    x, y, t = taskset.get_raw_samples(indices)
-    # TODO: Not sure if/how to handle the `bounding_boxes` attribute here.
-    bounding_boxes = taskset.bounding_boxes
-    if bounding_boxes is not None:
-        bounding_boxes = bounding_boxes[indices]
-    return replace_taskset_attributes(
-        taskset, x=x, y=y, t=t, bounding_boxes=bounding_boxes
-    )
-
-
-def random_subset(taskset: TaskSet, n_samples: int, seed: int = None) -> TaskSet:
-    rng = np.random.default_rng(seed)
-    dataset_length = len(taskset)
-    assert dataset_length >= n_samples, (
-        f"Dataset has {dataset_length}, asked for {n_samples} samples."
-    )
-    samples = rng.choice(len(taskset), size=n_samples, replace=False)
-    assert len(samples) == n_samples
-    return subset(taskset, samples)
-
 
 @dataclass
 class ContinualSLSetting(SLSetting, ContinualAssumption):
@@ -789,3 +658,135 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             if t_a != t_b:
                 break
         return Compose(stage_transforms[i:])
+
+
+def smooth_task_boundaries_concat(
+    datasets: List[Dataset], seed: int = None, window_length: float = 0.03
+) -> ConcatDataset:
+    """ TODO: Use a smarter way of mixing from one to the other? """
+    lengths = [len(dataset) for dataset in datasets]
+    total_length = sum(lengths)
+    n_tasks = len(datasets)
+
+    if not isinstance(window_length, int):
+        window_length = int(total_length * window_length)
+    assert (
+        window_length > 1
+    ), f"Window length should be positive or a fraction of the dataset length. ({window_length})"
+
+    rng = np.random.default_rng(seed)
+
+    def option1():
+        shuffled_indices = np.arange(total_length)
+        for start_index in range(
+            0, total_length - window_length + 1, window_length // 2
+        ):
+            rng.shuffle(shuffled_indices[start_index : start_index + window_length])
+        return shuffled_indices
+
+    # Maybe do the same but backwards?
+
+    # IDEA #2: Sample based on how close to the 'center' of the task we are.
+    def option2():
+        boundaries = np.array(list(itertools.accumulate(lengths, initial=0)))
+        middles = [
+            (start + end) / 2 for start, end in zip(boundaries[0:], boundaries[1:])
+        ]
+        samples_left: Dict[int, int] = {i: length for i, length in enumerate(lengths)}
+        indices_left: Dict[int, List[int]] = {
+            i: list(range(boundaries[i], boundaries[i] + length))
+            for i, length in enumerate(lengths)
+        }
+
+        out_indices: List[int] = []
+        last_dataset_index = n_tasks - 1
+        for step in range(total_length):
+            if step < middles[0] and samples_left[0]:
+                # Prevent sampling things from task 1 at the beginning of task 0, and
+                eligible_dataset_ids = [0]
+            elif step > middles[-1] and samples_left[last_dataset_index]:
+                # Prevent sampling things from task N-1 at the emd of task N
+                eligible_dataset_ids = [last_dataset_index]
+            else:
+                # 'smooth', but at the boundaries there are actually two or three datasets,
+                # from future tasks even!
+                eligible_dataset_ids = list(k for k, v in samples_left.items() if v > 0)
+                # if len(eligible_dataset_ids) > 2:
+                #     # Prevent sampling from future tasks (past the next task) when at a
+                #     # boundary.
+                #     left_dataset_index = min(eligible_dataset_ids)
+                #     right_dataset_index = min(
+                #         v for v in eligible_dataset_ids if v > left_dataset_index
+                #     )
+                #     eligible_dataset_ids = [left_dataset_index, right_dataset_index]
+
+            options = np.array(eligible_dataset_ids, dtype=int)
+
+            # Calculate the 'distance' to the center of the task's dataset.
+            distances = np.abs(
+                [step - middles[dataset_index] for dataset_index in options]
+            )
+
+            # NOTE: THis exponent is kindof arbitrary, setting it to this value because it
+            # sortof works for MNIST so far.
+            probs = 1 / (1 + np.abs(distances) ** 2)
+            probs /= sum(probs)
+
+            chosen_dataset = rng.choice(options, p=probs)
+            chosen_index = indices_left[chosen_dataset].pop()
+            samples_left[chosen_dataset] -= 1
+            out_indices.append(chosen_index)
+
+        shuffled_indices = np.array(out_indices)
+        return shuffled_indices
+
+    def option3():
+        shuffled_indices = np.arange(total_length)
+        for start_index in range(
+            0, total_length - window_length + 1, window_length // 2
+        ):
+            rng.shuffle(shuffled_indices[start_index : start_index + window_length])
+        for start_index in reversed(
+            range(0, total_length - window_length + 1, window_length // 2)
+        ):
+            rng.shuffle(shuffled_indices[start_index : start_index + window_length])
+        return shuffled_indices
+
+    shuffled_indices = option3()
+
+    if all(isinstance(dataset, TaskSet) for dataset in datasets):
+        # Use the 'concat' from continuum, just to preserve the field/methods of a
+        # TaskSet.
+        joined_taskset = concat(datasets)
+        return subset(joined_taskset, shuffled_indices)
+    else:
+        joined_dataset = ConcatDataset(datasets)
+        return Subset(joined_dataset, shuffled_indices)
+
+    return shuffled_indices
+
+
+from .wrappers import replace_taskset_attributes
+
+
+def subset(taskset: TaskSet, indices: np.ndarray) -> TaskSet:
+    # x, y, t = taskset.get_raw_samples(indices)
+    x, y, t = taskset.get_raw_samples(indices)
+    # TODO: Not sure if/how to handle the `bounding_boxes` attribute here.
+    bounding_boxes = taskset.bounding_boxes
+    if bounding_boxes is not None:
+        bounding_boxes = bounding_boxes[indices]
+    return replace_taskset_attributes(
+        taskset, x=x, y=y, t=t, bounding_boxes=bounding_boxes
+    )
+
+
+def random_subset(taskset: TaskSet, n_samples: int, seed: int = None) -> TaskSet:
+    rng = np.random.default_rng(seed)
+    dataset_length = len(taskset)
+    assert dataset_length >= n_samples, (
+        f"Dataset has {dataset_length}, asked for {n_samples} samples."
+    )
+    samples = rng.choice(len(taskset), size=n_samples, replace=False)
+    assert len(samples) == n_samples
+    return subset(taskset, samples)

@@ -13,7 +13,7 @@ def register_classic_control_variants(env_registry: EnvRegistry = registry) -> N
     """
     classic_control_env_specs: Dict[str, EnvSpec] = {
         spec.id: spec
-        for env_id, spec in registry.env_specs.items()
+        for env_id, spec in env_registry.env_specs.items()
         if isinstance(spec.entry_point, str)
         and spec.entry_point.startswith("gym.envs.classic_control")
     }

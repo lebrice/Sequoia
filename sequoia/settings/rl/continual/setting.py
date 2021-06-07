@@ -117,8 +117,8 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     Rewards: ClassVar[Type[Rewards]] = Rewards
 
     # The type of results returned by an RL experiment.
-    Results: ClassVar[Type[ContinualRLResults]] = ContinualRLResults
-    # The type wrapper used to wrap the test environment, and which produces the 
+    Results: ClassVar[Type[Results]] = ContinualRLResults
+    # The type wrapper used to wrap the test environment, and which produces the
     # results.
     TestEnvironment: ClassVar[Type[TestEnvironment]] = ContinualRLTestEnvironment
 
@@ -339,7 +339,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         self._temp_val_env: Optional[gym.Env] = None
         self._temp_test_env: Optional[gym.Env] = None
         # Create the task schedules, using the 'task sampling' function from `tasks.py`.
-        
+
         if not self.train_task_schedule:
             self.train_task_schedule = self.create_train_task_schedule()
         else:
@@ -347,12 +347,15 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 # If the keys correspond to the task ids rather than the transition steps:
                 nb_tasks = len(self.train_task_schedule) - 1
                 steps_per_task = self.train_max_steps // nb_tasks
-                self.train_task_schedule = type(self.train_task_schedule)({
-                    i * steps_per_task: self.train_task_schedule[step]
-                    for i, step in enumerate(sorted(self.train_task_schedule.keys()))
-                })
+                self.train_task_schedule = type(self.train_task_schedule)(
+                    {
+                        i * steps_per_task: self.train_task_schedule[step]
+                        for i, step in enumerate(
+                            sorted(self.train_task_schedule.keys())
+                        )
+                    }
+                )
             # self.train_max_steps = max(self.train_task_schedule)
-        
 
         if not self.val_task_schedule:
             # Avoid creating an additional env, just reuse the train_temp_env.
@@ -366,10 +369,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             # If the keys correspond to the task ids rather than the transition steps
             nb_tasks = len(self.val_task_schedule)
             steps_per_task = self.train_max_steps // nb_tasks
-            self.val_task_schedule = type(self.val_task_schedule)(**{
-                i * steps_per_task: self.val_task_schedule[step]
-                for i, step in enumerate(sorted(self.val_task_schedule.keys()))
-            })
+            self.val_task_schedule = type(self.val_task_schedule)(
+                **{
+                    i * steps_per_task: self.val_task_schedule[step]
+                    for i, step in enumerate(sorted(self.val_task_schedule.keys()))
+                }
+            )
 
         if not self.test_task_schedule:
             self._temp_test_env = (
@@ -383,10 +388,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 # If the keys correspond to the task ids rather than the transition steps
                 nb_tasks = len(self.test_task_schedule)
                 steps_per_task = self.test_max_steps // nb_tasks
-                self.test_task_schedule = type(self.test_task_schedule)(**{
-                    i * steps_per_task: self.test_task_schedule[step]
-                    for i, step in enumerate(sorted(self.test_task_schedule.keys()))
-                })
+                self.test_task_schedule = type(self.test_task_schedule)(
+                    **{
+                        i * steps_per_task: self.test_task_schedule[step]
+                        for i, step in enumerate(sorted(self.test_task_schedule.keys()))
+                    }
+                )
             # self.test_max_steps = max(self.test_task_schedule)
 
         # self._observation_space = self._temp_train_env.observation_space
@@ -528,92 +535,14 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             spaces.Box(reward_range[0], reward_range[1], shape=()),
         )
 
-    # def _setup_fields_using_temp_env(self, temp_env: MultiTaskEnvironment):
-    #     """ Setup some of the fields on the Setting using a temporary environment.
-
-    #     This temporary environment only lives during the __post_init__() call.
-    #     """
-    #     # For now since we always have a CL-type wrapper (either MultiTaskEnv (or
-    #     # AddTaskIdWrapper in IncrementalRL, the observation space should already be a
-    #     # NamedTupleSpace.
-    #     # NOTE: We use 'NamedTupleSpace', rather than dict, because we need Observations
-    #     # to be objects (in this case, Batch objects, which are basically dataclasses
-    #     # with tensor fields). This is because we need inheritance to work for the
-    #     # objects given by the envs, so that methods can accept new subclasses too.
-    #     assert isinstance(temp_env.observation_space, NamedTupleSpace)
-
-    #     # FIXME: Replacing the observation space dtypes from their original
-    #     # 'generated' NamedTuples to self.Observations. The alternative
-    #     # would be to add another argument to the MultiTaskEnv wrapper, to
-    #     # pass down a dtype to be set on its observation_space's `dtype`
-    #     # attribute, which would be ugly.
-    #     temp_env.observation_space.dtype = self.Observations
-
-    #     # Populate the task schedules created above.
-    #     if not self.train_task_schedule:
-    #         train_change_steps = [i * self.steps_per_task for i in range(self.nb_tasks)]
-    #         assert len(train_change_steps) == self.nb_tasks
-
-    #         if self.smooth_task_boundaries:
-    #             # Add a last 'task' at the end of the 'epoch', so that the
-    #             # env changes smoothly right until the end.
-    #             train_change_steps.append(self.train_max_steps)
-
-    #         self.train_task_schedule = self.create_task_schedule(
-    #             temp_env=temp_env, change_steps=train_change_steps
-    #         )
-
-    #     assert self.train_task_schedule is not None
-    #     # The validation task schedule is the same as the one used in
-    #     # training by default.
-    #     if not self.valid_task_schedule:
-    #         self.valid_task_schedule = deepcopy(self.train_task_schedule)
-
-    #     if not self.test_task_schedule:
-    #         # The test task schedule is by default the same as in validation
-    #         # except that the interval between the tasks may be different,
-    #         # depending on the value of `self.test_steps_per_task`.
-    #         valid_steps = sorted(self.valid_task_schedule.keys())
-    #         valid_tasks = [self.valid_task_schedule[step] for step in valid_steps]
-    #         self.test_task_schedule = {
-    #             i * self.test_steps_per_task: deepcopy(task)
-    #             for i, task in enumerate(valid_tasks)
-    #         }
-
-    #     space_dict = dict(temp_env.observation_space.items())
-    #     task_label_space = spaces.Discrete(self.nb_tasks)
-    #     if not self.task_labels_at_train_time or not self.task_labels_at_test_time:
-    #         task_label_space = Sparse(task_label_space)
-    #     space_dict["task_labels"] = task_label_space
-    #     observation_space = NamedTupleSpace(spaces=space_dict, dtype=self.Observations)
-    #     self.observation_space = observation_space
-    #     # Set the spaces using the temp env.
-    #     # self.observation_space = temp_env.observation_space
-    #     self.action_space = temp_env.action_space
-    #     self.reward_range = temp_env.reward_range
-    #     self.reward_space = getattr(
-    #         temp_env,
-    #         "reward_space",
-    #         spaces.Box(low=self.reward_range[0], high=self.reward_range[1], shape=()),
-    #     )
-
     def apply(
         self, method: Method, config: Config = None
     ) -> "ContinualRLSetting.Results":
         """Apply the given method on this setting to producing some results. """
         # Use the supplied config, or parse one from the arguments that were
         # used to create `self`.
-        self.config: Config
-        if config is not None:
-            self.config = config
-            logger.debug(f"Using Config {self.config}")
-        elif isinstance(getattr(method, "config", None), Config):
-            self.config = method.config
-            logger.debug(f"Using Config from the Method: {self.config}")
-        else:
-            logger.debug("Parsing the Config from the command-line.")
-            self.config = Config.from_args(self._argv, strict=False)
-            logger.debug(f"Resulting Config: {self.config}")
+        self.config: Config = config or self._setup_config(method)
+        logger.debug(f"Config: {self.config}")
 
         # TODO: Test to make sure that this doesn't cause any other bugs with respect to
         # the display of stuff:
@@ -892,14 +821,18 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         """The number of training 'phases', i.e. how many times `method.fit` will be
         called.
 
-        In the case of ContinualRL, fit is only called once, with an environment that
-        shifts between all the tasks.
+        In the case of ContinualRL and DiscreteTaskAgnosticRL, fit is only called once,
+        with an environment that shifts between all the tasks. In IncrementalRL, fit is
+        called once per task, while in TraditionalRL and MultiTaskRL, fit is called
+        once.
         """
         return 1
 
     @property
     def steps_per_phase(self) -> Optional[int]:
-        """Returns the number of steps per training "phase".
+        """Returns the number of steps per training "phase", i.e. the max number of
+        (steps for now) that can be taken in the training environment passed to
+        `Method.fit`
 
         In most settings, this is the same as `steps_per_task`.
 
@@ -908,7 +841,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         Optional[int]
             `None` if `max_steps` is None, else `max_steps // phases`.
         """
-        # TODO: This doesn't work when the schedule has tasks of different length.
         return (
             None
             if self.train_max_steps is None
@@ -1107,12 +1039,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         wrappers.append(partial(ActionLimit, max_steps=max_steps))
 
         # if is_classic_control_env(base_env):
-            # If we are in a classic control env, and we dont want the state to
-            # be fully-observable (i.e. we want pixel observations rather than
-            # getting the pole angle, velocity, etc.), then add the
-            # PixelObservation wrapper to the list of wrappers.
-            # if self.force_pixel_observations:
-            #     wrappers.append(PixelObservationWrapper)
+        # If we are in a classic control env, and we dont want the state to
+        # be fully-observable (i.e. we want pixel observations rather than
+        # getting the pole angle, velocity, etc.), then add the
+        # PixelObservation wrapper to the list of wrappers.
+        # if self.force_pixel_observations:
+        #     wrappers.append(PixelObservationWrapper)
 
         if is_atari_env(base_env):
             # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
@@ -1184,26 +1116,23 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
         return wrappers
 
-    # def _temp_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
-    #     """ Gets the minimal wrappers needed to figure out the Spaces of the
-    #     train/valid/test environments.
-
-    #     This is called in the 'constructor' (__post_init__) to set the Setting's
-    #     observation/action/reward spaces, so this should depend on as little
-    #     state from `self` as possible, since not all attributes have been
-    #     defined at the time when this is called.
-    #     """
-    #     return self._make_wrappers(
-    #         base_env=self.dataset,
-    #         task_schedule=self.train_task_schedule,
-    #         # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
-    #         task_labels_available=self.task_labels_at_train_time,
-    #         transforms=self.train_transforms,
-    #         # These two shouldn't matter really:
-    #         starting_step=0,
-    #         max_steps=self.train_max_steps,
-    #         new_random_task_on_reset=self.stationary_context,
-    #     )
+    def _setup_config(self, method: Method) -> Config:
+        config: Config
+        if isinstance(getattr(method, "config", None), Config):
+            config = method.config
+            logger.debug(f"Using Config from the Method: {self.config}")
+        else:
+            argv = self._argv
+            if argv:
+                logger.debug(
+                    f"Parsing the Config from the command-line arguments ({argv})"
+                )
+            else:
+                logger.debug(
+                    f"Parsing the config from the current command-line arguments."
+                )
+            config = Config.from_args(argv, strict=False)
+        return config
 
     def _get_objective_scaling_factor(self) -> float:
         """ Return the factor to be multiplied with the mean reward per episode
@@ -1217,6 +1146,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # TODO: remove this, currently used just so we can get a 'scaling factor' to use
         # to scale the 'mean reward per episode' to a score between 0 and 1.
         # TODO: Add other environments, for instance 1/200 for cartpole.
+        # TODO: Rework this so its based on the reward threshold!
         max_reward_per_episode = 1
         if isinstance(self.dataset, str) and self.dataset.startswith("MetaMonsterKong"):
             max_reward_per_episode = 100
@@ -1254,7 +1184,6 @@ def _load_task_schedule(file_path: Path) -> Dict[int, Dict]:
     with open(file_path) as f:
         task_schedule = json.load(f)
         return {int(k): task_schedule[k] for k in sorted(task_schedule.keys())}
-
 
 
 if __name__ == "__main__":

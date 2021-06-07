@@ -32,11 +32,10 @@ from sequoia.settings.rl.envs import (
     metaworld_envs,
     mtenv_envs,
 )
-from sequoia.utils import constant, dict_union
+from sequoia.utils import constant, dict_union, pairwise
 from sequoia.utils.logging_utils import get_logger
 from simple_parsing import field, list_field
 from simple_parsing.helpers import choice
-
 from ..discrete.setting import DiscreteTaskAgnosticRLSetting
 from ..discrete.setting import supported_envs as _parent_supported_envs
 from .results import IncrementalRLResults
@@ -67,15 +66,10 @@ available_datasets: Dict[str, str] = {env_id: env_id for env_id in supported_env
 
 @dataclass
 class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting):
-    """ Continual RL setting the data is divided into 'tasks' with clear boundaries.
-
-    By default, the task labels are given at train time, but not at test time.
-
-    TODO: Decide how to implement the train procedure, if we give a single
-    dataloader, we might need to call the agent's `on_task_switch` when we reach
-    the task boundary.. Or, we could produce one dataloader per task, and then
-    implement a custom `fit` procedure in the CLTrainer class, that loops over
-    the tasks and calls the `on_task_switch` when needed.
+    """ Continual RL setting in which:
+    - Changes in the environment's context occur suddenly (same as in Discrete, Task-Agnostic RL)
+    - Task boundary information (and task labels) are given at training time
+    - Task boundary information is given at test time, but task identity is not.
     """
 
     # The function used to create the tasks for the chosen env.
@@ -84,9 +78,19 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
     ] = make_incremental_task
     Results: ClassVar[Type[Results]] = IncrementalRLResults
 
+    # Class variable that holds the dict of available environments.
+    available_datasets: ClassVar[Dict[str, str]] = available_datasets
+    # Which dataset/environment to use for training, validation and testing.
+    dataset: str = choice(available_datasets, default="CartPole-v0")
+
     # # The number of tasks. By default 0, which means that it will be set
     # # depending on other fields in __post_init__, or eventually be just 1.
     # nb_tasks: int = field(0, alias=["n_tasks", "num_tasks"])
+
+    # (Copied from the assumption, just for clarity:)
+    # TODO: Shouldn't these kinds of properties be on the class, rather than on the
+    # instance?
+
     # Wether the task boundaries are smooth or sudden.
     smooth_task_boundaries: bool = constant(False)
     # Wether to give access to the task labels at train time.
@@ -94,10 +98,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
     # Wether to give access to the task labels at test time.
     task_labels_at_test_time: bool = False
 
-    # Class variable that holds the dict of available environments.
-    available_datasets: ClassVar[Dict[str, str]] = available_datasets
-
-    dataset: str = choice(available_datasets, default="CartPole-v0")
 
     train_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
     val_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
@@ -179,6 +179,57 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
 
         # FIXME: Really annoying little bugs with these three arguments!
         # self.nb_tasks = self.max_steps // self.steps_per_task
+
+    @property
+    def train_task_lengths(self) -> List[int]:
+        """ Gives the length of each training task (in steps for now). """
+        return [
+            task_b_step - task_a_step
+            for task_a_step, task_b_step in pairwise(
+                sorted(self.train_task_schedule.keys())
+            )
+        ]
+
+    @property
+    def train_phase_lengths(self) -> List[int]:
+        """ Gives the length of each training 'phase', i.e. the maximum number of (steps
+        for now) that can be taken in the training environment, in a single call to .fit
+        """
+        return [
+            task_b_step - task_a_step
+            for task_a_step, task_b_step in pairwise(
+                sorted(self.train_task_schedule.keys())
+            )
+        ]
+
+    @property
+    def current_train_task_length(self) -> int:
+        """ Deprecated field, gives back the max number of steps per task. """
+        if self.stationary_context:
+            return sum(self.train_task_lengths)
+        return self.train_task_lengths[self.current_task_id]
+
+    @property
+    def steps_per_task(self) -> int:
+        # unique_task_lengths = list(set(self.train_task_lengths))
+        warning = DeprecationWarning(
+            "The 'steps_per_task' attribute is deprecated, use "
+            "`current_train_task_length` instead, which gives the length of the "
+            "current task."
+        )
+        warnings.warn(warning)
+        logger.warning(warning)
+        return self.current_train_task_length
+
+    # @property
+    # def steps_per_phase(self) -> int:
+    #     # return unique_task_lengths
+    #     test_task_lengths: List[int] = [
+    #         task_b_step - task_a_step
+    #         for task_a_step, task_b_step in pairwise(
+    #             sorted(self.test_task_schedule.keys())
+    #         )
+    #     ]
 
     @property
     def task_label_space(self) -> gym.Space:

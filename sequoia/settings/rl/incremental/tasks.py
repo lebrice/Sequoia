@@ -3,9 +3,8 @@ ContinualRL
 """
 import operator
 import warnings
-from functools import singledispatch
+from functools import singledispatch, partial
 from typing import Any, Callable, Dict, List, Optional, Union
-
 import gym
 from gym.envs.registration import registry, EnvRegistry, EnvSpec
 import numpy as np
@@ -22,7 +21,7 @@ from sequoia.settings.rl.envs import (
 )
 
 from ..discrete.tasks import ContinuousTask, DiscreteTask
-from ..discrete.tasks import is_supported as _is_supported
+from ..discrete.tasks import _is_supported
 from ..discrete.tasks import make_discrete_task, sequoia_registry, task_sampling_function
 
 IncrementalTask = DiscreteTask
@@ -47,16 +46,19 @@ def make_incremental_task(
         f"Don't know how to create an (incremental) task for env {env}"
     )
 
+is_supported = partial(_is_supported, _make_task_function=make_incremental_task)
 
-def is_supported(
-    env_id: str,
-    env_registry: EnvRegistry = sequoia_registry,
-    _make_discrete_task: Callable[..., DiscreteTask] = make_incremental_task,
-) -> bool:
-    """ Returns wether Sequoia is able to create (incremental) tasks for the given
-    environment.
-    """
-    return make_incremental_task.is_supported(env_id=env_id, env_registry=env_registry)
+# def is_supported(
+#     env_id: str,
+#     env_registry: EnvRegistry = sequoia_registry,
+#     _make_task_function: Callable[..., DiscreteTask] = make_incremental_task,
+# ) -> bool
+#     """ Returns wether Sequoia is able to create (incremental) tasks for the given
+#     environment.
+#     """
+#     return is_supported_by_parent(env_id, env_registry=env_registry, _make_task_function=_make_task_function)
+
+#     return make_incremental_task.is_supported(env_id=env_id, env_registry=env_registry)
 
 
 if MTENV_INSTALLED:

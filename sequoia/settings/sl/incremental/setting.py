@@ -80,7 +80,15 @@ from continuum.tasks import concat
 from ..discrete.setting import DiscreteTaskAgnosticSLSetting
 from .results import IncrementalSLResults
 from .environment import IncrementalSLEnvironment
-from .objects import Observations, ObservationType, Actions, ActionType, Rewards, RewardType
+from .objects import (
+    Observations,
+    ObservationType,
+    Actions,
+    ActionType,
+    Rewards,
+    RewardType,
+)
+
 logger = get_logger(__file__)
 # # NOTE: This dict reflects the observation space of the different datasets
 # # *BEFORE* any transforms are applied. The resulting property on the Setting is
@@ -247,7 +255,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         self.data_dir = data_dir
         super().prepare_data(**kwargs)
 
-    def setup(self, stage: str=None):
+    def setup(self, stage: str = None):
         super().setup(stage=stage)
         # TODO: Adding this temporarily just for the competition
         self.test_boundary_steps = [0] + list(
@@ -271,7 +279,9 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         self, batch_size: int = None, num_workers: int = None
     ) -> IncrementalSLEnvironment:
         """ Returns a DataLoader for the train dataset of the current task. """
-        train_env = super().train_dataloader(batch_size=batch_size, num_workers=num_workers)
+        train_env = super().train_dataloader(
+            batch_size=batch_size, num_workers=num_workers
+        )
         # TODO: Set a different prefix for `MeasureSLPerformanceWrapper`
         if self.monitor_training_performance:
             assert isinstance(train_env, MeasureSLPerformanceWrapper)
@@ -582,7 +592,7 @@ class IncrementalSLTestEnvironment(TestEnvironment):
         self.task_schedule = task_schedule or {}
         self.task_steps = sorted(self.task_schedule.keys())
         self.results: TaskSequenceResults[ClassificationMetrics] = TaskSequenceResults(
-            TaskResults() for step in self.task_steps
+            task_results=[TaskResults() for step in self.task_steps]
         )
         self._reset = False
         # NOTE: The task schedule is already in terms of the number of batches.
@@ -630,7 +640,7 @@ class IncrementalSLTestEnvironment(TestEnvironment):
 
         # Given the step, find the task id.
         task_id = bisect.bisect_right(task_steps, self._steps) - 1
-        self.results[task_id].append(metric)
+        self.results.task_results[task_id].metrics.append(metric)
         self._steps += 1
 
         # Debugging issue with Monitor class:

@@ -58,7 +58,7 @@ class HalfCheetahV3Env(_HalfCheetahV3Env):
         frame_skip: int = 5,
     ):
         if frame_skip != 5:
-            raise NotImplementedError(f"todo: Add a frame_skip arg to the gym class.")
+            raise NotImplementedError("todo: Add a frame_skip arg to the gym class.")
         super().__init__(
             xml_file=xml_file or model_path,
             forward_reward_weight=forward_reward_weight,

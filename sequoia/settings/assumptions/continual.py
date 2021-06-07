@@ -290,9 +290,10 @@ class ContinualAssumption(AssumptionBase):
         run: Run = self.wandb.wandb_init()
         run.config["setting"] = setting_name
         run.config["method"] = method_name
-        for k, value in self.to_dict().items():
-            if not k.startswith("_"):
-                run.config[f"setting/{k}"] = value
+        if hasattr(self, "to_dict"):
+            for k, value in self.to_dict().items():
+                if not k.startswith("_"):
+                    run.config[f"setting/{k}"] = value
 
         run.summary["setting"] = self.get_name()
         run.summary["method"] = method.get_name()
@@ -335,6 +336,17 @@ class ContinualAssumption(AssumptionBase):
             wandb.log(plots_dict)
             # TODO: Finish the run here? Not sure this is right.
             # wandb.run.finish()
+
+    @property
+    def phases(self) -> int:
+        """The number of training 'phases', i.e. how many times `method.fit` will be
+        called.
+
+        In the case of Continual and DiscreteTaskAgnostic, fit is only called once,
+        with an environment that shifts between all the tasks. In Incremental, fit is
+        called once per task, while in Traditional and MultiTask, fit is called once.
+        """
+        return 1
 
 
 from gym.vector import VectorEnv
