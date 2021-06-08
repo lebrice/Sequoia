@@ -11,8 +11,8 @@ from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
 from gym import spaces
-from sequoia.common.gym_wrappers.action_limit import ActionLimit
 from sequoia.common.gym_wrappers import MultiTaskEnvironment, TransformObservation
+from sequoia.common.gym_wrappers.action_limit import ActionLimit
 from sequoia.common.gym_wrappers.utils import is_monsterkong_env
 from sequoia.common.spaces import Sparse
 from sequoia.common.transforms import Transforms
@@ -36,6 +36,8 @@ from sequoia.utils import constant, dict_union, pairwise
 from sequoia.utils.logging_utils import get_logger
 from simple_parsing import field, list_field
 from simple_parsing.helpers import choice
+from typing_extensions import Final
+
 from ..discrete.setting import DiscreteTaskAgnosticRLSetting
 from ..discrete.setting import supported_envs as _parent_supported_envs
 from .results import IncrementalRLResults
@@ -92,12 +94,11 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
     # instance?
 
     # Wether the task boundaries are smooth or sudden.
-    smooth_task_boundaries: bool = constant(False)
+    smooth_task_boundaries: Final[bool] = constant(False)
     # Wether to give access to the task labels at train time.
-    task_labels_at_train_time: bool = constant(True)
+    task_labels_at_train_time: Final[bool] = constant(True)
     # Wether to give access to the task labels at test time.
     task_labels_at_test_time: bool = False
-
 
     train_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
     val_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
@@ -310,7 +311,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 f"re-write the test loop."
             )
         return super().test_loop(method)
-    
+
     @property
     def phases(self) -> int:
         """The number of training 'phases', i.e. how many times `method.fit` will be
@@ -421,7 +422,19 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             base_env = self.train_dataset
         # assert False, super().create_train_wrappers()
         if self.stationary_context:
-            task_schedule_slice = self.train_task_schedule
+            task_schedule_slice = self.train_task_schedule.copy()
+            assert len(task_schedule_slice) >= 2
+            # Need to pop the last task, so that we don't sample it by accident!
+            max_step = max(task_schedule_slice)
+            last_task = task_schedule_slice.pop(max_step)
+            # TODO: Shift the second-to-last task to the last step
+            last_boundary = max(task_schedule_slice)
+            second_to_last_task = task_schedule_slice.pop(last_boundary)
+            task_schedule_slice[max_step] = second_to_last_task
+            if 0 not in task_schedule_slice:
+                assert self.nb_tasks == 1
+                task_schedule_slice[0] = second_to_last_task
+            # assert False, (max_step, last_boundary, last_task, second_to_last_task)
         else:
             current_task = list(self.train_task_schedule.values())[self.current_task_id]
             task_length = self.train_max_steps // self.nb_tasks
@@ -472,7 +485,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             max_steps=max(task_schedule_slice.keys()),
             new_random_task_on_reset=self.stationary_context,
         )
-    
+
     def create_test_wrappers(self):
         if self._using_custom_envs_foreach_task:
             # TODO: Maybe do something different here, since we don't actually want to
@@ -503,7 +516,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             max_steps=self.test_max_steps,
             new_random_task_on_reset=self.stationary_context,
         )
-    
+
     def _check_all_envs_have_same_spaces(
         self,
         envs_or_env_functions: List[Union[str, gym.Env, Callable[[], gym.Env]]],
@@ -559,7 +572,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 )
             task_schedule = None
 
-
         wrappers = super()._make_wrappers(
             base_env=base_env,
             task_schedule=task_schedule,
@@ -606,7 +618,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # TODO: Maybe add another field for 'force_state_observations' ?
             # if self.force_pixel_observations:
             pass
-        
+
         return wrappers
 
 

@@ -19,6 +19,7 @@ from sequoia.conftest import (
     MUJOCO_INSTALLED,
     DummyEnvironment,
     mujoco_required,
+    monsterkong_required,
     param_requires_atari_py,
     param_requires_monsterkong,
     param_requires_mujoco,
@@ -223,7 +224,7 @@ class TestContinualRLSetting:
                 setting: DiscreteTaskAgnosticRLSetting
                 train_tasks = setting.nb_tasks
                 unique_attribute_values = set(train_values)
-                assert len(unique_attribute_values) == train_tasks, (attribute, unique_attribute_values)
+                assert len(unique_attribute_values) == train_tasks, (attribute, unique_attribute_values, setting.train_task_schedule)
 
     def validate_results(
         self,

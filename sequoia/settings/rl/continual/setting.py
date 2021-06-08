@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Sequence, Type, Union
+import difflib
 
 import gym
 import numpy as np
@@ -74,9 +75,8 @@ from .objects import (
     RewardType,
 )
 from .results import ContinualRLResults
-from .tasks import ContinuousTask, TaskSchedule, is_supported, make_continuous_task
+from .tasks import ContinuousTask, TaskSchedule, is_supported, make_continuous_task, names_match
 from .test_environment import ContinualRLTestEnvironment
-
 logger = get_logger(__file__)
 
 
@@ -271,15 +271,13 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         super().__post_init__()
 
         if (
-            self.dataset not in self.available_datasets
-            and self.dataset not in self.available_datasets.values()
+            self.dataset not in self.available_datasets.values()
         ):
             self.dataset = find_matching_dataset(self.available_datasets, self.dataset)
 
         if (
             self.dataset not in self.available_datasets
             and self.dataset not in self.available_datasets.values()
-            and not is_supported(self.dataset)
             and not self.train_task_schedule
         ):
             raise gym.error.UnregisteredEnv(
@@ -1181,6 +1179,7 @@ if __name__ == "__main__":
     ContinualRLSetting.main()
 
 
+
 def find_matching_dataset(
     available_datasets: Dict[str, Union[str, Any]], dataset: str
 ) -> Union[str, Any]:
@@ -1191,15 +1190,9 @@ def find_matching_dataset(
     if dataset in available_datasets:
         return available_datasets[dataset]
 
-    def names_match(name_a: str, name_b: str) -> bool:
-        a_variants = (name_a, name_a.lower(), camel_case(name_a))
-        b_variants = (name_b, name_b.lower(), camel_case(name_b))
-        # TODO: Not sure about this 'endswith' stuff, e.g. with MountainCarContinuous vs MountainCar?
-        return (
-            name_a in b_variants or name_b in a_variants
-        )  # or name_a.endswith(b_variants) or name_b.endswith(a_variants)
 
     if isinstance(dataset, str):
+        
         chosen_env_name, _, chosen_version = dataset.partition("-v")
         for key, env_id in available_datasets.items():
             if dataset == key:
@@ -1232,6 +1225,17 @@ def find_matching_dataset(
                 }
                 return max(datasets_with_that_name, key=versions.get)
 
+        closest_matches = difflib.get_close_matches(dataset, available_datasets)
+        if closest_matches:
+            warnings.warn(
+                RuntimeWarning(
+                    f"Can't find matching entry for chosen dataset {dataset}, using "
+                    f"closest match: {closest_matches[0]}"
+                )
+            )
+            return available_datasets[closest_matches[0]]
+        assert False, (dataset, closest_matches)
+        
     warnings.warn(
         RuntimeWarning(f"Can't find matching entry for chosen dataset {dataset}")
     )

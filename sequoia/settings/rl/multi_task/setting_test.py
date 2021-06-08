@@ -7,9 +7,9 @@ from sequoia.settings import Setting
 from ..task_incremental.setting_test import (
     TestTaskIncrementalRLSetting as TaskIncrementalRLSettingTests,
 )
-from ..task_incremental.setting_test import make_dataset_fixture, DummyMethod
+from ..task_incremental.setting_test import make_dataset_fixture
 from .setting import MultiTaskRLSetting
-
+from sequoia.settings.rl.setting_test import DummyMethod
 
 class TestMultiTaskRLSetting(TaskIncrementalRLSettingTests):
     Setting: ClassVar[Type[Setting]] = MultiTaskRLSetting
@@ -25,11 +25,5 @@ class TestMultiTaskRLSetting(TaskIncrementalRLSettingTests):
         )
         method = DummyMethod()
         _ = setting.apply(method)
-        # 5 after learning task 0
-        # 5 after learning task 1
-        # 5 after learning task 2
-        # 5 after learning task 3
-        # 5 after learning task 4
-        # == 30 task switches in total.
-        assert method.n_task_switches == 0
         assert setting.task_labels_at_test_time
+        assert False, method.observation_task_labels

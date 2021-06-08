@@ -50,7 +50,7 @@ class TraditionalSLSetting(MultiTaskSLSetting):
     # this were to be left 'floating'.
     nb_tasks: int = constant(1)
 
-    increment: Union[int, List[int]] = constant(None)
+    # increment: Union[int, List[int]] = constant(None)
     # A different task size applied only for the first task.
     # Desactivated if `increment` is a list.
     initial_increment: int = constant(None)

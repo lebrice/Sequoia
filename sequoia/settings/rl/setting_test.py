@@ -26,12 +26,14 @@ class DummyMethod(RandomBaselineMethod):
         self.all_train_values = []
         self.all_valid_values = []
         self.observation_task_labels: List[Any] = []
+        self.n_fit_calls = 0
 
     def configure(self, setting):
         super().configure(setting)
         self.all_train_values.clear()
         self.all_valid_values.clear()
         self.observation_task_labels.clear()
+        self.n_fit_calls = 0
 
     def fit(
         self, train_env: Environment, valid_env: Environment,
@@ -77,6 +79,7 @@ class DummyMethod(RandomBaselineMethod):
             self.all_train_values.append(self.train_env.values)
         if hasattr(self.valid_env, "values"):
             self.all_valid_values.append(self.valid_env.values)
+        self.n_fit_calls += 1
 
 
 class CheckAttributesWrapper(IterableWrapper):

@@ -27,6 +27,7 @@ from .tasks import DiscreteTask, TaskSchedule, is_supported, make_discrete_task
 from .tasks import registry, EnvSpec
 from .test_environment import DiscreteTaskAgnosticRLTestEnvironment, TestEnvironment
 
+from sequoia.settings.rl.envs import MONSTERKONG_INSTALLED
 logger = get_logger(__file__)
 
 supported_envs: Dict[str, EnvSpec] = dict_union(
@@ -56,9 +57,7 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
     _task_sampling_function: ClassVar[Callable[..., DiscreteTask]] = make_discrete_task
 
     # Class variable that holds the dict of available environments.
-    available_datasets: ClassVar[Dict[str, Union[str, Any]]] = dict_union(
-        available_datasets, {"monsterkong": "MetaMonsterKong-v0"},
-    )
+    available_datasets: ClassVar[Dict[str, Union[str, Any]]] = available_datasets
 
     # Which environment (a.k.a. "dataset") to learn on.
     # The dataset could be either a string (env id or a key from the

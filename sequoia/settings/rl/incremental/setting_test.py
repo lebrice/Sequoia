@@ -37,7 +37,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
     Setting: ClassVar[Type[Setting]] = IncrementalRLSetting
     dataset: pytest.fixture = make_dataset_fixture(IncrementalRLSetting)
 
-    @pytest.fixture(params=[1, 2, 3])
+    @pytest.fixture(params=[1, 2])
     def nb_tasks(self, request):
         n = request.param
         return n
@@ -46,7 +46,9 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
     def setting_kwargs(self, dataset: str, nb_tasks: int):
         """ Fixture used to pass keyword arguments when creating a Setting. """
         kwargs = {"dataset": dataset, "nb_tasks": nb_tasks, "max_episode_steps": 100}
-        if dataset.lower().startswith(("walker2d", "hopper", "halfcheetah", "continual")):
+        if dataset.lower().startswith(
+            ("walker2d", "hopper", "halfcheetah", "continual")
+        ):
             # kwargs["train_max_steps"] = 5_000
             # kwargs["max_episode_steps"] = 100
             pass
@@ -63,7 +65,9 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         assert len(results.task_sequence_results) == setting.nb_tasks
         for task_sequence_result in results.task_sequence_results:
             super().validate_results(setting, method, task_sequence_result)
-        assert results.average_final_performance == sum(results.task_sequence_results[-1].average_metrics_per_task)
+        assert results.average_final_performance == sum(
+            results.task_sequence_results[-1].average_metrics_per_task
+        )
 
     def test_on_task_switch_is_called(self):
         setting = self.Setting(
@@ -84,7 +88,13 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         # 5 after learning task 3
         # 5 after learning task 4
         # == 30 task switches in total.
-        assert method.n_task_switches == 30
+        assert (
+            method.n_task_switches == 30
+            if not setting.stationary_context
+            else 5
+            if setting.known_task_boundaries_at_test_time
+            else 0
+        )
         if setting.task_labels_at_test_time:
             assert method.received_task_ids == [
                 0,
@@ -98,6 +108,8 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
                 4,
                 *list(range(5)),
             ]
+        elif setting.stationary_context:
+            assert method.received_task_ids == [None for _ in range(5)]
         else:
             assert method.received_task_ids == [
                 0,
@@ -111,18 +123,23 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
                 4,
                 *[None for _ in range(5)],
             ]
-        assert method.received_while_training == [
-            True,
-            *[False for _ in range(5)],
-            True,
-            *[False for _ in range(5)],
-            True,
-            *[False for _ in range(5)],
-            True,
-            *[False for _ in range(5)],
-            True,
-            *[False for _ in range(5)],
-        ]
+        assert (
+            method.received_while_training
+            == [
+                True,
+                *[False for _ in range(5)],
+                True,
+                *[False for _ in range(5)],
+                True,
+                *[False for _ in range(5)],
+                True,
+                *[False for _ in range(5)],
+                True,
+                *[False for _ in range(5)],
+            ]
+            if not setting.stationary_context
+            else [False for _ in range(5)]
+        )
 
     def test_number_of_tasks(self):
         setting = self.Setting(
@@ -195,18 +212,20 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         if state:
             # State-based monsterkong: We observe a flattened version of the game state
             # (20 x 20 grid + player cell and goal cell, IIRC.)
-            assert setting.observation_space.x == spaces.Box(0, 292, (402,), np.int16)
+            assert setting.observation_space.x == spaces.Box(0, 292, (402,), np.int16), setting._temp_train_env.observation_space
         else:
             assert setting.observation_space.x == Image(0, 255, (64, 64, 3), np.uint8)
 
         if setting.task_labels_at_test_time:
             assert setting.observation_space.task_labels == spaces.Discrete(5)
         else:
+            assert setting.task_labels_at_train_time
             assert setting.observation_space.task_labels == Sparse(
-                spaces.Discrete(5), sparsity=0.0
+                spaces.Discrete(5),
+                sparsity=0.5,  # 0.5 since we have task labels at train time.
             )
 
-        assert setting.test_steps == 500
+        assert setting.test_max_steps == 500
         with setting.train_dataloader() as env:
             obs = env.reset()
             assert obs in setting.observation_space
@@ -214,7 +233,13 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         method = DummyMethod()
         _ = setting.apply(method)
 
-        assert method.n_task_switches == 30
+        assert (
+            method.n_task_switches == 30
+            if not setting.stationary_context
+            else 5
+            if setting.known_task_boundaries_at_test_time
+            else 0
+        )
         if setting.task_labels_at_test_time:
             assert method.received_task_ids == [
                 0,
@@ -228,6 +253,8 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
                 4,
                 *list(range(5)),
             ]
+        elif setting.stationary_context:
+            assert method.received_task_ids == [None for _ in range(setting.nb_tasks)]
         else:
             assert method.received_task_ids == [
                 0,
@@ -241,18 +268,23 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
                 4,
                 *[None for _ in range(5)],
             ]
-        assert method.received_while_training == [
-            True,
-            *[False for _ in range(5)],
-            True,
-            *[False for _ in range(5)],
-            True,
-            *[False for _ in range(5)],
-            True,
-            *[False for _ in range(5)],
-            True,
-            *[False for _ in range(5)],
-        ]
+        assert (
+            method.received_while_training
+            == [
+                True,
+                *[False for _ in range(5)],
+                True,
+                *[False for _ in range(5)],
+                True,
+                *[False for _ in range(5)],
+                True,
+                *[False for _ in range(5)],
+                True,
+                *[False for _ in range(5)],
+            ]
+            if not setting.stationary_context
+            else [False for _ in range(5)]
+        )
 
 
 @pytest.mark.timeout(120)

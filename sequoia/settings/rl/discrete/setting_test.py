@@ -1,7 +1,7 @@
 import itertools
 from dataclasses import fields
 from typing import Any, ClassVar, Dict, Optional, Type
-
+import gym
 import pytest
 from sequoia.settings import Setting
 from sequoia.methods import Method
@@ -9,8 +9,11 @@ from sequoia.settings.assumptions.incremental_test import DummyMethod as _DummyM
 from sequoia.settings.rl.envs import (
     ATARI_PY_INSTALLED,
     MONSTERKONG_INSTALLED,
+    MetaMonsterKongEnv,
     MUJOCO_INSTALLED,
 )
+
+from sequoia.conftest import monsterkong_required
 
 from ..continual.setting_test import TestContinualRLSetting as ContinualRLSettingTests
 from ..continual.setting_test import make_dataset_fixture
@@ -21,7 +24,7 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
     Setting: ClassVar[Type[Setting]] = DiscreteTaskAgnosticRLSetting
     dataset: pytest.fixture = make_dataset_fixture(DiscreteTaskAgnosticRLSetting)
 
-    @pytest.fixture(params=[1, 2, 3])
+    @pytest.fixture(params=[1, 2])
     def nb_tasks(self, request):
         n = request.param
         return n
@@ -162,3 +165,37 @@ def test_fit_and_on_task_switch_calls():
     assert method.n_fit_calls == 1
     assert not method.received_task_ids
     assert not method.received_while_training
+
+
+@monsterkong_required
+@pytest.mark.parametrize(
+    "dataset, expected_env_type",
+    [
+        ("MetaMonsterKong-v0", MetaMonsterKongEnv),
+        ("monsterkong", MetaMonsterKongEnv),
+        ("PixelMetaMonsterKong-v0", MetaMonsterKongEnv),
+        ("monster_kong", MetaMonsterKongEnv),
+        ("monster_kong", MetaMonsterKongEnv),
+        # ("halfcheetah", ContinualHalfCheetahEnv),
+        # ("HalfCheetah-v2", ContinualHalfCheetahV2Env),
+        # ("HalfCheetah-v3", ContinualHalfCheetahV3Env),
+        # ("ContinualHalfCheetah-v2", ContinualHalfCheetahV2Env),
+        # ("ContinualHalfCheetah-v3", ContinualHalfCheetahV3Env),
+        # ("ContinualHopper-v2", ContinualHopperEnv),
+        # ("hopper", ContinualHopperEnv),
+        # ("Hopper-v2", ContinualHopperEnv),
+        # ("walker2d", ContinualWalker2dV3Env),
+        # ("Walker2d-v2", ContinualWalker2dV2Env),
+        # ("Walker2d-v3", ContinualWalker2dV3Env),
+        # ("ContinualWalker2d-v2", ContinualWalker2dV2Env),
+        # ("ContinualWalker2d-v3", ContinualWalker2dV3Env),
+    ],
+)
+def test_monsterkong_env_name_maps_to_continual_variant(
+    dataset: str, expected_env_type: Type[gym.Env]
+):
+    setting = DiscreteTaskAgnosticRLSetting(
+        dataset=dataset, train_max_steps=10_000, test_max_steps=10_000
+    )
+    train_env = setting.train_dataloader()
+    assert isinstance(train_env.unwrapped, expected_env_type)

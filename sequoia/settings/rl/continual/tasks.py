@@ -8,6 +8,7 @@ TODO: Add more envs:
 
 from gym.envs.box2d import BipedalWalker, BipedalWalkerHardcore
 """
+import difflib
 import warnings
 from functools import singledispatch, partial
 from typing import Any, Dict, List, Type, Union, Callable, TypeVar
@@ -16,6 +17,7 @@ import inspect
 import gym
 from sequoia.common.gym_wrappers.multi_task_environment import make_env_attributes_task
 from sequoia.settings.rl.envs import MUJOCO_INSTALLED, EnvVariantSpec, sequoia_registry
+from sequoia.utils.utils import camel_case
 from gym.envs.registration import load, EnvRegistry, EnvSpec, registry, spec
 import numpy as np
 from gym.envs.classic_control import (
@@ -45,6 +47,15 @@ class EnvironmentNotSupportedError(gym.error.UnregisteredEnv):
     """
 
 
+def names_match(name_a: str, name_b: str) -> bool:
+    a_variants = (name_a, name_a.lower(), camel_case(name_a))
+    b_variants = (name_b, name_b.lower(), camel_case(name_b))
+    # TODO: Not sure about this 'endswith' stuff, e.g. with MountainCarContinuous vs MountainCar?
+    return (
+        name_a in b_variants or name_b in a_variants
+    )  # or name_a.endswith(b_variants) or name_b.endswith(a_variants)
+
+
 def _is_supported(
     env_id: str,
     _make_task_function: Callable[..., ContinuousTask],
@@ -61,10 +72,10 @@ def _is_supported(
         """ Returns wether the "make task" function has a registered handler for the
         given envs.
         """
-        return some_env_type in _make_task_function.registry or _make_task_function.dispatch(
-            some_env_type
-        ) is not _make_task_function.dispatch(
-            object
+        return some_env_type in _make_task_function.registry or (
+            not inspect.isfunction(some_env_type)
+            and _make_task_function.dispatch(some_env_type)
+            is not _make_task_function.dispatch(object)
         )
 
     if isinstance(env_id, str):
@@ -76,42 +87,85 @@ def _is_supported(
 
     elif inspect.isclass(env_id) and issubclass(env_id, gym.Env):
         env_type = env_id
-        return _has_handler(env_type)
-    elif inspect.isfunction(env_id):
-        return False
-    else:
-        raise NotImplementedError(env_id)
-
-    if isinstance(env_spec, EnvVariantSpec):
-        # TODO: Test this out.
-        if inspect.isclass(env_spec.entry_point):
-            return _has_handler(env_spec.entry_point)
-        return is_supported(env_spec.base_spec)
-
-        if is_supported(env_spec.base_spec):
+        if _has_handler(env_type):
             return True
+        env_id = env_type.__name__
+    else:
+        raise NotImplementedError(env_id, type(env_id))
+
+    assert isinstance(env_id, str)
+    assert isinstance(env_spec, EnvSpec)
 
     if callable(env_spec.entry_point):
-        if inspect.isfunction(env_spec.entry_point):
-            raise NotImplementedError(env_spec)
-
         if _has_handler(env_spec.entry_point):
             return True
+        class_name = env_spec.entry_point.__name__
+    else:
+        assert isinstance(env_spec.entry_point, str)
+        _module, _, class_name = env_spec.entry_point.partition(":")
 
-        return _has_handler(env_spec.entry_point)
+    registered_class_names = tuple(c.__name__ for c in _make_task_function.registry)
 
-    assert isinstance(env_spec.entry_point, str)
-    # TODO: Change this so we only mark *our* versions as supported (for mujoco envs)
-
-    class_name = env_spec.entry_point.rsplit(":")[-1]
-    if class_name in [c.__name__ for c in _make_task_function.registry]:
+    if class_name in registered_class_names:
         return True
-
-    entry_point = load(env_spec.entry_point)
-    if inspect.isfunction(entry_point):
+    elif class_name.startswith(registered_class_names):
+        return True
+    
+    close_matches = difflib.get_close_matches(class_name, registered_class_names)
+    if not close_matches:
         return False
+    return False
 
-    return _has_handler(entry_point)
+    # elif any(
+    #     names_match(class_name, registered_class_name)
+    #     for registered_class_name in registered_class_names
+    # ):
+    #     return True
+
+    # if env_id == "MetaMonsterKong-v0":
+    #     assert False, (env_id, env_spec, [n for n in registered_class_names)
+
+    # if isinstance(env_spec, EnvVariantSpec):
+    #     # TODO: Test this out.
+    #     if inspect.isclass(env_spec.entry_point):
+    #         if _has_handler(env_spec.entry_point):
+    #             return True
+    #     if is_supported(env_spec.base_spec):
+    #         return True
+    #     # return is_supported(env_spec.base_spec)
+
+    # if callable(env_spec.entry_point):
+    #     if inspect.isfunction(env_spec.entry_point):
+    #         raise NotImplementedError(env_spec)
+
+    #     if _has_handler(env_spec.entry_point):
+    #         return True
+
+    #     if _has_handler(env_spec.entry_point):
+    #         return True
+    #     class_name = env_spec.entry_point.__name__
+    # else:
+    #     class_name = env_spec.entry_point.rsplit(":")[-1]
+
+    # registered_class_names = tuple(c.__name__ for c in _make_task_function.registry)
+    # if class_name in registered_class_names:
+    #     return True
+    # elif class_name.startswith(registered_class_names):
+    #     return True
+    # elif any(
+    #     names_match(registered_class_name, class_name)
+    #     for registered_class_name in registered_class_names
+    # ):
+    #     return True
+
+    # assert isinstance(env_spec.entry_point, str)
+    # # TODO: Change this so we only mark *our* versions as supported (for mujoco envs)
+
+    # entry_point = load(env_spec.entry_point)
+    # if inspect.isfunction(entry_point):
+    #     return False
+
+    # return _has_handler(entry_point)
 
     # # return _has_handler(env_id)
 
