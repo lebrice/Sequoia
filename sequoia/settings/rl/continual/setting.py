@@ -1,15 +1,15 @@
 """ Current most general Setting in the Reinforcement Learning side of the tree.
 """
+import difflib
 import itertools
 import json
 import math
 import warnings
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Sequence, Type, Union
-import difflib
 
 import gym
 import numpy as np
@@ -19,6 +19,10 @@ from gym.envs.classic_control import CartPoleEnv, MountainCarEnv, PendulumEnv
 from gym.envs.registration import EnvRegistry, EnvSpec, load, registry, spec
 from gym.utils import colorize
 from gym.wrappers import TimeLimit
+from simple_parsing import choice, field, list_field
+from simple_parsing.helpers import dict_field
+from stable_baselines3.common.atari_wrappers import AtariWrapper
+
 from sequoia.common import Config
 from sequoia.common.gym_wrappers import (
     AddDoneToObservation,
@@ -27,6 +31,7 @@ from sequoia.common.gym_wrappers import (
     SmoothTransitions,
     TransformObservation,
 )
+from sequoia.utils.utils import pairwise, deprecated_property
 from sequoia.common.gym_wrappers.action_limit import ActionLimit
 from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
@@ -51,7 +56,7 @@ from sequoia.settings.assumptions.continual import (
     ContinualResults,
     TestEnvironment,
 )
-from sequoia.settings.base import Method
+from sequoia.settings.base import Method, Results
 from sequoia.settings.rl import ActiveEnvironment, RLSetting
 from sequoia.settings.rl.wrappers import (
     HideTaskLabelsWrapper,
@@ -60,9 +65,7 @@ from sequoia.settings.rl.wrappers import (
 )
 from sequoia.utils import get_logger
 from sequoia.utils.utils import camel_case, flag
-from simple_parsing import choice, field, list_field
-from simple_parsing.helpers import dict_field
-from stable_baselines3.common.atari_wrappers import AtariWrapper
+
 
 from .environment import GymDataLoader
 from .make_env import make_batched_env
@@ -75,8 +78,15 @@ from .objects import (
     RewardType,
 )
 from .results import ContinualRLResults
-from .tasks import ContinuousTask, TaskSchedule, is_supported, make_continuous_task, names_match
+from .tasks import (
+    ContinuousTask,
+    TaskSchedule,
+    is_supported,
+    make_continuous_task,
+    names_match,
+)
 from .test_environment import ContinualRLTestEnvironment
+
 logger = get_logger(__file__)
 
 
@@ -134,6 +144,15 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     # available_datasets dict), a gym.Env, or a callable that returns a
     # single environment.
     dataset: str = choice(available_datasets, default="CartPole-v0")
+
+    # The number of "tasks" that will be created for the training, valid and test
+    # environments.
+    # NOTE: In the case of settings with smooth task boundaries, this is the number of
+    # "base" tasks which are created, and the task space consists of interpolations
+    # between these base tasks.
+    # When left unset, will use a default value that makes sense
+    # (something like 5).
+    nb_tasks: int = field(5, alias=["n_tasks", "num_tasks"])
 
     # Environment/dataset to use for validation. Defaults to the same as `dataset`.
     train_dataset: Optional[str] = None
@@ -262,17 +281,34 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     batch_size: Optional[int] = field(default=None, cmd=False)
     num_workers: Optional[int] = field(default=None, cmd=False)
 
-    # # Deprecated: use `train_max_steps` instead.
-    # max_steps: Optional[int] = field(default=None, cmd=False)
-    # # Deprecated: use `train_max_steps` instead.
-    # test_steps: Optional[int] = field(default=None, cmd=False)
+    # Deprecated: use `train_max_steps` instead.
+    # max_steps: Optional[int] = field(default=None, to_dict=False, cmd=False)
+    # Deprecated: use `train_max_steps` instead.
+    test_steps: Optional[int] = field(default=None, to_dict=False, cmd=False)
+    steps_per_task: Optional[int] = field(default=None, to_dict=False, cmd=False)
+    # max_steps = property(lambda self: )
+
+    # Deprecated: use `train_max_steps` instead.
+    max_steps: Optional[int] = deprecated_property("max_steps", "train_max_steps") 
+    # Deprecated: use `train_max_steps` instead.
+    test_steps: Optional[int] = deprecated_property("test_steps", "test_max_steps")
+    # steps_per_task: Optional[int] = field(default=None, to_dict=False, cmd=False)
 
     def __post_init__(self):
+        renamed_fields = {
+            "max_steps": "train_max_steps",
+            "test_steps": "test_max_steps",
+            "steps_per_task": ""
+        }
+        if self.max_steps is not None:
+            warnings.warn(DeprecationWarning("'max_steps' is deprecated, use 'train_max_steps' instead."))
+            self.train_max_steps = self.max_steps
+        if self.test_steps is not None:
+            warnings.warn(DeprecationWarning("'test_steps' is deprecated, use 'test_max_steps' instead."))
+
         super().__post_init__()
 
-        if (
-            self.dataset not in self.available_datasets.values()
-        ):
+        if self.dataset not in self.available_datasets.values():
             self.dataset = find_matching_dataset(self.available_datasets, self.dataset)
 
         if (
@@ -308,6 +344,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             self.train_task_schedule = _load_task_schedule(
                 self.train_task_schedule_path
             )
+            self.nb_tasks = len(self.train_task_schedule) - 1
         if self.val_task_schedule_path:
             self.val_task_schedule = _load_task_schedule(self.val_task_schedule_path)
         if self.test_task_schedule_path:
@@ -320,11 +357,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # Temporary environments which are created and used only for creating the task
         # schedules and the 'base' observation spaces, and then closed right after.
         self._temp_train_env: Optional[gym.Env] = self._make_env(self.train_dataset)
-        # if self.force_pixel_observations:
-        #     self._temp_train_env = observe_pixels(self._temp_train_env)
-        # elif self.force_state_observations:
-        #     self._temp_train_env = observe_state(self._temp_train_env)
-
         self._temp_val_env: Optional[gym.Env] = None
         self._temp_test_env: Optional[gym.Env] = None
         # Create the task schedules, using the 'task sampling' function from `tasks.py`.
@@ -344,6 +376,9 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                         )
                     }
                 )
+            nb_tasks = len(self.train_task_schedule) - 1
+            logger.info(f"Setting the number of tasks to {nb_tasks} based on the task schedule.")
+            self.nb_tasks = nb_tasks
             # self.train_max_steps = max(self.train_task_schedule)
 
         if not self.val_task_schedule:
@@ -385,15 +420,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 )
             # self.test_max_steps = max(self.test_task_schedule)
 
-        # self._observation_space = self._temp_train_env.observation_space
-        # self._action_space = self._temp_train_env.action_space
-        # reward_range = self._temp_train_env.reward_range
-        # self._reward_space = getattr(
-        #     self._temp_train_env,
-        #     "reward_space",
-        #     spaces.Box(reward_range[0], reward_range[1], shape=()),
-        # )
-
         if self._temp_train_env:
             self._temp_train_env.close()
         if self._temp_val_env and self._temp_val_env is not self._temp_train_env:
@@ -401,11 +427,132 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         if self._temp_test_env and self._temp_test_env is not self._temp_train_env:
             self._temp_test_env.close()
 
+        defaults = {f.name: f.default for f in fields(self)}
+        train_task_lengths: List[int] = [
+            task_b_step - task_a_step
+            for task_a_step, task_b_step in pairwise(
+                sorted(self.train_task_schedule.keys())
+            )
+        ]
+        # TODO: This will crash if nb_tasks is 1, right?
+        # train_max_steps = train_last_boundary + train_task_lengths[-1]
+        test_task_lengths: List[int] = [
+            task_b_step - task_a_step
+            for task_a_step, task_b_step in pairwise(
+                sorted(self.test_task_schedule.keys())
+            )
+        ]
+        if 0 not in self.train_task_schedule.keys():
+            raise RuntimeError(
+                "`train_task_schedule` needs an entry at key 0, as the initial state"
+            )
+        if 0 not in self.test_task_schedule.keys():
+            raise RuntimeError(
+                "`test_task_schedule` needs an entry at key 0, as the initial state"
+            )
+        if self.train_max_steps != max(self.train_task_schedule):
+            if self.train_max_steps == defaults["train_max_steps"]:
+                self.train_max_steps = max(self.train_task_schedule)
+                logger.info(f"Setting `train_max_steps` to {self.train_max_steps}")
+            else:
+                raise RuntimeError(
+                    f"For now, the train task schedule needs to have a value at key "
+                    f"`train_max_steps` ({self.train_max_steps})."
+                )
+        if self.test_max_steps != max(self.test_task_schedule):
+            if self.test_max_steps == defaults["test_max_steps"]:
+                logger.info(f"Setting `test_max_steps` to {self.train_max_steps}")
+                self.test_max_steps = max(self.test_task_schedule)
+            raise RuntimeError(
+                f"For now, the test task schedule needs to have a value at key "
+                f"`test_max_steps` ({self.test_max_steps}). "
+            )
+        if not (
+            len(self.train_task_schedule)
+            == len(self.test_task_schedule)
+            == len(self.val_task_schedule)
+        ):
+            raise RuntimeError(
+                "Training, validation and testing task schedules should have the same "
+                "number of items for now."
+            )
+
+        # Expected value for self.nb_tasks
+        nb_tasks = len(self.train_task_schedule) - 1
+        # if self.nb_tasks != nb_tasks:
+        #     raise RuntimeError(
+        #         f"Expected `nb_tasks` to be {nb_tasks}, since there are "
+        #         f"{len(train_task_schedule)} tasks in the task schedule, but got value "
+        #         f"of {self.nb_tasks} instead!"
+        #     )
+
+        train_last_boundary = max(
+            set(self.train_task_schedule.keys()) - {self.train_max_steps}
+        )
+        test_last_boundary = max(
+            set(self.test_task_schedule.keys()) - {self.test_max_steps}
+        )
+        if self.nb_tasks != nb_tasks:
+            if self.nb_tasks == defaults["nb_tasks"]:
+                assert len(self.train_task_schedule) == len(self.test_task_schedule)
+                self.nb_tasks = len(self.train_task_schedule) - 1
+                logger.info(
+                    f"`nb_tasks` set to {self.nb_tasks} based on the task schedule"
+                )
+            else:
+                raise RuntimeError(
+                    f"The passed number of tasks ({self.nb_tasks}) is inconsistent "
+                    f"with the passed task schedules, which have {nb_tasks} tasks."
+                )
+
+        if not train_task_lengths:
+            assert not test_task_lengths
+            assert nb_tasks == 1
+            assert self.train_max_steps > 0
+            assert self.test_max_steps > 0
+            train_max_steps = self.train_max_steps
+            test_max_steps = self.test_max_steps
+        else:
+            train_max_steps = sum(train_task_lengths)
+            test_max_steps = sum(test_task_lengths)
+            # train_max_steps = round(train_last_boundary + train_task_lengths[-1])
+            # test_max_steps = round(test_last_boundary + test_task_lengths[-1])
+
+        if self.train_max_steps != train_max_steps:
+            if self.train_max_steps == defaults["train_max_steps"]:
+                self.train_max_steps = train_max_steps
+            else:
+                raise RuntimeError(
+                    f"Value of train_max_steps ({self.train_max_steps}) is "
+                    f"inconsistent with the given train task schedule, which has "
+                    f"the last task boundary at step {train_last_boundary}, with "
+                    f"task lengths of {train_task_lengths}, as it suggests the maximum "
+                    f"total number of steps to be {train_last_boundary} + "
+                    f"{train_task_lengths[-1]} => {train_max_steps}!"
+                )
+        if self.test_max_steps != test_max_steps:
+            if self.test_max_steps == defaults["test_max_steps"]:
+                self.test_max_steps = test_max_steps
+            else:
+                raise RuntimeError(
+                    f"Value of test_max_steps ({self.test_max_steps}) is "
+                    f"inconsistent with the given tet task schedule, which has "
+                    f"the last task boundary at step {test_last_boundary}, with "
+                    f"task lengths of {test_task_lengths}, as it suggests the maximum "
+                    f"total number of steps to be {test_last_boundary} + "
+                    f"{test_task_lengths[-1]} => {test_max_steps}!"
+                )
+
     def create_train_task_schedule(self) -> TaskSchedule:
-        change_steps = [0, self.train_max_steps]
+        # change_steps = [0, self.train_max_steps]
+        # Ex: nb_tasks == 5, train_max_steps = 10_000:
+        # change_steps = [0, 2_000, 4_000, 6_000, 8_000, 10_000]
+        task_schedule_keys = np.linspace(
+            0, self.train_max_steps, self.nb_tasks + 1, endpoint=True, dtype=int
+        ).tolist()
         return self.create_task_schedule(
             temp_env=self._temp_train_env,
-            change_steps=change_steps
+            change_steps=task_schedule_keys,
             # # TODO: Add properties for the train/valid/test seeds?
             # seed=self.train_seed,
         )
@@ -413,18 +560,20 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     def create_val_task_schedule(self) -> TaskSchedule:
         # Always the same as train task schedule for now.
         return self.train_task_schedule.copy()
-        # return self.create_task_schedule(
-        #     temp_env=self._temp_val_env, change_steps=change_steps
-        # )
 
-    def create_test_task_schedule(self) -> TaskSchedule:
-        n_boundaries = len(self.train_task_schedule)
+    def create_test_task_schedule(self) -> TaskSchedule[ContinuousTask]:
         # Re-scale the steps in the task schedule based on self.test_max_steps
         # NOTE: Using the same task schedule as in training and validation for now.
-        test_boundaries = np.linspace(0, self.test_max_steps, n_boundaries)
+        if self.train_task_schedule:
+            nb_tasks = len(self.train_task_schedule) - 1
+        else:
+            nb_tasks = self.nb_tasks
+        test_task_schedule_keys = np.linspace(
+            0, self.test_max_steps, nb_tasks + 1, endpoint=True, dtype=int
+        ).tolist()
         return {
             step: task
-            for step, task in zip(test_boundaries, self.train_task_schedule.values())
+            for step, task in zip(test_task_schedule_keys, self.train_task_schedule.values())
         }
 
     def create_task_schedule(
@@ -1105,24 +1254,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
         return wrappers
 
-    def _setup_config(self, method: Method) -> Config:
-        config: Config
-        if isinstance(getattr(method, "config", None), Config):
-            config = method.config
-            logger.debug(f"Using Config from the Method: {self.config}")
-        else:
-            argv = self._argv
-            if argv:
-                logger.debug(
-                    f"Parsing the Config from the command-line arguments ({argv})"
-                )
-            else:
-                logger.debug(
-                    f"Parsing the config from the current command-line arguments."
-                )
-            config = Config.from_args(argv, strict=False)
-        return config
-
     def _get_objective_scaling_factor(self) -> float:
         """ Return the factor to be multiplied with the mean reward per episode
         in order to produce a 'performance score' between 0 and 1.
@@ -1179,64 +1310,81 @@ if __name__ == "__main__":
     ContinualRLSetting.main()
 
 
-
 def find_matching_dataset(
     available_datasets: Dict[str, Union[str, Any]], dataset: str
-) -> Union[str, Any]:
+) -> Optional[Union[str, Any]]:
     """ Compares `dataset` with the keys in the `available_datasets` dict and return the
-    value of the matching key if found, else raises a warning and returns the dataset
-    unchanged. 
+    value of the matching key if found, else returns None.
     """
     if dataset in available_datasets:
         return available_datasets[dataset]
 
+    if not isinstance(dataset, str):
+        raise NotImplementedError(dataset)
 
-    if isinstance(dataset, str):
-        
-        chosen_env_name, _, chosen_version = dataset.partition("-v")
-        for key, env_id in available_datasets.items():
-            if dataset == key:
-                assert False, "this should be reached, since we do that check above"
+    chosen_env_name, _, chosen_version = dataset.partition("-v")
+    for key, env_id in available_datasets.items():
+        if dataset == key:
+            assert False, "this should be reached, since we do that check above"
 
-            env_name, _, env_version = key.partition("-v")
-            if chosen_version:
-                # chosen: half_cheetah
-                # key: HalfCheetah-v2
-                # HalfCheetah-v2
-                # halfcheetah-v2
-                # half_cheetah_v2
-                if chosen_version != env_version:
-                    continue
-                if names_match(chosen_env_name, env_name):
-                    return env_id
-            elif names_match(chosen_env_name, env_name):
-                # Look for matching entries with that name, and select the highest
-                # available version.
-                datasets_with_that_name = {
-                    other_key: other_env_id
-                    for other_key, other_env_id in available_datasets.items()
-                    if names_match(chosen_env_name, other_key.partition("-v")[0])
-                }
-                if len(datasets_with_that_name) == 1:
-                    return env_id
-                versions = {
-                    other_key: int(other_key.partition("-v")[-1])
-                    for other_key in datasets_with_that_name
-                }
-                return max(datasets_with_that_name, key=versions.get)
+        env_name, _, env_version = key.partition("-v")
+        if chosen_version:
+            # chosen: half_cheetah
+            # key: HalfCheetah-v2
+            # HalfCheetah-v2
+            # halfcheetah-v2
+            # half_cheetah_v2
+            if chosen_version != env_version:
+                continue
+            if names_match(chosen_env_name, env_name):
+                return env_id
+        elif names_match(chosen_env_name, env_name):
+            # Look for matching entries with that name, and select the highest
+            # available version.
+            datasets_with_that_name = {
+                other_key: other_env_id
+                for other_key, other_env_id in available_datasets.items()
+                if names_match(chosen_env_name, other_key.partition("-v")[0])
+            }
+            if len(datasets_with_that_name) == 1:
+                return env_id
+            versions = {
+                other_key: int(other_key.partition("-v")[-1])
+                for other_key in datasets_with_that_name
+            }
+            return max(datasets_with_that_name, key=versions.get)
 
-        closest_matches = difflib.get_close_matches(dataset, available_datasets)
-        if closest_matches:
-            warnings.warn(
-                RuntimeWarning(
-                    f"Can't find matching entry for chosen dataset {dataset}, using "
-                    f"closest match: {closest_matches[0]}"
-                )
+    closest_matches = difflib.get_close_matches(dataset, available_datasets)
+    if closest_matches:
+        closest_match_key: str = closest_matches[0]
+        closest_match: Union[str, Any] = available_datasets[closest_match_key]
+        if chosen_version:
+            # Find the 'version' number of the closest match, and check that it fits.
+            closest_match_version = closest_match_key.partition("-v")[-1]
+            if not closest_match_version:
+                assert isinstance(closest_match, str)
+                closest_match_version = closest_match.partition("-v")[-1]
+
+            if chosen_version == closest_match_version:
+                return closest_match
+
+            raise gym.error.UnregisteredEnv(
+                f"Can't find any matching entries for chosen dataset {dataset} "
+                f"with that same version (closest entries: {closest_matches}) "
             )
-            return available_datasets[closest_matches[0]]
-        assert False, (dataset, closest_matches)
-        
-    warnings.warn(
-        RuntimeWarning(f"Can't find matching entry for chosen dataset {dataset}")
+
+        warnings.warn(
+            RuntimeWarning(
+                f"Can't find matching entry for chosen dataset {dataset}, using "
+                f"closest match: {closest_match}"
+            )
+        )
+        return closest_match
+        # raise RuntimeError(f"Can't find any matching entries for chosen dataset {dataset}. "
+        #                 f"Closest entries: {closest_matches}")
+
+    raise gym.error.UnregisteredEnv(
+        f"Can't find any matching entries for chosen dataset {dataset}."
     )
-    return dataset
+        # assert False, (dataset, closest_matches)
+

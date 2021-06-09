@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class TraditionalSLSetting(TaskIncrementalAssumption):
+class TraditionalSetting(TaskIncrementalAssumption):
     """ Assumption (mixin) for Settings where the data is stationary (only one
     task).
     """

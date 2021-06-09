@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import List, Callable
 import gym
 from ..task_incremental import TaskIncrementalRLSetting
+from ..traditional import TraditionalRLSetting
 from sequoia.utils.utils import constant
 from sequoia.utils.logging_utils import get_logger
 
@@ -11,7 +12,7 @@ logger = get_logger(__file__)
 
 
 @dataclass
-class MultiTaskRLSetting(TaskIncrementalRLSetting):
+class MultiTaskRLSetting(TaskIncrementalRLSetting, TraditionalRLSetting):
     """ Reinforcement Learning setting where the environment alternates between a set
     of tasks sampled uniformly.
 

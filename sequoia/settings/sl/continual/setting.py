@@ -63,10 +63,10 @@ from .results import ContinualSLResults
 from .wrappers import relabel
 from continuum.tasks import concat
 import wandb
+
 logger = get_logger(__file__)
 
 EnvironmentType = TypeVar("EnvironmentType", bound=ContinualSLEnvironment)
-
 
 
 @dataclass
@@ -162,6 +162,8 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
     # Wether task boundaries are smooth or not.
     smooth_task_boundaries: bool = flag(True)
+    # Wether the context (task) variable is stationary or not.
+    stationary_context: bool = flag(False)
 
     def __post_init__(self):
         super().__post_init__()
@@ -231,17 +233,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         """Apply the given method on this setting to producing some results."""
         # TODO: It still isn't super clear what should be in charge of creating
         # the config, and how to create it, when it isn't passed explicitly.
-        if config is not None:
-            self.config = config
-            logger.debug(f"Using Config {self.config}")
-        elif isinstance(getattr(method, "config", None), Config):
-            # If the Method has a `config` attribute that is a Config, use that.
-            self.config = getattr(method, "config")
-            logger.debug(f"Using Config from the Method: {self.config}")
-        else:
-            logger.debug("Parsing the Config from the command-line.")
-            self.config = Config.from_args(self._argv, strict=False)
-            logger.debug(f"Resulting Config: {self.config}")
+        self.config = config or self._setup_config(method)
         assert self.config is not None
 
         method.configure(setting=self)
@@ -450,7 +442,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         if not self.has_prepared_data:
             self.prepare_data()
         super().setup(stage=stage)
-        
+
         if stage not in (None, "fit", "test"):
             raise RuntimeError(f"`stage` should be 'fit', 'test' or None.")
 
@@ -520,8 +512,12 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             return smooth_task_boundaries_concat(
                 self.val_datasets, seed=self.config.seed
             )
-        else:
-            return concat(self.val_datasets)
+        if self.stationary_context:
+            joined_dataset = concat(self.train_datasets)
+            return shuffle(joined_dataset, seed=self.config.seed)
+        if self.known_task_boundaries_at_train_time:
+            return self.val_datasets[self.current_task_id]
+        return concat(self.val_datasets)
 
     def _make_test_dataset(self) -> Dataset:
         if self.smooth_task_boundaries:
@@ -781,12 +777,24 @@ def subset(taskset: TaskSet, indices: np.ndarray) -> TaskSet:
     )
 
 
-def random_subset(taskset: TaskSet, n_samples: int, seed: int = None) -> TaskSet:
+def random_subset(
+    taskset: TaskSet, n_samples: int, seed: int = None, ordered: bool = True
+) -> TaskSet:
+    """ Returns a random (ordered by default) subset of the given TaskSet. """
     rng = np.random.default_rng(seed)
     dataset_length = len(taskset)
-    assert dataset_length >= n_samples, (
-        f"Dataset has {dataset_length}, asked for {n_samples} samples."
-    )
-    samples = rng.choice(len(taskset), size=n_samples, replace=False)
-    assert len(samples) == n_samples
-    return subset(taskset, samples)
+    if n_samples > dataset_length:
+        raise RuntimeError(
+            f"Dataset has {dataset_length}, asked for {n_samples} samples."
+        )
+    indices = rng.permutation(range(dataset_length))[:n_samples]
+    if ordered:
+        indices = sorted(indices)
+    # samples = rng.choice(len(taskset), size=n_samples, replace=False)
+    assert len(indices) == n_samples
+    return subset(taskset, indices)
+
+
+def shuffle(dataset: TaskSet, seed: int = None) -> TaskSet:
+    length = len(dataset)
+    return random_subset(dataset, seed=seed, ordered=False)

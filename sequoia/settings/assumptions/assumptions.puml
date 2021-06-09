@@ -1,8 +1,8 @@
 @startuml assumptions
 !include gym.puml
+remove gym.spaces
 
-
-package Assumptions {
+package assumptions {
     '  TODO: How to describe relationship between gym.Env and these other 
     ' assumptions about the env?
     ' abstract class Environment {
@@ -103,6 +103,111 @@ package Assumptions {
             }
         }
     }
+}
+remove assumptions
+remove gym
+package cl {
+    class ContinuousTaskAgnosticSLSetting {
+        - clear_task_boundaries: bool = False
+        ' - task_labels_at_train_time: bool = False
+        ' - task_labels_at_test_time: bool = False
+        ' - stationary_context: bool = False
+        ' - shared_action_space: bool = False
+    }
+    class DiscreteTaskAgnosticSLSetting extends ContinuousTaskAgnosticSLSetting {
+        == New assumptions ==
+
+        + clear_task_boundaries: Constant[bool] = True
+        ' + known_task_boundaries_at_train_time: bool = False
+        ' + known_task_boundaries_at_test_time: bool = False
+
+        == Inherited assumptions ==
+        ' # task_labels_at_train_time: bool = False
+        ' # task_labels_at_test_time: bool = False
+        ' # stationary_context: bool = False
+        ' # shared_action_space: bool = False
+
+    }
+    class IncrementalSLSetting extends DiscreteTaskAgnosticSLSetting{
+        == New assumptions ==
+
+        + known_task_boundaries_at_train_time: Constant[bool] = True
+        + known_task_boundaries_at_test_time: Constant[bool] = True
+
+        == Inherited assumptions ==
+
+        # clear_task_boundaries: Constant[bool] = True
+        ' # task_labels_at_train_time: bool = False
+        ' # task_labels_at_test_time: bool = False
+        ' # shared_action_space: bool = False
+        ' # stationary_context: bool = False
+        
+    }
+    class ClassIncrementalSLSetting extends IncrementalSLSetting {
+        == New assumptions ==
+        
+        + shared_action_space: Constant[bool] = False
+
+        == Inherited assumptions ==
+
+        # clear_task_boundaries: Constant[bool] = True
+        # known_task_boundaries_at_train_time: Constant[bool] = True
+        # known_task_boundaries_at_test_time: Constant[bool] = True
+        ' # task_labels_at_train_time: bool = False
+        ' # task_labels_at_test_time: bool = False
+        ' # stationary_context: bool = False
+    }
+    class DomainIncrementalSLSetting extends IncrementalSLSetting {
+        == New assumptions ==
+
+        + shared_action_space: Constant[bool] = True
+
+        == Inherited assumptions ==
+
+        # clear_task_boundaries: Constant[bool] = True
+        # known_task_boundaries_at_train_time: Constant[bool] = True
+        # known_task_boundaries_at_test_time: Constant[bool] = True
+    }
+
+    class TaskIncrementalSLSetting extends IncrementalSLSetting {
+        == New assumptions ==
+
+        + task_labels_at_train_time: Constant[bool] = True
+        + task_labels_at_test_time: Constant[bool] = True
+        
+        == Inherited assumptions ==
+
+        # clear_task_boundaries: Constant[bool] = True
+        # known_task_boundaries_at_train_time: Constant[bool] = True
+        # known_task_boundaries_at_test_time: Constant[bool] = True
+    }
+
+    class TraditionalSLSetting extends IncrementalSLSetting {
+        == New assumptions ==
+
+        + stationary_context: Constant[bool] = True
+
+        == Inherited assumptions ==
+
+        # clear_task_boundaries: Constant[bool] = True
+    }
+    
+    class MultiTaskSLSetting extends TaskIncrementalSLSetting, TraditionalSLSetting {
+        == New assumptions ==
+
+        + stationary_context: Context[bool] = True
+        
+        == Inherited assumptions ==
+
+        # task_labels_at_train_time: Constant[bool] = True
+        # task_labels_at_test_time: Constant[bool] = True
+        # clear_task_boundaries: Constant[bool] = True
+        # known_task_boundaries_at_train_time: Constant[bool] = True
+        # known_task_boundaries_at_test_time: Constant[bool] = True
+    }
+
+    remove ClassIncrementalSLSetting
+    remove DomainIncrementalSLSetting
 }
 
 

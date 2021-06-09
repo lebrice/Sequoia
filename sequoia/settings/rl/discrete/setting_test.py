@@ -1,19 +1,20 @@
 import itertools
 from dataclasses import fields
 from typing import Any, ClassVar, Dict, Optional, Type
+
 import gym
 import pytest
-from sequoia.settings import Setting
+from sequoia.common.config import Config
+from sequoia.conftest import monsterkong_required
 from sequoia.methods import Method
+from sequoia.settings import Setting
 from sequoia.settings.assumptions.incremental_test import DummyMethod as _DummyMethod
 from sequoia.settings.rl.envs import (
     ATARI_PY_INSTALLED,
     MONSTERKONG_INSTALLED,
-    MetaMonsterKongEnv,
     MUJOCO_INSTALLED,
+    MetaMonsterKongEnv,
 )
-
-from sequoia.conftest import monsterkong_required
 
 from ..continual.setting_test import TestContinualRLSetting as ContinualRLSettingTests
 from ..continual.setting_test import make_dataset_fixture
@@ -30,9 +31,9 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
         return n
 
     @pytest.fixture()
-    def setting_kwargs(self, dataset: str, nb_tasks: int):
+    def setting_kwargs(self, dataset: str, nb_tasks: int, config: Config):
         """ Fixture used to pass keyword arguments when creating a Setting. """
-        return {"dataset": dataset, "nb_tasks": nb_tasks}
+        return {"dataset": dataset, "nb_tasks": nb_tasks, "config": config}
 
     def validate_results(
         self,
@@ -108,8 +109,7 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
             kwargs.pop("train_task_schedule")
         elif ids_instead_of_steps:
             kwargs["train_task_schedule"] = {
-                i: task
-                for i, (step, task) in enumerate(train_task_schedule.items())
+                i: task for i, (step, task) in enumerate(train_task_schedule.items())
             }
 
         setting = self.Setting(**kwargs)

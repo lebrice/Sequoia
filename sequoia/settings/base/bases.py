@@ -382,7 +382,6 @@ class Method(Generic[SettingType], Parseable, ABC):
             else:
                 raise RuntimeError(
                     f"Unable to create a unique results dir under {base_results_dir} "
-                    f"(run_id is {run_id})"
                 )
         results_dir = Path(results_dir)
         logger.info(f"Saving results in directory {results_dir}")

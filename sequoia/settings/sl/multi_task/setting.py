@@ -20,147 +20,143 @@ from sequoia.utils import get_logger
 from sequoia.utils.utils import constant
 from sequoia.settings.sl.task_incremental import TaskIncrementalSLSetting
 
-logger = get_logger(__file__)
 from continuum.tasks import TaskSet, concat
 from sequoia.settings.sl.continual.setting import subset, random_subset
 from sequoia.settings.sl.continual.wrappers import replace_taskset_attributes
+from ..traditional.setting import TraditionalSLSetting
+from ..task_incremental.setting import TaskIncrementalSLSetting
+from sequoia.settings.base import Results
 
 
-def shuffle(dataset: TaskSet, seed: int = None) -> TaskSet:
-    length = len(dataset)
-    rng = np.random.default_rng(seed)
-    indices = rng.permutation(range(length))
-    if isinstance(dataset, TaskSet):
-        return subset(dataset, indices)
-    return Subset(dataset, indices)
+logger = get_logger(__file__)
 
 
 @dataclass
-class MultiTaskSLSetting(TaskIncrementalSLSetting):
+class MultiTaskSLSetting(TaskIncrementalSLSetting, TraditionalSLSetting):
     """IID version of the Task-Incremental Setting, where the data is shuffled.
     
     Can be used to estimate the upper bound performance of Task-Incremental CL Methods.
     """
+    Results: ClassVar[Type[Results]] = TraditionalSLSetting.Results
+
+    stationary_context: bool = constant(True)
 
     def __post_init__(self):
         super().__post_init__()
-        # IDEA: We could reuse the training loop from Incremental, if we modify it so it
+        # We reuse the training loop from Incremental, by modifying it so it
         # discriminates between "phases" and "tasks".
 
     @property
     def phases(self) -> int:
         return 1
 
-    def setup(self, stage=None, *args, **kwargs):
-        super().setup(stage=stage, *args, **kwargs)
-    
-    def _make_train_dataset(self) -> Dataset:
-        """ Returns the training dataset, which in this case will be shuffled.
+    # def _make_train_dataset(self) -> Dataset:
+    #     """ Returns the training dataset, which in this case will be shuffled.
 
-        IDEA: We could probably do it the same way in both RL and SL:
-        1. Create the 'datasets' for all the tasks;
-        2. "concatenate"+"Shuffle" the "datasets":
-            - in SL: ConcatDataset / shuffle the datasets
-            - in RL: Create a true `MultiTaskEnvironment` that accepts a list of envs as
-              an input and alternates between environments at each episode.
-              (either round-robin style, or randomly)
+    #     IDEA: We could probably do it the same way in both RL and SL:
+    #     1. Create the 'datasets' for all the tasks;
+    #     2. "concatenate"+"Shuffle" the "datasets":
+    #         - in SL: ConcatDataset / shuffle the datasets
+    #         - in RL: Create a true `MultiTaskEnvironment` that accepts a list of envs as
+    #           an input and alternates between environments at each episode.
+    #           (either round-robin style, or randomly)
 
-        Returns
-        -------
-        Dataset
-        """
-        joined_dataset = concat(self.train_datasets)
-        return shuffle(joined_dataset, seed=self.config.seed)
+    #     Returns
+    #     -------
+    #     Dataset
+    #     """
+    #     joined_dataset = concat(self.train_datasets)
+    #     return shuffle(joined_dataset, seed=self.config.seed)
 
-    def _make_val_dataset(self) -> Dataset:
-        joined_dataset = concat(self.val_datasets)
-        return shuffle(joined_dataset, seed=self.config.seed)
+    # def _make_val_dataset(self) -> Dataset:
+    #     joined_dataset = concat(self.val_datasets)
+    #     return shuffle(joined_dataset, seed=self.config.seed)
 
-    def _make_test_dataset(self) -> Dataset:
-        return concat(self.test_datasets)
+    # def _make_test_dataset(self) -> Dataset:
+    #     return concat(self.test_datasets)
 
-    def train_dataloader(
-        self, batch_size: int = None, num_workers: int = None
-    ) -> PassiveEnvironment:
-        """Returns a DataLoader for the training dataset.
+    # def train_dataloader(
+    #     self, batch_size: int = None, num_workers: int = None
+    # ) -> PassiveEnvironment:
+    #     """Returns a DataLoader for the training dataset.
 
-        This dataloader will yield batches which will very likely contain data from
-        multiple different tasks, and will contain task labels.
+    #     This dataloader will yield batches which will very likely contain data from
+    #     multiple different tasks, and will contain task labels.
 
-        Parameters
-        ----------
-        batch_size : int, optional
-            Batch size to use. Defaults to None, in which case the value of
-            `self.batch_size` is used.
-        num_workers : int, optional
-            Number of workers to use. Defaults to None, in which case the value of
-            `self.num_workers` is used.
+    #     Parameters
+    #     ----------
+    #     batch_size : int, optional
+    #         Batch size to use. Defaults to None, in which case the value of
+    #         `self.batch_size` is used.
+    #     num_workers : int, optional
+    #         Number of workers to use. Defaults to None, in which case the value of
+    #         `self.num_workers` is used.
 
-        Returns
-        -------
-        PassiveEnvironment
-            A "Passive" Dataloader/gym.Env. 
-        """
-        return super().train_dataloader(batch_size=batch_size, num_workers=num_workers)
+    #     Returns
+    #     -------
+    #     PassiveEnvironment
+    #         A "Passive" Dataloader/gym.Env. 
+    #     """
+    #     return super().train_dataloader(batch_size=batch_size, num_workers=num_workers)
 
-    def val_dataloader(
-        self, batch_size: int = None, num_workers: int = None
-    ) -> PassiveEnvironment:
-        """Returns a DataLoader for the validation dataset.
+    # def val_dataloader(
+    #     self, batch_size: int = None, num_workers: int = None
+    # ) -> PassiveEnvironment:
+    #     """Returns a DataLoader for the validation dataset.
 
-        This dataloader will yield batches which will very likely contain data from
-        multiple different tasks, and will contain task labels.
+    #     This dataloader will yield batches which will very likely contain data from
+    #     multiple different tasks, and will contain task labels.
 
-        Parameters
-        ----------
-        batch_size : int, optional
-            Batch size to use. Defaults to None, in which case the value of
-            `self.batch_size` is used.
-        num_workers : int, optional
-            Number of workers to use. Defaults to None, in which case the value of
-            `self.num_workers` is used.
+    #     Parameters
+    #     ----------
+    #     batch_size : int, optional
+    #         Batch size to use. Defaults to None, in which case the value of
+    #         `self.batch_size` is used.
+    #     num_workers : int, optional
+    #         Number of workers to use. Defaults to None, in which case the value of
+    #         `self.num_workers` is used.
 
-        Returns
-        -------
-        PassiveEnvironment
-            A "Passive" Dataloader/gym.Env. 
-        """
-        return super().val_dataloader(batch_size=batch_size, num_workers=num_workers)
+    #     Returns
+    #     -------
+    #     PassiveEnvironment
+    #         A "Passive" Dataloader/gym.Env. 
+    #     """
+    #     return super().val_dataloader(batch_size=batch_size, num_workers=num_workers)
 
-    def test_dataloader(
-        self, batch_size: int = None, num_workers: int = None
-    ) -> PassiveEnvironment:
-        """Returns a DataLoader for the test dataset.
+    # def test_dataloader(
+    #     self, batch_size: int = None, num_workers: int = None
+    # ) -> PassiveEnvironment:
+    #     """Returns a DataLoader for the test dataset.
 
-        This dataloader will yield batches which will very likely contain data from
-        multiple different tasks, and will contain task labels.
+    #     This dataloader will yield batches which will very likely contain data from
+    #     multiple different tasks, and will contain task labels.
 
-        Unlike the train and validation environments, the test environment will not
-        yield rewards until the action has been sent to it using either `send` (when
-        iterating in the DataLoader-style) or `step` (when interacting with the
-        environment in the gym.Env style). For more info, take a look at the
-        `PassiveEnvironment` class.
+    #     Unlike the train and validation environments, the test environment will not
+    #     yield rewards until the action has been sent to it using either `send` (when
+    #     iterating in the DataLoader-style) or `step` (when interacting with the
+    #     environment in the gym.Env style). For more info, take a look at the
+    #     `PassiveEnvironment` class.
         
-        Parameters
-        ----------
-        batch_size : int, optional
-            Batch size to use. Defaults to None, in which case the value of
-            `self.batch_size` is used.
-        num_workers : int, optional
-            Number of workers to use. Defaults to None, in which case the value of
-            `self.num_workers` is used.
+    #     Parameters
+    #     ----------
+    #     batch_size : int, optional
+    #         Batch size to use. Defaults to None, in which case the value of
+    #         `self.batch_size` is used.
+    #     num_workers : int, optional
+    #         Number of workers to use. Defaults to None, in which case the value of
+    #         `self.num_workers` is used.
 
-        Returns
-        -------
-        PassiveEnvironment
-            A "Passive" Dataloader/gym.Env. 
-        """
-        return super().test_dataloader(batch_size=batch_size, num_workers=num_workers)
+    #     Returns
+    #     -------
+    #     PassiveEnvironment
+    #         A "Passive" Dataloader/gym.Env. 
+    #     """
+    #     return super().test_dataloader(batch_size=batch_size, num_workers=num_workers)
 
-    def test_loop(self, method: Method) -> "IncrementalAssumption.Results":
-        """ Runs a multi-task test loop and returns the Results.
-        """
-        return super().test_loop(method)
+    # def test_loop(self, method: Method) -> "IncrementalAssumption.Results":
+    #     """ Runs a multi-task test loop and returns the Results.
+    #     """
+    #     return super().test_loop(method)
         # # TODO: 
         # test_env = self.test_dataloader()
         # try:

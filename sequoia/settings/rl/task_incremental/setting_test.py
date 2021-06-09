@@ -31,9 +31,9 @@ def test_task_schedule_is_used():
 
         env = setting.train_dataloader(batch_size=None)
         env: MultiTaskEnvironment
-        assert len(setting.train_task_schedule) == 2
-        assert len(setting.valid_task_schedule) == 2
-        assert len(setting.test_task_schedule) == 2
+        assert len(setting.train_task_schedule) == 3
+        assert len(setting.val_task_schedule) == 3
+        assert len(setting.test_task_schedule) == 3
 
         starting_length = env.length
 

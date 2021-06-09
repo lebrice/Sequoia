@@ -18,8 +18,7 @@ from sequoia.utils.utils import constant, dict_union
 # task-incremental, this might not be 100% accurate, as the "IID" you get from
 # moving down from domain-incremental (+ only one task) might not be exactly the same as
 # the one you get form TaskIncremental (+ only one task)
-from sequoia.settings.sl.multi_task import MultiTaskSLSetting
-# from sequoia.settings.sl.domain_incremental import DomainIncrementalSLSetting
+from ..incremental import IncrementalSLSetting
 from .results import IIDResults
 
 
@@ -35,7 +34,7 @@ from .results import IIDResults
 
 
 @dataclass
-class TraditionalSLSetting(MultiTaskSLSetting):
+class TraditionalSLSetting(IncrementalSLSetting):
     """Your 'usual' supervised learning Setting, where the samples are i.i.d.
     
     This Setting is slightly different than the others, in that it can be recovered in
@@ -45,10 +44,10 @@ class TraditionalSLSetting(MultiTaskSLSetting):
     """
     Results: ClassVar[Type[Results]] = IIDResults
 
-    # Number of tasks, held constant, since this is an IID setting.
-    # TODO: This setting could also be a 'multi-task' Supervised learning setting, if
-    # this were to be left 'floating'.
-    nb_tasks: int = constant(1)
+    # Number of tasks.
+    nb_tasks: int = 5
+
+    stationary_context: bool = constant(True)
 
     # increment: Union[int, List[int]] = constant(None)
     # A different task size applied only for the first task.

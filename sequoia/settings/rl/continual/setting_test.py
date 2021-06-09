@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Type
 
 import gym
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from gym import spaces
@@ -18,8 +19,8 @@ from sequoia.conftest import (
     MONSTERKONG_INSTALLED,
     MUJOCO_INSTALLED,
     DummyEnvironment,
-    mujoco_required,
     monsterkong_required,
+    mujoco_required,
     param_requires_atari_py,
     param_requires_monsterkong,
     param_requires_mujoco,
@@ -28,16 +29,15 @@ from sequoia.conftest import (
 from sequoia.methods import Method, RandomBaselineMethod
 from sequoia.settings import Environment, Setting
 from sequoia.settings.assumptions.incremental_test import DummyMethod as _DummyMethod
-from sequoia.utils.utils import take
+from sequoia.settings.rl.setting_test import CheckAttributesWrapper, DummyMethod
+from sequoia.utils.utils import pairwise, take
 
 from .setting import ContinualRLSetting, TaskSchedule, make_continuous_task
-from sequoia.settings.rl.setting_test import DummyMethod, CheckAttributesWrapper
 
 
 @pytest.mark.parametrize(
     "dataset",
     [
-        "Acrobot-v0",
         "CartPole-v8",
         "Breakout-v9",
         param_requires_mujoco("Ant-v0"),
@@ -94,9 +94,9 @@ class TestContinualRLSetting:
     #     return dataset
 
     @pytest.fixture()
-    def setting_kwargs(self, dataset: str):
+    def setting_kwargs(self, dataset: str, config: Config):
         """ Fixture used to pass keyword arguments when creating a Setting. """
-        return {"dataset": dataset}
+        return {"dataset": dataset, "config": config}
 
     def test_passing_supported_dataset(self, setting_kwargs: Dict):
         setting = self.Setting(**setting_kwargs)
@@ -104,17 +104,51 @@ class TestContinualRLSetting:
         assert all(setting.train_task_schedule.values()), "Should have non-empty tasks."
         # assert isinstance(setting._temp_train_env, expected_type)
 
+    def test_using_deprecated_fields(self):
+        with pytest.warns(DeprecationWarning):
+            setting = self.Setting(nb_tasks=5, max_steps=123)
+        assert setting.train_max_steps == 123
+
+        with pytest.warns(DeprecationWarning):
+            setting.max_steps = 456
+        assert setting.train_max_steps == 456
+
+        with pytest.warns(DeprecationWarning):
+            setting = self.Setting(nb_tasks=5, test_steps=123)
+        assert setting.test_max_steps == 123
+
+        with pytest.warns(DeprecationWarning):
+            setting.test_steps = 456
+        assert setting.test_max_steps == 456
+
     def test_task_creation_seeding(
         self, setting_kwargs: Dict[str, Any], config: Config
     ):
         """ Make sure that the tasks are 'reproducible' given a seed. """
+        config = setting_kwargs.pop("config", config)
         assert config.seed is not None
+
         setting_1 = self.Setting(**setting_kwargs, config=config)
         assert setting_1.train_task_schedule
         assert all(
             setting_1.train_task_schedule.values()
         ), "Should have non-empty tasks."
 
+        # Make sure that each task is unique:
+        assert all(
+            task_a != task_b
+            for task_a, task_b in pairwise(setting_1.train_task_schedule.values())
+        )
+        assert all(
+            task_a != task_b
+            for task_a, task_b in pairwise(setting_1.val_task_schedule.values())
+        )
+        assert all(
+            task_a != task_b
+            for task_a, task_b in pairwise(setting_1.test_task_schedule.values())
+        )
+
+        # Uses the same config:
         setting_2 = self.Setting(**setting_kwargs, config=config)
         assert setting_2.train_task_schedule
         assert all(
@@ -174,6 +208,7 @@ class TestContinualRLSetting:
         training.
         """
         setting_kwargs.setdefault("train_max_steps", 1000)
+        setting_kwargs.setdefault("max_episode_steps", 50)
         setting_kwargs.setdefault("test_max_steps", 1000)
         setting = self.Setting(**setting_kwargs)
         assert setting.train_task_schedule
@@ -185,12 +220,8 @@ class TestContinualRLSetting:
             *[task.keys() for task in setting.train_task_schedule.values()]
         )
 
-        method = DummyMethod(
-            train_wrappers=[partial(CheckAttributesWrapper, attributes=attributes)]
-        )
+        method = DummyMethod()
 
-        # method.configure(setting)
-        # method.fit(setting.train_dataloader(), setting.val_dataloader())
         results = setting.apply(method, config=config)
 
         assert results
@@ -206,57 +237,101 @@ class TestContinualRLSetting:
                 for values_dict in method.all_train_values
                 for step, values in values_dict.items()
             ]
+            assert train_values
             train_steps = setting.train_max_steps
+            task_schedule_values: List[float] = {
+                step: task[attribute]
+                for step, task in setting.train_task_schedule.items()
+            }
+            self.validate_env_value_changes(
+                setting=setting,
+                attribute=attribute,
+                task_schedule_for_attr=task_schedule_values,
+                train_values=train_values,
+            )
 
+    def validate_env_value_changes(
+        self,
+        setting: ContinualRLSetting,
+        attribute: str,
+        task_schedule_for_attr: Dict[str, float],
+        train_values: List[float],
+    ):
+        """ Given an attribute name, and the values of that attribute in the
+        task schedule, check that the actual values for that attribute
+        encountered during training make sense, based on the type of
+        non-stationarity present in this Setting.
+        """
+        assert len(set(task_schedule_for_attr.values())) == setting.nb_tasks + 1, (
+            f"Task schedule should have had {setting.nb_tasks + 1} distinct values for "
+            f"attribute {attribute}: {task_schedule_for_attr}"
+        )
+
+        if setting.smooth_task_boundaries:
             # Should have one (unique) value for the attribute at each step during training
-            if setting.smooth_task_boundaries:
-                # This is the truth condition for the ContinualRLSetting.
-                # NOTE: There's an offset by 1 here because of when the env is closed.
-                # NOTE: This test won't really work with integer values, but that doesn't matter
-                # right now because we don't/won't support changing the values of integer
-                # parameters in this "continuous" task setting.
-                assert (
-                    len(set(train_values)) == train_steps - 1
-                ), f"{attribute} didn't change enough?"
-            else:
-                from ..discrete.setting import DiscreteTaskAgnosticRLSetting
+            # This is the truth condition for the ContinualRLSetting.
+            # NOTE: There's an offset by 1 here because of when the env is closed.
+            # NOTE: This test won't really work with integer values, but that doesn't matter
+            # right now because we don't/won't support changing the values of integer
+            # parameters in this "continuous" task setting.
+            assert len(set(train_values)) == setting.train_max_steps - 1, (
+                f"Should have encountered {setting.train_max_steps-1} distinct values "
+                f"for attribute {attribute}: during training!"
+            )
+        else:
+            from ..discrete.setting import DiscreteTaskAgnosticRLSetting
 
-                setting: DiscreteTaskAgnosticRLSetting
-                train_tasks = setting.nb_tasks
-                unique_attribute_values = set(train_values)
-                assert len(unique_attribute_values) == train_tasks, (attribute, unique_attribute_values, setting.train_task_schedule)
+            setting: DiscreteTaskAgnosticRLSetting
+            train_tasks = setting.nb_tasks
+            unique_attribute_values = set(train_values)
+            assert len(unique_attribute_values) == train_tasks, (
+                attribute,
+                unique_attribute_values,
+                setting.train_task_schedule,
+            )
 
     def validate_results(
         self,
         setting: ContinualRLSetting,
-        method: Method,
+        method: DummyMethod,
         results: ContinualRLSetting.Results,
     ) -> None:
         assert results
         assert results.objective
-        # For now we treat the stream as a single task.
-        # assert len(results.task_results) == 1
-        # assert sum(results.task_result.metrics) == results.average_metric
-        # assert sum(results.task_results) == results.average_metrics
-        # self.validate_results(setting, method, results)
+        assert method.n_task_switches == 0
+        assert method.n_fit_calls == 1
+        assert not method.received_task_ids
+        assert not method.received_while_training
 
-    # TODO: This could be the tests for all the descendants of the RL Settings!
-    # @pytest.mark.parametrize(
-    #     "dataset, force_pixel_observations, expected_x_space",
-    #     [
-    #         ("CartPole-v0", False, expected_cartpole_obs_space),
-    #         ("CartPole-v0", True, Image(0, 255, (400, 600, 3))),
-    #         param_requires_mujoco(
-    #             "HalfCheetah-v3", False, spaces.Box(-np.inf, np.inf, (17,))
-    #         ),
-    #         # param_requires_atari_py("Breakout-v0", (3, 210, 160)),
-    #         # Since the AtariWrapper gets added by default
-    #         # param_requires_atari_py("Breakout-v0", True, Image(0, 255, (84, 84, 1)),),
-    #         # param_requires_monsterkong(
-    #         #     "MetaMonsterKong-v0", True, Image(0, 255, (64, 64, 3))
-    #         # ),
-    #     ],
-    # )
+        # changing_attributes = method.changing_attributes
+
+        # for attribute in changing_attributes:
+        #     train_values: List[float] = [
+        #         values[attribute]
+        #         for values_dict in method.all_train_values
+        #         for step, values in values_dict.items()
+        #     ]
+        #     assert train_values
+        #     train_steps = setting.train_max_steps
+
+        #     # Should have one (unique) value for the attribute at each step during training
+        #     if setting.smooth_task_boundaries:
+        #         # This is the truth condition for the ContinualRLSetting.
+        #         # NOTE: There's an offset by 1 here because of when the env is closed.
+        #         # NOTE: This test won't really work with integer values, but that doesn't matter
+        #         # right now because we don't/won't support changing the values of integer
+        #         # parameters in this "continuous" task setting.
+        #         assert (
+        #             len(set(train_values)) == train_steps - 1
+        #         ), f"{attribute} didn't change enough?"
+        #     else:
+        #         from ..discrete.setting import DiscreteTaskAgnosticRLSetting
+
+        #         setting: DiscreteTaskAgnosticRLSetting
+        #         train_tasks = setting.nb_tasks
+        #         unique_attribute_values = set(train_values)
+        #         assert len(unique_attribute_values) == train_tasks, (attribute, unique_attribute_values, setting.train_task_schedule)
+
     @pytest.mark.parametrize(
         "batch_size",
         [
@@ -311,6 +386,8 @@ class TestContinualRLSetting:
                 assert env.observation_space.x == expected_x_space
                 assert env.action_space == expected_action_space
 
+        # FIXME: Move this to an instance method on the test class so that subclasses
+        # can change stuff in it.
         def check_obs(obs: ContinualRLSetting.Observations) -> None:
             assert isinstance(obs, self.Setting.Observations), obs[0].shape
             assert obs.x in expected_batched_x_space
@@ -410,9 +487,6 @@ class TestContinualRLSetting:
             max_episode_steps=100,
             config=config,
         )
-        from functools import partial
-
-        import matplotlib.pyplot as plt
 
         fig, axes = plt.subplots(2, 3)
         name_to_env_fn = {
@@ -544,10 +618,6 @@ def test_fit_and_on_task_switch_calls():
     method = _DummyMethod()
     _ = setting.apply(method)
     # == 30 task switches in total.
-    assert method.n_task_switches == 0
-    assert method.n_fit_calls == 1
-    assert not method.received_task_ids
-    assert not method.received_while_training
 
 
 if MUJOCO_INSTALLED:

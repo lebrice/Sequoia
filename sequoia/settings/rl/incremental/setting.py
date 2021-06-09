@@ -32,7 +32,7 @@ from sequoia.settings.rl.envs import (
     metaworld_envs,
     mtenv_envs,
 )
-from sequoia.utils import constant, dict_union, pairwise
+from sequoia.utils import constant, dict_union, pairwise, deprecated_property
 from sequoia.utils.logging_utils import get_logger
 from simple_parsing import field, list_field
 from simple_parsing.helpers import choice
@@ -210,17 +210,18 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             return sum(self.train_task_lengths)
         return self.train_task_lengths[self.current_task_id]
 
-    @property
-    def steps_per_task(self) -> int:
-        # unique_task_lengths = list(set(self.train_task_lengths))
-        warning = DeprecationWarning(
-            "The 'steps_per_task' attribute is deprecated, use "
-            "`current_train_task_length` instead, which gives the length of the "
-            "current task."
-        )
-        warnings.warn(warning)
-        logger.warning(warning)
-        return self.current_train_task_length
+    steps_per_task: int = deprecated_property("steps_per_task", "current_train_task_length")
+    # @property
+    # def steps_per_task(self) -> int:
+    #     # unique_task_lengths = list(set(self.train_task_lengths))
+    #     warning = DeprecationWarning(
+    #         "The 'steps_per_task' attribute is deprecated, use "
+    #         "`current_train_task_length` instead, which gives the length of the "
+    #         "current task."
+    #     )
+    #     warnings.warn(warning)
+    #     logger.warning(warning)
+    #     return self.current_train_task_length
 
     # @property
     # def steps_per_phase(self) -> int:

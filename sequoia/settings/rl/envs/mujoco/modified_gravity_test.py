@@ -80,7 +80,7 @@ class ModifiedGravityEnvTests:
         starting_gravity = original.gravity
 
         task_schedule = {
-            10: dict(),
+            10: dict(gravity=starting_gravity),
             20: dict(gravity=-12.0),
             30: dict(gravity=0.9),
         }

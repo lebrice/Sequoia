@@ -87,22 +87,25 @@ def _is_supported(
 
     elif inspect.isclass(env_id) and issubclass(env_id, gym.Env):
         env_type = env_id
+        env_spec = None
         if _has_handler(env_type):
             return True
         env_id = env_type.__name__
+        class_name = env_type.__name__
     else:
         raise NotImplementedError(env_id, type(env_id))
 
     assert isinstance(env_id, str)
-    assert isinstance(env_spec, EnvSpec)
+    if env_spec:
+        assert isinstance(env_spec, EnvSpec)
 
-    if callable(env_spec.entry_point):
-        if _has_handler(env_spec.entry_point):
-            return True
-        class_name = env_spec.entry_point.__name__
-    else:
-        assert isinstance(env_spec.entry_point, str)
-        _module, _, class_name = env_spec.entry_point.partition(":")
+        if callable(env_spec.entry_point):
+            if _has_handler(env_spec.entry_point):
+                return True
+            class_name = env_spec.entry_point.__name__
+        else:
+            assert isinstance(env_spec.entry_point, str)
+            _module, _, class_name = env_spec.entry_point.partition(":")
 
     registered_class_names = tuple(c.__name__ for c in _make_task_function.registry)
 
@@ -220,6 +223,9 @@ def task_sampling_function(
     NOTE (@lebrice): not sure about this is_supported being created and set on the
     function itself. It would probably be cleaner to create a class like TaskCreator or
     something that has the same methods as the underlying singledispatch callable.
+    
+    NOTE: A task sampling function should give back the same task when given the same
+    seed, step and change_steps.
     """
 
     def _wrapper(
@@ -331,60 +337,6 @@ is_supported = partial(_is_supported, _make_task_function=make_continuous_task)
 
 # from functools import _SingleDispatchCallable
 
-
-@make_continuous_task.register(type)
-def make_continuous_task_type(env_type: Type[gym.Env], **kwargs) -> ContinuousTask:
-    try:
-        # Try to create a task without actually instantiating the env, by passing the
-        # type of env as the 'env' argument, rather than an env instance.
-        env_handler_function = make_continuous_task.dispatch(env_type)
-        return env_handler_function(env_type, **kwargs)
-    except Exception as exc:
-        raise RuntimeError(
-            f"Unable to create a task based only on the env type {env_type}: {exc}\n"
-        ) from exc
-
-
-@make_continuous_task.register(str)
-def make_continuous_task_by_id(env: str, **kwargs,) -> Union[Dict[str, Any], Any]:
-    # Load the entry-point class, and use it to determine what handler to use.
-    # TODO: Actually instantiate the env here? or just dispatch based on the env class?
-    if env not in registry.env_specs:
-        raise RuntimeError(
-            f"Can't create a task for env id {env}, since it isn't a registered env id."
-        )
-    env_spec: EnvSpec = registry.env_specs[env]
-    env_entry_point: Callable[..., gym.Env] = load(env_spec.entry_point)
-    # import inspect
-
-    try:
-        task: ContinuousTask = make_continuous_task_type(env_entry_point, **kwargs)
-        return task
-
-    except RuntimeError as exc:
-        warnings.warn(
-            RuntimeWarning(
-                f"A temporary environment will have to be created in order to make a task: {exc}"
-            )
-        )
-
-    with gym.make(env) as temp_env:
-        # IDEA: Could avoid re-creating the env between calls to this function, for
-        # instance by saving a single temp env in a global variable and overwriting
-        # it if `env` is of a different type.
-        return make_continuous_task(temp_env, **kwargs)
-
-
-@make_continuous_task.register
-def make_task_for_wrapped_env(
-    env: gym.Wrapper, step: int, change_steps: List[int] = None, **kwargs,
-) -> Union[Dict[str, Any], Any]:
-    # NOTE: Not sure if this is totally a good idea...
-    # If someone registers a handler for some kind of Wrapper, than all envs wrapped
-    # with that wrapper will use that handler, instead of their base environment type.
-    return make_continuous_task(env.env, step=step, change_steps=change_steps, **kwargs)
-
-
 # Dictionary mapping from environment type to a dict of environment values which can be
 # modified with multiplicative gaussian noise.
 _ENV_TASK_ATTRIBUTES: Dict[Union[Type[gym.Env]], Dict[str, float]] = {
@@ -447,7 +399,6 @@ def make_task_for_classic_control_env(
     change_steps: List[int] = None,
     task_params: Union[List[str], Dict[str, Any]] = None,
     seed: int = None,
-    rng: np.random.Generator = None,
     noise_std: float = 0.2,
 ):
     # NOTE: `step` doesn't matter here, all tasks are independant.
@@ -456,12 +407,18 @@ def make_task_for_classic_control_env(
         # Use the 'default' task as the first task.
         return task_params.copy()
 
+    # Make this more reproducible: When given the same seed and same step, return the
+    # same task.
+    if seed is not None:
+        rng = np.random.default_rng(seed + step)
+    else:
+        rng = None
     # Default back to the 'env attributes' task, which multiplies the default values
     # with normally distributed scaling coefficients.
     # TODO: Need to refactor the whole MultiTaskEnv/SmoothTransition wrappers / tasks
     # etc.
     return make_env_attributes_task(
-        env, task_params=task_params, seed=seed, rng=rng, noise_std=noise_std,
+        env, task_params=task_params, rng=rng, noise_std=noise_std,
     )
 
 

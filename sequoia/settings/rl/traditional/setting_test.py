@@ -36,6 +36,38 @@ class TestTraditionalRLSetting(IncrementalRLSettingTests):
     Setting: ClassVar[Type[Setting]] = TraditionalRLSetting
     dataset: pytest.fixture = make_dataset_fixture(TraditionalRLSetting)
 
+    def validate_results(
+        self,
+        setting: TraditionalRLSetting,
+        method: DummyMethod,
+        results: TraditionalRLSetting.Results,
+    ) -> None:
+        """ Check that the results make sense.
+        The Dummy Method used also keeps useful attributes, which we check here.
+        """
+        assert results
+        assert results.objective
+        assert setting.stationary_context
+        assert len(results.task_results) == setting.nb_tasks
+        assert results.average_metrics == sum(
+            task_result.average_metrics for task_result in results.task_results
+        )
+        t = setting.nb_tasks
+        p = setting.phases
+        assert setting.known_task_boundaries_at_train_time
+        assert setting.known_task_boundaries_at_test_time
+        assert setting.task_labels_at_train_time
+        assert not setting.task_labels_at_test_time
+        if setting.nb_tasks == 1:
+            assert not method.received_task_ids
+            assert not method.received_while_training
+        else:
+            # Only received during testing.
+            assert method.n_task_switches == t
+            assert method.received_task_ids == [None for t_i in range(t)]
+            assert method.received_while_training == [False for _ in range(t)]
+
+    
     
     def validate_results(
         self,

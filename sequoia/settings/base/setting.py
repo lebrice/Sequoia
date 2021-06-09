@@ -390,6 +390,24 @@ class Setting(
         """ Returns an iterable of strings which represent the names of datasets. """
         return cls.available_datasets
 
+    def _setup_config(self, method: Method) -> Config:
+        config: Config
+        if isinstance(getattr(method, "config", None), Config):
+            config = method.config
+            logger.debug(f"Using Config from the Method: {self.config}")
+        else:
+            argv = self._argv
+            if argv:
+                logger.debug(
+                    f"Parsing the Config from the command-line arguments ({argv})"
+                )
+            else:
+                logger.debug(
+                    f"Parsing the config from the current command-line arguments."
+                )
+            config = Config.from_args(argv, strict=False)
+        return config
+
     @classmethod
     def main(cls, argv: Optional[Union[str, List[str]]] = None) -> Results:
         from sequoia.main import Experiment

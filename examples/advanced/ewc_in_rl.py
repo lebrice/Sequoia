@@ -330,7 +330,7 @@ if __name__ == "__main__":
             0:      {"gravity": 10, "length": 0.3},
             1000:   {"gravity": 10, "length": 0.5}, # second task is 'easier' than the first one.
         },
-        max_steps =2000,
+        train_max_steps =2000,
     )    
     method = EWCExampleMethod(reg_coefficient=0.)
     results_without_reg = setting.apply(method)
