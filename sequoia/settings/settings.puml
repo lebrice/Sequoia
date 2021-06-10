@@ -1,13 +1,14 @@
 @startuml settings
 ' skinparam linetype polyline
-skinparam linetype ortho
+' skinparam linetype ortho
 
-!include gym.puml
-
-!include assumptions/assumptions.puml
+' skinparam classFontSize 20
+' fieldFontSize 20
+' !include gym.puml
+' !include assumptions/assumptions.puml
 hide empty members
-
-remove Assumptions
+' hide fields
+' hide methods  
 
 ' ' Use this to turn on / off the display of assumptions
 ' remove Assumptions
@@ -20,157 +21,88 @@ remove Assumptions
 ' Comment/uncomment this to show/hide the descriptions for each node.
 ' hide fields
 
-package sequoia.settings {
-    package base {
-        interface AbstractSetting {
-            The most general Setting. Makes no assumptions whatsoever.
-            ==
-            + {abstract} Results apply(Method)
-        }
-        abstract class Results {
-            The experimental results returned by a Setting. Must provide a single float
-            objective, which represents how well the Methods were able to solve the
-            problem.
-            ==
-            {abstract} float objective
-        }
+package settings as sequoia.settings {
+    ' !include base/base.puml
+
+    ' package settings.base {
+    ' }
+
+    package settings.assumptions {
+        !include assumptions/assumptions.puml
+        remove assumptions
+        remove <<Observations>>
+        remove <<Actions>>
+        remove <<Rewards>>
+        remove <<Environment>>
+        ' remove supervision_assumptions
+        ' remove context_assumption_family
+        ' remove <<Assumption>>
     }
-    ' package CL {
-    '     abstract class ContinualAssumption extends AbstractSetting, Continual, HiddenContext {
-    '         # Context may change smoothly over time
-    '     }
-    '     abstract class TaskAgnosticIncrementalSetting extends ContinualAssumption, Incremental {
-    '         # Context changes smoothly over time
-    '         Task boundaries are given
-    '     }
-    '     abstract class IncrementalAssumption extends TaskAgnosticIncrementalSetting, PartiallyObservableContext {
-    '         Task labels are given during training
-    '     }
-    '     abstract class TaskIncrementalSLSetting extends IncrementalAssumption, FullyObservableContext {
-    '         Task labels are given at test-time.
-    '     }
-    '     abstract class MultiTaskSetting extends TaskIncrementalSLSetting, MultiTask {
-    '     }
-    '     class SingleTaskSetting extends MultiTaskSetting {
-    '     }
-    ' }
-    ' This is the '1/4 compositional' way to do it:
 
-    package SL {
-        abstract class SL extends AbstractSetting, PassiveEnvironment, DenseFeedback {
-            # environment gives the reward associated with all actions at each step
-            # Environment state isn't affected by actions / predictions
+    ' !include settings/rl/rl.puml
+    package rl {
+
+        ' ContinualRLSetting -.- rl.continuous.ContinuousTaskAgnosticRLSetting
+
+        abstract class RLSetting <<AbstractSetting>> extends SparseFeedback, ActiveEnvironment {}
+        package continuous as rl.continuous {
+            class ContinuousTaskAgnosticRLSetting <<Setting>> implements RLSetting, ContinuousTaskAgnosticSetting {}
         }
-        class ContinuousTaskAgnosticSL extends SL, Continual, ContinuousContext{
-            + Context may change over time
-            ==
-            Example: non-stationary data stream
+        package discrete as rl.discrete {
+            class DiscreteTaskAgnosticRLSetting <<Setting>> implements DiscreteTaskAgnosticSetting, ContinuousTaskAgnosticRLSetting {}
         }
-        class DiscreteTaskAgnosticSL extends ContinuousTaskAgnosticSL, DiscreteContext {
-            + Task boundaries (and task labels) are available during training
+        package incremental as rl.incremental {
+            class IncrementalRLSetting <<Setting>> implements IncrementalSetting, DiscreteTaskAgnosticRLSetting {}
         }
-        ' Here we could add another setting!
-        ' class UnnamedSetting extends DiscreteTaskAgnosticSL, TaskBoudariesAtTestTime {
-        '     + Task boundaries are given during testing
-        ' }
-        class IncrementalSL extends DiscreteTaskAgnosticSL, PartiallyObservableContext  {
-            # context variable is observable during training
+        package class_incremental as rl.class_incremental {
+            class ClassIncrementalRLSetting <<Setting>> implements ClassIncrementalSetting, IncrementalRLSetting {}
         }
-        class TaskIncrementalSL extends IncrementalSL, FullyObservableContext {
-            + context variable is observable during testing
+        package domain_incremental as rl.domain_incremental {
+            class DomainIncrementalRLSetting <<Setting>> implements DomainIncrementalSetting, IncrementalRLSetting {}
         }
-        class MultiTaskSL extends TaskIncrementalSL, MultiTask {
-            + The countext is sampled uniformly during training 
+        package traditional as rl.traditional {
+            class TraditionalRLSetting <<Setting>> implements TraditionalSetting, IncrementalRLSetting {}
         }
-        class TraditionalSL extends MultiTaskSL, FixedContext {
+        package task_incremental as rl.task_incremental {
+            class TaskIncrementalRLSetting <<Setting>> implements TaskIncrementalSetting, IncrementalRLSetting {}
         }
+        package multi_task as rl.multi_task {
+            class MultiTaskRLSetting <<Setting>> implements MultiTaskSetting, TaskIncrementalRLSetting, TraditionalRLSetting {}
+        }
+        remove rl.class_incremental
+        remove rl.domain_incremental
     }
-    package RL {
-        abstract class RL extends AbstractSetting, ActiveEnvironment, SparseFeedback {
-            # The environment only gives back the reward associated with the action taken.
-            # Actions DO influence future observations
-            --
-            Examples:
-            Playing tennis
+
+    ' !include settings/rl/sl.puml
+    package sl {
+        abstract class SLSetting <<AbstractSetting>> extends DenseFeedback, PassiveEnvironment {}
+        package continuous as sl.continuous {
+            class ContinuousTaskAgnosticSLSetting <<Setting>> implements SLSetting, ContinuousTaskAgnosticSetting {}
         }
-        class ContinuousTaskAgnosticRL extends RL, Continual, ContinuousContext{
-            + Context may change over time
-            ==
-            Example: non-stationary data stream
+        package discrete as sl.discrete {
+            class DiscreteTaskAgnosticSLSetting <<Setting>> implements DiscreteTaskAgnosticSetting, ContinuousTaskAgnosticSLSetting {}
         }
-        class DiscreteTaskAgnosticRL extends ContinuousTaskAgnosticRL, DiscreteContext {
-            + Task boundaries are given during training
+        package incremental as sl.incremental {
+            class IncrementalSLSetting <<Setting>> implements IncrementalSetting, DiscreteTaskAgnosticSLSetting {}
         }
-        ' class UnnamedSetting extends DiscreteTaskAgnosticRL, TaskBoudariesAtTestTime {
-        '     + Task boundaries are given during testing
-        ' }
-        class IncrementalRL extends DiscreteTaskAgnosticRL, PartiallyObservableContext  {
-            # context variable is observable during training
+        package class_incremental as sl.class_incremental {
+            class ClassIncrementalSLSetting <<Setting>> implements ClassIncrementalSetting, IncrementalSLSetting {}
         }
-        class TaskIncrementalRL extends IncrementalRL, FullyObservableContext {
-            + context variable is observable during testing
+        package domain_incremental as sl.domain_incremental {
+            class DomainIncrementalSLSetting <<Setting>> implements DomainIncrementalSetting, IncrementalSLSetting {}
         }
-        class MultiTaskRL extends TaskIncrementalRL, MultiTask {
-            + The countext is sampled uniformly during training 
+        package traditional as sl.traditional {
+            class TraditionalSLSetting <<Setting>> implements TraditionalSetting, IncrementalSLSetting {}
         }
-        class TraditionalRL extends MultiTaskRL, FixedContext {
+        package task_incremental as sl.task_incremental {
+            class TaskIncrementalSLSetting <<Setting>> implements TaskIncrementalSetting, IncrementalSLSetting {}
         }
+        package multi_task as sl.multi_task {
+            class MultiTaskSLSetting <<Setting>> implements MultiTaskSetting, TaskIncrementalSLSetting, TraditionalSLSetting {}
+        }
+        remove sl.class_incremental
+        remove sl.domain_incremental
     }
-    
-
-
-    ' This is a 'half-compositional' way to do it
-    ' package SL {
-    '     class SL extends AbstractSetting, PassiveEnvironment, DenseFeedback {
-    '     }
-    '     class ContinualSL extends ContinualAssumption, SL {
-    '     }
-    '     class TaskAgnosticIncrementalSL extends TaskAgnosticIncrementalSetting, SL {
-    '     }
-    '     class IncrementalSL extends IncrementalAssumption, SL {
-    '     }
-    '     class TaskIncrementalSL extends TaskIncrementalSLSetting, SL {
-    '     }
-    '     class MultiTaskSL extends MultiTaskSetting, SL {
-    '     }
-    '     class TraditionalSL extends SingleTaskSetting, SL {
-    '     }
-    ' }
-    
-    ' This is the non-compositional way to do it:
-
-    ' package SL {
-    '     class SL extends AbstractSetting, PassiveEnvironment, DenseFeedback {
-    '     }
-    '     class ContinualSL extends ContinualAssumption, SL {
-    '     }
-    '     class TaskAgnosticIncrementalSL extends ContinualSL, TaskAgnosticIncrementalSetting {
-    '     }
-    '     class IncrementalSL extends TaskAgnosticIncrementalSL, IncrementalAssumption {
-    '     }
-    '     class TaskIncrementalSL extends IncrementalSL, TaskIncrementalSLSetting {
-    '     }
-    '     class MultiTaskSL extends TaskIncrementalSL, MultiTaskSetting {
-    '     }
-    '     class TraditionalSL extends MultiTaskSL, SingleTaskSetting{
-    '     }
-    ' }
-    ' package RL {
-    '     class RL extends AbstractSetting, ActiveEnvironment, DenseFeedback {
-    '     }
-    '     class ContinualRL extends ContinualAssumption, RL {
-    '     }
-    '     class TaskAgnosticIncrementalRL extends ContinualRL, TaskAgnosticIncrementalSetting {
-    '     }
-    '     class IncrementalRL extends TaskAgnosticIncrementalRL, IncrementalAssumption {
-    '     }
-    '     class TaskIncrementalRL extends IncrementalRL, TaskIncrementalSLSetting {
-    '     }
-    '     class MultiTaskRL extends TaskIncrementalRL, MultiTaskSetting {
-    '     }
-    '     class TraditionalRL extends MultiTaskRL, MultiTaskSetting, SingleTaskSetting {
-    '     }
-    ' }
 }
 
 

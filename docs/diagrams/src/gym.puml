@@ -3,10 +3,9 @@
 package gym {
     package spaces as gym.spaces {
         abstract class Space<T> {
-            + bool contains(T sample) 
-            + T sample()
+            + contains(T sample) -> bool
+            + sample() -> T
         }
-
         class Box extends Space {
             + low: np.ndarray
             + high: np.ndarray
@@ -42,8 +41,8 @@ package gym {
     abstract class gym.Env<Obs, Act, Rew> {
         + observation_space: Space<Obs>
         + action_space: Space<Act> 
-        + step(Actions): Tuple[Obs, Rew, bool, dict]
-        + reset(): Obs
+        + step(Actions) -> Tuple[Obs, Rew, bool, dict]
+        + reset() -> Obs
     }
     gym.Env .. Space
 

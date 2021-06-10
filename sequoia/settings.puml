@@ -17,7 +17,7 @@ namespace torch {
 
 
 package settings {
-    !include settings/base.puml
+    ' !include base/base.puml
 
     abstract class Setting extends SettingABC {
         ' 'root' setting.

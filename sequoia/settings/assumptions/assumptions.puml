@@ -1,6 +1,5 @@
 @startuml assumptions
-!include gym.puml
-remove gym.spaces
+
 
 package assumptions {
     '  TODO: How to describe relationship between gym.Env and these other 
@@ -104,112 +103,215 @@ package assumptions {
         }
     }
 }
-remove assumptions
-remove gym
+
 package cl {
-    class ContinuousTaskAgnosticSLSetting {
-        - clear_task_boundaries: bool = False
-        ' - task_labels_at_train_time: bool = False
-        ' - task_labels_at_test_time: bool = False
-        ' - stationary_context: bool = False
-        ' - shared_action_space: bool = False
-    }
-    class DiscreteTaskAgnosticSLSetting extends ContinuousTaskAgnosticSLSetting {
-        == New assumptions ==
-
-        + clear_task_boundaries: Constant[bool] = True
-        ' + known_task_boundaries_at_train_time: bool = False
-        ' + known_task_boundaries_at_test_time: bool = False
-
-        == Inherited assumptions ==
-        ' # task_labels_at_train_time: bool = False
-        ' # task_labels_at_test_time: bool = False
-        ' # stationary_context: bool = False
-        ' # shared_action_space: bool = False
-
-    }
-    class IncrementalSLSetting extends DiscreteTaskAgnosticSLSetting{
-        == New assumptions ==
-
-        + known_task_boundaries_at_train_time: Constant[bool] = True
-        + known_task_boundaries_at_test_time: Constant[bool] = True
-
-        == Inherited assumptions ==
-
-        # clear_task_boundaries: Constant[bool] = True
-        ' # task_labels_at_train_time: bool = False
-        ' # task_labels_at_test_time: bool = False
-        ' # shared_action_space: bool = False
-        ' # stationary_context: bool = False
-        
-    }
-    class ClassIncrementalSLSetting extends IncrementalSLSetting {
-        == New assumptions ==
-        
-        + shared_action_space: Constant[bool] = False
-
-        == Inherited assumptions ==
-
-        # clear_task_boundaries: Constant[bool] = True
-        # known_task_boundaries_at_train_time: Constant[bool] = True
-        # known_task_boundaries_at_test_time: Constant[bool] = True
-        ' # task_labels_at_train_time: bool = False
-        ' # task_labels_at_test_time: bool = False
-        ' # stationary_context: bool = False
-    }
-    class DomainIncrementalSLSetting extends IncrementalSLSetting {
-        == New assumptions ==
-
-        + shared_action_space: Constant[bool] = True
-
-        == Inherited assumptions ==
-
-        # clear_task_boundaries: Constant[bool] = True
-        # known_task_boundaries_at_train_time: Constant[bool] = True
-        # known_task_boundaries_at_test_time: Constant[bool] = True
+    package continuous {
+        abstract class ContinuousTaskAgnosticSetting <<AbstractSetting>> extends base.SettingABC {
+            - clear_task_boundaries: bool = False
+            ' - task_labels_at_train_time: bool = False
+            ' - task_labels_at_test_time: bool = False
+            ' - stationary_context: bool = False
+            ' - shared_action_space: bool = False
+        }
+        abstract class continuous.Environment <<Environment>> extends gym.Env {}
+        abstract class continuous.Observations <<Observations>> extends base.Observations {}
+        abstract class continuous.Actions <<Actions>> extends base.Actions {}
+        abstract class continuous.Rewards <<Rewards>> extends base.Rewards {}
+        ' continuous.Environment -.- continuous.Observations: yields
+        ' continuous.Environment -.- continuous.Actions: receives
+        ' continuous.Environment -.- continuous.Rewards: returns
     }
 
-    class TaskIncrementalSLSetting extends IncrementalSLSetting {
-        == New assumptions ==
+    package discrete {
+        abstract class DiscreteTaskAgnosticSetting <<AbstractSetting>> extends ContinuousTaskAgnosticSetting {
+            == New assumptions ==
 
-        + task_labels_at_train_time: Constant[bool] = True
-        + task_labels_at_test_time: Constant[bool] = True
-        
-        == Inherited assumptions ==
+            + clear_task_boundaries: Constant[bool] = True
+            ' + known_task_boundaries_at_train_time: bool = False
+            ' + known_task_boundaries_at_test_time: bool = False
 
-        # clear_task_boundaries: Constant[bool] = True
-        # known_task_boundaries_at_train_time: Constant[bool] = True
-        # known_task_boundaries_at_test_time: Constant[bool] = True
+            == Inherited assumptions ==
+            ' # task_labels_at_train_time: bool = False
+            ' # task_labels_at_test_time: bool = False
+            ' # stationary_context: bool = False
+            ' # shared_action_space: bool = False
+
+        }
+        abstract class discrete.Environment <<Environment>> extends continuous.Environment {}
+        abstract class discrete.Observations <<Observations>> extends continuous.Observations {}
+        abstract class discrete.Actions <<Actions>> extends continuous.Actions {}
+        abstract class discrete.Rewards <<Rewards>> extends continuous.Rewards {}
+        ' discrete.Environment -.- discrete.Observations: yields
+        ' discrete.Environment -.- discrete.Actions: receives
+        ' discrete.Environment -.- discrete.Rewards: returns
     }
+    package incremental {
+        abstract class IncrementalSetting <<AbstractSetting>> extends DiscreteTaskAgnosticSetting{
+            == New assumptions ==
 
-    class TraditionalSLSetting extends IncrementalSLSetting {
-        == New assumptions ==
+            + known_task_boundaries_at_train_time: Constant[bool] = True
+            + known_task_boundaries_at_test_time: Constant[bool] = True
 
-        + stationary_context: Constant[bool] = True
+            == Inherited assumptions ==
 
-        == Inherited assumptions ==
-
-        # clear_task_boundaries: Constant[bool] = True
+            # clear_task_boundaries: Constant[bool] = True
+            ' # task_labels_at_train_time: bool = False
+            ' # task_labels_at_test_time: bool = False
+            ' # shared_action_space: bool = False
+            ' # stationary_context: bool = False
+            
+        }
+        abstract class incremental.Environment <<Environment>> extends discrete.Environment {}
+        abstract class incremental.Observations <<Observations>> extends discrete.Observations {}
+        abstract class incremental.Actions <<Actions>> extends discrete.Actions {}
+        abstract class incremental.Rewards <<Rewards>> extends discrete.Rewards {}
+        ' incremental.Environment -.- incremental.Observations: yields
+        ' incremental.Environment -.- incremental.Actions: receives
+        ' incremental.Environment -.- incremental.Rewards: returns
     }
-    
-    class MultiTaskSLSetting extends TaskIncrementalSLSetting, TraditionalSLSetting {
-        == New assumptions ==
+    package class_incremental {
+        abstract class ClassIncrementalSetting <<AbstractSetting>> extends IncrementalSetting {
+            == New assumptions ==
+            
+            + shared_action_space: Constant[bool] = False
 
-        + stationary_context: Context[bool] = True
-        
-        == Inherited assumptions ==
+            == Inherited assumptions ==
 
-        # task_labels_at_train_time: Constant[bool] = True
-        # task_labels_at_test_time: Constant[bool] = True
-        # clear_task_boundaries: Constant[bool] = True
-        # known_task_boundaries_at_train_time: Constant[bool] = True
-        # known_task_boundaries_at_test_time: Constant[bool] = True
+            # clear_task_boundaries: Constant[bool] = True
+            # known_task_boundaries_at_train_time: Constant[bool] = True
+            # known_task_boundaries_at_test_time: Constant[bool] = True
+            ' # task_labels_at_train_time: bool = False
+            ' # task_labels_at_test_time: bool = False
+            ' # stationary_context: bool = False
+        }
+        abstract class class_incremental.Environment <<Environment>> extends incremental.Environment {}
+        abstract class class_incremental.Observations <<Observations>> extends incremental.Observations {}
+        abstract class class_incremental.Actions <<Actions>> extends incremental.Actions {}
+        abstract class class_incremental.Rewards <<Rewards>> extends incremental.Rewards {}
+        ' class_incremental.Environment -.- class_incremental.Observations: yields
+        ' class_incremental.Environment -.- class_incremental.Actions: receives
+        ' class_incremental.Environment -.- class_incremental.Rewards: returns
     }
+    package domain_incremental {
+        abstract class DomainIncrementalSetting <<AbstractSetting>> extends IncrementalSetting {
+            == New assumptions ==
 
-    remove ClassIncrementalSLSetting
-    remove DomainIncrementalSLSetting
+            + shared_action_space: Constant[bool] = True
+
+            == Inherited assumptions ==
+
+            # clear_task_boundaries: Constant[bool] = True
+            # known_task_boundaries_at_train_time: Constant[bool] = True
+            # known_task_boundaries_at_test_time: Constant[bool] = True
+        }
+        abstract class domain_incremental.Environment <<Environment>> extends incremental.Environment {}
+        abstract class domain_incremental.Observations <<Observations>> extends incremental.Observations {}
+        abstract class domain_incremental.Actions <<Actions>> extends incremental.Actions {}
+        abstract class domain_incremental.Rewards <<Rewards>> extends incremental.Rewards {}
+        ' domain_incremental.Environment -.- domain_incremental.Observations: yields
+        ' domain_incremental.Environment -.- domain_incremental.Actions: receives
+        ' domain_incremental.Environment -.- domain_incremental.Rewards: returns
+    }
+    package task_incremental {
+        abstract class TaskIncrementalSetting <<AbstractSetting>> extends IncrementalSetting {
+            == New assumptions ==
+
+            + task_labels_at_train_time: Constant[bool] = True
+            + task_labels_at_test_time: Constant[bool] = True
+            
+            == Inherited assumptions ==
+
+            # clear_task_boundaries: Constant[bool] = True
+            # known_task_boundaries_at_train_time: Constant[bool] = True
+            # known_task_boundaries_at_test_time: Constant[bool] = True
+        }
+        abstract class task_incremental.Environment <<Environment>> extends incremental.Environment {}
+        abstract class task_incremental.Observations <<Observations>> extends incremental.Observations {}
+        abstract class task_incremental.Actions <<Actions>> extends incremental.Actions {}
+        abstract class task_incremental.Rewards <<Rewards>> extends incremental.Rewards {}
+        ' task_incremental.Environment -.- task_incremental.Observations: yields
+        ' task_incremental.Environment -.- task_incremental.Actions: receives
+        ' task_incremental.Environment -.- task_incremental.Rewards: returns
+
+    }
+    package traditional{
+        abstract class TraditionalSetting <<AbstractSetting>> extends IncrementalSetting {
+            == New assumptions ==
+
+            + stationary_context: Constant[bool] = True
+
+            == Inherited assumptions ==
+
+            # clear_task_boundaries: Constant[bool] = True
+        }
+        abstract class traditional.Environment <<Environment>> extends incremental.Environment {}
+        abstract class traditional.Observations <<Observations>> extends incremental.Observations {}
+        abstract class traditional.Actions <<Actions>> extends incremental.Actions {}
+        abstract class traditional.Rewards <<Rewards>> extends incremental.Rewards {}
+        ' traditional.Environment -.- traditional.Observations: yields
+        ' traditional.Environment -.- traditional.Actions: receives
+        ' traditional.Environment -.- traditional.Rewards: returns
+    }
+    package multi_task {
+        abstract class MultiTaskSetting <<AbstractSetting>> extends TaskIncrementalSetting, TraditionalSetting {
+            == New assumptions (compared to Traditional) ==
+
+            + task_labels_at_train_time: Constant[bool] = True
+            + task_labels_at_test_time: Constant[bool] = True
+
+            == New assumptions (compared to TaskIncremental) ==
+
+            + stationary_context: Context[bool] = True
+            
+            == Inherited assumptions ==
+            # stationary_context: Context[bool] = True
+            # task_labels_at_train_time: Constant[bool] = True
+            # task_labels_at_test_time: Constant[bool] = True
+            # clear_task_boundaries: Constant[bool] = True
+            # known_task_boundaries_at_train_time: Constant[bool] = True
+            # known_task_boundaries_at_test_time: Constant[bool] = True
+        }
+        abstract class multi_task.Environment <<Environment>> extends task_incremental.Environment, traditional.Environment {}
+        abstract class multi_task.Observations <<Observations>> extends task_incremental.Observations, traditional.Observations {}
+        abstract class multi_task.Actions <<Actions>> extends task_incremental.Actions, traditional.Actions {}
+        abstract class multi_task.Rewards <<Rewards>> extends task_incremental.Rewards, traditional.Rewards {}
+    }
 }
 
+' !include settings/base/base.puml
+' remove settings.base
+
+' !include gym.puml
+remove assumptions
+' remove @unlinked
+remove class_incremental
+remove domain_incremental
+' remove <<Environment>>
+' remove <<Observations>>
+' remove <<Actions>>
+' remove <<Rewards>>
+
+' show context_assumption_family
+' remove assumptions
+' remove supervision_assumptions
+' remove context_assumption_family
+' remove <<Assumption>>
+' remove <<AbstractSetting>>
+
+' remove sl
+' remove cl
+' remove rl
+' show SLSetting
+' show RLSetting
+' remove <<Setting>>
+
+' hide empty fields
+' hide empty methods
+' ' remove gym
+' remove gym.spaces
+' ' remove cl
+' remove class_incremental
+' remove domain_incremental
 
 
 @enduml

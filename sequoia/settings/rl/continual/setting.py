@@ -295,16 +295,16 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     # steps_per_task: Optional[int] = field(default=None, to_dict=False, cmd=False)
 
     def __post_init__(self):
-        renamed_fields = {
-            "max_steps": "train_max_steps",
-            "test_steps": "test_max_steps",
-            "steps_per_task": ""
-        }
-        if self.max_steps is not None:
-            warnings.warn(DeprecationWarning("'max_steps' is deprecated, use 'train_max_steps' instead."))
-            self.train_max_steps = self.max_steps
-        if self.test_steps is not None:
-            warnings.warn(DeprecationWarning("'test_steps' is deprecated, use 'test_max_steps' instead."))
+        # renamed_fields = {
+        #     "max_steps": "train_max_steps",
+        #     "test_steps": "test_max_steps",
+        #     "steps_per_task": ""
+        # }
+        # if self.max_steps is not None:
+        #     warnings.warn(DeprecationWarning("'max_steps' is deprecated, use 'train_max_steps' instead."))
+        #     self.train_max_steps = self.max_steps
+        # if self.test_steps is not None:
+        #     warnings.warn(DeprecationWarning("'test_steps' is deprecated, use 'test_max_steps' instead."))
 
         super().__post_init__()
 
