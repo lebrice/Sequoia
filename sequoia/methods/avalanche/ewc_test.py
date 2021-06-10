@@ -44,7 +44,7 @@ class TestEWCMethod(_TestAvalancheMethod):
                 MTSimpleCNN,
                 reason=(
                     "Shape Mismatch between the saved parameter importance and the "
-                    "current weight tensor in EWC plugin.",
+                    "current weight tensor in EWC plugin."
                 ),
             ),
             # MTSimpleMLP,
@@ -52,7 +52,7 @@ class TestEWCMethod(_TestAvalancheMethod):
                 MTSimpleMLP,
                 reason=(
                     "Shape Mismatch between the saved parameter importance and the "
-                    "current weight tensor in EWC plugin.",
+                    "current weight tensor in EWC plugin."
                 ),
             ),
         ],
@@ -77,7 +77,7 @@ class TestEWCMethod(_TestAvalancheMethod):
                 MTSimpleCNN,
                 reason=(
                     "Shape Mismatch between the saved parameter importance and the "
-                    "current weight tensor in EWC plugin.",
+                    "current weight tensor in EWC plugin."
                 ),
             ),
             # MTSimpleMLP,
@@ -85,7 +85,7 @@ class TestEWCMethod(_TestAvalancheMethod):
                 MTSimpleMLP,
                 reason=(
                     "Shape Mismatch between the saved parameter importance and the "
-                    "current weight tensor in EWC plugin.",
+                    "current weight tensor in EWC plugin."
                 ),
             ),
         ],
@@ -110,7 +110,7 @@ class TestEWCMethod(_TestAvalancheMethod):
                 MTSimpleCNN,
                 reason=(
                     "Shape Mismatch between the saved parameter importance and the "
-                    "current weight tensor in EWC plugin.",
+                    "current weight tensor in EWC plugin."
                 ),
             ),
             # MTSimpleMLP,
@@ -118,7 +118,7 @@ class TestEWCMethod(_TestAvalancheMethod):
                 MTSimpleMLP,
                 reason=(
                     "Shape Mismatch between the saved parameter importance and the "
-                    "current weight tensor in EWC plugin.",
+                    "current weight tensor in EWC plugin."
                 ),
             ),
         ],
@@ -145,7 +145,7 @@ class TestEWCMethod(_TestAvalancheMethod):
                 MTSimpleCNN,
                 reason=(
                     "Shape Mismatch between the saved parameter importance and the "
-                    "current weight tensor in EWC plugin.",
+                    "current weight tensor in EWC plugin."
                 ),
             ),
             # MTSimpleMLP,
