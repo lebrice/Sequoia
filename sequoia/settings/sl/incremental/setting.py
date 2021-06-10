@@ -122,75 +122,14 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
 
     # Class variable holding a dict of the names and types of all available
     # datasets.
-    # TODO: Issue #43: Support other datasets than just classification
-    available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = {
-        c.__name__.lower(): c
-        for c in [
-            CIFARFellowship,
-            MNISTFellowship,
-            ImageNet100,
-            ImageNet1000,
-            CIFAR10,
-            CIFAR100,
-            EMNIST,
-            KMNIST,
-            MNIST,
-            QMNIST,
-            FashionMNIST,
-            Synbols,
-        ]
-        # "synbols": Synbols,
-        # "synbols_font": partial(Synbols, task="fonts"),
-    }
+    available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = DiscreteTaskAgnosticSLSetting.available_datasets.copy()
+
     # A continual dataset to use. (Should be taken from the continuum package).
     dataset: str = choice(available_datasets.keys(), default="mnist")
 
-    # Transformations to use. See the Transforms enum for the available values.
-    transforms: List[Transforms] = list_field(
-        Transforms.to_tensor,
-        # BUG: The input_shape given to the Model doesn't have the right number
-        # of channels, even if we 'fixed' them here. However the images are fine
-        # after.
-        Transforms.three_channels,
-        Transforms.channels_first_if_needed,
-    )
-
-    # Either number of classes per task, or a list specifying for
-    # every task the amount of new classes.
-    increment: Union[int, List[int]] = list_field(
-        2, type=int, nargs="*", alias="n_classes_per_task"
-    )
-    # The scenario number of tasks.
-    # If zero, defaults to the number of classes divied by the increment.
-    nb_tasks: int = 0
-    # A different task size applied only for the first task.
-    # Desactivated if `increment` is a list.
-    initial_increment: int = 0
-    # An optional custom class order, used for NC.
-    class_order: Optional[List[int]] = None
-    # Either number of classes per task, or a list specifying for
-    # every task the amount of new classes (defaults to the value of
-    # `increment`).
-    test_increment: Optional[Union[List[int], int]] = None
-    # A different task size applied only for the first test task.
-    # Desactivated if `test_increment` is a list. Defaults to the
-    # value of `initial_increment`.
-    test_initial_increment: Optional[int] = None
-    # An optional custom class order for testing, used for NC.
-    # Defaults to the value of `class_order`.
-    test_class_order: Optional[List[int]] = None
-
-    # TODO: Need to put num_workers in only one place.
-    batch_size: int = field(default=32, cmd=False)
-    num_workers: int = field(default=4, cmd=False)
-
-    # Wether or not to relabel the y's to be within the [0, n_classes_per_task]
-    # range. Floating (False by default) in Class-Incremental Setting, but set to True
-    # in domain_incremental Setting.
-    shared_action_space: bool = False
-
     # TODO: IDEA: Adding these fields/constructor arguments so that people can pass a
-    # custom ready-made `Scenario` from continuum to use.
+    # custom ready-made `Scenario` from continuum to use (not sure this is a good idea
+    # though)
     train_cl_scenario: Optional[_BaseScenario] = field(
         default=None, cmd=False, to_dict=False
     )
@@ -217,18 +156,8 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         """Apply the given method on this setting to producing some results."""
         # TODO: It still isn't super clear what should be in charge of creating
         # the config, and how to create it, when it isn't passed explicitly.
-        if config is not None:
-            self.config = config
-            logger.debug(f"Using Config {self.config}")
-        elif isinstance(getattr(method, "config", None), Config):
-            # If the Method has a `config` attribute that is a Config, use that.
-            self.config = getattr(method, "config")
-            logger.debug(f"Using Config from the Method: {self.config}")
-        else:
-            logger.debug("Parsing the Config from the command-line.")
-            self.config = Config.from_args(self._argv, strict=False)
-            logger.debug(f"Resulting Config: {self.config}")
-        assert self.config is not None
+        self.config = config or self._setup_config(method) 
+        assert self.config
 
         method.configure(setting=self)
 
@@ -241,7 +170,6 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
 
     def prepare_data(self, data_dir: Path = None, **kwargs):
         self.config = self.config or Config.from_args(self._argv, strict=False)
-
         # if self.batch_size is None:
         #     logger.warning(UserWarning(
         #         f"Using the default batch size of 32. (You can set the "
@@ -250,14 +178,15 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         #     ))
         #     self.batch_size = 32
 
-        data_dir = data_dir or self.data_dir or self.config.data_dir
-        self.make_dataset(data_dir, download=True)
-        self.data_dir = data_dir
-        super().prepare_data(**kwargs)
+        # data_dir = data_dir or self.data_dir or self.config.data_dir
+        # self.make_dataset(data_dir, download=True)
+        # self.data_dir = data_dir
+        return super().prepare_data(data_dir=data_dir, **kwargs)
 
     def setup(self, stage: str = None):
         super().setup(stage=stage)
-        # TODO: Adding this temporarily just for the competition
+        # TODO: Adding this temporarily just for the competition: The TestEnvironment
+        # needs access to this information in order to split the metrics for each task.
         self.test_boundary_steps = [0] + list(
             itertools.accumulate(map(len, self.test_datasets))
         )[:-1]
@@ -266,14 +195,14 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         #     itertools.accumulate(map(len, self.test_datasets))
         # )[:-1]
 
-    def _make_train_dataset(self) -> Dataset:
-        return self.train_datasets[self.current_task_id]
+    # def _make_train_dataset(self) -> Dataset:
+    #     return self.train_datasets[self.current_task_id]
 
-    def _make_val_dataset(self) -> Dataset:
-        return self.val_datasets[self.current_task_id]
+    # def _make_val_dataset(self) -> Dataset:
+    #     return self.val_datasets[self.current_task_id]
 
-    def _make_test_dataset(self) -> Dataset:
-        return concat(self.test_datasets)
+    # def _make_test_dataset(self) -> Dataset:
+    #     return concat(self.test_datasets)
 
     def train_dataloader(
         self, batch_size: int = None, num_workers: int = None
@@ -282,8 +211,10 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         train_env = super().train_dataloader(
             batch_size=batch_size, num_workers=num_workers
         )
-        # TODO: Set a different prefix for `MeasureSLPerformanceWrapper`
+        # Overwrite the wandb prefix for the `MeasureSLPerformanceWrapper` to include
+        # the task id.
         if self.monitor_training_performance:
+            # Overwrite the 'wandb prefix'
             assert isinstance(train_env, MeasureSLPerformanceWrapper)
             train_env.wandb_prefix = f"Train/Task {self.current_task_id}"
         self.train_env = train_env

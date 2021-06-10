@@ -8,7 +8,7 @@ from sequoia.common.config import Config, TrainerConfig
 from sequoia.conftest import skip_param, slow
 from sequoia.settings import (ClassIncrementalSetting, IncrementalRLSetting,
                               RLSetting, Setting)
-from sequoia.settings.rl.continual import RLResults
+from sequoia.settings.rl.continual.results import ContinualRLResults
 
 from .baseline_method import BaselineMethod, BaselineModel
 
@@ -35,7 +35,7 @@ def test_cartpole_state(config: Config, trainer: Trainer):
     method.hparams.learning_rate = 0.01
     
     setting = RLSetting(dataset="cartpole", max_steps=5000)
-    results: RLResults = setting.apply(method)
+    results: ContinualRLResults = setting.apply(method)
 
     print(results.to_log_dict())
     # The method should normally get the maximum length (200), but checking with
@@ -54,7 +54,7 @@ def test_incremental_cartpole_state(config: Config, trainer: Trainer):
     method.hparams.learning_rate = 0.01
     
     setting = IncrementalRLSetting(dataset="cartpole", max_steps=5000, nb_tasks=2)
-    results: RLResults = setting.apply(method)
+    results: ContinualRLResults = setting.apply(method)
 
     print(results.to_log_dict())
     # The method should normally get the maximum length (200), but checking with

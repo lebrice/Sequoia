@@ -322,14 +322,16 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     def send(self, action):
         # TODO: Make `send` use `self.step`, that way wrappers can apply the same way to
         # RL and SL environments.
-        # if hasattr(self.unwrapped, "send"):
-        
-        # action = self.action(action)
-        # reward = self.env.send(action)
-        # reward = self.reward(reward)
-        self.action_ = action
-        self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
-        return self.reward_
+        if hasattr(self.unwrapped, "send"):
+            action = self.action(action)
+            reward = self.env.send(action)
+            reward = self.reward(reward)
+            return reward
+        else:
+                
+            self.action_ = action
+            self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
+            return self.reward_
 
         # (Option 1 below)
         # return self.env.send(action)

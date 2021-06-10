@@ -152,6 +152,10 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     # Defaults to the value of `class_order`.
     test_class_order: Optional[List[int]] = None
 
+    # Wether task boundaries are smooth or not.
+    smooth_task_boundaries: bool = flag(True)
+    # Wether the context (task) variable is stationary or not.
+    stationary_context: bool = flag(False)
     # Wether tasks share the same action space or not.
     # TODO: This will probably be moved into a different assumption.
     shared_action_space: Optional[bool] = None
@@ -159,11 +163,6 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     # TODO: Need to put num_workers in only one place.
     batch_size: int = field(default=32, cmd=False)
     num_workers: int = field(default=4, cmd=False)
-
-    # Wether task boundaries are smooth or not.
-    smooth_task_boundaries: bool = flag(True)
-    # Wether the context (task) variable is stationary or not.
-    stationary_context: bool = flag(False)
 
     def __post_init__(self):
         super().__post_init__()
@@ -497,13 +496,18 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                     # If we have a shared output space, then they are all mapped to [0, n_per_task]
                     self.test_datasets = list(map(relabel, self.test_datasets))
 
-    def _make_train_dataset(self) -> Dataset:
+    def _make_train_dataset(self) -> Union[TaskSet, Dataset]:
         # NOTE: Passing the same seed to `train`/`valid`/`test` is fine, because it's
         # only used for the shuffling used to make the task boundaries smooth.
         if self.smooth_task_boundaries:
             return smooth_task_boundaries_concat(
                 self.train_datasets, seed=self.config.seed
             )
+        if self.stationary_context:
+            joined_dataset = concat(self.train_datasets)
+            return shuffle(joined_dataset, seed=self.config.seed)
+        if self.known_task_boundaries_at_train_time:
+            return self.train_datasets[self.current_task_id]
         else:
             return concat(self.train_datasets)
 
@@ -513,7 +517,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 self.val_datasets, seed=self.config.seed
             )
         if self.stationary_context:
-            joined_dataset = concat(self.train_datasets)
+            joined_dataset = concat(self.val_datasets)
             return shuffle(joined_dataset, seed=self.config.seed)
         if self.known_task_boundaries_at_train_time:
             return self.val_datasets[self.current_task_id]
@@ -763,9 +767,23 @@ def smooth_task_boundaries_concat(
 
 
 from .wrappers import replace_taskset_attributes
+from typing import Sequence
+from typing import overload
+from functools import singledispatch
+DatasetType = TypeVar("DatasetType", bound=Dataset)
 
 
-def subset(taskset: TaskSet, indices: np.ndarray) -> TaskSet:
+@overload
+def subset(dataset: TaskSet, indices: Sequence[int]) -> TaskSet:
+    ...
+
+@singledispatch
+def subset(dataset: DatasetType, indices: Sequence[int]) -> Union[Subset, DatasetType]:
+    raise NotImplementedError(f"Don't know how to take a subset of dataset {dataset}")
+    return Subset(dataset, indices)
+
+@subset.register
+def taskset_subset(taskset: TaskSet, indices: np.ndarray) -> TaskSet:
     # x, y, t = taskset.get_raw_samples(indices)
     x, y, t = taskset.get_raw_samples(indices)
     # TODO: Not sure if/how to handle the `bounding_boxes` attribute here.
@@ -780,7 +798,7 @@ def subset(taskset: TaskSet, indices: np.ndarray) -> TaskSet:
 def random_subset(
     taskset: TaskSet, n_samples: int, seed: int = None, ordered: bool = True
 ) -> TaskSet:
-    """ Returns a random (ordered by default) subset of the given TaskSet. """
+    """ Returns a random (ordered) subset of the given TaskSet. """
     rng = np.random.default_rng(seed)
     dataset_length = len(taskset)
     if n_samples > dataset_length:
@@ -788,13 +806,18 @@ def random_subset(
             f"Dataset has {dataset_length}, asked for {n_samples} samples."
         )
     indices = rng.permutation(range(dataset_length))[:n_samples]
+    # indices = rng.choice(len(taskset), size=n_samples, replace=False)
     if ordered:
         indices = sorted(indices)
-    # samples = rng.choice(len(taskset), size=n_samples, replace=False)
     assert len(indices) == n_samples
     return subset(taskset, indices)
 
 
-def shuffle(dataset: TaskSet, seed: int = None) -> TaskSet:
+
+DatasetType = TypeVar("DatasetType", bound=Dataset)
+
+def shuffle(dataset: DatasetType, seed: int = None) -> DatasetType:
     length = len(dataset)
-    return random_subset(dataset, seed=seed, ordered=False)
+    rng = np.random.default_rng(seed)
+    perm = rng.permutation(range(length))
+    return subset(dataset, perm)

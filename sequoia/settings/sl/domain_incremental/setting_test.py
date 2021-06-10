@@ -63,7 +63,7 @@ def test_domain_incremental_mnist_setup():
     )
     assert setting.action_space == spaces.Discrete(2)
     assert setting.reward_space == spaces.Discrete(2)
-    
+
     for i in range(setting.nb_tasks):
         setting.current_task_id = i
         batch_size = 5

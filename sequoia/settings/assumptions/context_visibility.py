@@ -24,6 +24,7 @@ class PartiallyObservableContextAssumption(HiddenContextAssumption):
     # Wether we get informed when reaching the boundary between two tasks during
     # training.
     known_task_boundaries_at_train_time: bool = constant(True)
+    known_task_boundaries_at_test_time: bool = flag(True)
 
 
 @dataclass

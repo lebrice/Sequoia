@@ -12,6 +12,22 @@ from pathlib import Path
 from .setting import ContinualSLSetting, smooth_task_boundaries_concat
 
 
+from continuum.tasks import TaskSet, concat
+from continuum.datasets import MNIST
+from continuum.scenarios import ClassIncremental
+from sequoia.common.config import Config
+from sequoia.settings.sl.continual.setting import shuffle
+
+
+def test_shuffle(config: Config):
+    dataset = MNIST(data_path=config.data_dir, train=True)
+    cl_dataset = concat(ClassIncremental(dataset, increment=2))
+    shuffled_dataset = shuffle(cl_dataset)
+    assert (shuffled_dataset._y != cl_dataset._y).sum() > len(cl_dataset) / 2
+    assert (shuffled_dataset._t != cl_dataset._t).sum() > len(cl_dataset) / 2
+    # assert False, list(zip(shuffled_dataset._t, cl_dataset._t, shuffled_dataset._y, cl_dataset._y))[:10]
+
+
 class TestContinualSLSetting(SettingTests):
     Setting: ClassVar[Type[Setting]] = ContinualSLSetting
 
@@ -20,21 +36,45 @@ class TestContinualSLSetting(SettingTests):
         dataset="mnist", batch_size=64,
     )
 
+    # @pytest.fixture
+    # def setting_kwargs(self):
+
     def test_shared_action_space(self, config: Config):
-        setting = ContinualSLSetting(
-            dataset="mnist", shared_action_space=True, config=config
-        )
-        c = Counter()
-        train_env = setting.train_dataloader(batch_size=128, num_workers=4)
-        for _, rewards in train_env:
+        kwargs = dict(dataset="mnist", config=config)
+        if not self.Setting.shared_action_space:
+            kwargs.update(shared_action_space=True)
+
+        setting = self.Setting(**kwargs)
+        y_counter = Counter()
+        t_counter = Counter()
+        test_env = setting.test_dataloader(batch_size=128, num_workers=4)
+        for obs, rewards in test_env:
             if rewards is None:
-                rewards = train_env.send(train_env.action_space.sample())
+                rewards = test_env.send(test_env.action_space.sample())
 
             y = rewards.y.tolist()
-            c.update(y)
+            t = (
+                obs.task_labels.tolist()
+                if obs.task_labels is not None
+                else [None for _ in range(obs.x.shape[0])]
+            )
+            y_counter.update(y)
+            t_counter.update(t)
 
         # This is what you get with mnist, with the default class ordering:
-        assert c == {1: 27456, 0: 26546}
+        # if setting.known_task_boundaries_at_train_time:
+        #     # Only the first task of mnist, in this case.
+        #     assert y_counter == {1: 6065, 0: 5534}
+
+        assert y_counter == {0: 4926, 1: 5074}
+        if setting.task_labels_at_test_time:
+            assert t_counter == {0: 2115, 1: 2042, 3: 1986, 4: 1983, 2: 1874}
+        else:
+            assert t_counter == {None: 10_000}
+        # assert t_counter
+
+        # Full Train envs:
+        # assert y_counter == {1: 27456, 0: 26546}
         # assert False, c
 
     def test_only_one_epoch(self, config: Config):
@@ -51,14 +91,16 @@ class TestContinualSLSetting(SettingTests):
 
     @pytest.mark.no_xvfb
     @pytest.mark.timeout(20)
-    @pytest.mark.skipif(not Path("temp").exists(), reason="Need temp dir for saving the figure this test creates.")
+    @pytest.mark.skipif(
+        not Path("temp").exists(),
+        reason="Need temp dir for saving the figure this test creates.",
+    )
     def test_show_distributions(self, config: Config):
         setting = self.Setting(dataset="mnist", config=config)
-        
-        
-        
+
         import matplotlib.pyplot as plt
         from functools import partial
+
         fig, axes = plt.subplots(2, 3)
         name_to_env_fn = {
             "train": setting.train_dataloader,
@@ -86,7 +128,7 @@ class TestContinualSLSetting(SettingTests):
 
             classes = list(set().union(*y_counters))
             task_ids = list(set().union(*t_counters))
-            
+
             nb_classes = len(classes)
             x = np.arange(len(env))
 

@@ -66,22 +66,22 @@ sudo chown root /tmp/.X11-unix/
 
 ### Current Settings & Assumptions:
 
-| Setting                                                                    | RL vs SL | clear task boundaries? | Task boundaries given? | Task labels at training time? | task labels at test time | Stationary context? |
-| ------------------------------------------------------------------------   | --       | ---------------------- | ---------------------- | ----------------------------- | ------------------------ | ------------------- |
-| [Continual RL](sequoia/settings/rl/continual/setting.py)                   | RL       | no                     | no                     | no                            | no                       | no                  |             
-| [Discrete Task-Agnostic RL](sequoia/settings/rl/discrete/setting.py)       | RL       | **yes**                | **yes**                | no                            | no                       | no                  |
-| [Incremental RL](sequoia/settings/rl/incremental/setting.py)               | RL       | **yes**                | **yes**                | **yes**                       | no                       | no                  |
-| [Task-Incremental RL](sequoia/settings/rl/task_incremental/setting.py)     | RL       | **yes**                | **yes**                | **yes**                       | **yes**                  | no                  |
-| [Traditional RL](sequoia/settings/rl/task_incremental/setting.py)          | RL       | **yes**                | **yes**                | **yes**                       | no                       | **yes**             |
-| [Multi-Task RL](sequoia/settings/rl/task_incremental/setting.py)           | RL       | **yes**                | **yes**                | **yes**                       | **yes**                  | **yes**             |
-| [Continual SL](sequoia/settings/sl/continual/setting.py)                   | RL       | no                     | no                     | no                            | no                       | no                  |
-| [Discrete Task-Agnostic SL](sequoia/settings/sl/discrete/setting.py)       | RL       | **yes**                | no                     | no                            | no                       | no                  |
-| [(Class) Incremental SL](sequoia/settings/sl/incremental/setting.py)       | RL       | **yes**                | **yes**                | no                            | no                       | no                  |
-| [Domain-Incremental SL](sequoia/settings/sl/domain_incremental/setting.py) | RL       | **yes**                | **yes**                | **yes**                       | no                       | no                  |
-| [Task-Incremental SL](sequoia/settings/sl/task_incremental/setting.py)     | RL       | **yes**                | **yes**                | **yes**                       | **yes**                  | no                  |
-| [Traditional SL](sequoia/settings/sl/traditional/setting.py)               | RL       | **yes**                | **yes**                | **yes**                       | no                       | **yes**             |
-| [Multi-Task SL](sequoia/settings/sl/multi_task/setting.py)                 | RL       | **yes**                | **yes**                | **yes**                       | **yes**                  | **yes**             |
-<!-- | [Class-Incremental SL](sequoia/settings/sl/class_incremental/setting.py)   | RL       | **yes**                | **yes**                | no                            | no                       | no                  | -->
+| Setting                                                                    | RL vs SL | clear task boundaries? | Task boundaries given? | Task labels at training time? | task labels at test time | Stationary context? | Fixed action space  |
+| ------------------------------------------------------------------------   | --       | ---------------------- | ---------------------- | ----------------------------- | ------------------------ | ------------------- | ------------------- |
+| [Continual RL](sequoia/settings/rl/continual/setting.py)                   | RL       | no                     | no                     | no                            | no                       | no                  | no(?)               |
+| [Discrete Task-Agnostic RL](sequoia/settings/rl/discrete/setting.py)       | RL       | **yes**                | **yes**                | no                            | no                       | no                  | no(?)               |
+| [Incremental RL](sequoia/settings/rl/incremental/setting.py)               | RL       | **yes**                | **yes**                | **yes**                       | no                       | no                  | no(?)               |
+| [Task-Incremental RL](sequoia/settings/rl/task_incremental/setting.py)     | RL       | **yes**                | **yes**                | **yes**                       | **yes**                  | no                  | no(?)               |
+| [Traditional RL](sequoia/settings/rl/task_incremental/setting.py)          | RL       | **yes**                | **yes**                | **yes**                       | no                       | **yes**             | no(?)               |
+| [Multi-Task RL](sequoia/settings/rl/task_incremental/setting.py)           | RL       | **yes**                | **yes**                | **yes**                       | **yes**                  | **yes**             | no(?)               |
+| [Continual SL](sequoia/settings/sl/continual/setting.py)                   | SL       | no                     | no                     | no                            | no                       | no                  | no                  |
+| [Discrete Task-Agnostic SL](sequoia/settings/sl/discrete/setting.py)       | SL       | **yes**                | no                     | no                            | no                       | no                  | no                  |
+| [(Class) Incremental SL](sequoia/settings/sl/incremental/setting.py)       | SL       | **yes**                | **yes**                | no                            | no                       | no                  | no                  |
+| [Domain-Incremental SL](sequoia/settings/sl/domain_incremental/setting.py) | SL       | **yes**                | **yes**                | **yes**                       | no                       | no                  | **yes**             |
+| [Task-Incremental SL](sequoia/settings/sl/task_incremental/setting.py)     | SL       | **yes**                | **yes**                | **yes**                       | **yes**                  | no                  | no                  |
+| [Traditional SL](sequoia/settings/sl/traditional/setting.py)               | SL       | **yes**                | **yes**                | **yes**                       | no                       | **yes**             | no                  |
+| [Multi-Task SL](sequoia/settings/sl/multi_task/setting.py)                 | SL       | **yes**                | **yes**                | **yes**                       | **yes**                  | **yes**             | no                  |
+<!-- | [Class-Incremental SL](sequoia/settings/sl/class_incremental/setting.py)   | SL       | **yes**                | **yes**                | no                            | no                       | no                  | -->
 
 #### Notes
 

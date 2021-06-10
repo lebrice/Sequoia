@@ -25,7 +25,8 @@ def check_is_multitask_env(env: Environment, has_rewards: bool):
     # dataloader-style:
     for i, (observations, rewards) in itertools.islice(enumerate(env), 10):
         assert isinstance(observations, MultiTaskSLSetting.Observations)
-        assert len(set(observations.task_labels.cpu().tolist())) > 1
+        task_labels = observations.task_labels.cpu().tolist()
+        assert len(set(task_labels)) > 1
         if has_rewards:
             assert isinstance(rewards, MultiTaskSLSetting.Rewards)
             # Check that there is no relabelling happening, by checking that there are
@@ -56,7 +57,6 @@ def check_is_multitask_env(env: Environment, has_rewards: bool):
 
 def test_multitask_setting():
     setting = MultiTaskSLSetting(dataset="mnist")
-
     assert setting.phases == 1
     assert setting.nb_tasks == 5
     assert setting.observation_space == NamedTupleSpace(
@@ -69,7 +69,6 @@ def test_multitask_setting():
 
     with setting.val_dataloader(batch_size=32, num_workers=0) as val_env:
         check_is_multitask_env(val_env, has_rewards=True)
-        
 
 
 

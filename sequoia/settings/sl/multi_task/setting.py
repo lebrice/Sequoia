@@ -27,6 +27,9 @@ from ..traditional.setting import TraditionalSLSetting
 from ..task_incremental.setting import TaskIncrementalSLSetting
 from sequoia.settings.base import Results
 
+# TODO: Playing around with this 'constant_property' idea as an alternative to the
+# init=False of `constant` field.
+from sequoia.utils.utils import constant_property
 
 logger = get_logger(__file__)
 
@@ -39,7 +42,7 @@ class MultiTaskSLSetting(TaskIncrementalSLSetting, TraditionalSLSetting):
     """
     Results: ClassVar[Type[Results]] = TraditionalSLSetting.Results
 
-    stationary_context: bool = constant(True)
+    stationary_context: bool = constant_property(True)
 
     def __post_init__(self):
         super().__post_init__()

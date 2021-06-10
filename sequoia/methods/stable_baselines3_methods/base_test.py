@@ -157,7 +157,7 @@ class BaseTests:
             config=config,
         )
         assert setting.train_max_steps == 1_000
-        assert setting.steps_per_phase == setting.max_steps // setting.phases
+        assert setting.steps_per_phase == setting.train_max_steps // setting.phases
         results: Results = setting.apply(method)
         assert results.objective is not None
         print(results.summary())
