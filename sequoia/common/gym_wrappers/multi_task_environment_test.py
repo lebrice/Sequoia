@@ -9,7 +9,7 @@ from gym.vector import SyncVectorEnv
 from gym.wrappers import TimeLimit
 
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
-from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
+from sequoia.common.spaces import TypedDictSpace
 from sequoia.conftest import monsterkong_required, param_requires_monsterkong, atari_py_required
 from sequoia.settings import RLSetting
 from sequoia.utils.utils import dict_union
@@ -185,7 +185,7 @@ def test_add_task_id_to_obs():
     env.seed(123)
     env.reset()
 
-    assert env.observation_space == NamedTupleSpace(
+    assert env.observation_space == spaces.Dict(
         x=original.observation_space,
         task_labels=spaces.Discrete(4),
     )
@@ -195,7 +195,7 @@ def test_add_task_id_to_obs():
         obs, _, done, info = env.step(env.action_space.sample())
         # env.render()
 
-        x, task_id = obs
+        x, task_id = obs["x"], obs["task_labels"]
 
         if 0 <= step < 10:
             assert env.length == starting_length and env.gravity == starting_gravity
@@ -215,7 +215,7 @@ def test_add_task_id_to_obs():
 
         if done:
             obs = env.reset()
-            assert isinstance(obs, tuple)
+            assert isinstance(obs, dict)
 
 
     env.close()
@@ -244,7 +244,7 @@ def test_starting_step_and_max_step():
     env.seed(123)
     env.reset()
 
-    assert env.observation_space == NamedTupleSpace(
+    assert env.observation_space == spaces.Dict(
         x=original.observation_space,
         task_labels=spaces.Discrete(4),
     )
@@ -270,7 +270,7 @@ def test_starting_step_and_max_step():
         obs, _, done, info = env.step(env.action_space.sample())
         # env.render()
 
-        x, task_id = obs
+        x, task_id = obs["x"], obs["task_labels"]
 
         # Check that we're always stuck between 10 and 20
         assert 10 <= env.steps < 20
@@ -280,7 +280,7 @@ def test_starting_step_and_max_step():
         if done:
             print(f"Resetting on step {step}")
             obs = env.reset()
-            assert isinstance(obs, tuple)
+            assert isinstance(obs, dict)
 
     env.close()
 
@@ -299,7 +299,7 @@ def test_task_id_is_added_even_when_no_known_task_schedule():
     env.seed(123)
     env.reset()
 
-    assert env.observation_space == NamedTupleSpace(
+    assert env.observation_space == spaces.Dict(
         x=original.observation_space,
         task_labels=spaces.Discrete(1),
     )
@@ -307,7 +307,7 @@ def test_task_id_is_added_even_when_no_known_task_schedule():
         obs, _, done, info = env.step(env.action_space.sample())
         # env.render()
 
-        x, task_id = obs
+        x, task_id = obs["x"], obs["task_labels"]
         assert task_id == 0
 
         if done:
@@ -331,13 +331,13 @@ def test_task_schedule_monsterkong():
     }, add_task_id_to_obs=True)
     obs = env.reset()
 
-    # img, task_labels = obs
-    assert obs[1] == 0
+    img, task_labels = obs["x"], obs["task_labels"]
+    assert task_labels == 0
     assert env.get_level() == 0
 
     for i in range(500):
         obs, reward, done, info = env.step(env.action_space.sample())
-        assert obs[1] == i // 100
+        assert obs["task_labels"] == i // 100
         assert env.level == i // 100
         env.render()
         assert isinstance(done, bool)
@@ -345,12 +345,12 @@ def test_task_schedule_monsterkong():
             print(f"End of episode at step {i}")
             obs = env.reset()
 
-    assert obs[1] == 4
+    assert obs["task_labels"] == 4
     assert env.level == 4
     # level stays the same even after reaching that objective.
     for i in range(500):
         obs, reward, done, info = env.step(env.action_space.sample())
-        assert obs[1] == 4
+        assert obs["task_labels"] == 4
         assert env.level == 4
         env.render()
         if done:
@@ -380,12 +380,12 @@ def test_task_schedule_with_callables():
     obs = env.reset()
 
     # img, task_labels = obs
-    assert obs[1] == 0
+    assert obs["task_labels"] == 0
     assert env.get_level() == 0
 
     for i in range(500):
         obs, reward, done, info = env.step(env.action_space.sample())
-        assert obs[1] == i // 100
+        assert obs["task_labels"] == i // 100
         assert env.level == i // 100
         env.render()
         assert isinstance(done, bool)
@@ -393,12 +393,12 @@ def test_task_schedule_with_callables():
             print(f"End of episode at step {i}")
             obs = env.reset()
 
-    assert obs[1] == 4
+    assert obs["task_labels"] == 4
     assert env.level == 4
     # level stays the same even after reaching that objective.
     for i in range(500):
         obs, reward, done, info = env.step(env.action_space.sample())
-        assert obs[1] == 4
+        assert obs["task_labels"] == 4
         assert env.level == 4
         env.render()
         if done:
@@ -426,16 +426,16 @@ def test_random_task_on_each_episode():
     task_labels = []
     for i in range(10):
         obs = env.reset()
-        task_labels.append(obs[1])
+        task_labels.append(obs["task_labels"])
     assert len(set(task_labels)) > 1
 
     # Episodes only last 10 steps. Tasks don't have anything to do with the task
     # schedule.
     obs = env.reset()
-    start_task_label = obs[1]
+    start_task_label = obs["task_labels"]
     for i in range(10):
         obs, reward, done, info = env.step(env.action_space.sample())
-        assert obs[1] == start_task_label
+        assert obs["task_labels"] == start_task_label
         if i == 9:
             assert done
         else:
@@ -465,12 +465,12 @@ def test_random_task_on_each_episode_and_only_one_task_in_schedule():
     lengths = []
     for i in range(10):
         obs = env.reset()
-        task_labels.append(obs[1])
+        task_labels.append(obs["task_labels"])
         lengths.append(env.length)
         done = False
         while not done:
             obs, reward, done, info = env.step(env.action_space.sample())
-            task_labels.append(obs[1])
+            task_labels.append(obs["task_labels"])
             lengths.append(env.length)
 
     assert set(task_labels) == {0}
@@ -543,7 +543,7 @@ def test_task_sequence_is_reproducible(env: str):
         for episode in range(n_episodes_per_run):
             print(f"Episode {episode} / {n_episodes_per_run}")
             obs = env.reset()
-            task_id: int = obs[1][0]
+            task_id: int = obs["task_labels"][0]
             task_length = 0
             done = False
             while not done:

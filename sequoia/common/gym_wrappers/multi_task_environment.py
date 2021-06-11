@@ -85,15 +85,26 @@ def add_task_labels(observation: Any, task_labels: Any) -> Any:
 @add_task_labels.register(Tensor)
 @add_task_labels.register(np.ndarray)
 def _add_task_labels_to_single_obs(observation: X, task_labels: T) -> Tuple[X, T]:
-    return ObservationsAndTaskLabels(observation, task_labels)
+    return {
+        "x": observation,
+        "task_labels": task_labels,
+    }
+    # return ObservationsAndTaskLabels(observation, task_labels)
+
+
+from sequoia.common.spaces import TypedDictSpace
 
 
 @add_task_labels.register(spaces.Space)
-def _add_task_labels_to_space(observation: X, task_labels: T) -> spaces.Dict:
+def _add_task_labels_to_space(observation: spaces.Space, task_labels: T) -> spaces.Dict:
     # TODO: Return a dict or NamedTuple at some point:
-    return NamedTupleSpace(
-        x=observation, task_labels=task_labels, dtype=ObservationsAndTaskLabels,
-    )
+    return TypedDictSpace({
+        "x": observation,
+        "task_labels": task_labels,
+    })
+    # return NamedTupleSpace(
+    #     x=observation, task_labels=task_labels, dtype=ObservationsAndTaskLabels,
+    # )
 
 
 @add_task_labels.register(NamedTupleSpace)
@@ -117,9 +128,21 @@ def _add_task_labels_to_dict_space(
     observation: spaces.Dict, task_labels: T
 ) -> spaces.Dict:
     assert "task_labels" not in observation.spaces
-    spaces = observation.spaces.copy()
-    spaces["task_labels"] = task_labels
-    return type(observation)(**spaces)
+    d_spaces = observation.spaces.copy()
+    d_spaces["task_labels"] = task_labels
+    return type(observation)(**d_spaces)
+
+
+@add_task_labels.register(TypedDictSpace)
+def _add_task_labels_to_typed_dict_space(
+    observation: TypedDictSpace, task_labels: T
+) -> TypedDictSpace:
+    assert "task_labels" not in observation.spaces
+    d_spaces = observation.spaces.copy()
+    d_spaces["task_labels"] = task_labels
+    # NOTE: We assume here that the `dtype` of the typed dict space (e.g. the
+    # `Observations` class, usually) can handle having a `task_labels` field.
+    return type(observation)(**d_spaces, type=observation.dtype)
 
 
 @add_task_labels.register(dict)
@@ -364,7 +387,7 @@ class MultiTaskEnvironment(gym.Wrapper):
 
         observation = self.env.reset(**kwargs)
         if self.add_task_id_to_obs:
-            observation = (observation, self.current_task_id)
+            observation = add_task_labels(observation, self.current_task_id)
 
         self._episodes += 1
         return observation

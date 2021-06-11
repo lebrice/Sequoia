@@ -45,8 +45,8 @@ class TensorBox(spaces.Box):
             self._numpy_dtype = np.float32
             self._torch_dtype = torch.float32
         else:
-            assert not any(dtype == k for k in numpy_to_torch_dtypes.keys())
-            assert not any(dtype == k for k in torch_to_numpy_dtypes.keys())
+            assert not any(dtype == k for k in numpy_to_torch_dtypes)
+            assert not any(dtype == k for k in torch_to_numpy_dtypes)
             raise NotImplementedError(
                 f"Unsupported dtype {dtype} (of type {type(dtype)})"
             )

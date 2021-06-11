@@ -1,13 +1,19 @@
 from functools import singledispatch, wraps
-from typing import Any, Dict, List, Tuple, TypeVar, Union, Optional
+from typing import Any, Dict, Generic, List, Optional, Tuple, TypeVar, Union
 
 import gym
 import numpy as np
 import torch
 from gym import Space, spaces
 from torch import Tensor
-from sequoia.utils.generic_functions import move, to_tensor, from_tensor
+
+from sequoia.common.spaces.image import Image, ImageTensorSpace
+from sequoia.common.spaces.named_tuple import NamedTupleSpace
+from sequoia.common.spaces.typed_dict import TypedDictSpace
+from sequoia.utils.generic_functions import from_tensor, move, to_tensor
 from sequoia.utils.logging_utils import get_logger
+
+T = TypeVar("T")
 
 logger = get_logger(__file__)
 
@@ -115,10 +121,6 @@ def add_tensor_support(space: S, device: torch.device = None) -> S:
     return space
 
 
-from sequoia.common.spaces.named_tuple import NamedTupleSpace, NamedTuple
-from sequoia.common.spaces.image import Image, ImageTensorSpace
-
-
 @add_tensor_support.register
 def _add_tensor_support(space: Image, device: torch.device = None) -> Image:
     tensor_box = TensorBox(
@@ -134,6 +136,21 @@ def _add_tensor_support(space: spaces.Dict, device: torch.device = None) -> spac
             key: add_tensor_support(value, device=device)
             for key, value in space.spaces.items()
         }
+    )
+    _mark_supports_tensors(space)
+    return space
+
+
+@add_tensor_support.register
+def _add_tensor_support(
+    space: TypedDictSpace, device: torch.device = None
+) -> TypedDictSpace:
+    space = type(space)(
+        {
+            key: add_tensor_support(value, device=device)
+            for key, value in space.spaces.items()
+        },
+        dtype=space.dtype,
     )
     _mark_supports_tensors(space)
     return space

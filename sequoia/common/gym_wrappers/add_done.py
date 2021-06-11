@@ -11,6 +11,8 @@ from gym.vector import VectorEnv
 from gym.vector.utils import batch_space
 from torch import Tensor
 
+from sequoia.common.spaces import TypedDictSpace
+
 from .utils import IterableWrapper, has_wrapper
 
 Bool = TypeVar("Bool", bound=Union[bool, Sequence[bool]])
@@ -32,8 +34,9 @@ def add_done(observation: Any, done: Any) -> Any:
 
 @add_done.register(Tensor)
 @add_done.register(np.ndarray)
-def _add_done_to_array_obs(observation: np.ndarray, done: bool) -> Tuple[np.ndarray, np.ndarray]:
-    return (observation, done)
+def _add_done_to_array_obs(observation: np.ndarray, done: bool) -> Dict[str, Union[np.ndarray, bool]]:
+    # TODO: use 'x' or 'observation'?
+    return {"x": observation, "done": done}
 
 
 @add_done.register(tuple)
@@ -62,26 +65,17 @@ def add_done_to_space(observation: Space, done: Space) -> Space:
 
 
 from ..spaces.named_tuple import NamedTuple, NamedTupleSpace
+from sequoia.common.spaces import TypedDictSpace
 
 
-class ObservationsWithDone(NamedTuple):
-    x: np.ndarray
-    done: np.ndarray
-
-
-@add_done.register
-def _add_done_to_box_space(observation: spaces.Box, done: Space) -> spaces.Tuple:
-    return NamedTupleSpace(
+@add_done.register(spaces.Discrete)
+@add_done.register(spaces.MultiDiscrete)
+@add_done.register(spaces.MultiBinary)
+@add_done.register(spaces.Box)
+def _add_done_to_box_space(observation: Space, done: Space) -> spaces.Dict:
+    # TODO: Use 'x' or 'observation' as the key?
+    return TypedDictSpace(
         x=observation,
-        done=done,
-        dtype=ObservationsWithDone,
-    )
-
-
-@add_done.register
-def _add_done_to_namedtuple_space(observation: NamedTupleSpace, done: Space) -> NamedTupleSpace:
-    return NamedTupleSpace(
-        **observation._spaces,
         done=done,
     )
 
@@ -92,6 +86,14 @@ def _add_done_to_tuple_space(observation: spaces.Tuple, done: Space) -> spaces.T
         *observation.spaces,
         done,
     ])
+
+
+@add_done.register
+def _add_done_to_namedtuple_space(observation: NamedTupleSpace, done: Space) -> NamedTupleSpace:
+    return NamedTupleSpace(
+        **observation._spaces,
+        done=done,
+    )
 
 
 @add_done.register
