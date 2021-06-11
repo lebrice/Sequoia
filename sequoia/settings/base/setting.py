@@ -332,8 +332,8 @@ class Setting(
         if isinstance(self.observation_space, spaces.Box):
             return self.observation_space
         if isinstance(self.observation_space, spaces.Tuple):
-            assert isinstance(self.observation_space[0], spaces.Box)
-            return self.observation_space[0]
+            assert isinstance(self.observation_space["x"], spaces.Box)
+            return self.observation_space["x"]
         if isinstance(self.observation_space, spaces.Dict):
             return self.observation_space.spaces["x"]
         logger.warning(
@@ -480,8 +480,8 @@ class Setting(
             # TODO: Batching the 'Sparse' makes it really ugly, so just
             # comparing the 'image' portion of the space for now.
             assert (
-                env.observation_space[0].shape == expected_observation_space[0].shape
-            ), (env.observation_space[0], expected_observation_space[0])
+                env.observation_space["x"].shape == expected_observation_space[0].shape
+            ), (env.observation_space["x"], expected_observation_space[0])
 
             assert env.action_space == expected_action_space, (
                 env.action_space,
@@ -551,7 +551,7 @@ class Setting(
         if isinstance(env.observation_space, spaces.Box):
             image_space = env.observation_space
         elif isinstance(env.observation_space, spaces.Tuple):
-            image_space = env.observation_space[0]
+            image_space = env.observation_space["x"]
         else:
             raise RuntimeError(
                 f"Don't know how to find the image space in the "

@@ -85,8 +85,8 @@ class PnnMethod(Method, target_setting=Setting):
         where you get access to the observation & action spaces.
         """
 
-        input_space: Box = setting.observation_space[0]
-        task_label_space = setting.observation_space[1]
+        input_space: Box = setting.observation_space["x"]
+        task_label_space = setting.observation_space["task_labels"]
 
         # For now all Settings have `Discrete` (i.e. classification) action spaces.
         action_space: spaces.Discrete = setting.action_space

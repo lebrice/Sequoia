@@ -93,7 +93,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.action_space: gym.Space = setting.action_space
         self.reward_space: gym.Space = setting.reward_space
 
-        self.input_shape = self.observation_space[0].shape
+        self.input_shape = self.observation_space.x.shape
         self.reward_shape = self.reward_space.shape
 
         # TODO: Remove this:
@@ -117,7 +117,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             # ISSUE # 62: Need to add a dense network instead of no encoder, and
             # change the PolicyHead to have only one layer.
             # Only pass the image, not the task labels to the encoder (for now).
-            input_dims = flatdim(self.observation_space[0])
+            input_dims = flatdim(self.observation_space["x"])
             output_dims = self.hp.new_hidden_size or 128
 
             self.encoder = FCNet(
@@ -538,7 +538,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
 
     def _are_batched(self, observations: IncrementalAssumption.Observations) -> bool:
         """ Returns wether these observations are batched. """
-        assert isinstance(self.observation_space, spaces.Tuple)
+        assert isinstance(self.observation_space, spaces.Dict)
 
         # if observations.task_labels is not None:
         #     if isinstance(observations.task_labels, int):
@@ -547,7 +547,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         #     assert False, observations.shapes
         #     return observations.task_labels.shape and observations.task_labels.shape[0]
 
-        x_space: spaces.Box = self.observation_space[0]
+        x_space: spaces.Box = self.observation_space["x"]
 
         if isinstance(x_space, Image) or len(x_space.shape) == 4:
             return observations.x.ndim == 4

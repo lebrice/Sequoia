@@ -344,11 +344,9 @@ class TestPassiveEnvironment:
                 batch_size=batch_size,
                 split_batch_fn=split_batch_fn,
                 # Need to pass the observation space, in this case.
-                observation_space=spaces.Tuple(
-                    [
-                        spaces.Box(low=0, high=1, shape=(3, 28, 28)),
-                        spaces.Discrete(scenario.nb_tasks),  # task label
-                    ]
+                observation_space=spaces.Dict(
+                    x=spaces.Box(low=0, high=1, shape=(3, 28, 28)),
+                    t=spaces.Discrete(scenario.nb_tasks),  # task label
                 ),
                 action_space=spaces.Box(
                     low=np.array([i * classes_per_task]),
@@ -361,9 +359,9 @@ class TestPassiveEnvironment:
                 high=np.array([(i + 1) * classes_per_task]),
                 dtype=int,
             ).shape == (1,)
-            assert isinstance(env.observation_space[0], spaces.Box)
-            assert env.observation_space[0].shape == (batch_size, 3, 28, 28)
-            assert env.observation_space[1].shape == (batch_size,)
+            assert isinstance(env.observation_space["x"], spaces.Box)
+            assert env.observation_space["x"].shape == (batch_size, 3, 28, 28)
+            assert env.observation_space["t"].shape == (batch_size,)
             assert env.action_space.shape == (batch_size, 1)
             assert env.reward_space.shape == (batch_size, 1)
 

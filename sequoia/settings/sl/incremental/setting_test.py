@@ -154,8 +154,8 @@ def test_task_label_space(dataset_name: str):
         assert train_env.observation_space == setting.observation_space
 
         reset_obs = train_env.reset()
-        assert reset_obs[0] in train_env.observation_space[0], reset_obs[0].shape
-        assert reset_obs[1] in train_env.observation_space[1]
+        assert reset_obs["x"] in train_env.observation_space["x"], reset_obs[0].shape
+        assert reset_obs["task_labels"] in train_env.observation_space["task_labels"]
         assert reset_obs in train_env.observation_space
         assert reset_obs in setting.observation_space
         assert isinstance(reset_obs, ClassIncrementalSetting.Observations)

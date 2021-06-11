@@ -230,7 +230,7 @@ class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
             i: setting.num_classes_in_task(i, train=True)
             for i in range(setting.nb_tasks)  
         }
-        image_space: Image = setting.observation_space[0]
+        image_space: Image = setting.observation_space["x"]
         self.model = HatNet(
             image_space=image_space,
             n_classes_per_task=n_classes_per_task,

@@ -85,7 +85,7 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
         where you get access to the observation & action spaces.
         """
 
-        input_space: Box = setting.observation_space[0]
+        input_space: Box = setting.observation_space["x"]
 
         # For now all Settings have `Discrete` (i.e. classification) action spaces.
         action_space: spaces.Discrete = setting.action_space

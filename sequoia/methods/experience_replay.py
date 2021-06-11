@@ -70,7 +70,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
         # Set drop_last to True, to avoid getting a batch of size 1, which makes
         # batchnorm raise an error.
         setting.drop_last = True
-        image_space: spaces.Box = setting.observation_space[0]
+        image_space: spaces.Box = setting.observation_space["x"]
         # Create the buffer.
         if self.buffer_capacity:
             self.buffer = Buffer(

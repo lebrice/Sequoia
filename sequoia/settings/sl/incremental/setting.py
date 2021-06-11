@@ -460,7 +460,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
             # task label might be None, and so that would make it fail.
             x, task_label = first_obs
             if task_label is None:
-                assert x in self.observation_space[0]
+                assert x in self.observation_space["x"]
 
             for i in range(5):
                 actions = env.action_space.sample()

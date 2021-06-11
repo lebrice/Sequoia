@@ -50,7 +50,7 @@ class MyModel(nn.Module):
     ):
         super().__init__()
 
-        image_shape = observation_space[0].shape
+        image_shape = observation_space["x"].shape
         assert image_shape == (3, 28, 28), "this example only works on mnist-like data"
         assert isinstance(action_space, spaces.Discrete)
         assert action_space == reward_space
