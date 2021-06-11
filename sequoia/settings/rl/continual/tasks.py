@@ -16,14 +16,16 @@ from typing import Any, Callable, Dict, List, Type, TypeVar, Union
 
 import gym
 import numpy as np
-from gym.envs.classic_control import (AcrobotEnv, CartPoleEnv,
-                                      Continuous_MountainCarEnv,
-                                      MountainCarEnv, PendulumEnv)
+from gym.envs.classic_control import (
+    AcrobotEnv,
+    CartPoleEnv,
+    Continuous_MountainCarEnv,
+    MountainCarEnv,
+    PendulumEnv,
+)
 from gym.envs.registration import EnvRegistry, EnvSpec, load, registry, spec
-from sequoia.common.gym_wrappers.multi_task_environment import \
-    make_env_attributes_task
-from sequoia.settings.rl.envs import (MUJOCO_INSTALLED, EnvVariantSpec,
-                                      sequoia_registry)
+from sequoia.common.gym_wrappers.multi_task_environment import make_env_attributes_task
+from sequoia.settings.rl.envs import MUJOCO_INSTALLED, EnvVariantSpec, sequoia_registry
 from sequoia.utils.utils import camel_case
 
 # Idea: Create a true 'Task' class?
@@ -111,7 +113,7 @@ def _is_supported(
         return True
     elif class_name.startswith(registered_class_names):
         return True
-    
+
     close_matches = difflib.get_close_matches(class_name, registered_class_names)
     if not close_matches:
         return False
@@ -336,12 +338,14 @@ def make_task_for_classic_control_env(
 # the different mujoco env classes anyway.
 
 if MUJOCO_INSTALLED:
-    from sequoia.settings.rl.envs.mujoco import (ContinualHalfCheetahV2Env,
-                                                 ContinualHalfCheetahV3Env,
-                                                 ContinualHopperEnv,
-                                                 ContinualWalker2dV2Env,
-                                                 ContinualWalker2dV3Env,
-                                                 ModifiedGravityEnv)
+    from sequoia.settings.rl.envs.mujoco import (
+        ContinualHalfCheetahV2Env,
+        ContinualHalfCheetahV3Env,
+        ContinualHopperEnv,
+        ContinualWalker2dV2Env,
+        ContinualWalker2dV3Env,
+        ModifiedGravityEnv,
+    )
 
     default_mujoco_gravity = -9.81
 
