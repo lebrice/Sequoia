@@ -2,7 +2,7 @@ from typing import Any, Callable, Tuple, Union
 
 import gym
 from gym import spaces
-from sequoia.common.spaces import NamedTupleSpace
+from sequoia.common.spaces import TypedDictSpace
 from sequoia.settings.sl.continual.environment import ContinualSLEnvironment
 from torch.utils.data import Dataset, IterableDataset
 
@@ -21,7 +21,7 @@ class IncrementalSLEnvironment(ContinualSLEnvironment[ObservationType, ActionTyp
         self,
         dataset: Union[Dataset, IterableDataset],
         hide_task_labels: bool = True,
-        observation_space: NamedTupleSpace = None,
+        observation_space: TypedDictSpace[ObservationType] = None,
         action_space: gym.Space = None,
         reward_space: gym.Space = None,
         split_batch_fn: Callable[

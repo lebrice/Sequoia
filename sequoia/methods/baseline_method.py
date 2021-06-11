@@ -318,7 +318,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         method (`Actions`) and the type of `action_space`: we should either have
         a `Discrete` action space, and this method should return ints, or this
         method should return `Actions`, and the `action_space` should be a
-        `NamedTupleSpace` or something similar.
+        `TypedDictSpace` or something similar.
         Either way, `get_actions(obs, action_space) in action_space` should
         always be `True`.
         """

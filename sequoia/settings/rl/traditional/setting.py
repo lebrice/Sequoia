@@ -18,7 +18,7 @@ class TraditionalRLSetting(IncrementalRLSetting):
     """
 
     # IDEA: By default, only use one task, although there may actually be more than one.
-    nb_tasks: int = 1
+    nb_tasks: int = 5
 
     stationary_context: Final[bool] = constant(True)
     known_task_boundaries_at_train_time: Final[bool] = constant(True)

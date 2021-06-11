@@ -122,9 +122,9 @@ def test_isinstance():
     assert isinstance(space.sample(), StateTransition)
 
 
-def test_equals_tuple_space_with_same_items():
-    """ Test that a NamedTupleSpace is considered equal to a Tuple space if
-    the spaces are in the same order and all equal (regardless of the names).
+def test_equals_dict_space_with_same_items():
+    """ Test that a TypedDictSpace is considered equal to aDict space if
+    the spaces are in the same order and all equal.
     """
     space = TypedDictSpace(
         current_state=Box(0, 1, (2, 2)),
@@ -191,11 +191,41 @@ def test_batch_space_preserves_dtype():
     )
     batched_space = batch_space(space, n=5)
     assert isinstance(batched_space, TypedDictSpace)
+    assert list(batched_space.spaces.keys()) == list(batched_space.spaces.keys())
+    assert list(batched_space.spaces.keys()) == ["current_state", "action", "next_state"]
     assert batched_space.dtype is StateTransition
 
+    space = TypedDictSpace(dict(
+            current_state=Box(0, 1, (2, 2)),
+            action=Discrete(2),
+            next_state=Box(0, 1, (2, 2)),
+        ),
+        dtype=StateTransition,
+    )
+    batched_space = batch_space(space, n=5)
+    assert isinstance(batched_space, TypedDictSpace)
+    assert list(batched_space.spaces.keys()) == list(batched_space.spaces.keys())
+    assert list(batched_space.spaces.keys()) == ["current_state", "action", "next_state"]
+    assert list(batched_space.sample().keys()) == ["current_state", "action", "next_state"]
+    assert list(v[0] for v in space.spaces.items()) == ["current_state", "action", "next_state"]
+    assert batched_space.dtype is StateTransition
 
-## IDEA: Creating a space like this, using the same syntax as with NamedTuple
-# class StateTransitionSpace(NamedTupleSpace):
+    space = TypedDictSpace(dict(
+            x=Box(0, 1, (2, 2)),
+            action=Discrete(2),
+            next_state=Box(0, 1, (2, 2)),
+        ),
+    )
+    batched_space = batch_space(space, n=5)
+    assert isinstance(batched_space, TypedDictSpace)
+    assert list(batched_space.spaces.keys()) == list(batched_space.spaces.keys())
+    assert list(batched_space.spaces.keys()) == ["x", "action", "next_state"]
+    assert list(batched_space.sample().keys()) == ["x", "action", "next_state"]
+    assert list(v[0] for v in space.spaces.items()) == ["x", "action", "next_state"]
+
+
+## IDEA: Creating a space like this, using the same syntax as with TypedDict
+# class StateTransitionSpace(TypedDict):
 #     current_state: Box = Box(0, 1, (2,2))
 #     action: Discrete = Discrete(2)
 #     current_state: Box = Box(0, 1, (2,2))

@@ -8,7 +8,7 @@ import gym
 import numpy as np
 import torch
 from gym import spaces
-from sequoia.common.spaces import NamedTupleSpace
+from sequoia.common.spaces import NamedTupleSpace, TypedDictSpace
 from sequoia.utils.logging_utils import get_logger
 from torch import Tensor
 
@@ -181,6 +181,17 @@ def _three_channels(x: Any) -> Any:
             key: three_channels(value) if is_image(value) else value
             for key, value in x.items()
         }
+    )
+
+
+@three_channels.register(TypedDictSpace)
+def _three_channels(x: TypedDictSpace) -> TypedDictSpace:
+    return type(x)(
+        {
+            key: three_channels(value) if is_image(value) else value
+            for key, value in x.items()
+        },
+        dtype=x.dtype,
     )
 
 

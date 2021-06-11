@@ -9,24 +9,22 @@ TODO: Add more envs:
 from gym.envs.box2d import BipedalWalker, BipedalWalkerHardcore
 """
 import difflib
-import warnings
-from functools import singledispatch, partial
-from typing import Any, Dict, List, Type, Union, Callable, TypeVar
-
 import inspect
+import warnings
+from functools import partial, singledispatch
+from typing import Any, Callable, Dict, List, Type, TypeVar, Union
+
 import gym
-from sequoia.common.gym_wrappers.multi_task_environment import make_env_attributes_task
-from sequoia.settings.rl.envs import MUJOCO_INSTALLED, EnvVariantSpec, sequoia_registry
-from sequoia.utils.utils import camel_case
-from gym.envs.registration import load, EnvRegistry, EnvSpec, registry, spec
 import numpy as np
-from gym.envs.classic_control import (
-    CartPoleEnv,
-    PendulumEnv,
-    MountainCarEnv,
-    Continuous_MountainCarEnv,
-    AcrobotEnv,
-)
+from gym.envs.classic_control import (AcrobotEnv, CartPoleEnv,
+                                      Continuous_MountainCarEnv,
+                                      MountainCarEnv, PendulumEnv)
+from gym.envs.registration import EnvRegistry, EnvSpec, load, registry, spec
+from sequoia.common.gym_wrappers.multi_task_environment import \
+    make_env_attributes_task
+from sequoia.settings.rl.envs import (MUJOCO_INSTALLED, EnvVariantSpec,
+                                      sequoia_registry)
+from sequoia.utils.utils import camel_case
 
 # Idea: Create a true 'Task' class?
 Task = Any
@@ -118,94 +116,6 @@ def _is_supported(
     if not close_matches:
         return False
     return False
-
-    # elif any(
-    #     names_match(class_name, registered_class_name)
-    #     for registered_class_name in registered_class_names
-    # ):
-    #     return True
-
-    # if env_id == "MetaMonsterKong-v0":
-    #     assert False, (env_id, env_spec, [n for n in registered_class_names)
-
-    # if isinstance(env_spec, EnvVariantSpec):
-    #     # TODO: Test this out.
-    #     if inspect.isclass(env_spec.entry_point):
-    #         if _has_handler(env_spec.entry_point):
-    #             return True
-    #     if is_supported(env_spec.base_spec):
-    #         return True
-    #     # return is_supported(env_spec.base_spec)
-
-    # if callable(env_spec.entry_point):
-    #     if inspect.isfunction(env_spec.entry_point):
-    #         raise NotImplementedError(env_spec)
-
-    #     if _has_handler(env_spec.entry_point):
-    #         return True
-
-    #     if _has_handler(env_spec.entry_point):
-    #         return True
-    #     class_name = env_spec.entry_point.__name__
-    # else:
-    #     class_name = env_spec.entry_point.rsplit(":")[-1]
-
-    # registered_class_names = tuple(c.__name__ for c in _make_task_function.registry)
-    # if class_name in registered_class_names:
-    #     return True
-    # elif class_name.startswith(registered_class_names):
-    #     return True
-    # elif any(
-    #     names_match(registered_class_name, class_name)
-    #     for registered_class_name in registered_class_names
-    # ):
-    #     return True
-
-    # assert isinstance(env_spec.entry_point, str)
-    # # TODO: Change this so we only mark *our* versions as supported (for mujoco envs)
-
-    # entry_point = load(env_spec.entry_point)
-    # if inspect.isfunction(entry_point):
-    #     return False
-
-    # return _has_handler(entry_point)
-
-    # # return _has_handler(env_id)
-
-    # # return make_continuous_task.is_supported(env_id, env_registry)
-
-    # env_spec = env_registry.spec(env_id)
-
-    # if isinstance(env_spec, EnvVariantSpec):
-    #     return is_supported(env_spec.base_spec)
-
-    # def _has_handler(some_env_type: Type[gym.Env]) -> bool:
-    #     """ Returns wether the "make task" function has a registered handler for the
-    #     given envs.
-    #     """
-    #     return _make_task_function.dispatch(
-    #         some_env_type
-    #     ) is not _make_task_function.dispatch(object)
-
-    # if callable(env_spec.entry_point):
-    #     # assert False, (env_id, spec.entry_point, make_continuous_task.registry)
-    #     # TODO: This won't work for IncrementalRLSetting if we call the `make_continuous_task_for_env` within the
-    #     # `make_continuous_task` of the incremental/tasks.py
-    #     if inspect.isfunction(env_spec.entry_point):
-    #         raise NotImplementedError(env_spec)
-
-    #     return _has_handler(env_spec.entry_point)
-
-    # assert isinstance(env_spec.entry_point, str)
-    # class_name = env_spec.entry_point.rsplit(":")[-1]
-    # if class_name in [c.__name__ for c in _make_task_function.registry]:
-    #     return True
-
-    # entry_point = load(env_spec.entry_point)
-    # if inspect.isfunction(entry_point):
-    #     return False
-
-    # return _has_handler(entry_point)
 
 
 def task_sampling_function(
@@ -426,14 +336,12 @@ def make_task_for_classic_control_env(
 # the different mujoco env classes anyway.
 
 if MUJOCO_INSTALLED:
-    from sequoia.settings.rl.envs.mujoco import (
-        ModifiedGravityEnv,
-        ContinualHopperEnv,
-        ContinualWalker2dV2Env,
-        ContinualWalker2dV3Env,
-        ContinualHalfCheetahV2Env,
-        ContinualHalfCheetahV3Env,
-    )
+    from sequoia.settings.rl.envs.mujoco import (ContinualHalfCheetahV2Env,
+                                                 ContinualHalfCheetahV3Env,
+                                                 ContinualHopperEnv,
+                                                 ContinualWalker2dV2Env,
+                                                 ContinualWalker2dV3Env,
+                                                 ModifiedGravityEnv)
 
     default_mujoco_gravity = -9.81
 

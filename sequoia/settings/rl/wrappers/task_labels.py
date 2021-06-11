@@ -12,7 +12,7 @@ from torch import Tensor
 
 from sequoia.common import Batch
 from sequoia.common.gym_wrappers import IterableWrapper, TransformObservation
-from sequoia.common.spaces import Sparse
+from sequoia.common.spaces import Sparse, TypedDictSpace
 from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import (Actions, ActionType, Observations,
@@ -30,6 +30,14 @@ from gym import Space, spaces
 def hide_task_labels(observation: Tuple[T, int]) -> Tuple[T, Optional[int]]:
     assert len(observation) == 2
     return observation[0], None
+
+
+@hide_task_labels.register(dict)
+def _hide_task_labels_in_dict(observation: Dict) -> Dict:
+    new_observation = observation.copy()
+    assert "task_labels" in observation
+    new_observation["task_labels"] = None
+    return new_observation
 
 
 @hide_task_labels.register
@@ -92,6 +100,20 @@ def hide_task_labels_in_dict_space(observation: spaces.Dict) -> spaces.Dict:
         key: subspace if key != "task_labels" else Sparse(task_label_space, 1.0)
         for key, subspace in observation.spaces.items()
     })
+
+
+@hide_task_labels.register(TypedDictSpace)
+def hide_task_labels_in_typed_dict_space(observation: TypedDictSpace[T]) -> TypedDictSpace[T]:
+    task_label_space = observation.spaces["task_labels"]
+    if isinstance(task_label_space, Sparse):
+        # Replace the existing 'Sparse' space with another one with the same
+        # base but with sparsity = 1.0
+        task_label_space = task_label_space.base
+    assert not isinstance(task_label_space, Sparse)
+    return type(observation)({
+        key: subspace if key != "task_labels" else Sparse(task_label_space, 1.0)
+        for key, subspace in observation.spaces.items()
+    }, dtype=observation.dtype)
 
 
 class HideTaskLabelsWrapper(TransformObservation):

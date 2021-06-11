@@ -15,7 +15,6 @@ from sequoia.common.spaces import Image
 import numpy as np
 from torch.utils.data import Subset
 
-from sequoia.common.spaces import NamedTupleSpace
 from sequoia.common.gym_wrappers import TransformObservation
 
 

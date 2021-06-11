@@ -10,15 +10,28 @@ from dataclasses import (
     is_dataclass,
     make_dataclass,
 )
-from typing import Any, Dict, Generic, List, Mapping, Tuple, Type, TypeVar, Union
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    List,
+    Mapping,
+    Iterable,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    KeysView,
+)
 
 import numpy as np
 from gym import Space, spaces
 from gym.vector.utils import batch_space, concatenate
+from collections import OrderedDict
 
 M = TypeVar("M", bound=Mapping[str, Any])
 S = TypeVar("S")
-
 Dataclass = TypeVar("Dataclass")
 
 
@@ -26,7 +39,17 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
     def __init__(
         self, spaces: Mapping[str, Space] = None, dtype: Type[M] = dict, **spaces_kwargs
     ):
-        super().__init__(spaces=spaces, **spaces_kwargs)
+        # Avoid the annoying sorting of keys that `spaces.Dict` does if we pass a
+        # regular dict.
+        spaces = spaces or spaces_kwargs
+        if spaces is not None and not isinstance(spaces, OrderedDict):
+            spaces = OrderedDict(list(spaces.items()))
+        super().__init__(spaces=spaces)
+        self.spaces = dict(self.spaces)  # Get rid of the OrderedDict.
+
+        if "x" in self.spaces:
+            assert list(self.spaces.keys()).index("x") == 0, self.spaces
+
         if not (issubclass(dtype, MappingABC) or dataclasses.is_dataclass(dtype)):
             raise RuntimeError(
                 f"`dtype` needs to be either a type of Mapping or a dataclass, got "
@@ -34,20 +57,29 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
             )
         self.dtype = dtype
         if dataclasses.is_dataclass(self.dtype):
-            fields: List[str] = [f.name for f in dataclasses.fields(self.dtype)]
+            dtype_fields: List[str] = [f.name for f in dataclasses.fields(self.dtype)]
             # Check that the dtype can handle all the entries of `self.spaces`, so that
             # we won't get any issues when calling `self.dtype(**super().sample())`.
             for space_name, space in self.spaces.items():
-                if space_name not in fields:
+                if space_name not in dtype_fields:
                     raise RuntimeError(
                         f"dtype {self.dtype} doesn't have a field for space "
-                        f"'{space_name}'!"
+                        f"'{space_name}' ({space})!"
                     )
+
+    def keys(self) -> Sequence[str]:
+        return self.spaces.keys()
+
+    def items(self) -> Iterable[Tuple[str, Space]]:
+        return self.spaces.items()
+
+    def values(self) -> Sequence[Space]:
+        return self.spaces.values()
 
     def sample(self) -> M:
         dict_sample: dict = super().sample()
         if self.dtype is dict:
-            return dict_sample
+            return dict(dict_sample)  # Get rid of OrderedDict.
         return self.dtype(**dict_sample)
 
     def __getattr__(self, attr: str) -> Space:
@@ -67,23 +99,18 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
     def __len__(self) -> int:
         return len(self.spaces)
 
-    def __setitem__(self, key, value):
-        return super().__setitem__(key, value)
+    # def __setitem__(self, key, value):
+    #     return super().__setitem__(key, value)
 
     def contains(self, x: Union[M, Mapping[str, Space]]) -> bool:
-        if not issubclass(self.dtype, MappingABC):
-            # NOTE: If `self.dtype` is not a mapping type, then it must be a dataclass.
-            return isinstance(x, self.dtype) and super().contains(dataclasses.asdict(x))
-
-        if not isinstance(x, MappingABC) or len(x) != len(self.spaces):
-            return False
-        for k, space in self.spaces.items():
-            if k not in x:
-                return False
-            if not space.contains(x[k]):
-                return False
-        return True
-        # return super().contains(x)
+        if is_dataclass(x):
+            if is_dataclass(self.dtype):
+                if not isinstance(x, self.dtype):
+                    return False
+            # NOTE: We don't use dataclasses.asdict as it doesn't work with Tensor
+            # items with grad attributes.
+            x = {f.name: getattr(x, f.name) for f in fields(x)}
+        return super().contains(x)
 
     def __repr__(self) -> str:
         return (
@@ -92,6 +119,11 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
             + f", dtype={self.dtype}"
             + ")"
         )
+
+    def __eq__(self, other):
+        if isinstance(other, TypedDictSpace) and self.dtype != other.dtype:
+            return False
+        return super().__eq__(other)
 
 
 @batch_space.register(TypedDictSpace)
@@ -104,7 +136,9 @@ def _batch_typed_dict_space(space: TypedDictSpace, n: int = 1) -> spaces.Dict:
 
 @concatenate.register(TypedDictSpace)
 def _concatenate_typed_dicts(
-    space: TypedDictSpace, items: Union[list, tuple], out: Union[tuple, dict, np.ndarray]
+    space: TypedDictSpace,
+    items: Union[list, tuple],
+    out: Union[tuple, dict, np.ndarray],
 ) -> Dict:
     return space.dtype(
         **{

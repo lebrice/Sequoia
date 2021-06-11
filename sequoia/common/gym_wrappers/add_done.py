@@ -90,7 +90,7 @@ def _add_done_to_tuple_space(observation: spaces.Tuple, done: Space) -> spaces.T
 
 @add_done.register
 def _add_done_to_namedtuple_space(observation: NamedTupleSpace, done: Space) -> NamedTupleSpace:
-    return NamedTupleSpace(
+    return type(observation)(
         **observation._spaces,
         done=done,
     )

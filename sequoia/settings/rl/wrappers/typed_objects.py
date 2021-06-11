@@ -11,7 +11,7 @@ from torch import Tensor
 
 from sequoia.common import Batch
 from sequoia.common.gym_wrappers import IterableWrapper, TransformObservation
-from sequoia.common.spaces import Sparse
+from sequoia.common.spaces import Sparse, TypedDictSpace
 from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import (Actions, ActionType, Observations,
@@ -47,12 +47,13 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
         self.Rewards = rewards_type
         self.Actions = actions_type
         super().__init__(env=env)
-        
-        if isinstance(self.env.observation_space, NamedTupleSpace):
+
+        # TODO: Also change the action and reward spaces?
+        if isinstance(self.env.observation_space, (TypedDictSpace, NamedTupleSpace)):
+            # Replace the space's `dtype` with `self.Observations`.
             self.observation_space = self.env.observation_space
             self.observation_space.dtype = self.Observations
 
-        # TODO: Also change the action and reward spaces?
         # if isinstance(self.env.observation_space, NamedTupleSpace):
         #     self.observation_space = self.env.observation_space
         #     self.observation_space.dtype = self.Observations
@@ -73,9 +74,14 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
         if isinstance(observation, self.Observations):
             return observation
         if isinstance(observation, tuple):
+            # TODO: Fix this, shouldn't get tuples like this since it's quite ambiguous.
+            # assert False, observation 
             return self.Observations(*observation)
         if isinstance(observation, dict):
-            return self.Observations(**observation)
+            try:
+                return self.Observations(**observation)
+            except TypeError:
+                assert False, (self.Observations, observation)
         assert isinstance(observation, (Tensor, np.ndarray))
         return self.Observations(observation)
 
@@ -144,6 +150,13 @@ def _unwrap_space(obj: NamedTupleSpace) -> Space:
     # This gets rid of everything except just the first item in the space.
     # TODO: Keep the task labels? or no? For now, no.
     return obj[0]
+
+
+@unwrap.register(TypedDictSpace)
+def _unwrap_space(obj: TypedDictSpace) -> spaces.Dict:
+    # This gets rid of everything except just the first item in the space.
+    # TODO: Keep the task labels? or no? For now, no.
+    return spaces.Dict(obj.spaces)
 
 
 class NoTypedObjectsWrapper(IterableWrapper):

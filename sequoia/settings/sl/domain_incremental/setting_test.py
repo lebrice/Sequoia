@@ -1,13 +1,15 @@
 import itertools
 
 from .setting import DomainIncrementalSLSetting
-from sequoia.common.spaces import NamedTupleSpace, Image
+from sequoia.common.spaces import Image, TypedDictSpace
 from gym.spaces import Discrete
 import numpy as np
 
 from typing import ClassVar, Type, Dict, Any
 from sequoia.settings.base import Setting
-from sequoia.settings.sl.incremental.setting_test import TestIncrementalSLSetting as IncrementalSLSettingTests
+from sequoia.settings.sl.incremental.setting_test import (
+    TestIncrementalSLSetting as IncrementalSLSettingTests,
+)
 from gym import spaces
 from sequoia.common.metrics import ClassificationMetrics
 
@@ -22,7 +24,9 @@ class TestDiscreteTaskAgnosticSLSetting(IncrementalSLSettingTests):
 
     # Override how we measure 'chance' accuracy for DomainIncrementalSetting.
     def assert_chance_level(
-        self, setting: DomainIncrementalSLSetting, results: DomainIncrementalSLSetting.Results
+        self,
+        setting: DomainIncrementalSLSetting,
+        results: DomainIncrementalSLSetting.Results,
     ):
         assert isinstance(setting, DomainIncrementalSLSetting), setting
         assert isinstance(results, DomainIncrementalSLSetting.Results), results
@@ -50,17 +54,17 @@ class TestDiscreteTaskAgnosticSLSetting(IncrementalSLSettingTests):
             # we're setting the lower bound super low, which makes no sense.
             assert 0.25 * chance_accuracy <= task_accuracy <= 2.1 * chance_accuracy
 
-    
-    
-
 
 def test_domain_incremental_mnist_setup():
     setting = DomainIncrementalSLSetting(dataset="mnist", increment=2,)
     setting.prepare_data(data_dir="data")
     setting.setup()
-    assert setting.observation_space == NamedTupleSpace(
-        x=Image(0.0, 1.0, (3, 28, 28), np.float32), task_labels=Discrete(5)
+    assert setting.observation_space == TypedDictSpace(
+        x=Image(0.0, 1.0, (3, 28, 28), np.float32),
+        task_labels=Discrete(5),
+        dtype=setting.Observations,
     )
+    assert setting.observation_space.dtype == setting.Observations
     assert setting.action_space == spaces.Discrete(2)
     assert setting.reward_space == spaces.Discrete(2)
 
@@ -88,11 +92,9 @@ def test_domain_incremental_mnist_setup():
         train_loader.close()
 
         test_loader = setting.test_dataloader(batch_size=batch_size)
-        for j, (observations, rewards) in enumerate(
-            itertools.islice(test_loader, 100)
-        ):
+        for j, (observations, rewards) in enumerate(itertools.islice(test_loader, 100)):
             assert rewards is None
-            
+
             x = observations.x
             t = observations.task_labels
             assert t is None

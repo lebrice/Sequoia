@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from gym import spaces
 from sequoia.common.config import Config
-from sequoia.common.spaces import Image, NamedTupleSpace, Sparse
+from sequoia.common.spaces import Image, TypedDictSpace, Sparse
 from sequoia.conftest import monsterkong_required
 from sequoia.settings.rl import IncrementalRLSetting
 
@@ -40,13 +40,14 @@ class TestDQN(DiscreteActionSpaceMethodTests, OffPolicyMethodTests):
         assert setting.max_steps == 2_000
         assert setting.test_steps == 2_000
         assert setting.nb_tasks == 2
-        assert setting.observation_space == NamedTupleSpace(
+        assert setting.observation_space == TypedDictSpace(
             spaces={
                 "x": Image(0, 255, shape=(64, 64, 3), dtype=np.uint8),
                 "task_labels": Sparse(spaces.Discrete(2)),
             },
             dtype=setting.Observations,
         )
+        assert setting.observation_space.dtype is setting.Observations
         assert setting.action_space == spaces.Discrete(6)  # monsterkong has 6 actions.
 
         # (Before the method gets to change the Setting):

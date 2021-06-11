@@ -32,7 +32,7 @@ from sequoia.settings.rl.envs import (
     metaworld_envs,
     mtenv_envs,
 )
-from sequoia.utils import constant, dict_union, pairwise, deprecated_property
+from sequoia.utils import constant, deprecated_property, dict_union, pairwise
 from sequoia.utils.logging_utils import get_logger
 from simple_parsing import field, list_field
 from simple_parsing.helpers import choice
@@ -40,6 +40,14 @@ from typing_extensions import Final
 
 from ..discrete.setting import DiscreteTaskAgnosticRLSetting
 from ..discrete.setting import supported_envs as _parent_supported_envs
+from .objects import (
+    Actions,
+    ActionType,
+    Observations,
+    ObservationType,
+    Rewards,
+    RewardType,
+)
 from .results import IncrementalRLResults
 from .tasks import (
     EnvSpec,
@@ -50,7 +58,6 @@ from .tasks import (
 )
 
 logger = get_logger(__file__)
-
 
 # TODO: When we add a wrapper to 'concat' two environments, then we can move this
 # 'passing custom env for each task' feature up into DiscreteTaskAgnosticRL.
@@ -73,6 +80,10 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
     - Task boundary information (and task labels) are given at training time
     - Task boundary information is given at test time, but task identity is not.
     """
+
+    Observations: ClassVar[Type[Observations]] = Observations
+    Actions: ClassVar[Type[Actions]] = Actions
+    Rewards: ClassVar[Type[Rewards]] = Rewards
 
     # The function used to create the tasks for the chosen env.
     _task_sampling_function: ClassVar[
@@ -210,7 +221,9 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             return sum(self.train_task_lengths)
         return self.train_task_lengths[self.current_task_id]
 
-    steps_per_task: int = deprecated_property("steps_per_task", "current_train_task_length")
+    steps_per_task: int = deprecated_property(
+        "steps_per_task", "current_train_task_length"
+    )
     # @property
     # def steps_per_task(self) -> int:
     #     # unique_task_lengths = list(set(self.train_task_lengths))

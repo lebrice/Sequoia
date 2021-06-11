@@ -28,7 +28,7 @@ from sequoia.common.gym_wrappers.convert_tensors import (
     add_tensor_support as tensor_space,
 )
 import itertools
-from sequoia.common.spaces import Image, NamedTupleSpace
+from sequoia.common.spaces import Image, TypedDictSpace
 from sequoia.settings.sl.environment import PassiveEnvironment
 from sequoia.utils.logging_utils import get_logger
 from torch import Tensor
@@ -172,7 +172,7 @@ class ContinualSLEnvironment(
         self,
         dataset: Union[Dataset, IterableDataset],
         hide_task_labels: bool = True,
-        observation_space: NamedTupleSpace = None,
+        observation_space: TypedDictSpace = None,
         action_space: gym.Space = None,
         reward_space: gym.Space = None,
         Observations: Type[ObservationType] = Observations,

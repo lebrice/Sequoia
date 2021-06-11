@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 import torch
 from gym.spaces import Discrete
-from sequoia.common.spaces import Image, NamedTupleSpace
+from sequoia.common.spaces import Image, TypedDictSpace
 from sequoia.settings import Environment, Actions
 from sequoia.methods import Method
 from .setting import MultiTaskSLSetting
@@ -37,7 +37,20 @@ def check_is_multitask_env(env: Environment, has_rewards: bool):
 
     # gym-style interaction:
     obs = env.reset()
-    assert env.observation_space.contains(obs.numpy())
+    assert isinstance(env.observation_space, TypedDictSpace)
+    space_shapes = {k: s.shape for k, s in env.observation_space.spaces.items()}
+    space_dtypes = {k: s.dtype for k, s in env.observation_space.spaces.items()}
+    # assert False, (obs.keys(), obs.numpy().keys())
+    assert obs.shapes == space_shapes
+    assert obs.numpy().shapes == space_shapes
+    assert obs.numpy().dtypes == space_dtypes
+    x_space = env.observation_space.x
+    t_space = env.observation_space.task_labels
+    assert obs.x in x_space, (obs.x, x_space)
+    assert obs.task_labels in t_space, (obs.task_labels, t_space)
+    assert isinstance(obs, env.observation_space.dtype)
+    
+    assert obs in env.observation_space
     done = False
     steps = 0
     while not done and steps < 10:
@@ -59,8 +72,10 @@ def test_multitask_setting():
     setting = MultiTaskSLSetting(dataset="mnist")
     assert setting.phases == 1
     assert setting.nb_tasks == 5
-    assert setting.observation_space == NamedTupleSpace(
-        x=Image(0.0, 1.0, (3, 28, 28), np.float32), task_labels=Discrete(5)
+    assert setting.observation_space == TypedDictSpace(
+        x=Image(0.0, 1.0, (3, 28, 28), np.float32),
+        task_labels=Discrete(5),
+        dtype=setting.Observations,
     )
     assert setting.action_space == Discrete(10)
 
@@ -71,14 +86,13 @@ def test_multitask_setting():
         check_is_multitask_env(val_env, has_rewards=True)
 
 
-
 @pytest.mark.xfail(reason="test environments still operate in a 'sequential tasks' way")
 def test_multitask_setting_test_env():
     setting = MultiTaskSLSetting(dataset="mnist")
 
     assert setting.phases == 1
     assert setting.nb_tasks == 5
-    assert setting.observation_space == NamedTupleSpace(
+    assert setting.observation_space == TypedDictSpace(
         x=Image(0.0, 1.0, (3, 28, 28), np.float32), task_labels=Discrete(5)
     )
     assert setting.action_space == Discrete(10)
@@ -88,7 +102,10 @@ def test_multitask_setting_test_env():
         check_is_multitask_env(test_env, has_rewards=False)
 
 
-from sequoia.settings.assumptions.incremental import IncrementalAssumption, TestEnvironment
+from sequoia.settings.assumptions.incremental import (
+    IncrementalAssumption,
+    TestEnvironment,
+)
 from sequoia.settings.assumptions.incremental_test import DummyMethod
 from sequoia.conftest import DummyEnvironment
 

@@ -29,7 +29,7 @@ from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.gym_wrappers.convert_tensors import (
     add_tensor_support as tensor_space,
 )
-from sequoia.common.spaces import Image, NamedTupleSpace, Sparse
+from sequoia.common.spaces import Image, TypedDictSpace, Sparse
 from sequoia.common.transforms import Transforms, Compose
 from sequoia.settings.assumptions.continual import ContinualAssumption
 from sequoia.settings.base import Method, SettingABC
@@ -295,8 +295,8 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 env, first_epoch_only=True, wandb_prefix=f"Train/",
             )
 
-        # FIXME: Quickfix for the 'dtype' of the NamedTupleSpace getting lost in
-        # transformation.
+        # NOTE: Quickfix for the 'dtype' of the TypedDictSpace perhaps getting lost
+        # when transforms don't propagate the 'dtype' field.
         env.observation_space.dtype = self.Observations
         self.train_env = env
         return self.train_env
@@ -355,7 +355,8 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         #         wandb_prefix=f"Train/Task {self.current_task_id}",
         #     )
 
-        # FIXME: Quickfix for the 'dtype' of the NamedTupleSpace getting lost in transformation.
+        # NOTE: Quickfix for the 'dtype' of the TypedDictSpace perhaps getting lost
+        # when transforms don't propagate the 'dtype' field.
         env.observation_space.dtype = self.Observations
         self.val_env = env
         return self.val_env
@@ -417,7 +418,8 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             video_callable=None if (wandb.run or self.config.render) else False,
         )
 
-        # FIXME: Quickfix for the 'dtype' of the NamedTupleSpace getting lost in transformation.
+        # NOTE: Quickfix for the 'dtype' of the TypedDictSpace perhaps getting lost
+        # when transforms don't propagate the 'dtype' field.
         env.observation_space.dtype = self.Observations
         if self.test_env:
             self.test_env.close()
@@ -561,16 +563,19 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             raise NotImplementedError
 
     @property
-    def observation_space(self) -> NamedTupleSpace:
+    def observation_space(self) -> TypedDictSpace[Observations]:
         """ The un-batched observation space, based on the choice of dataset and
         the transforms at `self.transforms` (which apply to the train/valid/test
         environments).
 
-        The returned spaces is a NamedTupleSpace, with the following properties:
+        The returned space is a TypedDictSpace, with the following properties:
         - `x`: observation space (e.g. `Image` space)
         - `task_labels`: Union[Discrete, Sparse[Discrete]]
            The task labels for each sample. When task labels are not available,
            the task labels space is Sparse, and entries will be `None`.
+           
+        TODO: Replace this property's type with a `Space[Observations]` (and also create
+        this `Space` generic)
         """
         x_space = self.base_observation_spaces[self.dataset]
         if not self.transforms:
@@ -587,8 +592,8 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         if not self.task_labels_at_train_time:
             task_label_space = Sparse(task_label_space, 1.0)
         task_label_space = add_tensor_support(task_label_space)
-
-        return NamedTupleSpace(
+ 
+        return TypedDictSpace(
             x=x_space, task_labels=task_label_space, dtype=self.Observations,
         )
 

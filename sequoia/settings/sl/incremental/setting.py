@@ -56,7 +56,6 @@ from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.gym_wrappers.utils import RenderEnvWrapper
 from sequoia.common.spaces import Image, Sparse
-from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.transforms import Transforms
 from sequoia.settings.assumptions.incremental import (
     IncrementalAssumption,

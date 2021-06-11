@@ -48,8 +48,7 @@ from sequoia.common.gym_wrappers.utils import (
     is_monsterkong_env,
 )
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
-from sequoia.common.spaces import Sparse
-from sequoia.common.spaces.named_tuple import NamedTupleSpace
+from sequoia.common.spaces import Sparse, TypedDictSpace
 from sequoia.common.transforms import Transforms
 from sequoia.settings.assumptions.continual import (
     ContinualAssumption,
@@ -610,12 +609,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         return task_schedule
 
     @property
-    def observation_space(self) -> NamedTupleSpace:
+    def observation_space(self) -> TypedDictSpace:
         """ The un-batched observation space, based on the choice of dataset and
         the transforms at `self.transforms` (which apply to the train/valid/test
         environments).
 
-        The returned spaces is a NamedTupleSpace, with the following properties:
+        The returned spaces is a TypedDictSpace, with the following properties/items:
         - `x`: observation space (e.g. `Image` space)
         - `task_labels`: Union[Discrete, Sparse[Discrete]]
            The task labels for each sample when task labels are available,
@@ -630,7 +629,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             x_space = transform(x_space)
 
         task_label_space = self.task_label_space
-        observation_space = NamedTupleSpace(
+        observation_space = TypedDictSpace(
             x=x_space, task_labels=task_label_space, dtype=self.Observations,
         )
         if self.prefer_tensors:
@@ -656,12 +655,11 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
     @property
     def action_space(self) -> gym.Space:
-        # TODO: Convert the action/reward spaces so they also use NamedTupleSpace (even
+        # TODO: Convert the action/reward spaces so they also use TypedDictSpace (even
         # if they just have one item), so that it correctly reflects the objects that
         # the envs accept.
-        # IDEA: Rename/rework NamedTupleSpace to be TypedDictSpace instead
         y_pred_space = self._temp_train_env.action_space
-        # action_space = NamedTupleSpace(y_pred=y_pred_space, dtype=self.Actions)
+        # action_space = TypedDictSpace(y_pred=y_pred_space, dtype=self.Actions)
         return y_pred_space
 
     @property

@@ -400,6 +400,10 @@ class MultiHeadModel(BaseModel[SettingType]):
         observations = observations.to(self.device)
         task_ids: Optional[Tensor] = observations.task_labels
 
+        if isinstance(task_ids, np.ndarray) and task_ids.dtype == np.object:
+            task_ids = task_ids.tolist()
+            if len(task_ids) == 1:
+                task_ids = task_ids[0]
         if task_ids is None:
             # Run the forward pass with task inference turned on.
             return self.task_inference_forward_pass(observations)
@@ -494,8 +498,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         # --> Perform a simple kind of task inference:
         # 1. Perform a forward pass with each task's output head;
         # 2. Merge these predictions into a single prediction somehow.
-        assert observations.task_labels is None
-
+        assert observations.task_labels is None or all(observations.task_labels == None)
         # NOTE: This assumes that the observations are batched.
         # These are used below to indicate the shape of the different tensors.
         B = observations.x.shape[0]

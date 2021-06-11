@@ -14,7 +14,6 @@ from gym import spaces
 
 from torch import Tensor
 from sequoia.common.spaces.sparse import Sparse
-from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 from sequoia.utils.logging_utils import get_logger
 
 from .multi_task_environment import MultiTaskEnvironment, add_task_labels

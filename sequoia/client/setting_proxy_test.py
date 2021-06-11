@@ -6,7 +6,7 @@ from typing import Type
 import numpy as np
 import pytest
 from gym import spaces
-from sequoia.common.spaces import Image, NamedTupleSpace, Sparse
+from sequoia.common.spaces import Image, Sparse, TypedDictSpace
 from sequoia.common.transforms import Transforms
 from sequoia.methods.baseline_method import BaselineMethod
 from sequoia.methods.random_baseline import RandomBaselineMethod
@@ -118,7 +118,7 @@ def test_rl_track_setting_is_correct():
     setting = SettingProxy(IncrementalRLSetting, "rl_track",)
     assert setting.nb_tasks == 8
     assert setting.dataset == "MetaMonsterKong-v0"
-    assert setting.observation_space == NamedTupleSpace(
+    assert setting.observation_space == spaces.Dict(
         x=Image(0, 1, (3, 64, 64), dtype=np.float32),
         task_labels=Sparse(spaces.Discrete(8)),
     )
@@ -136,13 +136,13 @@ def test_rl_track_setting_is_correct():
     assert setting.test_transforms == [Transforms.to_tensor, Transforms.three_channels]
 
     train_env = setting.train_dataloader()
-    assert train_env.observation_space == NamedTupleSpace(
+    assert train_env.observation_space == spaces.Dict(
         x=Image(0, 1, (3, 64, 64), dtype=np.float32), task_labels=spaces.Discrete(8),
     )
     assert train_env.reset() in train_env.observation_space
 
     valid_env = setting.val_dataloader()
-    assert valid_env.observation_space == NamedTupleSpace(
+    assert valid_env.observation_space == spaces.Dict(
         x=Image(0, 1, (3, 64, 64), dtype=np.float32), task_labels=spaces.Discrete(8),
     )
 
@@ -161,7 +161,7 @@ def test_sl_track_setting_is_correct():
     setting = SettingProxy(ClassIncrementalSetting, "sl_track",)
     assert setting.nb_tasks == 12
     assert setting.dataset == "synbols"
-    assert setting.observation_space == NamedTupleSpace(
+    assert setting.observation_space == spaces.Dict(
         x=Image(0, 1, (3, 32, 32), dtype=np.float32), task_labels=spaces.Discrete(12),
     )
     assert setting.n_classes_per_task == 4
