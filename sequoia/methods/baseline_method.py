@@ -4,6 +4,9 @@ The Method could be whatever you want, really. For the 'baselines' we have here,
 we use pytorch-lightning, and a few little utility classes such as `Metrics` and
 `Loss`, which are basically just like dicts/objects, with some cool other
 methods.
+
+TODO: Add a wrapper to limit the 'epoch' length in RL, and then use an early-stopping
+callback to also perform validation like in SL.
 """
 import json
 import operator
@@ -222,7 +225,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         if not setting.known_task_boundaries_at_train_time:
             # If we won't have access to the task boundaries, so we can only do one
             # epoch.
-            self.hparams.max_epochs = 1
+            self.trainer_options.max_epochs = 1
 
         if isinstance(setting, ContinualRLSetting):
             setting.add_done_to_observations = True
