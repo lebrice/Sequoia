@@ -21,8 +21,8 @@ from sequoia.common.spaces import Image
 from sequoia.methods import Method
 from sequoia.settings import ClassIncrementalSetting
 from sequoia.settings.sl import PassiveEnvironment
-from sequoia.settings.sl.class_incremental.objects import (Actions, Environment,
-                                                 Observations, Rewards)
+from sequoia.settings.sl.incremental import Actions, Observations, Rewards, Environment
+
 
 @dataclass
 class HParams(HyperParameters):
@@ -44,9 +44,9 @@ class Classifier(nn.Module):
 
     This example model uses a resnet18 as the encoder, and a single output layer.
     """
-    
+
     HParams: ClassVar[Type[HParams]] = HParams
-    
+
     def __init__(
         self,
         observation_space: gym.Space,
@@ -192,8 +192,9 @@ class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
 
     This method uses the ExampleModel, which is quite simple.
     """
+
     ModelType: ClassVar[Type[Classifier]] = Classifier
-    
+
     def __init__(self, hparams: HParams = None):
         self.hparams: HParams = hparams or HParams()
 
@@ -213,7 +214,7 @@ class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
             reward_space=setting.reward_space,
         )
         self.optimizer = self.model.configure_optimizers()
-    
+
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
         """ Example train loop.
         You can do whatever you want with train_env and valid_env here.
@@ -292,6 +293,7 @@ class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
 if __name__ == "__main__":
     from sequoia.common import Config
     from sequoia.settings import ClassIncrementalSetting
+
     # Create the Method:
     # - Manually:
     # method = ExampleMethod()

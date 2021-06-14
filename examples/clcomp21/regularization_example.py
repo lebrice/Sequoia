@@ -10,8 +10,8 @@ import torch
 from torch import Tensor
 
 from sequoia.common.hparams import uniform
-from sequoia.settings import DomainIncrementalSetting
-from sequoia.settings.sl.class_incremental.objects import Observations, Rewards
+from sequoia.settings import DomainIncrementalSLSetting
+from sequoia.settings.sl.incremental.objects import Observations, Rewards
 from sequoia.utils import dict_intersection
 from sequoia.utils.logging_utils import get_logger
 from .multihead_classifier import (ExampleTaskInferenceMethod,
@@ -113,7 +113,7 @@ class ExampleRegMethod(ExampleTaskInferenceMethod):
     def __init__(self, hparams: HParams = None):
         super().__init__(hparams=hparams or self.HParams.from_args())
 
-    def configure(self, setting: DomainIncrementalSetting):
+    def configure(self, setting: DomainIncrementalSLSetting):
         # Use the improved model, with the added EWC-like term.
         self.model = RegularizedClassifier(
             observation_space=setting.observation_space,
@@ -146,8 +146,8 @@ if __name__ == "__main__":
     # - "Easy": Domain-Incremental MNIST Setting, useful for quick debugging, but
     #           beware that the action space is different than in class-incremental!
     #           (which is the type of Setting used in the SL track!)
-    # from sequoia.settings.sl.class_incremental.domain_incremental import DomainIncrementalSetting
-    # setting = DomainIncrementalSetting(
+    # from sequoia.settings.sl.class_incremental.domain_incremental import DomainIncrementalSLSetting
+    # setting = DomainIncrementalSLSetting(
     #     dataset="mnist", nb_tasks=5, monitor_training_performance=True
     # )
 

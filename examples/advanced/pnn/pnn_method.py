@@ -12,34 +12,25 @@ from gym import spaces
 from gym.spaces import Box
 from numpy import inf
 from scipy.signal import lfilter
+from simple_parsing import ArgumentParser
+from torchvision import transforms
+
 from sequoia import Environment
 from sequoia.common import Config
 from sequoia.common.spaces import Image
 from sequoia.common.transforms.utils import is_image
-from sequoia.settings import (
-    Actions,
-    ActiveEnvironment,
-    RLSetting,
-    Method,
-    Observations,
+from sequoia.settings import Actions, Method, Observations, Rewards, Setting
+from sequoia.settings.assumptions import IncrementalAssumption
+from sequoia.settings.rl import ActiveEnvironment, RLSetting, TaskIncrementalRLSetting
+from sequoia.settings.sl import (
+    DomainIncrementalSLSetting,
     PassiveEnvironment,
     SLSetting,
-    Rewards,
-    Setting,
-    DomainIncrementalSetting,
-    TaskIncrementalRLSetting,
     TaskIncrementalSLSetting,
 )
-from sequoia.settings.assumptions import IncrementalAssumption
-from simple_parsing import ArgumentParser
-from torchvision import transforms
 
-import sys
-
-sys.path.extend([".", ".."])
-
-from model_sl import PnnClassifier
-from model_rl import PnnA2CAgent
+from examples.advanced.pnn.model_rl import PnnA2CAgent
+from examples.advanced.pnn.model_sl import PnnClassifier
 
 
 class PnnMethod(Method, target_setting=Setting):
@@ -401,8 +392,9 @@ def main_sl():
 
     # setting: TaskIncrementalSLSetting = args.setting
     setting: TaskIncrementalSLSetting = TaskIncrementalSLSetting.from_argparse_args(
-    # setting: DomainIncrementalSetting = DomainIncrementalSetting.from_argparse_args(
-        args, dest="setting"
+        # setting: DomainIncrementalSetting = DomainIncrementalSetting.from_argparse_args(
+        args,
+        dest="setting",
     )
     config: Config = Config.from_argparse_args(args, dest="config")
 

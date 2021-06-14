@@ -4,7 +4,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
-from layers import PNNConvLayer, PNNLinearBlock
+from .layers import PNNConvLayer, PNNLinearBlock
 
 
 class PnnA2CAgent(nn.Module):
