@@ -4,7 +4,6 @@ known_task_boundaries_at_test_time: false
 task_labels_at_train_time: true
 task_labels_at_test_time: false
 monitor_training_performance: true
-force_pixel_observations: true
 steps_per_task: 200_000
 test_steps_per_task: 10_000
 train_task_schedule:

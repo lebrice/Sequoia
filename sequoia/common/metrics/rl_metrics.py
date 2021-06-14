@@ -27,6 +27,17 @@ class EpisodeMetrics(Metrics):
         return self.n_samples
 
     @property
+    def objective_name(self) -> str:
+        """Returns the name to be associated with the objective of this class.
+
+        Returns
+        -------
+        str
+            The name associated with the objective.
+        """
+        return "Mean Reward per Episode"
+
+    @property
     def mean_reward_per_step(self) -> float:
         return self.mean_episode_reward / self.mean_episode_length
 

@@ -35,6 +35,19 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
         """ Fixture used to pass keyword arguments when creating a Setting. """
         return {"dataset": dataset, "nb_tasks": nb_tasks, "config": config}
 
+    @pytest.mark.parametrize(
+        "dataset, expected_resulting_name",
+        [
+            ("monsterkong", "MetaMonsterKong-v1"),
+            ("meta_monsterkong", "MetaMonsterKong-v1"),
+            ("cartpole", "CartPole-v1"),
+        ],
+    )
+    def test_passing_name_variant_works(
+        self, dataset: str, expected_resulting_name: str
+    ):
+        assert self.Setting(dataset=dataset).dataset == expected_resulting_name
+
     def validate_results(
         self,
         setting: DiscreteTaskAgnosticRLSetting,

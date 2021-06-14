@@ -147,7 +147,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 self.test_envs = self.train_envs.copy()
             if (
                 self.train_task_schedule
-                or self.valid_task_schedule
+                or self.val_task_schedule
                 or self.test_task_schedule
             ):
                 raise RuntimeError(
@@ -165,7 +165,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         if self._using_custom_envs_foreach_task:
             # TODO: Use 'no-op' task schedules for now.
             # self.train_task_schedule.clear()
-            # self.valid_task_schedule.clear()
+            # self.val_task_schedule.clear()
             # self.test_task_schedule.clear()
             pass
 
@@ -221,9 +221,9 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             return sum(self.train_task_lengths)
         return self.train_task_lengths[self.current_task_id]
 
-    steps_per_task: int = deprecated_property(
-        "steps_per_task", "current_train_task_length"
-    )
+    # steps_per_task: int = deprecated_property(
+    #     "steps_per_task", "current_train_task_length"
+    # )
     # @property
     # def steps_per_task(self) -> int:
     #     # unique_task_lengths = list(set(self.train_task_lengths))
@@ -427,6 +427,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         return task_schedule
 
     def create_train_wrappers(self):
+        # TODO: Clean this up a bit?
         if self._using_custom_envs_foreach_task:
             # TODO: Maybe do something different here, since we don't actually want to
             # add a CL wrapper at all in this case?
@@ -463,7 +464,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # the task boundaries are given to the Method.
             # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
             task_labels_available=self.task_labels_at_train_time,
-            transforms=self.train_transforms,
+            transforms=self.transforms + self.train_transforms,
             starting_step=0,
             max_steps=max(task_schedule_slice.keys()),
             new_random_task_on_reset=self.stationary_context,
@@ -494,7 +495,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # the task boundaries are given to the Method.
             # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
             task_labels_available=self.task_labels_at_train_time,
-            transforms=self.val_transforms,
+            transforms=self.transforms + self.val_transforms,
             starting_step=0,
             max_steps=max(task_schedule_slice.keys()),
             new_random_task_on_reset=self.stationary_context,
@@ -525,7 +526,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # the task boundaries are given to the Method.
             # sharp_task_boundaries=self.known_task_boundaries_at_train_time,
             task_labels_available=self.task_labels_at_train_time,
-            transforms=self.val_transforms,
+            transforms=self.transforms + self.test_transforms,
             starting_step=0,
             max_steps=self.test_max_steps,
             new_random_task_on_reset=self.stationary_context,

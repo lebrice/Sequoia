@@ -26,6 +26,17 @@ class TaskSequenceResults(Results, Generic[MetricType]):
     # SL) have higher => better
     lower_is_better: ClassVar[bool] = False
 
+    def __post_init__(self):
+        if self.task_results and isinstance(self.task_results[0], dict):
+            self.task_results = [
+                TaskResults.from_dict(task_result, drop_extra_fields=False)
+                for task_result in self.task_results
+            ]
+
+    @property
+    def objective_name(self) -> str:
+        return self.average_metrics.objective_name
+    
     @property
     def num_tasks(self) -> int:
         """Returns the number of tasks.

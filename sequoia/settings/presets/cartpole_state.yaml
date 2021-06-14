@@ -10,7 +10,7 @@ train_task_schedule:
   2000:
     gravity: 10
     length: 0.8
-valid_task_schedule:
+val_task_schedule:
   0:
     gravity: 10
     length: 0.3

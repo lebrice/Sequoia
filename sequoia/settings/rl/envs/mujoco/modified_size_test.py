@@ -82,10 +82,10 @@ class ModifiedSizeEnvTests:
 
         # # NOTE: Same as above: we use a `no-op` task schedule, rather than an empty one.
         # assert not any(setting.train_task_schedule.values())
-        # assert not any(setting.valid_task_schedule.values())
+        # assert not any(setting.val_task_schedule.values())
         # assert not any(setting.test_task_schedule.values())
         # # assert not setting.train_task_schedule
-        # # assert not setting.valid_task_schedule
+        # # assert not setting.val_task_schedule
         # # assert not setting.test_task_schedule
 
         # method = RandomBaselineMethod()

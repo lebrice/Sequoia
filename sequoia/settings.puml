@@ -156,7 +156,7 @@ package settings {
                 + smooth_task_boundaries: bool = True
                 
                 + train_task_schedule: dict
-                + valid_task_schedule: dict
+                + val_task_schedule: dict
                 + test_task_schedule: dict
                 + task_noise_std: float
 

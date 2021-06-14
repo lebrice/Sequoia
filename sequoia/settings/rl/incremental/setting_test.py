@@ -488,10 +488,10 @@ class TestPassingEnvsForEachTask:
         # TODO: Using 'no-op' task schedules, rather than empty ones.
         # This fixes a bug with the creation of the test environment.
         assert not any(setting.train_task_schedule.values())
-        assert not any(setting.valid_task_schedule.values())
+        assert not any(setting.val_task_schedule.values())
         assert not any(setting.test_task_schedule.values())
         # assert not setting.train_task_schedule
-        # assert not setting.valid_task_schedule
+        # assert not setting.val_task_schedule
         # assert not setting.test_task_schedule
 
         # assert len(setting.train_task_schedule.keys()) == 2
@@ -520,11 +520,7 @@ class TestPassingEnvsForEachTask:
             argv="--train_envs CartPole-v0 Pendulum-v0"
         )
         assert setting.train_envs == ["CartPole-v0", "Pendulum-v0"]
-
-        setting = IncrementalRLSetting.from_args(argv="")
-        assert setting == IncrementalRLSetting()
         # TODO: Not using this:
-        # assert setting.train_envs == [setting.dataset] * setting.nb_tasks
 
     def test_raises_error_when_envs_have_different_obs_spaces(self):
         task_envs = ["CartPole-v0", "Pendulum-v0"]
@@ -591,10 +587,10 @@ def test_incremental_mujoco_like_LPG_FTW():
 
     # NOTE: Same as above: we use a `no-op` task schedule, rather than an empty one.
     assert not any(setting.train_task_schedule.values())
-    assert not any(setting.valid_task_schedule.values())
+    assert not any(setting.val_task_schedule.values())
     assert not any(setting.test_task_schedule.values())
     # assert not setting.train_task_schedule
-    # assert not setting.valid_task_schedule
+    # assert not setting.val_task_schedule
     # assert not setting.test_task_schedule
 
     method = RandomBaselineMethod()

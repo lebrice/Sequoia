@@ -4,8 +4,9 @@ from .setting import SLSetting
 from .continual import ContinualSLSetting
 from .discrete import DiscreteTaskAgnosticSLSetting
 from .incremental import IncrementalSLSetting
-ClassIncrementalSetting = IncrementalSLSetting
+# NOTE: Class-Incremental is now the same as IncrementalSLSetting.
 # from .class_incremental import ClassIncrementalSetting
+ClassIncrementalSetting = IncrementalSLSetting
 from .task_incremental import TaskIncrementalSLSetting
 from .domain_incremental import DomainIncrementalSLSetting
 from .multi_task import MultiTaskSLSetting

@@ -1,6 +1,6 @@
 from collections import Counter
 from typing import Any, ClassVar, Dict, Type
-
+import functools
 import gym
 import pytest
 from sequoia.common.config import Config
@@ -41,7 +41,14 @@ class TestContinualSLSetting(SettingTests):
 
     def test_shared_action_space(self, config: Config):
         kwargs = dict(dataset="mnist", config=config)
-        if not self.Setting.shared_action_space:
+        if (
+            isinstance(self.Setting, functools.partial)
+            and not self.Setting.args[0].shared_action_space
+        ):
+            # NOTE: This `self.Setting` being a partial instead of a Setting class only
+            # happens in the tests for the SettingProxy. 
+            kwargs.update(shared_action_space=True)
+        elif not self.Setting.shared_action_space:
             kwargs.update(shared_action_space=True)
 
         setting = self.Setting(**kwargs)

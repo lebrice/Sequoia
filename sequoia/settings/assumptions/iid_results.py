@@ -2,7 +2,7 @@
 from dataclasses import dataclass, field
 from typing import TypeVar, List, Dict, ClassVar, Generic
 import matplotlib.pyplot as plt
-from sequoia.common.metrics import Metrics
+from sequoia.common.metrics import Metrics, EpisodeMetrics
 from sequoia.settings.base.results import Results
 
 MetricType = TypeVar("MetricType", bound=Metrics)
@@ -19,6 +19,12 @@ class TaskResults(Results, Generic[MetricType]):
     lower_is_better: ClassVar[bool] = False
 
     metrics: List[MetricType] = field(default_factory=list)
+
+    def __post_init__(self):
+        if self.metrics and isinstance(self.metrics[0], dict):
+            self.metrics = [
+                Metrics.from_dict(metrics, drop_extra_fields=False) for metrics in self.metrics
+            ]
 
     @property
     def average_metrics(self) -> MetricType:

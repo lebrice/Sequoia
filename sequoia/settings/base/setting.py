@@ -67,6 +67,7 @@ class Setting(
     Serializable,
     LightningDataModule,
     Generic[EnvironmentType],
+    metaclass=SettingMeta,
 ):
     """ Base class for all research settings in ML: Root node of the tree.
 

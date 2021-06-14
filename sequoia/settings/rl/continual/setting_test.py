@@ -389,7 +389,12 @@ class TestContinualRLSetting:
         # FIXME: Move this to an instance method on the test class so that subclasses
         # can change stuff in it.
         def check_obs(obs: ContinualRLSetting.Observations) -> None:
-            assert isinstance(obs, self.Setting.Observations), obs[0].shape
+            if isinstance(self.Setting, partial):
+                # NOTE: This Happens when we sneakily switch out the self.Setting
+                # attribute in other tests (for the SettingProxy for example).
+                assert isinstance(obs, self.Setting.args[0].Observations)
+            else:
+                assert isinstance(obs, self.Setting.Observations), obs[0].shape
             assert obs.x in expected_batched_x_space
             # In this particular case here, the task labels should be None.
             # FIXME: For InrementalRL, this isn't correct! TestIncrementalRL should

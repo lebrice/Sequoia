@@ -503,7 +503,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         # only used for the shuffling used to make the task boundaries smooth.
         if self.smooth_task_boundaries:
             return smooth_task_boundaries_concat(
-                self.train_datasets, seed=self.config.seed
+                self.train_datasets, seed=self.config.seed if self.config else None
             )
         if self.stationary_context:
             joined_dataset = concat(self.train_datasets)

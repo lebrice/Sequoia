@@ -1,13 +1,16 @@
 """ 'Classical' RL setting.
 """
 from dataclasses import dataclass
-from typing import List, Callable
+from typing import Callable, ClassVar, Dict, List
+
 import gym
-from ..incremental import IncrementalRLSetting
 from sequoia.utils.utils import constant
+from simple_parsing.helpers import choice
 from typing_extensions import Final
+
 # NOTE: We can reuse those results for now, since they describe the same thing.
 from ..discrete.results import DiscreteTaskAgnosticRLResults as TraditionalRLResults
+from ..incremental import IncrementalRLSetting
 
 
 @dataclass
@@ -16,6 +19,13 @@ class TraditionalRLSetting(IncrementalRLSetting):
 
     Implemented as a MultiTaskRLSetting, but with a single task.
     """
+
+    # Class variable that holds the dict of available environments.
+    available_datasets: ClassVar[
+        Dict[str, str]
+    ] = IncrementalRLSetting.available_datasets.copy()
+    # Which dataset/environment to use for training, validation and testing.
+    dataset: str = choice(available_datasets, default="CartPole-v0")
 
     # IDEA: By default, only use one task, although there may actually be more than one.
     nb_tasks: int = 5
