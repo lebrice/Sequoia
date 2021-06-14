@@ -83,8 +83,9 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
         return self.dtype(**dict_sample)
 
     def __getattr__(self, attr: str) -> Space:
-        if attr in self.spaces:
-            return self.spaces[attr]
+        if attr != "spaces":
+            if attr in self.spaces:
+                return self.spaces[attr]
         raise AttributeError(f"Space doesn't have attribute {attr}")
 
     def __getitem__(self, key: Union[str, int]) -> Space:
@@ -110,7 +111,19 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
             # NOTE: We don't use dataclasses.asdict as it doesn't work with Tensor
             # items with grad attributes.
             x = {f.name: getattr(x, f.name) for f in fields(x)}
-        return super().contains(x)
+
+        # NOTE: Modifying this so that we allow samples with more values, as long as it
+        # has all the required keys.
+        if not isinstance(x, dict) or not all(k in x for k in self.spaces):
+            return False
+        for k, space in self.spaces.items():
+            if k not in x:
+                return False
+            if not space.contains(x[k]):
+                return False
+        return True
+        # return super().contains(x)
+
 
     def __repr__(self) -> str:
         return (

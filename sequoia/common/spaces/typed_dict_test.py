@@ -223,6 +223,31 @@ def test_batch_space_preserves_dtype():
     assert list(batched_space.sample().keys()) == ["x", "action", "next_state"]
     assert list(v[0] for v in space.spaces.items()) == ["x", "action", "next_state"]
 
+from sequoia.common.batch import Batch
+from torch import Tensor
+from typing import Optional
+from numpy.typing import ArrayLike
+
+def test_object_with_extra_keys_fits():
+    @dataclass(frozen=True)
+    class Observation(Batch):
+        x: np.ndarray
+        t: ArrayLike
+        done: Optional[ArrayLike] = None
+    
+    space = TypedDictSpace(
+        x=spaces.Box(0, 10, (10,)),
+        t=spaces.Box(0, 1, (1,), dtype=np.int32)
+    )
+
+    obs = Observation(
+        x=np.arange(10),
+        t=np.array([1]),
+        done = False,
+    )
+    assert obs.x in space.x
+    assert obs.t in space.t
+    assert obs in space
 
 ## IDEA: Creating a space like this, using the same syntax as with TypedDict
 # class StateTransitionSpace(TypedDict):
