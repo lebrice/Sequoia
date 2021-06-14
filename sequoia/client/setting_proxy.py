@@ -118,7 +118,19 @@ class SettingProxy(SettingABC, Generic[SettingType]):
 
     @property
     def test_env(self) -> EnvironmentProxy:
-        raise RuntimeError("You don't have access to the test_env attribute!")
+        if not self._is_readable("test_env"):
+            raise RuntimeError("You don't have access to the test_env attribute!")
+        return self._setting_type.test_env(self)
+
+    @test_env.setter
+    def test_env(self, value) -> None:
+        if not self._is_writeable("test_env"):
+            raise RuntimeError("You don't have access to the test_env attribute!")
+        self.__setting.test_env = value
+
+    def _temp_make_readable(self, attribute: str) -> None:
+        """ Temporarily makes an attribute readable. """
+        # if attribute in _hidden_attributes:
 
     @property
     def config(self) -> Config:
@@ -135,16 +147,31 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         self.__setting.setup(stage=stage)
 
     def get_name(self):
-        # TODO
         return self.__setting.get_name()
 
     def _is_readable(self, attribute: str) -> bool:
-        if self._setting_type not in _hidden_attributes:
-            return True
-        return attribute not in _hidden_attributes[self._setting_type]
+        if self._setting_type in _hidden_attributes:
+            key = self._setting_type
+        else:
+            for parent_setting_type in self._setting_type.get_parents():
+                if parent_setting_type in _hidden_attributes:
+                    key = parent_setting_type
+                    break
+            else:
+                return True
+        return attribute not in _hidden_attributes[key]
 
     def _is_writeable(self, attribute: str) -> bool:
-        return attribute not in _readonly_attributes[self._setting_type]
+        if self._setting_type in _readonly_attributes:
+            key = self._setting_type
+        else:
+            for parent_setting_type in self._setting_type.get_parents():
+                if parent_setting_type in _readonly_attributes:
+                    key = parent_setting_type
+                    break
+            else:
+                return True
+        return attribute not in _readonly_attributes[key]
 
     @property
     def batch_size(self) -> Optional[int]:
@@ -181,11 +208,19 @@ class SettingProxy(SettingABC, Generic[SettingType]):
     def apply(self, method: Method, config: Config = None) -> Results:
         # TODO: Figure out where the 'config' should be defined?
         method.configure(setting=self)
+        self.config = self._setup_config(method)
         # TODO: Not sure if the method is changing the train_transforms.
         # Run the Main loop.
-        results: Results = self.main_loop(method)
+        self.Observations = self._setting_type.Observations
+        self.Actions = self._setting_type.Actions
+        self.Rewards = self._setting_type.Rewards
+        
+        if hasattr(self._setting_type, "TestEnvironment"):
+            self.TestEnvironment = self._setting_type.TestEnvironment
+        # results = self._setting_type.apply(self, method, config=config)
 
-        logger.info(f"Resulting objective of Test Loop: {results.objective}")
+        results: Results = self.main_loop(method)
+        logger.info(f"Results objective: {results.objective}")
         logger.info(results.summary())
         method.receive_results(self, results=results)
         return results
@@ -211,7 +246,15 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         self, batch_size: int = None, num_workers: int = None
     ) -> EnvironmentProxy:
         # TODO: Faking this 'remote-ness' for now:
-
+        return EnvironmentProxy(
+            env_fn=partial(
+                self.__setting.train_dataloader,
+                batch_size=batch_size,
+                num_workers=num_workers,
+            ),
+            setting_type=self._setting_type,
+        )
+        
         batch_size = (
             batch_size if batch_size is not None else self.get_attribute("batch_size")
         )
@@ -237,22 +280,23 @@ class SettingProxy(SettingABC, Generic[SettingType]):
     def val_dataloader(
         self, batch_size: int = None, num_workers: int = None
     ) -> EnvironmentProxy:
-
-        batch_size = (
-            batch_size if batch_size is not None else self.get_attribute("batch_size")
+        return EnvironmentProxy(
+            env_fn=partial(
+                self.__setting.val_dataloader,
+                batch_size=batch_size,
+                num_workers=num_workers,
+            ),
+            setting_type=self._setting_type,
         )
-        num_workers = (
-            num_workers
-            if num_workers is not None
-            else self.get_attribute("num_workers")
-        )
-
+       
         if self._val_env:
             self._val_env.close()
             del self._val_env
+
         self._val_env = EnvironmentProxy(
             env_fn=partial(
-                self.__setting.val_dataloader,
+                self._setting_type.val_dataloader,
+                self,
                 batch_size=batch_size,
                 num_workers=num_workers,
             ),
@@ -261,7 +305,21 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         return self._val_env
 
     def test_dataloader(self, batch_size: int = None, num_workers: int = None):
-        raise RuntimeError("You don't have access to the test_dataloader method!")
+        # TODO: Get the caller, and if it's 'internal' to sequoia then let it through.
+        # raise RuntimeError("You don't have access to the test_dataloader method!")
+        return EnvironmentProxy(
+            env_fn=partial(
+                self.__setting.test_dataloader,
+                batch_size=batch_size,
+                num_workers=num_workers,
+            ),
+            setting_type=self._setting_type,
+        )
+        # return EnvironmentProxy(
+        #     partial(self._setting_type.test_dataloader, self, batch_size=batch_size, num_workers=num_workers),
+        #     setting_type=self._setting_type,
+        # )
+    
 
     def __test_dataloader(
         self, batch_size: int = None, num_workers: int = None
@@ -291,77 +349,77 @@ class SettingProxy(SettingABC, Generic[SettingType]):
     def main_loop(self, method: Method) -> Results:
         # TODO: Implement the 'remote' equivalent of the main loop of the IncrementalAssumption.
 
-        test_results = self._setting_type.Results()
-        test_results._online_training_performance = []
-
-        # TODO: Fix this up, need to get the 'scaling factor' to use for the objective
-        # here.
-        dataset: str = self.get_attribute("dataset")
-        test_results._objective_scaling_factor = (
-            0.01 if dataset.startswith("MetaMonsterKong") else 1.0
-        )
-
+        # test_results = self._setting_type.Results()
         method.set_training()
 
+        dataset: str = self.get_attribute("dataset")
         nb_tasks = self.get_attribute("nb_tasks")
-        known_task_boundaries_at_train_time = self.get_attribute(
+        known_task_boundaries_at_train_time: bool = self.get_attribute(
             "known_task_boundaries_at_train_time"
         )
-        task_labels_at_train_time = self.get_attribute("task_labels_at_train_time")
-        start_time = time.process_time()
+        task_labels_at_train_time: bool = self.get_attribute("task_labels_at_train_time")
 
         # Send the train / val transforms to the 'remote' env.
         self.set_attribute("train_transforms", self.train_transforms)
         self.set_attribute("val_transforms", self.val_transforms)
+        self.Results = self._setting_type.Results
 
-        for task_id in range(nb_tasks):
-            logger.info(
-                f"Starting training" + (f" on task {task_id}." if nb_tasks > 1 else ".")
-            )
-            self.set_attribute("_current_task_id", task_id)
+        # TODO: Can we avoid duplicating the main loop here?
+        # test_results = self.__setting.main_loop(method)
+        # test_results._objective_scaling_factor = (
+        #     0.01 if dataset.startswith("MetaMonsterKong") else 1.0
+        # )        
+        test_results = self._setting_type.main_loop(self, method=method)
+        start_time = time.process_time()
+        
+        # for task_id in range(nb_tasks):
+        #     logger.info(
+        #         f"Starting training" + (f" on task {task_id}." if nb_tasks > 1 else ".")
+        #     )
+        #     self.set_attribute("_current_task_id", task_id)
 
-            if known_task_boundaries_at_train_time:
-                # Inform the model of a task boundary. If the task labels are
-                # available, then also give the id of the new task to the
-                # method.
-                # TODO: Should we also inform the method of wether or not the
-                # task switch is occuring during training or testing?
-                if not hasattr(method, "on_task_switch"):
-                    logger.warning(
-                        UserWarning(
-                            f"On a task boundary, but since your method doesn't "
-                            f"have an `on_task_switch` method, it won't know about "
-                            f"it! "
-                        )
-                    )
-                elif not task_labels_at_train_time:
-                    method.on_task_switch(None)
-                else:
-                    # NOTE: on_task_switch won't be called if there is only one "task",
-                    # (as-in one task in a 'sequence' of tasks).
-                    # TODO: in multi-task RL, i.e. RLSetting(dataset=..., nb_tasks=10),
-                    # for instance, then there are indeed 10 tasks, but `self.tasks`
-                    # is used here to describe the number of 'phases' in training and
-                    # testing.
-                    if nb_tasks > 1:
-                        method.on_task_switch(task_id)
+        #     if known_task_boundaries_at_train_time:
+        #         # Inform the model of a task boundary. If the task labels are
+        #         # available, then also give the id of the new task to the
+        #         # method.
+        #         # TODO: Should we also inform the method of wether or not the
+        #         # task switch is occuring during training or testing?
+        #         if not hasattr(method, "on_task_switch"):
+        #             logger.warning(
+        #                 UserWarning(
+        #                     f"On a task boundary, but since your method doesn't "
+        #                     f"have an `on_task_switch` method, it won't know about "
+        #                     f"it! "
+        #                 )
+        #             )
+        #         elif not task_labels_at_train_time:
+        #             method.on_task_switch(None)
+        #         else:
+        #             # NOTE: on_task_switch won't be called if there is only one "task",
+        #             # (as-in one task in a 'sequence' of tasks).
+        #             # TODO: in multi-task RL, i.e. RLSetting(dataset=..., nb_tasks=10),
+        #             # for instance, then there are indeed 10 tasks, but `self.tasks`
+        #             # is used here to describe the number of 'phases' in training and
+        #             # testing.
+        #             if nb_tasks > 1:
+        #                 method.on_task_switch(task_id)
 
-            task_train_loader = self.train_dataloader()
-            task_valid_loader = self.val_dataloader()
-            success = method.fit(
-                train_env=task_train_loader, valid_env=task_valid_loader,
-            )
-            task_train_loader.close()
-            task_valid_loader.close()
+        #     task_train_loader = self.train_dataloader()
+        #     task_valid_loader = self.val_dataloader()
+        #     success = method.fit(
+        #         train_env=task_train_loader, valid_env=task_valid_loader,
+        #     )
+        #     task_train_loader.close()
+        #     task_valid_loader.close()
 
-            test_results._online_training_performance.append(
-                task_train_loader.get_online_performance()
-            )
+        #     test_results._online_training_performance.append(
+        #         task_train_loader.get_online_performance()
+        #     )
 
-            test_loop_results = self.test_loop(method)
-            test_results.append(test_loop_results)
+        #     test_loop_results = self.test_loop(method)
+        #     test_results.append(test_loop_results)
 
-            logger.info(f"Finished Training on task {task_id}.")
+        #     logger.info(f"Finished Training on task {task_id}.")
 
         runtime = time.process_time() - start_time
         test_results._runtime = runtime
@@ -394,75 +452,77 @@ class SettingProxy(SettingABC, Generic[SettingType]):
                     "no task labels at test time for now when using a SettingProxy"
                 )
             )
+        # TODO: Avoid duplicating the test loop here?
+        test_results = self.__setting.test_loop(method=method)
 
-        was_training = method.training
-        method.set_testing()
-        test_env = self.__test_dataloader()
+        # was_training = method.training
+        # method.set_testing()
+        # test_env = self.__test_dataloader()
 
-        if known_task_boundaries_at_test_time and nb_tasks > 1:
-            # TODO: We need to have a way to inform the Method of task boundaries, if the
-            # Setting allows it.
-            # Not sure how to do this. It might be simpler to just do something like
-            # `obs, rewards, done, info, task_switched = <endpoint>.step(actions)`?
-            # # Add this wrapper that will call `on_task_switch` when the right step is
-            # # reached.
-            # test_env = StepCallbackWrapper(test_env, callbacks=[_on_task_switch])
-            pass
+        # if known_task_boundaries_at_test_time and nb_tasks > 1:
+        #     # TODO: We need to have a way to inform the Method of task boundaries, if the
+        #     # Setting allows it.
+        #     # Not sure how to do this. It might be simpler to just do something like
+        #     # `obs, rewards, done, info, task_switched = <endpoint>.step(actions)`?
+        #     # # Add this wrapper that will call `on_task_switch` when the right step is
+        #     # # reached.
+        #     # test_env = StepCallbackWrapper(test_env, callbacks=[_on_task_switch])
+        #     pass
 
-        obs = test_env.reset()
-        batch_size = test_env.batch_size
-        max_steps: int = self.get_attribute("test_steps") // (batch_size or 1)
+        # obs = test_env.reset()
+        # batch_size = test_env.batch_size
+        # max_steps: int = self.get_attribute("test_steps") // (batch_size or 1)
 
-        # Reset on the last step is causing trouble, since the env is closed.
-        pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
-        episode = 0
-        for step in pbar:
-            if test_env.is_closed():
-                logger.debug(f"Env is closed")
-                break
+        # # Reset on the last step is causing trouble, since the env is closed.
+        # pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
+        # episode = 0
+        # for step in pbar:
+        #     if test_env.is_closed():
+        #         logger.debug(f"Env is closed")
+        #         break
 
-            # BUG: This doesn't work if the env isn't batched.
-            action_space = test_env.action_space
-            batch_size = getattr(
-                test_env, "num_envs", getattr(test_env, "batch_size", 0)
-            )
-            env_is_batched = batch_size is not None and batch_size >= 1
-            if env_is_batched:
-                # NOTE: Need to pass an action space that actually reflects the batch
-                # size, even for the last batch!
-                obs_batch_size = obs.x.shape[0] if obs.x.shape else None
-                action_space_batch_size = (
-                    test_env.action_space.shape[0]
-                    if test_env.action_space.shape
-                    else None
-                )
-                if (
-                    obs_batch_size is not None
-                    and obs_batch_size != action_space_batch_size
-                ):
-                    action_space = batch_space(
-                        test_env.single_action_space, obs_batch_size
-                    )
+        #     # BUG: This doesn't work if the env isn't batched.
+        #     action_space = test_env.action_space
+        #     batch_size = getattr(
+        #         test_env, "num_envs", getattr(test_env, "batch_size", 0)
+        #     )
+        #     env_is_batched = batch_size is not None and batch_size >= 1
+        #     if env_is_batched:
+        #         # NOTE: Need to pass an action space that actually reflects the batch
+        #         # size, even for the last batch!
+        #         obs_batch_size = obs.x.shape[0] if obs.x.shape else None
+        #         action_space_batch_size = (
+        #             test_env.action_space.shape[0]
+        #             if test_env.action_space.shape
+        #             else None
+        #         )
+        #         if (
+        #             obs_batch_size is not None
+        #             and obs_batch_size != action_space_batch_size
+        #         ):
+        #             action_space = batch_space(
+        #                 test_env.single_action_space, obs_batch_size
+        #             )
 
-            action = method.get_actions(obs, action_space)
+        #     action = method.get_actions(obs, action_space)
 
-            # logger.debug(f"action: {action}")
-            obs, reward, done, info = test_env.step(action)
+        #     # logger.debug(f"action: {action}")
+        #     obs, reward, done, info = test_env.step(action)
 
-            # TODO: Add something to `info` that indicates when a task boundary is
-            # reached, so that we can call the `on_task_switch` method on the Method
-            # ourselves.
+        #     # TODO: Add something to `info` that indicates when a task boundary is
+        #     # reached, so that we can call the `on_task_switch` method on the Method
+        #     # ourselves.
 
-            if done and not test_env.is_closed():
-                # logger.debug(f"end of test episode {episode}")
-                obs = test_env.reset()
-                episode += 1
+        #     if done and not test_env.is_closed():
+        #         # logger.debug(f"end of test episode {episode}")
+        #         obs = test_env.reset()
+        #         episode += 1
 
-        test_env.close()
-        test_results = test_env.get_results()
+        # test_env.close()
+        # test_results = test_env.get_results()
 
-        if was_training:
-            method.set_training()
+        # if was_training:
+        #     method.set_training()
 
         return test_results
 

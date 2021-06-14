@@ -3,6 +3,8 @@
 """
 from typing import Type
 
+from typing import ClassVar
+from functools import partial
 import numpy as np
 import pytest
 from gym import spaces
@@ -12,7 +14,7 @@ from sequoia.methods.baseline_method import BaselineMethod
 from sequoia.methods.random_baseline import RandomBaselineMethod
 from sequoia.settings import Setting, all_settings
 from sequoia.settings.rl import IncrementalRLSetting, TaskIncrementalRLSetting
-from sequoia.settings.sl import ClassIncrementalSetting, DomainIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, DomainIncrementalSLSetting
 from sequoia.conftest import slow
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 
@@ -30,22 +32,41 @@ def test_spaces_match(setting_type: Type[Setting]):
 
 def test_transforms_get_propagated():
     for setting in [
-        TaskIncrementalRLSetting(dataset="cartpole"),
-        SettingProxy(TaskIncrementalRLSetting, dataset="cartpole"),
+        TaskIncrementalRLSetting(dataset="MetaMonsterKong-v0"),
+        SettingProxy(TaskIncrementalRLSetting, dataset="MetaMonsterKong-v0"),
     ]:
-        assert setting.observation_space.x == Image(0, 1, shape=(3, 400, 600))
-        setting.train_transforms.append(Transforms.resize_64x64)
+        assert setting.observation_space.x == Image(0, 255, shape=(64, 64, 3), dtype=np.uint8)
+        setting.transforms.append(Transforms.to_tensor)
+        setting.transforms.append(Transforms.resize_32x32)
         # TODO: The observation space doesn't update directly in RL whenever the
         # transforms are changed.
-        # assert setting.observation_space.x == Image(0, 1, shape=(3, 64, 64))
-        assert setting.train_dataloader().reset().x.shape == (3, 64, 64)
+        assert setting.observation_space.x == Image(0, 1, shape=(3, 32, 32))
+        assert setting.train_dataloader().reset().x.shape == (3, 32, 32)
 
 
-@pytest.mark.timeout(60)
-def test_random_baseline():
+from sequoia.settings.sl.continual.setting import ContinualSLSetting
+from sequoia.settings.sl.continual.setting_test import TestContinualSLSetting as ContinualSLSettingTests
+
+
+class TestContinualSLSettingProxy(ContinualSLSettingTests):
+    Setting: ClassVar[Type[Setting]] = partial(SettingProxy, ContinualSLSetting)
+
+
+from sequoia.settings.rl.continual.setting import ContinualRLSetting
+from sequoia.settings.rl.continual.setting_test import TestContinualRLSetting as ContinualRLSettingTests
+
+
+
+
+class TestContinualRLSettingProxy(ContinualRLSettingTests):
+    Setting: ClassVar[Type[Setting]] = partial(SettingProxy, ContinualRLSetting)
+
+
+@pytest.mark.timeout(30)
+def test_random_baseline(config):
     method = RandomBaselineMethod()
-    setting = SettingProxy(DomainIncrementalSetting)
-    results = setting.apply(method)
+    setting = SettingProxy(DomainIncrementalSLSetting, config=config)
+    results = setting.apply(method, config=config)
     # domain incremental mnist: 2 classes per task -> chance accuracy of 50%.
     assert 0.45 <= results.objective <= 0.55
 
@@ -58,23 +79,22 @@ def test_random_baseline_rl():
         dataset="monsterkong",
         monitor_training_performance=True,
         # observe_state_directly=False, ## TODO: Make sure this doesn't change anything.
-        steps_per_task=1_000,
+        train_steps_per_task=1_000,
         test_steps_per_task=1_000,
         train_task_schedule={
             0: {"level": 0},
             1: {"level": 1},
             2: {"level": 10},
             3: {"level": 11},
-            4: {"level": 20},
-            5: {"level": 21},
-            6: {"level": 30},
-            7: {"level": 31},
+            4: {"level": 0},
         },
         # Interesting problem: Will it always do at least an entire episode here per
         # env?
         # batch_size=2,
         # num_workers=0,
     )
+    assert setting.train_max_steps == 4_000
+    assert setting.test_max_steps == 4_000
     results: IncrementalRLSetting.Results[EpisodeMetrics] = setting.apply(method)
     assert 20 <= results.average_final_performance.mean_reward_per_episode
 
