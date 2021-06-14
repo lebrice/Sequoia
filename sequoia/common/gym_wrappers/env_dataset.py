@@ -289,10 +289,10 @@ class EnvDataset(
         self.reset_ = False
         self.n_episodes_ += 1
 
-        logger.debug(f"self.n_steps: {self.n_steps_} self.n_episodes: {self.n_episodes_}")
-        logger.debug(f"Reached step limit: {self.reached_step_limit}")
-        logger.debug(f"Reached episode limit: {self.reached_episode_limit}")
-        logger.debug(f"Reached episode length limit: {self.reached_episode_length_limit}")
+        # logger.debug(f"self.n_steps: {self.n_steps_} self.n_episodes: {self.n_episodes_}")
+        # logger.debug(f"Reached step limit: {self.reached_step_limit}")
+        # logger.debug(f"Reached episode limit: {self.reached_episode_limit}")
+        # logger.debug(f"Reached episode length limit: {self.reached_episode_length_limit}")
 
         if self.reached_episode_limit or self.reached_step_limit:
             logger.debug("Done iterating, closing the env.")
