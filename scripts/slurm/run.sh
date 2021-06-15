@@ -9,7 +9,6 @@ module load anaconda/3
 conda activate sequoia
 
 cd ~/Sequoia
-pip install -e .[hpo,monsterkong]
+pip install -e .[hpo,monsterkong,avalanche]
 
-# TODO: Change the setting, the number of tasks, the method, etc.
-sequoia_sweep --data_dir $SLURM_TMPDIR "$@"
+sequoia --data_dir $SLURM_TMPDIR "$@"

@@ -70,6 +70,18 @@ try:
 except ImportError:
     pass
 
+
+try:
+    from .stable_baselines3_methods import *
+except ImportError:
+    pass
+
+
+try:
+    from .pl_bolts_methods import *
+except ImportError:
+    pass
+
 try:
     # TODO: This won't work, because we don't currently package the `cndpm_method`
     # inside of the `cndpm` package.
@@ -88,19 +100,6 @@ try:
 
 except ImportError:
     pass
-
-
-try:
-    from .stable_baselines3_methods import *
-except ImportError:
-    pass
-
-
-try:
-    from .pl_bolts_methods import *
-except ImportError:
-    pass
-
 
 ## A bit hacky: Dynamically import all the modules/packages defined in this
 # folder. This way, we register the methods as they are declared.

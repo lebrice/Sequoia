@@ -5,8 +5,8 @@ For now this only inherits the tests from the AvalancheMethod class.
 from typing import ClassVar, Type
 from .base import AvalancheMethod
 from .ewc import EWCMethod
-from .base_test import TestAvalancheMethod
+from .base_test import _TestAvalancheMethod
 
 
-class TestEWCMethod(TestAvalancheMethod):
+class TestEWCMethod(_TestAvalancheMethod):
     Method: ClassVar[Type[AvalancheMethod]] = EWCMethod

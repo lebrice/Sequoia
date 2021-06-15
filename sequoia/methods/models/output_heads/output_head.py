@@ -39,7 +39,7 @@ class OutputHead(nn.Module, ABC):
     base_model_optimizer: ClassVar[Optimizer]
 
     @dataclass
-    class HParams(HyperParameters):
+    class HParams(HyperParameters, Parseable):
         """ Hyperparameters of the output head. """
         
     def __init__(self,

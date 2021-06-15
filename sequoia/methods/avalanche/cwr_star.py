@@ -1,11 +1,14 @@
-""" CWRStar Method from Avalanche. """
+""" Method based on CWRStar from [Avalanche](https://github.com/ContinualAI/avalanche).
+
+See `avalanche.training.plugins.cwr_star.CWRStarPlugin` or
+`avalanche.training.strategies.strategy_wrappers.CWRStar` for more info.
+"""
 from dataclasses import dataclass
 from typing import ClassVar, Optional, Type
+from avalanche.training.strategies import BaseStrategy, CWRStar
 
 from sequoia.methods import register_method
 from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
-
-from avalanche.training.strategies import BaseStrategy, CWRStar
 
 from .base import AvalancheMethod
 

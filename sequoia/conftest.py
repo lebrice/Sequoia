@@ -51,7 +51,12 @@ def trainer_config(tmp_path_factory):
 @pytest.fixture(scope="session")
 def config():
     # TODO: Set the results dir somehow with the value of this `tmp_path` fixture.
-    return Config(debug=True, data_dir=Path(os.environ.get("SLURM_TMPDIR", "data")), seed=123)
+    data_dir = Path(os.environ.get("SLURM_TMPDIR", os.environ.get("DATA_DIR", "data")))
+    return Config(
+        debug=True,
+        data_dir=data_dir,
+        seed=123,
+    )
 
 
 def id_fn(params: Any) -> str:

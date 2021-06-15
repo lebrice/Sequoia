@@ -1,11 +1,15 @@
-""" AR1 Method from Avalanche. """
+""" Method based on AR1 from [Avalanche](https://github.com/ContinualAI/avalanche).
+
+See `avalanche.training.strategies.ar1.AR1` for more info.
+"""
 from dataclasses import dataclass
 from typing import ClassVar, Type
 
 from avalanche.training.strategies import AR1, BaseStrategy
+from simple_parsing.helpers.hparams import uniform, log_uniform
+
 from sequoia.methods import register_method
 from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
-
 from .base import AvalancheMethod
 
 
@@ -20,13 +24,13 @@ class AR1Method(AvalancheMethod[AR1], target_setting=ClassIncrementalSetting):
     """
 
     # The learning rate (SGD optimizer).
-    lr: float = 0.001
+    lr: float = log_uniform(1e-6, 1e-2, default=0.001)
     # The momentum (SGD optimizer).
-    momentum: float = 0.9
+    momentum: float = uniform(0.9, 0.999, default=0.9)
     # The L2 penalty used for weight decay.
-    l2: float = 0.0005
+    l2: float = uniform(1e-6, 1e-3, default=0.0005)
     # The number of training epochs. Defaults to 4.
-    train_epochs: int = 4
+    train_epochs: int = uniform(1, 50, default=4)
     # The initial update rate of BatchReNorm layers.
     init_update_rate: float = 0.01
     # The incremental update rate of BatchReNorm layers.
@@ -38,7 +42,7 @@ class AR1Method(AvalancheMethod[AR1], target_setting=ClassIncrementalSetting):
     # The incremental step of r and d values of BatchReNorm layers.
     inc_step: float = 4.1e-05
     # The size of the replay buffer. The replay buffer is shared across classes.
-    rm_sz: int = 1500
+    rm_sz: int = uniform(500, 2000, default=1500)
     # A string describing the name of the layer to use while freezing the lower
     # (nearest to the input) part of the model. The given layer is not frozen
     # (exclusive).
@@ -48,11 +52,11 @@ class AR1Method(AvalancheMethod[AR1], target_setting=ClassIncrementalSetting):
     latent_layer_num: int = 19
     # The Synaptic Intelligence lambda term. Defaults to 0, which means that the
     # Synaptic Intelligence regularization will not be applied.
-    ewc_lambda: float = 0
-    # The train minibatch size. Defaults to 1.
-    train_mb_size: int = 128
-    # The eval minibatch size. Defaults to 1.
-    eval_mb_size: int = 128
+    ewc_lambda: float = uniform(0, 1, default=0)
+    # The train minibatch size. Defaults to 128.
+    train_mb_size: int = uniform(1, 512, default=128)
+    # The eval minibatch size. Defaults to 128.
+    eval_mb_size: int = uniform(1, 512, default=128)
 
     strategy_class: ClassVar[Type[BaseStrategy]] = AR1
 

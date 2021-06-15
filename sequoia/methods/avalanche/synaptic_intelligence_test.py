@@ -6,8 +6,8 @@ from typing import ClassVar, Type
 
 from .base import AvalancheMethod
 from .synaptic_intelligence import SynapticIntelligenceMethod
-from .base_test import TestAvalancheMethod
+from .base_test import _TestAvalancheMethod
 
 
-class TestSynapticIntelligenceMethod(TestAvalancheMethod):
+class TestSynapticIntelligenceMethod(_TestAvalancheMethod):
     Method: ClassVar[Type[AvalancheMethod]] = SynapticIntelligenceMethod

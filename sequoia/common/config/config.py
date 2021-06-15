@@ -36,9 +36,9 @@ class Config(Serializable, Parseable):
     random seed, or the log directory, wether CUDA is to be used, etc.
     """
     # Directory containing the datasets.
-    data_dir: Path = Path(os.environ.get("SLURM_TMPDIR", "data"))
+    data_dir: Path = Path(os.environ.get("SLURM_TMPDIR", os.environ.get("DATA_DIR", "data")))
     # Directory containing the results of an experiment.
-    log_dir: Path = Path("results")
+    log_dir: Path = Path(os.environ.get("RESULTS_DIR", "results"))
 
     # Run in Debug mode: no wandb logging, extra output.
     debug: bool = flag(False)
