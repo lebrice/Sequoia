@@ -14,6 +14,7 @@ from typing import (
 )
 import numpy as np
 from sequoia.common.metrics import Metrics
+from sequoia.common.spaces import TypedDictSpace
 from sequoia.settings import (
     Actions,
     ActionType,
