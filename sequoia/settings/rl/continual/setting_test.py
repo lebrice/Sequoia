@@ -333,14 +333,7 @@ class TestContinualRLSetting:
         #         assert len(unique_attribute_values) == train_tasks, (attribute, unique_attribute_values, setting.train_task_schedule)
 
     @pytest.mark.parametrize(
-        "batch_size",
-        [
-            None,
-            1,
-            xfail_param(
-                3, reason="is_closed and env_dataset cause issues in a batched env.",
-            ),
-        ],
+        "batch_size", [None, 1, 3],
     )
     @pytest.mark.timeout(60)
     def test_check_iterate_and_step(
@@ -474,6 +467,15 @@ class TestContinualRLSetting:
             step_obs, *_ = env.step(env.action_space.sample())
             check_obs(step_obs)
 
+            # NOTE: Can't do this here, unless the episode is over, because the Monitor
+            # doesn't want us to end an episode early!
+            # for iter_obs in take(env, 3):
+            #     check_obs(iter_obs)
+            #     _ = env.send(env.action_space.sample())
+
+        with setting.test_dataloader(batch_size=batch_size) as env:
+            # NOTE: Can't do this here, unless the episode is over, because the Monitor
+            # doesn't want us to end an episode early!
             for iter_obs in take(env, 3):
                 check_obs(iter_obs)
                 _ = env.send(env.action_space.sample())

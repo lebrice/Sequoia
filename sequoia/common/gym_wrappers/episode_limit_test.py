@@ -81,8 +81,6 @@ def test_episode_limit_with_single_env(env_name: str):
         _ = env.step(env.action_space.sample())
 
 
-# @pytest.mark.xfail(reason="TODO: Fix the bugs in the interaction between "
-#                           "EnvDataset and EpisodeLimit.")
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
 def test_episode_limit_with_single_env_dataset(env_name: str):
     """ EpisodeLimit should close the env when a given number of episodes is

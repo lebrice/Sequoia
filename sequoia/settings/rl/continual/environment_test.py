@@ -76,44 +76,51 @@ class TestGymDataLoader:
         env.close()
 
     @pytest.mark.parametrize("batch_size", [None, 1, 2, 5])
-    @pytest.mark.parametrize(
-        "env_name", ["CartPole-v0", param_requires_atari_py("Breakout-v0")]
-    )
-    def test_multiple_epochs_works(self, env_name: str, batch_size: Optional[int]):
+    @pytest.mark.parametrize("seed", [None, 123, 456])
+    # @pytest.mark.parametrize(
+    #     "env_name", ["CartPole-v0", param_requires_atari_py("Breakout-v0")]
+    # )
+    def test_multiple_epochs_works(self, batch_size: Optional[int], seed: Optional[int]):
         epochs = 3
         max_steps_per_episode = 10
         from gym.wrappers import TimeLimit
-        
+        from sequoia.conftest import DummyEnvironment
+        from sequoia.common.gym_wrappers import AddDoneToObservation
         def env_fn():
-            env = gym.make(env_name)
+            # FIXME: Using the DummyEnvironment for now since it's easier to debug with.
+            # env = gym.make(env_name)
+            env = DummyEnvironment()
+            env = AddDoneToObservation(env)
             env = TimeLimit(env, max_episode_steps=max_steps_per_episode)
             return env
 
         # assert False, [env_fn(i).unwrapped for i in range(4)]
         # env = gym.vector.make(env_name, num_envs=(batch_size or 1))
         env = make_batched_env(env_fn, batch_size=batch_size)
-
+        
+        
         batched_env = env
         # from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
         # env = EpisodeLimit(env, max_episodes=epochs)
-
-        env = EnvDataset(env, max_steps_per_episode=max_steps_per_episode)
         from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
         env = ConvertToFromTensors(env)
+
+        env = EnvDataset(env, max_steps_per_episode=max_steps_per_episode)
 
         env: GymDataLoader = self.GymDataLoader(env)
         # BUG: Seems to be a little bug in the shape of the items yielded by the env due
         # to the concat_fn of the DataLoader.
         # if batch_size and batch_size >= 1:
         #     assert False, (env.reset().shape, env.observation_space, next(iter(env)).shape)
+        env.seed(seed)
 
         all_rewards = []
         with env:
             for epoch in range(epochs):
                 for step, obs in enumerate(env):
-                    print(f"'epoch' {epoch}, step {step}:")
+                    print(f"'epoch' {epoch}, step {step}:, obs: {obs}")
                     assert obs in env.observation_space, obs.shape
-                    assert (  # BUG: This isn't working:
+                    assert (  # BUG: This isn't working: (sometimes!)
                         step < max_steps_per_episode
                     ), "Max steps per episode should have been respected."
                     rewards = env.send(env.action_space.sample())
@@ -130,9 +137,14 @@ class TestGymDataLoader:
 
             assert epoch == epochs - 1
 
-        if batch_size is None:
+        if batch_size in [None, 1]:
+            # Some episodes might last shorter than the max number of steps per episode,
+            # therefore the total should be at most this much:
             assert len(all_rewards) <= epochs * max_steps_per_episode
         else:
+            # The maximum number of steps per episode is set, but the env is vectorized,
+            # so the number of 'total' rewards we get from all envs should be *exactly*
+            # this much:
             assert len(all_rewards) == epochs * max_steps_per_episode * batch_size
 
     @pytest.mark.parametrize("batch_size", [1, 2, 5])

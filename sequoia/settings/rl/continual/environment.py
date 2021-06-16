@@ -37,6 +37,7 @@ from typing import (
     Union,
     Iterator,
 )
+from gym.utils import colorize
 import multiprocessing as mp
 import gym
 import numpy as np
@@ -162,19 +163,18 @@ class GymDataLoader(
             num_workers = 0
 
         self.env = env
-        # TODO: We could also perhaps let those parameters through to the
-        # constructor of DataLoader, because in __iter__ we're not using the
-        # DataLoader iterator anyway! This would have the benefit that the
-        # batch_size and num_workers attributes would reflect the actual state
-        # of the iterator, and things like pytorch-lightning would stop warning
-        # us that the num_workers is too low.
+        # NOTE: The batch_size and num_workers attributes reflect the values from the
+        # iterator (the VectorEnv), not those of the dataloader.
+        # This is done in order to avoid pytorch workers being ever created, and also so
+        # that pytorch-lightning stops warning us that the num_workers is too low.
         self._batch_size = batch_size
+        self._num_workers = num_workers
         super().__init__(
             dataset=self.env,
             # The batch size is None, because the VecEnv takes care of
             # doing the batching for us.
             batch_size=None,
-            num_workers=num_workers,
+            num_workers=0,
             collate_fn=None,
             **kwargs,
         )
@@ -211,6 +211,19 @@ class GymDataLoader(
         # assert has_tensor_support(self.observation_space)
 
     @property
+    def num_workers(self) -> Optional[int]:
+        return self._num_workers
+
+    @num_workers.setter
+    def num_workers(self, value: Any) -> Optional[int]:
+        if value and value != self._num_workers:
+            warnings.warn(
+                RuntimeWarning(
+                    f"Can't set num_workers to {value}, it's hard-set to {self._num_workers}"
+                )
+            )
+
+    @property
     def batch_size(self) -> Optional[int]:
         return self._batch_size
 
@@ -233,10 +246,26 @@ class GymDataLoader(
     #         return self.env.max_steps
     #     raise NotImplementedError(f"TODO: Can't tell the length of the env {self.env}.")
 
+    def _obs_have_done_signal(self) -> bool:
+        """ Try to determine if the observations contain the 'done' signal or not. """
+        if isinstance(self.observation_space, spaces.Dict) and "done" in self.observation_space.spaces:
+            return True
+        return False
+
     def __iter__(self) -> Iterator:
         # TODO: Pretty sure this could be greatly simplified by just always using the loop from EnvDataset.
         # return super().__iter__()
         # assert False, self.env.__iter__()
+        if self.is_vectorized:
+            # elif isinstance(self.observation_space, spaces.Tuple)
+            if not self._obs_have_done_signal():
+                warnings.warn(RuntimeWarning(colorize(
+                    f"You are iterating over a vectorized env, but the observations "
+                    f"don't seem to contain the 'done' signal! You should definitely "
+                    f"consider applying something like an `AddDoneToObservation` "
+                    f"wrapper to each individual env before vectorization. ",
+                    "red"
+                )))
         return self.env.__iter__()
         # yield from IterableWrapper.__iter__(self)
         

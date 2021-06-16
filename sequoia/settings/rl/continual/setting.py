@@ -660,8 +660,13 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
            The task labels for each sample when task labels are available,
            otherwise the task labels space is `Sparse`, and entries will be `None`.
         """
-        if self.train_env:
-            return self.train_env.observation_space
+        # TODO: Is it right that we set the observation space on the Setting to be the
+        # observation space of the current train environment? 
+        # In what situation could there be any difference between those?
+        # - Changing the 'transforms' attributes after training?
+        # if self.train_env is not None:
+        #     # assert self._observation_space == self.train_env.observation_space
+        #     return self.train_env.observation_space
 
         x_space = self._temp_train_env.observation_space
         # apply the transforms to the observation space.
@@ -684,6 +689,15 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         if self.prefer_tensors:
             observation_space = add_tensor_support(observation_space)
         assert isinstance(observation_space, TypedDictSpace)
+
+        if self.train_env is not None:
+            # FIXME: Remove this perhaps. Just making sure that the Setting's
+            # observation space is consistent with that of its environments.
+            # NOTE: This check is a bit too strict, the task label space's sparsity for
+            # instance isn't exactly the same.
+            # assert observation_space == self.train_env.observation_space
+            assert observation_space.x == self.train_env.observation_space.x, (observation_space, self.train_env.observation_space)
+            # assert observation_space.task_labels.n == self.train_env.observation_space.task_labels.n
         return observation_space
 
     @property
@@ -1085,10 +1099,8 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 shared_memory=False,
             )
         if max_steps:
-
             env = ActionLimit(env, max_steps=max_steps)
         if max_episodes:
-
             env = EpisodeLimit(env, max_episodes=max_episodes)
 
         # Apply the "post-batch" wrappers:

@@ -510,7 +510,13 @@ class TestPassingEnvsForEachTask:
 
         # Not sure, do we want to add a 'observation_spaces`, `action_spaces` and
         # `reward_spaces` properties?
-        assert setting.observation_space == train_env.observation_space
+        assert setting.observation_space.x == train_env.observation_space.x
+        if setting.task_labels_at_train_time:
+            # TODO: Either add a `__getattr__` proxy on the Sparse space, or create
+            # dedicated `SparseDiscrete`, `SparseBox` etc spaces so that we eventually
+            # get to use `space.n` on a Sparse space.
+            assert train_env.observation_space.task_labels == spaces.Discrete(setting.nb_tasks)
+            assert setting.observation_space.task_labels.n == train_env.observation_space.task_labels.n
 
     def test_command_line(self):
         # TODO: If someone passes the same env ids from the command-line, then shouldn't
