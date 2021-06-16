@@ -26,7 +26,6 @@ class EpisodeCounter(IterableWrapper):
 
     def __init__(self, env: gym.Env):
         super().__init__(env=env)
-        self.is_vectorized = isinstance(env.unwrapped, VectorEnv)
         self._episode_counter: int = 0  # -1 to account for the initial reset?
         self._done: Union[bool, Sequence[bool]] = False
         if self.is_vectorized:
@@ -139,6 +138,8 @@ class EpisodeLimit(EpisodeCounter):
         obs, reward, done, info = super().step(action)
 
         if self.is_vectorized:
+            # BUG: This can be reached while in the last 'send' (which uses self.send)
+            # of the previous epoch while iterating
             if any(done) and self._episode_counter >= self.max_episodes:
                 logger.info(
                     f"Closing the envs since we reached the max number of episodes."

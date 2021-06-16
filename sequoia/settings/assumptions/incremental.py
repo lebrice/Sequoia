@@ -68,7 +68,6 @@ class IncrementalAssumption(ContinualAssumption):
 
         Adds the 'task labels' to the base Observation.
         """
-
         task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
 
     # Wether we have clear boundaries between tasks, or if the transition is

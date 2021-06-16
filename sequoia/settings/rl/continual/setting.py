@@ -826,7 +826,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
         batch_size = batch_size or self.batch_size
         num_workers = num_workers if num_workers is not None else self.num_workers
-
+        
         env_factory = partial(
             self._make_env,
             base_env=self.dataset,

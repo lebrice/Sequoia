@@ -1,4 +1,4 @@
-from typing import Type, ClassVar
+from typing import Type, ClassVar, Optional
 import gym
 import numpy as np
 import pytest
@@ -62,10 +62,14 @@ class TestGymDataLoader:
         max_steps = 5
         env_name = "CartPole-v0"
         env = make_batched_env(env_name, batch_size=batch_size)
-        dataset = EnvDataset(env, max_steps=max_steps)
+        dataset = EnvDataset(env)
+        from sequoia.common.gym_wrappers.action_limit import ActionLimit
+        dataset = ActionLimit(dataset, max_steps=max_steps * (batch_size or 1))
         env: GymDataLoader = self.GymDataLoader(dataset)
         env.reset()
-        for i, batch in enumerate(env):
+        i = 0
+        for i, obs in enumerate(env):
+            assert obs in env.observation_space
             assert i < max_steps, f"Max steps should have been respected: {i}"
             env.send(env.action_space.sample())
         assert i == max_steps - 1
@@ -75,21 +79,42 @@ class TestGymDataLoader:
     @pytest.mark.parametrize(
         "env_name", ["CartPole-v0", param_requires_atari_py("Breakout-v0")]
     )
-    def test_multiple_epochs_works(self, env_name: str, batch_size: int):
-
+    def test_multiple_epochs_works(self, env_name: str, batch_size: Optional[int]):
         epochs = 3
         max_steps_per_episode = 10
+        from gym.wrappers import TimeLimit
+        
+        def env_fn():
+            env = gym.make(env_name)
+            env = TimeLimit(env, max_episode_steps=max_steps_per_episode)
+            return env
 
-        env = make_batched_env(env_name, batch_size=batch_size)
-        dataset = EnvDataset(env, max_steps_per_episode=max_steps_per_episode)
-        env: GymDataLoader = self.GymDataLoader(dataset,)
+        # assert False, [env_fn(i).unwrapped for i in range(4)]
+        # env = gym.vector.make(env_name, num_envs=(batch_size or 1))
+        env = make_batched_env(env_fn, batch_size=batch_size)
+
+        batched_env = env
+        # from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
+        # env = EpisodeLimit(env, max_episodes=epochs)
+
+        env = EnvDataset(env, max_steps_per_episode=max_steps_per_episode)
+        from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+        env = ConvertToFromTensors(env)
+
+        env: GymDataLoader = self.GymDataLoader(env)
+        # BUG: Seems to be a little bug in the shape of the items yielded by the env due
+        # to the concat_fn of the DataLoader.
+        # if batch_size and batch_size >= 1:
+        #     assert False, (env.reset().shape, env.observation_space, next(iter(env)).shape)
+
         all_rewards = []
         with env:
-            env.reset()
             for epoch in range(epochs):
-                for i, batch in enumerate(env):
-                    assert (
-                        i < max_steps_per_episode
+                for step, obs in enumerate(env):
+                    print(f"'epoch' {epoch}, step {step}:")
+                    assert obs in env.observation_space, obs.shape
+                    assert (  # BUG: This isn't working:
+                        step < max_steps_per_episode
                     ), "Max steps per episode should have been respected."
                     rewards = env.send(env.action_space.sample())
 
@@ -101,7 +126,7 @@ class TestGymDataLoader:
                 # Since in the VectorEnv, 'episodes' are infinite, we must have
                 # reached the limit of the number of steps, while in a single
                 # environment, the episode might have been shorter.
-                assert i <= max_steps_per_episode - 1
+                assert step <= max_steps_per_episode - 1
 
             assert epoch == epochs - 1
 

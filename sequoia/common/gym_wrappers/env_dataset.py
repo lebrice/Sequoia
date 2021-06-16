@@ -1,4 +1,4 @@
-""" Creates an IterableDataset from a Gym Environment. 
+""" Creates an IterableDataset from a Gym Environment.
 """
 from collections import abc as collections_abc
 from typing import (
@@ -49,7 +49,7 @@ class EnvDataset(
     """ Wrapper that exposes a Gym environment as an IterableDataset.
 
     This makes it possible to iterate over a gym env with an Active DataLoader.
-    
+
     One pass through __iter__ is one episode. The __iter__ method can be called
     at most `max_episodes` times.
     """
@@ -208,7 +208,7 @@ class EnvDataset(
         """
         assert action is not None, "Don't send a None action!"
         self.action_ = action
-        self.observation_, self.reward_, self.done_, self.info_ = self.step(action) 
+        self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
         # self.observation_ = self.__next__()
         self.n_sends_ += 1
         return self.reward_
@@ -219,13 +219,13 @@ class EnvDataset(
 
         TODO: BUG: Wrappers applied on top of the EnvDataset won't have an
         effect on the values yielded by this iterator. Currently trying to fix
-        this inside the IterableWrapper base class, but it's not that simple.      
-        
+        this inside the IterableWrapper base class, but it's not that simple.
+
         TODO: To allow wrappers to also be iterable, we need to rename all the
         "private" attributes to "public" names, so that they can call something
         like:
-        type(self.env).__iter__(self) (from within the wrapper).  
-        
+        type(self.env).__iter__(self) (from within the wrapper).
+
         Yields
         -------
         Observations
@@ -262,6 +262,12 @@ class EnvDataset(
         # Yield the first observation_.
         # TODO: What do we want to yield, actually? Just observations?
         yield self.observation_
+
+        if self.action_ is None:
+            raise RuntimeError(
+                f"You have to send an action using send() between every "
+                f"observation. (env = {self})"
+            )
 
         # logger.debug(f"episode {self.n_episodes_}/{self.max_episodes}")
 
@@ -320,7 +326,7 @@ class EnvDataset(
     # @property
     def done_is_true(self) -> bool:
         """Returns wether self.done_ is True.
-        
+
         This will always return False if the wrapped env is a VectorEnv,
         regardless of if the some of the values in the self.done_ array are
         true. This is because the VectorEnvs already reset the underlying envs
@@ -329,7 +335,7 @@ class EnvDataset(
         Returns
         -------
         bool
-            Wether the episode is considered "done" based on self.done_. 
+            Wether the episode is considered "done" based on self.done_.
         """
         if isinstance(self.done_, bool):
             return self.done_
@@ -373,4 +379,6 @@ class EnvDataset(
 
     def __add__(self, other):
         from sequoia.utils.generic_functions import concatenate
-        return concatenate(self, other) 
+
+        return concatenate(self, other)
+

@@ -21,7 +21,7 @@ batch.
 In either case, we can easily keep the `step` API from gym available.
 Need to talk more about this for sure.
 """
-
+import warnings
 from typing import (
     Any,
     Callable,
@@ -168,13 +168,14 @@ class GymDataLoader(
         # batch_size and num_workers attributes would reflect the actual state
         # of the iterator, and things like pytorch-lightning would stop warning
         # us that the num_workers is too low.
+        self._batch_size = batch_size
         super().__init__(
             dataset=self.env,
             # The batch size is None, because the VecEnv takes care of
             # doing the batching for us.
-            batch_size=batch_size,
+            batch_size=None,
             num_workers=num_workers,
-            # collate_fn=None,
+            collate_fn=None,
             **kwargs,
         )
         Wrapper.__init__(self, env=self.env)
@@ -209,10 +210,23 @@ class GymDataLoader(
         # self.reward_space = add_tensor_support(self.reward_space)
         # assert has_tensor_support(self.observation_space)
 
-    # def __next__(self) -> EnvDatasetItem:
-    #     if self._iterator is None:
-    #         self._iterator = self.__iter__()
-    #     return next(self._iterator)
+    @property
+    def batch_size(self) -> Optional[int]:
+        return self._batch_size
+
+    @batch_size.setter
+    def batch_size(self, value: Any) -> Optional[int]:
+        if value != self._batch_size:
+            warnings.warn(
+                RuntimeWarning(
+                    f"Can't set batch size to {value}, it's hard-set to {self._batch_size}"
+                )
+            )
+
+    def __next__(self) -> ObservationType:
+        if self._iterator is None:
+            self._iterator = self.__iter__()
+        return next(self._iterator)
 
     # def __len__(self):
     #     if isinstance(self.env, EnvDataset):
@@ -221,36 +235,42 @@ class GymDataLoader(
 
     def __iter__(self) -> Iterator:
         # TODO: Pretty sure this could be greatly simplified by just always using the loop from EnvDataset.
+        # return super().__iter__()
+        # assert False, self.env.__iter__()
+        return self.env.__iter__()
+        # yield from IterableWrapper.__iter__(self)
+        
+        # self.observation_ = self.reset()
+        # self.done_ = False
+        # self.action_ = None
+        # self.reward_ = None
 
-        self.observation_ = self.reset()
-        self.done_ = False
-        self.action_ = None
-        self.reward_ = None
+        # # Yield the first observation_.
+        # # TODO: Maybe add something like 't' on the observations to make sure they
+        # # line up with the rewards we get?
+        # yield self.observation_
 
-        # Yield the first observation_.
-        # TODO: Maybe add something like 't' on the observations to make sure they
-        # line up with the rewards we get?
-        yield self.observation_
+        # if self.action_ is None:
+        #     raise RuntimeError(
+        #         f"You have to send an action using send() between every "
+        #         f"observation. (env = {self})"
+        #     )
+        # def done_is_true(done: Union[bool, np.ndarray, Sequence[bool]]) -> bool:
+        #     return done if isinstance(done, bool) or not done.shape else all(done)
 
-        if self.action_ is None:
-            raise RuntimeError(
-                f"You have to send an action using send() between every "
-                f"observation. (env = {self})"
-            )
+        # while not any([done_is_true(self.done_), self.is_closed()]):
+        #     # logger.debug(f"step {self.n_steps_}/{self.max_steps},  (episode {self.n_episodes_})")
 
-        while not any([self.done_, self.is_closed()]):
-            # logger.debug(f"step {self.n_steps_}/{self.max_steps},  (episode {self.n_episodes_})")
+        #     # Set those to None to force the user to call .send()
+        #     self.action_ = None
+        #     self.reward_ = None
+        #     yield self.observation_
 
-            # Set those to None to force the user to call .send()
-            self.action_ = None
-            self.reward_ = None
-            yield self.observation_
-
-            if self.action_ is None:
-                raise RuntimeError(
-                    f"You have to send an action using send() between every "
-                    f"observation. (env = {self})"
-                )
+        #     if self.action_ is None:
+        #         raise RuntimeError(
+        #             f"You have to send an action using send() between every "
+        #             f"observation. (env = {self})"
+        #         )
 
     # def __iter__(self) -> Iterable[ObservationType]:
     #     # This would give back a single-process dataloader iterator over the
@@ -287,9 +307,8 @@ class GymDataLoader(
         return super().step(action)
 
     def send(self, action: Union[ActionType, Any]) -> RewardType:
-        # if self.actions_type and not isinstance(action, self.actions_type):
-        #     raise RuntimeError(f"Expected to receive an action of type {self.actions_type}?")
-        # logger.debug(f"Receiving actions {action}")
+        # TODO: Remove this unwrapping code, and instead only unwrap stuff if necessary
+        # for the environment.
         if isinstance(action, Actions):
             action = action.y_pred
         if isinstance(action, Tensor):
@@ -301,7 +320,8 @@ class GymDataLoader(
         ):
             action = action.tolist()
         assert action in self.env.action_space, (action, self.env.action_space)
-        self.action_ = action
-        self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
-        return self.reward_
+        return super().send(action)
+        # self.action_ = action
+        # self.observation_, self.reward_, self.done_, self.info_ = su(action)
+        # return self.reward_
         # return self.env.send(action)

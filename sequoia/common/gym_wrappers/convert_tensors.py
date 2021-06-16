@@ -12,15 +12,17 @@ from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.spaces.typed_dict import TypedDictSpace
 from sequoia.utils.generic_functions import from_tensor, move, to_tensor
 from sequoia.utils.logging_utils import get_logger
-
-T = TypeVar("T")
+from .utils import IterableWrapper, StepResult
 
 logger = get_logger(__file__)
 
+T = TypeVar("T")
 S = TypeVar("S", bound=Space)
+# TODO: Add 'TensorSpace' space which wraps a given space, doing the same kinda thing
+# as in Sparse.
 
 
-class ConvertToFromTensors(gym.Wrapper):
+class ConvertToFromTensors(IterableWrapper):
     """ Wrapper that converts Tensors into samples/ndarrays and vice versa.
 
     Whatever comes into the env is converted into np.ndarrays or samples from
@@ -45,32 +47,47 @@ class ConvertToFromTensors(gym.Wrapper):
         self.action_space: Space = add_tensor_support(
             self.env.action_space, device=device
         )
+        self.reward_space: Space
         if hasattr(self.env, "reward_space"):
-            self.reward_space: Space = add_tensor_support(
-                self.env.reward_space, device=device
+            self.reward_space = self.env.reward_space
+        else:
+            reward_range = getattr(self.env, "reward_range", (-np.inf, np.inf))
+            reward_shape: Tuple[int, ...] = ()
+            if self.is_vectorized:
+                reward_shape = (self.env.num_envs,)
+            self.reward_space = spaces.Box(
+                reward_range[0], reward_range[1], reward_shape, np.float32
             )
+        self.reward_space = add_tensor_support(self.reward_space, device=device)
 
     def reset(self, *args, **kwargs):
         obs = self.env.reset(*args, **kwargs)
-        return to_tensor(self.observation_space, obs, device=self.device)
+        return self.observation(obs)
 
-    def step(self, action: Tensor) -> Tuple[Tensor, Tensor, Tensor, List[Dict]]:
-        action = from_tensor(self.action_space, action)
+    def observation(self, observation):
+        return to_tensor(self.observation_space, observation, device=self.device)
+
+    def action(self, action):
+        return from_tensor(self.action_space, action)
+
+    def reward(self, reward):
+        return to_tensor(self.reward_space, reward, device=self.device)
+
+    def step(self, action: Tensor) -> StepResult:
+        action = self.action(action)
         assert action in self.env.action_space, (action, self.env.action_space)
 
         result = self.env.step(action)
         observation, reward, done, info = result
-
-        observation = to_tensor(self.observation_space, observation, self.device)
-
-        if hasattr(self, "reward_space"):
-            reward = to_tensor(self.reward_space, reward, self.device)
-        else:
-            reward = torch.as_tensor(reward, device=self.device)
+        observation = self.observation(observation)
+        reward = self.reward(reward)
         done = torch.as_tensor(done, device=self.device)
         # We could actually do this!
         # info = np.ndarray(info)
-        return type(result)([observation, reward, done, info])
+        if isinstance(result, StepResult):
+            return type(result)(**dict(observation=observation, reward=reward, done=done, info=info))
+        else:
+            return StepResult(observation, reward, done, info)
 
 
 def supports_tensors(space: S) -> bool:

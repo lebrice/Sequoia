@@ -11,6 +11,7 @@ from typing import (
     List,
     NamedTuple,
     Optional,
+    Sequence,
     Tuple,
     Type,
     TypeVar,
@@ -31,6 +32,7 @@ from gym.envs.classic_control import (
 )
 from gym.envs.registration import load, EnvSpec
 from gym.vector.utils import batch_space
+from gym.vector import VectorEnv
 from torch.utils.data import DataLoader, IterableDataset
 
 from sequoia.utils.logging_utils import get_logger
@@ -222,10 +224,10 @@ RewardType = TypeVar("RewardType")
 
 
 class StepResult(NamedTuple, Generic[ObservationType, RewardType]):
-    state: ObservationType
+    observation: ObservationType
     reward: RewardType
-    done: bool
-    info: Dict
+    done: Union[bool, Sequence[bool]]
+    info: Union[Dict, Sequence[Dict]]
 
 
 def has_wrapper(
@@ -367,6 +369,13 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
             reward = self.reward(reward)
             return reward
 
+        # if hasattr(self.env, "send"):
+        #     # TODO: Maybe put 'self.action_' in step(), same for the other fields
+        #     action = self.action(action)
+        #     self.action_ = action
+        #     reward = self.env.send(action)
+        #     self.reward_ = self.reward(reward)
+        # else:
         self.action_ = action
         self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
         return self.reward_
@@ -409,7 +418,10 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
                     f"observation. (env = {self})"
                 )
 
-            while not any([self.done_, self.is_closed()]):
+            def done_is_true(done: Union[bool, np.ndarray, Sequence[bool]]) -> bool:
+                return done if isinstance(done, bool) or not done.shape else all(done)
+
+            while not any([done_is_true(self.done_), self.is_closed()]):
                 # logger.debug(f"step {self.n_steps_}/{self.max_steps},  (episode {self.n_episodes_})")
 
                 # Set those to None to force the user to call .send()
